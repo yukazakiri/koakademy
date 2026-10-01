@@ -585,6 +585,260 @@ it('manages curriculum subjects and class schedules via AI tools', function (): 
         ->and($rescheduleResult['schedule']['day_of_week'])->toBe('Friday');
 });
 
+it('assigns a faculty member to a class using an employee number instead of a uuid key', function (): void {
+    foreach (['Create:Classes', 'Update:Classes', 'View:Classes'] as $perm) {
+        Spatie\Permission\Models\Permission::firstOrCreate(['name' => $perm, 'guard_name' => 'web']);
+    }
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $admin->givePermissionTo(['Create:Classes', 'Update:Classes', 'View:Classes']);
+    $this->actingAs($admin);
+
+    $school = App\Models\School::factory()->create();
+    app(App\Services\TenantContext::class)->setCurrentSchool($school);
+
+    $faculty = App\Models\Faculty::factory()->create([
+        'school_id' => $school->id,
+        'first_name' => 'Doc',
+        'last_name' => 'Arenas',
+        'faculty_id_number' => '800188',
+    ]);
+
+    $class = App\Models\Classes::factory()->create([
+        'school_id' => $school->id,
+        'subject_code' => 'GE-3',
+        'section' => 'B',
+    ]);
+
+    $tool = new App\Ai\Tools\ManageClassScheduleTool();
+
+    // `faculty.id` is a UUID, so passing the human employee number straight to
+    // Faculty::find() raised a Postgres "invalid input syntax for type uuid"
+    // driver error. It must now resolve to the real record.
+    $result = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'action' => 'assign_faculty',
+        'class_id' => $class->id,
+        'faculty_id' => '800188',
+    ])), true);
+
+    expect($result['success'])->toBeTrue()
+        ->and($result['instructor']['id'])->toBe($faculty->id)
+        ->and($result['instructor']['faculty_id_number'])->toBe('800188')
+        ->and($class->refresh()->faculty_id)->toBe($faculty->id);
+
+    // The same lookup must work by name, and by the real UUID.
+    $byName = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'action' => 'assign_faculty',
+        'class_id' => $class->id,
+        'faculty_name' => 'Arenas',
+    ])), true);
+
+    expect($byName['success'])->toBeTrue()
+        ->and($byName['instructor']['id'])->toBe($faculty->id);
+
+    $byUuid = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'action' => 'assign_faculty',
+        'class_id' => $class->id,
+        'faculty_id' => $faculty->id,
+    ])), true);
+
+    expect($byUuid['success'])->toBeTrue()
+        ->and($byUuid['instructor']['id'])->toBe($faculty->id);
+});
+
+it('reports an actionable error instead of a driver crash for an unknown faculty reference', function (): void {
+    foreach (['Create:Classes', 'Update:Classes', 'View:Classes'] as $perm) {
+        Spatie\Permission\Models\Permission::firstOrCreate(['name' => $perm, 'guard_name' => 'web']);
+    }
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $admin->givePermissionTo(['Create:Classes', 'Update:Classes', 'View:Classes']);
+    $this->actingAs($admin);
+    app(App\Services\TenantContext::class)->setCurrentSchool(App\Models\School::factory()->create());
+
+    $class = App\Models\Classes::factory()->create(['subject_code' => 'GE-3', 'section' => 'B', 'faculty_id' => null]);
+    $before = $class->faculty_id;
+
+    $tool = new App\Ai\Tools\ManageClassScheduleTool();
+
+    $result = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'action' => 'assign_faculty',
+        'class_id' => $class->id,
+        'faculty_id' => '999999',
+    ])), true);
+
+    // The agent must get a readable answer, not a Postgres uuid cast error.
+    expect($result['error'])->toBeTrue()
+        ->and($result['message'])->toContain('No faculty matches "999999"')
+        ->and($class->refresh()->faculty_id)->toBe($before);
+});
+
+it('resolves compound class labels without losing the subject code', function (): void {
+    $school = App\Models\School::factory()->create();
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
+
+    // A catalog where the codes share a prefix, so a resolver that reads "GE"
+    // as the subject and "3" as the section will misfire.
+    foreach (['GE-1', 'GE-2', 'GE-3'] as $code) {
+        $subject = App\Models\Subject::factory()->create(['course_id' => $course->id, 'code' => $code]);
+        App\Models\Classes::factory()->create([
+            'school_id' => $school->id,
+            'subject_id' => $subject->id,
+            'subject_code' => $code,
+            'section' => 'A',
+            'school_year' => '2026-2027',
+            'semester' => 1,
+        ]);
+    }
+
+    $resolver = new App\Services\Ai\InstitutionEntityResolver();
+
+    // "GE-3 Section A" must not match GE-1 A or GE-2 A.
+    expect($resolver->class('GE-3 Section A', '2026-2027', 1, $school)->subject_code)->toBe('GE-3');
+
+    // A bare code must not be read as subject "GE" plus section "3".
+    expect($resolver->class('GE-3', '2026-2027', 1, $school)->subject_code)->toBe('GE-3');
+
+    // The short form resolves too.
+    expect($resolver->class('GE-2 A', '2026-2027', 1, $school)->subject_code)->toBe('GE-2');
+});
+
+it('lists ambiguous faculty candidates so the agent can ask which one is meant', function (): void {
+    $school = App\Models\School::factory()->create();
+
+    App\Models\Faculty::factory()->create([
+        'school_id' => $school->id,
+        'first_name' => 'Ana',
+        'last_name' => 'Cruz',
+    ]);
+    App\Models\Faculty::factory()->create([
+        'school_id' => $school->id,
+        'first_name' => 'Bea',
+        'last_name' => 'Cruz',
+    ]);
+
+    $resolver = new App\Services\Ai\InstitutionEntityResolver();
+
+    try {
+        $resolver->faculty('Cruz', $school);
+        $this->fail('Expected an ambiguity error for a shared surname.');
+    } catch (App\Services\Ai\Exceptions\AmbiguousEntityException $e) {
+        expect($e->getMessage())->toContain('matches multiple faculty records')
+            ->and($e->getMessage())->toContain('faculty_id_number=');
+    }
+
+    expect($resolver->findFaculty('nobody-at-all', $school))->toBeNull();
+});
+
+it('gates a section transfer behind an approval and previews it without writing', function (): void {
+    foreach (['View:StudentEnrollment', 'Update:StudentEnrollment'] as $perm) {
+        Spatie\Permission\Models\Permission::firstOrCreate(['name' => $perm, 'guard_name' => 'web']);
+    }
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $admin->givePermissionTo(['View:StudentEnrollment', 'Update:StudentEnrollment']);
+    $this->actingAs($admin);
+
+    $school = App\Models\School::factory()->create();
+    app(App\Services\TenantContext::class)->setCurrentSchool($school);
+
+    $student = App\Models\Student::factory()->create([
+        'school_id' => $school->id,
+        'institution_id' => $school->id,
+        'student_id' => 2026701,
+        'first_name' => 'Maria',
+        'last_name' => 'Santos',
+    ]);
+
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id, 'lec_per_unit' => 500, 'lab_per_unit' => 0]);
+    $enrollment = App\Models\StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'school_id' => $school->id,
+        'school_year' => '2026-2027',
+        'semester' => 1,
+    ]);
+    $subject = App\Models\Subject::factory()->create([
+        'course_id' => $course->id,
+        'code' => 'GE-3',
+        'units' => 3,
+        'lecture' => 3,
+    ]);
+
+    $makeClass = function (string $section, string $day) use ($school, $subject, $enrollment) {
+        $class = App\Models\Classes::factory()->create([
+            'school_id' => $school->id,
+            'subject_id' => $subject->id,
+            'subject_code' => 'GE-3',
+            'section' => $section,
+            'school_year' => $enrollment->school_year,
+            'semester' => 1,
+            'maximum_slots' => 40,
+        ]);
+        App\Models\Schedule::factory()->create([
+            'class_id' => $class->id,
+            'day_of_week' => $day,
+            'start_time' => '15:00:00',
+            'end_time' => '16:00:00',
+        ]);
+
+        return $class;
+    };
+
+    $sectionB = $makeClass('B', 'Tuesday');
+    $sectionA = $makeClass('A', 'Wednesday');
+
+    App\Models\SubjectEnrollment::query()->create([
+        'enrollment_id' => $enrollment->id,
+        'student_id' => $student->id,
+        'subject_id' => $subject->id,
+        'class_id' => $sectionB->id,
+        'section' => 'B',
+        'school_year' => $enrollment->school_year,
+        'semester' => 1,
+    ]);
+    App\Models\ClassEnrollment::factory()->create([
+        'class_id' => $sectionB->id,
+        'student_id' => $student->id,
+        'status' => true,
+    ]);
+
+    $tool = new App\Ai\Tools\ManageClassEnrollmentTool();
+
+    // The preview is read-only and safe to run before asking for consent.
+    $preview = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'action' => 'preview',
+        'student' => '2026701',
+        'subject' => 'GE-3',
+        'to_section' => 'GE-3 Section A',
+    ])), true);
+
+    expect($preview['can_transfer'])->toBeTrue()
+        ->and($preview['current']['class_id'])->toBe($sectionB->id)
+        ->and($preview['proposed']['class_id'])->toBe($sectionA->id)
+        ->and($preview['resulting_timetable'])->toHaveCount(1)
+        ->and(App\Models\SubjectEnrollment::query()->where('subject_id', $subject->id)->first()->class_id)->toBe($sectionB->id);
+
+    // A transfer always requires a reviewable confirmation before it runs.
+    $approval = $tool->shouldRequestApproval(new Laravel\Ai\Tools\Request([
+        'action' => 'transfer',
+        'student' => '2026701',
+        'subject' => 'GE-3',
+        'to_section' => 'GE-3 Section A',
+    ]));
+
+    expect($approval)->not->toBeNull()
+        ->and($approval->reason)->toContain('GE-3 Section A');
+
+    $transfer = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'action' => 'transfer',
+        'student' => '2026701',
+        'subject' => 'GE-3',
+        'to_section' => 'GE-3 Section A',
+    ])), true);
+
+    expect($transfer['transferred'])->toBeTrue()
+        ->and($transfer['to']['class_id'])->toBe($sectionA->id)
+        ->and(App\Models\SubjectEnrollment::query()->where('subject_id', $subject->id)->first()->class_id)->toBe($sectionA->id);
+});
+
 it('adapts built-in MCP tools seamlessly into AI agent tools', function (): void {
     Spatie\Permission\Models\Permission::firstOrCreate(['name' => 'View:Course', 'guard_name' => 'web']);
     $school = App\Models\School::factory()->create();

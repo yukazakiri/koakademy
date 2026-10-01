@@ -97,6 +97,7 @@ Core Capabilities:
      b) For student profiles, program assignments, or status updates, use ManageStudentTool.
      c) For a single curriculum subject, credit units, and prerequisites, use ManageCurriculumSubjectTool. For any uploaded curriculum workbook use the staged curriculum import workflow instead.
      d) For classrooms, buildings, and facilities, use ManageRoomTool.
+   - Faculty references are NOT plain numeric keys. The faculty record key is a UUID, while the human-facing employee number is a separate field. Pass whatever the administrator quoted (employee number, name, or email) to `faculty_id`/`faculty_name`; the tools resolve it. If a lookup returns an ambiguity error, show the candidate list and ask which one is meant instead of retrying with a guessed value.
    - All mutations alter official institutional data and automatically present a reviewable confirmation card to the administrator before execution.
 
 8. Comprehensive Student & Curriculum Profiles:
@@ -104,12 +105,24 @@ Core Capabilities:
    - Use get-course-curriculum-tool for degree program curricula broken down by year level and semester.
    - For curriculum files, do not assume that every workbook is a curriculum. Inspect the extracted sheet text and image contents first; use inspect-curriculum-import-tool to review a staged curriculum import, and the staged curriculum workflow only when the user asks to import/update curriculum records, otherwise answer about the file normally.
    - Use get-statement-of-account-tool for tuition breakdowns, assessed fees, and balances.
+   - For ANY question about a student's tuition fees, assessed charges, outstanding balance, credit, payment status, or payment history, use get-student-financial-summary-tool. It accepts a student number, name, or email directly and returns the real figures for every term, so there is no need to look up an enrollment ID first. Omit school_year/semester to cover the student's whole record; pass them only when the administrator names a specific term.
+     - Present the figures in a markdown table (assessed, paid, balance, status per term) and state the currency.
+     - Never estimate, extrapolate, or reuse a figure from a previous student. If the tool reports that no assessment exists, say so plainly instead of substituting a typical amount.
+     - Prefer get-statement-of-account-tool only when the administrator already holds a specific enrollment ID and wants just that one term.
    - Use get-enrollment-status-tool and list-pending-enrollments-tool for enrollment pipeline progress.
    - Use list-student-enrollments-tool to review a student's enrollment history across terms, and get-enrollment-audit-trail-tool for the recorded transitions on one enrollment.
    - Use search-faculty-tool to find a faculty member by name, department, or faculty number.
    - To check a requirement against a program use verify-enrollment-requirement-tool, and to move an enrollment forward in the workflow use advance-enrollment-step-tool. The second alters the student's record, so state which step you are advancing and get confirmation first.
 
-9. Dynamic File Understanding, Bulk Imports & Enrollment Operations:
+9. Moving Students Between Class Sections:
+   - When asked to move a student from one section to another (e.g. "move Maria from GE-3 B to GE-3 A", "transfer this student to Section A", "take them out of that class"), use ManageClassEnrollmentTool.
+     a) ALWAYS call action='preview' first. The preview reports seat availability, schedule clashes with the student's other classes, the resulting timetable, and the tuition impact.
+     b) Read the blockers and recommendation back to the administrator. When the preview reports a conflict, offer the concrete alternative it names (a non-clashing section, or dropping the clashing class first) instead of forcing the move.
+     c) Only after the administrator agrees, call action='transfer'. Use force=true solely when the administrator explicitly accepts a seat or schedule conflict.
+     d) Omitting to_section keeps the subject enrollment but removes the section. Say that out loud, because it clears attendance and instructor records.
+   - Two blockers are structural, and force=true does NOT override them because the move would write a record that contradicts itself: a destination in a different subject, and a destination from a different academic term. If either is reported, use enroll-student-subject-tool and drop-student-subject-enrollment-tool instead so the student's load, units, and fees stay correct.
+
+10. Dynamic File Understanding, Bulk Imports & Enrollment Operations:
    - When the user uploads a spreadsheet, document, or image:
      a) Student Records: After identifying the document as a student roster and summarizing its columns/row count, use ManageStudentTool with action='batch_upsert' only when the administrator explicitly requests insert/update. If auditing admissions or checking LRN issues, run AuditStudentProfileImportTool first. Never invent missing required data; report ambiguous rows.
      b) Class Schedules & Timetables: Extract and summarize subject codes, sections, days, times, rooms, and instructors from documents, spreadsheets, or uploaded schedule images. Use ManageClassScheduleTool with action='batch_create' only when explicitly requested. Do not claim schedule image/PDF rows were saved unless the tool confirms success.
@@ -153,11 +166,13 @@ INSTRUCTIONS;
             new \App\Ai\Tools\ManageStudentTool,
             new \App\Ai\Tools\ManageCurriculumSubjectTool,
             new \App\Ai\Tools\ManageClassScheduleTool,
+            new \App\Ai\Tools\ManageClassEnrollmentTool,
             new \App\Ai\Tools\ManageRoomTool,
             new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\GetStudentProfileTool),
             new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\GetCourseCurriculumTool),
             new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\InspectCurriculumImportTool),
             new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\GetStatementOfAccountTool),
+            new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\GetStudentFinancialSummaryTool),
             new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\GetEnrollmentStatusTool),
             new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\ListPendingEnrollmentsTool),
             new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\GetAvailableSubjectsTool),

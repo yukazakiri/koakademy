@@ -10,6 +10,9 @@ use App\Models\Room;
 use App\Models\Schedule;
 use App\Models\Subject;
 use App\Models\User;
+use App\Services\Ai\Exceptions\AmbiguousEntityException;
+use App\Services\Ai\Exceptions\EntityNotFoundException;
+use App\Services\Ai\InstitutionEntityResolver;
 use App\Services\GeneralSettingsService;
 use App\Services\TimetableConflictService;
 use Carbon\Carbon;
@@ -31,9 +34,11 @@ final class ManageClassScheduleTool implements Tool
     public function __construct(
         private ?GeneralSettingsService $settings = null,
         private ?TimetableConflictService $conflictService = null,
+        private ?InstitutionEntityResolver $entities = null,
     ) {
         $this->settings ??= app(GeneralSettingsService::class);
         $this->conflictService ??= app(TimetableConflictService::class);
+        $this->entities ??= app(InstitutionEntityResolver::class);
     }
 
     public function description(): Stringable|string
@@ -72,16 +77,25 @@ final class ManageClassScheduleTool implements Tool
             }
         }
 
-        return match ($action) {
-            'create_class' => $this->handleCreateClass($request),
-            'batch_create' => $this->handleBatchCreate($request),
-            'reschedule', 'update_schedule' => $this->handleReschedule($request),
-            'assign_faculty' => $this->handleAssignFaculty($request),
-            'assign_room' => $this->handleAssignRoom($request),
-            'delete_class' => $this->handleDeleteClass($request),
-            'get' => $this->handleGet($request),
-            default => json_encode(['error' => true, 'message' => "Unknown action '{$action}'. Supported: create_class, batch_create, reschedule, assign_faculty, assign_room, delete_class, get."]),
-        };
+        try {
+            return match ($action) {
+                'create_class' => $this->handleCreateClass($request),
+                'batch_create' => $this->handleBatchCreate($request),
+                'reschedule', 'update_schedule' => $this->handleReschedule($request),
+                'assign_faculty' => $this->handleAssignFaculty($request),
+                'assign_room' => $this->handleAssignRoom($request),
+                'delete_class' => $this->handleDeleteClass($request),
+                'get' => $this->handleGet($request),
+                default => json_encode(['error' => true, 'message' => "Unknown action '{$action}'. Supported: create_class, batch_create, reschedule, assign_faculty, assign_room, delete_class, get."]),
+            };
+        } catch (EntityNotFoundException|AmbiguousEntityException $e) {
+            // Surface the resolution failure as a tool result the model can act
+            // on, instead of letting a driver-level error abort the chat turn.
+            return json_encode([
+                'error' => true,
+                'message' => $e->getMessage(),
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        }
     }
 
     public function schema(JsonSchema $schema): array
@@ -101,6 +115,7 @@ final class ManageClassScheduleTool implements Tool
                         'start_time' => $s->string()->description('HH:MM format.'),
                         'end_time' => $s->string()->description('HH:MM format.'),
                         'room_name' => $s->string()->description('Room name or number.'),
+                        'faculty_id' => $s->string()->description('Faculty UUID or employee number.'),
                         'faculty_name' => $s->string()->description('Instructor name.'),
                         'maximum_slots' => $s->integer()->description('Max capacity (default 40).'),
                     ])
@@ -113,9 +128,10 @@ final class ManageClassScheduleTool implements Tool
             'start_time' => $schema->string()->description('Start time in HH:MM format (e.g. "09:00", "13:30").'),
             'end_time' => $schema->string()->description('End time in HH:MM format (e.g. "10:30", "15:00").'),
             'room_id' => $schema->integer()->description('Room database ID.'),
-            'room_name' => $schema->string()->description('Room name (e.g. "Room 201").'),
-            'faculty_id' => $schema->string()->description('Faculty instructor ID or UUID.'),
-            'faculty_name' => $schema->string()->description('Instructor name (e.g. "Dr. Santos").'),
+            'room_name' => $schema->string()->description('Room name or number (e.g. "Room 201").'),
+            'faculty_id' => $schema->string()->description('Faculty reference: the internal UUID or the employee/faculty ID number (e.g. 800188). Never assume a faculty key is a plain integer.'),
+            'faculty_name' => $schema->string()->description('Instructor name (e.g. "Dr. Santos"). Used when faculty_id is unavailable.'),
+            'faculty_email' => $schema->string()->description('Instructor email. Used when faculty_id is unavailable.'),
             'maximum_slots' => $schema->integer()->description('Maximum student capacity (default 40).'),
             'school_year' => $schema->string()->description('Academic year (e.g. "2026-2027").'),
             'semester' => $schema->integer()->enum([1, 2])->description('Semester (1 or 2).'),
@@ -175,6 +191,61 @@ final class ManageClassScheduleTool implements Tool
         return false;
     }
 
+    /**
+     * Resolve a faculty reference supplied by a model.
+     *
+     * `faculty.id` is a UUID, so handing a numeric employee number straight to
+     * `Faculty::find()` raises a Postgres "invalid input syntax for type uuid"
+     * driver error. Resolution accepts a UUID, an employee number, an email, or
+     * a name, and reports ambiguity instead of guessing.
+     */
+    private function resolveFaculty(mixed $identifier): Faculty
+    {
+        return $this->entities->faculty($identifier, $this->currentSchool());
+    }
+
+    private function resolveRoom(mixed $identifier): Room
+    {
+        return $this->entities->room($identifier, $this->currentSchool());
+    }
+
+    /**
+     * Resolve an optional faculty reference, preferring the explicit ID over the
+     * name. Returns null when neither was supplied.
+     */
+    private function resolveOptionalFaculty(mixed $identifier, ?string $name): ?Faculty
+    {
+        if (filled($identifier)) {
+            return $this->resolveFaculty($identifier);
+        }
+
+        if (filled($name)) {
+            return $this->resolveFaculty($name);
+        }
+
+        return null;
+    }
+
+    private function resolveOptionalRoom(mixed $identifier, ?string $name): ?Room
+    {
+        if (filled($identifier)) {
+            return $this->resolveRoom($identifier);
+        }
+
+        if (filled($name)) {
+            return $this->resolveRoom($name);
+        }
+
+        return null;
+    }
+
+    private function currentSchool(): ?\App\Models\School
+    {
+        $school = app(\App\Services\TenantContext::class)->getCurrentSchool();
+
+        return $school instanceof \App\Models\School ? $school : null;
+    }
+
     private function handleCreateClass(Request $request): string
     {
         $validated = $request->validate([
@@ -197,18 +268,10 @@ final class ManageClassScheduleTool implements Tool
 
         $roomId = $validated['room_id'] ?? null;
         if (! $roomId && filled($validated['room_name'] ?? null)) {
-            $room = Room::query()->where('name', 'like', "%{$validated['room_name']}%")->first();
-            $roomId = $room?->id;
+            $roomId = $this->resolveOptionalRoom(null, $validated['room_name'])?->id;
         }
 
-        $facultyId = null;
-        if (filled($validated['faculty_id'] ?? null)) {
-            $faculty = Faculty::query()->find($validated['faculty_id']);
-            $facultyId = $faculty?->id;
-        } elseif (filled($validated['faculty_name'] ?? null)) {
-            $faculty = Faculty::query()->whereRaw("TRIM(CONCAT_WS(' ', first_name, last_name)) LIKE ?", ["%{$validated['faculty_name']}%"])->first();
-            $facultyId = $faculty?->id;
-        }
+        $facultyId = $this->resolveOptionalFaculty($validated['faculty_id'] ?? null, $validated['faculty_name'] ?? null)?->id;
 
         $subject = Subject::query()->where('code', $validated['subject_code'])->first();
 
@@ -295,18 +358,10 @@ final class ManageClassScheduleTool implements Tool
 
                 $roomId = $cData['room_id'] ?? null;
                 if (! $roomId && filled($cData['room_name'] ?? null)) {
-                    $room = Room::query()->where('name', 'like', "%{$cData['room_name']}%")->first();
-                    $roomId = $room?->id;
+                    $roomId = $this->resolveOptionalRoom(null, $cData['room_name'])?->id;
                 }
 
-                $facultyId = null;
-                if (filled($cData['faculty_id'] ?? null)) {
-                    $faculty = Faculty::query()->find($cData['faculty_id']);
-                    $facultyId = $faculty?->id;
-                } elseif (filled($cData['faculty_name'] ?? null)) {
-                    $faculty = Faculty::query()->whereRaw("TRIM(CONCAT_WS(' ', first_name, last_name)) LIKE ?", ["%{$cData['faculty_name']}%"])->first();
-                    $facultyId = $faculty?->id;
-                }
+                $facultyId = $this->resolveOptionalFaculty($cData['faculty_id'] ?? null, $cData['faculty_name'] ?? null)?->id;
 
                 $subject = Subject::query()->where('code', $subjectCode)->first();
 
@@ -402,8 +457,7 @@ final class ManageClassScheduleTool implements Tool
 
         $roomId = $validated['room_id'] ?? null;
         if (! $roomId && filled($validated['room_name'] ?? null)) {
-            $room = Room::query()->where('name', 'like', "%{$validated['room_name']}%")->first();
-            $roomId = $room?->id;
+            $roomId = $this->resolveOptionalRoom(null, $validated['room_name'])?->id;
         }
 
         $dayOfWeek = mb_convert_case(mb_trim((string) $validated['day_of_week']), MB_CASE_TITLE);
@@ -463,6 +517,7 @@ final class ManageClassScheduleTool implements Tool
             'class_id' => 'required|integer',
             'faculty_id' => 'nullable',
             'faculty_name' => 'nullable|string',
+            'faculty_email' => 'nullable|email',
         ]);
 
         $class = Classes::query()->find($validated['class_id']);
@@ -470,23 +525,33 @@ final class ManageClassScheduleTool implements Tool
             return json_encode(['error' => true, 'message' => "Class #{$validated['class_id']} not found."]);
         }
 
-        $faculty = null;
-        if (filled($validated['faculty_id'] ?? null)) {
-            $faculty = Faculty::query()->find($validated['faculty_id']);
-        } elseif (filled($validated['faculty_name'] ?? null)) {
-            $faculty = Faculty::query()->whereRaw("TRIM(CONCAT_WS(' ', first_name, last_name)) LIKE ?", ["%{$validated['faculty_name']}%"])->first();
-        }
+        $faculty = $this->resolveOptionalFaculty(
+            $validated['faculty_id'] ?? $validated['faculty_email'] ?? null,
+            $validated['faculty_name'] ?? null,
+        );
 
         if (! $faculty instanceof Faculty) {
-            return json_encode(['error' => true, 'message' => 'Specified faculty member was not found.']);
+            return json_encode([
+                'error' => true,
+                'message' => 'No faculty reference supplied. Pass faculty_id (UUID or employee number), faculty_name, or faculty_email.',
+            ]);
         }
 
+        $previous = $class->faculty?->full_name;
         $class->update(['faculty_id' => $faculty->id]);
 
         return json_encode([
             'success' => true,
             'action' => 'assign_faculty',
             'message' => "Assigned instructor {$faculty->full_name} to class {$class->subject_code} ({$class->section}).",
+            'class_id' => $class->id,
+            'instructor' => [
+                'id' => $faculty->id,
+                'faculty_id_number' => (string) $faculty->faculty_id_number,
+                'name' => $faculty->full_name,
+                'email' => $faculty->email,
+            ],
+            'previous_instructor' => $previous ?? 'TBA',
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
@@ -503,15 +568,10 @@ final class ManageClassScheduleTool implements Tool
             return json_encode(['error' => true, 'message' => "Class #{$validated['class_id']} not found."]);
         }
 
-        $room = null;
-        if (filled($validated['room_id'] ?? null)) {
-            $room = Room::query()->find($validated['room_id']);
-        } elseif (filled($validated['room_name'] ?? null)) {
-            $room = Room::query()->where('name', 'like', "%{$validated['room_name']}%")->first();
-        }
+        $room = $this->resolveOptionalRoom($validated['room_id'] ?? null, $validated['room_name'] ?? null);
 
         if (! $room instanceof Room) {
-            return json_encode(['error' => true, 'message' => 'Specified classroom was not found.']);
+            return json_encode(['error' => true, 'message' => 'No room reference supplied. Pass room_id or room_name.']);
         }
 
         $class->update(['room_id' => $room->id]);
@@ -521,6 +581,8 @@ final class ManageClassScheduleTool implements Tool
             'success' => true,
             'action' => 'assign_room',
             'message' => "Assigned room {$room->name} to class {$class->subject_code} ({$class->section}).",
+            'class_id' => $class->id,
+            'room' => ['id' => $room->id, 'name' => $room->name],
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 

@@ -270,3 +270,66 @@ it('forbids an unknown desk id', function (): void {
 
     $this->get('/administrators/desks/not-a-desk')->assertForbidden();
 });
+
+it('applies the requested trend range and reflects it in the payload', function (): void {
+    $this->actingAs(deskUser(UserRole::Dean));
+
+    $this->get('/administrators/desks/executive?range=months')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('context.range', 'months')
+            ->has('context.range_label'),
+        );
+
+    $this->get('/administrators/desks/executive')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->where('context.range', 'year'));
+});
+
+it('caches each trend range separately', function (): void {
+    $contexts = [
+        DashboardContext::for('year'),
+        DashboardContext::for('months'),
+    ];
+
+    expect($contexts[0]->cacheKey())->not->toBe($contexts[1]->cacheKey());
+    expect($contexts[0]->rangeLabel())->not->toBe($contexts[1]->rangeLabel());
+});
+
+it('renders every desk a super administrator can open', function (string $desk): void {
+    $admin = User::factory()->create(['role' => UserRole::Developer]);
+    $admin->syncPermissions([]);
+
+    $this->actingAs($admin);
+
+    $this->get("/administrators/desks/{$desk}")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->component('administrators/desks/show')->where('desk.id', $desk));
+})->with([
+    'executive',
+    'registrar',
+    'accounting',
+    'academic',
+    'hr',
+    'student-affairs',
+    'it-admin',
+]);
+
+it('sends the switcher options to the page', function (): void {
+    $this->actingAs(deskUser(UserRole::Cashier));
+
+    $this->get('/administrators/desks/accounting')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('administrators/desks/show')
+            ->has('desks')
+            ->has('kpis')
+            ->has('queues'),
+        );
+});
+
+it('renders a desk with no queues or tables without error', function (): void {
+    $this->actingAs(deskUser(UserRole::MaintenanceStaff));
+
+    $this->get('/administrators/desks/it-admin')->assertOk();
+});

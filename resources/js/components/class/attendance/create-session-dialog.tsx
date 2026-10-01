@@ -52,7 +52,7 @@ export function CreateSessionDialog({ open, onOpenChange, classId, date, schedul
             return;
         }
 
-        post(route("classes.attendance.store", { class: classId }), {
+        post(route("faculty.classes.attendance.sessions.store", { class: classId }), {
             onSuccess: () => {
                 toast.success("Session created successfully.");
                 onOpenChange(false);

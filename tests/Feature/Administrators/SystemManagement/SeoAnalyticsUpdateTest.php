@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Enums\UserRole;
+use App\Models\AnalyticsProviderInstance;
 use App\Models\GeneralSetting;
 use App\Models\User;
 use Spatie\Permission\Models\Permission;
@@ -34,10 +35,14 @@ it('updates analytics configuration from the analytics system management form', 
     actingAs($user)
         ->put(portalUrlForAdministrators('/administrators/system-management/analytics'), [
             'analytics_enabled' => true,
-            'analytics_provider' => 'google',
-            'analytics_script' => '',
-            'analytics_settings' => [
-                'google_measurement_id' => 'G-KOATEST01',
+            'providers' => [
+                [
+                    'provider' => 'google',
+                    'enabled' => true,
+                    'settings' => [
+                        'measurement_id' => 'G-KOATEST01',
+                    ],
+                ],
             ],
         ])
         ->assertRedirect()
@@ -46,10 +51,11 @@ it('updates analytics configuration from the analytics system management form', 
     $settings->refresh();
 
     expect($settings->analytics_enabled)->toBeTrue()
-        ->and($settings->analytics_provider)->toBe('google')
-        ->and($settings->analytics_script)->toBeNull()
-        ->and($settings->analytics_settings)->toMatchArray([
-            'google_measurement_id' => 'G-KOATEST01',
-        ])
         ->and($settings->google_analytics_id)->toBe('G-KOATEST01');
+
+    $instance = AnalyticsProviderInstance::query()->sole();
+
+    expect($instance->provider)->toBe('google')
+        ->and($instance->enabled)->toBeTrue()
+        ->and($instance->settings)->toMatchArray(['measurement_id' => 'G-KOATEST01']);
 });

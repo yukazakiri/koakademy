@@ -54,6 +54,45 @@ The finance area provides dashboards, payment recording, invoices and receipts, 
 
 The System Management area centralizes institution configuration: school profile and branding, academic periods, grading rules, student identifier formats, deployment mail status, notification templates, analytics, SEO, social sign-in providers, API keys, and the **Feature Toggles** page that switches portal features on or off. SMTP and provider credentials are configured on the server through `koakademy configure mail`, not in the web application.
 
+### Analytics providers
+
+**System Management → Analytics** controls every third-party analytics script the portal loads. A fresh install sends none.
+
+You can add as many providers as you need, including several instances of the same provider (for example one Umami site per domain). Each instance is saved as its own entry with its own enable switch, so you can turn one off without touching the others. A master switch above the list disables all of them at once.
+
+Add a provider with the picker at the top of the page. Its form is generated from the provider's own definition, so the fields shown always match what that service needs. The available providers are:
+
+| Provider | Hosting | Notable options |
+| -------- | ------- | --------------- |
+| Umami | Self-hosted | Click and scroll heatmaps, session replay (needs v3.2+) |
+| Plausible | Self-hosted or cloud | Site domain, API host |
+| Matomo | Self-hosted | Site ID; heatmaps and recording are paid plugins |
+| PostHog | Self-hosted or cloud | Autocapture for click maps, rage-click detection |
+| Fathom | Cloud or Fathom Lite | Lite (self-hosted) or Cloud |
+| OpenPanel | Self-hosted | Session replay, outgoing-link tracking |
+| GoatCounter | Self-hosted | No cookies, no unique visitor IDs |
+| Countly | Self-hosted | Consent requirement toggle |
+| Counter.dev | Cloud | Cookieless, no signup |
+| Cloudflare Web Analytics | Cloud | Beacon token from your Cloudflare zone |
+| Simple Analytics | Cloud | Cookie-free |
+| Google Analytics 4 | Cloud | GA4 measurement ID |
+| Microsoft Clarity | Cloud | Session recordings and click heatmaps |
+| StatCounter | Cloud | Project and security code |
+| Yandex Metrica | Cloud | Click map toggle |
+| Custom Snippet | Any | Paste any HTML or script; add as many as you like |
+
+Every entry can be given a name, so two instances of the same provider stay distinguishable, and a **custom snippet override** field lets you replace the generated markup when a service needs something the generator cannot express.
+
+:::caution[Student data]
+Providers marked *Hosted* send visitor data to a third party, which makes them a data processor for your institution. You have a `StudentMedicalRecords` module and minors' records in scope, so review your obligations under the Data Privacy Act and your guardian-consent position before enabling Google Analytics, Clarity, or Yandex Metrica. Prefer the self-hosted options.
+
+Session replay (Umami, OpenPanel, Clarity, Yandex) records what appears on screen, including student names, grades, and medical details. If you enable it, use the strictest masking your provider offers and set a low sample rate.
+:::
+
+:::tip[Which one for click and heatmap data?]
+Since Umami v3.2, self-hosted Umami gives you click and scroll heatmaps with no third-party processor involved. PostHog's autocapture is the stronger choice if you want dead-click and rage-click detection as queryable data rather than a visual overlay.
+:::
+
 :::tip[Audit trail]
 Administrative changes are recorded under **Audit Logs**. When something looks wrong, check there first before changing a record back.
 :::

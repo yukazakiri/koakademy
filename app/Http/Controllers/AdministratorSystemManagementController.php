@@ -29,6 +29,7 @@ use App\Http\Requests\Administrators\UpdateSchoolStatusRequest;
 use App\Http\Requests\Administrators\UpdateSentrySettingsRequest;
 use App\Http\Requests\Administrators\UpdateTuitionPaymentScheduleSettingsRequest;
 use App\Http\Requests\Administrators\UpsertMcpServerRequest;
+use App\Models\AnalyticsProviderInstance;
 use App\Models\Course;
 use App\Models\EnrollmentPolicy;
 use App\Models\EnrollmentPolicyVersion;
@@ -56,9 +57,11 @@ use App\Services\RegistrarReportingSettingsService;
 use App\Services\SocialiteProviderService;
 use App\Services\TuitionPaymentScheduleSettingsService;
 use App\Settings\SiteSettings;
+use App\Support\Analytics\AnalyticsProviderCatalog;
 use App\Support\IsoAlpha2CountryCodes;
 use App\Support\SystemManagementPermissions;
 use Exception;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -858,6 +861,15 @@ final class AdministratorSystemManagementController extends Controller
         return Redirect::back()->with('success', 'SEO settings updated successfully.');
     }
 
+    /**
+     * Persist the global analytics switch plus the full list of provider
+     * instances.
+     *
+     * The instance list is sent wholesale from the admin UI and reconciled
+     * here: rows keep their id when one is sent, new rows are created, and rows
+     * that are no longer present are deleted. This lets an operator add,
+     * remove, reorder, and toggle any number of providers in one request.
+     */
     public function updateAnalytics(Request $request)
     {
         $this->authorize('updateAnalytics', GeneralSetting::class);
@@ -870,40 +882,15 @@ final class AdministratorSystemManagementController extends Controller
             ]);
         }
 
-        $validated = $request->validate([
-            'analytics_enabled' => 'required|boolean',
-            'analytics_provider' => 'nullable|string|in:google,ackee,umami,openpanel,custom',
-            'analytics_script' => 'nullable|string',
-            'analytics_settings' => 'nullable|array',
-            'analytics_settings.google_measurement_id' => 'nullable|string|max:50',
-            'analytics_settings.ackee_script_url' => 'nullable|url|max:2048',
-            'analytics_settings.ackee_server_url' => 'nullable|url|max:2048',
-            'analytics_settings.ackee_domain_id' => 'nullable|string|max:255',
-            'analytics_settings.umami_script_url' => 'nullable|url|max:2048',
-            'analytics_settings.umami_website_id' => 'nullable|string|max:255',
-            'analytics_settings.umami_host_url' => 'nullable|url|max:2048',
-            'analytics_settings.umami_domains' => 'nullable|string|max:255',
-            'analytics_settings.openpanel_script_url' => 'nullable|url|max:2048',
-            'analytics_settings.openpanel_client_id' => 'nullable|string|max:255',
-            'analytics_settings.openpanel_api_url' => 'nullable|url|max:2048',
-            'analytics_settings.openpanel_track_screen_views' => 'nullable|boolean',
-            'analytics_settings.openpanel_track_outgoing_links' => 'nullable|boolean',
-            'analytics_settings.openpanel_track_attributes' => 'nullable|boolean',
-            'analytics_settings.openpanel_session_replay' => 'nullable|boolean',
+        $rules = $this->analyticsProviderRules();
+
+        $validated = $request->validate($rules);
+
+        $settings->update([
+            'analytics_enabled' => (bool) $validated['analytics_enabled'],
         ]);
 
-        $analyticsSettings = $validated['analytics_settings'] ?? [];
-        $validated['analytics_provider'] = filled($validated['analytics_provider'] ?? null)
-            ? $validated['analytics_provider']
-            : null;
-        $validated['analytics_script'] = filled($validated['analytics_script'] ?? null)
-            ? $validated['analytics_script']
-            : null;
-        $validated['google_analytics_id'] = ($validated['analytics_provider'] ?? null) === 'google'
-            ? ($analyticsSettings['google_measurement_id'] ?? null)
-            : null;
-
-        $settings->update($validated);
+        $this->syncAnalyticsProviderInstances($settings, $validated['providers']);
 
         return Redirect::back()->with('success', 'Analytics settings updated successfully.');
     }
@@ -1205,6 +1192,98 @@ final class AdministratorSystemManagementController extends Controller
         return Redirect::back()->with('success', 'Academic calendar defaults updated successfully.');
     }
 
+    /**
+     * Build the validation rules for the provider list.
+     *
+     * Per-provider field rules are derived from the catalog, so validation
+     * stays in step with the provider list without repeating it here. Rows
+     * whose provider key is unknown to the catalog are rejected rather than
+     * silently stored, which keeps the table free of orphaned keys.
+     *
+     * @return array<string, mixed>
+     */
+    private function analyticsProviderRules(): array
+    {
+        $rules = [
+            'analytics_enabled' => 'required|boolean',
+            'providers' => 'present|array|max:50',
+            'providers.*.id' => 'nullable|integer',
+            'providers.*.provider' => ['required', 'string', 'max:64', Rule::in(AnalyticsProviderCatalog::keys())],
+            'providers.*.label' => 'nullable|string|max:255',
+            'providers.*.enabled' => 'required|boolean',
+            'providers.*.script' => 'nullable|string|max:20000',
+            'providers.*.settings' => 'nullable|array',
+        ];
+
+        $submitted = request()->input('providers');
+
+        if (! is_array($submitted)) {
+            return $rules;
+        }
+
+        foreach (array_values($submitted) as $index => $provider) {
+            $key = is_array($provider) && is_string($provider['provider'] ?? null) ? $provider['provider'] : '';
+
+            $rules = array_merge($rules, AnalyticsProviderCatalog::rulesFor($key, "providers.{$index}.settings."));
+        }
+
+        return $rules;
+    }
+
+    /**
+     * Reconcile the submitted provider rows against what is stored.
+     *
+     * @param  array<int, array<string, mixed>>  $providers
+     */
+    private function syncAnalyticsProviderInstances(GeneralSetting $settings, array $providers): void
+    {
+        $keptIds = [];
+
+        foreach (array_values($providers) as $position => $provider) {
+            $key = $provider['provider'];
+            $settingsPayload = is_array($provider['settings'] ?? null) ? $provider['settings'] : [];
+
+            $attributes = [
+                'general_setting_id' => $settings->id,
+                'provider' => $key,
+                'label' => filled($provider['label'] ?? null) ? $provider['label'] : null,
+                'enabled' => (bool) $provider['enabled'],
+                'settings' => $settingsPayload === [] ? null : $settingsPayload,
+                'script' => filled($provider['script'] ?? null) ? $provider['script'] : null,
+                'position' => $position,
+            ];
+
+            $id = $provider['id'] ?? null;
+
+            $instance = AnalyticsProviderInstance::query()
+                ->where('general_setting_id', $settings->id)
+                ->find($id);
+
+            if ($instance instanceof AnalyticsProviderInstance) {
+                $instance->update($attributes);
+                $keptIds[] = $instance->id;
+
+                continue;
+            }
+
+            $keptIds[] = AnalyticsProviderInstance::query()->create($attributes)->id;
+        }
+
+        AnalyticsProviderInstance::query()
+            ->where('general_setting_id', $settings->id)
+            ->when($keptIds !== [], fn (Builder $query) => $query->whereNotIn('id', $keptIds))
+            ->delete();
+
+        // Keep the legacy Google column in step for any consumer that still
+        // reads it, such as older API responses and SEO templates.
+        $googleId = collect($providers)
+            ->firstWhere('provider', 'google')['settings']['measurement_id'] ?? null;
+
+        $settings->update([
+            'google_analytics_id' => filled($googleId) ? $googleId : null,
+        ]);
+    }
+
     private function ensureSiteSettingExists(string $name, mixed $value): void
     {
         $exists = DB::table('settings')
@@ -1312,6 +1391,20 @@ final class AdministratorSystemManagementController extends Controller
             'socialite_config' => $socialiteConfig,
             'mail_config' => $finalMailConfig,
             'analytics' => $analyticsService->getFrontendConfig(),
+            'analytics_catalog' => AnalyticsProviderCatalog::toFrontend(),
+            'analytics_providers' => $analyticsService
+                ->instances()
+                ->map(static fn (AnalyticsProviderInstance $instance): array => [
+                    'id' => $instance->id,
+                    'provider' => $instance->provider,
+                    'label' => $instance->label ?? '',
+                    'enabled' => $instance->enabled,
+                    'settings' => is_array($instance->settings) ? $instance->settings : [],
+                    'script' => $instance->manualScript(),
+                    'position' => $instance->position,
+                ])
+                ->values()
+                ->all(),
             'error_reporting' => app(ErrorReportingService::class)->forAdministration(),
             'sentry' => app(ErrorReportingService::class)->get()['providers']['sentry'],
             'enrollment_pipeline' => $this->enrollmentPipelineService->getConfiguration(),

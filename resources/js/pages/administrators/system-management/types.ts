@@ -1,4 +1,4 @@
-import type { AnalyticsConfig, AnalyticsProviderSettings } from "@/types/analytics";
+import type { AnalyticsConfig, AnalyticsProviderDefinition, AnalyticsProviderInstance } from "@/types/analytics";
 import type { User } from "@/types/user";
 
 export type SystemManagementSectionKey =
@@ -217,9 +217,6 @@ export interface GeneralSettings {
     site_description: string | null;
     google_analytics_id?: string | null;
     analytics_enabled: boolean;
-    analytics_provider: AnalyticsConfig["provider"];
-    analytics_script: string | null;
-    analytics_settings: AnalyticsProviderSettings | null;
     seo_title: string | null;
     seo_keywords: string | null;
     seo_metadata: SeoMetadata | null;
@@ -588,6 +585,10 @@ export interface SystemManagementPageProps {
     ai_config?: AiConfigPayload;
     mcp_servers?: McpServerConfig[];
     analytics: AnalyticsConfig;
+    /** Every provider Koakademy knows how to render, for the dynamic UI. */
+    analytics_catalog: AnalyticsProviderDefinition[];
+    /** The rows currently saved for this installation. */
+    analytics_providers: AnalyticsProviderInstance[];
     sentry: SentryConfig;
     error_reporting: ErrorReportingConfig;
     branding: BrandingSettings;

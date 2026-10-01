@@ -63,10 +63,11 @@ final class GeneralSettingController extends Controller
             'support_phone' => 'nullable|string|max:50',
             'google_analytics_id' => 'nullable|string|max:50',
             'posthog_html_snippet' => 'nullable|string',
+            // Analytics provider instances are managed through the system
+            // management screen, not this public settings endpoint. The
+            // global switch is exposed for convenience; adding or editing
+            // providers here would bypass per-provider validation.
             'analytics_enabled' => 'nullable|boolean',
-            'analytics_provider' => 'nullable|string|in:google,ackee,umami,openpanel,custom',
-            'analytics_script' => 'nullable|string',
-            'analytics_settings' => 'nullable|array',
             'seo_title' => 'nullable|string|max:255',
             'seo_keywords' => 'nullable|string',
             'seo_metadata' => 'nullable|array',
@@ -167,10 +168,11 @@ final class GeneralSettingController extends Controller
             'support_phone' => 'nullable|string|max:50',
             'google_analytics_id' => 'nullable|string|max:50',
             'posthog_html_snippet' => 'nullable|string',
+            // Analytics provider instances are managed through the system
+            // management screen, not this public settings endpoint. The
+            // global switch is exposed for convenience; adding or editing
+            // providers here would bypass per-provider validation.
             'analytics_enabled' => 'nullable|boolean',
-            'analytics_provider' => 'nullable|string|in:google,ackee,umami,openpanel,custom',
-            'analytics_script' => 'nullable|string',
-            'analytics_settings' => 'nullable|array',
             'seo_title' => 'nullable|string|max:255',
             'seo_keywords' => 'nullable|string',
             'seo_metadata' => 'nullable|array',

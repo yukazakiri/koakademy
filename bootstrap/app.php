@@ -98,5 +98,11 @@ return Application::configure(basePath: dirname(__DIR__))
                 ], $statusCode);
             }
         });
+        // Sentry stays registered unconditionally. The integration is inert
+        // without a DSN, and gating it here would break the admin panel's
+        // error reporting: AppServiceProvider::applySentrySettings() pushes a
+        // database-configured DSN into config on the app's booted callback,
+        // which runs after this file. The DSN, not this registration, is what
+        // decides whether anything is sent.
         Integration::handles($exceptions);
     })->create();

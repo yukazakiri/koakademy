@@ -44,6 +44,21 @@ final class DashboardRegistry
         ItAdminDesk::class,
     ];
 
+    /**
+     * Icon token per desk, matching AdminRouteIconKey in admin-routes.tsx.
+     *
+     * @var array<string, string>
+     */
+    private const array DESK_ICONS = [
+        'executive' => 'report_analytics',
+        'registrar' => 'clipboard_check',
+        'accounting' => 'chart_bar',
+        'academic' => 'school',
+        'hr' => 'users_group',
+        'student-affairs' => 'user_check',
+        'it-admin' => 'tools',
+    ];
+
     public function __construct(
         private readonly CacheRepository $cache,
     ) {}
@@ -114,6 +129,30 @@ final class DashboardRegistry
     public function defaultFor(User $user): ?Dashboard
     {
         return $this->visibleFor($user)[0] ?? null;
+    }
+
+    /**
+     * Desk entries for the administrator sidebar and command palette.
+     *
+     * Derived from the same visibleFor() the routes enforce, so a desk can never appear in the
+     * navigation of someone who would get a 403 opening it. Returned in the shape
+     * ModuleAdminRoute uses on the front end, which is what the sidebar merges.
+     *
+     * @return list<array{id: string, title: string, link: string, section: string, icon: string, description: string}>
+     */
+    public function navigationFor(User $user): array
+    {
+        return array_map(
+            fn (Dashboard $desk): array => [
+                'id' => 'admin-desk-'.$desk->id(),
+                'title' => $desk->title(),
+                'link' => route('administrators.desks.show', $desk->id()),
+                'section' => 'core',
+                'icon' => self::DESK_ICONS[$desk->id()] ?? 'dashboard',
+                'description' => $desk->description(),
+            ],
+            $this->visibleFor($user),
+        );
     }
 
     /**

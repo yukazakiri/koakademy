@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Dashboards\DashboardRegistry;
 use App\Enums\SchoolLevel;
 use App\Features\Toggles\StudentAvatarUpload;
 use App\Features\Toggles\StudentInformationUpdates;
@@ -132,6 +133,17 @@ final class HandleInertiaRequests extends Middleware
                     ? Inertia::defer(fn (): ?array => $administratorSidebarCounts->resolve($request), 'admin-shell', true)
                     : fn (): ?array => $administratorSidebarCounts->resolve($request),
                 'moduleAdminRoutes' => $moduleAdminNavigationService->getRoutes(),
+                // Desk entries for the sidebar and command palette. Resolved by the registry
+                // so the front end never has to restate which roles may open which desk.
+                // Deferred with the rest of the admin shell: the sidebar renders before it
+                // arrives and the nav simply fills in.
+                'deskRoutes' => $isAdministratorPortal
+                    ? Inertia::defer(
+                        fn (): array => app(DashboardRegistry::class)->navigationFor($user),
+                        'admin-shell',
+                        true,
+                    )
+                    : [],
                 'institutionOnboarding' => $isAdministratorPortal
                     ? Inertia::defer(fn (): ?array => $this->getInstitutionOnboardingData($request, $user), 'admin-shell', true)
                     : fn (): ?array => $this->getInstitutionOnboardingData($request, $user),

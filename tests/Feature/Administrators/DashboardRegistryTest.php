@@ -402,3 +402,71 @@ it('still authorizes a desk on the deferred request', function (): void {
         'X-Inertia-Partial-Component' => 'administrators/desks/show',
     ])->assertForbidden();
 });
+
+it('exposes each desk to the sidebar with a reachable link', function (string $roleName): void {
+    $user = deskUser(UserRole::from($roleName));
+
+    $nav = app(DashboardRegistry::class)->navigationFor($user);
+
+    expect($nav)->not->toBeEmpty();
+
+    foreach ($nav as $entry) {
+        expect($entry)->toHaveKeys(['id', 'title', 'link', 'section', 'icon', 'description']);
+        expect($entry['section'])->toBe('core');
+
+        // A desk must never appear in navigation for someone who would get a 403.
+        $this->actingAs($user)->get($entry['link'])->assertOk();
+    }
+})->with([
+    UserRole::President->value,
+    UserRole::Dean->value,
+    UserRole::DepartmentHead->value,
+    UserRole::Registrar->value,
+    UserRole::Cashier->value,
+    UserRole::HRManager->value,
+    UserRole::GuidanceCounselor->value,
+    UserRole::MaintenanceStaff->value,
+]);
+
+it('gives every desk a unique navigation id', function (): void {
+    $ids = array_column(app(DashboardRegistry::class)->navigationFor(deskUser(UserRole::Dean)), 'id');
+
+    expect($ids)->toBe(array_unique($ids));
+});
+
+it('never lists a desk the role cannot open', function (): void {
+    $registry = app(DashboardRegistry::class);
+
+    foreach (UserRole::cases() as $role) {
+        $user = deskUser($role);
+
+        foreach ($registry->navigationFor($user) as $entry) {
+            expect($registry->resolve($user, str_replace('admin-desk-', '', $entry['id'])))
+                ->not->toBeNull();
+        }
+    }
+});
+
+it('shares desk navigation through the deferred admin-shell group', function (): void {
+    $user = deskUser(UserRole::Cashier);
+
+    $this->actingAs($user);
+    $full = json_decode(
+        preg_replace('/^.*?<script data-page="app" type="application\/json">(.*?)<\/script>.*$/s', '$1', $this->get('/administrators/departments')->getContent()) ?: '{}',
+        true,
+    );
+
+    // Deferred alongside the rest of the shell, so the sidebar is not blocked on it.
+    expect($full['deferredProps']['admin-shell'] ?? [])->toContain('deskRoutes');
+
+    $partial = $this->get('/administrators/departments', [
+        'X-Inertia' => 'true',
+        'X-Inertia-Version' => $full['version'],
+        'X-Inertia-Partial-Data' => 'deskRoutes',
+        'X-Inertia-Partial-Component' => 'administrators/departments/index',
+    ])->assertOk();
+
+    $desks = json_decode($partial->getContent(), true)['props']['deskRoutes'];
+
+    expect(array_column($desks, 'id'))->toContain('admin-desk-accounting');
+});

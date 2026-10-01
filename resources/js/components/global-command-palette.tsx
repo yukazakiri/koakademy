@@ -113,6 +113,8 @@ interface PageProps {
         user?: User | null;
     };
     moduleAdminRoutes?: ModuleAdminRoute[];
+    /** Role-scoped dashboard desks, already filtered by DashboardRegistry::navigationFor(). */
+    deskRoutes?: ModuleAdminRoute[];
 }
 
 type StudentPublicInfo = {
@@ -234,14 +236,15 @@ export function GlobalCommandContent({
 
     const isAdminContext = typeof window !== "undefined" && window.location.pathname.startsWith("/administrators");
     const moduleAdminRoutes = props.moduleAdminRoutes ?? [];
+    const deskRoutes = props.deskRoutes ?? [];
     const sharedAuthUser = props.auth?.user;
     const resolvedUserRole = sharedAuthUser?.role ?? user.role ?? "";
     const resolvedUserPermissions = sharedAuthUser?.permissions ?? user.permissions ?? [];
     const isInstructor = /faculty|instructor/i.test(resolvedUserRole);
     const isStudentContext = !isAdminContext && !isInstructor;
     const allowedAdminRoutes = useMemo(
-        () => getRoutesForRoleWithModules(resolvedUserRole, resolvedUserPermissions, moduleAdminRoutes),
-        [moduleAdminRoutes, resolvedUserPermissions, resolvedUserRole],
+        () => getRoutesForRoleWithModules(resolvedUserRole, resolvedUserPermissions, moduleAdminRoutes, deskRoutes),
+        [deskRoutes, moduleAdminRoutes, resolvedUserPermissions, resolvedUserRole],
     );
     const allowedAdminRouteIds = useMemo(() => new Set(allowedAdminRoutes.map((route) => route.id)), [allowedAdminRoutes]);
 

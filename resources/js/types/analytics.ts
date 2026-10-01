@@ -1,26 +1,54 @@
-export type AnalyticsProvider = "google" | "ackee" | "umami" | "openpanel" | "custom";
+export type AnalyticsFieldType = "text" | "url" | "textarea" | "toggle" | "select";
 
-export interface AnalyticsProviderSettings {
-    google_measurement_id: string;
-    ackee_script_url: string;
-    ackee_server_url: string;
-    ackee_domain_id: string;
-    umami_script_url: string;
-    umami_website_id: string;
-    umami_host_url: string;
-    umami_domains: string;
-    openpanel_script_url: string;
-    openpanel_client_id: string;
-    openpanel_api_url: string;
-    openpanel_track_screen_views: boolean;
-    openpanel_track_outgoing_links: boolean;
-    openpanel_track_attributes: boolean;
-    openpanel_session_replay: boolean;
+export interface AnalyticsFieldOption {
+    value: string;
+    label: string;
+}
+
+export interface AnalyticsFieldDefinition {
+    key: string;
+    label: string;
+    type: AnalyticsFieldType;
+    placeholder: string;
+    help: string | null;
+    options: AnalyticsFieldOption[];
+    default: string | boolean | null;
+}
+
+export interface AnalyticsProviderDefinition {
+    key: string;
+    label: string;
+    description: string;
+    docs_url: string;
+    category: "self_hosted" | "cloud";
+    self_hosted: boolean;
+    consent_note: string | null;
+    fields: AnalyticsFieldDefinition[];
+}
+
+export type AnalyticsSettingValue = string | boolean;
+
+/** One saved provider instance. */
+export interface AnalyticsProviderInstance {
+    id: number;
+    provider: string;
+    label: string;
+    enabled: boolean;
+    settings: Record<string, AnalyticsSettingValue>;
+    script: string;
+    position: number;
+}
+
+/** A provider resolved to a snippet the browser should inject. */
+export interface AnalyticsActiveProvider {
+    key: string;
+    label: string;
+    snippet: string;
+    session: boolean;
 }
 
 export interface AnalyticsConfig {
     enabled: boolean;
-    provider: AnalyticsProvider | null;
-    script: string;
-    settings: AnalyticsProviderSettings;
+    has_providers: boolean;
+    providers: AnalyticsActiveProvider[];
 }

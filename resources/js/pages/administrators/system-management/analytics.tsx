@@ -1,4 +1,3 @@
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,74 +6,108 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import type { AnalyticsProvider } from "@/types/analytics";
+import type { AnalyticsFieldDefinition, AnalyticsProviderDefinition, AnalyticsSettingValue } from "@/types/analytics";
 import { useForm } from "@inertiajs/react";
-import { Activity, BarChart3, Bot, Fingerprint, Loader2, Radio, Save } from "lucide-react";
+import { AlertTriangle, BarChart3, ExternalLink, Loader2, Plus, Save, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
 
 import { submitSystemForm } from "./form-submit";
 import SystemManagementLayout from "./layout";
 import type { SystemManagementPageProps } from "./types";
 
-interface AnalyticsFormData {
-    analytics_enabled: boolean;
-    analytics_provider: AnalyticsProvider;
-    analytics_script: string;
-    analytics_settings: {
-        google_measurement_id: string;
-        ackee_script_url: string;
-        ackee_server_url: string;
-        ackee_domain_id: string;
-        umami_script_url: string;
-        umami_website_id: string;
-        umami_host_url: string;
-        umami_domains: string;
-        openpanel_script_url: string;
-        openpanel_client_id: string;
-        openpanel_api_url: string;
-        openpanel_track_screen_views: boolean;
-        openpanel_track_outgoing_links: boolean;
-        openpanel_track_attributes: boolean;
-        openpanel_session_replay: boolean;
-    };
+interface ProviderRow {
+    /** Null for a row the operator has added but not yet saved. */
+    id: number | null;
+    provider: string;
+    label: string;
+    enabled: boolean;
+    settings: Record<string, AnalyticsSettingValue>;
+    script: string;
 }
 
-export default function SystemManagementAnalyticsPage({ user, general_settings, access }: SystemManagementPageProps) {
+interface AnalyticsFormData {
+    analytics_enabled: boolean;
+    providers: ProviderRow[];
+}
+
+let temporaryRowId = 0;
+
+export default function SystemManagementAnalyticsPage({ user, general_settings, access, analytics_catalog, analytics_providers }: SystemManagementPageProps) {
+    const catalog = (analytics_catalog ?? []) as AnalyticsProviderDefinition[];
+    const providersByKey = useMemo(() => new Map(catalog.map((provider) => [provider.key, provider])), [catalog]);
+    const [addingProvider, setAddingProvider] = useState<string>("");
+
     const analyticsForm = useForm<AnalyticsFormData>({
-        analytics_enabled: general_settings?.analytics_enabled ?? false,
-        analytics_provider: general_settings?.analytics_provider || "google",
-        analytics_script: general_settings?.analytics_script || "",
-        analytics_settings: {
-            google_measurement_id: general_settings?.analytics_settings?.google_measurement_id || general_settings?.google_analytics_id || "",
-            ackee_script_url: general_settings?.analytics_settings?.ackee_script_url || "",
-            ackee_server_url: general_settings?.analytics_settings?.ackee_server_url || "",
-            ackee_domain_id: general_settings?.analytics_settings?.ackee_domain_id || "",
-            umami_script_url: general_settings?.analytics_settings?.umami_script_url || "",
-            umami_website_id: general_settings?.analytics_settings?.umami_website_id || "",
-            umami_host_url: general_settings?.analytics_settings?.umami_host_url || "",
-            umami_domains: general_settings?.analytics_settings?.umami_domains || "",
-            openpanel_script_url: general_settings?.analytics_settings?.openpanel_script_url || "https://openpanel.dev/op1.js",
-            openpanel_client_id: general_settings?.analytics_settings?.openpanel_client_id || "",
-            openpanel_api_url: general_settings?.analytics_settings?.openpanel_api_url || "",
-            openpanel_track_screen_views: general_settings?.analytics_settings?.openpanel_track_screen_views ?? true,
-            openpanel_track_outgoing_links: general_settings?.analytics_settings?.openpanel_track_outgoing_links ?? true,
-            openpanel_track_attributes: general_settings?.analytics_settings?.openpanel_track_attributes ?? true,
-            openpanel_session_replay: general_settings?.analytics_settings?.openpanel_session_replay ?? false,
-        },
+        analytics_enabled: analytics?.enabled ?? general_settings?.analytics_enabled ?? false,
+        providers: ((analytics_providers ?? []) as ProviderRow[]).map((row) => ({
+            id: row.id ?? null,
+            provider: row.provider,
+            label: row.label ?? "",
+            enabled: row.enabled ?? false,
+            settings: row.settings ?? {},
+            script: row.script ?? "",
+        })),
     });
 
-    const analyticsProvider = analyticsForm.data.analytics_provider;
-    const manualAnalyticsOverride = analyticsForm.data.analytics_script.trim() !== "";
+    const rows = analyticsForm.data.providers;
+    const activeCount = rows.filter((row) => row.enabled).length;
+    const availableProviders = catalog.filter((provider) => !rows.some((row) => row.provider === provider.key));
 
-    const providerDisplayName =
-        analyticsProvider === "google"
-            ? "Google Analytics"
-            : analyticsProvider === "ackee"
-              ? "Ackee"
-              : analyticsProvider === "umami"
-                ? "Umami"
-                : analyticsProvider === "openpanel"
-                  ? "OpenPanel"
-                  : "Custom";
+    function addProvider(key: string): void {
+        if (!key) {
+            return;
+        }
+
+        const definition = providersByKey.get(key);
+
+        if (!definition) {
+            return;
+        }
+
+        const defaults: Record<string, AnalyticsSettingValue> = {};
+
+        definition.fields.forEach((field) => {
+            defaults[field.key] = (field.default ?? (field.type === "toggle" ? false : "")) as AnalyticsSettingValue;
+        });
+
+        analyticsForm.setData("providers", [
+            ...rows,
+            {
+                id: null,
+                provider: key,
+                label: "",
+                enabled: true,
+                settings: defaults,
+                script: "",
+            },
+        ]);
+
+        setAddingProvider("");
+    }
+
+    function updateRow(index: number, patch: Partial<ProviderRow>): void {
+        analyticsForm.setData(
+            "providers",
+            rows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)),
+        );
+    }
+
+    function updateRowSetting(index: number, field: string, value: AnalyticsSettingValue): void {
+        const row = rows[index];
+
+        if (!row) {
+            return;
+        }
+
+        updateRow(index, { settings: { ...row.settings, [field]: value } });
+    }
+
+    function removeRow(index: number): void {
+        analyticsForm.setData(
+            "providers",
+            rows.filter((_, rowIndex) => rowIndex !== index),
+        );
+    }
 
     return (
         <SystemManagementLayout
@@ -82,7 +115,7 @@ export default function SystemManagementAnalyticsPage({ user, general_settings, 
             access={access}
             activeSection="analytics"
             heading="Analytics & Tracking"
-            description="Configure site telemetry providers, tracking snippets, and client-side analytics behavior."
+            description="Add as many analytics providers as you need. Each one is enabled and configured independently, and nothing is injected until you turn it on."
         >
             <div className="space-y-6">
                 <div className="bg-card/70 flex flex-col gap-4 rounded-2xl border p-4 shadow-sm backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
@@ -92,14 +125,17 @@ export default function SystemManagementAnalyticsPage({ user, general_settings, 
                         </div>
                         <div>
                             <div className="flex flex-wrap items-center gap-2">
-                                <p className="font-medium">{providerDisplayName}</p>
+                                <p className="font-medium">
+                                    {activeCount === 0
+                                        ? "No active providers"
+                                        : `${activeCount} active ${activeCount === 1 ? "provider" : "providers"}`}
+                                </p>
                                 <Badge variant={analyticsForm.data.analytics_enabled ? "default" : "secondary"}>
                                     {analyticsForm.data.analytics_enabled ? "Tracking on" : "Tracking off"}
                                 </Badge>
-                                {manualAnalyticsOverride && <Badge variant="outline">Manual override</Badge>}
                             </div>
                             <p className="text-muted-foreground text-sm">
-                                Choose one provider or use a final script snippet when you need complete control.
+                                Applies to Inertia pages and the Filament admin panel.
                             </p>
                         </div>
                     </div>
@@ -124,400 +160,298 @@ export default function SystemManagementAnalyticsPage({ user, general_settings, 
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
                             <BarChart3 className="h-4 w-4" />
-                            Provider
+                            Global switch
                         </CardTitle>
-                        <CardDescription>Enable analytics globally and choose which provider should be injected.</CardDescription>
+                        <CardDescription>Master toggle. When off, every provider below is skipped.</CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-5">
-                        <div className="grid gap-5 sm:grid-cols-2">
-                            <div className="space-y-2.5">
-                                <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Analytics Enabled</Label>
-                                <div className="bg-background flex min-h-11 items-center justify-between rounded-lg border px-3">
-                                    <div className="space-y-0.5">
-                                        <p className="text-sm font-medium">Inject tracking scripts</p>
-                                        <p className="text-muted-foreground text-xs">Applies to both Inertia pages and the Filament admin panel.</p>
-                                    </div>
-                                    <Switch
-                                        checked={analyticsForm.data.analytics_enabled}
-                                        onCheckedChange={(checked) => analyticsForm.setData("analytics_enabled", checked)}
-                                    />
-                                </div>
+                    <CardContent>
+                        <div className="bg-background flex min-h-11 items-center justify-between rounded-lg border px-3">
+                            <div className="space-y-0.5">
+                                <p className="text-sm font-medium">Inject tracking scripts</p>
+                                <p className="text-muted-foreground text-xs">Individual providers still have their own switches.</p>
                             </div>
-                            <div className="space-y-2.5">
-                                <Label htmlFor="analytics_provider" className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-                                    Provider
-                                </Label>
-                                <Select
-                                    value={analyticsForm.data.analytics_provider}
-                                    onValueChange={(value) => analyticsForm.setData("analytics_provider", value as AnalyticsProvider)}
-                                >
-                                    <SelectTrigger id="analytics_provider" className="bg-background">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="google">Google Analytics</SelectItem>
-                                        <SelectItem value="ackee">Ackee</SelectItem>
-                                        <SelectItem value="umami">Umami</SelectItem>
-                                        <SelectItem value="openpanel">OpenPanel</SelectItem>
-                                        <SelectItem value="custom">Custom Script</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
+                            <Switch
+                                checked={analyticsForm.data.analytics_enabled}
+                                onCheckedChange={(checked) => analyticsForm.setData("analytics_enabled", checked)}
+                            />
                         </div>
-
-                        <Accordion
-                            type="single"
-                            collapsible
-                            defaultValue={manualAnalyticsOverride ? "manual-override" : undefined}
-                            className="rounded-xl border px-4"
-                        >
-                            <AccordionItem value="manual-override" className="border-0">
-                                <AccordionTrigger className="py-4 text-left hover:no-underline">
-                                    <span>
-                                        <span className="block font-medium">Manual script override</span>
-                                        <span className="text-muted-foreground block text-sm font-normal">
-                                            Use this only when a provider integration cannot express your tracking snippet.
-                                        </span>
-                                    </span>
-                                </AccordionTrigger>
-                                <AccordionContent className="pb-4">
-                                    <Textarea
-                                        id="analytics_script"
-                                        rows={7}
-                                        value={analyticsForm.data.analytics_script}
-                                        onChange={(event) => analyticsForm.setData("analytics_script", event.target.value)}
-                                        className="bg-background resize-y font-mono text-xs"
-                                        placeholder={`<script async src="..."></script>\n<script>/* provider init */</script>`}
-                                    />
-                                    <p className="text-muted-foreground mt-2 text-[11px] leading-tight">
-                                        When filled, the application injects this snippet exactly and ignores the generated provider configuration
-                                        below.
-                                    </p>
-                                </AccordionContent>
-                            </AccordionItem>
-                        </Accordion>
                     </CardContent>
                 </Card>
 
-                {!manualAnalyticsOverride && analyticsProvider === "google" ? (
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <Radio className="h-4 w-4" />
-                                Google Analytics
-                            </CardTitle>
-                            <CardDescription>Use a GA4 measurement ID for page tracking.</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="space-y-2.5">
-                                <Label
-                                    htmlFor="google_measurement_id"
-                                    className="text-muted-foreground text-xs font-semibold tracking-wider uppercase"
-                                >
-                                    Measurement ID
-                                </Label>
-                                <Input
-                                    id="google_measurement_id"
-                                    value={analyticsForm.data.analytics_settings.google_measurement_id}
-                                    onChange={(event) =>
-                                        analyticsForm.setData("analytics_settings", {
-                                            ...analyticsForm.data.analytics_settings,
-                                            google_measurement_id: event.target.value,
-                                        })
-                                    }
-                                    className="bg-background"
-                                    placeholder="G-XXXXXXXXXX"
-                                />
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <Plus className="h-4 w-4" />
+                            Add a provider
+                        </CardTitle>
+                        <CardDescription>
+                            {catalog.length} providers available. Self-hosted options keep your data on your own infrastructure.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                            <Select value={addingProvider} onValueChange={setAddingProvider}>
+                                <SelectTrigger className="bg-background">
+                                    <SelectValue placeholder="Choose a provider to add" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {availableProviders.length === 0 ? (
+                                        <SelectItem value="none" disabled>
+                                            Every provider has been added
+                                        </SelectItem>
+                                    ) : (
+                                        availableProviders.map((provider) => (
+                                            <SelectItem key={provider.key} value={provider.key}>
+                                                {provider.label}
+                                                {provider.self_hosted ? " · self-hosted" : ""}
+                                            </SelectItem>
+                                        ))
+                                    )}
+                                </SelectContent>
+                            </Select>
+                            <Button type="button" variant="outline" onClick={() => addProvider(addingProvider)} disabled={!addingProvider}>
+                                <Plus className="mr-2 h-4 w-4" />
+                                Add
+                            </Button>
+                        </div>
+
+                        <div className="space-y-2">
+                            <p className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Not added yet</p>
+                            <div className="flex flex-wrap gap-1.5">
+                                {availableProviders.length === 0 ? (
+                                    <p className="text-muted-foreground text-xs">Nothing left to add.</p>
+                                ) : (
+                                    availableProviders.map((provider) => (
+                                        <Badge key={provider.key} variant="outline" className="font-normal">
+                                            {provider.label}
+                                        </Badge>
+                                    ))
+                                )}
                             </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {rows.length === 0 ? (
+                    <Card>
+                        <CardContent className="text-muted-foreground py-10 text-center text-sm">
+                            No analytics providers configured. Add one above, or leave this empty to send no analytics at all.
                         </CardContent>
                     </Card>
                 ) : null}
 
-                {!manualAnalyticsOverride && analyticsProvider === "ackee" ? (
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <Fingerprint className="h-4 w-4" />
-                                Ackee
-                            </CardTitle>
-                            <CardDescription>Provide the tracker script, Ackee server URL, and domain ID.</CardDescription>
-                        </CardHeader>
-                        <CardContent className="grid gap-5 sm:grid-cols-2">
-                            <div className="space-y-2.5">
-                                <Label htmlFor="ackee_script_url" className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-                                    Tracker Script URL
-                                </Label>
-                                <Input
-                                    id="ackee_script_url"
-                                    value={analyticsForm.data.analytics_settings.ackee_script_url}
-                                    onChange={(event) =>
-                                        analyticsForm.setData("analytics_settings", {
-                                            ...analyticsForm.data.analytics_settings,
-                                            ackee_script_url: event.target.value,
-                                        })
-                                    }
-                                    className="bg-background"
-                                    placeholder="https://ackee.example.com/tracker.js"
-                                />
-                            </div>
-                            <div className="space-y-2.5">
-                                <Label htmlFor="ackee_server_url" className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-                                    Ackee Server URL
-                                </Label>
-                                <Input
-                                    id="ackee_server_url"
-                                    value={analyticsForm.data.analytics_settings.ackee_server_url}
-                                    onChange={(event) =>
-                                        analyticsForm.setData("analytics_settings", {
-                                            ...analyticsForm.data.analytics_settings,
-                                            ackee_server_url: event.target.value,
-                                        })
-                                    }
-                                    className="bg-background"
-                                    placeholder="https://ackee.example.com"
-                                />
-                            </div>
-                            <div className="space-y-2.5 sm:col-span-2">
-                                <Label htmlFor="ackee_domain_id" className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-                                    Domain ID
-                                </Label>
-                                <Input
-                                    id="ackee_domain_id"
-                                    value={analyticsForm.data.analytics_settings.ackee_domain_id}
-                                    onChange={(event) =>
-                                        analyticsForm.setData("analytics_settings", {
-                                            ...analyticsForm.data.analytics_settings,
-                                            ackee_domain_id: event.target.value,
-                                        })
-                                    }
-                                    className="bg-background"
-                                    placeholder="e5235bfe-046a-4899-8c08-95a99eb02b00"
-                                />
-                            </div>
-                        </CardContent>
-                    </Card>
-                ) : null}
+                {rows.map((row, index) => {
+                    const definition = providersByKey.get(row.provider);
 
-                {!manualAnalyticsOverride && analyticsProvider === "umami" ? (
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <Activity className="h-4 w-4" />
-                                Umami
-                            </CardTitle>
-                            <CardDescription>Configure the Umami script, website ID, optional host URL, and allowed domains.</CardDescription>
-                        </CardHeader>
-                        <CardContent className="grid gap-5 sm:grid-cols-2">
-                            <div className="space-y-2.5">
-                                <Label htmlFor="umami_script_url" className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-                                    Script URL
-                                </Label>
-                                <Input
-                                    id="umami_script_url"
-                                    value={analyticsForm.data.analytics_settings.umami_script_url}
-                                    onChange={(event) =>
-                                        analyticsForm.setData("analytics_settings", {
-                                            ...analyticsForm.data.analytics_settings,
-                                            umami_script_url: event.target.value,
-                                        })
-                                    }
-                                    className="bg-background"
-                                    placeholder="https://cloud.umami.is/script.js"
-                                />
-                            </div>
-                            <div className="space-y-2.5">
-                                <Label htmlFor="umami_website_id" className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-                                    Website ID
-                                </Label>
-                                <Input
-                                    id="umami_website_id"
-                                    value={analyticsForm.data.analytics_settings.umami_website_id}
-                                    onChange={(event) =>
-                                        analyticsForm.setData("analytics_settings", {
-                                            ...analyticsForm.data.analytics_settings,
-                                            umami_website_id: event.target.value,
-                                        })
-                                    }
-                                    className="bg-background"
-                                    placeholder="c3f8e397-1612-4b95-8963-c20a654f02f6"
-                                />
-                            </div>
-                            <div className="space-y-2.5">
-                                <Label htmlFor="umami_host_url" className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-                                    Host URL
-                                </Label>
-                                <Input
-                                    id="umami_host_url"
-                                    value={analyticsForm.data.analytics_settings.umami_host_url}
-                                    onChange={(event) =>
-                                        analyticsForm.setData("analytics_settings", {
-                                            ...analyticsForm.data.analytics_settings,
-                                            umami_host_url: event.target.value,
-                                        })
-                                    }
-                                    className="bg-background"
-                                    placeholder="https://umami.example.com"
-                                />
-                            </div>
-                            <div className="space-y-2.5">
-                                <Label htmlFor="umami_domains" className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-                                    Domains
-                                </Label>
-                                <Input
-                                    id="umami_domains"
-                                    value={analyticsForm.data.analytics_settings.umami_domains}
-                                    onChange={(event) =>
-                                        analyticsForm.setData("analytics_settings", {
-                                            ...analyticsForm.data.analytics_settings,
-                                            umami_domains: event.target.value,
-                                        })
-                                    }
-                                    className="bg-background"
-                                    placeholder="portal.koakademy.edu,admin.koakademy.edu"
-                                />
-                            </div>
-                        </CardContent>
-                    </Card>
-                ) : null}
-
-                {!manualAnalyticsOverride && analyticsProvider === "openpanel" ? (
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <Bot className="h-4 w-4" />
-                                OpenPanel
-                            </CardTitle>
-                            <CardDescription>
-                                Configure the client script, API endpoint, project client ID, and client-side tracking toggles.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-5">
-                            <div className="grid gap-5 sm:grid-cols-2">
-                                <div className="space-y-2.5">
-                                    <Label
-                                        htmlFor="openpanel_script_url"
-                                        className="text-muted-foreground text-xs font-semibold tracking-wider uppercase"
-                                    >
-                                        Script URL
-                                    </Label>
-                                    <Input
-                                        id="openpanel_script_url"
-                                        value={analyticsForm.data.analytics_settings.openpanel_script_url}
-                                        onChange={(event) =>
-                                            analyticsForm.setData("analytics_settings", {
-                                                ...analyticsForm.data.analytics_settings,
-                                                openpanel_script_url: event.target.value,
-                                            })
-                                        }
-                                        className="bg-background"
-                                        placeholder="https://openpanel.dev/op1.js"
-                                    />
-                                </div>
-                                <div className="space-y-2.5">
-                                    <Label
-                                        htmlFor="openpanel_api_url"
-                                        className="text-muted-foreground text-xs font-semibold tracking-wider uppercase"
-                                    >
-                                        API URL
-                                    </Label>
-                                    <Input
-                                        id="openpanel_api_url"
-                                        value={analyticsForm.data.analytics_settings.openpanel_api_url}
-                                        onChange={(event) =>
-                                            analyticsForm.setData("analytics_settings", {
-                                                ...analyticsForm.data.analytics_settings,
-                                                openpanel_api_url: event.target.value,
-                                            })
-                                        }
-                                        className="bg-background"
-                                        placeholder="https://openpanel.koakademy.edu/api"
-                                    />
-                                </div>
-                            </div>
-                            <div className="space-y-2.5">
-                                <Label htmlFor="openpanel_client_id" className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-                                    Client ID
-                                </Label>
-                                <Input
-                                    id="openpanel_client_id"
-                                    value={analyticsForm.data.analytics_settings.openpanel_client_id}
-                                    onChange={(event) =>
-                                        analyticsForm.setData("analytics_settings", {
-                                            ...analyticsForm.data.analytics_settings,
-                                            openpanel_client_id: event.target.value,
-                                        })
-                                    }
-                                    className="bg-background"
-                                    placeholder="e4e45149-bbde-44d7-b436-f9a0ae1042b0"
-                                />
-                            </div>
-
-                            <div className="grid gap-3 sm:grid-cols-2">
-                                <div className="bg-background flex items-center justify-between rounded-lg border px-3 py-2.5">
-                                    <div>
-                                        <p className="text-sm font-medium">Track screen views</p>
-                                        <p className="text-muted-foreground text-xs">Record client-side page transitions.</p>
-                                    </div>
-                                    <Switch
-                                        checked={analyticsForm.data.analytics_settings.openpanel_track_screen_views}
-                                        onCheckedChange={(checked) =>
-                                            analyticsForm.setData("analytics_settings", {
-                                                ...analyticsForm.data.analytics_settings,
-                                                openpanel_track_screen_views: checked,
-                                            })
-                                        }
-                                    />
-                                </div>
-                                <div className="bg-background flex items-center justify-between rounded-lg border px-3 py-2.5">
-                                    <div>
-                                        <p className="text-sm font-medium">Track outgoing links</p>
-                                        <p className="text-muted-foreground text-xs">Capture external link clicks automatically.</p>
-                                    </div>
-                                    <Switch
-                                        checked={analyticsForm.data.analytics_settings.openpanel_track_outgoing_links}
-                                        onCheckedChange={(checked) =>
-                                            analyticsForm.setData("analytics_settings", {
-                                                ...analyticsForm.data.analytics_settings,
-                                                openpanel_track_outgoing_links: checked,
-                                            })
-                                        }
-                                    />
-                                </div>
-                                <div className="bg-background flex items-center justify-between rounded-lg border px-3 py-2.5">
-                                    <div>
-                                        <p className="text-sm font-medium">Track attributes</p>
-                                        <p className="text-muted-foreground text-xs">Send enriched visit metadata to OpenPanel.</p>
-                                    </div>
-                                    <Switch
-                                        checked={analyticsForm.data.analytics_settings.openpanel_track_attributes}
-                                        onCheckedChange={(checked) =>
-                                            analyticsForm.setData("analytics_settings", {
-                                                ...analyticsForm.data.analytics_settings,
-                                                openpanel_track_attributes: checked,
-                                            })
-                                        }
-                                    />
-                                </div>
-                                <div className="bg-background flex items-center justify-between rounded-lg border px-3 py-2.5">
-                                    <div>
-                                        <p className="text-sm font-medium">Session replay</p>
-                                        <p className="text-muted-foreground text-xs">Enable client session recording if supported.</p>
-                                    </div>
-                                    <Switch
-                                        checked={analyticsForm.data.analytics_settings.openpanel_session_replay}
-                                        onCheckedChange={(checked) =>
-                                            analyticsForm.setData("analytics_settings", {
-                                                ...analyticsForm.data.analytics_settings,
-                                                openpanel_session_replay: checked,
-                                            })
-                                        }
-                                    />
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-                ) : null}
+                    return (
+                        <ProviderCard
+                            key={row.id ?? `new-${row.provider}-${index}`}
+                            definition={definition}
+                            row={row}
+                            duplicateLabel={`${definition?.label ?? row.provider} (copy ${temporaryRowId++})`}
+                            onToggle={(enabled) => updateRow(index, { enabled })}
+                            onLabelChange={(label) => updateRow(index, { label })}
+                            onScriptChange={(script) => updateRow(index, { script })}
+                            onSettingChange={(field, value) => updateRowSetting(index, field, value)}
+                            onRemove={() => removeRow(index)}
+                        />
+                    );
+                })}
             </div>
         </SystemManagementLayout>
     );
+}
+
+interface ProviderCardProps {
+    definition: AnalyticsProviderDefinition | undefined;
+    row: ProviderRow;
+    duplicateLabel: string;
+    onToggle: (enabled: boolean) => void;
+    onLabelChange: (label: string) => void;
+    onScriptChange: (script: string) => void;
+    onSettingChange: (field: string, value: AnalyticsSettingValue) => void;
+    onRemove: () => void;
+}
+
+function ProviderCard({
+    definition,
+    row,
+    duplicateLabel,
+    onToggle,
+    onLabelChange,
+    onScriptChange,
+    onSettingChange,
+    onRemove,
+}: ProviderCardProps) {
+    const [showScript, setShowScript] = useState(false);
+
+    const label = row.label.trim() || duplicateLabel;
+
+    return (
+        <Card className={row.enabled ? "" : "opacity-70"}>
+            <CardHeader>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1 space-y-1">
+                        <CardTitle className="flex flex-wrap items-center gap-2">
+                            {label}
+                            <Badge variant={definition?.self_hosted ? "outline" : "secondary"}>
+                                {definition?.self_hosted ? "Self-hosted" : "Hosted"}
+                            </Badge>
+                            {row.id === null && <Badge variant="secondary">New</Badge>}
+                        </CardTitle>
+                        {definition?.description ? <CardDescription>{definition.description}</CardDescription> : null}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Switch checked={row.enabled} onCheckedChange={onToggle} aria-label={`Enable ${label}`} />
+                        <Button type="button" variant="ghost" size="icon" onClick={onRemove} aria-label={`Remove ${label}`}>
+                            <Trash2 className="text-destructive h-4 w-4" />
+                        </Button>
+                    </div>
+                </div>
+            </CardHeader>
+            <CardContent className="space-y-5">
+                {definition?.consent_note ? (
+                    <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                        <p className="text-muted-foreground text-xs leading-relaxed">{definition.consent_note}</p>
+                    </div>
+                ) : null}
+
+                <div className="space-y-2.5">
+                    <Label htmlFor={`label-${row.id ?? index}`} className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+                        Instance name
+                    </Label>
+                    <Input
+                        id={`label-${row.id ?? index}`}
+                        value={row.label}
+                        onChange={(event) => onLabelChange(event.target.value)}
+                        className="bg-background"
+                        placeholder={definition?.label ?? "Provider name"}
+                    />
+                </div>
+
+                <div className="grid gap-5 sm:grid-cols-2">
+                    {(definition?.fields ?? []).map((field) => (
+                        <ProviderField
+                            key={field.key}
+                            field={field}
+                            value={row.settings[field.key] ?? defaultValueFor(field)}
+                            onChange={(value) => onSettingChange(field.key, value)}
+                        />
+                    ))}
+                </div>
+
+                {definition?.docs_url ? (
+                    <a
+                        href={definition.docs_url}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        className="text-muted-foreground inline-flex items-center gap-1.5 text-xs hover:underline"
+                    >
+                        <ExternalLink className="h-3 w-3" />
+                        {definition.label} documentation
+                    </a>
+                ) : null}
+
+                <div className="space-y-2.5">
+                    <Button type="button" variant="ghost" size="sm" className="px-0" onClick={() => setShowScript((open) => !open)}>
+                        {showScript ? "Hide" : "Show"} custom snippet override
+                    </Button>
+                    {showScript ? (
+                        <>
+                            <Textarea
+                                rows={6}
+                                value={row.script}
+                                onChange={(event) => onScriptChange(event.target.value)}
+                                className="bg-background resize-y font-mono text-xs"
+                                placeholder="Leave empty to use the generated snippet above."
+                            />
+                            <p className="text-muted-foreground text-[11px] leading-tight">
+                                When set, this replaces the generated snippet for this instance only.
+                            </p>
+                        </>
+                    ) : null}
+                </div>
+            </CardContent>
+        </Card>
+    );
+}
+
+interface ProviderFieldProps {
+    field: AnalyticsFieldDefinition;
+    value: AnalyticsSettingValue;
+    onChange: (value: AnalyticsSettingValue) => void;
+}
+
+function ProviderField({ field, value, onChange }: ProviderFieldProps) {
+    if (field.type === "toggle") {
+        return (
+            <div className="bg-background flex items-center justify-between rounded-lg border px-3 py-2.5 sm:col-span-1">
+                <div className="min-w-0 pr-3">
+                    <p className="text-sm font-medium">{field.label}</p>
+                    {field.help ? <p className="text-muted-foreground text-xs leading-snug">{field.help}</p> : null}
+                </div>
+                <Switch checked={value === true} onCheckedChange={onChange} />
+            </div>
+        );
+    }
+
+    if (field.type === "select") {
+        return (
+            <div className="space-y-2.5">
+                <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">{field.label}</Label>
+                <Select value={String(value ?? "")} onValueChange={onChange}>
+                    <SelectTrigger className="bg-background">
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {field.options.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+                {field.help ? <p className="text-muted-foreground text-xs leading-snug">{field.help}</p> : null}
+            </div>
+        );
+    }
+
+    if (field.type === "textarea") {
+        return (
+            <div className="space-y-2.5 sm:col-span-2">
+                <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">{field.label}</Label>
+                <Textarea
+                    rows={6}
+                    value={String(value ?? "")}
+                    onChange={(event) => onChange(event.target.value)}
+                    className="bg-background resize-y font-mono text-xs"
+                    placeholder={field.placeholder}
+                />
+                {field.help ? <p className="text-muted-foreground text-xs leading-snug">{field.help}</p> : null}
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-2.5">
+            <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">{field.label}</Label>
+            <Input
+                type={field.type === "url" ? "url" : "text"}
+                value={String(value ?? "")}
+                onChange={(event) => onChange(event.target.value)}
+                className="bg-background"
+                placeholder={field.placeholder}
+            />
+            {field.help ? <p className="text-muted-foreground text-xs leading-snug">{field.help}</p> : null}
+        </div>
+    );
+}
+
+function defaultValueFor(field: AnalyticsFieldDefinition): AnalyticsSettingValue {
+    if (field.default !== null && field.default !== undefined) {
+        return field.default;
+    }
+
+    return field.type === "toggle" ? false : "";
 }

@@ -116,16 +116,16 @@ final class HrDesk implements Dashboard
 
     private function unstaffedCount(): int
     {
-        $departments = Department::query()->active()->get(['id', 'code', 'name']);
+        $departments = Department::query()->active()->get(['id']);
 
         if ($departments->isEmpty()) {
             return 0;
         }
 
         $staffed = Faculty::query()
-            ->whereIn('department', $departments->pluck('code')->filter()->merge($departments->pluck('name'))->all())
+            ->whereIn('department_id', $departments->pluck('id'))
             ->distinct()
-            ->count('department');
+            ->count('department_id');
 
         return $departments->count() - $staffed;
     }
@@ -141,13 +141,11 @@ final class HrDesk implements Dashboard
             return [];
         }
 
-        $keys = $departments->pluck('code')->filter()->merge($departments->pluck('name'))->all();
-
         $facultyCounts = Faculty::query()
-            ->whereIn('department', $keys)
-            ->selectRaw('department, count(*) as aggregate')
-            ->groupBy('department')
-            ->pluck('aggregate', 'department');
+            ->whereIn('department_id', $departments->pluck('id'))
+            ->selectRaw('department_id, count(*) as aggregate')
+            ->groupBy('department_id')
+            ->pluck('aggregate', 'department_id');
 
         $staffCounts = User::query()
             ->whereIn('department_id', $departments->pluck('id'))
@@ -158,7 +156,7 @@ final class HrDesk implements Dashboard
         return $departments->map(fn (Department $department): array => [
             'id' => $department->id,
             'name' => $department->name,
-            'faculty' => (int) ($facultyCounts[$department->code] ?? $facultyCounts[$department->name] ?? 0),
+            'faculty' => (int) ($facultyCounts[$department->id] ?? 0),
             'staff' => (int) ($staffCounts[$department->id] ?? 0),
             'head' => $department->head_name ?: '—',
         ])->values()->all();

@@ -85,6 +85,7 @@ final class Faculty extends Authenticatable implements FilamentUser, HasAvatar
         'gender',
         'age',
         'school_id',
+        'department_id',
     ];
 
     #[Override]
@@ -142,6 +143,23 @@ final class Faculty extends Authenticatable implements FilamentUser, HasAvatar
     }
 
     // Relationships
+
+    /**
+     * The owning department through the department_id foreign key.
+     *
+     * Preferred over departmentBelongsTo(), which joins the legacy free-text `department`
+     * column to departments.code and so misses rows recorded with the department's full name.
+     * Populated by 2026_10_01_120000_add_department_id_to_faculty_table.
+     */
+    public function departmentRecord(): BelongsTo
+    {
+        return $this->belongsTo(Department::class, 'department_id', 'id');
+    }
+
+    /**
+     * @deprecated Use departmentRecord() instead. Kept because Filament, the MCP faculty tools
+     *             and DigitalIdCardService still read the free-text `department` column.
+     */
     public function departmentBelongsTo(): BelongsTo
     {
         return $this->belongsTo(Department::class, 'department', 'code');
@@ -255,6 +273,7 @@ final class Faculty extends Authenticatable implements FilamentUser, HasAvatar
             'last_name' => 'string',
             'middle_name' => 'string',
             'email' => 'string',
+            'department_id' => 'integer',
             'phone_number' => 'string',
             'department' => 'string',
             'position' => 'string',

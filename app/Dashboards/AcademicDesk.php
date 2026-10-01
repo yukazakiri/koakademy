@@ -150,15 +150,7 @@ final class AcademicDesk implements Dashboard
             ->where('semester', $context->semester)
             ->when($department instanceof Department, fn ($query) => $query
                 ->whereHas('Faculty', fn ($faculty) => $faculty
-                    ->whereIn('department', $this->facultyDepartmentKeys($department))));
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function facultyDepartmentKeys(Department $department): array
-    {
-        return array_values(array_filter([$department->code, $department->name]));
+                    ->where('department_id', $department->id)));
     }
 
     /**
@@ -168,7 +160,7 @@ final class AcademicDesk implements Dashboard
     {
         return Faculty::query()
             ->when($department instanceof Department, fn ($query) => $query
-                ->whereIn('department', $this->facultyDepartmentKeys($department)));
+                ->where('department_id', $department->id));
     }
 
     /**

@@ -218,8 +218,8 @@ final class ExecutiveDesk implements Dashboard
     /**
      * Per-department headcount in a single grouped pass rather than a query per department.
      *
-     * Faculty are linked by the loose `department` string column, so they are matched by
-     * code-or-name the same way Department::faculty() does.
+     * Faculty are joined on the department_id foreign key rather than the legacy free-text
+     * `department` string, which needed a code-or-name fallback that silently dropped rows.
      *
      * @return list<array<string, mixed>>
      */
@@ -234,21 +234,13 @@ final class ExecutiveDesk implements Dashboard
             return [];
         }
 
-        $codes = $departments->pluck('code')->filter()->all();
-        $names = $departments->pluck('name')->all();
         $ids = $departments->pluck('id')->all();
 
         $facultyCounts = Faculty::query()
-            ->where(function ($query) use ($codes, $names): void {
-                $query->whereIn('department', $codes);
-
-                if ($names !== []) {
-                    $query->orWhereIn('department', $names);
-                }
-            })
-            ->selectRaw('department, count(*) as aggregate')
-            ->groupBy('department')
-            ->pluck('aggregate', 'department');
+            ->whereIn('department_id', $ids)
+            ->selectRaw('department_id, count(*) as aggregate')
+            ->groupBy('department_id')
+            ->pluck('aggregate', 'department_id');
 
         $coursesByDepartment = Course::query()
             ->whereIn('department_id', $ids)
@@ -270,19 +262,11 @@ final class ExecutiveDesk implements Dashboard
 
             $students = $courses->sum(fn ($course): int => (int) ($studentCountsByCourse[$course->id] ?? 0));
 
-            // A faculty row's `department` string holds either the code or the name; take
-            // whichever the record actually used, without counting the same bucket twice.
-            $faculty = match (true) {
-                isset($facultyCounts[$department->code]) => (int) $facultyCounts[$department->code],
-                isset($facultyCounts[$department->name]) => (int) $facultyCounts[$department->name],
-                default => 0,
-            };
-
             return [
                 'id' => $department->id,
                 'name' => $department->name,
                 'code' => $department->code,
-                'faculty' => $faculty,
+                'faculty' => (int) ($facultyCounts[$department->id] ?? 0),
                 'courses' => (int) ($courseCounts[$department->id] ?? 0),
                 'students' => (int) $students,
             ];

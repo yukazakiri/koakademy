@@ -10,6 +10,13 @@ declare global {
         };
         dataLayer?: unknown[];
         gtag?: (...args: unknown[]) => void;
+        posthog?: { opt_out_capturing?: () => void; reset?: () => void };
+        op?: (...args: unknown[]) => void;
+        umami?: { track?: (...args: unknown[]) => void };
+        _paq?: unknown[];
+        countly?: unknown;
+        clarity?: (...args: unknown[]) => void;
+        ym?: (...args: unknown[]) => void;
     }
 }
 
@@ -88,6 +95,12 @@ export function AnalyticsScripts() {
 /**
  * Injects a raw snippet. Script elements are recreated so they execute, since
  * a script inserted from a template's innerHTML is inert.
+ *
+ * Nodes are injected in document order, and an external `<script src>` is
+ * awaited before any following inline script runs. Several providers ship an
+ * external script followed by inline initialisation that depends on it (the
+ * Countly snippet calls `countly.init()`), and appending them together would
+ * run the inline code while the SDK was still loading.
  */
 function injectHtmlSnippet(snippet: string): (() => void) | null {
     if (typeof document === "undefined" || snippet.trim() === "") {
@@ -98,31 +111,75 @@ function injectHtmlSnippet(snippet: string): (() => void) | null {
     template.innerHTML = snippet.trim();
 
     const createdNodes: HTMLElement[] = [];
+    let disposed = false;
 
-    Array.from(template.content.childNodes).forEach((node) => {
-        if (!(node instanceof HTMLElement)) {
+    // Tear down whatever exists at call time, so the returned cleanup works
+    // even if a later node is still waiting on the network.
+    const cleanup = () => {
+        disposed = true;
+        createdNodes.forEach((node) => node.remove());
+        resetAnalyticsGlobals();
+    };
+
+    const queue = Array.from(template.content.childNodes).filter((node): node is HTMLElement => node instanceof HTMLElement);
+
+    const injectNext = (index: number): void => {
+        if (disposed || index >= queue.length) {
             return;
         }
 
-        const executableNode = createExecutableNode(node);
+        const executableNode = createExecutableNode(queue[index]);
 
         if (!executableNode) {
+            injectNext(index + 1);
+
             return;
         }
 
         const target = executableNode.tagName === "NOSCRIPT" ? document.body : document.head;
         target.appendChild(executableNode);
         createdNodes.push(executableNode);
-    });
+
+        if (executableNode instanceof HTMLScriptElement && executableNode.src) {
+            // Wait for the external script to load (or fail) before running
+            // anything that depends on it.
+            const proceed = () => {
+                if (disposed) {
+                    return;
+                }
+
+                // Give the freshly loaded SDK a turn to define its global
+                // before the next inline script references it.
+                window.setTimeout(() => injectNext(index + 1), 0);
+            };
+
+            if (executableNode.dataset.analyticsLoaded === "true") {
+                proceed();
+
+                return;
+            }
+
+            executableNode.addEventListener("load", proceed, { once: true });
+            executableNode.addEventListener("error", proceed, { once: true });
+
+            // A cached script can finish before the listener is attached.
+            if (executableNode.dataset.analyticsLoadState === "complete") {
+                proceed();
+            }
+
+            return;
+        }
+
+        injectNext(index + 1);
+    };
+
+    injectNext(0);
 
     if (createdNodes.length === 0) {
         return null;
     }
 
-    return () => {
-        createdNodes.forEach((node) => node.remove());
-        resetAnalyticsGlobals();
-    };
+    return cleanup;
 }
 
 function createExecutableNode(node: HTMLElement): HTMLElement | null {
@@ -141,16 +198,64 @@ function createExecutableNode(node: HTMLElement): HTMLElement | null {
     return node.cloneNode(true) as HTMLElement;
 }
 
+/**
+ * Stop provider runtimes and clear their globals.
+ *
+ * Removing the injected `<script>` tags only removes markup. Each provider's
+ * SDK installs globals, timers, and listeners of its own once it has executed,
+ * so a disabled provider would otherwise keep collecting until a hard reload.
+ * Providers expose an opt-out for exactly this; where one exists, call it
+ * before clearing state, and fall back to resetting the globals.
+ */
 function resetAnalyticsGlobals(): void {
     if (typeof window === "undefined") {
         return;
     }
 
-    resetWindowProperty("gtag", undefined);
-    resetWindowProperty("dataLayer", []);
+    if (typeof window.posthog?.opt_out_capturing === "function") {
+        window.posthog.opt_out_capturing();
+    }
+
+    if (typeof window.op === "function") {
+        // OpenPanel's SDK has no teardown call, so dropping the queue global is
+        // the strongest signal available to it.
+        try {
+            window.op("shutdown");
+        } catch {
+            // Providers may reject unknown commands; the global reset below is
+            // what actually stops new events.
+        }
+    }
+
+    if (typeof window.umami?.track === "function") {
+        try {
+            window.umami.track = undefined;
+        } catch {
+            // Fall through to the global reset.
+        }
+    }
+
+    if (Array.isArray(window._paq)) {
+        // Matomo: clear the command queue so no further tracking commands run.
+        window._paq.length = 0;
+    }
+
+    ["gtag", "dataLayer", "posthog", "op", "umami", "_paq", "countly", "clarity", "ym"].forEach((key) => {
+        resetWindowProperty(key as ProviderGlobalKey, providerGlobalFallback(key as ProviderGlobalKey));
+    });
 }
 
-function resetWindowProperty(key: "gtag" | "dataLayer", fallback: unknown): void {
+type ProviderGlobalKey = "gtag" | "dataLayer" | "posthog" | "op" | "umami" | "_paq" | "countly" | "clarity" | "ym";
+
+/**
+ * Queue-shaped globals get a fresh array so a late-arriving call from a
+ * torn-down provider cannot repopulate the previous one.
+ */
+function providerGlobalFallback(key: ProviderGlobalKey): unknown {
+    return key === "dataLayer" || key === "_paq" ? [] : undefined;
+}
+
+function resetWindowProperty(key: ProviderGlobalKey, fallback: unknown): void {
     try {
         if (Reflect.deleteProperty(window, key)) {
             return;

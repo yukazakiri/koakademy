@@ -98,10 +98,11 @@ return Application::configure(basePath: dirname(__DIR__))
                 ], $statusCode);
             }
         });
-        // Sentry is an optional third-party error reporter. Only wire up its
-        // exception handling when a DSN is actually configured, so a stock
-        // self-hosted install never registers an outbound error reporter.
-        if (filled(config('sentry.dsn'))) {
-            Integration::handles($exceptions);
-        }
+        // Sentry stays registered unconditionally. The integration is inert
+        // without a DSN, and gating it here would break the admin panel's
+        // error reporting: AppServiceProvider::applySentrySettings() pushes a
+        // database-configured DSN into config on the app's booted callback,
+        // which runs after this file. The DSN, not this registration, is what
+        // decides whether anything is sent.
+        Integration::handles($exceptions);
     })->create();

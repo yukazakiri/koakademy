@@ -78,6 +78,44 @@ final class AnalyticsProviderMigrationTest extends TestCase
         $this->assertSame('<script>/* manual */</script>', AnalyticsProviderInstance::query()->sole()->script);
     }
 
+    public function test_it_renames_the_legacy_google_measurement_key(): void
+    {
+        $this->withoutAnalyticsInstanceTable();
+
+        GeneralSetting::factory()->create([
+            'analytics_enabled' => true,
+            'analytics_provider' => 'google',
+            'analytics_settings' => json_encode(['google_measurement_id' => 'G-LEGACY01']),
+        ]);
+
+        $this->runBackfill();
+
+        $instance = AnalyticsProviderInstance::query()->sole();
+
+        // The catalog field is `measurement_id`, so preserving the old key
+        // verbatim would leave a migrated instance enabled with no snippet.
+        $this->assertSame(['measurement_id' => 'G-LEGACY01'], $instance->settings);
+    }
+
+    public function test_it_falls_back_to_the_google_analytics_id_column(): void
+    {
+        $this->withoutAnalyticsInstanceTable();
+
+        GeneralSetting::factory()->create([
+            'analytics_enabled' => true,
+            'analytics_provider' => 'google',
+            'analytics_settings' => null,
+            'google_analytics_id' => 'G-FROMCOLUMN',
+        ]);
+
+        $this->runBackfill();
+
+        $this->assertSame(
+            ['measurement_id' => 'G-FROMCOLUMN'],
+            AnalyticsProviderInstance::query()->sole()->settings,
+        );
+    }
+
     public function test_it_skips_installations_with_no_provider_configured(): void
     {
         $this->withoutAnalyticsInstanceTable();

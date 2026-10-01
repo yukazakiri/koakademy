@@ -30,8 +30,6 @@ interface AnalyticsFormData {
     providers: ProviderRow[];
 }
 
-let temporaryRowId = 0;
-
 export default function SystemManagementAnalyticsPage({ user, general_settings, access, analytics_catalog, analytics_providers }: SystemManagementPageProps) {
     const catalog = (analytics_catalog ?? []) as AnalyticsProviderDefinition[];
     const providersByKey = useMemo(() => new Map(catalog.map((provider) => [provider.key, provider])), [catalog]);
@@ -51,7 +49,15 @@ export default function SystemManagementAnalyticsPage({ user, general_settings, 
 
     const rows = analyticsForm.data.providers;
     const activeCount = rows.filter((row) => row.enabled).length;
-    const availableProviders = catalog.filter((provider) => !rows.some((row) => row.provider === provider.key));
+
+    // Every catalog provider stays selectable. Several instances of the same
+    // provider are supported (a separate Umami site per domain, for example),
+    // so already-added keys are annotated with a count rather than hidden.
+    const instanceCounts = rows.reduce<Record<string, number>>((counts, row) => {
+        counts[row.provider] = (counts[row.provider] ?? 0) + 1;
+
+        return counts;
+    }, {});
 
     function addProvider(key: string): void {
         if (!key) {
@@ -185,7 +191,8 @@ export default function SystemManagementAnalyticsPage({ user, general_settings, 
                             Add a provider
                         </CardTitle>
                         <CardDescription>
-                            {catalog.length} providers available. Self-hosted options keep your data on your own infrastructure.
+                            {catalog.length} providers available. Self-hosted options keep your data on your own infrastructure. Add a provider more
+                            than once when you need separate instances, such as one site per domain.
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
@@ -195,18 +202,17 @@ export default function SystemManagementAnalyticsPage({ user, general_settings, 
                                     <SelectValue placeholder="Choose a provider to add" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {availableProviders.length === 0 ? (
-                                        <SelectItem value="none" disabled>
-                                            Every provider has been added
-                                        </SelectItem>
-                                    ) : (
-                                        availableProviders.map((provider) => (
+                                    {catalog.map((provider) => {
+                                        const count = instanceCounts[provider.key] ?? 0;
+
+                                        return (
                                             <SelectItem key={provider.key} value={provider.key}>
                                                 {provider.label}
                                                 {provider.self_hosted ? " · self-hosted" : ""}
+                                                {count > 0 ? ` · ${count} configured` : ""}
                                             </SelectItem>
-                                        ))
-                                    )}
+                                        );
+                                    })}
                                 </SelectContent>
                             </Select>
                             <Button type="button" variant="outline" onClick={() => addProvider(addingProvider)} disabled={!addingProvider}>
@@ -215,20 +221,19 @@ export default function SystemManagementAnalyticsPage({ user, general_settings, 
                             </Button>
                         </div>
 
-                        <div className="space-y-2">
-                            <p className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Not added yet</p>
-                            <div className="flex flex-wrap gap-1.5">
-                                {availableProviders.length === 0 ? (
-                                    <p className="text-muted-foreground text-xs">Nothing left to add.</p>
-                                ) : (
-                                    availableProviders.map((provider) => (
-                                        <Badge key={provider.key} variant="outline" className="font-normal">
-                                            {provider.label}
+                        {rows.length > 0 ? (
+                            <div className="space-y-2">
+                                <p className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Configured</p>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {Object.entries(instanceCounts).map(([key, count]) => (
+                                        <Badge key={key} variant="outline" className="font-normal">
+                                            {providersByKey.get(key)?.label ?? key}
+                                            {count > 1 ? ` × ${count}` : ""}
                                         </Badge>
-                                    ))
-                                )}
+                                    ))}
+                                </div>
                             </div>
-                        </div>
+                        ) : null}
                     </CardContent>
                 </Card>
 
@@ -243,12 +248,21 @@ export default function SystemManagementAnalyticsPage({ user, general_settings, 
                 {rows.map((row, index) => {
                     const definition = providersByKey.get(row.provider);
 
+                    // Number duplicates by their position among instances of the
+                    // same provider, so the name is stable across renders.
+                    const sameProviderIndex = rows.slice(0, index + 1).filter((candidate) => candidate.provider === row.provider).length;
+                    const totalOfProvider = rows.filter((candidate) => candidate.provider === row.provider).length;
+                    const fallbackLabel =
+                        totalOfProvider > 1
+                            ? `${definition?.label ?? row.provider} ${sameProviderIndex} of ${totalOfProvider}`
+                            : (definition?.label ?? row.provider);
+
                     return (
                         <ProviderCard
                             key={row.id ?? `new-${row.provider}-${index}`}
                             definition={definition}
                             row={row}
-                            duplicateLabel={`${definition?.label ?? row.provider} (copy ${temporaryRowId++})`}
+                            fallbackLabel={fallbackLabel}
                             onToggle={(enabled) => updateRow(index, { enabled })}
                             onLabelChange={(label) => updateRow(index, { label })}
                             onScriptChange={(script) => updateRow(index, { script })}
@@ -265,7 +279,7 @@ export default function SystemManagementAnalyticsPage({ user, general_settings, 
 interface ProviderCardProps {
     definition: AnalyticsProviderDefinition | undefined;
     row: ProviderRow;
-    duplicateLabel: string;
+    fallbackLabel: string;
     onToggle: (enabled: boolean) => void;
     onLabelChange: (label: string) => void;
     onScriptChange: (script: string) => void;
@@ -276,7 +290,7 @@ interface ProviderCardProps {
 function ProviderCard({
     definition,
     row,
-    duplicateLabel,
+    fallbackLabel,
     onToggle,
     onLabelChange,
     onScriptChange,
@@ -285,7 +299,7 @@ function ProviderCard({
 }: ProviderCardProps) {
     const [showScript, setShowScript] = useState(false);
 
-    const label = row.label.trim() || duplicateLabel;
+    const label = row.label.trim() || fallbackLabel;
 
     return (
         <Card className={row.enabled ? "" : "opacity-70"}>

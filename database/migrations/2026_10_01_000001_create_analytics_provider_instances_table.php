@@ -65,6 +65,7 @@ return new class extends Migration
 
         $legacySettingsAvailable = Schema::hasColumn('general_settings', 'analytics_settings');
         $legacyScriptAvailable = Schema::hasColumn('general_settings', 'analytics_script');
+        $legacyGoogleIdAvailable = Schema::hasColumn('general_settings', 'google_analytics_id');
 
         DB::table('general_settings')
             ->select([
@@ -73,6 +74,7 @@ return new class extends Migration
                 'analytics_provider',
                 ...($legacySettingsAvailable ? ['analytics_settings'] : []),
                 ...($legacyScriptAvailable ? ['analytics_script'] : []),
+                ...($legacyGoogleIdAvailable ? ['google_analytics_id'] : []),
             ])
             ->orderBy('id')
             ->each(function (object $row): void {
@@ -92,6 +94,18 @@ return new class extends Migration
                 }
 
                 $settings = $this->unpackLegacySettings($row->analytics_settings ?? null, $provider);
+
+                // Google kept a separate `google_analytics_id` column that the
+                // old form wrote alongside the JSON blob, and the old service
+                // fell back to it. Preserve that fallback so installations that
+                // only ever set the column are not left without an ID.
+                if ($provider === 'google' && ! isset($settings['measurement_id'])) {
+                    $legacyGoogleId = $row->google_analytics_id ?? null;
+
+                    if (is_string($legacyGoogleId) && $legacyGoogleId !== '') {
+                        $settings['measurement_id'] = $legacyGoogleId;
+                    }
+                }
 
                 DB::table('analytics_provider_instances')->insert([
                     'general_setting_id' => $row->id,
@@ -155,8 +169,21 @@ return new class extends Migration
             return [];
         }
 
-        if ($provider === '' || $provider === 'google') {
-            // Google only ever had a single flat key.
+        if ($provider === 'google') {
+            // The old admin form stored the measurement ID under a
+            // `google_` prefix, but the catalog field is plain `measurement_id`.
+            // Copying the key verbatim would leave a migrated instance enabled
+            // with an empty snippet, so rename it explicitly.
+            $measurementId = $decoded['google_measurement_id']
+                ?? $decoded['measurement_id']
+                ?? null;
+
+            return is_string($measurementId) && $measurementId !== ''
+                ? ['measurement_id' => $measurementId]
+                : [];
+        }
+
+        if ($provider === '') {
             return array_filter($decoded, static fn (mixed $v): bool => $v !== null && $v !== '');
         }
 

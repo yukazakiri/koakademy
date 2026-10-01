@@ -636,7 +636,7 @@ export const ADMIN_ROUTES: AdminRoute[] = [
         icon: <IconHistory className="size-4" />,
         link: "/administrators/audit-logs",
         section: "system",
-        requiredPermission: "View:LogTable",
+        requiredPermission: "ViewAny:Activity",
         allowedRoles: SYSTEM_ADMIN_ROLES,
     },
     {

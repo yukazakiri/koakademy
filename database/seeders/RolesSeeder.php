@@ -8,6 +8,7 @@ use App\Enums\UserRole;
 use App\Support\SystemManagementPermissions;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\File;
+use ReflectionMethod;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
@@ -26,6 +27,83 @@ final class RolesSeeder extends Seeder
         'Replicate',
         'Reorder',
     ];
+
+    /**
+     * Legacy include/exclude tokens mapped to the permission names that actually exist.
+     *
+     * The per-role permission lists below read as intent ("ViewDashboard", "ViewPayments").
+     * Those tokens are NOT literal permission names: permissions are generated as either
+     * `Action:Entity` (from app/Policies and each module's app/Policies) or snake_case (from
+     * getCustomPermissions()). Without this map, str_contains() silently matched nothing, so
+     * roles such as cashier, hr_manager and guidance_counselor were granted far fewer
+     * permissions than intended.
+     *
+     * A token mapped to [] can never match, and is reported by self::unresolvedTokens().
+     *
+     * @var array<string, array<int, string>>
+     */
+    private const array PERMISSION_ALIASES = [
+        'ViewDashboard' => ['view_dashboard'],
+        'GenerateReports' => ['generate_reports'],
+        'ExportData' => ['export_data'],
+        'ImportData' => ['import_data'],
+        'ViewPayments' => ['view_payments'],
+        'ProcessPayments' => ['process_payments'],
+        'ViewClearance' => ['view_clearance'],
+        'ManageClearance' => ['manage_clearance'],
+        'ManageEnrollments' => ['manage_enrollments'],
+        'QuickEnroll' => ['quick_enroll'],
+        'ViewAuditLog' => ['view_audit_logs'],
+        'ViewSettings' => ['ViewAny:GeneralSetting'],
+        'ManageSettings' => ['Update:GeneralSetting'],
+        'ViewInventory' => ['ViewAny:InventoryProduct', 'ViewAny:InventoryCategory'],
+        'ManageInventory' => ['Create:InventoryProduct', 'Update:InventoryProduct'],
+        'BorrowInventory' => ['borrow_inventory'],
+        'ViewIdCard' => ['view_id_card'],
+        'VerifyIdCard' => ['verify_id_card'],
+        // No ResearchPaperPolicy exists in Modules/LibrarySystem, so no permission is
+        // generated for it. Borrow records are the enforceable library-research grant.
+        'ResearchPaper' => ['ViewAny:BorrowRecord'],
+    ];
+
+    /**
+     * Include/exclude tokens that resolve to no real permission. Kept explicit so the intent
+     * stays visible and the gap is discoverable instead of silently granting nothing.
+     *
+     * @var array<int, string>
+     */
+    private const array KNOWN_UNRESOLVED_TOKENS = [
+        'View:Inventory',
+    ];
+
+    /**
+     * Report include tokens that match no permission at all, so a typo like "ViewDashbord"
+     * cannot quietly strip a role's access.
+     *
+     * @param  array<int, string>  $tokens
+     * @return array<int, string>
+     */
+    public static function unresolvedTokens(array $permissions, array $tokens): array
+    {
+        return array_values(array_filter($tokens, function (string $token) use ($permissions): bool {
+            if (in_array($token, self::KNOWN_UNRESOLVED_TOKENS, true)) {
+                return false;
+            }
+
+            foreach ($permissions as $permission) {
+                if (str_contains((string) $permission, $token)) {
+                    return false;
+                }
+
+                if (array_key_exists($token, self::PERMISSION_ALIASES)
+                    && in_array((string) $permission, self::PERMISSION_ALIASES[$token], true)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }));
+    }
 
     public function run(): void
     {
@@ -49,6 +127,8 @@ final class RolesSeeder extends Seeder
         $this->command->info('Assigning permissions to roles...');
         $this->assignPermissionsToRoles();
         $this->command->info('Permissions assigned successfully.');
+
+        $this->reportUnresolvedTokens();
     }
 
     private function generatePermissionsFromPolicies(): \Illuminate\Support\Collection
@@ -138,6 +218,12 @@ final class RolesSeeder extends Seeder
             'manage_onboarding',
             'manage_tokens',
             'view_tokens',
+            // View:Cashier is referenced by AdministratorFinanceController::authorizeFinanceAccess(),
+            // ProfileController, UpdatePaymentWorkspacePreferencesRequest, the MCP
+            // GetStatementOfAccountTool and 6 finance nav entries. There is no CashierPolicy, so
+            // the Action:Entity generator never produced it and every one of those call sites
+            // 403'd for all non-super-admins. Registered here so the finance section works.
+            'View:Cashier',
             ...SystemManagementPermissions::all(),
         ];
     }
@@ -201,15 +287,112 @@ final class RolesSeeder extends Seeder
 
     private function filterPermissions(array $permissions, array $includes, array $excludes = []): array
     {
-        $filtered = array_filter($permissions, fn ($p): bool => array_reduce($includes, fn ($carry, $i): bool => $carry || str_contains((string) $p, (string) $i), false)
+        $filtered = array_filter($permissions, fn ($p): bool => array_reduce($includes, fn ($carry, $i): bool => $carry || $this->tokenMatches((string) $p, (string) $i), false)
         );
 
         if ($excludes !== []) {
-            $filtered = array_filter($filtered, fn ($p): bool => ! array_reduce($excludes, fn ($carry, $e): bool => $carry || str_contains((string) $p, (string) $e), false)
+            $filtered = array_filter($filtered, fn ($p): bool => ! array_reduce($excludes, fn ($carry, $e): bool => $carry || $this->tokenMatches((string) $p, (string) $e), false)
             );
         }
 
         return array_values($filtered);
+    }
+
+    /**
+     * An aliased token matches by exact permission name, so one token cannot accidentally
+     * match several unrelated permissions. Non-aliased tokens keep the original substring
+     * behaviour (e.g. 'User' -> ViewAny:User, View:User, Create:User, ...).
+     */
+    private function tokenMatches(string $permission, string $token): bool
+    {
+        if (array_key_exists($token, self::PERMISSION_ALIASES)) {
+            return in_array($permission, self::PERMISSION_ALIASES[$token], true);
+        }
+
+        return str_contains($permission, $token);
+    }
+
+    /**
+     * Warn about any permission token used by a role that resolves to nothing, so a typo
+     * cannot quietly strip access. Reads the real get*Permissions() lists by reflection so
+     * this check can never drift from the definitions it audits.
+     */
+    private function reportUnresolvedTokens(): void
+    {
+        $allPermissions = Permission::pluck('name')->toArray();
+
+        foreach ($this->getRolePermissionMap() as $roleName => $_) {
+            $method = $this->permissionMethodFor((string) $roleName);
+
+            if ($method === null) {
+                continue;
+            }
+
+            [$includes, $excludes] = $this->extractTokens($method);
+
+            $unresolved = self::unresolvedTokens($allPermissions, $includes);
+
+            if ($unresolved !== []) {
+                $this->command->warn(sprintf(
+                    '  %s: include tokens matching no permission -> %s',
+                    $roleName,
+                    implode(', ', $unresolved),
+                ));
+            }
+
+            $ignored = array_values(array_intersect($excludes, self::KNOWN_UNRESOLVED_TOKENS));
+
+            if ($ignored !== []) {
+                $this->command->warn(sprintf(
+                    '  %s: unresolved exclude tokens -> %s',
+                    $roleName,
+                    implode(', ', $ignored),
+                ));
+            }
+        }
+    }
+
+    /**
+     * Resolve the get*Permissions() builder method backing a role name.
+     */
+    private function permissionMethodFor(string $roleName): ?string
+    {
+        $method = 'get'.str_replace(' ', '', ucwords(str_replace('_', ' ', $roleName))).'Permissions';
+
+        return method_exists($this, $method) ? $method : null;
+    }
+
+    /**
+     * Pull the literal include/exclude token arrays out of a get*Permissions() method.
+     *
+     * @return array{0: array<int, string>, 1: array<int, string>}
+     */
+    private function extractTokens(string $method): array
+    {
+        $includes = [];
+        $excludes = [];
+
+        foreach ((new ReflectionMethod($this, $method))->getParameters() as $parameter) {
+            if (! $parameter->isDefaultValueAvailable()) {
+                continue;
+            }
+
+            $defaults = $parameter->getDefaultValue();
+
+            if (! is_array($defaults)) {
+                continue;
+            }
+
+            // get*Permissions(array $all) declares only $includes and $excludes; $all has no
+            // default and is skipped above.
+            if ($parameter->getPosition() === 1) {
+                $excludes = $defaults;
+            } else {
+                $includes = $defaults;
+            }
+        }
+
+        return [$includes, $excludes];
     }
 
     private function getPresidentPermissions(array $all): array
@@ -229,6 +412,7 @@ final class RolesSeeder extends Seeder
             'ViewAny:Mail',
             'ViewAny:Role',
             'GenerateReports', 'ViewDashboard',
+            'ExportData',
         ]);
     }
 
@@ -249,6 +433,7 @@ final class RolesSeeder extends Seeder
             'ViewAny:Mail',
             'ViewAny:Role',
             'GenerateReports', 'ViewDashboard',
+            'ExportData',
         ]);
     }
 
@@ -270,7 +455,7 @@ final class RolesSeeder extends Seeder
             'Enrollment', 'Event', 'Announcement', 'Inventory',
             'Department', 'Room', 'Class',
             'IndustryCourseCode', 'CodeAuthority',
-            'ViewDashboard',
+            'ViewDashboard', 'GenerateReports',
         ], ['Delete', 'ForceDelete']);
     }
 
@@ -290,7 +475,7 @@ final class RolesSeeder extends Seeder
         return $this->filterPermissions($all, [
             'Student', 'Course', 'Subject',
             'Enrollment', 'Event', 'Announcement',
-            'Class',
+            'Faculty', 'Class',
             'IndustryCourseCode', 'CodeAuthority',
             'ViewDashboard',
         ]);
@@ -338,6 +523,7 @@ final class RolesSeeder extends Seeder
             'Event', 'Announcement',
             'IndustryCourseCode', 'CodeAuthority',
             'ViewIdCard', 'VerifyIdCard',
+            'ViewClearance',
             'ViewDashboard', 'ExportData', 'ImportData',
         ]);
     }
@@ -347,6 +533,7 @@ final class RolesSeeder extends Seeder
         return $this->filterPermissions($all, [
             'Student', 'Enrollment', 'Event', 'Announcement',
             'ViewIdCard', 'VerifyIdCard',
+            'ViewClearance', 'ManageClearance',
             'ViewDashboard',
         ]);
     }
@@ -378,6 +565,7 @@ final class RolesSeeder extends Seeder
             'Student',
             'view_tuition_fees', 'manage_tuition_fees',
             'ProcessPayments', 'ViewPayments',
+            'View:Cashier',
             'View:Announcement', 'View:Event',
             'ViewDashboard',
         ]);
@@ -389,6 +577,7 @@ final class RolesSeeder extends Seeder
             'Student',
             'view_tuition_fees', 'manage_tuition_fees',
             'ViewPayments', 'ProcessPayments',
+            'View:Cashier',
             'View:Announcement', 'View:Event',
             'ViewDashboard', 'GenerateReports',
         ]);
@@ -400,6 +589,7 @@ final class RolesSeeder extends Seeder
             'Student',
             'view_tuition_fees', 'manage_tuition_fees',
             'ProcessPayments', 'ViewPayments',
+            'View:Cashier',
             'View:Announcement', 'View:Event',
             'ViewDashboard', 'GenerateReports', 'ExportData',
         ]);
@@ -409,7 +599,7 @@ final class RolesSeeder extends Seeder
     {
         return $this->filterPermissions($all, [
             'User', 'Faculty',
-            'View:Department',
+            'ViewAny:Department', 'View:Department',
             'View:Announcement', 'Manage:Announcement',
             'View:Event', 'Manage:Event',
             'ViewAuditLog',

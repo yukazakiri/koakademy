@@ -59,7 +59,9 @@ export function AnalyticsScripts() {
             return;
         }
 
-        const cleanups = (analytics.providers ?? []).map((provider) => injectHtmlSnippet(provider.snippet)).filter(Boolean);
+        const cleanups = (analytics.providers ?? [])
+            .map((provider) => injectHtmlSnippet(provider.snippet))
+            .filter((cleanup): cleanup is () => void => cleanup !== null);
 
         state.cleanup = () => {
             cleanups.forEach((cleanup) => cleanup());

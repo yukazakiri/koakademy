@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Dashboards;
 
 use App\Dashboards\Contracts\Dashboard;
+use App\Dashboards\Support\StatAggregates;
 use App\Enums\UserRole;
 use App\Models\Classes;
 use App\Models\Course;
@@ -95,7 +96,10 @@ final class ExecutiveDesk implements Dashboard
      */
     private function kpis(DashboardContext $context): array
     {
-        $totalStudents = Student::query()->count();
+        // One shared aggregate pass supplies the totals the desk reports, so this screen and the
+        // original portal dashboard read the same figures.
+        $studentStats = app(StatAggregates::class)->studentStats();
+        $totalStudents = (int) $studentStats->total;
         $enrolled = StudentEnrollment::query()
             ->where('school_year', $context->schoolYear)
             ->where('semester', $context->semester)

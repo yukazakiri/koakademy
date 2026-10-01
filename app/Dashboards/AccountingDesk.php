@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Dashboards;
 
 use App\Dashboards\Contracts\Dashboard;
+use App\Dashboards\Support\StatAggregates;
 use App\Models\StudentTransaction;
-use App\Models\StudentTuition;
 use App\Models\Transaction;
 use App\Models\User;
 
@@ -51,19 +51,15 @@ final class AccountingDesk implements Dashboard
      */
     public function data(User $user, DashboardContext $context): array
     {
-        $collected = $this->collected($context);
-        [$assessed, $outstandingCount] = $this->tuitionTotals($context);
+        // Reuses the shared aggregate so this desk and the original portal dashboard cannot drift
+        // apart on the same figures.
+        $snapshot = app(StatAggregates::class)->financeSnapshot($context->schoolYear, $context->semester);
 
-        // raw_total_amount is an accessor, so the day's total is summed in PHP after fetching,
-        // mirroring AdministratorFinanceController::index() rather than a column-level sum().
-        $todayRows = Transaction::query()
-            ->whereBetween('transaction_date', [today()->startOfDay(), today()->endOfDay()])
-            ->get();
-
-        $todayCollection = (float) $todayRows->sum(fn (Transaction $transaction): mixed => $transaction->raw_total_amount);
-        $todayTransactions = $todayRows->count();
-
-        $collectionRate = $assessed > 0 ? round(($collected / $assessed) * 100, 2) : 0.0;
+        $collected = $snapshot['total_revenue'];
+        $outstandingCount = $snapshot['outstanding_count'];
+        $todayCollection = $snapshot['today_collection'];
+        $todayTransactions = $snapshot['today_transactions'];
+        $collectionRate = $snapshot['collection_rate'];
 
         return [
             'kpis' => [
@@ -129,38 +125,6 @@ final class AccountingDesk implements Dashboard
                     'rows' => $this->topPayers($context),
                 ],
             ],
-        ];
-    }
-
-    private function collected(DashboardContext $context): float
-    {
-        return (float) StudentTransaction::query()
-            ->whereHas('transaction', fn ($query) => $query
-                ->forAcademicPeriod($context->schoolYear, $context->semester))
-            ->sum('amount');
-    }
-
-    /**
-     * Assessed tuition and the number of students still owing.
-     *
-     * student_tuition carries its own school_year and semester, so the period filter needs no
-     * join. Aggregated in one grouped pass instead of whereHas() + selectRaw(), which cannot be
-     * combined because the subquery's select corrupts the aggregate column list.
-     *
-     * @return array{0: float, 1: int}
-     */
-    private function tuitionTotals(DashboardContext $context): array
-    {
-        $row = StudentTuition::query()
-            ->where('school_year', $context->schoolYear)
-            ->where('semester', $context->semester)
-            ->selectRaw('coalesce(sum(overall_tuition), 0) as assessed')
-            ->selectRaw('coalesce(sum(case when total_balance > 0 then 1 else 0 end), 0) as outstanding')
-            ->first();
-
-        return [
-            (float) ($row?->assessed ?? 0),
-            (int) ($row?->outstanding ?? 0),
         ];
     }
 

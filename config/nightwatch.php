@@ -3,7 +3,10 @@
 declare(strict_types=1);
 
 return [
-    'enabled' => env('NIGHTWATCH_ENABLED', true),
+    // Opt-in. Koakademy is self-hosted software, so monitoring must never
+    // forward data to a third-party ingest on an install that did not ask for
+    // it. Set NIGHTWATCH_ENABLED=true only alongside a NIGHTWATCH_TOKEN.
+    'enabled' => env('NIGHTWATCH_ENABLED', false),
     'token' => env('NIGHTWATCH_TOKEN'),
     'deployment' => env('NIGHTWATCH_DEPLOY', env('LARAVEL_CLOUD_DEPLOY_UUID', env('FORGE_DEPLOY_COMMIT', env('VAPOR_COMMIT_HASH')))),
     'server' => env('NIGHTWATCH_SERVER', (string) gethostname()),
@@ -13,10 +16,10 @@ return [
     'redact_headers' => explode(',', env('NIGHTWATCH_REDACT_HEADERS', 'Authorization,Cookie,Proxy-Authorization,X-XSRF-TOKEN')),
 
     'sampling' => [
-        'requests' => env('NIGHTWATCH_REQUEST_SAMPLE_RATE', 1.0),
-        'commands' => env('NIGHTWATCH_COMMAND_SAMPLE_RATE', 1.0),
-        'exceptions' => env('NIGHTWATCH_EXCEPTION_SAMPLE_RATE', 1.0),
-        'scheduled_tasks' => env('NIGHTWATCH_SCHEDULED_TASK_SAMPLE_RATE', 1.0),
+        'requests' => env('NIGHTWATCH_REQUEST_SAMPLE_RATE', 0.0),
+        'commands' => env('NIGHTWATCH_COMMAND_SAMPLE_RATE', 0.0),
+        'exceptions' => env('NIGHTWATCH_EXCEPTION_SAMPLE_RATE', 0.0),
+        'scheduled_tasks' => env('NIGHTWATCH_SCHEDULED_TASK_SAMPLE_RATE', 0.0),
     ],
 
     'filtering' => [

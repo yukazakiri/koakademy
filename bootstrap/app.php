@@ -98,5 +98,10 @@ return Application::configure(basePath: dirname(__DIR__))
                 ], $statusCode);
             }
         });
-        Integration::handles($exceptions);
+        // Sentry is an optional third-party error reporter. Only wire up its
+        // exception handling when a DSN is actually configured, so a stock
+        // self-hosted install never registers an outbound error reporter.
+        if (filled(config('sentry.dsn'))) {
+            Integration::handles($exceptions);
+        }
     })->create();

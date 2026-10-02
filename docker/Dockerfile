@@ -38,7 +38,7 @@ RUN composer dump-autoload --optimize --classmap-authoritative --no-dev --no-scr
 # -----------------------------------------------------------------------------
 # Stage 2: Generate Wayfinder Files (requires the application's PHP version)
 # -----------------------------------------------------------------------------
-FROM php:8.5-fpm@sha256:70076c1cae0cd0ba6761832417e3a1df3e5560f0544eb0fe40357373e54420fe AS wayfinder
+FROM php:8.5-fpm@sha256:584e584083bada479f0ee733a3025722a68e366eb721e618d1b6a252e4ff45c5 AS wayfinder
 # The application boots during wayfinder:generate and config/backup.php
 # instantiates ZipArchive, so the extension must be present in this stage.
 RUN apt-get update && apt-get install -y --no-install-recommends libzip-dev \
@@ -52,7 +52,7 @@ RUN APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= PORTAL_HOST= ADM
 # -----------------------------------------------------------------------------
 # Stage 3: Build Frontend Assets
 # -----------------------------------------------------------------------------
-FROM node:26-bookworm-slim@sha256:cd9f682fa2885cd1056e830424764158570061c59736a1da836bc3d73df095ae AS build-assets
+FROM node:26-bookworm-slim@sha256:662933cf47f013bc8e4beb31a6116448427a82057ba7c42c97e4c5ba766504c2 AS build-assets
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -70,7 +70,7 @@ RUN npm prune --omit=dev
 # -----------------------------------------------------------------------------
 # Stage 4: Final Runtime Image
 # -----------------------------------------------------------------------------
-FROM php:8.5-fpm@sha256:70076c1cae0cd0ba6761832417e3a1df3e5560f0544eb0fe40357373e54420fe
+FROM php:8.5-fpm@sha256:584e584083bada479f0ee733a3025722a68e366eb721e618d1b6a252e4ff45c5
 
 LABEL maintainer="Yuka <128908897+yukazakiri@users.noreply.github.com>"
 LABEL org.opencontainers.image.title="KoAkademy"

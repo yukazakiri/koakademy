@@ -6,6 +6,7 @@ namespace App\Dashboards\Support;
 
 use App\Enums\StudentStatus;
 use App\Enums\StudentType;
+use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentTransaction;
 use App\Models\StudentTuition;
@@ -206,11 +207,17 @@ final class StatAggregates
     }
 
     /**
-     * Collections figures for an academic period.
+     * Collections figures for an academic period, limited to one school.
      *
      * Period totals are filtered through whereHas() on the related enrollment, and the
-     * outstanding/fully-paid split reuses the same base query. raw_total_amount is an
-     * accessor on Transaction, so today's collection is summed in PHP.
+     * outstanding/fully-paid split reuses the same base query. raw_total_amount is an accessor
+     * on Transaction, so today's collection is summed in PHP.
+     *
+     * None of student_transactions, transactions or student_tuition carries a school_id and
+     * none of those models has the BelongsToSchool scope, so a school filter has to travel
+     * through the enrollment relation. Without it a multi-school installation would aggregate
+     * every school's payments into one cashier's totals. Pass null only where a caller has
+     * already established there is a single school.
      *
      * @return array{
      *     total_revenue: float,
@@ -223,24 +230,33 @@ final class StatAggregates
      *     today_transactions: int
      * }
      */
-    public function financeSnapshot(string $schoolYear, int $semester): array
+    public function financeSnapshot(string $schoolYear, int $semester, ?School $school = null): array
     {
+        $schoolId = $school?->id;
+
         $periodTuition = StudentTuition::query()
-            ->whereHas('enrollment', function ($query) use ($schoolYear, $semester): void {
+            ->whereHas('enrollment', function ($query) use ($schoolYear, $semester, $schoolId): void {
                 $query->forAcademicPeriod($schoolYear, $semester);
+
+                if ($schoolId !== null) {
+                    $query->where('school_id', $schoolId);
+                }
             });
 
         $totalRevenue = (float) StudentTransaction::query()
             ->whereHas('transaction', function ($query) use ($schoolYear, $semester): void {
                 $query->forAcademicPeriod($schoolYear, $semester);
             })
+            // StudentTransaction has no school scope, so constrain via the enrollment it belongs to.
+            ->when($schoolId !== null, fn ($query) => $query->whereHas(
+                'enrollment',
+                fn ($enrollment) => $enrollment->where('school_id', $schoolId),
+            ))
             ->sum('amount');
 
         $totalAssessed = (float) (clone $periodTuition)->sum('overall_tuition');
 
-        $todayTransactions = Transaction::query()
-            ->whereBetween('transaction_date', [now()->startOfDay(), now()->endOfDay()])
-            ->get();
+        $todayTransactions = $this->todayTransactions($schoolId);
 
         return [
             'total_revenue' => $totalRevenue,
@@ -252,5 +268,24 @@ final class StatAggregates
             'today_collection' => (float) $todayTransactions->sum(fn (Transaction $transaction): float => $transaction->raw_total_amount),
             'today_transactions' => $todayTransactions->count(),
         ];
+    }
+
+    /**
+     * Today's transactions, optionally limited to one school.
+     *
+     * `settlements` must be selected for raw_total_amount to be readable, because the accessor
+     * decodes that attribute; a grouped or narrowed select would silently total to zero.
+     *
+     * @return \Illuminate\Database\Eloquent\Collection<int, Transaction>
+     */
+    private function todayTransactions(?int $schoolId)
+    {
+        return Transaction::query()
+            ->whereBetween('transaction_date', [now()->startOfDay(), now()->endOfDay()])
+            ->when($schoolId !== null, fn ($query) => $query
+                // Transaction has no school scope either; reach it through the student
+                // transactions that point at this transaction.
+                ->whereHas('studentTransactions.enrollment', fn ($enrollment) => $enrollment->where('school_id', $schoolId)))
+            ->get();
     }
 }

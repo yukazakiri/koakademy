@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Dashboards;
 
 use App\Dashboards\Contracts\Dashboard;
-use App\Enums\UserRole;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\User;
@@ -41,12 +40,6 @@ final class StudentAffairsDesk implements Dashboard
      */
     public function canView(User $user, array $permissions = []): bool
     {
-        if ($permissions === []) {
-            return in_array($user->role, [
-                UserRole::StudentAffairsOfficer,
-                UserRole::GuidanceCounselor,
-            ], true);
-        }
 
         return array_intersect(['manage_clearance'], $permissions) !== [];
     }

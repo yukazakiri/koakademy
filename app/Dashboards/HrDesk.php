@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Dashboards;
 
 use App\Dashboards\Contracts\Dashboard;
-use App\Enums\UserRole;
 use App\Models\Department;
 use App\Models\Faculty;
 use App\Models\User;
@@ -38,9 +37,6 @@ final class HrDesk implements Dashboard
      */
     public function canView(User $user, array $permissions = []): bool
     {
-        if ($permissions === []) {
-            return $user->role === UserRole::HRManager;
-        }
 
         return array_intersect(['ViewAny:User', 'ViewAny:Faculty', 'ViewAny:Department'], $permissions) !== [];
     }

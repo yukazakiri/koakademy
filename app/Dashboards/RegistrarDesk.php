@@ -36,19 +36,18 @@ final class RegistrarDesk implements Dashboard
     }
 
     /**
-     * Admissions staff only. ViewAny:StudentEnrollment alone is held by cashiers too, so the
-     * gate also requires an enrollment-management or clearance permission that only the
-     * registrar's office holds.
+     * Admissions staff only, gated on the role.
      *
-     * @param  list<string>  $permissions
+     * A permission gate cannot separate the two registrar roles from the welfare offices:
+     * manage_enrollments is registrar-only, but view_clearance is held by the assistant
+     * registrar, the guidance counsellor and student affairs alike, and manage_clearance is
+     * held by the guidance counsellor too. Requiring manage_enrollments would lock the assistant
+     * registrar out of the desk meant for them. The role list is unambiguous; sysadmins bypass
+     * this via DashboardRegistry.
      */
     public function canView(User $user, array $permissions = []): bool
     {
-        if ($permissions === []) {
-            return in_array($user->role, [UserRole::Registrar, UserRole::AssistantRegistrar], true);
-        }
-
-        return array_intersect(['manage_enrollments', 'manage_clearance'], $permissions) !== [];
+        return in_array($user->role, [UserRole::Registrar, UserRole::AssistantRegistrar], true);
     }
 
     /**

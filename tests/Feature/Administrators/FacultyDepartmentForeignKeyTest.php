@@ -174,3 +174,113 @@ it('scopes the academic desk faculty count to the department', function (): void
     expect($payload['scope']['id'])->toBe($it->id);
     expect($faculty['value'])->toBe(3);
 });
+
+/**
+ * Writers only submit the free-text string: StoreFacultyRequest, the Filament faculty form
+ * and API requests, AdministratorFacultyManagementController::store(), the profile editor and
+ * FacultyBulkImportService. Without a sync, faculty created after the migration would have a
+ * null department_id and be missing from Department::faculty() and the desk counts.
+ */
+describe('syncs the free-text department to the foreign key on write', function (): void {
+    it('resolves a department by code', function (): void {
+        $school = School::factory()->create();
+        $it = Department::factory()->create(['school_id' => $school->id, 'code' => 'IT']);
+
+        $faculty = Faculty::factory()->create(['school_id' => $school->id, 'department' => 'IT']);
+
+        expect($faculty->fresh()->department_id)->toBe($it->id);
+    });
+
+    it('resolves a department by name when no code matches', function (): void {
+        $school = School::factory()->create();
+        $it = Department::factory()->create([
+            'school_id' => $school->id,
+            'code' => 'IT',
+            'name' => 'Information Technology',
+        ]);
+
+        $faculty = Faculty::factory()->create([
+            'school_id' => $school->id,
+            'department' => 'Information Technology',
+        ]);
+
+        expect($faculty->fresh()->department_id)->toBe($it->id);
+    });
+
+    it('ignores case and surrounding whitespace', function (): void {
+        $school = School::factory()->create();
+        $it = Department::factory()->create(['school_id' => $school->id, 'code' => 'IT']);
+
+        $faculty = Faculty::factory()->create(['school_id' => $school->id, 'department' => '  it  ']);
+
+        expect($faculty->fresh()->department_id)->toBe($it->id);
+    });
+
+    it('leaves the foreign key null for a department that does not match', function (): void {
+        $school = School::factory()->create();
+
+        $faculty = Faculty::factory()->create(['school_id' => $school->id, 'department' => 'Nonexistent']);
+
+        expect($faculty->fresh()->department_id)->toBeNull();
+    });
+
+    it('leaves the foreign key null for a blank department', function (): void {
+        $school = School::factory()->create();
+
+        $faculty = Faculty::factory()->create(['school_id' => $school->id, 'department' => null]);
+
+        expect($faculty->fresh()->department_id)->toBeNull();
+    });
+
+    it('moves the foreign key when the department is reassigned', function (): void {
+        $school = School::factory()->create();
+        $it = Department::factory()->create(['school_id' => $school->id, 'code' => 'IT']);
+        $ba = Department::factory()->create(['school_id' => $school->id, 'code' => 'BA']);
+
+        $faculty = Faculty::factory()->create(['school_id' => $school->id, 'department' => 'IT']);
+        expect($faculty->fresh()->department_id)->toBe($it->id);
+
+        $faculty->forceFill(['department' => 'BA'])->save();
+
+        // A stale foreign key here would keep the faculty counted under the old department.
+        expect($faculty->fresh()->department_id)->toBe($ba->id);
+        expect($ba->fresh()->faculty()->count())->toBe(1);
+        expect($it->fresh()->faculty()->count())->toBe(0);
+    });
+
+    it('clears the foreign key when reassigned to a department that does not exist', function (): void {
+        $school = School::factory()->create();
+        Department::factory()->create(['school_id' => $school->id, 'code' => 'IT']);
+
+        $faculty = Faculty::factory()->create(['school_id' => $school->id, 'department' => 'IT']);
+        expect($faculty->fresh()->department_id)->not->toBeNull();
+
+        $faculty->forceFill(['department' => 'Nonexistent'])->save();
+
+        expect($faculty->fresh()->department_id)->toBeNull();
+    });
+
+    it('respects an explicit department_id set by the caller', function (): void {
+        $school = School::factory()->create();
+        $it = Department::factory()->create(['school_id' => $school->id, 'code' => 'IT']);
+
+        $faculty = Faculty::factory()->create(['school_id' => $school->id]);
+        $faculty->forceFill(['department' => 'Nonexistent', 'department_id' => $it->id])->save();
+
+        expect($faculty->fresh()->department_id)->toBe($it->id);
+    });
+
+    it('does not resolve a department in another school', function (): void {
+        $mine = School::factory()->create();
+        $theirs = School::factory()->create();
+        $theirDepartment = Department::factory()->create([
+            'school_id' => $theirs->id,
+            'code' => 'IT',
+        ]);
+
+        $faculty = Faculty::factory()->create(['school_id' => $mine->id, 'department' => 'IT']);
+
+        expect($faculty->fresh()->department_id)->not->toBe($theirDepartment->id);
+        expect($faculty->fresh()->department_id)->toBeNull();
+    });
+});

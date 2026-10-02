@@ -39,9 +39,6 @@ final class AccountingDesk implements Dashboard
      */
     public function canView(User $user, array $permissions = []): bool
     {
-        if ($permissions === []) {
-            return $user->role?->isCashier() ?? false;
-        }
 
         return array_intersect(['View:Cashier', 'view_tuition_fees', 'view_payments'], $permissions) !== [];
     }
@@ -52,8 +49,13 @@ final class AccountingDesk implements Dashboard
     public function data(User $user, DashboardContext $context): array
     {
         // Reuses the shared aggregate so this desk and the original portal dashboard cannot drift
-        // apart on the same figures.
-        $snapshot = app(StatAggregates::class)->financeSnapshot($context->schoolYear, $context->semester);
+        // apart on the same figures. The school is passed through so a multi-school
+        // installation cannot aggregate another school's money into this cashier's totals.
+        $snapshot = app(StatAggregates::class)->financeSnapshot(
+            $context->schoolYear,
+            $context->semester,
+            $context->school,
+        );
 
         $collected = $snapshot['total_revenue'];
         $outstandingCount = $snapshot['outstanding_count'];
@@ -135,19 +137,36 @@ final class AccountingDesk implements Dashboard
     {
         // Aggregated off the transactions table directly: joining student_transactions to
         // transactions alongside a whereHas() subquery corrupts the generated select list.
+        // Grouped per day in PHP rather than SQL. raw_total_amount is an accessor over the JSON
+        // `settlements` column, so reading it on a grouped row that never selected
+        // `settlements` reports zero for every day. Summing the accessor over the rows we
+        // actually fetch keeps this driver-agnostic: SQLite json_each and MySQL JSON_TABLE
+        // would both be extra, non-portable SQL for what is one array_sum.
         return Transaction::query()
             ->forAcademicPeriod($context->schoolYear, $context->semester)
             ->whereBetween('transaction_date', [$context->from->toDateTimeString(), $context->to->toDateTimeString()])
-            ->selectRaw('date(transaction_date) as day, count(*) as transactions')
-            ->groupBy('day')
-            ->orderBy('day')
+            ->when($context->school?->id !== null, fn ($query) => $query
+                // Transaction carries no school scope, so reach the tenant through the
+                // student transactions pointing at it.
+                ->whereHas('studentTransactions.enrollment', fn ($enrollment) => $enrollment
+                    ->where('school_id', $context->school->id)))
+            ->orderBy('transaction_date')
             ->get()
-            ->map(fn (Transaction $transaction): array => [
-                'date' => (string) $transaction->getAttribute('day'),
-                'label' => date('M j', strtotime((string) $transaction->getAttribute('day'))),
-                'total' => (float) $transaction->raw_total_amount,
-                'transactions' => (int) $transaction->getAttribute('transactions'),
-            ])
+            ->groupBy(fn (Transaction $transaction): string => $transaction->transaction_date?->format('Y-m-d') ?? 'unknown')
+            ->map(function ($transactions, string $day): array {
+                $dayTransactions = $transactions instanceof \Illuminate\Support\Collection
+                    ? $transactions
+                    : collect($transactions);
+
+                return [
+                    'date' => $day,
+                    'label' => date('M j', strtotime($day)),
+                    'total' => (float) $dayTransactions->sum(
+                        fn (Transaction $transaction): float => $transaction->raw_total_amount,
+                    ),
+                    'transactions' => $dayTransactions->count(),
+                ];
+            })
             ->values()
             ->all();
     }
@@ -159,6 +178,12 @@ final class AccountingDesk implements Dashboard
     {
         return StudentTransaction::query()
             ->whereHas('transaction', fn ($query) => $query->forAcademicPeriod($context->schoolYear, $context->semester))
+            // student_transactions has no school column of its own; the enrollment it belongs
+            // to does, so constrain through it rather than reporting another school's payers.
+            ->when($context->school?->id !== null, fn ($query) => $query->whereHas(
+                'enrollment',
+                fn ($enrollment) => $enrollment->where('school_id', $context->school->id),
+            ))
             ->selectRaw('student_id, sum(amount) as total, count(*) as transactions')
             ->groupBy('student_id')
             ->orderByDesc('total')

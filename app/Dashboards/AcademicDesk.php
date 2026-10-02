@@ -40,18 +40,22 @@ final class AcademicDesk implements Dashboard
     /**
      * @param  list<string>  $permissions
      */
+    /**
+     * Academic leadership only.
+     *
+     * Gated on the role, not on a permission: ViewAny:Student is held by the cashier, the
+     * registrar, student affairs and guidance, so a permission gate here would expose faculty
+     * rosters, teaching loads and program counts to all of them. The role list is the same one
+     * the desk is documented for; sysadmins are bypassed by DashboardRegistry.
+     */
     public function canView(User $user, array $permissions = []): bool
     {
-        if ($permissions === []) {
-            return in_array($user->role, [
-                UserRole::DepartmentHead,
-                UserRole::ProgramChair,
-                UserRole::Dean,
-                UserRole::AssociateDean,
-            ], true);
-        }
-
-        return array_intersect(['ViewAny:Course', 'ViewAny:Classes', 'ViewAny:Student'], $permissions) !== [];
+        return in_array($user->role, [
+            UserRole::DepartmentHead,
+            UserRole::ProgramChair,
+            UserRole::Dean,
+            UserRole::AssociateDean,
+        ], true);
     }
 
     /**

@@ -6,7 +6,6 @@ namespace App\Dashboards;
 
 use App\Dashboards\Contracts\Dashboard;
 use App\Dashboards\Support\StatAggregates;
-use App\Enums\UserRole;
 use App\Models\Classes;
 use App\Models\Course;
 use App\Models\Department;
@@ -49,14 +48,6 @@ final class ExecutiveDesk implements Dashboard
      */
     public function canView(User $user, array $permissions = []): bool
     {
-        if ($permissions === []) {
-            return in_array($user->role, [
-                UserRole::President,
-                UserRole::VicePresident,
-                UserRole::Dean,
-                UserRole::AssociateDean,
-            ], true);
-        }
 
         return $this->granted($permissions, ['ViewAny:Department', 'ViewAny:Role']);
     }

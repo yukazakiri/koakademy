@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Dashboards;
 
 use App\Dashboards\Contracts\Dashboard;
-use App\Enums\UserRole;
 use App\Models\HelpTicket;
 use App\Models\User;
 use Modules\Inventory\Models\InventoryBorrowing;
@@ -38,13 +37,6 @@ final class ItAdminDesk implements Dashboard
      */
     public function canView(User $user, array $permissions = []): bool
     {
-        if ($permissions === []) {
-            return in_array($user->role, [
-                UserRole::ITSupport,
-                UserRole::MaintenanceStaff,
-                UserRole::AdministrativeAssistant,
-            ], true);
-        }
 
         return array_intersect(['View:InventoryProduct', 'ViewAny:GeneralSetting', 'ViewAny:User'], $permissions) !== [];
     }

@@ -7,6 +7,7 @@ use App\Dashboards\DashboardContext;
 use App\Dashboards\DashboardRegistry;
 use App\Enums\UserRole;
 use App\Models\Department;
+use App\Models\Faculty;
 use App\Models\School;
 use App\Models\User;
 use Database\Seeders\RolesSeeder;
@@ -334,7 +335,7 @@ it('renders a desk with no queues or tables without error', function (): void {
     $this->get('/administrators/desks/it-admin')->assertOk();
 });
 
-it('defers charts and tables out of the first paint', function (): void {
+it('sends the whole desk in one response', function (): void {
     $this->actingAs(deskUser(UserRole::Dean));
 
     $response = $this->get('/administrators/desks/executive');
@@ -344,18 +345,17 @@ it('defers charts and tables out of the first paint', function (): void {
         true,
     );
 
-    // KPI strip and attention queue are what a user acts on immediately.
-    expect($page['props'])->toHaveKeys(['kpis', 'queues', 'desk', 'context', 'desks']);
+    // Everything the desk renders arrives together. Deferring was removed: the payload is
+    // under 2.3 KB and the registry caches it for five minutes, so a second round trip cost
+    // more than the bytes it avoided shipping twice.
+    expect($page['props'])->toHaveKeys(['kpis', 'queues', 'trends', 'tables', 'desk', 'context', 'desks']);
 
-    expect($page['deferredProps']['desk-secondary'] ?? null)->toBe(['trends', 'tables', 'activity']);
-
-    // Stripped from the initial payload.
-    expect($page['props'])->not->toHaveKey('trends');
-    expect($page['props'])->not->toHaveKey('tables');
-    expect($page['props'])->not->toHaveKey('activity');
+    // The desk's own defer group is gone. `admin-shell` still defers from the shared
+    // middleware, which is unrelated to the desk payload.
+    expect($page['deferredProps'])->not->toHaveKey('desk-secondary');
 });
 
-it('serves the deferred group on a partial reload', function (): void {
+it('serves any single prop on a partial reload', function (): void {
     $user = deskUser(UserRole::Dean);
 
     $this->actingAs($user);
@@ -367,18 +367,18 @@ it('serves the deferred group on a partial reload', function (): void {
     $partial = $this->get('/administrators/desks/executive', [
         'X-Inertia' => 'true',
         'X-Inertia-Version' => $full['version'],
-        'X-Inertia-Partial-Data' => 'trends,tables,activity',
+        'X-Inertia-Partial-Data' => 'trends,tables',
         'X-Inertia-Partial-Component' => 'administrators/desks/show',
     ])->assertOk();
 
     $props = json_decode($partial->getContent(), true)['props'];
 
-    expect(array_keys($props))->toEqualCanonicalizing(['errors', 'trends', 'tables', 'activity']);
+    expect(array_keys($props))->toEqualCanonicalizing(['errors', 'trends', 'tables']);
     expect($props['trends'])->toBeArray();
     expect($props['tables'])->toBeArray();
 });
 
-it('still authorizes a desk on the deferred request', function (): void {
+it('still authorizes a desk on a partial reload', function (): void {
     $user = deskUser(UserRole::Cashier);
 
     $this->actingAs($user);
@@ -469,4 +469,67 @@ it('shares desk navigation through the deferred admin-shell group', function ():
     $desks = json_decode($partial->getContent(), true)['props']['deskRoutes'];
 
     expect(array_column($desks, 'id'))->toContain('admin-desk-accounting');
+});
+
+it('pins a department head to their own department regardless of the query string', function (): void {
+    $school = School::factory()->create();
+    $mine = Department::factory()->create(['school_id' => $school->id, 'code' => 'MINE']);
+    $other = Department::factory()->create(['school_id' => $school->id, 'code' => 'OTHER']);
+
+    $user = deskUser(UserRole::DepartmentHead);
+    $user->forceFill(['department_id' => $mine->id])->save();
+
+    Faculty::factory()->count(2)->create([
+        'school_id' => $school->id,
+        'department_id' => $mine->id,
+    ]);
+    Faculty::factory()->count(5)->create([
+        'school_id' => $school->id,
+        'department_id' => $other->id,
+    ]);
+
+    $this->actingAs($user->fresh());
+
+    // Asking for another department by id must not change the scope.
+    $this->get("/administrators/desks/academic?department={$other->id}")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('scope.id', $mine->id)
+            ->where('scope.code', 'MINE'),
+        );
+
+    // And the faculty KPI must reflect only their own department.
+    $this->get("/administrators/desks/academic?department={$other->id}")
+        ->assertInertia(fn ($page) => $page
+            ->component('administrators/desks/show')
+            ->where('kpis.0.value', 2),
+        );
+});
+
+it('lets institutional roles choose a department by id', function (): void {
+    $school = School::factory()->create();
+    $dept = Department::factory()->create(['school_id' => $school->id, 'code' => 'CHOSEN']);
+
+    $user = deskUser(UserRole::Dean);
+
+    $this->actingAs($user);
+
+    $this->get("/administrators/desks/academic?department={$dept->id}")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->where('scope.id', $dept->id));
+});
+
+it('ignores a department id for an inactive department', function (): void {
+    $school = School::factory()->create();
+    $inactive = Department::factory()->create([
+        'school_id' => $school->id,
+        'code' => 'OLD',
+        'is_active' => false,
+    ]);
+
+    $this->actingAs(deskUser(UserRole::Dean));
+
+    $this->get("/administrators/desks/academic?department={$inactive->id}")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->where('scope', null));
 });

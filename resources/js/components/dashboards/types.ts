@@ -76,12 +76,20 @@ export type DeskContext = {
     range: string;
 };
 
+export type DeskScope = {
+    id: number;
+    name: string;
+    code: string;
+};
+
 export type DeskProps = {
     desk: DeskMeta;
     desks: DeskOption[];
     context: DeskContext;
     kpis: DeskKpi[];
     queues: DeskQueueItem[];
+    /** Department this view is limited to, or null for an institution-wide view. */
+    scope?: DeskScope | null;
     /** Deferred group: undefined until the desk-secondary request resolves. */
     trends?: DeskTrend[];
     /** Deferred group: undefined until the desk-secondary request resolves. */

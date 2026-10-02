@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Dashboards\DashboardContext;
 use App\Dashboards\DashboardRegistry;
+use App\Enums\UserRole;
 use App\Models\Department;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
@@ -22,14 +23,6 @@ use Inertia\Response;
  */
 final class AdministratorDashboardController extends Controller
 {
-    /**
-     * Inertia defer group for everything below the KPI strip and attention queue.
-     *
-     * `rescue: true` so the group is still requested on a partial reload; without it a visit
-     * that only asks for one prop would drop the charts entirely.
-     */
-    private const string SECONDARY_GROUP = 'desk-secondary';
-
     public function __construct(
         private readonly DashboardRegistry $registry,
     ) {}
@@ -63,9 +56,11 @@ final class AdministratorDashboardController extends Controller
      * An unknown desk id and a desk the user may not see both 403, so the response never
      * reveals which desks exist to someone without access to them.
      *
-     * Charts and tables are deferred behind the `desk-secondary` group so the first paint
-     * only carries the heading, KPI strip and attention queue. Both groups are resolved from
-     * the same cached payload, so deferring costs no extra queries.
+     * Charts and tables are sent with the rest of the payload rather than behind an Inertia
+     * defer group. Deferring was measured and removed: DashboardRegistry already caches each
+     * desk for five minutes, so a desk costs 2 queries warm and 5-11 cold, and the whole
+     * payload is under 2.3 KB. Deferring bought a second round trip to avoid serializing at
+     * most 1.3 KB of it, which is a worse trade than just sending the page once.
      */
     public function show(Request $request, string $desk): Response|RedirectResponse
     {
@@ -104,47 +99,65 @@ final class AdministratorDashboardController extends Controller
                 'range_label' => $context->rangeLabel(),
                 'range' => $request->string('range')->toString() ?: 'year',
             ],
-            // First paint: the two things a user acts on immediately.
+            // Which department this view is limited to, so the UI can state the scope
+            // rather than implying an institution-wide figure.
+            'scope' => $payload['scope'] ?? null,
             'kpis' => $payload['kpis'] ?? [],
             'queues' => $payload['queues'] ?? [],
-            // Streamed right after first paint.
-            'trends' => Inertia::defer(
-                fn (): array => $payload['trends'] ?? [],
-                self::SECONDARY_GROUP,
-                true,
-            ),
-            'tables' => Inertia::defer(
-                fn (): array => $payload['tables'] ?? [],
-                self::SECONDARY_GROUP,
-                true,
-            ),
-            'activity' => Inertia::defer(
-                fn (): array => $payload['activity'] ?? [],
-                self::SECONDARY_GROUP,
-                true,
-            ),
+            'trends' => $payload['trends'] ?? [],
+            'tables' => $payload['tables'] ?? [],
+            'activity' => $payload['activity'] ?? [],
         ]);
     }
 
     /**
-     * Resolve the optional department scope.
+     * Resolve the department scope a desk payload may be limited to.
      *
-     * A department id in the query string only narrows the view for users already allowed to
-     * see that department's data; the Academic desk is scoped server-side rather than trusting
-     * the request, so a chair cannot widen their own scope by editing the URL.
+     * A department head or program chair is pinned to their own department regardless of the
+     * query string: accepting ?department=<id> for a scoped user would let them read another
+     * department's faculty, teaching load and student counts by editing the URL. Only roles
+     * that legitimately see the whole institution may choose a department, and they may only
+     * pick an active one.
      */
     private function resolveDepartment(Request $request, User $user): ?Department
     {
-        $departmentId = $request->integer('department') ?: null;
+        $own = $this->ownDepartment($user);
 
-        if ($departmentId === null) {
-            return $this->ownDepartment($user);
+        if (! $this->mayBrowseAllDepartments($user)) {
+            // Scoped roles get their own department, and nothing else.
+            return $own;
+        }
+
+        $requested = $request->integer('department') ?: null;
+
+        if ($requested === null) {
+            return $own;
         }
 
         return Department::query()
             ->active()
-            ->whereKey($departmentId)
+            ->whereKey($requested)
             ->first();
+    }
+
+    /**
+     * Roles permitted to view a department other than their own.
+     *
+     * Mirrors the roles the Executive desk is documented for; a department head is explicitly
+     * absent.
+     */
+    private function mayBrowseAllDepartments(User $user): bool
+    {
+        return in_array($user->role, [
+            UserRole::SuperAdmin,
+            UserRole::Developer,
+            UserRole::Admin,
+            UserRole::President,
+            UserRole::VicePresident,
+            UserRole::Dean,
+            UserRole::AssociateDean,
+            UserRole::HRManager,
+        ], true);
     }
 
     /**

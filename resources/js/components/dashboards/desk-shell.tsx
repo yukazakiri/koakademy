@@ -2,7 +2,7 @@ import { AttentionQueue } from "@/components/dashboards/attention-queue";
 import { KpiStrip } from "@/components/dashboards/kpi-strip";
 import { QueueTable } from "@/components/dashboards/queue-table";
 import { TrendCard } from "@/components/dashboards/trend-card";
-import type { DeskContext, DeskKpi, DeskMeta, DeskOption, DeskQueueItem, DeskTable, DeskTrend } from "@/components/dashboards/types";
+import type { DeskContext, DeskKpi, DeskMeta, DeskOption, DeskQueueItem, DeskScope, DeskTable, DeskTrend } from "@/components/dashboards/types";
 import { Frame, FrameDescription, FrameFooter, FrameHeader, FramePanel, FrameTitle } from "@/components/reui/frame";
 import { Button } from "@/components/ui/button";
 import { router } from "@inertiajs/react";
@@ -11,6 +11,7 @@ type DeskShellProps = {
     desk: DeskMeta;
     desks: DeskOption[];
     context: DeskContext;
+    scope?: DeskScope | null;
     kpis: DeskKpi[];
     queues: DeskQueueItem[];
     /**
@@ -29,7 +30,7 @@ type DeskShellProps = {
  * land in the first paint, then charts, then tables. Reading top to bottom answers "how are we
  * doing" before "show me everything".
  */
-export function DeskShell({ desk, desks, context, kpis, queues, trends, tables }: DeskShellProps) {
+export function DeskShell({ desk, desks, context, scope, kpis, queues, trends, tables }: DeskShellProps) {
     const switchDesk = (url: string) => {
         router.get(url, {}, { preserveState: true, preserveScroll: true });
     };
@@ -66,6 +67,16 @@ export function DeskShell({ desk, desks, context, kpis, queues, trends, tables }
 
                 <FrameFooter>
                     <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
+                        {/* State the scope explicitly: a department head reading their own
+                            figures should not have to infer it from the numbers. */}
+                        {scope ? (
+                            <>
+                                <span className="text-foreground font-medium">
+                                    {scope.name} ({scope.code})
+                                </span>
+                                <span aria-hidden="true">&middot;</span>
+                            </>
+                        ) : null}
                         <span>{context.period_label}</span>
                         <span aria-hidden="true">&middot;</span>
                         <span>{context.range_label}</span>

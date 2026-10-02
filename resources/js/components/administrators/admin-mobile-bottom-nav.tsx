@@ -90,9 +90,12 @@ export function AdminMobileBottomNav() {
         auth?: { user?: User | null };
         user?: User;
         moduleAdminRoutes?: ModuleAdminRoute[];
+        /** Role-scoped dashboard desks, already filtered by DashboardRegistry::navigationFor(). */
+        deskRoutes?: ModuleAdminRoute[];
     }>();
     const user = (props.auth as any)?.user || ((props as any).user as User | undefined);
     const moduleAdminRoutes = props.moduleAdminRoutes ?? [];
+    const deskRoutes = props.deskRoutes ?? [];
     const [showMore, setShowMore] = useState(false);
     const visible = useScrollDirection();
     const touchStart = useRef<{ x: number; y: number; time: number } | null>(null);
@@ -100,7 +103,7 @@ export function AdminMobileBottomNav() {
     // Build sections from allowed routes
     const sections = useMemo<SectionItem[]>(() => {
         if (!user) return [];
-        const allowed = getRoutesForRoleWithModules(user.role, user.permissions ?? [], moduleAdminRoutes).filter((r) => !r.disabled);
+        const allowed = getRoutesForRoleWithModules(user.role, user.permissions ?? [], moduleAdminRoutes, deskRoutes).filter((r) => !r.disabled);
         const map = new Map<RouteSection, SectionItem>();
         for (const route of allowed) {
             const section = (route.section || "core") as RouteSection;
@@ -113,7 +116,7 @@ export function AdminMobileBottomNav() {
             }
         }
         return Array.from(map.values());
-    }, [user, moduleAdminRoutes]);
+    }, [user, moduleAdminRoutes, deskRoutes]);
 
     const priority = useMemo(() => {
         const ordered = PRIORITY_IDS.map((id) => sections.find((s) => s.id === id)).filter(Boolean) as SectionItem[];

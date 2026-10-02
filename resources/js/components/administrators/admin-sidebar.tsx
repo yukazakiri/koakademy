@@ -60,6 +60,8 @@ interface PageProps {
     unresolvedHelpTicketsCount?: number;
     adminSidebarCounts?: AdminSidebarCounts | null;
     moduleAdminRoutes?: ModuleAdminRoute[];
+    /** Role-scoped dashboard desks, already filtered by DashboardRegistry::navigationFor(). */
+    deskRoutes?: ModuleAdminRoute[];
     featureFlags?: {
         library?: boolean;
     };
@@ -116,10 +118,16 @@ interface SearchableRoute extends AdminRoute {
 /**
  * Get routes organized by section for a specific user role and permissions
  */
-function useOrganizedRoutes(userRole: string, userPermissions: string[] = [], moduleRoutes: ModuleAdminRoute[] = [], libraryEnabled = false) {
+function useOrganizedRoutes(
+    userRole: string,
+    userPermissions: string[] = [],
+    moduleRoutes: ModuleAdminRoute[] = [],
+    deskRoutes: ModuleAdminRoute[] = [],
+    libraryEnabled = false,
+) {
     return React.useMemo(() => {
         const normalizedRole = normalizeRole(userRole);
-        const allowedRoutes = getRoutesForRoleWithModules(normalizedRole, userPermissions, moduleRoutes).filter(
+        const allowedRoutes = getRoutesForRoleWithModules(normalizedRole, userPermissions, moduleRoutes, deskRoutes).filter(
             (route) => route.id !== "admin-digital-library" || libraryEnabled,
         );
 
@@ -173,7 +181,7 @@ function useOrganizedRoutes(userRole: string, userPermissions: string[] = [], mo
         });
 
         return { groupedRoutes, sectionsWithRoutes, allSearchableRoutes, normalizedRole };
-    }, [libraryEnabled, moduleRoutes, userPermissions, userRole]);
+    }, [deskRoutes, libraryEnabled, moduleRoutes, userPermissions, userRole]);
 }
 
 function isRouteActive(currentUrl: string, routeLink: string, exact = false): boolean {
@@ -256,6 +264,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
     const branding = resolveBranding(props.branding);
     const adminSidebarCounts = props.adminSidebarCounts ?? null;
     const moduleAdminRoutes = props.moduleAdminRoutes ?? [];
+    const deskRoutes = props.deskRoutes ?? [];
     const libraryEnabled = props.featureFlags?.library === true;
     const appName = branding.appName;
     const organizationShortName = branding.organizationShortName;
@@ -270,6 +279,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
         resolvedUserRole,
         resolvedUserPermissions,
         moduleAdminRoutes,
+        deskRoutes,
         libraryEnabled,
     );
 

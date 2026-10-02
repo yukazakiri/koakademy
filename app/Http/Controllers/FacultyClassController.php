@@ -1315,7 +1315,7 @@ final class FacultyClassController extends Controller
             ->actions([
                 Action::make('accept')
                     ->button()
-                    ->url(route('classes.students.move.accept', [
+                    ->url(route('faculty.classes.students.move.accept', [
                         'class' => $class->id, // Source
                         'student' => $student->id,
                         'target_class' => $targetClass->id,

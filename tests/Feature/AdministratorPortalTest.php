@@ -28,7 +28,7 @@ it('allows administrative users to view the administrator dashboard', function (
     ]);
 
     $this->actingAs($user)
-        ->get(portalUrlForAdministrators('/administrators/dashboard'))
+        ->get(portalUrlForAdministrators('/administrators/dashboard/overview'))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
             ->component('administrators/dashboard', false)

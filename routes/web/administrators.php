@@ -47,7 +47,9 @@ Route::middleware(['auth', 'administrators.only'])
             return redirect()->route('administrators.dashboard');
         })->name('home');
 
-        Route::get('/dashboard', function () {
+        // Original role-blind dashboard, kept reachable for users whose role has no desk yet
+        // and for direct links. Superseded by the role-scoped desks below.
+        Route::get('/dashboard/overview', function () {
             $user = Auth::user();
 
             if (! $user instanceof User) {
@@ -107,7 +109,15 @@ Route::middleware(['auth', 'administrators.only'])
                 ],
                 'flash' => session('flash'),
             ]);
-        })->name('dashboard');
+        })->name('dashboard.legacy');
+
+        // Role-scoped desks. The registry decides which desks a user may open, so there is
+        // one route for every desk rather than one route per role.
+        Route::get('/desks/{desk}', [App\Http\Controllers\AdministratorDashboardController::class, 'show'])
+            ->name('desks.show');
+
+        Route::get('/dashboard', [App\Http\Controllers\AdministratorDashboardController::class, 'index'])
+            ->name('dashboard');
 
         Route::get('/settings', [App\Http\Controllers\ProfileController::class, 'index'])->name('settings.index');
         Route::get('/settings/newsletter', [App\Http\Controllers\AdministratorSystemManagementController::class, 'newsletter'])->name('settings.newsletter.index');

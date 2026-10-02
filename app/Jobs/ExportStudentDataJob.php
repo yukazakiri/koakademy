@@ -119,7 +119,7 @@ final class ExportStudentDataJob implements ShouldQueue
                 ->actions([
                     Action::make('download')
                         ->label('Download')
-                        ->url(route('export.download', $exportJob->id))
+                        ->url(route('filament.exports.download', $exportJob->id))
                         ->openUrlInNewTab(),
                 ])
                 ->sendToDatabase($user);

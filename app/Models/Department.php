@@ -104,15 +104,16 @@ final class Department extends Model
     }
 
     /**
-     * Get all faculty members belonging to this department
-     * Matches by both department code and name for flexibility
+     * Faculty belonging to this department, via the department_id foreign key.
+     *
+     * Backfilled from the legacy free-text `department` column by
+     * 2026_10_01_120000_add_department_id_to_faculty_table. Rows whose string never matched a
+     * department code or name keep a null department_id, so they are excluded here; they are
+     * reachable by the string column until they are reassigned.
      */
-    public function faculty()
+    public function faculty(): HasMany
     {
-        return Faculty::where(function ($query): void {
-            $query->where('department', $this->code)
-                ->orWhere('department', $this->name);
-        });
+        return $this->hasMany(Faculty::class, 'department_id', 'id');
     }
 
     /**
@@ -169,9 +170,7 @@ final class Department extends Model
      */
     public function getFacultyCount(): int
     {
-        return Faculty::where('department', $this->code)
-            ->orWhere('department', $this->name)
-            ->count();
+        return $this->faculty()->count();
     }
 
     /**
@@ -250,9 +249,7 @@ final class Department extends Model
      */
     public function hasFaculty(): bool
     {
-        return Faculty::where('department', $this->code)
-            ->orWhere('department', $this->name)
-            ->exists();
+        return $this->faculty()->exists();
     }
 
     /**
@@ -284,10 +281,16 @@ final class Department extends Model
             // Set users' department_id to null instead of deleting users
             $department->users()->update(['department_id' => null]);
 
-            // Handle faculty records - set department field to null for faculty in this department (by code or name)
-            Faculty::where('department', $department->code)
-                ->orWhere('department', $department->name)
-                ->update(['department' => null]);
+            // Unassign faculty through the foreign key. The legacy free-text column is cleared
+            // too so it cannot keep matching a department that no longer exists.
+            $faculty = $department->faculty()->get();
+
+            if ($faculty->isNotEmpty()) {
+                Faculty::whereIn('id', $faculty->modelKeys())->update([
+                    'department_id' => null,
+                    'department' => null,
+                ]);
+            }
 
             // Set courses' department_id to null instead of deleting courses
             $department->courses()->update(['department_id' => null]);

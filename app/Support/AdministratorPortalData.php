@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support;
 
+use App\Dashboards\Support\StatAggregates;
 use App\Enums\StudentStatus;
 use App\Enums\StudentType;
 use App\Models\Classes;
@@ -11,9 +12,6 @@ use App\Models\Course;
 use App\Models\Faculty;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
-use App\Models\StudentTransaction;
-use App\Models\StudentTuition;
-use App\Models\Transaction;
 use App\Models\User;
 use App\Services\EnrollmentPipelineService;
 use App\Services\GeneralSettingsService;
@@ -167,33 +165,21 @@ final class AdministratorPortalData
     }
 
     /**
+     * Shared aggregates live in StatAggregates so the dashboard desks compute identical
+     * figures from identical SQL rather than each re-deriving them.
+     */
+    private static function aggregates(): StatAggregates
+    {
+        return app(StatAggregates::class);
+    }
+
+    /**
      * Get all student statistics in a single aggregated query.
      * This replaces 16+ individual COUNT queries with 1 query.
      */
     private static function getAggregatedStudentStats(): object
     {
-        return Student::query()
-            ->selectRaw("
-                count(*) as total,
-                count(case when student_type = 'college' then 1 end) as type_college,
-                count(case when student_type = 'shs' then 1 end) as type_shs,
-                count(case when student_type = 'tesda' then 1 end) as type_tesda,
-                count(case when student_type = 'dhrt' then 1 end) as type_dhrt,
-                count(case when gender = 'male' then 1 end) as gender_male,
-                count(case when gender = 'female' then 1 end) as gender_female,
-                count(case when gender = 'other' then 1 end) as gender_other,
-                count(case when gender = 'prefer_not_to_say' then 1 end) as gender_prefer_not_to_say,
-                count(case when gender not in ('male', 'female', 'other', 'prefer_not_to_say') or gender is null then 1 end) as gender_unspecified,
-                count(case when academic_year = 1 then 1 end) as year_1,
-                count(case when academic_year = 2 then 1 end) as year_2,
-                count(case when academic_year = 3 then 1 end) as year_3,
-                count(case when academic_year = 4 then 1 end) as year_4,
-                count(case when academic_year = 5 then 1 end) as year_5,
-                count(case when status = 'applicant' then 1 end) as status_applicant,
-                count(case when status = 'enrolled' then 1 end) as status_enrolled,
-                count(case when status = 'on_leave' then 1 end) as status_on_leave
-            ")
-            ->first();
+        return self::aggregates()->studentStats();
     }
 
     /**
@@ -203,21 +189,7 @@ final class AdministratorPortalData
      */
     private static function buildApplicationStats(object $stats): array
     {
-        $totalApplicants = (int) $stats->status_applicant;
-        $totalEnrolled = (int) $stats->status_enrolled;
-        $totalOnLeave = (int) $stats->status_on_leave;
-
-        $totalProcessed = $totalApplicants + $totalEnrolled;
-        $conversionRate = $totalProcessed > 0
-            ? round(($totalEnrolled / $totalProcessed) * 100, 1)
-            : 0.0;
-
-        return [
-            'applicants' => $totalApplicants,
-            'enrolled' => $totalEnrolled,
-            'on_leave' => $totalOnLeave,
-            'conversion_rate' => $conversionRate,
-        ];
+        return self::aggregates()->applicationStats($stats);
     }
 
     /**
@@ -227,28 +199,7 @@ final class AdministratorPortalData
      */
     private static function buildStudentTypeDistribution(object $stats, int $totalStudents): array
     {
-        $typeMapping = [
-            'college' => 'type_college',
-            'shs' => 'type_shs',
-            'tesda' => 'type_tesda',
-            'dhrt' => 'type_dhrt',
-        ];
-
-        return collect(StudentType::cases())
-            ->map(function (StudentType $type) use ($stats, $totalStudents, $typeMapping): array {
-                $column = $typeMapping[$type->value] ?? null;
-                $count = $column !== '' && $column !== '0' ? (int) ($stats->{$column} ?? 0) : 0;
-                $percentage = $totalStudents > 0 ? round(($count / $totalStudents) * 100, 1) : 0.0;
-
-                return [
-                    'type' => $type->value,
-                    'label' => $type->getLabel() ?? $type->value,
-                    'count' => $count,
-                    'percentage' => $percentage,
-                ];
-            })
-            ->values()
-            ->all();
+        return self::aggregates()->studentTypeDistribution($stats, $totalStudents);
     }
 
     /**
@@ -258,13 +209,7 @@ final class AdministratorPortalData
      */
     private static function buildGenderDistribution(object $stats): array
     {
-        return [
-            ['gender' => 'Male', 'count' => (int) $stats->gender_male],
-            ['gender' => 'Female', 'count' => (int) $stats->gender_female],
-            ['gender' => 'Other', 'count' => (int) $stats->gender_other],
-            ['gender' => 'Prefer not to say', 'count' => (int) $stats->gender_prefer_not_to_say],
-            ['gender' => 'Unspecified', 'count' => (int) $stats->gender_unspecified],
-        ];
+        return self::aggregates()->genderDistribution($stats);
     }
 
     /**
@@ -274,13 +219,7 @@ final class AdministratorPortalData
      */
     private static function buildYearLevelDistribution(object $stats): array
     {
-        return [
-            ['year_level' => '1st Year', 'count' => (int) $stats->year_1],
-            ['year_level' => '2nd Year', 'count' => (int) $stats->year_2],
-            ['year_level' => '3rd Year', 'count' => (int) $stats->year_3],
-            ['year_level' => '4th Year', 'count' => (int) $stats->year_4],
-            ['year_level' => 'Graduates', 'count' => (int) $stats->year_5],
-        ];
+        return self::aggregates()->yearLevelDistribution($stats);
     }
 
     /**
@@ -331,24 +270,7 @@ final class AdministratorPortalData
      */
     private static function getEnrollmentTrendSeries(?string $status = null): array
     {
-        $query = StudentEnrollment::withTrashed();
-
-        if ($status !== null) {
-            $query->where('status', $status);
-        }
-
-        $data = Trend::query($query)
-            ->between(start: now()->startOfYear(), end: now()->endOfYear())
-            ->perMonth()
-            ->count();
-
-        return $data
-            ->map(fn (TrendValue $value): array => [
-                'date' => Carbon::parse($value->date)->startOfMonth()->toDateString(),
-                'value' => (int) $value->aggregate,
-            ])
-            ->values()
-            ->all();
+        return self::aggregates()->monthlySeries(StudentEnrollment::withTrashed(), $status);
     }
 
     /**
@@ -356,18 +278,7 @@ final class AdministratorPortalData
      */
     private static function getStudentProfileTrendSeries(): array
     {
-        $data = Trend::query(Student::query())
-            ->between(start: now()->startOfYear(), end: now()->endOfYear())
-            ->perMonth()
-            ->count();
-
-        return $data
-            ->map(fn (TrendValue $value): array => [
-                'date' => Carbon::parse($value->date)->startOfMonth()->toDateString(),
-                'value' => (int) $value->aggregate,
-            ])
-            ->values()
-            ->all();
+        return self::aggregates()->monthlySeries(Student::query());
     }
 
     /**
@@ -375,8 +286,10 @@ final class AdministratorPortalData
      */
     private static function getConversionRateTrendSeries(): array
     {
-        $applicantTrend = self::getStudentStatusTrendSeries(StudentStatus::Applicant->value);
-        $enrolledTrend = self::getStudentStatusTrendSeries(StudentStatus::Enrolled->value);
+        $aggregates = self::aggregates();
+
+        $applicantTrend = $aggregates->studentStatusSeries(StudentStatus::Applicant);
+        $enrolledTrend = $aggregates->studentStatusSeries(StudentStatus::Enrolled);
         $applicantsByDate = collect($applicantTrend)->keyBy('date');
 
         return collect($enrolledTrend)
@@ -400,18 +313,7 @@ final class AdministratorPortalData
      */
     private static function getStudentStatusTrendSeries(string $status): array
     {
-        $data = Trend::query(Student::query()->where('status', $status))
-            ->between(start: now()->startOfYear(), end: now()->endOfYear())
-            ->perMonth()
-            ->count();
-
-        return $data
-            ->map(fn (TrendValue $value): array => [
-                'date' => Carbon::parse($value->date)->startOfMonth()->toDateString(),
-                'value' => (int) $value->aggregate,
-            ])
-            ->values()
-            ->all();
+        return self::aggregates()->monthlySeries(Student::query(), $status);
     }
 
     /**
@@ -420,13 +322,7 @@ final class AdministratorPortalData
      */
     private static function statSeriesFromTrend(array $trend, string $valueKey): array
     {
-        return collect($trend)
-            ->map(fn (array $point): array => [
-                'date' => (string) $point['date'],
-                'value' => (int) ($point[$valueKey] ?? 0),
-            ])
-            ->values()
-            ->all();
+        return self::aggregates()->toStatSeries($trend, $valueKey);
     }
 
     /**
@@ -434,19 +330,7 @@ final class AdministratorPortalData
      */
     private static function calculateSeriesTrend(array $series): float
     {
-        $values = collect($series)
-            ->pluck('value')
-            ->filter(fn (float|int $value): bool => $value > 0)
-            ->values();
-
-        if ($values->count() < 2) {
-            return 0.0;
-        }
-
-        $current = (float) $values->last();
-        $previous = (float) $values->slice(-2, 1)->first();
-
-        return $previous > 0 ? round((($current - $previous) / $previous) * 100, 1) : 0.0;
+        return self::aggregates()->seriesTrend($series);
     }
 
     /**
@@ -599,37 +483,7 @@ final class AdministratorPortalData
      */
     private static function getFinanceSnapshot(string $schoolYear, int $semester): array
     {
-        $periodTuition = StudentTuition::query()
-            ->whereHas('enrollment', function ($query) use ($schoolYear, $semester): void {
-                $query->forAcademicPeriod($schoolYear, $semester);
-            });
-
-        $totalRevenue = (float) StudentTransaction::query()
-            ->whereHas('transaction', function ($query) use ($schoolYear, $semester): void {
-                $query->forAcademicPeriod($schoolYear, $semester);
-            })
-            ->sum('amount');
-
-        $totalCollectibles = (float) (clone $periodTuition)->sum('total_balance');
-        $totalAssessed = (float) (clone $periodTuition)->sum('overall_tuition');
-        $collectionRate = $totalAssessed > 0 ? round(($totalRevenue / $totalAssessed) * 100, 1) : 0.0;
-
-        $todayStart = now()->startOfDay();
-        $todayEnd = now()->endOfDay();
-        $todayTransactions = Transaction::query()
-            ->whereBetween('transaction_date', [$todayStart, $todayEnd])
-            ->get();
-
-        return [
-            'total_revenue' => $totalRevenue,
-            'total_collectibles' => $totalCollectibles,
-            'total_assessed' => $totalAssessed,
-            'collection_rate' => $collectionRate,
-            'fully_paid_count' => (clone $periodTuition)->where('total_balance', '<=', 0)->count(),
-            'outstanding_count' => (clone $periodTuition)->where('total_balance', '>', 0)->count(),
-            'today_collection' => (float) $todayTransactions->sum(fn (Transaction $transaction): float => $transaction->raw_total_amount),
-            'today_transactions' => $todayTransactions->count(),
-        ];
+        return self::aggregates()->financeSnapshot($schoolYear, $semester);
     }
 
     /**

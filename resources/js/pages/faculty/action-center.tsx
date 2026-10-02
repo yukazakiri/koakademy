@@ -30,6 +30,7 @@ import {
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { route } from "ziggy-js";
 
 type ActivityStatus = "backlog" | "in_progress" | "review" | "done" | "blocked";
 
@@ -350,9 +351,8 @@ export default function ActionCenter({ user, action_center }: ActionCenterProps)
         // Optimistic update
         setActivities((prev) => prev.map((a) => (a.id === draggedActivityId ? { ...a, status } : a)));
 
-        // @ts-ignore
         router.patch(
-            route("action-center.status.update", activity.source_id),
+            route("faculty.action-center.status.update", activity.source_id),
             {
                 status: status,
             },

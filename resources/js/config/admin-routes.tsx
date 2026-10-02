@@ -636,7 +636,7 @@ export const ADMIN_ROUTES: AdminRoute[] = [
         icon: <IconHistory className="size-4" />,
         link: "/administrators/audit-logs",
         section: "system",
-        requiredPermission: "View:LogTable",
+        requiredPermission: "ViewAny:Activity",
         allowedRoles: SYSTEM_ADMIN_ROLES,
     },
     {
@@ -899,10 +899,13 @@ function toComposerModuleSlug(moduleName: string): string {
         .toLowerCase();
 }
 
-export function getResolvedAdminRoutes(moduleRoutes: ModuleAdminRoute[] = []): AdminRoute[] {
+export function getResolvedAdminRoutes(moduleRoutes: ModuleAdminRoute[] = [], deskRoutes: ModuleAdminRoute[] = []): AdminRoute[] {
     const deduplicatedRoutes = new Map<string, AdminRoute>();
 
-    for (const route of [...ADMIN_ROUTES, ...hydrateModuleRoutes(moduleRoutes)]) {
+    // Desk entries are already permission-filtered by DashboardRegistry::navigationFor(), so
+    // they need no requiredPermission here: hydrating them without one lets the sidebar show
+    // them to exactly the people who can open them.
+    for (const route of [...ADMIN_ROUTES, ...hydrateModuleRoutes(moduleRoutes), ...hydrateModuleRoutes(deskRoutes)]) {
         deduplicatedRoutes.set(route.id, route);
     }
 
@@ -917,8 +920,13 @@ export function getResolvedAdminRoutes(moduleRoutes: ModuleAdminRoute[] = []): A
     return [...deduplicatedLinks.values()];
 }
 
-export function getRoutesForRoleWithModules(userRole: string, userPermissions: string[] = [], moduleRoutes: ModuleAdminRoute[] = []): AdminRoute[] {
-    return getResolvedAdminRoutes(moduleRoutes).filter((route) => canAccessRoute(route, userRole, userPermissions));
+export function getRoutesForRoleWithModules(
+    userRole: string,
+    userPermissions: string[] = [],
+    moduleRoutes: ModuleAdminRoute[] = [],
+    deskRoutes: ModuleAdminRoute[] = [],
+): AdminRoute[] {
+    return getResolvedAdminRoutes(moduleRoutes, deskRoutes).filter((route) => canAccessRoute(route, userRole, userPermissions));
 }
 
 /**

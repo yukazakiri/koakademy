@@ -208,6 +208,12 @@ const definitions: PageDefinitionInput[] = [
     { routePattern: /^\/administrators\/system-management\/pulse$/, component: "administrators/system-management/pulse", variant: "analytics" },
     { routePattern: /^\/administrators\/system-management$/, component: "administrators/system-management/index", variant: "settings" },
     { routePattern: /^\/administrators\/dashboard$/, component: "administrators/dashboard", variant: "dashboard" },
+    {
+        routePattern: /^\/administrators\/dashboard\/overview$/,
+        component: "administrators/dashboard",
+        variant: "dashboard",
+    },
+    { routePattern: /^\/administrators\/desks\/[^/]+$/, component: "administrators/desks/show", variant: "dashboard" },
     { routePattern: UNMATCHABLE_CURRICULUM_INDEX_ALIAS, component: "administrators/curriculum/programs/index", variant: "list" },
 ];
 

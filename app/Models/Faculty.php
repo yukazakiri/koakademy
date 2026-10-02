@@ -85,6 +85,7 @@ final class Faculty extends Authenticatable implements FilamentUser, HasAvatar
         'gender',
         'age',
         'school_id',
+        'department_id',
     ];
 
     #[Override]
@@ -142,6 +143,23 @@ final class Faculty extends Authenticatable implements FilamentUser, HasAvatar
     }
 
     // Relationships
+
+    /**
+     * The owning department through the department_id foreign key.
+     *
+     * Preferred over departmentBelongsTo(), which joins the legacy free-text `department`
+     * column to departments.code and so misses rows recorded with the department's full name.
+     * Populated by 2026_10_01_120000_add_department_id_to_faculty_table.
+     */
+    public function departmentRecord(): BelongsTo
+    {
+        return $this->belongsTo(Department::class, 'department_id', 'id');
+    }
+
+    /**
+     * @deprecated Use departmentRecord() instead. Kept because Filament, the MCP faculty tools
+     *             and DigitalIdCardService still read the free-text `department` column.
+     */
     public function departmentBelongsTo(): BelongsTo
     {
         return $this->belongsTo(Department::class, 'department', 'code');
@@ -210,6 +228,43 @@ final class Faculty extends Authenticatable implements FilamentUser, HasAvatar
     }
 
     /**
+     * Keep department_id in step with the legacy free-text `department` column.
+     *
+     * Writers still submit only that string: StoreFacultyRequest, the Filament faculty form
+     * and API requests, AdministratorFacultyManagementController::store(), the profile editor
+     * and FacultyBulkImportService. Syncing here rather than at each of those means a faculty
+     * member created or reassigned after the department_id migration still lands in
+     * Department::faculty() and the academic, HR and executive desk counts.
+     *
+     * The string is left as the author wrote it, because Filament, the MCP tools,
+     * DigitalIdCardService and Scout all still read and display it.
+     */
+    #[Override]
+    protected static function booted(): void
+    {
+        self::saving(function (self $faculty): void {
+            // A foreign key the caller set in this same request is authoritative and never
+            // derived away, whether the string also moved or not.
+            if ($faculty->isDirty('department_id')) {
+                return;
+            }
+
+            // Otherwise the free-text column is the input, so re-resolve whenever it changes.
+            // This is what makes a reassignment move the faculty to the new department's count
+            // rather than leaving the foreign key from the previous value.
+            if (! $faculty->isDirty('department')) {
+                return;
+            }
+
+            $raw = is_string($faculty->department) ? mb_trim($faculty->department) : '';
+
+            $faculty->department_id = $raw === ''
+                ? null
+                : static::resolveDepartmentId($raw, $faculty->school_id);
+        });
+    }
+
+    /**
      * Get the full URL for the profile photo
      */
     protected function photoUrl(): Attribute
@@ -255,6 +310,7 @@ final class Faculty extends Authenticatable implements FilamentUser, HasAvatar
             'last_name' => 'string',
             'middle_name' => 'string',
             'email' => 'string',
+            'department_id' => 'integer',
             'phone_number' => 'string',
             'department' => 'string',
             'position' => 'string',
@@ -272,5 +328,30 @@ final class Faculty extends Authenticatable implements FilamentUser, HasAvatar
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    /**
+     * Resolve a free-text department to an id, preferring an exact code match over the name.
+     *
+     * Same precedence as the backfill in
+     * 2026_10_01_120000_add_department_id_to_faculty_table, so a row resolved at write time
+     * agrees with the same value resolved at migration time.
+     */
+    private static function resolveDepartmentId(string $value, ?int $schoolId): ?int
+    {
+        $normalized = mb_strtoupper($value);
+
+        $query = Department::query()
+            ->where(function ($q) use ($normalized): void {
+                $q->whereRaw('UPPER(TRIM(code)) = ?', [$normalized])
+                    ->orWhereRaw('UPPER(TRIM(name)) = ?', [$normalized]);
+            });
+
+        if ($schoolId !== null) {
+            $query->where('school_id', $schoolId);
+        }
+
+        return $query->orderByRaw('case when UPPER(TRIM(code)) = ? then 0 else 1 end', [$normalized])
+            ->value('id');
     }
 }

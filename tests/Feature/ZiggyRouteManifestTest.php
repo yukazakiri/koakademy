@@ -7,39 +7,62 @@ use Illuminate\Support\Facades\Route;
 
 /**
  * config/ziggy.php ships a name allowlist because the application registers over a thousand
- * routes while the front end resolves roughly 240 of them. This test keeps the list honest: a
+ * routes while the front end resolves roughly 300 of them. This test keeps the list honest: a
  * route() call whose name is not in the manifest fails at runtime in the browser, which is a
  * far worse failure mode than a failing test.
  *
  * Both sides are derived from source, so neither the allowlist nor this audit can drift.
  */
-function referencedRouteNames(string $directory, string $pattern): array
+
+/**
+ * Every route name the front end can resolve, across the app and every module.
+ *
+ * Three shapes have to be matched, and missing any one of them silently under-counts:
+ *  - route('name', ...)                 direct calls
+ *  - routeName = "name"                 default arguments in a data table
+ *  - routeName: "name"                  object properties, e.g. a Form's routeName
+ *
+ * Modules/*\/resources ship their own Inertia pages and are mounted into the same bundle by
+ * App.tsx's glob, so they resolve names from the same manifest and must be scanned too.
+ *
+ * @return list<string>
+ */
+function referencedRouteNames(): array
 {
     $names = [];
 
-    if (! File::isDirectory($directory)) {
-        return $names;
-    }
+    $patterns = [
+        '/route\(\s*[\'"]([a-zA-Z0-9._-]+)[\'"]/',
+        // `[:=]` rather than `=` so object properties are caught as well as default arguments.
+        '/routeName\s*[:=]\s*[\'"]([a-zA-Z0-9._-]+)[\'"]/',
+    ];
 
-    foreach (File::allFiles($directory) as $file) {
-        if (! preg_match($pattern, $file->getFilename())) {
-            continue;
+    $scan = function (string $directory) use (&$names, $patterns): void {
+        if (! File::isDirectory($directory)) {
+            return;
         }
 
-        $source = (string) file_get_contents($file->getPathname());
+        foreach (File::allFiles($directory) as $file) {
+            if (! preg_match('/\.(tsx|ts)$/', $file->getFilename())) {
+                continue;
+            }
 
-        // route('name', ...) and routeName = "name"
-        if (preg_match_all('/route\(\s*[\'"]([a-zA-Z0-9._-]+)[\'"]/', $source, $matches) > 0) {
-            foreach ($matches[1] as $name) {
-                $names[$name] = true;
+            $source = (string) file_get_contents($file->getPathname());
+
+            foreach ($patterns as $pattern) {
+                if (preg_match_all($pattern, $source, $matches) > 0) {
+                    foreach ($matches[1] as $name) {
+                        $names[$name] = true;
+                    }
+                }
             }
         }
+    };
 
-        if (preg_match_all('/routeName\s*=\s*[\'"]([a-zA-Z0-9._-]+)[\'"]/', $source, $matches) > 0) {
-            foreach ($matches[1] as $name) {
-                $names[$name] = true;
-            }
-        }
+    $scan(resource_path('js'));
+
+    foreach (File::directories(base_path('Modules')) as $module) {
+        $scan($module.'/resources');
     }
 
     return array_keys($names);
@@ -114,7 +137,7 @@ it('only lists route names that actually exist', function (): void {
 });
 
 it('serves every route name the front end references', function (): void {
-    $referenced = referencedRouteNames(resource_path('js'), '/\.(tsx|ts)$/');
+    $referenced = referencedRouteNames();
     $registered = registeredRouteNames();
 
     // A name the front end asks for that the application never registered is a broken link,
@@ -159,6 +182,22 @@ it('resolves the desk routes the switcher and sidebar link to', function (): voi
     // Added in the role-desks change; the switcher URLs are built server-side so the
     // frontend-only scan cannot see them.
     expect($manifest)->toContain('administrators.desks.show');
+});
+
+it('catches route names passed as object properties and from module pages', function (): void {
+    $referenced = referencedRouteNames();
+
+    // routeName: "name" (a Form routeName) rather than routeName = "name".
+    expect($referenced)->toContain('administrators.system-management.analytics.update');
+
+    // Module pages are globbed into the same bundle by App.tsx, so they resolve from this
+    // manifest too. Both of these were missed when only resources/js was scanned.
+    expect($referenced)->toContain('administrators.library.books.index');
+    expect($referenced)->toContain('administrators.inventory.items.index');
+
+    foreach (['administrators.library.books.index', 'administrators.inventory.items.index'] as $name) {
+        expect(config('ziggy.only'))->toContain($name);
+    }
 });
 
 it('does not blow the payload up', function (): void {

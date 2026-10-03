@@ -412,7 +412,13 @@ it('exposes each desk to the sidebar with a reachable link', function (string $r
 
     foreach ($nav as $entry) {
         expect($entry)->toHaveKeys(['id', 'title', 'link', 'section', 'icon', 'description']);
-        expect($entry['section'])->toBe('core');
+
+        // Desks group under their own sidebar section so they are not mixed in with the
+        // institution-wide dashboards they are not.
+        expect($entry['section'])->toBe('desks');
+
+        // Titles are suffixed so the sidebar reads as "Executive Desk", not a bare role name.
+        expect($entry['title'])->toEndWith(' Desk');
 
         // A desk must never appear in navigation for someone who would get a 403.
         $this->actingAs($user)->get($entry['link'])->assertOk();

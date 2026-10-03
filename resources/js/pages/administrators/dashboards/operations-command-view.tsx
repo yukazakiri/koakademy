@@ -172,39 +172,46 @@ export default function OperationsCommandView({ user, admin_data, currency }: Da
             icon: School,
         });
 
-        // 2. Pending grades / attendance submissions
+        // 2. Pending grades / attendance submissions.
+        // Only surfaced when the backend actually reports a grade or attendance item. Substituting
+        // an unrelated queue entry would report grading work that does not exist.
         const queueGradeItem = operations.action_queue.find((i) => /grade|attendance/i.test(i.label));
-        const gradeCount = queueGradeItem ? queueGradeItem.value : Math.max(operations.action_queue[0]?.value ?? 0, 8);
-        tasks.push({
-            id: "task-pending-grades",
-            title: "Pending Grades & Attendance Sheets",
-            description: "Instructor grade sheets and class attendance rosters submitted awaiting departmental endorsement and dean verification.",
-            category: "grades",
-            count: gradeCount,
-            urgency: gradeCount > 5 ? "high" : "medium",
-            tone: "warning",
-            href: queueGradeItem?.href || safeRoute("administrators.faculties.index", "/administrators/faculties"),
-            actionLabel: "Review Submissions",
-            icon: GraduationCap,
-        });
+        if (queueGradeItem) {
+            const gradeCount = queueGradeItem.value;
+            tasks.push({
+                id: "task-pending-grades",
+                title: "Pending Grades & Attendance Sheets",
+                description:
+                    "Instructor grade sheets and class attendance rosters submitted awaiting departmental endorsement and dean verification.",
+                category: "grades",
+                count: gradeCount,
+                urgency: gradeCount > 5 ? "high" : "medium",
+                tone: "warning",
+                href: queueGradeItem.href || safeRoute("administrators.faculties.index", "/administrators/faculties"),
+                actionLabel: "Review Submissions",
+                icon: GraduationCap,
+            });
+        }
 
-        // 3. Clearance approvals
+        // 3. Clearance approvals. Likewise only rendered when the backend reports such work.
         const queueClearanceItem = operations.action_queue.find((i) => /clearance|approval|hold/i.test(i.label));
-        const clearanceCount = queueClearanceItem ? queueClearanceItem.value : Math.max(operations.action_queue[1]?.value ?? 0, 5);
-        tasks.push({
-            id: "task-clearance-approvals",
-            title: "Student Clearance & Graduation Approvals",
-            description: "Term completion and academic clearance petitions awaiting administrator and registrar department sign-off.",
-            category: "clearance",
-            count: clearanceCount,
-            urgency: clearanceCount > 0 ? "high" : "low",
-            tone: clearanceCount > 0 ? "info" : "success",
-            href: queueClearanceItem?.href || safeRoute("administrators.students.index", "/administrators/students"),
-            actionLabel: "Clear Students",
-            icon: UserCheck,
-        });
+        if (queueClearanceItem) {
+            const clearanceCount = queueClearanceItem.value;
+            tasks.push({
+                id: "task-clearance-approvals",
+                title: "Student Clearance & Graduation Approvals",
+                description: "Term completion and academic clearance petitions awaiting administrator and registrar department sign-off.",
+                category: "clearance",
+                count: clearanceCount,
+                urgency: clearanceCount > 0 ? "high" : "low",
+                tone: clearanceCount > 0 ? "info" : "success",
+                href: queueClearanceItem.href || safeRoute("administrators.students.index", "/administrators/students"),
+                actionLabel: "Clear Students",
+                icon: UserCheck,
+            });
+        }
 
-        // 4. System maintenance & telemetry alerts
+        // 4. System maintenance & telemetry audit. Informational, so it is always listed.
         tasks.push({
             id: "task-system-maintenance",
             title: "System Maintenance & Telemetry Audit",
@@ -279,49 +286,12 @@ export default function OperationsCommandView({ user, admin_data, currency }: Da
         setResolvedTasks({});
     };
 
-    // Live Activity Stream Logs
+    /**
+     * Live Activity Stream Logs. Never synthesised: an invented entry such as a failed-password
+     * alert reads as a real security incident, so an empty log renders as an empty log.
+     */
     const rawActivity: RecentActivityItem[] = useMemo(() => {
-        const acts = admin_data.recent_records?.activity ?? admin_data.recent_activity ?? [];
-        if (acts.length > 0) return acts;
-
-        return [
-            {
-                actor: "Dean's Office",
-                action: 'Assigned 6 subject sections to Prof. Michael Ramos for "BSIT-3A"',
-                time: "10 mins ago",
-                status: "success",
-            },
-            {
-                actor: "Registrar Dept",
-                action: 'Verified official grade report for "MATH-101" College Algebra',
-                time: "24 mins ago",
-                status: "info",
-            },
-            {
-                actor: "Academic Head",
-                action: 'Flagged 2 unassigned laboratory schedules in "Engineering Bldg Lab 3"',
-                time: "48 mins ago",
-                status: "warning",
-            },
-            {
-                actor: "System Worker",
-                action: 'Executed automated database maintenance index on "enrollment_records"',
-                time: "1 hour ago",
-                status: "success",
-            },
-            {
-                actor: "Finance Admin",
-                action: 'Issued clearance approval for Student #2024-0891 "Maria Santos"',
-                time: "2 hours ago",
-                status: "success",
-            },
-            {
-                actor: "Portal Auth",
-                action: "Detected multiple failed password attempts on admin account",
-                time: "3 hours ago",
-                status: "error",
-            },
-        ];
+        return admin_data.recent_records?.activity ?? admin_data.recent_activity ?? [];
     }, [admin_data.recent_records?.activity, admin_data.recent_activity]);
 
     // Filtered Activity Stream
@@ -951,22 +921,33 @@ export default function OperationsCommandView({ user, admin_data, currency }: Da
                             <IconTile variant="outline" size="sm" className="text-muted-foreground/60 mb-2">
                                 <Search className="size-4" />
                             </IconTile>
-                            <p className="text-foreground text-sm font-semibold">No activity matches this query</p>
-                            <p className="text-muted-foreground mt-0.5 max-w-xs text-xs">
-                                Try adjusting your search keyword or clearing the status filter.
-                            </p>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="xs"
-                                onClick={() => {
-                                    setActivityFilter("");
-                                    setActivityStatusFilter("all");
-                                }}
-                                className="mt-3 text-xs"
-                            >
-                                Clear Activity Filter
-                            </Button>
+                            {rawActivity.length === 0 ? (
+                                <>
+                                    <p className="text-foreground text-sm font-semibold">No recorded activity</p>
+                                    <p className="text-muted-foreground mt-0.5 max-w-xs text-xs">
+                                        Nothing has been logged against this institution yet. Events appear here as staff act on records.
+                                    </p>
+                                </>
+                            ) : (
+                                <>
+                                    <p className="text-foreground text-sm font-semibold">No activity matches this query</p>
+                                    <p className="text-muted-foreground mt-0.5 max-w-xs text-xs">
+                                        Try adjusting your search keyword or clearing the status filter.
+                                    </p>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="xs"
+                                        onClick={() => {
+                                            setActivityFilter("");
+                                            setActivityStatusFilter("all");
+                                        }}
+                                        className="mt-3 text-xs"
+                                    >
+                                        Clear Activity Filter
+                                    </Button>
+                                </>
+                            )}
                         </div>
                     ) : (
                         <div className="divide-border/60 divide-y">

@@ -100,58 +100,45 @@ export default function ExecutiveOverviewView({ user, admin_data, currency }: Da
         [admin_data.operations.action_queue],
     );
 
-    // Filter and enrich trend points with target tracking for solution-analytics-8 template
-    const enrichedTrends = useMemo(() => {
+    /**
+     * Windowed enrollment series. The payload supplies no target, so no benchmark series is
+     * synthesised: an invented target line would read as an institutional goal.
+     */
+    const windowedTrends = useMemo(() => {
         const raw = admin_data.enrollment_health.trends ?? [];
-        const filtered = trendRange === "six_months" ? raw.slice(-6) : raw;
 
-        if (filtered.length === 0) {
-            return [];
-        }
-
-        const totalEnrollments = filtered.reduce((sum, item) => sum + (item.enrollments || 0), 0);
-        const avgEnrollment = totalEnrollments / filtered.length;
-        const benchmarkTarget = Math.max(Math.round(avgEnrollment * 1.12), 25);
-
-        return filtered.map((pt, idx) => {
-            // Target run-rate progression
-            const targetPacing = Math.round(benchmarkTarget * (1 + (idx - filtered.length / 2) * 0.025));
-            return {
-                ...pt,
-                target: Math.max(targetPacing, 10),
-            };
-        });
+        return trendRange === "six_months" ? raw.slice(-6) : raw;
     }, [admin_data.enrollment_health.trends, trendRange]);
 
     const trendMetrics = useMemo(() => {
-        if (enrichedTrends.length === 0) {
+        if (windowedTrends.length === 0) {
             return {
                 currentVal: 0,
-                targetVal: 0,
-                pacePercent: 100,
+                previousVal: 0,
+                changePercent: 0,
                 peakVal: 0,
                 rangeTotal: 0,
-                targetTotal: 0,
+                monthlyAverage: 0,
             };
         }
 
-        const lastItem = enrichedTrends[enrichedTrends.length - 1];
+        const lastItem = windowedTrends[windowedTrends.length - 1];
+        const previousItem = windowedTrends.length > 1 ? windowedTrends[windowedTrends.length - 2] : undefined;
         const currentVal = lastItem.enrollments || 0;
-        const targetVal = lastItem.target || 0;
-        const pacePercent = targetVal > 0 ? Math.round((currentVal / targetVal) * 100) : 100;
-        const peakVal = Math.max(...enrichedTrends.map((t) => t.enrollments), 0);
-        const rangeTotal = enrichedTrends.reduce((sum, t) => sum + (t.enrollments || 0), 0);
-        const targetTotal = enrichedTrends.reduce((sum, t) => sum + (t.target || 0), 0);
+        const previousVal = previousItem?.enrollments ?? 0;
+        const changePercent = previousVal > 0 ? Math.round(((currentVal - previousVal) / previousVal) * 100) : 0;
+        const peakVal = Math.max(...windowedTrends.map((t) => t.enrollments || 0), 0);
+        const rangeTotal = windowedTrends.reduce((sum, t) => sum + (t.enrollments || 0), 0);
 
         return {
             currentVal,
-            targetVal,
-            pacePercent,
+            previousVal,
+            changePercent,
             peakVal,
             rangeTotal,
-            targetTotal,
+            monthlyAverage: rangeTotal / windowedTrends.length,
         };
-    }, [enrichedTrends]);
+    }, [windowedTrends]);
 
     return (
         <div className="grid gap-6">
@@ -303,9 +290,7 @@ export default function ExecutiveOverviewView({ user, admin_data, currency }: Da
                                         KPI Matrix
                                     </Badge>
                                 </div>
-                                <FrameDescription className="text-xs">
-                                    Conversion and collection performance against institutional target rungs
-                                </FrameDescription>
+                                <FrameDescription className="text-xs">Conversion and collection rates with their underlying counts</FrameDescription>
                             </FrameHeader>
 
                             <div className="flex flex-col gap-5 p-4 sm:p-5">
@@ -322,7 +307,7 @@ export default function ExecutiveOverviewView({ user, admin_data, currency }: Da
                                                 size="xs"
                                                 className="font-medium"
                                             >
-                                                {conversionRate >= 75 ? "Target Met" : "Target: 75%"}
+                                                {conversionRate >= 75 ? "Strong" : "Low"}
                                             </Badge>
                                         </div>
 
@@ -361,7 +346,7 @@ export default function ExecutiveOverviewView({ user, admin_data, currency }: Da
                                                 Collection
                                             </span>
                                             <Badge variant={collectionRate >= 80 ? "success-light" : "info-light"} size="xs" className="font-medium">
-                                                {collectionRate >= 80 ? "Target Met" : "Target: 80%"}
+                                                {collectionRate >= 80 ? "Strong" : "Low"}
                                             </Badge>
                                         </div>
 
@@ -428,25 +413,21 @@ export default function ExecutiveOverviewView({ user, admin_data, currency }: Da
                                         </IconTile>
                                         Institutional Trend & Fiscal Run-rate
                                     </FrameTitle>
-                                    <FrameDescription className="text-xs">
-                                        Target-tracked monthly student intake and run-rate trajectory
-                                    </FrameDescription>
+                                    <FrameDescription className="text-xs">Monthly student intake and run-rate trajectory</FrameDescription>
                                 </div>
 
                                 <div className="flex flex-wrap items-center gap-2.5">
-                                    {/* Telemetry pill showing current month total vs target */}
+                                    {/* Telemetry pill: latest month and change on the prior month */}
                                     <div className="border-border/70 bg-muted/40 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs">
-                                        <span className="text-muted-foreground font-medium">Month Run-rate:</span>
-                                        <span className="text-foreground font-semibold tabular-nums">
-                                            {formatNumber(trendMetrics.currentVal)}
-                                            <span className="text-muted-foreground font-normal"> / {formatNumber(trendMetrics.targetVal)} tgt</span>
-                                        </span>
+                                        <span className="text-muted-foreground font-medium">Latest Month:</span>
+                                        <span className="text-foreground font-semibold tabular-nums">{formatNumber(trendMetrics.currentVal)}</span>
                                         <Badge
-                                            variant={trendMetrics.currentVal >= trendMetrics.targetVal ? "success-light" : "warning-light"}
+                                            variant={trendMetrics.changePercent >= 0 ? "success-light" : "destructive-light"}
                                             size="xs"
                                             className="font-semibold tabular-nums"
                                         >
-                                            {trendMetrics.pacePercent}%
+                                            {trendMetrics.changePercent >= 0 ? "+" : ""}
+                                            {trendMetrics.changePercent}%
                                         </Badge>
                                     </div>
 
@@ -484,9 +465,9 @@ export default function ExecutiveOverviewView({ user, admin_data, currency }: Da
                                         </span>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <span className="text-muted-foreground">Target Benchmark:</span>
+                                        <span className="text-muted-foreground">Monthly Average:</span>
                                         <span className="text-foreground font-bold tabular-nums">
-                                            {formatNumber(trendMetrics.targetTotal)} Target
+                                            {formatNumber(Math.round(trendMetrics.monthlyAverage))} / mo
                                         </span>
                                     </div>
                                     <div className="flex items-center gap-2">
@@ -496,29 +477,17 @@ export default function ExecutiveOverviewView({ user, admin_data, currency }: Da
                                 </div>
                             </div>
 
-                            {/* Target-tracked trend area chart with smooth gradient fill */}
+                            {/* Enrollment trend area chart with smooth gradient fill */}
                             <div className="p-4 sm:p-6">
-                                {enrichedTrends.length > 0 ? (
+                                {windowedTrends.length > 0 ? (
                                     <AreaChart
-                                        data={enrichedTrends}
+                                        data={windowedTrends}
                                         xDataKey="date"
                                         className="h-[270px] w-full"
                                         aspectRatio="16 / 7"
                                         margin={{ left: 40, right: 20, top: 20, bottom: 30 }}
                                     >
                                         <Grid horizontal />
-                                        {/* Target benchmark area */}
-                                        <Area
-                                            dataKey="target"
-                                            stroke="var(--muted-foreground)"
-                                            fill="var(--muted-foreground)"
-                                            fillOpacity={0.05}
-                                            gradientToOpacity={0}
-                                            strokeWidth={1.5}
-                                            dashFromIndex={Math.max(0, enrichedTrends.length - 3)}
-                                            dashArray="5 4"
-                                            showMarkers={false}
-                                        />
                                         {/* Active enrollment momentum area with smooth gradient fill */}
                                         <Area
                                             dataKey="enrollments"

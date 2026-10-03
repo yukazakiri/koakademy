@@ -82,18 +82,19 @@ export default function StudentDemographicsView({ user, admin_data, currency }: 
         label: "Active Academic Term",
     };
 
-    // Demographic total headcount
+    // Demographic total headcount. A genuine zero is preserved so an empty institution reads as
+    // empty rather than being backfilled with a plausible-looking number.
     const totalStudents = useMemo(() => {
-        if (typeof admin_data.student_demographics?.total === "number" && admin_data.student_demographics.total > 0) {
+        if (typeof admin_data.student_demographics?.total === "number") {
             return admin_data.student_demographics.total;
         }
-        if (typeof admin_data.enrollment_health?.enrolled === "number" && admin_data.enrollment_health.enrolled > 0) {
+        if (typeof admin_data.enrollment_health?.enrolled === "number") {
             return admin_data.enrollment_health.enrolled;
         }
-        return 180;
+        return 0;
     }, [admin_data.student_demographics?.total, admin_data.enrollment_health?.enrolled]);
 
-    // Student classifications / types
+    // Student classifications / types. Never synthesised: an empty breakdown renders an empty state.
     const studentTypes: StudentTypeItem[] = useMemo(() => {
         const types = admin_data.student_demographics?.by_type?.length
             ? admin_data.student_demographics.by_type
@@ -101,17 +102,8 @@ export default function StudentDemographicsView({ user, admin_data, currency }: 
               ? admin_data.analytics.student_types
               : [];
 
-        if (types.length > 0) {
-            return types;
-        }
-
-        return [
-            { type: "freshman", label: "Regular Freshmen", count: Math.round(totalStudents * 0.44), percentage: 44 },
-            { type: "transferee", label: "Transferees", count: Math.round(totalStudents * 0.22), percentage: 22 },
-            { type: "continuing", label: "Continuing", count: Math.round(totalStudents * 0.24), percentage: 24 },
-            { type: "returnee", label: "Returnees / Shifters", count: Math.round(totalStudents * 0.1), percentage: 10 },
-        ];
-    }, [admin_data.student_demographics?.by_type, admin_data.analytics?.student_types, totalStudents]);
+        return types;
+    }, [admin_data.student_demographics?.by_type, admin_data.analytics?.student_types]);
 
     // RingChart data format
     const ringData: RingSlice[] = useMemo(() => {
@@ -123,26 +115,14 @@ export default function StudentDemographicsView({ user, admin_data, currency }: 
         }));
     }, [studentTypes, totalStudents]);
 
-    // Top Degree Programs
+    // Top Degree Programs. Never synthesised, so the ranking only ever reports real enrolment.
     const topCourses: TopCourse[] = useMemo(() => {
-        const courses = admin_data.student_demographics?.top_courses?.length
+        return admin_data.student_demographics?.top_courses?.length
             ? admin_data.student_demographics.top_courses
             : admin_data.analytics?.top_courses?.length
               ? admin_data.analytics.top_courses
               : [];
-
-        if (courses.length > 0) {
-            return courses;
-        }
-
-        return [
-            { code: "BSCS", title: "BS Computer Science", student_count: Math.round(totalStudents * 0.32) },
-            { code: "BSIT", title: "BS Information Technology", student_count: Math.round(totalStudents * 0.26) },
-            { code: "BSBA", title: "BS Business Administration", student_count: Math.round(totalStudents * 0.18) },
-            { code: "BSED", title: "Bachelor of Secondary Education", student_count: Math.round(totalStudents * 0.14) },
-            { code: "BSCrim", title: "BS Criminology", student_count: Math.round(totalStudents * 0.1) },
-        ];
-    }, [admin_data.student_demographics?.top_courses, admin_data.analytics?.top_courses, totalStudents]);
+    }, [admin_data.student_demographics?.top_courses, admin_data.analytics?.top_courses]);
 
     // Top Degree Programs Horizontal Bar Chart data
     const topCoursesChartData = useMemo(() => {
@@ -153,25 +133,14 @@ export default function StudentDemographicsView({ user, admin_data, currency }: 
         }));
     }, [topCourses]);
 
-    // Year-Level distribution
+    // Year-Level distribution. Never synthesised.
     const yearLevels = useMemo(() => {
-        const raw = admin_data.student_demographics?.by_year_level?.length
+        return admin_data.student_demographics?.by_year_level?.length
             ? admin_data.student_demographics.by_year_level
             : admin_data.analytics?.year_level_distribution?.length
               ? admin_data.analytics.year_level_distribution
               : [];
-
-        if (raw.length > 0) {
-            return raw;
-        }
-
-        return [
-            { year_level: "1st Year", count: Math.round(totalStudents * 0.4) },
-            { year_level: "2nd Year", count: Math.round(totalStudents * 0.28) },
-            { year_level: "3rd Year", count: Math.round(totalStudents * 0.2) },
-            { year_level: "4th Year", count: Math.round(totalStudents * 0.12) },
-        ];
-    }, [admin_data.student_demographics?.by_year_level, admin_data.analytics?.year_level_distribution, totalStudents]);
+    }, [admin_data.student_demographics?.by_year_level, admin_data.analytics?.year_level_distribution]);
 
     // Year-Level BarChart data
     const yearLevelChartData = useMemo(() => {
@@ -181,21 +150,13 @@ export default function StudentDemographicsView({ user, admin_data, currency }: 
         }));
     }, [yearLevels]);
 
-    // Gender breakdown
+    // Gender breakdown. Never synthesised.
     const genderBreakdown = useMemo(() => {
-        const raw = admin_data.student_demographics?.by_gender?.length
+        const categories = admin_data.student_demographics?.by_gender?.length
             ? admin_data.student_demographics.by_gender
             : admin_data.analytics?.gender_distribution?.length
               ? admin_data.analytics.gender_distribution
               : [];
-
-        const categories =
-            raw.length > 0
-                ? raw
-                : [
-                      { gender: "Female", count: Math.round(totalStudents * 0.53) },
-                      { gender: "Male", count: Math.round(totalStudents * 0.47) },
-                  ];
 
         const sumCount = categories.reduce((sum, item) => sum + (Number(item.count) || 0), 0) || 1;
 
@@ -204,7 +165,7 @@ export default function StudentDemographicsView({ user, admin_data, currency }: 
             count: Number(item.count) || 0,
             percentage: ((Number(item.count) || 0) / sumCount) * 100,
         }));
-    }, [admin_data.student_demographics?.by_gender, admin_data.analytics?.gender_distribution, totalStudents]);
+    }, [admin_data.student_demographics?.by_gender, admin_data.analytics?.gender_distribution]);
 
     // Gender parity ratio text
     const genderRatioText = useMemo(() => {
@@ -219,74 +180,14 @@ export default function StudentDemographicsView({ user, admin_data, currency }: 
         return "Demographic Parity";
     }, [genderBreakdown]);
 
-    // Recent Students Roster
+    // Recent Students Roster. Never synthesised: the profile links below carry real record ids, so an
+    // invented roster would point administrators at students that do not exist.
     const recentStudents: RecentStudent[] = useMemo(() => {
-        const raw = admin_data.recent_records?.students?.length
+        return admin_data.recent_records?.students?.length
             ? admin_data.recent_records.students
             : admin_data.analytics?.recent_students?.length
               ? admin_data.analytics.recent_students
               : [];
-
-        if (raw.length > 0) {
-            return raw;
-        }
-
-        return [
-            {
-                id: 101,
-                student_id: "2026-00101",
-                name: "Samantha Clarisse Reyes",
-                type: "Freshman",
-                status: "Enrolled",
-                course: "BS Computer Science",
-                registered_at: new Date(Date.now() - 1000 * 60 * 35).toISOString(),
-            },
-            {
-                id: 102,
-                student_id: "2026-00102",
-                name: "Marcus Aurelius Tan",
-                type: "Transferee",
-                status: "Enrolled",
-                course: "BS Information Technology",
-                registered_at: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-            },
-            {
-                id: 103,
-                student_id: "2026-00103",
-                name: "Alyssa Marie Bautista",
-                type: "Continuing",
-                status: "Enrolled",
-                course: "BS Business Administration",
-                registered_at: new Date(Date.now() - 1000 * 60 * 360).toISOString(),
-            },
-            {
-                id: 104,
-                student_id: "2026-00104",
-                name: "Joshua Gabriel Santos",
-                type: "Freshman",
-                status: "Applicant",
-                course: "BS Criminology",
-                registered_at: new Date(Date.now() - 1000 * 60 * 720).toISOString(),
-            },
-            {
-                id: 105,
-                student_id: "2026-00105",
-                name: "Chloe Dominique Cruz",
-                type: "Returnee",
-                status: "Enrolled",
-                course: "Bachelor of Secondary Education",
-                registered_at: new Date(Date.now() - 1000 * 60 * 1440).toISOString(),
-            },
-            {
-                id: 106,
-                student_id: "2026-00106",
-                name: "Ethan John Dela Cruz",
-                type: "Continuing",
-                status: "Graduated",
-                course: "BS Computer Science",
-                registered_at: new Date(Date.now() - 1000 * 60 * 2880).toISOString(),
-            },
-        ];
     }, [admin_data.recent_records?.students, admin_data.analytics?.recent_students]);
 
     // Unique classification list for filter pills
@@ -392,14 +293,25 @@ export default function StudentDemographicsView({ user, admin_data, currency }: 
             </Frame>
 
             {/* Informational Synchronization Alert */}
-            <Alert variant="info" className="border-info/20 bg-info/5 text-info-foreground">
-                <Info className="text-info size-4" />
-                <AlertTitle>Demographics Synchronized</AlertTitle>
-                <AlertDescription>
-                    Population telemetry reflects active term registrations for {currentPeriod.label || `SY ${currentPeriod.school_year}`}. All cohort
-                    percentages are calculated based on {formatNumber(totalStudents)} verified records.
-                </AlertDescription>
-            </Alert>
+            {totalStudents > 0 ? (
+                <Alert variant="info" className="border-info/20 bg-info/5 text-info-foreground">
+                    <Info className="text-info size-4" />
+                    <AlertTitle>Demographics Synchronized</AlertTitle>
+                    <AlertDescription>
+                        Population telemetry reflects active term registrations for {currentPeriod.label || `SY ${currentPeriod.school_year}`}. All
+                        cohort percentages are calculated based on {formatNumber(totalStudents)} verified records.
+                    </AlertDescription>
+                </Alert>
+            ) : (
+                <Alert variant="warning" className="border-warning/20 bg-warning/5 text-warning-foreground">
+                    <Info className="text-warning size-4" />
+                    <AlertTitle>No student records yet</AlertTitle>
+                    <AlertDescription>
+                        No student profiles exist for {currentPeriod.label || `SY ${currentPeriod.school_year}`}. Distributions below stay empty until
+                        students are registered.
+                    </AlertDescription>
+                </Alert>
+            )}
 
             {/* =========================================================
                 2. COMPACT 2x2 DEMOGRAPHIC KPI GRID (card-40 template)
@@ -519,54 +431,68 @@ export default function StudentDemographicsView({ user, admin_data, currency }: 
                             </div>
                         </FrameHeader>
 
-                        {/* Ring Chart Center & Visual Canvas */}
-                        <div className="pt-4">
-                            <div className="mx-auto flex w-full max-w-[260px] items-center justify-center">
-                                <RingChart
-                                    data={ringData}
-                                    size={250}
-                                    strokeWidth={14}
-                                    ringGap={6}
-                                    baseInnerRadius={55}
-                                    hoveredIndex={hoveredRingIndex}
-                                    onHoverChange={setHoveredRingIndex}
-                                >
-                                    {ringData.map((item, index) => (
-                                        <Ring key={item.label} index={index} />
-                                    ))}
-                                    <RingCenter defaultLabel="Total Students" />
-                                </RingChart>
-                            </div>
+                        {studentTypes.length > 0 ? (
+                            <>
+                                {/* Ring Chart Center & Visual Canvas */}
+                                <div className="pt-4">
+                                    <div className="mx-auto flex w-full max-w-[260px] items-center justify-center">
+                                        <RingChart
+                                            data={ringData}
+                                            size={250}
+                                            strokeWidth={14}
+                                            ringGap={6}
+                                            baseInnerRadius={55}
+                                            hoveredIndex={hoveredRingIndex}
+                                            onHoverChange={setHoveredRingIndex}
+                                        >
+                                            {ringData.map((item, index) => (
+                                                <Ring key={item.label} index={index} />
+                                            ))}
+                                            <RingCenter defaultLabel="Total Students" />
+                                        </RingChart>
+                                    </div>
 
-                            {/* Interactive Legend with Progress Bars */}
-                            <div className="mt-5">
-                                <Legend
-                                    items={ringData}
-                                    hoveredIndex={hoveredRingIndex}
-                                    onHoverChange={setHoveredRingIndex}
-                                    className="flex flex-col gap-2"
-                                >
-                                    <LegendItem className="hover:bg-muted/30 flex flex-col gap-1.5 rounded-lg p-2 transition-colors">
-                                        <div className="flex items-center justify-between gap-2">
-                                            <div className="flex items-center gap-2">
-                                                <LegendMarker className="size-2.5" />
-                                                <LegendLabel className="text-xs font-medium" />
-                                            </div>
-                                            <LegendValue showPercentage className="text-xs tabular-nums" />
-                                        </div>
-                                        <LegendProgress height="h-1.5" />
-                                    </LegendItem>
-                                </Legend>
-                            </div>
-                        </div>
+                                    {/* Interactive Legend with Progress Bars */}
+                                    <div className="mt-5">
+                                        <Legend
+                                            items={ringData}
+                                            hoveredIndex={hoveredRingIndex}
+                                            onHoverChange={setHoveredRingIndex}
+                                            className="flex flex-col gap-2"
+                                        >
+                                            <LegendItem className="hover:bg-muted/30 flex flex-col gap-1.5 rounded-lg p-2 transition-colors">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <LegendMarker className="size-2.5" />
+                                                        <LegendLabel className="text-xs font-medium" />
+                                                    </div>
+                                                    <LegendValue showPercentage className="text-xs tabular-nums" />
+                                                </div>
+                                                <LegendProgress height="h-1.5" />
+                                            </LegendItem>
+                                        </Legend>
+                                    </div>
+                                </div>
 
-                        {/* Micro-insight Footer */}
-                        <div className="border-border/60 text-muted-foreground mt-4 flex items-center justify-between border-t pt-3 text-xs">
-                            <span className="font-medium">Primary Cohort Focus</span>
-                            <span className="text-foreground font-semibold">
-                                {studentTypes[0]?.label || "Regular Freshmen"} ({studentTypes[0]?.percentage || 0}%)
-                            </span>
-                        </div>
+                                {/* Micro-insight Footer */}
+                                <div className="border-border/60 text-muted-foreground mt-4 flex items-center justify-between border-t pt-3 text-xs">
+                                    <span className="font-medium">Primary Cohort Focus</span>
+                                    <span className="text-foreground font-semibold">
+                                        {studentTypes[0]?.label ?? "—"} ({studentTypes[0]?.percentage ?? 0}%)
+                                    </span>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
+                                <IconTile variant="soft" size="lg" className="text-muted-foreground mb-3">
+                                    <PieChart className="size-5" />
+                                </IconTile>
+                                <p className="text-foreground text-sm font-semibold">No classification data</p>
+                                <p className="text-muted-foreground mt-1 max-w-xs text-xs">
+                                    Student profiles have not been classified into admission categories yet, so the mix cannot be drawn.
+                                </p>
+                            </div>
+                        )}
                     </FramePanel>
                 </Frame>
 
@@ -594,21 +520,33 @@ export default function StudentDemographicsView({ user, admin_data, currency }: 
                                 </div>
                             </FrameHeader>
 
-                            <div className="w-full pt-3">
-                                <BarChart
-                                    data={topCoursesChartData}
-                                    xDataKey="code"
-                                    orientation="horizontal"
-                                    className="h-[220px] w-full"
-                                    aspectRatio="16 / 8"
-                                    margin={{ left: 65, right: 24, top: 12, bottom: 20 }}
-                                >
-                                    <Grid vertical strokeDasharray="3 3" />
-                                    <Bar dataKey="students" fill={chartCssVars.linePrimary} lineCap="round" />
-                                    <BarYAxis />
-                                    <ChartTooltip showDatePill={false} />
-                                </BarChart>
-                            </div>
+                            {topCoursesChartData.length > 0 ? (
+                                <div className="w-full pt-3">
+                                    <BarChart
+                                        data={topCoursesChartData}
+                                        xDataKey="code"
+                                        orientation="horizontal"
+                                        className="h-[220px] w-full"
+                                        aspectRatio="16 / 8"
+                                        margin={{ left: 65, right: 24, top: 12, bottom: 20 }}
+                                    >
+                                        <Grid vertical strokeDasharray="3 3" />
+                                        <Bar dataKey="students" fill={chartCssVars.linePrimary} lineCap="round" />
+                                        <BarYAxis />
+                                        <ChartTooltip showDatePill={false} />
+                                    </BarChart>
+                                </div>
+                            ) : (
+                                <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
+                                    <IconTile variant="soft" size="lg" className="text-muted-foreground mb-3">
+                                        <GraduationCap className="size-5" />
+                                    </IconTile>
+                                    <p className="text-foreground text-sm font-semibold">No major enrolment yet</p>
+                                    <p className="text-muted-foreground mt-1 max-w-xs text-xs">
+                                        No student has been mapped to a degree program for {currentPeriod.label}, so there is nothing to rank.
+                                    </p>
+                                </div>
+                            )}
                         </FramePanel>
                     </Frame>
 
@@ -632,29 +570,40 @@ export default function StudentDemographicsView({ user, admin_data, currency }: 
                                         </div>
                                     </FrameHeader>
 
-                                    <div className="w-full pt-2">
-                                        <BarChart
-                                            data={yearLevelChartData}
-                                            xDataKey="year_level"
-                                            orientation="vertical"
-                                            className="h-[180px] w-full"
-                                            aspectRatio="16 / 9"
-                                            margin={{ left: 40, right: 16, top: 16, bottom: 28 }}
-                                        >
-                                            <Grid horizontal strokeDasharray="3 3" />
-                                            <Bar dataKey="students" fill="var(--chart-2)" lineCap="round" />
-                                            <BarXAxis />
-                                            <ChartTooltip showDatePill={false} />
-                                        </BarChart>
-                                    </div>
+                                    {yearLevelChartData.length > 0 ? (
+                                        <div className="w-full pt-2">
+                                            <BarChart
+                                                data={yearLevelChartData}
+                                                xDataKey="year_level"
+                                                orientation="vertical"
+                                                className="h-[180px] w-full"
+                                                aspectRatio="16 / 9"
+                                                margin={{ left: 40, right: 16, top: 16, bottom: 28 }}
+                                            >
+                                                <Grid horizontal strokeDasharray="3 3" />
+                                                <Bar dataKey="students" fill="var(--chart-2)" lineCap="round" />
+                                                <BarXAxis />
+                                                <ChartTooltip showDatePill={false} />
+                                            </BarChart>
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
+                                            <p className="text-foreground text-xs font-semibold">No year-level data</p>
+                                            <p className="text-muted-foreground mt-1 text-[11px]">
+                                                Academic standing has not been recorded for this term.
+                                            </p>
+                                        </div>
+                                    )}
                                 </div>
 
-                                <div className="border-border/60 text-muted-foreground mt-3 flex items-center justify-between border-t pt-2.5 text-xs">
-                                    <span className="font-medium">Largest Standing</span>
-                                    <span className="text-foreground font-semibold">
-                                        {yearLevels[0]?.year_level || "1st Year"} ({formatNumber(yearLevels[0]?.count || 0)})
-                                    </span>
-                                </div>
+                                {yearLevels.length > 0 ? (
+                                    <div className="border-border/60 text-muted-foreground mt-3 flex items-center justify-between border-t pt-2.5 text-xs">
+                                        <span className="font-medium">Largest Standing</span>
+                                        <span className="text-foreground font-semibold">
+                                            {yearLevels[0]?.year_level} ({formatNumber(Number(yearLevels[0]?.count) || 0)})
+                                        </span>
+                                    </div>
+                                ) : null}
                             </FramePanel>
                         </Frame>
 
@@ -679,42 +628,53 @@ export default function StudentDemographicsView({ user, admin_data, currency }: 
                                         </div>
                                     </FrameHeader>
 
-                                    <div className="space-y-4 pt-4">
-                                        {genderBreakdown.map((item, idx) => (
-                                            <div key={item.gender} className="space-y-1.5">
-                                                <div className="flex items-center justify-between text-xs">
-                                                    <div className="text-foreground flex items-center gap-2 font-medium">
-                                                        <span
-                                                            className="size-2.5 rounded-full"
+                                    {genderBreakdown.length > 0 ? (
+                                        <div className="space-y-4 pt-4">
+                                            {genderBreakdown.map((item, idx) => (
+                                                <div key={item.gender} className="space-y-1.5">
+                                                    <div className="flex items-center justify-between text-xs">
+                                                        <div className="text-foreground flex items-center gap-2 font-medium">
+                                                            <span
+                                                                className="size-2.5 rounded-full"
+                                                                style={{
+                                                                    backgroundColor: chartPalette[(idx + 2) % chartPalette.length],
+                                                                }}
+                                                            />
+                                                            <span>{item.gender}</span>
+                                                        </div>
+                                                        <div className="text-muted-foreground flex items-center gap-1.5 font-mono tabular-nums">
+                                                            <span className="text-foreground font-semibold">{formatNumber(item.count)}</span>
+                                                            <span>({formatPercent(item.percentage)})</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="bg-muted h-2 w-full overflow-hidden rounded-full">
+                                                        <div
+                                                            className="h-full rounded-full transition-all duration-500"
                                                             style={{
+                                                                width: `${Math.min(100, Math.max(0, item.percentage))}%`,
                                                                 backgroundColor: chartPalette[(idx + 2) % chartPalette.length],
                                                             }}
                                                         />
-                                                        <span>{item.gender}</span>
-                                                    </div>
-                                                    <div className="text-muted-foreground flex items-center gap-1.5 font-mono tabular-nums">
-                                                        <span className="text-foreground font-semibold">{formatNumber(item.count)}</span>
-                                                        <span>({formatPercent(item.percentage)})</span>
                                                     </div>
                                                 </div>
-                                                <div className="bg-muted h-2 w-full overflow-hidden rounded-full">
-                                                    <div
-                                                        className="h-full rounded-full transition-all duration-500"
-                                                        style={{
-                                                            width: `${Math.min(100, Math.max(0, item.percentage))}%`,
-                                                            backgroundColor: chartPalette[(idx + 2) % chartPalette.length],
-                                                        }}
-                                                    />
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
+                                            <p className="text-foreground text-xs font-semibold">No gender data</p>
+                                            <p className="text-muted-foreground mt-1 text-[11px]">
+                                                Gender has not been captured on student profiles for this term.
+                                            </p>
+                                        </div>
+                                    )}
                                 </div>
 
-                                <div className="border-border/60 text-muted-foreground mt-4 flex items-center justify-between border-t pt-2.5 text-xs">
-                                    <span className="font-medium">Parity Index</span>
-                                    <span className="text-foreground font-mono font-semibold tabular-nums">{genderRatioText}</span>
-                                </div>
+                                {genderBreakdown.length > 0 ? (
+                                    <div className="border-border/60 text-muted-foreground mt-4 flex items-center justify-between border-t pt-2.5 text-xs">
+                                        <span className="font-medium">Parity Index</span>
+                                        <span className="text-foreground font-mono font-semibold tabular-nums">{genderRatioText}</span>
+                                    </div>
+                                ) : null}
                             </FramePanel>
                         </Frame>
                     </div>

@@ -72,20 +72,21 @@ export default function EnrollmentAnalyticsView({ user, admin_data, currency }: 
         label: "Active Academic Term",
     };
 
-    // Target benchmark (80% of applicants or default 100 students)
-    const targetEnrolled = useMemo(() => {
-        if (applicants > 0) {
-            return Math.max(100, Math.round(applicants * 0.8));
-        }
-        return Math.max(100, enrolled > 0 ? Math.round(enrolled * 1.25) : 100);
-    }, [applicants, enrolled]);
+    /**
+     * No enrolment target is configured in the payload, so rather than invent a quota the panel
+     * reports the real applicant split: how much of intake is already matriculated versus still
+     * awaiting a decision.
+     */
+    const pipelineTotals = useMemo(() => {
+        const decided = enrolled + onLeave;
 
-    const targetProgressPercent = useMemo(() => {
-        if (targetEnrolled <= 0) {
-            return 0;
-        }
-        return Math.min(100, Math.round((enrolled / targetEnrolled) * 100));
-    }, [enrolled, targetEnrolled]);
+        return {
+            decided,
+            pending,
+            decidedShare: applicants > 0 ? Math.round((decided / applicants) * 100) : 0,
+            pendingShare: applicants > 0 ? Math.round((pending / applicants) * 100) : 0,
+        };
+    }, [applicants, enrolled, onLeave, pending]);
 
     // 4-Stage Admissions Funnel Flow (solution-analytics-3 template)
     const funnelSteps: FunnelStep[] = useMemo(() => {
@@ -170,32 +171,15 @@ export default function EnrollmentAnalyticsView({ user, admin_data, currency }: 
 
     const hasPositiveFunnelData = applicants > 0 || pending > 0 || enrolled > 0 || onLeave > 0;
 
-    // Monthly velocity trends with fallback if empty
+    // Monthly velocity trends. Never synthesised: an empty series would otherwise show fabricated
+    // enrolments and feed them into the total, average and peak readouts.
     const trendData: TrendPoint[] = useMemo(() => {
-        const raw = admin_data.enrollment_health?.trends?.length
+        return admin_data.enrollment_health?.trends?.length
             ? admin_data.enrollment_health.trends
             : admin_data.analytics?.enrollment_trends?.length
               ? admin_data.analytics.enrollment_trends
               : [];
-
-        if (raw.length > 0) {
-            return raw;
-        }
-
-        // Realistic fallback trend for the current year
-        const fallbackMonths = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-        const currentYear = new Date().getFullYear();
-        return fallbackMonths.map((m, idx) => {
-            const monthNum = String(idx + 1).padStart(2, "0");
-            const base = Math.max(15, Math.round((enrolled || 120) / 12));
-            const variance = ((idx * 7) % 11) - 4;
-            return {
-                date: `${currentYear}-${monthNum}-01`,
-                month: m,
-                enrollments: Math.max(4, base + variance),
-            };
-        });
-    }, [admin_data.enrollment_health?.trends, admin_data.analytics?.enrollment_trends, enrolled]);
+    }, [admin_data.enrollment_health?.trends, admin_data.analytics?.enrollment_trends]);
 
     const displayedTrends = useMemo(() => {
         if (velocityRange === "6M") {
@@ -216,25 +200,14 @@ export default function EnrollmentAnalyticsView({ user, admin_data, currency }: 
         return displayedTrends.reduce((max, p) => Math.max(max, Number(p.enrollments) || 0), 0);
     }, [displayedTrends]);
 
-    // Student segment breakdown
+    // Student segment breakdown. Never synthesised.
     const studentTypes = useMemo(() => {
-        const types = admin_data.student_demographics?.by_type?.length
+        return admin_data.student_demographics?.by_type?.length
             ? admin_data.student_demographics.by_type
             : admin_data.analytics?.student_types?.length
               ? admin_data.analytics.student_types
               : [];
-
-        if (types.length > 0) {
-            return types;
-        }
-
-        return [
-            { type: "regular", label: "Regular Freshmen", count: Math.round(enrolled * 0.65), percentage: 65 },
-            { type: "transferee", label: "Transferee", count: Math.round(enrolled * 0.2), percentage: 20 },
-            { type: "continuing", label: "Continuing", count: Math.round(enrolled * 0.1), percentage: 10 },
-            { type: "returnee", label: "Returnee / Shifter", count: Math.round(enrolled * 0.05), percentage: 5 },
-        ];
-    }, [admin_data.student_demographics?.by_type, admin_data.analytics?.student_types, enrolled]);
+    }, [admin_data.student_demographics?.by_type, admin_data.analytics?.student_types]);
 
     return (
         <div className="space-y-6">
@@ -580,22 +553,34 @@ export default function EnrollmentAnalyticsView({ user, admin_data, currency }: 
                             </FrameHeader>
 
                             <div className="p-4 sm:p-5">
-                                {/* Zero CLS fixed container */}
-                                <div className="relative h-[260px] min-h-[260px] w-full">
-                                    <AreaChart data={displayedTrends} xDataKey="date" className="h-[260px] w-full" aspectRatio="16 / 7">
-                                        <Grid horizontal strokeDasharray="3 3" strokeOpacity={0.3} />
-                                        <Area
-                                            dataKey="enrollments"
-                                            fill={chartCssVars.linePrimary}
-                                            fillOpacity={0.24}
-                                            stroke={chartCssVars.linePrimary}
-                                            strokeWidth={2.5}
-                                            showMarkers
-                                        />
-                                        <XAxis tickMode="data" />
-                                        <ChartTooltip showDatePill={false} />
-                                    </AreaChart>
-                                </div>
+                                {displayedTrends.length > 0 ? (
+                                    /* Zero CLS fixed container */
+                                    <div className="relative h-[260px] min-h-[260px] w-full">
+                                        <AreaChart data={displayedTrends} xDataKey="date" className="h-[260px] w-full" aspectRatio="16 / 7">
+                                            <Grid horizontal strokeDasharray="3 3" strokeOpacity={0.3} />
+                                            <Area
+                                                dataKey="enrollments"
+                                                fill={chartCssVars.linePrimary}
+                                                fillOpacity={0.24}
+                                                stroke={chartCssVars.linePrimary}
+                                                strokeWidth={2.5}
+                                                showMarkers
+                                            />
+                                            <XAxis tickMode="data" />
+                                            <ChartTooltip showDatePill={false} />
+                                        </AreaChart>
+                                    </div>
+                                ) : (
+                                    <div className="flex h-[260px] flex-col items-center justify-center px-6 text-center">
+                                        <IconTile variant="soft" size="lg" className="text-muted-foreground mb-3">
+                                            <TrendingUp className="size-5" />
+                                        </IconTile>
+                                        <p className="text-foreground text-sm font-semibold">No enrollment history</p>
+                                        <p className="text-muted-foreground mt-1 max-w-sm text-xs">
+                                            No monthly enrollment records exist for this period, so a velocity trend cannot be drawn yet.
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                         </FramePanel>
                     </Frame>
@@ -629,7 +614,7 @@ export default function EnrollmentAnalyticsView({ user, admin_data, currency }: 
                                         radius="full"
                                         className="font-semibold"
                                     >
-                                        {conversionRate >= 70 ? "Healthy Pace" : "Under Target"}
+                                        {conversionRate >= 70 ? "Strong Yield" : "Low Yield"}
                                     </Badge>
                                 </div>
                             </FrameHeader>
@@ -651,26 +636,28 @@ export default function EnrollmentAnalyticsView({ user, admin_data, currency }: 
                                     </div>
                                 </div>
 
-                                {/* Enrolled vs Target Progress (stats-10 pattern) */}
+                                {/* Applicant decision split */}
                                 <div className="border-border/40 mt-4 space-y-2.5 border-t pt-3">
                                     <div className="flex items-baseline justify-between text-xs">
-                                        <span className="text-muted-foreground font-medium">Target Matriculation Quota</span>
+                                        <span className="text-muted-foreground font-medium">Applicant Decision Split</span>
                                         <span className="text-foreground font-semibold tabular-nums">
-                                            {formatNumber(enrolled)} / {formatNumber(targetEnrolled)}
+                                            {formatNumber(pipelineTotals.decided)} decided / {formatNumber(pending)} pending
                                         </span>
                                     </div>
 
-                                    <Progress value={targetProgressPercent} className="h-2" />
+                                    <Progress value={pipelineTotals.decidedShare} className="h-2" />
 
                                     <div className="text-muted-foreground flex items-center justify-between pt-0.5 text-[11px]">
-                                        <span className="tabular-nums">{targetProgressPercent}% of goal</span>
+                                        <span className="tabular-nums">{pipelineTotals.decidedShare}% of intake decided</span>
                                         <Badge
-                                            variant={enrolled >= targetEnrolled ? "success-light" : "warning-light"}
+                                            variant={pipelineTotals.pending === 0 ? "success-light" : "warning-light"}
                                             size="xs"
                                             radius="full"
                                             className="font-mono text-[10px]"
                                         >
-                                            {enrolled >= targetEnrolled ? "Target Achieved" : `${formatNumber(targetEnrolled - enrolled)} to quota`}
+                                            {pipelineTotals.pending === 0
+                                                ? "No Awaiting Decision"
+                                                : `${formatNumber(pipelineTotals.pending)} awaiting decision`}
                                         </Badge>
                                     </div>
                                 </div>
@@ -704,28 +691,40 @@ export default function EnrollmentAnalyticsView({ user, admin_data, currency }: 
 
                             <div className="flex flex-1 flex-col justify-between space-y-4 p-4 sm:p-5">
                                 <div className="space-y-3">
-                                    {studentTypes.map((type) => {
-                                        const share = type.percentage || (enrolled > 0 ? (type.count / enrolled) * 100 : 0);
-                                        return (
-                                            <div key={type.label} className="space-y-1.5">
-                                                <div className="flex items-center justify-between text-xs">
-                                                    <span className="text-foreground font-medium">{type.label}</span>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-muted-foreground tabular-nums">{formatNumber(type.count)}</span>
-                                                        <Badge variant="secondary" size="xs" radius="full" className="font-mono tabular-nums">
-                                                            {formatPercent(share)}
-                                                        </Badge>
+                                    {studentTypes.length > 0 ? (
+                                        studentTypes.map((type) => {
+                                            const share = type.percentage || (enrolled > 0 ? (type.count / enrolled) * 100 : 0);
+                                            return (
+                                                <div key={type.label} className="space-y-1.5">
+                                                    <div className="flex items-center justify-between text-xs">
+                                                        <span className="text-foreground font-medium">{type.label}</span>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-muted-foreground tabular-nums">{formatNumber(type.count)}</span>
+                                                            <Badge variant="secondary" size="xs" radius="full" className="font-mono tabular-nums">
+                                                                {formatPercent(share)}
+                                                            </Badge>
+                                                        </div>
+                                                    </div>
+                                                    <div className="bg-muted/60 h-1.5 w-full overflow-hidden rounded-full">
+                                                        <div
+                                                            className="bg-primary/70 h-full rounded-full transition-all duration-300"
+                                                            style={{ width: `${Math.min(100, Math.max(2, share))}%` }}
+                                                        />
                                                     </div>
                                                 </div>
-                                                <div className="bg-muted/60 h-1.5 w-full overflow-hidden rounded-full">
-                                                    <div
-                                                        className="bg-primary/70 h-full rounded-full transition-all duration-300"
-                                                        style={{ width: `${Math.min(100, Math.max(2, share))}%` }}
-                                                    />
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
+                                            );
+                                        })
+                                    ) : (
+                                        <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
+                                            <IconTile variant="soft" size="lg" className="text-muted-foreground mb-3">
+                                                <Users className="size-5" />
+                                            </IconTile>
+                                            <p className="text-foreground text-xs font-semibold">No segment mix</p>
+                                            <p className="text-muted-foreground mt-1 text-[11px]">
+                                                Applicants have not been classified into admission segments yet.
+                                            </p>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Top course highlight if available */}

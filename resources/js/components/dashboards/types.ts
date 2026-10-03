@@ -7,7 +7,14 @@
  */
 
 /** Severity/emphasis of a KPI or queue item, mapped to ReUI Alert/Badge variants. */
-export type DeskTone = "success" | "warning" | "info" | "neutral";
+export type DeskTone = "success" | "warning" | "info" | "neutral" | "destructive";
+
+export type DeskUser = {
+    name: string;
+    email: string;
+    avatar?: string | null;
+    role?: string;
+};
 
 export type DeskKpi = {
     label: string;
@@ -83,6 +90,7 @@ export type DeskScope = {
 };
 
 export type DeskProps = {
+    user?: DeskUser;
     desk: DeskMeta;
     desks: DeskOption[];
     context: DeskContext;

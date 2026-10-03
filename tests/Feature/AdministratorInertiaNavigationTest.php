@@ -21,6 +21,10 @@ function administratorInertiaPageCatalog(): array
 {
     return [
         ['administrators.dashboard.legacy', 'administrators/dashboard'],
+        ['administrators.dashboard.overview', 'administrators/dashboard'],
+        ['administrators.dashboard.enrollment', 'administrators/dashboard'],
+        ['administrators.dashboard.students', 'administrators/dashboard'],
+        ['administrators.dashboard.operations', 'administrators/dashboard'],
         ['administrators.audit-logs.index', 'administrators/audit-logs/index'],
         ['administrators.classes.index', 'administrators/classes/index'],
         ['administrators.classes.create', 'administrators/classes/create'],

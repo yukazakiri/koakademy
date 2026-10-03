@@ -26,6 +26,7 @@ export type Route = {
     disabledTooltip?: string;
     separator?: boolean;
     badge?: React.ReactNode;
+    exact?: boolean;
     subs?: {
         title: string;
         link: string;
@@ -33,6 +34,7 @@ export type Route = {
         disabled?: boolean;
         disabledTooltip?: string;
         badge?: React.ReactNode;
+        exact?: boolean;
     }[];
 };
 
@@ -45,8 +47,12 @@ export default function DashboardNavigation({ routes }: { routes: Route[] }) {
     const [openCollapsible, setOpenCollapsible] = useState<string | null>(null);
 
     // Helper to determine active state
-    const isRouteActive = (link: string) => {
-        return !!(link && link !== "#" && (url === link || url.startsWith(`${link}/`)));
+    const isRouteActive = (link: string, exact = false) => {
+        if (!link || link === "#") return false;
+        const cleanUrl = url.split("?")[0].replace(/\/+$/, "") || "/";
+        const cleanLink = link.split("?")[0].replace(/\/+$/, "") || "/";
+        if (exact || cleanLink === "/") return cleanUrl === cleanLink;
+        return cleanUrl === cleanLink || cleanUrl.startsWith(`${cleanLink}/`);
     };
 
     return (
@@ -57,7 +63,7 @@ export default function DashboardNavigation({ routes }: { routes: Route[] }) {
                     const hasSubRoutes = !!route.subs?.length;
                     const isDisabled = route.disabled;
                     const hasSeparator = route.separator;
-                    const isActive = isRouteActive(route.link);
+                    const isActive = isRouteActive(route.link, route.exact);
 
                     return (
                         <React.Fragment key={route.id}>
@@ -100,7 +106,7 @@ export default function DashboardNavigation({ routes }: { routes: Route[] }) {
                                                     {/* Vertical line for hierarchy is handled by SidebarMenuSub styling usually */}
                                                     {route.subs?.map((subRoute) => {
                                                         const isSubDisabled = subRoute.disabled;
-                                                        const isSubActive = isRouteActive(subRoute.link);
+                                                        const isSubActive = isRouteActive(subRoute.link, subRoute.exact);
 
                                                         if (isSubDisabled) {
                                                             return (

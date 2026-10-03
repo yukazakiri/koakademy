@@ -101,7 +101,7 @@ final class DashboardRegistry
         return array_map(
             fn (Dashboard $desk): array => [
                 'id' => $desk->id(),
-                'title' => $desk->title(),
+                'title' => str_ends_with($desk->title(), 'Desk') ? $desk->title() : $desk->title().' Desk',
                 'description' => $desk->description(),
                 'url' => route('administrators.desks.show', $desk->id()),
             ],
@@ -145,9 +145,9 @@ final class DashboardRegistry
         return array_map(
             fn (Dashboard $desk): array => [
                 'id' => 'admin-desk-'.$desk->id(),
-                'title' => $desk->title(),
+                'title' => str_ends_with($desk->title(), 'Desk') ? $desk->title() : $desk->title().' Desk',
                 'link' => route('administrators.desks.show', $desk->id()),
-                'section' => 'core',
+                'section' => 'desks',
                 'icon' => self::DESK_ICONS[$desk->id()] ?? 'dashboard',
                 'description' => $desk->description(),
             ],

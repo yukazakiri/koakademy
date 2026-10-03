@@ -7,6 +7,7 @@ use App\Http\Controllers\AdministratorClassManagementController;
 use App\Http\Controllers\AdministratorCourseSchedulePdfController;
 use App\Http\Controllers\AdministratorCurriculumImportController;
 use App\Http\Controllers\AdministratorCurriculumManagementController;
+use App\Http\Controllers\AdministratorDashboardController;
 use App\Http\Controllers\AdministratorEnrollmentDiscountController;
 use App\Http\Controllers\AdministratorEnrollmentManagementController;
 use App\Http\Controllers\AdministratorEnrollmentPolicyController;
@@ -29,10 +30,7 @@ use App\Http\Controllers\AdministratorUserManagementController;
 use App\Http\Controllers\ApiKeyController;
 use App\Http\Controllers\UserSettingController;
 use App\Models\User;
-use App\Support\AdministratorPortalData;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
 
 // Allow any authenticated user to stop impersonating (since they might be impersonating a non-admin)
 Route::post('/administrators/users/stop-impersonating', [AdministratorUserManagementController::class, 'stopImpersonating'])
@@ -47,76 +45,19 @@ Route::middleware(['auth', 'administrators.only'])
             return redirect()->route('administrators.dashboard');
         })->name('home');
 
-        // Original role-blind dashboard, kept reachable for users whose role has no desk yet
-        // and for direct links. Superseded by the role-scoped desks below.
-        Route::get('/dashboard/overview', function () {
-            $user = Auth::user();
-
-            if (! $user instanceof User) {
-                return redirect('/login');
-            }
-
-            $portalData = AdministratorPortalData::build($user);
-
-            $quickActions = [
-                [
-                    'title' => 'Review pending approvals',
-                    'description' => 'Approve or reject the latest requests.',
-                    'href' => '/administrators/approvals',
-                    'disabled' => true,
-                    'disabledTooltip' => 'Approvals workflow coming soon',
-                ],
-                [
-                    'title' => 'View faculty directory',
-                    'description' => 'Find faculty details quickly.',
-                    'href' => '/administrators/faculties',
-                    'disabled' => false,
-                ],
-                [
-                    'title' => 'Create announcement',
-                    'description' => 'Draft and publish an announcement.',
-                    'href' => '/administrators/announcements',
-                    'disabled' => false,
-                ],
-            ];
-
-            $beginnerTips = [
-                [
-                    'title' => 'Start with the Faculty Directory',
-                    'content' => 'Use it to confirm who is assigned to which department and spot missing records.',
-                ],
-                [
-                    'title' => 'Use search often',
-                    'content' => 'Most screens will support search so you don\'t need to scroll.',
-                ],
-                [
-                    'title' => 'Look for “Coming soon” labels',
-                    'content' => 'Some tools are still being rolled out. You\'ll see clear hints when a feature is not ready yet.',
-                ],
-            ];
-
-            return Inertia::render('administrators/dashboard', [
-                'user' => [
-                    'name' => $user->name,
-                    'email' => $user->email,
-                    'avatar' => $user->avatar_url ?? null,
-                    'role' => $user->role?->getLabel() ?? 'Administrator',
-                ],
-                'admin_data' => [
-                    ...$portalData,
-                    'quick_actions' => $quickActions,
-                    'beginner_tips' => $beginnerTips,
-                ],
-                'flash' => session('flash'),
-            ]);
-        })->name('dashboard.legacy');
+        // Dedicated dashboard views
+        Route::get('/dashboard/overview', [AdministratorDashboardController::class, 'overview'])->name('dashboard.overview');
+        Route::get('/dashboard/enrollment', [AdministratorDashboardController::class, 'enrollment'])->name('dashboard.enrollment');
+        Route::get('/dashboard/students', [AdministratorDashboardController::class, 'students'])->name('dashboard.students');
+        Route::get('/dashboard/operations', [AdministratorDashboardController::class, 'operations'])->name('dashboard.operations');
+        Route::get('/dashboard/legacy', [AdministratorDashboardController::class, 'overview'])->name('dashboard.legacy');
 
         // Role-scoped desks. The registry decides which desks a user may open, so there is
         // one route for every desk rather than one route per role.
-        Route::get('/desks/{desk}', [App\Http\Controllers\AdministratorDashboardController::class, 'show'])
+        Route::get('/desks/{desk}', [AdministratorDashboardController::class, 'show'])
             ->name('desks.show');
 
-        Route::get('/dashboard', [App\Http\Controllers\AdministratorDashboardController::class, 'index'])
+        Route::get('/dashboard', [AdministratorDashboardController::class, 'index'])
             ->name('dashboard');
 
         Route::get('/settings', [App\Http\Controllers\ProfileController::class, 'index'])->name('settings.index');

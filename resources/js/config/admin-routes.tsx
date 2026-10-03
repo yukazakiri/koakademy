@@ -102,6 +102,8 @@ export interface AdminRoute extends Route {
      */
     requiredPermission?: string | string[];
     moduleSource?: string;
+    /** Match exact path only */
+    exact?: boolean;
 }
 
 export interface ModuleAdminRoute {
@@ -135,7 +137,7 @@ const MODULE_REACT_PAGES = {
 /**
  * Route sections for organizing the sidebar
  */
-export type RouteSection = "core" | "academic" | "student_services" | "finance" | "hr" | "system" | "support" | "library" | "inventory";
+export type RouteSection = "core" | "desks" | "academic" | "student_services" | "finance" | "hr" | "system" | "support" | "library" | "inventory";
 
 /**
  * Section configuration for display
@@ -152,7 +154,12 @@ export interface SectionConfig {
 export const ROUTE_SECTIONS: SectionConfig[] = [
     {
         id: "core",
-        title: "Overview",
+        title: "Dashboards",
+        allowedRoles: ALL_STAFF_ROLES,
+    },
+    {
+        id: "desks",
+        title: "Work Desks",
         allowedRoles: ALL_STAFF_ROLES,
     },
     {
@@ -210,14 +217,48 @@ export const ROUTE_SECTIONS: SectionConfig[] = [
  */
 export const ADMIN_ROUTES: AdminRoute[] = [
     // ============================================
-    // CORE - Dashboard & Overview
+    // CORE - Dashboards & Overview
     // ============================================
     {
-        id: "admin-dashboard",
-        title: "Dashboard",
+        id: "admin-dashboard-overview",
+        title: "Executive Overview",
+        link: "/administrators/dashboard/overview",
         icon: <IconDashboard className="size-4" />,
-        link: "/administrators/dashboard",
         section: "core",
+        exact: true,
+    },
+    {
+        id: "admin-dashboard-enrollment",
+        title: "Enrollment Analytics",
+        link: "/administrators/dashboard/enrollment",
+        icon: <IconChartBar className="size-4" />,
+        section: "core",
+        exact: true,
+    },
+    {
+        id: "admin-dashboard-students",
+        title: "Student Demographics",
+        link: "/administrators/dashboard/students",
+        icon: <IconUsers className="size-4" />,
+        section: "core",
+        exact: true,
+    },
+    {
+        id: "admin-dashboard-operations",
+        title: "Operations Command",
+        link: "/administrators/dashboard/operations",
+        icon: <IconShieldLock className="size-4" />,
+        section: "core",
+        exact: true,
+    },
+    {
+        id: "admin-dashboard-finance",
+        title: "Finance Desk",
+        link: "/administrators/finance",
+        icon: <IconCash className="size-4" />,
+        section: "core",
+        allowedRoles: [...SYSTEM_ADMIN_ROLES, ...FINANCE_ROLES, UserRole.President, UserRole.VicePresident],
+        exact: true,
     },
     {
         id: "admin-ai-chat",
@@ -899,6 +940,25 @@ function toComposerModuleSlug(moduleName: string): string {
         .toLowerCase();
 }
 
+/**
+ * Helper to determine if a route is currently active.
+ * Supports exact matching and prefix matching (for sub-routes).
+ */
+export function isRouteActive(currentUrl: string, routeLink: string, exact = false): boolean {
+    if (!routeLink || routeLink === "#") {
+        return false;
+    }
+
+    const cleanUrl = currentUrl.split("?")[0].replace(/\/+$/, "") || "/";
+    const cleanLink = routeLink.split("?")[0].replace(/\/+$/, "") || "/";
+
+    if (exact || cleanLink === "/") {
+        return cleanUrl === cleanLink;
+    }
+
+    return cleanUrl === cleanLink || cleanUrl.startsWith(`${cleanLink}/`);
+}
+
 export function getResolvedAdminRoutes(moduleRoutes: ModuleAdminRoute[] = [], deskRoutes: ModuleAdminRoute[] = []): AdminRoute[] {
     const deduplicatedRoutes = new Map<string, AdminRoute>();
 
@@ -912,8 +972,9 @@ export function getResolvedAdminRoutes(moduleRoutes: ModuleAdminRoute[] = [], de
     const deduplicatedLinks = new Map<string, AdminRoute>();
 
     for (const route of deduplicatedRoutes.values()) {
-        if (!deduplicatedLinks.has(route.link)) {
-            deduplicatedLinks.set(route.link, route);
+        const linkKey = `${route.section || "core"}:${route.link}`;
+        if (!deduplicatedLinks.has(linkKey)) {
+            deduplicatedLinks.set(linkKey, route);
         }
     }
 

@@ -4,18 +4,25 @@ import type { DeskProps } from "@/components/dashboards/types";
 import { Head } from "@inertiajs/react";
 
 /**
- * Renders any administrative desk.
+ * Administrative Desk Page Wrapper.
  *
- * All layout and widget composition lives in the shared kit under
- * `components/dashboards/`, so this stays a thin wrapper and a desk only has to change its
- * PHP class, never this file.
+ * Wraps role-scoped administrative desks in the unified AdminLayout, with
+ * semantic SEO/meta tags, breadcrumbs and responsive container chrome.
  */
-export default function AdministratorDesk({ desk, desks, context, scope, kpis, queues, trends, tables }: DeskProps) {
-    return (
-        <AdminLayout title={desk.title}>
-            <Head title={`${desk.title} Dashboard`} />
+export default function AdministratorDesk({ user, desk, desks, context, scope, kpis, queues, trends, tables }: DeskProps) {
+    const pageTitle = `${desk.title} Desk | Administrative Command`;
 
-            <DeskShell desk={desk} desks={desks} context={context} scope={scope} kpis={kpis} queues={queues} trends={trends} tables={tables} />
+    return (
+        <AdminLayout user={user as any} title={`${desk.title} Desk`}>
+            <Head>
+                <title>{pageTitle}</title>
+                <meta name="description" content={desk.description} />
+                <meta name="robots" content="noindex,nofollow" />
+            </Head>
+
+            <div className="py-2">
+                <DeskShell desk={desk} desks={desks} context={context} scope={scope} kpis={kpis} queues={queues} trends={trends} tables={tables} />
+            </div>
         </AdminLayout>
     );
 }

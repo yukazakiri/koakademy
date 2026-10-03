@@ -1,5 +1,73 @@
 # Changelog
 
+## [1.27.0](https://github.com/yukazakiri/koakademy/compare/v1.26.0...v1.27.0) (2026-10-03)
+
+
+### Features
+
+* **admin:** redesign administrator dashboards and role desks ([#368](https://github.com/yukazakiri/koakademy/issues/368)) ([db77f86](https://github.com/yukazakiri/koakademy/commit/db77f869062fa0f35b103f422d53b98171063b99))
+* **admin:** redesign administrator sidebar using ReUI and Spectrum UI ([2cb020a](https://github.com/yukazakiri/koakademy/commit/2cb020ac9d633f0be18140af7929ff5d43824753))
+* **admin:** role-scoped dashboard desks, and fix four unreachable sections ([#367](https://github.com/yukazakiri/koakademy/issues/367)) ([cacc147](https://github.com/yukazakiri/koakademy/commit/cacc1472d61eaa3709e734645d1c0f1feacbc98c))
+* **ai,auth:** redesign administrator ai chat with reui and adapt auth pages to active theme ([fce96b4](https://github.com/yukazakiri/koakademy/commit/fce96b4f22236f02d0b85eddbe8ff2d3a989ac17))
+* **ai:** add SHDR-14 orb to administrator chat welcome screen ([#338](https://github.com/yukazakiri/koakademy/issues/338)) ([5b5ad5f](https://github.com/yukazakiri/koakademy/commit/5b5ad5f25e1d79fe2fdcb9c8929fbbc6ce214ee1))
+* **ai:** allow administrators to upload, review, and import curriculum workbooks via MCP ([#341](https://github.com/yukazakiri/koakademy/issues/341)) ([ea2830c](https://github.com/yukazakiri/koakademy/commit/ea2830ce57bd6994a9daca08653882390b454b86))
+* **ai:** let the administrator copilot use gated external MCP servers ([#356](https://github.com/yukazakiri/koakademy/issues/356)) ([e4f49bb](https://github.com/yukazakiri/koakademy/commit/e4f49bbd841cca2fb7f8b11d076f12f7512333c4))
+* **analytics:** support multiple concurrent analytics providers and make third-party telemetry opt-in ([#363](https://github.com/yukazakiri/koakademy/issues/363)) ([9dd2b60](https://github.com/yukazakiri/koakademy/commit/9dd2b60beffc93bf8af76a9715fdb842a2ea0e4d))
+* **auth:** implement passwordless magic link login, dynamic branding, and test db isolation ([4df54a2](https://github.com/yukazakiri/koakademy/commit/4df54a295b3effeb0bc7108d3f2673ab06e0471b))
+* **auth:** redesign auth pages with ReUI split layout and isolate test database ([d5da414](https://github.com/yukazakiri/koakademy/commit/d5da4147589cdc4b7b89a38818bf3d7e3669a620))
+* **installer:** seamless domain-optional Swarm install with live progress ([ad9ae13](https://github.com/yukazakiri/koakademy/commit/ad9ae1391b4b4c618d3e545c81f30577492e1a20))
+* **mcp:** support student special equity and origin fields in ManageStudentTool ([76c7325](https://github.com/yukazakiri/koakademy/commit/76c7325595080249296a6cf83932e349438f43f5))
+* **setup:** redesign as full-page guided setup and add dynamic country catalog architecture ([0d1411d](https://github.com/yukazakiri/koakademy/commit/0d1411dc05ac1a69fadb5cb5f724ef89ca6055ba))
+* **setup:** redesign as minimalist onboarding with reui and spectrum ui ([0094036](https://github.com/yukazakiri/koakademy/commit/00940365ffbde7b705571b2cec02b1808735fe7c))
+* **setup:** revamp setup into guided onboarding experience for administrators ([2de79dd](https://github.com/yukazakiri/koakademy/commit/2de79ddf6c2c8f1edd9ce8d97bb8a4b10a9edc59))
+* **skills:** Add agent skills and optimize settings services ([499f30a](https://github.com/yukazakiri/koakademy/commit/499f30a7126c2aa68ad554637c0807e54811bd55))
+* **skills:** add and update agent skills ([009ec57](https://github.com/yukazakiri/koakademy/commit/009ec57ebfd704da3f795e9fdcd70ce8d08f159c))
+
+
+### Bug Fixes
+
+* **actions:** prevent untrusted recovery tag code execution in delivery workflow ([#343](https://github.com/yukazakiri/koakademy/issues/343)) ([6ed4e38](https://github.com/yukazakiri/koakademy/commit/6ed4e38fd7e5e0d4e8e60c7f97c06128abcba125))
+* **actions:** require cryptographic provenance verification for GHCR image replication in delivery workflow ([#342](https://github.com/yukazakiri/koakademy/issues/342)) ([244d9d1](https://github.com/yukazakiri/koakademy/commit/244d9d10a234f60729205cbe935e7e8dc2a765de))
+* **ai-chat:** global default model, tools popover, Think/Search reasoning ([#359](https://github.com/yukazakiri/koakademy/issues/359)) ([35cc988](https://github.com/yukazakiri/koakademy/commit/35cc9880cfdeec04cecc12693ac7740a88b3f52b))
+* **ai-chat:** never end a turn silently after tool failures ([#360](https://github.com/yukazakiri/koakademy/issues/360)) ([f2cafa1](https://github.com/yukazakiri/koakademy/commit/f2cafa116d9442929681914253c57999502acc51))
+* **ai:** let the copilot filter the student directory by program, status, and term ([#354](https://github.com/yukazakiri/koakademy/issues/354)) ([7caf9e6](https://github.com/yukazakiri/koakademy/commit/7caf9e61750895e6b5b151ed4ce24ddc0dfe8dc2))
+* **ai:** resolve class schedules by compound code and section identifier ([#335](https://github.com/yukazakiri/koakademy/issues/335)) ([3d8d66e](https://github.com/yukazakiri/koakademy/commit/3d8d66e35ab1c90e6278d0a0761811009ff23760))
+* **ai:** resolve faculty by employee number, read real tuition balances, and support section transfers ([#362](https://github.com/yukazakiri/koakademy/issues/362)) ([ef07644](https://github.com/yukazakiri/koakademy/commit/ef07644f9abf161bd8520b85372f6105459042e8))
+* **ai:** support batch and case-insensitive student name searches with full name parsing ([#353](https://github.com/yukazakiri/koakademy/issues/353)) ([a74a79c](https://github.com/yukazakiri/koakademy/commit/a74a79cdfb72d22c9dd14b510bac653a3e2ab94e))
+* **ai:** support document uploads across providers and preserve model search focus ([#350](https://github.com/yukazakiri/koakademy/issues/350)) ([8066b18](https://github.com/yukazakiri/koakademy/commit/8066b188782e71642abf0922f025b8bfbfa0b9d0))
+* **analytics:** resolve undefined variable crash on the analytics settings page ([#366](https://github.com/yukazakiri/koakademy/issues/366)) ([aaf1ac3](https://github.com/yukazakiri/koakademy/commit/aaf1ac34732e18839bc9ffa0dd9b836279c1ea53))
+* cross-tenant access vulnerability in ResearchPaper model ([#344](https://github.com/yukazakiri/koakademy/issues/344)) ([2b9322b](https://github.com/yukazakiri/koakademy/commit/2b9322b316803150af018733d4eec408f3e6e6c1))
+* **docs:** resolve security vulnerabilities in dependencies ([58b53ea](https://github.com/yukazakiri/koakademy/commit/58b53ea82c5cb068e49387342fe1319d3879c8c7))
+* enforce faculty-to-class ownership authorization in Faculty Copilot AI tools ([#348](https://github.com/yukazakiri/koakademy/issues/348)) ([2dd8c5b](https://github.com/yukazakiri/koakademy/commit/2dd8c5b93ab35accdcba547381147784544406f4))
+* enforce manage_clearance permission in AI tools and student controllers ([#345](https://github.com/yukazakiri/koakademy/issues/345)) ([d4ab4b2](https://github.com/yukazakiri/koakademy/commit/d4ab4b2a71a129c55cabb54d911f4a965e88ed5a))
+* **enrollments:** validate tuition IDs belong to selected student in Cashier ([#349](https://github.com/yukazakiri/koakademy/issues/349)) ([2325251](https://github.com/yukazakiri/koakademy/commit/232525185b0be7bfe6e4a742129bf77a361b8d78))
+* mitigate stored XSS in student name fields with defense-in-depth sanitization ([#346](https://github.com/yukazakiri/koakademy/issues/346)) ([7cb9dbe](https://github.com/yukazakiri/koakademy/commit/7cb9dbecd93bd4178f0b10f77f90e9ff834bd2f6))
+* **reports:** deduplicate CHED program lines and add inspector options ([#355](https://github.com/yukazakiri/koakademy/issues/355)) ([45c8cf9](https://github.com/yukazakiri/koakademy/commit/45c8cf94f766f2726be7efa5c3c01ccbf91eba2e))
+* **reports:** guard memory limit and timeout in regulatory export job ([#357](https://github.com/yukazakiri/koakademy/issues/357)) ([c5313b8](https://github.com/yukazakiri/koakademy/commit/c5313b8be785b2450b1fcf222343f2e40d03a3c8))
+* stored XSS vulnerability in Cashier transaction descriptions ([#347](https://github.com/yukazakiri/koakademy/issues/347)) ([5b1ed4d](https://github.com/yukazakiri/koakademy/commit/5b1ed4d291009956e0d3cd1c3f84dc9dcd10acde))
+* **student:** improve tuition request experience ([#332](https://github.com/yukazakiri/koakademy/issues/332)) ([3b9b755](https://github.com/yukazakiri/koakademy/commit/3b9b75530eb17fc8808fbf0a9367896806600312))
+* **students:** initialize active filters synchronously from props on students directory ([7d9eba3](https://github.com/yukazakiri/koakademy/commit/7d9eba3ae8250a3b5a6ef821cc1433e9309cded9))
+* **ui:** resolve white text on buttons and select triggers in light mode ([718e0de](https://github.com/yukazakiri/koakademy/commit/718e0de2164933e2077c1b311a632bf6c9c02b4c))
+
+
+### Performance Improvements
+
+* **core:** memoize global feature states and general settings instances ([b6dd815](https://github.com/yukazakiri/koakademy/commit/b6dd81546171bac0efd9bce3ed8006d3858d1bfe))
+* **students:** aggregate status counts in single query and optimize fullName attribute ([5ddb450](https://github.com/yukazakiri/koakademy/commit/5ddb450858ef93c60c81117d5d4a2426a729ca8a))
+* **students:** make year-level edits instant instead of a full page redirect ([#358](https://github.com/yukazakiri/koakademy/issues/358)) ([144ff9d](https://github.com/yukazakiri/koakademy/commit/144ff9dd30ad83a7bf9b4618a6dfd8c06f8c3363))
+* **system-management:** optimize page load, payload size, and permission resolution ([c6c9c76](https://github.com/yukazakiri/koakademy/commit/c6c9c766d18e50842fabaed2fa9876c2d6f3e49e))
+
+
+### Tests
+
+* purge redundant and non-behavioral test suites ([09c047f](https://github.com/yukazakiri/koakademy/commit/09c047f1c02f9e0bf41a564cda4d81447be582a2))
+* upgrade Laravel AI SDK to 1.0 ([#337](https://github.com/yukazakiri/koakademy/issues/337)) ([d56ffd0](https://github.com/yukazakiri/koakademy/commit/d56ffd00a836eaf705f5ca24dd6ae36d3e16b926))
+
+
+### Maintenance
+
+* **deps:** update Laravel to 13.33 ([#336](https://github.com/yukazakiri/koakademy/issues/336)) ([63ef10a](https://github.com/yukazakiri/koakademy/commit/63ef10a976b36912bf96343dc88bdf110c27c69e))
+
 ## [1.26.0](https://github.com/yukazakiri/koakademy/compare/v1.25.0...v1.26.0) (2026-09-23)
 
 

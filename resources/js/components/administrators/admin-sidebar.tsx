@@ -6,13 +6,14 @@ import {
     IconCash,
     IconDashboard,
     IconHelp,
+    IconReportAnalytics,
     IconSchool,
     IconServer,
     IconTools,
     IconUser,
 } from "@tabler/icons-react";
-import { SearchX } from "lucide-react";
 import { motion } from "framer-motion";
+import { SearchX } from "lucide-react";
 import * as React from "react";
 
 import { NavUser } from "@/components/nav-user";
@@ -38,6 +39,7 @@ import {
 import {
     getRoutesForRoleWithModules,
     getSectionTitle,
+    isRouteActive,
     ROUTE_SECTIONS,
     type AdminRoute,
     type ModuleAdminRoute,
@@ -78,6 +80,7 @@ interface AdminSidebarCounts {
 // Section icons mapping
 const SECTION_ICONS: Record<RouteSection, React.ElementType> = {
     core: IconDashboard,
+    desks: IconReportAnalytics,
     academic: IconSchool,
     student_services: IconUser,
     finance: IconCash,
@@ -184,26 +187,21 @@ function useOrganizedRoutes(
     }, [deskRoutes, libraryEnabled, moduleRoutes, userPermissions, userRole]);
 }
 
-function isRouteActive(currentUrl: string, routeLink: string, exact = false): boolean {
+function isParentRouteActive(currentUrl: string, routeLink: string, subs?: { link: string; exact?: boolean }[], exact = false): boolean {
     if (exact) {
-        return currentUrl === routeLink;
+        return isRouteActive(currentUrl, routeLink, true);
     }
-
-    return currentUrl === routeLink || currentUrl.startsWith(`${routeLink}/`);
-}
-
-function isParentRouteActive(currentUrl: string, routeLink: string, subs?: { link: string }[]): boolean {
-    if (currentUrl === routeLink) {
+    if (isRouteActive(currentUrl, routeLink, true)) {
         return true;
     }
     if (subs) {
         for (const sub of subs) {
-            if (currentUrl.startsWith(sub.link)) {
+            if (isRouteActive(currentUrl, sub.link, sub.exact)) {
                 return false;
             }
         }
     }
-    return currentUrl.startsWith(`${routeLink}/`);
+    return isRouteActive(currentUrl, routeLink, false);
 }
 
 function getActiveSectionFromUrl(
@@ -211,23 +209,49 @@ function getActiveSectionFromUrl(
     groupedRoutes: Map<RouteSection, AdminRoute[]>,
     sectionsWithRoutes: { id: RouteSection }[],
 ): RouteSection {
-    // Find which section contains the current URL
+    // 1. Exact match first: prefer a section containing a route or subroute matching exactly
     for (const section of sectionsWithRoutes) {
         const routes = groupedRoutes.get(section.id) || [];
         for (const route of routes) {
-            if (currentUrl.startsWith(route.link)) {
+            if (isRouteActive(currentUrl, route.link, true)) {
                 return section.id;
             }
-            // Check sub-routes too
             if (route.subs) {
                 for (const sub of route.subs) {
-                    if (currentUrl.startsWith(sub.link)) {
+                    if (isRouteActive(currentUrl, sub.link, true)) {
                         return section.id;
                     }
                 }
             }
         }
     }
+
+    // 2. Prefix match: pick section with longest matching route link (skipping exact-only routes)
+    let bestSection: RouteSection | null = null;
+    let longestMatchLen = -1;
+
+    for (const section of sectionsWithRoutes) {
+        const routes = groupedRoutes.get(section.id) || [];
+        for (const route of routes) {
+            if (!route.exact && isRouteActive(currentUrl, route.link, false) && route.link.length > longestMatchLen) {
+                longestMatchLen = route.link.length;
+                bestSection = section.id;
+            }
+            if (route.subs) {
+                for (const sub of route.subs) {
+                    if (!sub.exact && isRouteActive(currentUrl, sub.link, false) && sub.link.length > longestMatchLen) {
+                        longestMatchLen = sub.link.length;
+                        bestSection = section.id;
+                    }
+                }
+            }
+        }
+    }
+
+    if (bestSection) {
+        return bestSection;
+    }
+
     // Default to first section if no match found
     return sectionsWithRoutes.length > 0 ? sectionsWithRoutes[0].id : "core";
 }
@@ -246,7 +270,7 @@ function Highlighted({ text, query }: { text: string; query: string }) {
     return (
         <>
             {before}
-            <span className="rounded-xs bg-primary/20 text-primary font-medium px-0.5">{match}</span>
+            <span className="bg-primary/20 text-primary rounded-xs px-0.5 font-medium">{match}</span>
             {after}
         </>
     );
@@ -363,7 +387,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                     variant="secondary"
                     size="xs"
                     radius="full"
-                    className="tabular-nums font-mono text-[10px] h-4.5 min-w-4.5 px-1.5 font-medium bg-muted/80 text-muted-foreground"
+                    className="bg-muted/80 text-muted-foreground h-4.5 min-w-4.5 px-1.5 font-mono text-[10px] font-medium tabular-nums"
                 >
                     {numberFormatter.format(count)}
                 </Badge>
@@ -378,12 +402,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
             const countBadge = renderCountBadge(routeCountMap[routeId]);
             const routeBadge = badge ? (
                 typeof badge === "string" ? (
-                    <Badge
-                        variant="primary-light"
-                        size="xs"
-                        radius="default"
-                        className="font-semibold text-[10px] tracking-wide"
-                    >
+                    <Badge variant="primary-light" size="xs" radius="default" className="text-[10px] font-semibold tracking-wide">
                         {badge}
                     </Badge>
                 ) : (
@@ -396,7 +415,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
             }
 
             return (
-                <span className="ml-auto inline-flex items-center gap-1.5 shrink-0">
+                <span className="ml-auto inline-flex shrink-0 items-center gap-1.5">
                     {countBadge}
                     {routeBadge}
                 </span>
@@ -409,7 +428,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
     if (isMobile) {
         return (
             <Sidebar collapsible="offcanvas" className="overflow-hidden">
-                <SidebarHeader className="gap-2.5 border-b border-sidebar-border/60 p-3">
+                <SidebarHeader className="border-sidebar-border/60 gap-2.5 border-b p-3">
                     <SchoolSwitcher />
 
                     <div className="flex items-center justify-between">
@@ -434,7 +453,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                             <button
                                 type="button"
                                 onClick={() => setSearchQuery("")}
-                                className="text-xs text-muted-foreground hover:text-foreground font-medium transition-colors"
+                                className="text-muted-foreground hover:text-foreground text-xs font-medium transition-colors"
                             >
                                 Clear
                             </button>
@@ -442,7 +461,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                     </div>
 
                     {/* Section Selector Pills */}
-                    <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 scrollbar-none">
+                    <div className="-mx-1 flex scrollbar-none gap-1.5 overflow-x-auto px-1 pb-1">
                         {sectionsWithRoutes.map((section) => {
                             const isActive = displayedSection === section.id;
                             const Icon = SECTION_ICONS[section.id];
@@ -482,7 +501,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                 {searchQuery.trim() ? (
                                     filteredRoutes && filteredRoutes.length > 0 ? (
                                         filteredRoutes.map((route) => {
-                                            const isActive = isRouteActive(currentUrl, route.link);
+                                            const isActive = isRouteActive(currentUrl, route.link, route.exact);
                                             const badgeContent = renderRouteBadge(route.id, route.badge);
                                             return (
                                                 <SidebarMenuItem key={route.id}>
@@ -496,25 +515,25 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                                     >
                                                         <AdminLink href={route.link} prefetch cacheFor="30s">
                                                             {route.icon && (
-                                                                <span className="size-4 shrink-0 text-muted-foreground [&_svg]:size-4">
+                                                                <span className="text-muted-foreground size-4 shrink-0 [&_svg]:size-4">
                                                                     {route.icon}
                                                                 </span>
                                                             )}
-                                                            <div className="flex flex-col min-w-0 flex-1">
+                                                            <div className="flex min-w-0 flex-1 flex-col">
                                                                 <span className="truncate text-xs font-medium">
                                                                     <Highlighted text={route.title} query={searchQuery} />
                                                                 </span>
-                                                                <div className="flex items-center gap-1.5 mt-0.5">
+                                                                <div className="mt-0.5 flex items-center gap-1.5">
                                                                     <Badge
                                                                         variant="outline"
                                                                         size="xs"
                                                                         radius="default"
-                                                                        className="text-[9px] h-3.5 px-1 py-0 font-normal border-sidebar-border/80 text-muted-foreground"
+                                                                        className="border-sidebar-border/80 text-muted-foreground h-3.5 px-1 py-0 text-[9px] font-normal"
                                                                     >
                                                                         {route.sectionLabel}
                                                                     </Badge>
                                                                     {route.isSub && route.parentTitle && (
-                                                                        <span className="text-[10px] text-muted-foreground/70 truncate">
+                                                                        <span className="text-muted-foreground/70 truncate text-[10px]">
                                                                             via {route.parentTitle}
                                                                         </span>
                                                                     )}
@@ -529,17 +548,17 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                     ) : (
                                         <SidebarMenuItem>
                                             <div className="flex flex-col items-center justify-center p-6 text-center">
-                                                <div className="flex size-10 items-center justify-center rounded-full bg-muted/60 mb-2">
-                                                    <SearchX className="size-5 text-muted-foreground/70" />
+                                                <div className="bg-muted/60 mb-2 flex size-10 items-center justify-center rounded-full">
+                                                    <SearchX className="text-muted-foreground/70 size-5" />
                                                 </div>
-                                                <p className="text-xs font-medium text-foreground">No matches found</p>
-                                                <p className="text-[11px] text-muted-foreground mt-0.5">
+                                                <p className="text-foreground text-xs font-medium">No matches found</p>
+                                                <p className="text-muted-foreground mt-0.5 text-[11px]">
                                                     No navigation items matching &ldquo;{searchQuery}&rdquo;
                                                 </p>
                                                 <button
                                                     type="button"
                                                     onClick={() => setSearchQuery("")}
-                                                    className="mt-3 text-xs text-primary font-medium hover:underline"
+                                                    className="text-primary mt-3 text-xs font-medium hover:underline"
                                                 >
                                                     Clear search
                                                 </button>
@@ -551,7 +570,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                         const hasSubs = route.subs && route.subs.length > 0;
 
                                         if (hasSubs) {
-                                            const isActive = isParentRouteActive(currentUrl, route.link, route.subs);
+                                            const isActive = isParentRouteActive(currentUrl, route.link, route.subs, route.exact);
                                             const badgeContent = renderRouteBadge(route.id, route.badge);
 
                                             return (
@@ -566,17 +585,21 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                                     >
                                                         <AdminLink href={route.link} prefetch cacheFor="30s">
                                                             {route.icon && (
-                                                                <span className="size-4 shrink-0 text-muted-foreground [&_svg]:size-4">
+                                                                <span className="text-muted-foreground size-4 shrink-0 [&_svg]:size-4">
                                                                     {route.icon}
                                                                 </span>
                                                             )}
-                                                            <span className="truncate flex-1">{route.title}</span>
+                                                            <span className="flex-1 truncate">{route.title}</span>
                                                             {badgeContent}
                                                         </AdminLink>
                                                     </SidebarMenuButton>
-                                                    <SidebarMenuSub className="relative ml-4 pl-2 border-l border-sidebar-border/60 space-y-0.5 my-1">
+                                                    <SidebarMenuSub className="border-sidebar-border/60 relative my-1 ml-4 space-y-0.5 border-l pl-2">
                                                         {route.subs?.map((sub, idx) => {
-                                                            const isSubActive = isRouteActive(currentUrl, sub.link, sub.link === route.link);
+                                                            const isSubActive = isRouteActive(
+                                                                currentUrl,
+                                                                sub.link,
+                                                                sub.exact ?? sub.link === route.link,
+                                                            );
                                                             return (
                                                                 <SidebarMenuSubItem key={idx}>
                                                                     <SidebarMenuSubButton
@@ -591,9 +614,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                                                     >
                                                                         <AdminLink href={sub.link} prefetch cacheFor="30s">
                                                                             {sub.icon && (
-                                                                                <span className="size-3.5 shrink-0 [&_svg]:size-3.5">
-                                                                                    {sub.icon}
-                                                                                </span>
+                                                                                <span className="size-3.5 shrink-0 [&_svg]:size-3.5">{sub.icon}</span>
                                                                             )}
                                                                             <span className="truncate">{sub.title}</span>
                                                                         </AdminLink>
@@ -606,7 +627,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                             );
                                         }
 
-                                        const isActive = isRouteActive(currentUrl, route.link);
+                                        const isActive = isRouteActive(currentUrl, route.link, route.exact);
                                         const badgeContent = renderRouteBadge(route.id, route.badge);
 
                                         return (
@@ -621,11 +642,9 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                                 >
                                                     <AdminLink href={route.link} prefetch cacheFor="30s">
                                                         {route.icon && (
-                                                            <span className="size-4 shrink-0 text-muted-foreground [&_svg]:size-4">
-                                                                {route.icon}
-                                                            </span>
+                                                            <span className="text-muted-foreground size-4 shrink-0 [&_svg]:size-4">{route.icon}</span>
                                                         )}
-                                                        <span className="truncate flex-1">{route.title}</span>
+                                                        <span className="flex-1 truncate">{route.title}</span>
                                                         {badgeContent}
                                                     </AdminLink>
                                                 </SidebarMenuButton>
@@ -638,19 +657,14 @@ export function AdministratorSidebar({ user }: { user: User }) {
                     </SidebarGroup>
                 </SidebarContent>
 
-                <SidebarFooter className="border-t border-sidebar-border/60 p-3">
-                    <div className="flex items-center justify-between w-full">
-                        <AdminLink
-                            href="/changelog"
-                            prefetch
-                            cacheFor="30s"
-                            className="inline-flex items-center transition-opacity hover:opacity-85"
-                        >
+                <SidebarFooter className="border-sidebar-border/60 border-t p-3">
+                    <div className="flex w-full items-center justify-between">
+                        <AdminLink href="/changelog" prefetch cacheFor="30s" className="inline-flex items-center transition-opacity hover:opacity-85">
                             <Badge
                                 variant="outline"
                                 size="sm"
                                 radius="full"
-                                className="gap-1.5 font-mono text-[10px] font-medium border-sidebar-border/70 bg-sidebar/50 text-muted-foreground hover:text-foreground"
+                                className="border-sidebar-border/70 bg-sidebar/50 text-muted-foreground hover:text-foreground gap-1.5 font-mono text-[10px] font-medium"
                             >
                                 <span className="relative flex size-1.5">
                                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
@@ -659,9 +673,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                 v{version}
                             </Badge>
                         </AdminLink>
-                        <span className="text-[11px] font-medium text-muted-foreground/70 truncate max-w-[130px]">
-                            {organizationShortName}
-                        </span>
+                        <span className="text-muted-foreground/70 max-w-[130px] truncate text-[11px] font-medium">{organizationShortName}</span>
                     </div>
                 </SidebarFooter>
             </Sidebar>
@@ -672,7 +684,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
     return (
         <Sidebar
             collapsible="icon"
-            className="overflow-hidden border-r border-sidebar-border/60"
+            className="border-sidebar-border/60 overflow-hidden border-r"
             style={
                 {
                     "--sidebar-width": ADMIN_SIDEBAR_WIDTH,
@@ -684,20 +696,20 @@ export function AdministratorSidebar({ user }: { user: User }) {
                 {/* First Sidebar - Icon Rail Navigation */}
                 <Sidebar
                     collapsible="none"
-                    className="bg-sidebar border-r border-sidebar-border/60 flex flex-col justify-between"
+                    className="bg-sidebar border-sidebar-border/60 flex flex-col justify-between border-r"
                     style={
                         {
                             "--sidebar-width": ADMIN_SIDEBAR_ICON_WIDTH,
                         } as React.CSSProperties
                     }
                 >
-                    <SidebarHeader className="p-2 flex items-center justify-center">
+                    <SidebarHeader className="flex items-center justify-center p-2">
                         <SidebarMenu>
                             <SidebarMenuItem>
                                 <SidebarMenuButton
                                     size="lg"
                                     asChild
-                                    className="h-9 w-9 p-0 flex items-center justify-center rounded-xl"
+                                    className="flex h-9 w-9 items-center justify-center rounded-xl p-0"
                                     tooltip={{
                                         children: `${appName} • Dashboard`,
                                         hidden: false,
@@ -707,13 +719,9 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                         <motion.div
                                             whileHover={{ scale: 1.05 }}
                                             whileTap={{ scale: 0.95 }}
-                                            className="bg-sidebar-primary/10 text-sidebar-primary border border-sidebar-border/60 flex aspect-square size-8 items-center justify-center overflow-hidden rounded-lg shadow-2xs transition-colors hover:bg-sidebar-primary/20"
+                                            className="bg-sidebar-primary/10 text-sidebar-primary border-sidebar-border/60 hover:bg-sidebar-primary/20 flex aspect-square size-8 items-center justify-center overflow-hidden rounded-lg border shadow-2xs transition-colors"
                                         >
-                                            <img
-                                                src={branding.logo}
-                                                alt={`${organizationShortName} Logo`}
-                                                className="size-5 object-contain"
-                                            />
+                                            <img src={branding.logo} alt={`${organizationShortName} Logo`} className="size-5 object-contain" />
                                         </motion.div>
                                     </AdminLink>
                                 </SidebarMenuButton>
@@ -724,7 +732,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                     <SidebarContent className="flex-1 px-1 py-1">
                         <SidebarGroup className="p-0">
                             <SidebarGroupContent>
-                                <SidebarMenu className="gap-1 items-center">
+                                <SidebarMenu className="items-center gap-1">
                                     {sectionsWithRoutes.map((section) => {
                                         const Icon = SECTION_ICONS[section.id];
                                         const isActive = displayedSection === section.id;
@@ -737,7 +745,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                         }
 
                                         return (
-                                            <SidebarMenuItem key={section.id} className="w-full flex justify-center">
+                                            <SidebarMenuItem key={section.id} className="flex w-full justify-center">
                                                 <SidebarMenuButton
                                                     tooltip={{
                                                         children: `${getSectionTitle(section.id)} (${sectionRoutesCount} modules)`,
@@ -749,7 +757,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                                     }}
                                                     isActive={isActive}
                                                     className={cn(
-                                                        "relative h-9 w-9 p-0 flex items-center justify-center rounded-lg transition-all duration-150",
+                                                        "relative flex h-9 w-9 items-center justify-center rounded-lg p-0 transition-all duration-150",
                                                         isActive
                                                             ? "bg-sidebar-accent text-sidebar-primary font-medium shadow-2xs"
                                                             : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50",
@@ -758,23 +766,18 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                                     {isActive && (
                                                         <motion.span
                                                             layoutId="rail-active-indicator"
-                                                            className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r-full bg-primary"
+                                                            className="bg-primary absolute top-1.5 bottom-1.5 left-0 w-1 rounded-r-full"
                                                             transition={{ type: "spring", stiffness: 450, damping: 35 }}
                                                         />
                                                     )}
-                                                    <Icon
-                                                        className={cn(
-                                                            "size-4 shrink-0 transition-transform",
-                                                            isActive && "scale-105",
-                                                        )}
-                                                    />
+                                                    <Icon className={cn("size-4 shrink-0 transition-transform", isActive && "scale-105")} />
                                                     <span className="sr-only">{getSectionTitle(section.id)}</span>
                                                     {badgeCount > 0 && (
                                                         <Badge
                                                             variant="destructive"
                                                             size="xs"
                                                             radius="full"
-                                                            className="absolute -top-1 -right-1 font-bold h-4 min-w-4 px-1 text-[9px] shadow-xs"
+                                                            className="absolute -top-1 -right-1 h-4 min-w-4 px-1 text-[9px] font-bold shadow-xs"
                                                         >
                                                             {badgeCount > 9 ? "9+" : badgeCount}
                                                         </Badge>
@@ -788,18 +791,12 @@ export function AdministratorSidebar({ user }: { user: User }) {
                         </SidebarGroup>
                     </SidebarContent>
 
-                    <SidebarFooter className="p-2 gap-2 flex flex-col items-center border-t border-sidebar-border/40 [&_[data-sidebar=menu-button]_.grid]:hidden [&_[data-sidebar=menu-button]_.ml-auto]:hidden">
+                    <SidebarFooter className="border-sidebar-border/40 flex flex-col items-center gap-2 border-t p-2 [&_[data-sidebar=menu-button]_.grid]:hidden [&_[data-sidebar=menu-button]_.ml-auto]:hidden">
                         {/* Spectrum UI Notification Bell with Popover Trigger */}
                         <NotificationsPopover
                             baseUrl="/administrators/notifications"
                             inboxUrl="/administrators/notifications/inbox"
-                            renderTrigger={(unreadCount) => (
-                                <NotificationBell
-                                    count={unreadCount}
-                                    size="sm"
-                                    className="h-8 w-8 rounded-lg"
-                                />
-                            )}
+                            renderTrigger={(unreadCount) => <NotificationBell count={unreadCount} size="sm" className="h-8 w-8 rounded-lg" />}
                         />
                         <NavUser user={navUserData} />
                     </SidebarFooter>
@@ -808,24 +805,22 @@ export function AdministratorSidebar({ user }: { user: User }) {
                 {/* Second Sidebar - Section Content Pane */}
                 <Sidebar
                     collapsible="none"
-                    className="flex-1 bg-sidebar/50"
+                    className="bg-sidebar/50 flex-1"
                     style={
                         {
                             "--sidebar-width": ADMIN_SIDEBAR_CONTENT_WIDTH,
                         } as React.CSSProperties
                     }
                 >
-                    <SidebarHeader className="gap-2.5 border-b border-sidebar-border/60 p-3">
+                    <SidebarHeader className="border-sidebar-border/60 gap-2.5 border-b p-3">
                         <SchoolSwitcher />
 
                         {/* Section Title Banner with ReUI Badge */}
                         <div className="flex w-full items-center justify-between">
                             {searchQuery.trim() ? (
-                                <div className="flex items-center justify-between w-full">
-                                    <div className="flex items-center gap-1.5 min-w-0">
-                                        <span className="text-xs font-semibold text-foreground truncate">
-                                            Search
-                                        </span>
+                                <div className="flex w-full items-center justify-between">
+                                    <div className="flex min-w-0 items-center gap-1.5">
+                                        <span className="text-foreground truncate text-xs font-semibold">Search</span>
                                         <Badge variant="primary-light" size="xs" radius="full">
                                             {filteredRoutes?.length ?? 0}
                                         </Badge>
@@ -833,29 +828,24 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                     <button
                                         type="button"
                                         onClick={() => setSearchQuery("")}
-                                        className="text-[11px] text-muted-foreground hover:text-foreground transition-colors font-medium"
+                                        className="text-muted-foreground hover:text-foreground text-[11px] font-medium transition-colors"
                                     >
                                         Clear
                                     </button>
                                 </div>
                             ) : (
-                                <div className="flex items-center justify-between w-full">
-                                    <div className="flex items-center gap-2 min-w-0">
+                                <div className="flex w-full items-center justify-between">
+                                    <div className="flex min-w-0 items-center gap-2">
                                         {CurrentSectionIcon && (
-                                            <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                                            <span className="bg-primary/10 text-primary flex size-6 shrink-0 items-center justify-center rounded-md">
                                                 <CurrentSectionIcon className="size-3.5" />
                                             </span>
                                         )}
-                                        <span className="text-sm font-semibold tracking-tight text-foreground truncate">
+                                        <span className="text-foreground truncate text-sm font-semibold tracking-tight">
                                             {getSectionTitle(displayedSection)}
                                         </span>
                                     </div>
-                                    <Badge
-                                        variant="secondary"
-                                        size="xs"
-                                        radius="full"
-                                        className="font-mono text-[10px]"
-                                    >
+                                    <Badge variant="secondary" size="xs" radius="full" className="font-mono text-[10px]">
                                         {activeRoutes.length}
                                     </Badge>
                                 </div>
@@ -881,7 +871,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                         // Search results list
                                         filteredRoutes && filteredRoutes.length > 0 ? (
                                             filteredRoutes.map((route) => {
-                                                const isActive = isRouteActive(currentUrl, route.link);
+                                                const isActive = isRouteActive(currentUrl, route.link, route.exact);
                                                 const badgeContent = renderRouteBadge(route.id, route.badge);
                                                 return (
                                                     <SidebarMenuItem key={route.id}>
@@ -895,25 +885,25 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                                         >
                                                             <AdminLink href={route.link} prefetch cacheFor="30s">
                                                                 {route.icon && (
-                                                                    <span className="size-4 shrink-0 text-muted-foreground group-hover/search-item:text-foreground transition-colors [&_svg]:size-4">
+                                                                    <span className="text-muted-foreground group-hover/search-item:text-foreground size-4 shrink-0 transition-colors [&_svg]:size-4">
                                                                         {route.icon}
                                                                     </span>
                                                                 )}
-                                                                <div className="flex flex-col min-w-0 flex-1">
+                                                                <div className="flex min-w-0 flex-1 flex-col">
                                                                     <span className="truncate text-xs font-medium">
                                                                         <Highlighted text={route.title} query={searchQuery} />
                                                                     </span>
-                                                                    <div className="flex items-center gap-1.5 mt-0.5">
+                                                                    <div className="mt-0.5 flex items-center gap-1.5">
                                                                         <Badge
                                                                             variant="outline"
                                                                             size="xs"
                                                                             radius="default"
-                                                                            className="text-[9px] h-3.5 px-1 py-0 font-normal border-sidebar-border/80 text-muted-foreground"
+                                                                            className="border-sidebar-border/80 text-muted-foreground h-3.5 px-1 py-0 text-[9px] font-normal"
                                                                         >
                                                                             {route.sectionLabel}
                                                                         </Badge>
                                                                         {route.isSub && route.parentTitle && (
-                                                                            <span className="text-[10px] text-muted-foreground/70 truncate">
+                                                                            <span className="text-muted-foreground/70 truncate text-[10px]">
                                                                                 via {route.parentTitle}
                                                                             </span>
                                                                         )}
@@ -928,17 +918,17 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                         ) : (
                                             <SidebarMenuItem>
                                                 <div className="flex flex-col items-center justify-center p-6 text-center">
-                                                    <div className="flex size-10 items-center justify-center rounded-full bg-muted/60 mb-2">
-                                                        <SearchX className="size-5 text-muted-foreground/70" />
+                                                    <div className="bg-muted/60 mb-2 flex size-10 items-center justify-center rounded-full">
+                                                        <SearchX className="text-muted-foreground/70 size-5" />
                                                     </div>
-                                                    <p className="text-xs font-medium text-foreground">No matches found</p>
-                                                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                                                    <p className="text-foreground text-xs font-medium">No matches found</p>
+                                                    <p className="text-muted-foreground mt-0.5 text-[11px]">
                                                         No routes matching &ldquo;{searchQuery}&rdquo;
                                                     </p>
                                                     <button
                                                         type="button"
                                                         onClick={() => setSearchQuery("")}
-                                                        className="mt-3 text-xs text-primary font-medium hover:underline"
+                                                        className="text-primary mt-3 text-xs font-medium hover:underline"
                                                     >
                                                         Clear search filter
                                                     </button>
@@ -951,7 +941,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                             const hasSubs = route.subs && route.subs.length > 0;
 
                                             if (hasSubs) {
-                                                const isActive = isParentRouteActive(currentUrl, route.link, route.subs);
+                                                const isActive = isParentRouteActive(currentUrl, route.link, route.subs, route.exact);
                                                 const badgeContent = renderRouteBadge(route.id, route.badge);
 
                                                 return (
@@ -966,17 +956,21 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                                         >
                                                             <AdminLink href={route.link} prefetch cacheFor="30s">
                                                                 {route.icon && (
-                                                                    <span className="size-4 shrink-0 text-muted-foreground group-hover/item:text-foreground transition-colors [&_svg]:size-4">
+                                                                    <span className="text-muted-foreground group-hover/item:text-foreground size-4 shrink-0 transition-colors [&_svg]:size-4">
                                                                         {route.icon}
                                                                     </span>
                                                                 )}
-                                                                <span className="truncate flex-1 text-xs">{route.title}</span>
+                                                                <span className="flex-1 truncate text-xs">{route.title}</span>
                                                                 {badgeContent}
                                                             </AdminLink>
                                                         </SidebarMenuButton>
-                                                        <SidebarMenuSub className="relative ml-4 pl-2 border-l border-sidebar-border/60 space-y-0.5 my-0.5">
+                                                        <SidebarMenuSub className="border-sidebar-border/60 relative my-0.5 ml-4 space-y-0.5 border-l pl-2">
                                                             {route.subs?.map((sub, idx) => {
-                                                                const isSubActive = isRouteActive(currentUrl, sub.link, sub.link === route.link);
+                                                                const isSubActive = isRouteActive(
+                                                                    currentUrl,
+                                                                    sub.link,
+                                                                    sub.exact ?? sub.link === route.link,
+                                                                );
                                                                 return (
                                                                     <SidebarMenuSubItem key={idx}>
                                                                         <SidebarMenuSubButton
@@ -991,7 +985,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                                                         >
                                                                             <AdminLink href={sub.link} prefetch cacheFor="30s">
                                                                                 {isSubActive && (
-                                                                                    <span className="absolute left-[-9px] top-1/2 -translate-y-1/2 size-1.5 rounded-full bg-primary" />
+                                                                                    <span className="bg-primary absolute top-1/2 left-[-9px] size-1.5 -translate-y-1/2 rounded-full" />
                                                                                 )}
                                                                                 {sub.icon && (
                                                                                     <span className="size-3.5 shrink-0 [&_svg]:size-3.5">
@@ -1009,7 +1003,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                                 );
                                             }
 
-                                            const isActive = isRouteActive(currentUrl, route.link);
+                                            const isActive = isRouteActive(currentUrl, route.link, route.exact);
                                             const badgeContent = renderRouteBadge(route.id, route.badge);
 
                                             return (
@@ -1024,11 +1018,11 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                                     >
                                                         <AdminLink href={route.link} prefetch cacheFor="30s">
                                                             {route.icon && (
-                                                                <span className="size-4 shrink-0 text-muted-foreground group-hover/item:text-foreground transition-colors [&_svg]:size-4">
+                                                                <span className="text-muted-foreground group-hover/item:text-foreground size-4 shrink-0 transition-colors [&_svg]:size-4">
                                                                     {route.icon}
                                                                 </span>
                                                             )}
-                                                            <span className="truncate flex-1 text-xs">{route.title}</span>
+                                                            <span className="flex-1 truncate text-xs">{route.title}</span>
                                                             {badgeContent}
                                                         </AdminLink>
                                                     </SidebarMenuButton>
@@ -1041,8 +1035,8 @@ export function AdministratorSidebar({ user }: { user: User }) {
                         </SidebarGroup>
                     </SidebarContent>
 
-                    <SidebarFooter className="border-t border-sidebar-border/60 p-3">
-                        <div className="flex items-center justify-between w-full">
+                    <SidebarFooter className="border-sidebar-border/60 border-t p-3">
+                        <div className="flex w-full items-center justify-between">
                             <AdminLink
                                 href="/changelog"
                                 prefetch
@@ -1053,7 +1047,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                     variant="outline"
                                     size="sm"
                                     radius="full"
-                                    className="gap-1.5 font-mono text-[10px] font-medium border-sidebar-border/70 bg-sidebar/50 text-muted-foreground hover:text-foreground"
+                                    className="border-sidebar-border/70 bg-sidebar/50 text-muted-foreground hover:text-foreground gap-1.5 font-mono text-[10px] font-medium"
                                 >
                                     <span className="relative flex size-1.5">
                                         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
@@ -1062,9 +1056,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                     v{version}
                                 </Badge>
                             </AdminLink>
-                            <span className="text-[11px] font-medium text-muted-foreground/70 truncate max-w-[120px]">
-                                {organizationShortName}
-                            </span>
+                            <span className="text-muted-foreground/70 max-w-[120px] truncate text-[11px] font-medium">{organizationShortName}</span>
                         </div>
                     </SidebarFooter>
                 </Sidebar>

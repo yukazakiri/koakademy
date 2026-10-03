@@ -5,14 +5,26 @@ import { AdminLink } from "@/lib/admin-navigation";
 import { cn } from "@/lib/utils";
 import type { User } from "@/types/user";
 import { usePage } from "@inertiajs/react";
-import { IconBooks, IconBriefcase, IconCash, IconDashboard, IconHelp, IconSchool, IconServer, IconTools, IconUser } from "@tabler/icons-react";
+import {
+    IconBooks,
+    IconBriefcase,
+    IconCash,
+    IconDashboard,
+    IconHelp,
+    IconReportAnalytics,
+    IconSchool,
+    IconServer,
+    IconTools,
+    IconUser,
+} from "@tabler/icons-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { getRoutesForRoleWithModules, getSectionTitle, type ModuleAdminRoute, type RouteSection } from "@/config/admin-routes";
+import { getRoutesForRoleWithModules, getSectionTitle, isRouteActive, type ModuleAdminRoute, type RouteSection } from "@/config/admin-routes";
 
 const SECTION_ICONS: Record<RouteSection, React.ElementType> = {
     core: IconDashboard,
+    desks: IconReportAnalytics,
     academic: IconSchool,
     student_services: IconUser,
     finance: IconCash,
@@ -127,7 +139,10 @@ export function AdminMobileBottomNav() {
 
     const activeId = useMemo(() => {
         for (const section of sections) {
-            if (currentUrl.startsWith(section.link)) return section.id;
+            if (isRouteActive(currentUrl, section.link, true)) return section.id;
+        }
+        for (const section of sections) {
+            if (isRouteActive(currentUrl, section.link, false)) return section.id;
         }
         return sections[0]?.id ?? null;
     }, [currentUrl, sections]);

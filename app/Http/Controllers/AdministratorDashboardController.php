@@ -9,6 +9,7 @@ use App\Dashboards\DashboardRegistry;
 use App\Enums\UserRole;
 use App\Models\Department;
 use App\Models\User;
+use App\Support\AdministratorPortalData;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -30,7 +31,7 @@ final class AdministratorDashboardController extends Controller
     /**
      * Land the user on their default desk.
      *
-     * A user with no desk at all (no desk permissions) is sent to the original dashboard so
+     * A user with no desk at all (no desk permissions) is sent to the overview dashboard so
      * they are never left on a dead end.
      */
     public function index(Request $request): RedirectResponse
@@ -44,10 +45,30 @@ final class AdministratorDashboardController extends Controller
         $desk = $this->registry->defaultFor($user);
 
         if ($desk === null) {
-            return redirect()->route('administrators.dashboard.legacy');
+            return redirect()->route('administrators.dashboard.overview');
         }
 
         return redirect()->route('administrators.desks.show', $desk->id());
+    }
+
+    public function overview(Request $request): Response|RedirectResponse
+    {
+        return $this->dashboardView($request, 'overview');
+    }
+
+    public function enrollment(Request $request): Response|RedirectResponse
+    {
+        return $this->dashboardView($request, 'enrollment');
+    }
+
+    public function students(Request $request): Response|RedirectResponse
+    {
+        return $this->dashboardView($request, 'students');
+    }
+
+    public function operations(Request $request): Response|RedirectResponse
+    {
+        return $this->dashboardView($request, 'operations');
     }
 
     /**
@@ -107,6 +128,70 @@ final class AdministratorDashboardController extends Controller
             'trends' => $payload['trends'] ?? [],
             'tables' => $payload['tables'] ?? [],
             'activity' => $payload['activity'] ?? [],
+        ]);
+    }
+
+    private function dashboardView(Request $request, string $activeView): Response|RedirectResponse
+    {
+        $user = $request->user();
+
+        if (! $user instanceof User) {
+            return redirect('/login');
+        }
+
+        $portalData = AdministratorPortalData::build($user);
+
+        $quickActions = [
+            [
+                'title' => 'Review pending approvals',
+                'description' => 'Approve or reject the latest requests.',
+                'href' => '/administrators/approvals',
+                'disabled' => true,
+                'disabledTooltip' => 'Approvals workflow coming soon',
+            ],
+            [
+                'title' => 'View faculty directory',
+                'description' => 'Find faculty details quickly.',
+                'href' => '/administrators/faculties',
+                'disabled' => false,
+            ],
+            [
+                'title' => 'Create announcement',
+                'description' => 'Draft and publish an announcement.',
+                'href' => '/administrators/announcements',
+                'disabled' => false,
+            ],
+        ];
+
+        $beginnerTips = [
+            [
+                'title' => 'Start with the Faculty Directory',
+                'content' => 'Use it to confirm who is assigned to which department and spot missing records.',
+            ],
+            [
+                'title' => 'Use search often',
+                'content' => 'Most screens will support search so you don\'t need to scroll.',
+            ],
+            [
+                'title' => 'Look for “Coming soon” labels',
+                'content' => 'Some tools are still being rolled out. You\'ll see clear hints when a feature is not ready yet.',
+            ],
+        ];
+
+        return Inertia::render('administrators/dashboard', [
+            'active_view' => $activeView,
+            'user' => [
+                'name' => $user->name,
+                'email' => $user->email,
+                'avatar' => $user->avatar_url ?? null,
+                'role' => $user->role?->getLabel() ?? 'Administrator',
+            ],
+            'admin_data' => [
+                ...$portalData,
+                'quick_actions' => $quickActions,
+                'beginner_tips' => $beginnerTips,
+            ],
+            'flash' => session('flash'),
         ]);
     }
 

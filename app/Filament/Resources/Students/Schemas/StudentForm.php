@@ -324,8 +324,6 @@ final class StudentForm
     {
         return TextInput::make('student_id')
             ->label('Student ID')
-            ->unique(Student::class, 'student_id', ignoreRecord: true)
-            ->required()
             ->live()
             ->visible(function ($get): bool {
                 $studentType = $get('student_type');
@@ -333,51 +331,22 @@ final class StudentForm
                 // For SHS, we use LRN as student_id, so hide this field
                 return $studentType !== StudentType::SeniorHighSchool->value;
             })
-            ->rules(function ($get): array {
+            ->rules(function ($get, $record): array {
                 $studentType = $get('student_type');
                 if ($studentType === StudentType::SeniorHighSchool->value) {
                     return [];
                 }
 
-                return [
-                    'required',
-                    'numeric',
-                    'digits:6', // Ensure exactly 6 digits for College, TESDA, and DHRT
-                    function ($attribute, $value, $fail) use ($get): void {
-                        $studentType = $get('student_type');
-                        if (! $studentType) {
-                            return;
-                        }
+                $type = $studentType ? StudentType::tryFrom($studentType) : null;
 
-                        $type = StudentType::tryFrom($studentType);
-                        if (! $type) {
-                            return;
-                        }
-
-                        $expectedPrefix = $type->getIdPrefix();
-                        $valueStr = (string) $value;
-
-                        if (! str_starts_with($valueStr, $expectedPrefix)) {
-                            $typeName = $type->getLabel();
-                            $fail("The student ID must start with {$expectedPrefix} for {$typeName}.");
-                        }
-                    },
-                ];
+                return app(IdentifierGenerator::class)->getStudentIdValidationRules($type, $record?->id);
             })
             ->placeholder(function ($get): string {
                 $studentType = $get('student_type');
-                if (! $studentType) {
-                    return '6-digit student ID';
-                }
+                $type = $studentType ? StudentType::tryFrom($studentType) : null;
+                $preview = app(IdentifierGenerator::class)->previewStudentId($type);
 
-                $type = StudentType::tryFrom($studentType);
-                if (! $type) {
-                    return '6-digit student ID';
-                }
-
-                $prefix = $type->getIdPrefix();
-
-                return "6-digit ID starting with {$prefix} (e.g., {$prefix}00001)";
+                return "e.g. {$preview}";
             })
             ->helperText(function ($get): ?string {
                 $studentType = $get('student_type');
@@ -386,13 +355,22 @@ final class StudentForm
                 }
 
                 $type = StudentType::tryFrom($studentType);
-                if (! $type) {
-                    return null;
+                $generator = app(IdentifierGenerator::class);
+                $seq = $generator->sequenceFor(IdentifierGenerator::Student);
+                $prefix = $generator->resolvePrefix($seq, $type);
+
+                if ($seq->enforce_length && $seq->exact_length) {
+                    return $prefix !== '' && $seq->enforce_prefix
+                        ? "Must be {$seq->exact_length} digits starting with {$prefix}"
+                        : "Must be exactly {$seq->exact_length} digits";
                 }
 
-                $prefix = $type->getIdPrefix();
+                $min = $seq->min_length ?? 4;
+                $max = $seq->max_length ?? 12;
 
-                return "Must be exactly 6 digits starting with {$prefix}";
+                return $prefix !== '' && $seq->enforce_prefix
+                    ? "{$min}-{$max} digits starting with {$prefix}"
+                    : "Numeric identifier ({$min}-{$max} digits)";
             })
             ->suffixAction(
                 Action::make('generate')

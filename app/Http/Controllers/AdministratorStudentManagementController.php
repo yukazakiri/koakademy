@@ -1047,10 +1047,10 @@ final class AdministratorStudentManagementController extends Controller
             ],
             'student_id' => [
                 Rule::requiredIf(fn (): bool => $request->student_type !== StudentType::SeniorHighSchool->value),
-                'nullable',
-                'numeric',
-                'digits:6',
-                'unique:students,student_id',
+                ...$identifierGenerator->getStudentIdValidationRules(
+                    StudentType::tryFrom((string) $request->student_type),
+                    required: false
+                ),
             ],
             'lrn' => [
                 Rule::requiredIf(fn (): bool => $request->student_type === StudentType::SeniorHighSchool->value),
@@ -1299,7 +1299,7 @@ final class AdministratorStudentManagementController extends Controller
             return response()->json(['id' => null]);
         }
 
-        $nextId = $identifierGenerator->previewStudentId();
+        $nextId = $identifierGenerator->previewStudentId($type);
 
         return response()->json(['id' => $nextId]);
     }
@@ -1400,8 +1400,11 @@ final class AdministratorStudentManagementController extends Controller
     {
         $idWasGenerated = false;
         // If student_id is empty and not SHS, fallback to using the model's ID (primary key)
+        $identifierGenerator = app(IdentifierGenerator::class);
+
         if (empty($request->input('student_id')) && $request->input('student_type') !== StudentType::SeniorHighSchool->value) {
-            $generatedId = mb_str_pad((string) $student->id, 6, '0', STR_PAD_LEFT);
+            $padding = $identifierGenerator->sequenceFor(IdentifierGenerator::Student)->padding ?? 6;
+            $generatedId = mb_str_pad((string) $student->id, $padding, '0', STR_PAD_LEFT);
             $request->merge(['student_id' => $generatedId]);
             $idWasGenerated = true;
         }
@@ -1440,10 +1443,11 @@ final class AdministratorStudentManagementController extends Controller
             ],
             'student_id' => [
                 Rule::requiredIf(fn (): bool => $request->student_type !== StudentType::SeniorHighSchool->value),
-                'nullable',
-                'numeric',
-                'digits:6',
-                Rule::unique('students', 'student_id')->ignore($student->id),
+                ...$identifierGenerator->getStudentIdValidationRules(
+                    StudentType::tryFrom((string) $request->student_type),
+                    ignoreId: $student->id,
+                    required: false
+                ),
             ],
             'lrn' => [
                 Rule::requiredIf(fn (): bool => $request->student_type === StudentType::SeniorHighSchool->value),

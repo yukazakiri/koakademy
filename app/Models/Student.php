@@ -315,7 +315,7 @@ final class Student extends Model
      */
     public static function generateNextId(?StudentType $studentType = null): int
     {
-        return app(IdentifierGenerator::class)->generateStudentId();
+        return app(IdentifierGenerator::class)->generateStudentId($studentType);
     }
 
     /**

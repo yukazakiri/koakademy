@@ -1190,7 +1190,7 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
                                             id="student_id"
                                             value={data.student_id}
                                             onChange={(event) => setData("student_id", event.target.value)}
-                                            placeholder="6-digit ID"
+                                            placeholder="Student ID"
                                             className="font-mono"
                                         />
                                         <Button type="button" variant="outline" size="icon" onClick={fetchGeneratedId} disabled={isGeneratingId}>

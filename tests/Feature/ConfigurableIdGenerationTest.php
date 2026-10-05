@@ -295,3 +295,149 @@ it('bumps the shared staff sequence above existing numeric faculty records', fun
         ->and($generator->generateStaffId())->toBe('801000')
         ->and(IdSequence::query()->where('key', 'staff')->value('next_number'))->toBe(801001);
 });
+
+it('configures custom static prefix and previews formatted student ID', function (): void {
+    IdSequence::query()->create([
+        'key' => 'student',
+        'label' => 'Student IDs',
+        'start_number' => 1,
+        'next_number' => 1,
+        'increment_by' => 1,
+        'padding' => 4,
+        'prefix_mode' => 'static',
+        'prefix_value' => '2026',
+    ]);
+
+    $generator = app(IdentifierGenerator::class);
+
+    expect($generator->previewStudentId())->toBe(20260001)
+        ->and($generator->generateStudentId())->toBe(20260001)
+        ->and(IdSequence::query()->where('key', 'student')->value('next_number'))->toBe(2);
+});
+
+it('configures year-based prefix mode and generates formatted student ID', function (): void {
+    $currentYear = (int) date('Y');
+    IdSequence::query()->create([
+        'key' => 'student',
+        'label' => 'Student IDs',
+        'start_number' => 1,
+        'next_number' => 55,
+        'increment_by' => 1,
+        'padding' => 4,
+        'prefix_mode' => 'year',
+    ]);
+
+    $generator = app(IdentifierGenerator::class);
+    $expected = (int) ($currentYear.'0055');
+
+    expect($generator->previewStudentId())->toBe($expected)
+        ->and($generator->generateStudentId())->toBe($expected);
+});
+
+it('configures per-student-type prefixes and generates accordingly', function (): void {
+    IdSequence::query()->create([
+        'key' => 'student',
+        'label' => 'Student IDs',
+        'start_number' => 1,
+        'next_number' => 10,
+        'increment_by' => 1,
+        'padding' => 5,
+        'prefix_mode' => 'by_type',
+        'type_prefixes' => [
+            'college' => '1',
+            'tesda' => '5',
+            'dhrt' => '7',
+            'shs' => '3',
+        ],
+    ]);
+
+    $generator = app(IdentifierGenerator::class);
+
+    expect($generator->previewStudentId(StudentType::College))->toBe(100010)
+        ->and($generator->previewStudentId(StudentType::TESDA))->toBe(500010)
+        ->and($generator->previewStudentId(StudentType::DHRT))->toBe(700010);
+});
+
+it('allows flexible digit lengths in validation when enforce_length is false', function (): void {
+    IdSequence::query()->create([
+        'key' => 'student',
+        'label' => 'Student IDs',
+        'start_number' => 200000,
+        'next_number' => 200000,
+        'increment_by' => 1,
+        'padding' => 6,
+        'enforce_length' => false,
+        'min_length' => 4,
+        'max_length' => 12,
+    ]);
+
+    $generator = app(IdentifierGenerator::class);
+    $rules = $generator->getStudentIdValidationRules(StudentType::College);
+
+    expect($rules)->toContain('numeric')
+        ->and($rules)->toContain('digits_between:4,12');
+});
+
+it('enforces prefix in student validation rules only when enforce_prefix is true', function (): void {
+    IdSequence::query()->create([
+        'key' => 'student',
+        'label' => 'Student IDs',
+        'start_number' => 200000,
+        'next_number' => 200000,
+        'increment_by' => 1,
+        'padding' => 6,
+        'prefix_mode' => 'static',
+        'prefix_value' => '2026',
+        'enforce_prefix' => true,
+    ]);
+
+    $generator = app(IdentifierGenerator::class);
+    $rules = $generator->getStudentIdValidationRules(StudentType::College);
+
+    // There should be a closure rule for prefix check
+    $hasClosure = collect($rules)->contains(fn ($rule) => $rule instanceof Closure);
+    expect($hasClosure)->toBeTrue();
+});
+
+it('updates full configurable identifier settings from system management', function (): void {
+    $admin = User::factory()->create(['role' => UserRole::Developer]);
+
+    $this->actingAs($admin)
+        ->put(route('administrators.system-management.identifiers.update'), [
+            'student' => [
+                'start_number' => 20260001,
+                'next_number' => 20260001,
+                'increment_by' => 1,
+                'padding' => 8,
+                'prefix_mode' => 'static',
+                'prefix_value' => '2026',
+                'enforce_prefix' => true,
+                'enforce_length' => true,
+                'exact_length' => 8,
+                'min_length' => 4,
+                'max_length' => 12,
+                'type_prefixes' => [
+                    'college' => '2026',
+                    'tesda' => '2026',
+                    'dhrt' => '2026',
+                    'shs' => '3',
+                ],
+            ],
+            'staff' => [
+                'start_number' => 800000,
+                'next_number' => 800500,
+                'increment_by' => 1,
+                'padding' => 6,
+            ],
+        ])
+        ->assertRedirect();
+
+    $studentSeq = IdSequence::query()->where('key', 'student')->first();
+    expect($studentSeq->next_number)->toBe(20260001)
+        ->and($studentSeq->padding)->toBe(8)
+        ->and($studentSeq->prefix_mode)->toBe('static')
+        ->and($studentSeq->prefix_value)->toBe('2026')
+        ->and($studentSeq->enforce_prefix)->toBeTrue()
+        ->and($studentSeq->enforce_length)->toBeTrue()
+        ->and($studentSeq->exact_length)->toBe(8);
+});

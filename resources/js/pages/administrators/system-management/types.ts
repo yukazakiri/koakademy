@@ -515,6 +515,13 @@ export interface ApiManagementConfig {
     mcp_write_enabled?: boolean;
 }
 
+export interface StudentTypePrefixes {
+    college: string;
+    tesda: string;
+    dhrt: string;
+    shs: string;
+}
+
 export interface IdSequenceConfig {
     key: "student" | "staff";
     label: string;
@@ -523,6 +530,15 @@ export interface IdSequenceConfig {
     increment_by: number;
     padding: number | null;
     preview: string;
+    prefix_mode?: "none" | "static" | "year" | "by_type";
+    prefix_value?: string | null;
+    enforce_prefix?: boolean;
+    enforce_length?: boolean;
+    exact_length?: number | null;
+    min_length?: number | null;
+    max_length?: number | null;
+    type_prefixes?: StudentTypePrefixes;
+    type_previews?: Record<string, string>;
 }
 
 export type FacultyFieldType = "text" | "date" | "number" | "select";

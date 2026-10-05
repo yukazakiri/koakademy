@@ -488,16 +488,28 @@ final class AdministratorSystemManagementController extends Controller
         $this->authorize('updateIdentifiers', GeneralSetting::class);
 
         $validated = $request->validate([
-            'student' => ['required', 'array:start_number,next_number,increment_by,padding'],
-            'student.start_number' => ['required', 'integer', 'min:1', 'max:999999'],
-            'student.next_number' => ['required', 'integer', 'min:1', 'max:999999'],
+            'student' => ['required', 'array'],
+            'student.start_number' => ['required', 'integer', 'min:1', 'max:2147483647'],
+            'student.next_number' => ['required', 'integer', 'min:1', 'max:2147483647'],
             'student.increment_by' => ['required', 'integer', 'min:1', 'max:1000'],
-            'student.padding' => ['nullable', 'integer', 'min:1', 'max:12'],
+            'student.padding' => ['nullable', 'integer', 'min:0', 'max:12'],
+            'student.prefix_mode' => ['nullable', 'string', 'in:none,static,year,by_type'],
+            'student.prefix_value' => ['nullable', 'string', 'max:10'],
+            'student.enforce_prefix' => ['nullable', 'boolean'],
+            'student.enforce_length' => ['nullable', 'boolean'],
+            'student.exact_length' => ['nullable', 'integer', 'min:3', 'max:12'],
+            'student.min_length' => ['nullable', 'integer', 'min:1', 'max:12'],
+            'student.max_length' => ['nullable', 'integer', 'min:1', 'max:12'],
+            'student.type_prefixes' => ['nullable', 'array'],
+            'student.type_prefixes.college' => ['nullable', 'string', 'max:10'],
+            'student.type_prefixes.tesda' => ['nullable', 'string', 'max:10'],
+            'student.type_prefixes.dhrt' => ['nullable', 'string', 'max:10'],
+            'student.type_prefixes.shs' => ['nullable', 'string', 'max:10'],
             'staff' => ['required', 'array:start_number,next_number,increment_by,padding'],
-            'staff.start_number' => ['required', 'integer', 'min:1', 'max:999999999'],
-            'staff.next_number' => ['required', 'integer', 'min:1', 'max:999999999'],
+            'staff.start_number' => ['required', 'integer', 'min:1', 'max:2147483647'],
+            'staff.next_number' => ['required', 'integer', 'min:1', 'max:2147483647'],
             'staff.increment_by' => ['required', 'integer', 'min:1', 'max:1000'],
-            'staff.padding' => ['nullable', 'integer', 'min:1', 'max:12'],
+            'staff.padding' => ['nullable', 'integer', 'min:0', 'max:12'],
         ]);
 
         $identifierGenerator->updateConfiguration([

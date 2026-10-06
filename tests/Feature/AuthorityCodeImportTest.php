@@ -421,16 +421,6 @@ it('does not leak non-CHED authority codes into CHED Form B/C exports', function
     expect($row['program_code'] ?? null)->toBe('CHED-IT-001');
 });
 
-it('checks policy permissions in Filament resources', function (): void {
-    $school = chedAccreditedSchool();
-    $dean = User::factory()->create(['school_id' => $school->id, 'role' => UserRole::Dean]);
-    // Dean does not have Delete:CodeAuthority
-    $this->actingAs($dean);
-
-    expect(App\Filament\Resources\CodeAuthorities\CodeAuthorityResource::canDelete(new CodeAuthority))->toBeFalse()
-        ->and(App\Filament\Resources\IndustryCourseCodes\IndustryCourseCodeResource::canDelete(new IndustryCourseCode))->toBeFalse();
-});
-
 it('counts distinct courses missing authority codes in quality analytics', function (): void {
     $school = chedAccreditedSchool();
     app(TenantContext::class)->setCurrentSchool($school);

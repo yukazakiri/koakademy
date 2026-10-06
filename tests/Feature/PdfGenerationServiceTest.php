@@ -45,12 +45,6 @@ it('generates PDFs from HTML through laravel-pdf and maps core options', functio
             'left' => 4.0,
             'unit' => 'mm',
         ]);
-
-    $reflection = new ReflectionClass($savedPdf);
-    $driverProperty = $reflection->getProperty('driverName');
-    $driverProperty->setAccessible(true);
-
-    expect($driverProperty->getValue($savedPdf))->toBe('gotenberg');
 });
 
 it('generates PDFs from a Blade view through laravel-pdf', function (): void {

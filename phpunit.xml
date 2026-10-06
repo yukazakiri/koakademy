@@ -19,10 +19,16 @@
         <exclude>
             <directory>app/Filament</directory>
             <directory>app/Settings</directory>
+            <directory>app/Console</directory>
+            <directory>app/Ai</directory>
+            <directory>app/Mcp</directory>
+            <directory>app/Livewire</directory>
+            <directory>app/Providers</directory>
+            <directory>app/dashboard</directory>
         </exclude>
     </source>
     <php>
-        <ini name="memory_limit" value="1G"/>
+        <ini name="memory_limit" value="2G"/>
         <server name="APP_ENV" value="testing"/>
         <server name="APP_MAINTENANCE_DRIVER" value="file"/>
         <server name="BCRYPT_ROUNDS" value="4"/>

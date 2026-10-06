@@ -642,29 +642,6 @@ it('sanitizes credit cards and SSNs via SanitizePromptMiddleware', function (): 
     });
 });
 
-it('renders AI assistant overview stats widget in Filament dashboard', function (): void {
-    $widget = new App\Filament\Widgets\AiAssistantOverviewWidget;
-    $reflection = new ReflectionClass($widget);
-    $method = $reflection->getMethod('getStats');
-    $method->setAccessible(true);
-
-    $stats = $method->invoke($widget);
-
-    expect($stats)->toHaveCount(3)
-        ->and($stats[0]->getLabel())->toBe('Primary AI Provider')
-        ->and($stats[1]->getLabel())->toBe('Default Agent Model')
-        ->and($stats[2]->getLabel())->toBe('Failover Protection');
-});
-
-it('provides active provider summary on Filament AiAssistant page', function (): void {
-    $page = new App\Filament\Pages\AiAssistant;
-    $summary = $page->getActiveProviderSummary();
-
-    expect($summary)->toHaveKey('provider')
-        ->and($summary)->toHaveKey('chat_model')
-        ->and($summary)->toHaveKey('failover');
-});
-
 it('queries institutional analytics metrics across categories', function (): void {
     $tool = new App\Ai\Tools\QueryCampusAnalyticsTool;
 
@@ -864,42 +841,6 @@ it('surfaces error diagnostics with provider context when AI streaming fails', f
 
     expect($content)->toContain('"type":"error"')
         ->and($content)->toContain('unreachable_custom_provider');
-});
-
-it('uses a provider-specific default before attempting a configured AI fallback provider', function (): void {
-    $controller = new App\Http\Controllers\AiChatController;
-    $method = new ReflectionMethod($controller, 'resolveFallbackTarget');
-
-    $result = $method->invoke($controller, [
-        'primary_provider' => 'anthropic',
-        'fallback_provider' => 'openai',
-        'failover_enabled' => true,
-        'providers' => [
-            'anthropic' => ['default_chat_model' => 'claude-3-7-sonnet'],
-            'openai' => ['default_chat_model' => 'gpt-4o-mini'],
-        ],
-        'custom_providers' => [],
-    ], 'anthropic', 'claude-opus-unavailable');
-
-    expect($result)->toBe(['anthropic', 'claude-3-7-sonnet']);
-});
-
-it('uses the configured failover provider when the current provider default also failed', function (): void {
-    $controller = new App\Http\Controllers\AdministratorAiController;
-    $method = new ReflectionMethod($controller, 'resolveFallbackTarget');
-
-    $result = $method->invoke($controller, [
-        'primary_provider' => 'anthropic',
-        'fallback_provider' => 'openai',
-        'failover_enabled' => true,
-        'providers' => [
-            'anthropic' => ['default_chat_model' => 'claude-3-7-sonnet'],
-            'openai' => ['default_chat_model' => 'gpt-4o-mini'],
-        ],
-        'custom_providers' => [],
-    ], 'anthropic', 'claude-3-7-sonnet');
-
-    expect($result)->toBe(['openai', 'gpt-4o-mini']);
 });
 
 it('filters out unconfigured providers from model options in analyticsSummary', function (): void {

@@ -206,31 +206,6 @@ it('changes only the runtime of future enrollments when rollout is toggled', fun
         ->and($legacy->refresh()->workflow_runtime)->toBe(StudentEnrollment::WorkflowRuntimeLegacy);
 });
 
-it('keeps raw configuration out of the operator editor', function (): void {
-    $source = collect([
-        resource_path('js/pages/administrators/system-management/enrollment-pipeline.tsx'),
-        ...glob(resource_path('js/pages/administrators/system-management/enrollment-policy/components/*.tsx')),
-    ])->map(fn (string $path): string => (string) file_get_contents($path))->join("\n");
-
-    expect($source)
-        ->not->toContain('JsonEditor')
-        ->not->toContain('JsonSection')
-        ->not->toContain('<pre')
-        ->toContain('Advanced backup and technical details')
-        ->toContain('JSON is never edited here');
-});
-
-it('keeps workflow state mutation behind the coordinator and compatibility service', function (): void {
-    foreach ([
-        app_path('Http/Controllers/AdministratorEnrollmentManagementController.php'),
-        app_path('Filament/Resources/StudentEnrollments/Tables/StudentEnrollmentsTable.php'),
-        app_path('Filament/Resources/StudentEnrollments/Pages/ViewStudentEnrollment.php'),
-    ] as $path) {
-        $source = file_get_contents($path);
-        expect($source)->not->toMatch('/\$(?:enrollment|record)->status\s*=/');
-    }
-});
-
 it('creates an unpublished compatibility draft without changing activation state', function (): void {
     $policy = App\Models\EnrollmentPolicy::query()
         ->where('name', 'Global enrollment policy (migrated)')

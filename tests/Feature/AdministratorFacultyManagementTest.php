@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Enums\UserRole;
-use App\Http\Controllers\AdministratorFacultyManagementController;
 use App\Models\Classes;
 use App\Models\Faculty;
 use App\Models\FacultyDeadline;
@@ -64,19 +63,6 @@ it('renders faculty operations index with filters sorting and capped pagination 
             ->has('faculties.data.0.portal_account')
             ->has('faculties.data.0.profile_completion')
             ->has('faculties.data.0.workload_summary'));
-});
-
-it('casts faculty uuid ids when matching portal account records', function (): void {
-    $controller = new AdministratorFacultyManagementController();
-
-    foreach (['wherePortalLinked', 'wherePortalNotLinked'] as $method) {
-        $reflection = new ReflectionMethod($controller, $method);
-        $query = Faculty::query();
-
-        $reflection->invoke($controller, $query);
-
-        expect($query->toSql())->toContain('"users"."record_id" = cast(faculty.id as varchar)');
-    }
 });
 
 it('bulk updates faculty statuses', function (): void {

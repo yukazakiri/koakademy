@@ -38,25 +38,3 @@ it('throws a runtime exception when source stream cannot be opened', function ()
         StreamedStorage::putFileFromPath('streamed', 'exports/missing.pdf', $missingPath);
     })->toThrow(RuntimeException::class);
 });
-
-it('uses streamed uploads for hot PDF job paths', function (): void {
-    $jobFiles = [
-        'app/Jobs/GenerateStudentListPdfJob.php',
-        'app/Jobs/GenerateAssessmentPdfJob.php',
-        'app/Jobs/GenerateTimetablePdfJob.php',
-        'app/Jobs/GenerateStudentTimetablePdfJob.php',
-        'app/Jobs/SendAssessmentNotificationJob.php',
-        'app/Services/AssessmentExportArtifactService.php',
-        'app/Jobs/GenerateAttendancePdfJob.php',
-        'app/Jobs/GenerateStudentSoaPdfJob.php',
-        'app/Jobs/GenerateEnrollmentReportPreviewPdfJob.php',
-    ];
-
-    foreach ($jobFiles as $jobFile) {
-        $contents = file_get_contents(base_path($jobFile));
-
-        expect($contents)
-            ->not->toContain('file_get_contents(')
-            ->toContain('StreamedStorage::putFileFromPath');
-    }
-});

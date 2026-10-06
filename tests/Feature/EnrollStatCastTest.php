@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Tests\Unit;
+namespace Tests\Feature;
 
 use App\Models\StudentEnrollment;
 use Illuminate\Foundation\Testing\RefreshDatabase;

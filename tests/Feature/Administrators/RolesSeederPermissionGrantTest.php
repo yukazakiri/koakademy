@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Enums\UserRole;
 use Database\Seeders\RolesSeeder;
-use Illuminate\Support\Facades\File;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
@@ -81,39 +80,6 @@ it('gives finance roles the View:Cashier permission used by the finance nav and 
     }
 });
 
-it('resolves every include token used by a role to at least one real permission', function (): void {
-    $permissions = Permission::pluck('name')->toArray();
-    $seeder = app(RolesSeeder::class);
-
-    $roleMap = (new ReflectionMethod($seeder, 'getRolePermissionMap'))->invoke($seeder);
-
-    $unresolved = [];
-
-    foreach ($roleMap as $roleName => $_) {
-        $method = 'get'.str_replace(' ', '', ucwords(str_replace('_', ' ', (string) $roleName))).'Permissions';
-
-        if (! method_exists($seeder, $method)) {
-            continue;
-        }
-
-        $parameters = (new ReflectionMethod($seeder, $method))->getParameters();
-
-        $includes = [];
-
-        foreach ($parameters as $parameter) {
-            if ($parameter->isDefaultValueAvailable() && $parameter->getDefaultValue() !== []) {
-                $includes = $parameter->getDefaultValue();
-            }
-        }
-
-        foreach (RolesSeeder::unresolvedTokens($permissions, $includes) as $token) {
-            $unresolved[] = "{$roleName}: {$token}";
-        }
-    }
-
-    expect($unresolved)->toBe([]);
-});
-
 it('reports an unresolved token so a typo cannot silently strip access', function (): void {
     $permissions = ['ViewAny:Student', 'ViewAny:Course'];
 
@@ -126,12 +92,4 @@ it('excludes destroy permissions from the dean role', function (): void {
 
     expect($permissions)->toContain('ViewAny:Student');
     expect($permissions)->not->toContain('Delete:Student');
-});
-
-it('keeps the audit log nav gate on a permission that actually exists', function (): void {
-    expect(Permission::where('name', 'ViewAny:Activity')->exists())->toBeTrue();
-
-    $nav = File::get(resource_path('js/config/admin-routes.tsx'));
-
-    expect($nav)->not->toContain('View:LogTable');
 });

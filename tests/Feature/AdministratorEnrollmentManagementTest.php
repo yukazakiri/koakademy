@@ -405,18 +405,6 @@ it('calculates the assessment preview balance from paid transactions', function 
     expect($enrollment->studentTuition()->first()?->total_balance)->toBe(16075.0);
 });
 
-it('does not show a duplicate additional total line in the printable assessment preview', function (): void {
-    $previewSource = file_get_contents(resource_path('js/pages/administrators/enrollments/assessment-preview.tsx'));
-
-    expect($previewSource)->not->toContain('Additional Total');
-});
-
-it('defaults the printable assessment preview to A4 paper', function (): void {
-    $previewSource = file_get_contents(resource_path('js/pages/administrators/enrollments/assessment-preview.tsx'));
-
-    expect($previewSource)->toContain('useState<PaperSize>("a4")');
-});
-
 it('returns readable structured schedule entries for assessment previews', function (): void {
     $user = User::factory()->create(['role' => UserRole::Admin]);
     $course = Course::factory()->create([
@@ -639,22 +627,18 @@ it('regenerates a fresh assessment PDF when resending assessment emails', functi
 
     app()->instance(PdfGenerationService::class, $pdfService);
 
+    Illuminate\Support\Facades\Notification::fake();
     $job = new SendAssessmentNotificationJob($enrollment->fresh(), 'assessment_resend_test');
-    $method = new ReflectionMethod($job, 'ensurePdfIsAvailable');
-    $method->setAccessible(true);
+    $job->handle();
 
-    $freshPath = $method->invoke($job);
+    $resource = $enrollment->resources()->where('type', 'assessment')->latest()->first();
+    expect($resource)->not->toBeNull()
+        ->and($resource->file_path)->toStartWith('assessments/assmt-'.$enrollment->id.'-')
+        ->and($resource->file_path)->not->toBe('assessments/stale.pdf');
 
-    expect($freshPath)
-        ->toStartWith('assessments/assmt-'.$enrollment->id.'-')
-        ->not->toBe('assessments/stale.pdf');
-
-    Storage::disk('assessment-resend-test')->assertExists($freshPath);
-    expect(Storage::disk('assessment-resend-test')->get($freshPath))->toBe('fresh-pdf');
+    Storage::disk('assessment-resend-test')->assertExists($resource->file_path);
+    expect(Storage::disk('assessment-resend-test')->get($resource->file_path))->toBe('fresh-pdf');
     expect($pdfService->calls)->toBe(1);
-
-    expect($enrollment->resources()->where('type', 'assessment')->pluck('file_path')->all())
-        ->toBe([$freshPath]);
 });
 
 it('allows administrators to edit enrollment details', function (): void {

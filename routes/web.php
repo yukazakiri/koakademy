@@ -33,11 +33,11 @@ Route::post('/passkeys/login', [App\Http\Controllers\PasskeyAuthController::clas
 */
 $portalHost = config('app.portal_host');
 $portalHostAliases = config('app.portal_host_aliases', []);
+$isLocalPortalHost = in_array(mb_strtolower((string) $portalHost), ['localhost', '127.0.0.1', ''], true);
 
 $portalHosts = array_values(array_unique(array_filter([
     $portalHost,
     ...$portalHostAliases,
-    ...(in_array($portalHost, ['localhost', '127.0.0.1'], true) ? ['localhost', '127.0.0.1'] : []),
 ])));
 
 $registerPortalRoutes = function (): void {
@@ -294,11 +294,11 @@ $registerPortalRoutes = function (): void {
     require __DIR__.'/web/testing.php';
 };
 
-if (empty($portalHosts)) {
+if ($isLocalPortalHost || empty($portalHosts)) {
     Route::group([], $registerPortalRoutes);
 } else {
-    foreach ($portalHosts as $portalHost) {
-        Route::domain($portalHost)->group($registerPortalRoutes);
+    foreach ($portalHosts as $portalHostItem) {
+        Route::domain($portalHostItem)->group($registerPortalRoutes);
     }
 }
 

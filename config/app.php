@@ -100,7 +100,7 @@ return [
 
     'portal_host_aliases' => array_values(array_filter(array_map(
         'trim',
-        explode(',', env('PORTAL_HOST_ALIASES', '')),
+        explode(',', (string) env('PORTAL_HOST_ALIASES', '')),
     ))),
 
     /*

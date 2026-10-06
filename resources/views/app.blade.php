@@ -28,7 +28,7 @@
         // Detect current domain and select appropriate settings
         $currentHost = request()->getHost();
         $portalHost = (string) config('app.portal_host');
-        $isPortalDomain = str_contains($currentHost, $portalHost);
+        $isPortalDomain = app(\App\Services\SettingsShareService::class)->isPortalDomain(request());
 
         // Check if we're on a documentation page
         $isDocsPage = request()->is('docs/*') || request()->is('api-docs');

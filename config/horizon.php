@@ -8,6 +8,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Horizon In The "artisan dev" Stack
+    |--------------------------------------------------------------------------
+    |
+    | Horizon registers itself into `php artisan dev` and, when it does, it also
+    | removes the default `queue:listen` process so the two never compete for
+    | the same jobs. Horizon needs a Redis connection to supervise workers, so
+    | on a default install (database queue driver) it serves no purpose and
+    | costs a supervisor process. This flag lets you keep it out of the dev
+    | stack, which restores the plain `queue:listen` worker instead.
+    |
+    | This mirrors the HORIZON_ENABLED handling in docker/start-container so
+    | that local and container behaviour are configured by the same variable.
+    |
+    */
+
+    'dev_command' => env('HORIZON_ENABLED', false),
+
+    /*
+    |--------------------------------------------------------------------------
     | Horizon Name
     |--------------------------------------------------------------------------
     |

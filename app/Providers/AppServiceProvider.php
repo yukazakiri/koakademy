@@ -66,6 +66,7 @@ use App\Support\HostingSecurity;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Migrations\Migrator;
+use Illuminate\Foundation\DevCommands;
 use Illuminate\Http\Request;
 use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobFailed;
@@ -192,11 +193,35 @@ final class AppServiceProvider extends ServiceProvider
         // stays in sync without manual config edits.
         $this->syncFeatureShowcaseConfig();
 
+        $this->configureDevCommands();
+
         $this->app->booted(function (): void {
             $this->removeMissingViewFinderPaths();
             $this->applySentrySettings();
             $this->applyAiSettings();
         });
+    }
+
+    /**
+     * Keep Horizon out of the `php artisan dev` stack unless it is asked for.
+     *
+     * Horizon registers itself during its service provider's register() phase
+     * and calls DevCommands::except('queue') at that point, which removes the
+     * default queue listener so only Horizon drains the queues. With the
+     * database queue driver this app ships with, Horizon has no Redis to
+     * supervise, so it is dead weight in local development.
+     *
+     * DevCommands::except() replaces the excluded list wholesale rather than
+     * appending to it, and every provider's register() has already run by the
+     * time boot() executes, so overriding it here is safe: listing only
+     * "horizon" drops Horizon and lets the default `queue:listen` worker come
+     * back, giving the same process set as the composer "dev" script.
+     */
+    private function configureDevCommands(): void
+    {
+        if (! config('horizon.dev_command')) {
+            DevCommands::except('horizon');
+        }
     }
 
     /**

@@ -109,7 +109,12 @@ final readonly class SettingsShareService
             return false;
         }
 
-        return $currentHost === $portalHost;
+        $allowedHosts = array_values(array_unique(array_filter([
+            $portalHost,
+            ...array_map($this->normalizeHost(...), (array) config('app.portal_host_aliases', [])),
+        ])));
+
+        return in_array($currentHost, $allowedHosts, true);
     }
 
     /**

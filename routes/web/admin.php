@@ -18,10 +18,12 @@ use Illuminate\Support\Facades\Storage;
 
 $adminHost = config('app.admin_host');
 
-$registerAdminRoutes = function (): void {
-    Route::get('/', function () {
-        return redirect('/admin');
-    });
+$registerAdminRoutes = function () use ($adminHost): void {
+    if (filled($adminHost) && $adminHost !== config('app.portal_host') && ! in_array($adminHost, ['localhost', '127.0.0.1', ''], true)) {
+        Route::get('/', function () {
+            return redirect('/admin');
+        });
+    }
 
     Route::get('/system-management/brand/appearance', function () {
         return redirect('/administrators/system-management/brand/appearance');
@@ -72,7 +74,9 @@ $registerAdminRoutes = function (): void {
     })->name('assessment.download');
 };
 
-if (filled($adminHost)) {
+$isLocalAdminHost = in_array($adminHost, ['localhost', '127.0.0.1', ''], true);
+
+if (! $isLocalAdminHost && filled($adminHost)) {
     Route::domain($adminHost)->group($registerAdminRoutes);
 } else {
     Route::group([], $registerAdminRoutes);

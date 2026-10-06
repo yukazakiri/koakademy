@@ -172,11 +172,14 @@ final class AdminPanelProvider extends PanelProvider
             ])
         );
 
+        $adminHost = (string) config('app.admin_host');
+        $domain = in_array(mb_strtolower($adminHost), ['localhost', '127.0.0.1', ''], true) ? null : $adminHost;
+
         return $panel
             ->default()
             ->id('admin')
             ->path('admin')
-            ->domain((string) config('app.admin_host'))
+            ->domain($domain)
             ->brandName(fn (): string => $settings->getAppName())
             ->brandLogo(fn (): ?string => $settings->logo ? '/'.$settings->logo : null)
             ->brandLogoHeight('3rem')

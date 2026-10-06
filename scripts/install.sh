@@ -30,7 +30,6 @@ domain="${KOAKADEMY_DOMAIN:-}"
 public_port="${KOAKADEMY_PUBLIC_PORT:-8000}"
 port_explicit=""
 unattended="${KOAKADEMY_UNATTENDED:-}"
-direct_access=""
 release_flag=""
 source_sha_flag=""
 temporary_directory=""
@@ -383,7 +382,7 @@ while [ $# -gt 0 ]; do
             shift
             ;;
         --direct | --direct-access)
-            direct_access="true"
+            domain=""
             append_forward_arg "--direct"
             shift
             ;;
@@ -586,6 +585,7 @@ run_operator() {
         ${ADVERTISE_ADDR:+ADVERTISE_ADDR="${ADVERTISE_ADDR}"} \
         ${DOCKER_SWARM_INIT_ARGS:+DOCKER_SWARM_INIT_ARGS="${DOCKER_SWARM_INIT_ARGS}"} \
         ${ENDPOINT_MODE:+ENDPOINT_MODE="${ENDPOINT_MODE}"} \
+        ${KOAKADEMY_DIRECT_ACCESS:+KOAKADEMY_DIRECT_ACCESS="${KOAKADEMY_DIRECT_ACCESS}"} \
         ${unattended:+KOAKADEMY_UNATTENDED="${unattended}"} \
         "$@"
 }

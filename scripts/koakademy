@@ -1139,7 +1139,9 @@ configure_storage() {
     [[ -n "$region_opt" ]] && KOAKADEMY_S3_REGION="$region_opt"
     [[ -n "$path_style_opt" ]] && KOAKADEMY_S3_PATH_STYLE="$path_style_opt"
     [[ -n "$public_url_opt" ]] && KOAKADEMY_S3_PUBLIC_URL="$public_url_opt"
+    # shellcheck disable=SC2034
     [[ -n "$access_key_opt" ]] && KOAKADEMY_S3_ACCESS_KEY="$access_key_opt" && KOAKADEMY_LIBRARY_R2_ACCESS_KEY="$access_key_opt"
+    # shellcheck disable=SC2034
     [[ -n "$secret_key_opt" ]] && KOAKADEMY_S3_SECRET_KEY="$secret_key_opt" && KOAKADEMY_LIBRARY_R2_SECRET_KEY="$secret_key_opt"
 
     case "$mode" in
@@ -1185,11 +1187,14 @@ configure_mail() {
     [[ -n "$host_opt" ]] && KOAKADEMY_MAIL_HOST="$host_opt"
     [[ -n "$port_opt" ]] && KOAKADEMY_MAIL_PORT="$port_opt"
     [[ -n "$scheme_opt" ]] && KOAKADEMY_MAIL_SCHEME="$scheme_opt"
+    # shellcheck disable=SC2034
     [[ -n "$username_opt" ]] && KOAKADEMY_MAIL_USERNAME="$username_opt"
+    # shellcheck disable=SC2034
     [[ -n "$password_opt" ]] && KOAKADEMY_MAIL_PASSWORD="$password_opt"
     [[ -n "$from_address_opt" ]] && KOAKADEMY_MAIL_FROM_ADDRESS="$from_address_opt"
     [[ -n "$from_name_opt" ]] && KOAKADEMY_MAIL_FROM_NAME="$from_name_opt"
     [[ -n "$api_url_opt" ]] && KOAKADEMY_SEQUENZY_API_URL="$api_url_opt"
+    # shellcheck disable=SC2034
     [[ -n "$api_key_opt" ]] && KOAKADEMY_SEQUENZY_API_KEY="$api_key_opt"
 
     ask KOAKADEMY_MAIL_FROM_ADDRESS "Mail from address" "${KOAKADEMY_MAIL_FROM_ADDRESS:-${MAIL_FROM_ADDRESS:-no-reply@$KOAKADEMY_DOMAIN}}"; from_address="$ANSWER"
@@ -1227,6 +1232,7 @@ configure_search() {
     local endpoint api_key
 
     [[ -n "$endpoint_opt" ]] && KOAKADEMY_MEILISEARCH_HOST="$endpoint_opt"
+    # shellcheck disable=SC2034
     [[ -n "$api_key_opt" ]] && KOAKADEMY_MEILISEARCH_KEY="$api_key_opt"
 
     case "$mode" in

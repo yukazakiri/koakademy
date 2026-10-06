@@ -2089,6 +2089,34 @@ final class AdministratorStudentManagementController extends Controller
         ]);
     }
 
+    public function destroySignature(Request $request, Student $student): RedirectResponse
+    {
+        $oldPath = $student->signature_path;
+        $disk = config('filesystems.default');
+
+        if (
+            is_string($oldPath) &&
+            $oldPath !== '' &&
+            ! filter_var($oldPath, FILTER_VALIDATE_URL) &&
+            ! str_starts_with($oldPath, '/') &&
+            is_string($disk) &&
+            Storage::disk($disk)->exists($oldPath)
+        ) {
+            Storage::disk($disk)->delete($oldPath);
+        }
+
+        $student->update([
+            'signature_path' => null,
+        ]);
+
+        $student->refresh();
+
+        return back()->with([
+            'success' => 'Student signature removed successfully.',
+            'signature_url' => null,
+        ]);
+    }
+
     public function manageClearance(Request $request, Student $student): RedirectResponse
     {
         $user = $request->user();

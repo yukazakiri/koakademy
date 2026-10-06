@@ -148,6 +148,53 @@ function UploadDynamicDialog({ student }: any) {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+function DeleteFixedDialog({ student, docType, label }: any) {
+    const [open, setOpen] = useState(false);
+    const [processing, setProcessing] = useState(false);
+
+    const handleDelete = () => {
+        setProcessing(true);
+        router.delete(route("administrators.students.documents.fixed.destroy", [student.id, docType]), {
+            preserveScroll: true,
+            onSuccess: () => {
+                setOpen(false);
+                toast.success(`${label} removed successfully`);
+            },
+            onError: () => {
+                toast.error(`Failed to remove ${label}`);
+            },
+            onFinish: () => setProcessing(false),
+        });
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10" title={`Remove ${label}`}>
+                    <Trash2 className="h-4 w-4" />
+                </Button>
+            </DialogTrigger>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Remove {label}</DialogTitle>
+                    <DialogDescription>
+                        Are you sure you want to remove this document from {student.full_name}&apos;s record? The file will be permanently deleted.
+                    </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                    <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                        Cancel
+                    </Button>
+                    <Button type="button" variant="destructive" onClick={handleDelete} disabled={processing}>
+                        Remove Document
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function DeleteDynamicDialog({ student, resource }: any) {
     const [open, setOpen] = useState(false);
     const [processing, setProcessing] = useState(false);
@@ -274,16 +321,23 @@ export default function StudentDocuments({ auth, student, fixed_documents, dynam
                                                         )}
                                                     </TableCell>
                                                     <TableCell className="text-right">
-                                                        <div className="flex justify-end gap-2">
+                                                        <div className="flex justify-end items-center gap-2">
                                                             {hasFile && (
-                                                                <a
-                                                                    href={fixed_documents[doc.key]}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className={buttonVariants({ variant: "outline", size: "sm" })}
-                                                                >
-                                                                    View
-                                                                </a>
+                                                                <>
+                                                                    <a
+                                                                        href={fixed_documents[doc.key]}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className={buttonVariants({ variant: "outline", size: "sm" })}
+                                                                    >
+                                                                        View
+                                                                    </a>
+                                                                    <DeleteFixedDialog
+                                                                        student={student}
+                                                                        docType={doc.key}
+                                                                        label={doc.label}
+                                                                    />
+                                                                </>
                                                             )}
                                                             <UploadFixedDialog
                                                                 student={student}

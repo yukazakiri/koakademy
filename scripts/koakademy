@@ -25,6 +25,31 @@ configure_mode=""
 yes=false
 wait_ready=true
 preserve_volumes=false
+unattended=false
+admin_name=""
+admin_email=""
+admin_password=""
+school_name=""
+school_code=""
+country_code=""
+school_level=""
+currency=""
+endpoint_opt=""
+bucket_opt=""
+region_opt=""
+access_key_opt=""
+secret_key_opt=""
+public_url_opt=""
+path_style_opt=""
+host_opt=""
+port_opt=""
+scheme_opt=""
+username_opt=""
+password_opt=""
+from_address_opt=""
+from_name_opt=""
+api_key_opt=""
+api_url_opt=""
 original_arguments=()
 
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -37,12 +62,13 @@ usage() {
 KoAkademy production operator
 
 Usage:
-  koakademy install [--domain school.example] [--port 8000] [--channel stable|edge] [--release vX.Y.Z] [--no-wait]
+  koakademy install [--domain school.example] [--port 8000] [--channel stable|edge] [--release vX.Y.Z] [--no-wait] [--unattended] [--direct]
   koakademy update [--port 8000] [--channel stable|edge] [--release vX.Y.Z] [--no-wait]
   koakademy uninstall [--preserve-volumes] [--yes]
-  koakademy configure storage <local|s3|r2|library-r2>
-  koakademy configure mail <log|smtp|sequenzy>
-  koakademy configure search <enable|disable>
+  koakademy configure storage <local|s3|r2|library-r2> [--endpoint URL] [--bucket NAME] [--region REGION] [--access-key KEY] [--secret-key KEY] [--public-url URL] [--path-style true|false]
+  koakademy configure mail <log|smtp|sequenzy> [--host HOST] [--port PORT] [--scheme SCHEME] [--username USER] [--password PASS] [--from-address ADDR] [--from-name NAME] [--api-key KEY]
+  koakademy configure search <enable|disable> [--endpoint URL] [--api-key KEY]
+  koakademy setup [--admin-name NAME] [--admin-email EMAIL] [--admin-password PASS] [--school-name NAME] [--school-code CODE] [--country-code CC] [--school-level LEVEL] [--currency CURR] [--unattended]
   koakademy status
   koakademy rollback [--yes]
 
@@ -153,7 +179,7 @@ prompt_for_domain() {
 
     # The domain is optional: an empty answer selects direct self-hosted HTTP
     # access (http://server-ip:PORT) instead of domain-backed HTTPS.
-    if [[ -n "${KOAKADEMY_INSTALLER_TEST_NONINTERACTIVE:-}" || ! -r /dev/tty ]]; then
+    if [[ "$unattended" == true || "$direct_access" == true || -n "${KOAKADEMY_UNATTENDED:-}" || -n "${KOAKADEMY_NONINTERACTIVE:-}" || -n "${KOAKADEMY_INSTALLER_TEST_NONINTERACTIVE:-}" || ! -t 0 || ! -r /dev/tty ]]; then
         printf '\n'
         return
     fi
@@ -179,7 +205,7 @@ random_secret() {
 ask() {
     local environment_name="$1"
     local label="$2"
-    local default_value="$3"
+    local default_value="${3:-}"
     local value="${!environment_name-}"
     local supplied=false
 
@@ -188,13 +214,38 @@ ask() {
     fi
 
     if [[ "$supplied" != true && -z "$value" ]]; then
-        if [[ ! -t 0 ]]; then
-            [[ -n "$default_value" ]] || fail "Set $environment_name or run this command interactively."
-            value="$default_value"
-        else
+        if [[ -n "$default_value" ]]; then
+            if [[ "$unattended" == true || -n "${KOAKADEMY_UNATTENDED:-}" || ! -t 0 ]]; then
+                ANSWER="$default_value"
+                return
+            fi
             read -r -p "$label [$default_value]: " value
             value="${value:-$default_value}"
+        else
+            if [[ "$unattended" == true || -n "${KOAKADEMY_UNATTENDED:-}" || ! -t 0 ]]; then
+                fail "Option or environment variable $environment_name ($label) is required for unattended execution."
+            fi
+            [[ -t 0 ]] || fail "Set $environment_name or run this command interactively."
+            read -r -p "$label: " value
         fi
+    fi
+    [[ -n "$value" ]] || fail "$label cannot be empty."
+    ANSWER="$value"
+}
+
+ask_optional() {
+    local environment_name="$1"
+    local label="$2"
+    local default_value="${3:-}"
+    local value="${!environment_name-}"
+
+    if [[ -z "$value" ]]; then
+        if [[ "$unattended" == true || -n "${KOAKADEMY_UNATTENDED:-}" || ! -t 0 ]]; then
+            ANSWER="$default_value"
+            return
+        fi
+        read -r -p "$label [$default_value]: " value
+        value="${value:-$default_value}"
     fi
     ANSWER="$value"
 }
@@ -205,6 +256,9 @@ ask_secret() {
     local value="${!environment_name:-}"
 
     if [[ -z "$value" ]]; then
+        if [[ "$unattended" == true || -n "${KOAKADEMY_UNATTENDED:-}" || ! -t 0 ]]; then
+            fail "Option or environment variable $environment_name ($label) is required for unattended execution."
+        fi
         [[ -t 0 ]] || fail "Set $environment_name or run this command interactively."
         read -r -s -p "$label: " value
         printf '\n'
@@ -954,6 +1008,19 @@ perform_install() {
     wait_for_service "${STACK_NAME}_gotenberg"
     info "Running database migrations for $release_tag."
     run_app_job "koakademy-migrate-$(date +%s)" "$KOAKADEMY_IMAGE" php artisan migrate --force --no-interaction
+    if [[ -n "$admin_email" || -n "${KOAKADEMY_ADMIN_EMAIL:-}" ]]; then
+        info "Running automated application setup."
+        local -a setup_job_args=(php artisan app:setup --unattended)
+        [[ -n "$admin_name" ]] && setup_job_args+=(--admin-name="$admin_name")
+        [[ -n "$admin_email" ]] && setup_job_args+=(--admin-email="$admin_email")
+        [[ -n "$admin_password" ]] && setup_job_args+=(--admin-password="$admin_password")
+        [[ -n "$school_name" ]] && setup_job_args+=(--school-name="$school_name")
+        [[ -n "$school_code" ]] && setup_job_args+=(--school-code="$school_code")
+        [[ -n "$country_code" ]] && setup_job_args+=(--country-code="$country_code")
+        [[ -n "$school_level" ]] && setup_job_args+=(--school-level="$school_level")
+        [[ -n "$currency" ]] && setup_job_args+=(--currency="$currency")
+        run_app_job "koakademy-setup-$(date +%s)" "$KOAKADEMY_IMAGE" "${setup_job_args[@]}"
+    fi
     set_runtime APP_REPLICAS 1
     deploy_stack
     if [[ "$wait_ready" == true ]]; then
@@ -970,6 +1037,24 @@ perform_install() {
         print_ready_finale "$(format_duration $((SECONDS - started)))" "https://$KOAKADEMY_DOMAIN/setup"
     fi
     info "Manage this instance globally with 'koakademy status', 'koakademy update', and 'koakademy configure'."
+}
+
+perform_setup() {
+    require_root
+    load_runtime
+    local -a setup_job_args=(php artisan app:setup)
+    [[ "$unattended" == true ]] && setup_job_args+=(--unattended)
+    [[ -n "$admin_name" ]] && setup_job_args+=(--admin-name="$admin_name")
+    [[ -n "$admin_email" ]] && setup_job_args+=(--admin-email="$admin_email")
+    [[ -n "$admin_password" ]] && setup_job_args+=(--admin-password="$admin_password")
+    [[ -n "$school_name" ]] && setup_job_args+=(--school-name="$school_name")
+    [[ -n "$school_code" ]] && setup_job_args+=(--school-code="$school_code")
+    [[ -n "$country_code" ]] && setup_job_args+=(--country-code="$country_code")
+    [[ -n "$school_level" ]] && setup_job_args+=(--school-level="$school_level")
+    [[ -n "$currency" ]] && setup_job_args+=(--currency="$currency")
+    info "Running application setup."
+    run_app_job "koakademy-setup-$(date +%s)" "$KOAKADEMY_IMAGE" "${setup_job_args[@]}"
+    info "Application setup complete."
 }
 
 perform_update() {
@@ -1048,6 +1133,15 @@ apply_configuration() {
 configure_storage() {
     local mode="$1"
     local endpoint bucket region public_url path_style access_key secret_key
+
+    [[ -n "$endpoint_opt" ]] && KOAKADEMY_S3_ENDPOINT="$endpoint_opt" && KOAKADEMY_LIBRARY_R2_ENDPOINT="$endpoint_opt"
+    [[ -n "$bucket_opt" ]] && KOAKADEMY_S3_BUCKET="$bucket_opt" && KOAKADEMY_LIBRARY_R2_BUCKET="$bucket_opt"
+    [[ -n "$region_opt" ]] && KOAKADEMY_S3_REGION="$region_opt"
+    [[ -n "$path_style_opt" ]] && KOAKADEMY_S3_PATH_STYLE="$path_style_opt"
+    [[ -n "$public_url_opt" ]] && KOAKADEMY_S3_PUBLIC_URL="$public_url_opt"
+    [[ -n "$access_key_opt" ]] && KOAKADEMY_S3_ACCESS_KEY="$access_key_opt" && KOAKADEMY_LIBRARY_R2_ACCESS_KEY="$access_key_opt"
+    [[ -n "$secret_key_opt" ]] && KOAKADEMY_S3_SECRET_KEY="$secret_key_opt" && KOAKADEMY_LIBRARY_R2_SECRET_KEY="$secret_key_opt"
+
     case "$mode" in
         local)
             set_runtime FILESYSTEM_DISK public; set_runtime AWS_DEFAULT_REGION ""; set_runtime AWS_BUCKET ""
@@ -1062,7 +1156,7 @@ configure_storage() {
                 ask KOAKADEMY_S3_REGION "S3 region" "${KOAKADEMY_S3_REGION:-us-east-1}"; region="$ANSWER"
                 ask KOAKADEMY_S3_PATH_STYLE "Use path-style requests (true/false)" "${KOAKADEMY_S3_PATH_STYLE:-false}"; path_style="$ANSWER"
             fi
-            ask KOAKADEMY_S3_PUBLIC_URL "Public object or CDN URL (blank to omit)" "${KOAKADEMY_S3_PUBLIC_URL:-}"; public_url="$ANSWER"
+            ask_optional KOAKADEMY_S3_PUBLIC_URL "Public object or CDN URL (blank to omit)" "${KOAKADEMY_S3_PUBLIC_URL:-}"; public_url="$ANSWER"
             [[ -z "$public_url" ]] || validate_url "$public_url"
             ask_secret KOAKADEMY_S3_ACCESS_KEY "S3 access key ID"; access_key="$ANSWER"
             ask_secret KOAKADEMY_S3_SECRET_KEY "S3 secret access key"; secret_key="$ANSWER"
@@ -1087,9 +1181,20 @@ configure_storage() {
 configure_mail() {
     local mode="$1"
     local host port scheme username password api_key from_address from_name endpoint
-    ask KOAKADEMY_MAIL_FROM_ADDRESS "Mail from address" "${MAIL_FROM_ADDRESS:-no-reply@$KOAKADEMY_DOMAIN}"; from_address="$ANSWER"
+
+    [[ -n "$host_opt" ]] && KOAKADEMY_MAIL_HOST="$host_opt"
+    [[ -n "$port_opt" ]] && KOAKADEMY_MAIL_PORT="$port_opt"
+    [[ -n "$scheme_opt" ]] && KOAKADEMY_MAIL_SCHEME="$scheme_opt"
+    [[ -n "$username_opt" ]] && KOAKADEMY_MAIL_USERNAME="$username_opt"
+    [[ -n "$password_opt" ]] && KOAKADEMY_MAIL_PASSWORD="$password_opt"
+    [[ -n "$from_address_opt" ]] && KOAKADEMY_MAIL_FROM_ADDRESS="$from_address_opt"
+    [[ -n "$from_name_opt" ]] && KOAKADEMY_MAIL_FROM_NAME="$from_name_opt"
+    [[ -n "$api_url_opt" ]] && KOAKADEMY_SEQUENZY_API_URL="$api_url_opt"
+    [[ -n "$api_key_opt" ]] && KOAKADEMY_SEQUENZY_API_KEY="$api_key_opt"
+
+    ask KOAKADEMY_MAIL_FROM_ADDRESS "Mail from address" "${KOAKADEMY_MAIL_FROM_ADDRESS:-${MAIL_FROM_ADDRESS:-no-reply@$KOAKADEMY_DOMAIN}}"; from_address="$ANSWER"
     [[ "$from_address" == *@* ]] || fail "Mail from address must be valid."
-    ask KOAKADEMY_MAIL_FROM_NAME "Mail from name" "${MAIL_FROM_NAME:-KoAkademy}"; from_name="$ANSWER"
+    ask KOAKADEMY_MAIL_FROM_NAME "Mail from name" "${KOAKADEMY_MAIL_FROM_NAME:-${MAIL_FROM_NAME:-KoAkademy}}"; from_name="$ANSWER"
     case "$mode" in
         log)
             set_runtime MAIL_MAILER log; set_runtime MAIL_SCHEME ""; set_runtime MAIL_HOST ""; set_runtime MAIL_PORT ""; set_runtime MAIL_USERNAME ""
@@ -1105,7 +1210,7 @@ configure_mail() {
             create_secret SMTP_PASSWORD_SECRET "$password"; create_secret SEQUENZY_API_KEY_SECRET "$OPTIONAL_SECRET_VALUE"
             ;;
         sequenzy)
-            ask KOAKADEMY_SEQUENZY_API_URL "Sequenzy API URL" "${SEQUENZY_API_URL:-https://api.sequenzy.com/api/v1/transactional/send}"; endpoint="$ANSWER"; validate_url "$endpoint"
+            ask KOAKADEMY_SEQUENZY_API_URL "Sequenzy API URL" "${KOAKADEMY_SEQUENZY_API_URL:-${SEQUENZY_API_URL:-https://api.sequenzy.com/api/v1/transactional/send}}"; endpoint="$ANSWER"; validate_url "$endpoint"
             ask_secret KOAKADEMY_SEQUENZY_API_KEY "Sequenzy API key"; api_key="$ANSWER"
             set_runtime MAIL_MAILER sequenzy; set_runtime SEQUENZY_API_URL "$endpoint"
             create_secret SMTP_PASSWORD_SECRET "$OPTIONAL_SECRET_VALUE"; create_secret SEQUENZY_API_KEY_SECRET "$api_key"
@@ -1120,6 +1225,10 @@ configure_mail() {
 configure_search() {
     local mode="$1"
     local endpoint api_key
+
+    [[ -n "$endpoint_opt" ]] && KOAKADEMY_MEILISEARCH_HOST="$endpoint_opt"
+    [[ -n "$api_key_opt" ]] && KOAKADEMY_MEILISEARCH_KEY="$api_key_opt"
+
     case "$mode" in
         disable)
             set_runtime SCOUT_DRIVER null; set_runtime MEILISEARCH_HOST ""; create_secret MEILISEARCH_KEY_SECRET "$OPTIONAL_SECRET_VALUE"; apply_configuration
@@ -1232,7 +1341,7 @@ print_status() {
 parse_command() {
     command_name="${1:-}"; shift || true
     case "$command_name" in
-        install|update|configure|status|rollback|uninstall) ;;
+        install|update|configure|status|rollback|uninstall|setup) ;;
         -h|--help|"") usage; exit 0 ;;
         *) fail "Unknown command: $command_name" ;;
     esac
@@ -1243,16 +1352,89 @@ parse_command() {
     while (( $# > 0 )); do
         case "$1" in
             --release) (( $# >= 2 )) || fail "--release requires a tag."; release_tag="$2"; shift 2 ;;
+            --release=*) release_tag="${1#--release=}"; shift ;;
             --channel) (( $# >= 2 )) || fail "--channel requires stable or edge."; channel="$2"; channel_explicit=true; [[ "$channel" == stable || "$channel" == edge ]] || fail "Channel must be stable or edge."; shift 2 ;;
+            --channel=*) channel="${1#--channel=}"; channel_explicit=true; [[ "$channel" == stable || "$channel" == edge ]] || fail "Channel must be stable or edge."; shift ;;
             --stable) channel=stable; channel_explicit=true; shift ;;
             --edge) channel=edge; channel_explicit=true; shift ;;
             --source-sha) (( $# >= 2 )) || fail "--source-sha requires a Git SHA."; source_sha="$2"; validate_source_sha "$source_sha"; shift 2 ;;
-            --port) (( $# >= 2 )) || fail "--port requires a number."; public_port="$2"; public_port_explicit=true; validate_port "$public_port"; shift 2 ;;
+            --source-sha=*) source_sha="${1#--source-sha=}"; validate_source_sha "$source_sha"; shift ;;
+            --port)
+                (( $# >= 2 )) || fail "--port requires a number."
+                if [[ "$command_name" == configure && "${subcommand:-}" == mail ]]; then
+                    port_opt="$2"
+                else
+                    public_port="$2"
+                    public_port_explicit=true
+                    validate_port "$public_port"
+                fi
+                shift 2
+                ;;
+            --port=*)
+                local_port_val="${1#--port=}"
+                if [[ "$command_name" == configure && "${subcommand:-}" == mail ]]; then
+                    port_opt="$local_port_val"
+                else
+                    public_port="$local_port_val"
+                    public_port_explicit=true
+                    validate_port "$public_port"
+                fi
+                shift
+                ;;
             --domain) (( $# >= 2 )) || fail "--domain requires a hostname."; KOAKADEMY_DOMAIN="$2"; shift 2 ;;
-            --yes) yes=true; shift ;;
+            --domain=*) KOAKADEMY_DOMAIN="${1#--domain=}"; shift ;;
+            -y|--yes) yes=true; shift ;;
+            --unattended|--non-interactive) unattended=true; shift ;;
+            --direct|--direct-access) direct_access=true; shift ;;
             --wait) wait_ready=true; shift ;;
             --no-wait) wait_ready=false; shift ;;
             --preserve-volumes) preserve_volumes=true; shift ;;
+            --admin-name) (( $# >= 2 )) || fail "--admin-name requires a value."; admin_name="$2"; shift 2 ;;
+            --admin-name=*) admin_name="${1#--admin-name=}"; shift ;;
+            --admin-email) (( $# >= 2 )) || fail "--admin-email requires an email."; admin_email="$2"; shift 2 ;;
+            --admin-email=*) admin_email="${1#--admin-email=}"; shift ;;
+            --admin-password) (( $# >= 2 )) || fail "--admin-password requires a password."; admin_password="$2"; shift 2 ;;
+            --admin-password=*) admin_password="${1#--admin-password=}"; shift ;;
+            --school-name) (( $# >= 2 )) || fail "--school-name requires a value."; school_name="$2"; shift 2 ;;
+            --school-name=*) school_name="${1#--school-name=}"; shift ;;
+            --school-code) (( $# >= 2 )) || fail "--school-code requires a value."; school_code="$2"; shift 2 ;;
+            --school-code=*) school_code="${1#--school-code=}"; shift ;;
+            --country-code) (( $# >= 2 )) || fail "--country-code requires a 2-letter code."; country_code="$2"; shift 2 ;;
+            --country-code=*) country_code="${1#--country-code=}"; shift ;;
+            --school-level) (( $# >= 2 )) || fail "--school-level requires a level."; school_level="$2"; shift 2 ;;
+            --school-level=*) school_level="${1#--school-level=}"; shift ;;
+            --currency) (( $# >= 2 )) || fail "--currency requires a 3-letter currency code."; currency="$2"; shift 2 ;;
+            --currency=*) currency="${1#--currency=}"; shift ;;
+            --endpoint) (( $# >= 2 )) || fail "--endpoint requires a URL."; endpoint_opt="$2"; shift 2 ;;
+            --endpoint=*) endpoint_opt="${1#--endpoint=}"; shift ;;
+            --bucket) (( $# >= 2 )) || fail "--bucket requires a name."; bucket_opt="$2"; shift 2 ;;
+            --bucket=*) bucket_opt="${1#--bucket=}"; shift ;;
+            --region) (( $# >= 2 )) || fail "--region requires a value."; region_opt="$2"; shift 2 ;;
+            --region=*) region_opt="${1#--region=}"; shift ;;
+            --access-key) (( $# >= 2 )) || fail "--access-key requires a value."; access_key_opt="$2"; shift 2 ;;
+            --access-key=*) access_key_opt="${1#--access-key=}"; shift ;;
+            --secret-key) (( $# >= 2 )) || fail "--secret-key requires a value."; secret_key_opt="$2"; shift 2 ;;
+            --secret-key=*) secret_key_opt="${1#--secret-key=}"; shift ;;
+            --public-url) (( $# >= 2 )) || fail "--public-url requires a URL."; public_url_opt="$2"; shift 2 ;;
+            --public-url=*) public_url_opt="${1#--public-url=}"; shift ;;
+            --path-style) (( $# >= 2 )) || fail "--path-style requires true or false."; path_style_opt="$2"; shift 2 ;;
+            --path-style=*) path_style_opt="${1#--path-style=}"; shift ;;
+            --host) (( $# >= 2 )) || fail "--host requires a hostname."; host_opt="$2"; shift 2 ;;
+            --host=*) host_opt="${1#--host=}"; shift ;;
+            --scheme) (( $# >= 2 )) || fail "--scheme requires a value."; scheme_opt="$2"; shift 2 ;;
+            --scheme=*) scheme_opt="${1#--scheme=}"; shift ;;
+            --username) (( $# >= 2 )) || fail "--username requires a value."; username_opt="$2"; shift 2 ;;
+            --username=*) username_opt="${1#--username=}"; shift ;;
+            --password) (( $# >= 2 )) || fail "--password requires a value."; password_opt="$2"; shift 2 ;;
+            --password=*) password_opt="${1#--password=}"; shift ;;
+            --from-address) (( $# >= 2 )) || fail "--from-address requires an email."; from_address_opt="$2"; shift 2 ;;
+            --from-address=*) from_address_opt="${1#--from-address=}"; shift ;;
+            --from-name) (( $# >= 2 )) || fail "--from-name requires a name."; from_name_opt="$2"; shift 2 ;;
+            --from-name=*) from_name_opt="${1#--from-name=}"; shift ;;
+            --api-key) (( $# >= 2 )) || fail "--api-key requires a key."; api_key_opt="$2"; shift 2 ;;
+            --api-key=*) api_key_opt="${1#--api-key=}"; shift ;;
+            --api-url) (( $# >= 2 )) || fail "--api-url requires a URL."; api_url_opt="$2"; shift 2 ;;
+            --api-url=*) api_url_opt="${1#--api-url=}"; shift ;;
             *) fail "Unknown option: $1" ;;
         esac
     done
@@ -1266,6 +1448,7 @@ main() {
     case "$command_name" in
         install) perform_install ;;
         update) perform_update ;;
+        setup) perform_setup ;;
         configure)
             require_root; load_runtime
             case "$subcommand" in

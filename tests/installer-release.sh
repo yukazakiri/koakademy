@@ -109,6 +109,37 @@ if [[ "$channel" == stable ]]; then
     grep -Fq 'swarm-stack-direct.yml' "$missing_state/docker.log"
     grep -Fq 'INSTALLATION_COMPLETE=true' "$missing_state/runtime/runtime.env"
 
+    # Unattended configuration commands must accept options without prompting.
+    bash "$missing_state/runtime/bin/koakademy" configure storage s3 \
+        --endpoint https://s3.example.com --bucket test-bucket --region us-east-1 \
+        --access-key KEY123 --secret-key SECRET123 --unattended
+    grep -Fq 'FILESYSTEM_DISK=s3' "$missing_state/runtime/runtime.env"
+    grep -Fq 'AWS_BUCKET=test-bucket' "$missing_state/runtime/runtime.env"
+
+    bash "$missing_state/runtime/bin/koakademy" configure mail smtp \
+        --host smtp.example.com --port 587 --username mailuser --password mailpass \
+        --from-address test@school.example --unattended
+    grep -Fq 'MAIL_MAILER=smtp' "$missing_state/runtime/runtime.env"
+    grep -Fq 'MAIL_HOST=smtp.example.com' "$missing_state/runtime/runtime.env"
+
+    bash "$missing_state/runtime/bin/koakademy" configure search enable \
+        --endpoint https://search.example.com --api-key SEARCHKEY --unattended
+    grep -Fq 'SCOUT_DRIVER=meilisearch' "$missing_state/runtime/runtime.env"
+    grep -Fq 'MEILISEARCH_HOST=https://search.example.com' "$missing_state/runtime/runtime.env"
+
+    # An unattended install with pre-configured admin options must run automated setup.
+    unattended_state="$temporary_directory/unattended-state"
+    export KOAKADEMY_INSTALLER_TEST_STATE="$unattended_state"
+    export KOAKADEMY_ROOT="$unattended_state/runtime"
+    bash "$bootstrap_directory/install.sh" --unattended --direct \
+        --admin-email admin@unattended.example --admin-password secretpass123 \
+        --school-name "Automated School" --school-code "AUTO"
+    grep -Fq 'KOAKADEMY_DIRECT_ACCESS=true' "$unattended_state/runtime/runtime.env"
+    grep -Fq 'INSTALLATION_COMPLETE=true' "$unattended_state/runtime/runtime.env"
+    grep -Fq 'php artisan app:setup --unattended' "$unattended_state/docker.log"
+    grep -Fq -- '--admin-email=admin@unattended.example' "$unattended_state/docker.log"
+    grep -Fq -- '--school-name=Automated School' "$unattended_state/docker.log"
+
     # Restore the primary fixture state for the update lifecycle assertions.
     export KOAKADEMY_INSTALLER_TEST_STATE="$state_directory"
     export KOAKADEMY_ROOT="$state_directory/runtime"

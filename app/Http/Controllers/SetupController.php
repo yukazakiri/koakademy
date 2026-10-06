@@ -10,21 +10,14 @@ use App\Enums\UserRole;
 use App\Models\GeneralSetting;
 use App\Models\School;
 use App\Models\User;
-use App\Services\LogoConversionService;
-use App\Settings\SiteSettings;
 use App\Support\IsoAlpha2CountryCodes;
 use App\Support\SetupCatalogRegistry;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
-use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
-use Spatie\Permission\Models\Role;
 
 final class SetupController extends Controller
 {
@@ -78,7 +71,7 @@ final class SetupController extends Controller
     /**
      * Process the setup submission.
      */
-    public function store(Request $request, SetupCatalogRegistry $catalogRegistry): RedirectResponse
+    public function store(Request $request, SetupCatalogRegistry $catalogRegistry, \App\Services\SetupExecutionService $setupService): RedirectResponse
     {
         $currentUser = Auth::user();
         $isSuperAdmin = $currentUser?->role === UserRole::SuperAdmin;
@@ -145,152 +138,13 @@ final class SetupController extends Controller
             'enable_faculty_transfer_email_notifications' => ['nullable', 'boolean'],
         ]);
 
-        $schoolLevel = SchoolLevel::from($request->input('school_level'));
-        $countryCode = $request->input('country_code');
-        $availableFrameworks = $catalogRegistry->frameworks($countryCode, $schoolLevel);
-        $provider = $catalogRegistry->provider($countryCode);
-
-        $frameworkValue = $request->input('curriculum_framework');
-        $framework = is_string($frameworkValue) && $frameworkValue !== ''
-            ? CurriculumFramework::from($frameworkValue)
-            : null;
-
-        if ($framework !== null && ! in_array($framework, $availableFrameworks, true)) {
-            throw ValidationException::withMessages([
-                'curriculum_framework' => 'The selected curriculum framework does not apply to the chosen institution level.',
-            ]);
-        }
-
-        $programs = [];
-
-        foreach ((array) $request->input('programs') as $programCode) {
-            if (is_string($programCode) && $programCode !== '') {
-                $programs[] = $programCode;
-            }
-        }
-
-        if ($framework !== null) {
-            $allowed = $provider->validProgramCodes($framework);
-            $invalid = array_values(array_diff($programs, $allowed));
-
-            if ($invalid !== []) {
-                throw ValidationException::withMessages([
-                    'programs' => 'One or more selected programs are not part of the chosen curriculum framework.',
-                ]);
-            }
-        }
-
-        if ($framework === null && $programs !== []) {
-            throw ValidationException::withMessages([
-                'programs' => 'Programs require a supported curriculum framework.',
-            ]);
-        }
-
-        if ($countryCode !== 'PH' && $request->boolean('seed_strand_subjects')) {
-            throw ValidationException::withMessages([
-                'seed_strand_subjects' => 'Subject preloading is only available for Philippine curricula.',
-            ]);
-        }
-
-        $curriculumYearValue = $request->input('curriculum_year');
-        $startValue = $request->input('school_starting_date');
-        $endValue = $request->input('school_ending_date');
-        $curriculumYear = is_string($curriculumYearValue) && $curriculumYearValue !== ''
-            ? $curriculumYearValue
-            : ($framework === CurriculumFramework::DepedMatatag
-                ? '2026-2027'
-                : Carbon::parse(is_string($startValue) ? $startValue : 'today')->format('Y').'-'.Carbon::parse(is_string($endValue) ? $endValue : 'today')->format('Y'));
-
-        $curriculumReferenceValue = $request->input('curriculum_reference');
-        $curriculumReference = is_string($curriculumReferenceValue) && $curriculumReferenceValue !== ''
-            ? $curriculumReferenceValue
-            : $framework?->getReference();
-
-        $user = DB::transaction(function () use ($request, $framework, $provider, $programs, $curriculumYear, $curriculumReference, $countryCode) {
-            // Create the School
-            $school = School::create([
-                'name' => $request->input('school_name'),
-                'code' => $request->input('school_code'),
-                'country_code' => $request->input('country_code'),
-                'school_level' => $request->input('school_level'),
-                'curriculum_framework' => $framework?->value,
-                'curriculum_reference' => $curriculumReference,
-                'description' => $request->input('school_description'),
-                'email' => $request->input('school_email'),
-                'phone' => $request->input('school_phone'),
-                'location' => $request->input('school_location'),
-                'dean_name' => $request->input('dean_name'),
-                'dean_email' => $request->input('dean_email'),
-                'is_active' => true,
-            ]);
-
-            // Create or update General Setting
-            $generalSetting = GeneralSetting::first() ?? new GeneralSetting();
-            $generalSetting->site_name = $request->filled('site_name') ? $request->input('site_name') : $request->input('school_name');
-            $generalSetting->site_description = $request->input('site_description');
-            $generalSetting->theme_color = $request->input('theme_color') ?? '#0f172a';
-            $generalSetting->currency = $request->input('currency') ?: ($countryCode === 'PH' ? 'PHP' : null);
-            $generalSetting->support_email = $request->input('support_email');
-            $generalSetting->support_phone = $request->input('support_phone');
-            $generalSetting->school_starting_date = $request->input('school_starting_date');
-            $generalSetting->school_ending_date = $request->input('school_ending_date');
-            $generalSetting->semester = (int) $request->input('semester');
-            $generalSetting->curriculum_year = $curriculumYear;
-            $generalSetting->school_portal_enabled = $request->boolean('school_portal_enabled', true);
-            $generalSetting->online_enrollment_enabled = $request->boolean('online_enrollment_enabled', true);
-            $generalSetting->enable_clearance_check = $request->boolean('enable_clearance_check', true);
-            $generalSetting->enable_signatures = $request->boolean('enable_signatures');
-            $generalSetting->enable_qr_codes = $request->boolean('enable_qr_codes');
-            $generalSetting->enable_public_transactions = $request->boolean('enable_public_transactions');
-            $generalSetting->enable_support_page = $request->boolean('enable_support_page', true);
-            $generalSetting->inventory_module_enabled = $request->boolean('inventory_module_enabled');
-            $generalSetting->library_module_enabled = $request->boolean('library_module_enabled');
-            $generalSetting->enable_student_transfer_email_notifications = $request->boolean('enable_student_transfer_email_notifications', true);
-            $generalSetting->enable_faculty_transfer_email_notifications = $request->boolean('enable_faculty_transfer_email_notifications', true);
-            $generalSetting->is_setup = true;
-            $generalSetting->save();
-
-            // Create the curriculum structure selected in the wizard.
-            if ($framework !== null) {
-                $provider->bootstrap(
-                    school: $school,
-                    framework: $framework,
-                    programCodes: $programs,
-                    curriculumYear: $curriculumYear,
-                    seedStrandSubjects: $request->boolean('seed_strand_subjects'),
-                );
-            }
-
-            // Process logo upload — generates favicon, PWA icons, OG image
-            if ($request->hasFile('logo')) {
-                $paths = app(LogoConversionService::class)->process($request->file('logo'));
-
-                $siteSettings = app(SiteSettings::class);
-                $siteSettings->logo = $paths['logo'];
-                $siteSettings->favicon = $paths['favicon'];
-                $siteSettings->og_image = $paths['og_image'];
-                $siteSettings->save();
-            }
-
-            // Create the User
-            $user = User::create([
-                'name' => $request->input('admin_name'),
-                'email' => $request->input('admin_email'),
-                'password' => Hash::make($request->input('admin_password')),
-                'role' => UserRole::SuperAdmin,
-                'school_id' => $school->id,
-            ]);
-
-            // Assign Spatie Role
-            $roleName = config('filament-shield.super_admin.name', 'super_admin');
-            $role = Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']);
-            $user->assignRole($role);
-
-            return $user;
-        });
+        $result = $setupService->execute(
+            $request->all(),
+            $request->file('logo'),
+        );
 
         // Log in the new user
-        Auth::login($user);
+        Auth::login($result['user']);
 
         return redirect('/');
     }

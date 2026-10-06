@@ -134,7 +134,7 @@ case "$command_name" in
             ps)
                 name="$1"
                 exists services "$name" || exit 1
-                if [[ "$name" == koakademy-migrate-* || "$name" == koakademy-scout-* ]]; then
+                if [[ "$name" == koakademy-migrate-* || "$name" == koakademy-scout-* || "$name" == koakademy-setup-* ]]; then
                     printf 'Complete\n'
                 else
                     printf 'Running\n'

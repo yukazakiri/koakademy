@@ -18,6 +18,12 @@ final class EditStudent extends EditRecord
     #[Override]
     protected static string $resource = StudentResource::class;
 
+    #[Override]
+    protected function getRedirectUrl(): ?string
+    {
+        return null;
+    }
+
     protected function getHeaderActions(): array
     {
         return [

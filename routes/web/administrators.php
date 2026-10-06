@@ -258,6 +258,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/students/{student}/tuition/soa', [AdministratorStudentManagementController::class, 'printSoa'])->name('students.tuition.soa');
         Route::get('/students/{student}/documents', [AdministratorStudentDocumentController::class, 'index'])->name('students.documents.index');
         Route::post('/students/{student}/documents/fixed', [AdministratorStudentDocumentController::class, 'updateFixed'])->name('students.documents.fixed.update');
+        Route::delete('/students/{student}/documents/fixed/{documentType?}', [AdministratorStudentDocumentController::class, 'destroyFixed'])->name('students.documents.fixed.destroy');
         Route::post('/students/{student}/documents/dynamic', [AdministratorStudentDocumentController::class, 'storeDynamic'])->name('students.documents.dynamic.store');
         Route::delete('/students/{student}/documents/dynamic/{resource}', [AdministratorStudentDocumentController::class, 'destroyDynamic'])->name('students.documents.dynamic.destroy');
         Route::get('/students/{student}/edit', [AdministratorStudentManagementController::class, 'edit'])->name('students.edit')->withTrashed();
@@ -275,6 +276,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/students/{student}/retry-enrollment', [AdministratorStudentManagementController::class, 'retryClassEnrollment'])->name('students.retry-enrollment');
         Route::patch('/students/{student}/update-tuition', [AdministratorStudentManagementController::class, 'updateTuition'])->name('students.update-tuition');
         Route::post('/students/{student}/signature', [AdministratorStudentManagementController::class, 'updateSignature'])->name('students.signature.update');
+        Route::delete('/students/{student}/signature', [AdministratorStudentManagementController::class, 'destroySignature'])->name('students.signature.destroy');
         Route::post('/students/{student}/manage-clearance', [AdministratorStudentManagementController::class, 'manageClearance'])->name('students.manage-clearance');
         Route::patch('/students/{student}/update-status', [AdministratorStudentManagementController::class, 'updateStatus'])->name('students.update-status');
         Route::post('/students/{student}/restore', [AdministratorStudentManagementController::class, 'restore'])->name('students.restore');

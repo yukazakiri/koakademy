@@ -93,6 +93,42 @@ final class AdministratorStudentDocumentController extends Controller
         return redirect()->back()->with('success', 'Document uploaded successfully.');
     }
 
+    public function destroyFixed(Request $request, Student $student, ?string $documentType = null)
+    {
+        $type = $documentType ?: $request->input('document_type');
+
+        if (! is_string($type) || ! in_array($type, DocumentLocation::DOCUMENT_FIELDS, true)) {
+            abort(404, 'Invalid document type.');
+        }
+
+        if ($student->DocumentLocation) {
+            $oldPath = $student->DocumentLocation->$type;
+            if (is_string($oldPath) && $oldPath !== '' && ! filter_var($oldPath, FILTER_VALIDATE_URL) && ! str_starts_with($oldPath, '/')) {
+                foreach ([config('filesystems.default'), 'public'] as $disk) {
+                    if (Storage::disk($disk)->exists($oldPath)) {
+                        Storage::disk($disk)->delete($oldPath);
+                    }
+                }
+            }
+
+            $student->DocumentLocation->update([$type => null]);
+        }
+
+        if ($type === 'picture_1x1' && $student->profile_url) {
+            $profileUrl = $student->profile_url;
+            if (is_string($profileUrl) && $profileUrl !== '' && ! filter_var($profileUrl, FILTER_VALIDATE_URL) && ! str_starts_with($profileUrl, '/')) {
+                foreach ([config('filesystems.default'), 'public'] as $disk) {
+                    if (Storage::disk($disk)->exists($profileUrl)) {
+                        Storage::disk($disk)->delete($profileUrl);
+                    }
+                }
+            }
+            $student->update(['profile_url' => null]);
+        }
+
+        return redirect()->back()->with('success', 'Document removed successfully.');
+    }
+
     public function storeDynamic(Request $request, Student $student)
     {
         $request->validate([

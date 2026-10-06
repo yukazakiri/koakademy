@@ -1543,6 +1543,7 @@ final class AdministratorStudentManagementController extends Controller
             'job_position' => ['nullable', 'string', 'max:255'],
             'employment_date' => ['nullable', 'date'],
             'employed_by_institution' => ['nullable', 'boolean'],
+            'stay' => ['nullable', 'boolean'],
         ]);
 
         DB::transaction(function () use ($validated, $student): void {
@@ -1627,6 +1628,11 @@ final class AdministratorStudentManagementController extends Controller
         $message = 'Student updated successfully.';
         if ($idWasGenerated) {
             $message .= " Student ID defaulted to {$validated['student_id']}.";
+        }
+
+        if ($request->boolean('stay', false) || $request->has('stay')) {
+            return redirect()->route('administrators.students.edit', $student)
+                ->with('success', $message);
         }
 
         return redirect()->route('administrators.students.show', $student)
@@ -2086,6 +2092,34 @@ final class AdministratorStudentManagementController extends Controller
         return back()->with([
             'success' => 'Student signature saved successfully.',
             'signature_url' => $this->resolveStoredFileUrl($student->signature_path),
+        ]);
+    }
+
+    public function destroySignature(Request $request, Student $student): RedirectResponse
+    {
+        $oldPath = $student->signature_path;
+        $disk = config('filesystems.default');
+
+        if (
+            is_string($oldPath) &&
+            $oldPath !== '' &&
+            ! filter_var($oldPath, FILTER_VALIDATE_URL) &&
+            ! str_starts_with($oldPath, '/') &&
+            is_string($disk) &&
+            Storage::disk($disk)->exists($oldPath)
+        ) {
+            Storage::disk($disk)->delete($oldPath);
+        }
+
+        $student->update([
+            'signature_path' => null,
+        ]);
+
+        $student->refresh();
+
+        return back()->with([
+            'success' => 'Student signature removed successfully.',
+            'signature_url' => null,
         ]);
     }
 

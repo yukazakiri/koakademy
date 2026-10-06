@@ -1,10 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Tabs, TabsList, TabsTab, TabsPanel } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
 import { useTheme } from "@/hooks/use-theme";
 import { cn } from "@/lib/utils";
 import { router } from "@inertiajs/react";
-import { Eraser, ImageUp, PencilLine, Save, X } from "lucide-react";
+import { Eraser, ImageUp, PencilLine, Save, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import SignaturePad from "signature_pad";
 import { toast } from "sonner";
@@ -22,6 +22,7 @@ export function StudentSignaturePad({ studentId, signatureUrl }: StudentSignatur
     const signaturePadRef = useRef<SignaturePad | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
+    const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
     const [saving, setSaving] = useState(false);
     const [activeTab, setActiveTab] = useState<string>("draw");
     const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -278,6 +279,31 @@ export function StudentSignaturePad({ studentId, signatureUrl }: StudentSignatur
         );
     };
 
+    const handleRemoveSignature = () => {
+        setSaving(true);
+        router.optimistic((props) => ({
+            ...props,
+            student: {
+                ...props.student,
+                signature_url: null,
+            },
+        })).delete(route("administrators.students.signature.destroy", studentId), {
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: () => {
+                setIsConfirmDeleteOpen(false);
+                setIsDialogOpen(false);
+                toast.success("Signature removed successfully.");
+            },
+            onError: () => {
+                toast.error("Failed to remove signature.");
+            },
+            onFinish: () => {
+                setSaving(false);
+            },
+        });
+    };
+
     const handleSave = () => {
         if (activeTab === "upload") {
             if (!uploadFile) {
@@ -358,10 +384,24 @@ export function StudentSignaturePad({ studentId, signatureUrl }: StudentSignatur
                             />
                         </div>
                         <div className="border-foreground/20 border-b" />
-                        <span className="text-muted-foreground mt-1 inline-flex items-center gap-1 text-[10px] transition-colors group-hover:text-primary">
-                            <PencilLine className="h-3 w-3" />
-                            Click to update
-                        </span>
+                        <div className="mt-1 flex items-center justify-between">
+                            <span className="text-muted-foreground inline-flex items-center gap-1 text-[10px] transition-colors group-hover:text-primary">
+                                <PencilLine className="h-3 w-3" />
+                                Click to update
+                            </span>
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    setIsConfirmDeleteOpen(true);
+                                }}
+                                className="text-destructive hover:text-destructive/80 inline-flex items-center gap-1 text-[10px] transition-colors hover:underline"
+                            >
+                                <Trash2 className="h-2.5 w-2.5" />
+                                Remove
+                            </button>
+                        </div>
                     </div>
                 ) : (
                     <div className="relative">
@@ -467,19 +507,33 @@ export function StudentSignaturePad({ studentId, signatureUrl }: StudentSignatur
                     </Tabs>
 
                     <DialogFooter className="gap-2 sm:justify-between">
-                        {activeTab === "draw" && (
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={handleClear}
-                                disabled={saving}
-                            >
-                                <Eraser className="mr-1.5 h-3.5 w-3.5" />
-                                Clear
-                            </Button>
-                        )}
-                        {activeTab === "upload" && <div />}
+                        <div className="flex items-center gap-2">
+                            {activeTab === "draw" && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handleClear}
+                                    disabled={saving}
+                                >
+                                    <Eraser className="mr-1.5 h-3.5 w-3.5" />
+                                    Clear
+                                </Button>
+                            )}
+                            {signatureUrl && (
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-destructive hover:bg-destructive/10 hover:text-destructive gap-1 text-xs"
+                                    onClick={() => setIsConfirmDeleteOpen(true)}
+                                    disabled={saving}
+                                >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                    Delete Signature
+                                </Button>
+                            )}
+                        </div>
 
                         <Button
                             type="button"
@@ -489,6 +543,25 @@ export function StudentSignaturePad({ studentId, signatureUrl }: StudentSignatur
                         >
                             <Save className="mr-1.5 h-3.5 w-3.5" />
                             {saving ? "Saving..." : "Save"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={isConfirmDeleteOpen} onOpenChange={setIsConfirmDeleteOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Remove Signature</DialogTitle>
+                        <DialogDescription>
+                            Are you sure you want to remove this student&apos;s signature? This will delete the stored signature file.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button type="button" variant="outline" onClick={() => setIsConfirmDeleteOpen(false)}>
+                            Cancel
+                        </Button>
+                        <Button type="button" variant="destructive" onClick={handleRemoveSignature} disabled={saving}>
+                            Remove Signature
                         </Button>
                     </DialogFooter>
                 </DialogContent>

@@ -1,9 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useFeatureFlags } from "@/hooks/use-feature-flags";
 import { cn } from "@/lib/utils";
 import { router } from "@inertiajs/react";
-import { Camera, Copy, ImageUp, Loader2, User as UserIcon } from "lucide-react";
+import { Camera, Copy, ImageUp, Loader2, Trash2, User as UserIcon } from "lucide-react";
 import React, { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { StudentDetail } from "../types";
@@ -19,6 +20,7 @@ export function StudentDetailsCard({ student }: StudentDetailsCardProps) {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [processing, setProcessing] = useState(false);
     const [isDragOver, setIsDragOver] = useState(false);
+    const [confirmRemovePhoto, setConfirmRemovePhoto] = useState(false);
     const flags = useFeatureFlags();
 
     const signatureEnabled = flags.studentSignaturePad === true;
@@ -90,6 +92,38 @@ export function StudentDetailsCard({ student }: StudentDetailsCardProps) {
         [student.id],
     );
 
+    const removePhoto = useCallback(() => {
+        setProcessing(true);
+
+        router
+            .optimistic((props) => {
+                const documents = { ...(props.student as StudentDetail).documents };
+                documents.picture_1x1 = null;
+
+                return {
+                    ...props,
+                    student: {
+                        ...(props.student as StudentDetail),
+                        documents,
+                    },
+                };
+            })
+            .delete(route("administrators.students.documents.fixed.destroy", [student.id, "picture_1x1"]), {
+                preserveScroll: true,
+                preserveState: true,
+                onSuccess: () => {
+                    setConfirmRemovePhoto(false);
+                    toast.success("Profile photo removed successfully!");
+                },
+                onError: () => {
+                    toast.error("Failed to remove profile photo. Please try again.");
+                },
+                onFinish: () => {
+                    setProcessing(false);
+                },
+            });
+    }, [student.id]);
+
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -152,63 +186,98 @@ export function StudentDetailsCard({ student }: StudentDetailsCardProps) {
                     {hasRightColumn && (
                         <div className="flex w-full flex-col items-center gap-6 md:items-end">
                             {avatarUploadEnabled && (
-                                <div
-                                    onDragOver={avatarUploadEnabled ? handleDragOver : undefined}
-                                    onDragLeave={avatarUploadEnabled ? handleDragLeave : undefined}
-                                    onDrop={avatarUploadEnabled ? handleDrop : undefined}
-                                    className={cn(
-                                        "group relative h-28 w-28 overflow-hidden rounded-full transition-all",
-                                        processing
-                                            ? "ring-primary/30 pointer-events-none ring-2 ring-offset-2"
-                                            : isDragOver
-                                              ? "ring-primary ring-2 ring-offset-2"
-                                              : "ring-muted-foreground/15 hover:ring-primary/40 ring-2 ring-offset-2",
-                                    )}
-                                >
-                                    <input
-                                        type="file"
-                                        ref={fileInputRef}
-                                        className="hidden"
-                                        accept="image/*"
-                                        onChange={handleFileChange}
-                                        disabled={processing}
-                                    />
-
-                                    {processing ? (
-                                        <div className="bg-muted flex h-full w-full flex-col items-center justify-center gap-1">
-                                            <Loader2 className="text-primary h-6 w-6 animate-spin" />
-                                            <span className="text-primary text-[9px] font-medium">Uploading</span>
-                                        </div>
-                                    ) : profilePhotoUrl ? (
-                                        <img
-                                            src={profilePhotoUrl}
-                                            alt={student.name}
-                                            className="h-full w-full object-cover transition-all group-hover:scale-105 group-hover:brightness-75"
+                                <div className="flex flex-col items-center">
+                                    <div
+                                        onDragOver={avatarUploadEnabled ? handleDragOver : undefined}
+                                        onDragLeave={avatarUploadEnabled ? handleDragLeave : undefined}
+                                        onDrop={avatarUploadEnabled ? handleDrop : undefined}
+                                        className={cn(
+                                            "group relative h-28 w-28 overflow-hidden rounded-full transition-all",
+                                            processing
+                                                ? "ring-primary/30 pointer-events-none ring-2 ring-offset-2"
+                                                : isDragOver
+                                                  ? "ring-primary ring-2 ring-offset-2"
+                                                  : "ring-muted-foreground/15 hover:ring-primary/40 ring-2 ring-offset-2",
+                                        )}
+                                    >
+                                        <input
+                                            type="file"
+                                            ref={fileInputRef}
+                                            className="hidden"
+                                            accept="image/*"
+                                            onChange={handleFileChange}
+                                            disabled={processing}
                                         />
-                                    ) : (
-                                        <div className="bg-muted text-muted-foreground group-hover:text-primary flex h-full w-full items-center justify-center transition-colors">
-                                            <UserIcon className="h-10 w-10" />
-                                        </div>
+
+                                        {processing ? (
+                                            <div className="bg-muted flex h-full w-full flex-col items-center justify-center gap-1">
+                                                <Loader2 className="text-primary h-6 w-6 animate-spin" />
+                                                <span className="text-primary text-[9px] font-medium">Updating</span>
+                                            </div>
+                                        ) : profilePhotoUrl ? (
+                                            <img
+                                                src={profilePhotoUrl}
+                                                alt={student.name}
+                                                className="h-full w-full object-cover transition-all group-hover:scale-105 group-hover:brightness-75"
+                                            />
+                                        ) : (
+                                            <div className="bg-muted text-muted-foreground group-hover:text-primary flex h-full w-full items-center justify-center transition-colors">
+                                                <UserIcon className="h-10 w-10" />
+                                            </div>
+                                        )}
+
+                                        {!processing && (
+                                            <div
+                                                onClick={() => fileInputRef.current?.click()}
+                                                className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
+                                            >
+                                                {isDragOver ? (
+                                                    <>
+                                                        <ImageUp className="h-6 w-6 text-white" />
+                                                        <span className="text-[9px] font-medium text-white">Drop here</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Camera className="h-5 w-5 text-white" />
+                                                        <span className="text-[9px] font-medium text-white">Change</span>
+                                                    </>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {profilePhotoUrl && (
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="text-destructive hover:bg-destructive/10 hover:text-destructive mt-1.5 h-6 gap-1 px-2 text-[11px]"
+                                            onClick={() => setConfirmRemovePhoto(true)}
+                                            disabled={processing}
+                                        >
+                                            <Trash2 className="h-3 w-3" />
+                                            Remove photo
+                                        </Button>
                                     )}
 
-                                    {!processing && (
-                                        <div
-                                            onClick={() => fileInputRef.current?.click()}
-                                            className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
-                                        >
-                                            {isDragOver ? (
-                                                <>
-                                                    <ImageUp className="h-6 w-6 text-white" />
-                                                    <span className="text-[9px] font-medium text-white">Drop here</span>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <Camera className="h-5 w-5 text-white" />
-                                                    <span className="text-[9px] font-medium text-white">Change</span>
-                                                </>
-                                            )}
-                                        </div>
-                                    )}
+                                    <Dialog open={confirmRemovePhoto} onOpenChange={setConfirmRemovePhoto}>
+                                        <DialogContent>
+                                            <DialogHeader>
+                                                <DialogTitle>Remove Profile Photo</DialogTitle>
+                                                <DialogDescription>
+                                                    Are you sure you want to remove the profile photo for {student.name}? The image file will be permanently deleted.
+                                                </DialogDescription>
+                                            </DialogHeader>
+                                            <DialogFooter>
+                                                <Button type="button" variant="outline" onClick={() => setConfirmRemovePhoto(false)}>
+                                                    Cancel
+                                                </Button>
+                                                <Button type="button" variant="destructive" onClick={removePhoto} disabled={processing}>
+                                                    Remove Photo
+                                                </Button>
+                                            </DialogFooter>
+                                        </DialogContent>
+                                    </Dialog>
                                 </div>
                             )}
 

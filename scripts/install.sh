@@ -29,11 +29,18 @@ command="install"
 domain="${KOAKADEMY_DOMAIN:-}"
 public_port="${KOAKADEMY_PUBLIC_PORT:-8000}"
 port_explicit=""
+unattended="${KOAKADEMY_UNATTENDED:-}"
+direct_access=""
 release_flag=""
 source_sha_flag=""
 temporary_directory=""
 # Args forwarded to the versioned operator (domain/port/channel normalized).
 forward_args=""
+
+append_forward_arg() {
+    escaped="$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+    forward_args="${forward_args} '${escaped}'"
+}
 
 # Dokploy parity: ADVERTISE_ADDR is the documented public-IP override there.
 # Map it onto the operator's KOAKADEMY_ADVERTISE_ADDR when the native knob is
@@ -82,6 +89,18 @@ Options:
   update                  Download the operator then run 'koakademy update'
   uninstall [--preserve-volumes] [--yes]
                           Remove the installation via the operator
+  --unattended            Run non-interactively without user prompts
+  --direct                Use direct http://server-ip:PORT access without asking for a domain
+  -y, --yes               Automatic yes to confirmation prompts
+  --advertise-addr IP     Swarm advertise address override
+  --admin-email EMAIL     Pre-configure administrator email for automated setup
+  --admin-password PASS   Pre-configure administrator password for automated setup
+  --admin-name NAME       Pre-configure administrator name
+  --school-name NAME      Pre-configure institution display name
+  --school-code CODE      Pre-configure institution code
+  --country-code CC       Two-letter ISO country code (e.g. US, PH)
+  --school-level LEVEL    Institution level
+  --currency CODE         Three-letter ISO currency code
   --no-wait               Return once services are deployed; the app warms up
                           in the background (forwarded to the operator)
   -h, --help              Show this help
@@ -232,7 +251,8 @@ while [ $# -gt 0 ]; do
                 *) fail "Channel must be stable or edge." ;;
             esac
             channel_explicit="${channel}"
-            forward_args="${forward_args} --channel $2"
+            append_forward_arg "--channel"
+            append_forward_arg "$2"
             shift 2
             ;;
         --channel=*)
@@ -242,53 +262,57 @@ while [ $# -gt 0 ]; do
                 *) fail "Channel must be stable or edge." ;;
             esac
             channel_explicit="${channel}"
-            forward_args="${forward_args} --channel ${value}"
+            append_forward_arg "$1"
             shift
             ;;
         --domain)
             [ $# -ge 2 ] || fail "--domain requires a hostname."
             domain="$2"
-            forward_args="${forward_args} --domain $2"
+            append_forward_arg "--domain"
+            append_forward_arg "$2"
             shift 2
             ;;
         --domain=*)
             domain="${1#--domain=}"
-            forward_args="${forward_args} --domain ${domain}"
+            append_forward_arg "$1"
             shift
             ;;
         --port)
             [ $# -ge 2 ] || fail "--port requires a number."
             public_port="$2"
             port_explicit="flag"
-            forward_args="${forward_args} --port $2"
+            append_forward_arg "--port"
+            append_forward_arg "$2"
             shift 2
             ;;
         --port=*)
             public_port="${1#--port=}"
             port_explicit="flag"
-            forward_args="${forward_args} --port ${public_port}"
+            append_forward_arg "$1"
             shift
             ;;
         --release)
             [ $# -ge 2 ] || fail "--release requires a tag."
             release_flag="$2"
-            forward_args="${forward_args} --release $2"
+            append_forward_arg "--release"
+            append_forward_arg "$2"
             shift 2
             ;;
         --release=*)
             release_flag="${1#--release=}"
-            forward_args="${forward_args} --release ${release_flag}"
+            append_forward_arg "$1"
             shift
             ;;
         --source-sha)
             [ $# -ge 2 ] || fail "--source-sha requires a Git SHA."
             source_sha_flag="$2"
-            forward_args="${forward_args} --source-sha $2"
+            append_forward_arg "--source-sha"
+            append_forward_arg "$2"
             shift 2
             ;;
         --source-sha=*)
             source_sha_flag="${1#--source-sha=}"
-            forward_args="${forward_args} --source-sha ${source_sha_flag}"
+            append_forward_arg "$1"
             shift
             ;;
         install)
@@ -349,12 +373,50 @@ while [ $# -gt 0 ]; do
             done
             break
             ;;
-        --yes)
-            forward_args="${forward_args} --yes"
+        -y | --yes)
+            append_forward_arg "--yes"
+            shift
+            ;;
+        --unattended | --non-interactive)
+            unattended="true"
+            append_forward_arg "--unattended"
+            shift
+            ;;
+        --direct | --direct-access)
+            direct_access="true"
+            append_forward_arg "--direct"
+            shift
+            ;;
+        --advertise-addr)
+            [ $# -ge 2 ] || fail "--advertise-addr requires an IP address."
+            KOAKADEMY_ADVERTISE_ADDR="$2"
+            export KOAKADEMY_ADVERTISE_ADDR
+            append_forward_arg "--advertise-addr"
+            append_forward_arg "$2"
+            shift 2
+            ;;
+        --advertise-addr=*)
+            KOAKADEMY_ADVERTISE_ADDR="${1#--advertise-addr=}"
+            export KOAKADEMY_ADVERTISE_ADDR
+            append_forward_arg "$1"
+            shift
+            ;;
+        --admin-name | --admin-email | --admin-password | \
+        --school-name | --school-code | --country-code | \
+        --school-level | --currency)
+            [ $# -ge 2 ] || fail "$1 requires an argument."
+            append_forward_arg "$1"
+            append_forward_arg "$2"
+            shift 2
+            ;;
+        --admin-name=* | --admin-email=* | --admin-password=* | \
+        --school-name=* | --school-code=* | --country-code=* | \
+        --school-level=* | --currency=*)
+            append_forward_arg "$1"
             shift
             ;;
         --wait | --no-wait)
-            forward_args="${forward_args} $1"
+            append_forward_arg "$1"
             shift
             ;;
         --) shift; break ;;
@@ -364,7 +426,7 @@ while [ $# -gt 0 ]; do
 done
 # Any remaining positional args belong to the operator (e.g. extra flags).
 while [ $# -gt 0 ]; do
-    forward_args="${forward_args} $1"
+    append_forward_arg "$1"
     shift
 done
 
@@ -373,8 +435,11 @@ done
 # given. Direct access is decided by the absence of a domain on every channel.
 if [ -z "${domain}" ] && [ -z "${port_explicit}" ] && [ -n "${KOAKADEMY_PUBLIC_PORT:-}" ]; then
     case "${forward_args}" in
-        *" --port "* | *" --port="*) ;;
-        *) forward_args="${forward_args} --port ${public_port}" ;;
+        *"--port"*) ;;
+        *)
+            append_forward_arg "--port"
+            append_forward_arg "${public_port}"
+            ;;
     esac
 fi
 
@@ -456,16 +521,12 @@ fi
 script_dir="$(dirname "$0")"
 if is_test && [ -f "${script_dir}/koakademy" ]; then
     if [ "${command}" = "uninstall" ]; then
-        # shellcheck disable=SC2086
-        exec bash "${script_dir}/koakademy" uninstall ${forward_args}
+        eval "exec bash \"\${script_dir}/koakademy\" uninstall ${forward_args}"
     fi
-    # shellcheck disable=SC2086
     if [ "${channel}" = "stable" ]; then
-        # shellcheck disable=SC2086
-        exec bash "${script_dir}/koakademy" "${command}" --channel stable --release "${tag}" ${forward_args}
+        eval "exec bash \"\${script_dir}/koakademy\" \"\${command}\" --channel stable --release \"\${tag}\" ${forward_args}"
     fi
-    # shellcheck disable=SC2086
-    exec bash "${script_dir}/koakademy" "${command}" --channel edge --source-sha "${source_sha}" ${forward_args}
+    eval "exec bash \"\${script_dir}/koakademy\" \"\${command}\" --channel edge --source-sha \"\${source_sha}\" ${forward_args}"
 fi
 
 cleanup() {
@@ -500,11 +561,12 @@ fi
 chmod 0755 "${command_path}"
 
 run_operator() {
+    eval "set -- \"\$@\" ${forward_args}"
+
     # Preserve the full installer environment across the sudo boundary so a
     # non-root one-liner ('curl ... | bash') behaves identically to root.
     # Dokploy simply requires root; we auto-elevate but keep every knob.
     if is_test || [ "$(id -u 2>/dev/null || printf '0')" -eq 0 ]; then
-        # shellcheck disable=SC2086
         exec "${command_path}" "$@"
     fi
 
@@ -513,7 +575,6 @@ run_operator() {
 
     # Build 'sudo env K=V ... operator args' without bash arrays (POSIX).
     set -- "$command_path" "$@"
-    # shellcheck disable=SC2086
     exec sudo env \
         "KOAKADEMY_INSTALLER_USER=${KOAKADEMY_INSTALLER_USER:-}" \
         ${KOAKADEMY_DOMAIN:+KOAKADEMY_DOMAIN="${KOAKADEMY_DOMAIN}"} \
@@ -525,17 +586,14 @@ run_operator() {
         ${ADVERTISE_ADDR:+ADVERTISE_ADDR="${ADVERTISE_ADDR}"} \
         ${DOCKER_SWARM_INIT_ARGS:+DOCKER_SWARM_INIT_ARGS="${DOCKER_SWARM_INIT_ARGS}"} \
         ${ENDPOINT_MODE:+ENDPOINT_MODE="${ENDPOINT_MODE}"} \
+        ${unattended:+KOAKADEMY_UNATTENDED="${unattended}"} \
         "$@"
 }
 
-# shellcheck disable=SC2086
 if [ "${command}" = "uninstall" ]; then
-    run_operator uninstall ${forward_args}
+    run_operator uninstall
 fi
-# shellcheck disable=SC2086
 if [ "${channel}" = "stable" ]; then
-    # shellcheck disable=SC2086
-    run_operator "${command}" --channel stable --release "${tag}" ${forward_args}
+    run_operator "${command}" --channel stable --release "${tag}"
 fi
-# shellcheck disable=SC2086
-run_operator "${command}" --channel edge --source-sha "${source_sha}" ${forward_args}
+run_operator "${command}" --channel edge --source-sha "${source_sha}"

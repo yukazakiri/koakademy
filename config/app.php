@@ -98,10 +98,12 @@ return [
 
     'portal_host' => env('PORTAL_HOST', 'localhost'),
 
-    'portal_host_aliases' => array_values(array_filter(array_map(
-        'trim',
-        explode(',', env('PORTAL_HOST_ALIASES', '')),
-    ))),
+    'portal_host_aliases' => array_values(array_unique(array_filter(array_merge(
+        array_map('trim', explode(',', (string) env('PORTAL_HOST_ALIASES', ''))),
+        in_array(env('PORTAL_HOST', 'localhost'), ['localhost', '127.0.0.1', ''], true)
+            ? array_filter(['localhost', '127.0.0.1'], fn ($host) => $host !== env('PORTAL_HOST', 'localhost'))
+            : [],
+    )))),
 
     /*
     |--------------------------------------------------------------------------

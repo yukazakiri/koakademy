@@ -31,10 +31,14 @@ Route::post('/passkeys/login', [App\Http\Controllers\PasskeyAuthController::clas
 | Portal Domain Routes
 |--------------------------------------------------------------------------
 */
-$portalHosts = array_values(array_unique(array_filter(array_merge(
-    config('app.portal_host_aliases', []),
-    [config('app.portal_host')],
-))));
+$portalHost = config('app.portal_host');
+$portalHostAliases = config('app.portal_host_aliases', []);
+
+$portalHosts = array_values(array_unique(array_filter([
+    $portalHost,
+    ...$portalHostAliases,
+    ...(in_array($portalHost, ['localhost', '127.0.0.1'], true) ? ['localhost', '127.0.0.1'] : []),
+])));
 
 $registerPortalRoutes = function (): void {
     Route::get('/verify/finance/{token}', FinancialDocumentVerificationController::class)

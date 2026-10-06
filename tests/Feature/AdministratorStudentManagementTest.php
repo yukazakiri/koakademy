@@ -612,3 +612,53 @@ it('accepts transferee decimal point grades in a percentage policy school and st
         ->and($saved->grade_outcome)->toBe('pass')
         ->and((float) $saved->grade_quality_points)->toBe(4.0);
 });
+
+it('redirects back to the edit page when updating student with stay parameter', function (): void {
+    $school = School::first() ?? School::factory()->create();
+    $user = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
+    $student = Student::factory()->create([
+        'school_id' => $school->id,
+        'course_id' => $course->id,
+        'student_type' => App\Enums\StudentType::College,
+    ]);
+
+    actingAs($user)
+        ->put(route('administrators.students.update', ['student' => $student->id, 'stay' => true]), [
+            'student_type' => 'college',
+            'student_id' => (string) $student->student_id,
+            'first_name' => 'Jane',
+            'last_name' => 'Doe',
+            'gender' => 'female',
+            'birth_date' => '2004-05-10',
+            'course_id' => $course->id,
+            'academic_year' => 2,
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertRedirect(route('administrators.students.edit', $student));
+});
+
+it('redirects to the show page when updating student without stay parameter', function (): void {
+    $school = School::first() ?? School::factory()->create();
+    $user = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
+    $student = Student::factory()->create([
+        'school_id' => $school->id,
+        'course_id' => $course->id,
+        'student_type' => App\Enums\StudentType::College,
+    ]);
+
+    actingAs($user)
+        ->put(route('administrators.students.update', $student), [
+            'student_type' => 'college',
+            'student_id' => (string) $student->student_id,
+            'first_name' => 'Jane',
+            'last_name' => 'Doe',
+            'gender' => 'female',
+            'birth_date' => '2004-05-10',
+            'course_id' => $course->id,
+            'academic_year' => 2,
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertRedirect(route('administrators.students.show', $student));
+});

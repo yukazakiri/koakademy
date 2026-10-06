@@ -556,7 +556,7 @@ export default function AdministratorStudentEdit({ user, student, options, curre
     const submit = (event: React.FormEvent) => {
         event.preventDefault();
 
-        put(route("administrators.students.update", student.id), {
+        put(route("administrators.students.update", { student: student.id, stay: true }), {
             preserveScroll: true,
             preserveState: true,
             onSuccess: () => {

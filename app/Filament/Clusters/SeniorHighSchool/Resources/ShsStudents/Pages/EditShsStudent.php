@@ -15,6 +15,12 @@ final class EditShsStudent extends EditRecord
     #[Override]
     protected static string $resource = ShsStudentResource::class;
 
+    #[Override]
+    protected function getRedirectUrl(): ?string
+    {
+        return null;
+    }
+
     protected function getHeaderActions(): array
     {
         return [

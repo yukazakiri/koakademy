@@ -1543,6 +1543,7 @@ final class AdministratorStudentManagementController extends Controller
             'job_position' => ['nullable', 'string', 'max:255'],
             'employment_date' => ['nullable', 'date'],
             'employed_by_institution' => ['nullable', 'boolean'],
+            'stay' => ['nullable', 'boolean'],
         ]);
 
         DB::transaction(function () use ($validated, $student): void {
@@ -1627,6 +1628,11 @@ final class AdministratorStudentManagementController extends Controller
         $message = 'Student updated successfully.';
         if ($idWasGenerated) {
             $message .= " Student ID defaulted to {$validated['student_id']}.";
+        }
+
+        if ($request->boolean('stay', false) || $request->has('stay')) {
+            return redirect()->route('administrators.students.edit', $student)
+                ->with('success', $message);
         }
 
         return redirect()->route('administrators.students.show', $student)

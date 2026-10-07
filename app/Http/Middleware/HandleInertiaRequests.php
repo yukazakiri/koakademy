@@ -91,10 +91,15 @@ final class HandleInertiaRequests extends Middleware
                 'settings' => $settingsService->getSettings(),
                 'socialAuthProviders' => $socialiteProviderService->enabledProviders(...),
                 'version' => config('app.version'),
-                'ziggy' => fn (): array => [
-                    ...Cache::remember('ziggy_routes_payload', 3600, static fn (): array => (new \Tighten\Ziggy\Ziggy)->toArray()),
-                    'location' => $request->url(),
-                ],
+                'ziggy' => function () use ($request): array {
+                    $ziggyManifestHash = is_file(config_path('ziggy.php')) ? (string) filemtime(config_path('ziggy.php')) : '';
+                    $cacheKey = 'ziggy_routes_payload_'.md5(serialize([config('app.version'), $ziggyManifestHash]));
+
+                    return [
+                        ...Cache::remember($cacheKey, 3600, static fn (): array => (new \Tighten\Ziggy\Ziggy)->toArray()),
+                        'location' => $request->url(),
+                    ];
+                },
                 'onboarding' => $isAdministratorPortal
                     ? Inertia::defer(fn (): array => [
                         'forceOnLogin' => (bool) config('onboarding.force_on_login'),

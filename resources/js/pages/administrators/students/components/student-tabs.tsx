@@ -137,9 +137,10 @@ export function StudentTabs({ student, options, onAdjustTuition }: StudentTabsPr
                                                     <div>
                                                         <Link
                                                             href={
-                                                                student.current_enrollment_id
-                                                                    ? route("administrators.enrollments.show", student.current_enrollment_id)
-                                                                    : route("administrators.students.current-enrollment", student.id)
+                                                                student.current_enrollment_url
+                                                                || (student.current_enrollment_id
+                                                                    ? `/administrators/enrollments/${student.current_enrollment_id}`
+                                                                    : `/administrators/students/${student.id}/current-enrollment`)
                                                             }
                                                             className="text-primary hover:underline inline-flex items-center gap-1 text-xs font-medium"
                                                         >

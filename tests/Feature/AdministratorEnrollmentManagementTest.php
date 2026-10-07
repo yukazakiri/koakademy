@@ -1736,3 +1736,20 @@ it('finds a student in the search endpoint when typing their school student_id',
 
     expect($ids)->toContain($student->id);
 });
+
+it('exposes the student profile url on the enrollment show page', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $student = Student::factory()->create();
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+    ]);
+
+    $this->actingAs($user)
+        ->get(portalUrlForAdministrators("/administrators/enrollments/{$enrollment->id}"))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->component('administrators/enrollments/show', false)
+            ->where('enrollment.student.id', $student->id)
+            ->where('enrollment.student.student_url', route('administrators.students.show', $student->id))
+        );
+});

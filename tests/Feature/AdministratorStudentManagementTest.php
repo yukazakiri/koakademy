@@ -730,6 +730,7 @@ it('exposes current_enrollment_id on the student show page', function (): void {
         ->assertInertia(fn (AssertableInertia $page) => $page
             ->component('administrators/students/show', false)
             ->where('student.current_enrollment_id', $enrollment->id)
+            ->where('student.current_enrollment_url', route('administrators.enrollments.show', $enrollment->id))
             ->where('student.current_enrollment.id', $enrollment->id)
         );
 });
@@ -766,6 +767,7 @@ it('does not expose or redirect to a soft-deleted current enrollment', function 
         ->assertInertia(fn (AssertableInertia $page) => $page
             ->component('administrators/students/show', false)
             ->where('student.current_enrollment_id', null)
+            ->where('student.current_enrollment_url', route('administrators.students.current-enrollment', $student->id))
             ->where('student.current_enrollment', null)
         );
 });

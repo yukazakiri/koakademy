@@ -297,24 +297,23 @@ export default function AdministratorStudentShow({ user, student, options }: Stu
                             setDeleteAction={setStudentDeleteAction}
                         />
 
-                        {student.current_enrollment_id ? (
-                            <Link
-                                href={route("administrators.enrollments.show", student.current_enrollment_id)}
-                                className={buttonVariants({ variant: "outline", className: "gap-2" })}
-                            >
-                                <ClipboardList className="h-4 w-4" />
-                                Current Enrollment
-                            </Link>
-                        ) : (
-                            <Link
-                                href={route("administrators.students.current-enrollment", student.id)}
-                                className={buttonVariants({ variant: "outline", className: "gap-2" })}
-                                title="Check or redirect to related enrollment for the current semester and school year"
-                            >
-                                <ClipboardList className="h-4 w-4" />
-                                Current Enrollment
-                            </Link>
-                        )}
+                        <Link
+                            href={
+                                student.current_enrollment_url
+                                || (student.current_enrollment_id
+                                    ? `/administrators/enrollments/${student.current_enrollment_id}`
+                                    : `/administrators/students/${student.id}/current-enrollment`)
+                            }
+                            className={buttonVariants({ variant: "outline", className: "gap-2" })}
+                            title={
+                                student.current_enrollment_id
+                                    ? "View current semester enrollment"
+                                    : "Check or redirect to related enrollment for the current semester and school year"
+                            }
+                        >
+                            <ClipboardList className="h-4 w-4" />
+                            Current Enrollment
+                        </Link>
 
                         <Link
                             href={route("administrators.students.documents.index", student.id)}

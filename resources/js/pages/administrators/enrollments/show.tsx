@@ -92,6 +92,7 @@ interface EnrollmentData {
         email: string | null;
         student_id: string | number;
         course_code: string | null;
+        student_url?: string;
     };
     subjects_enrolled: Array<{
         id: number;
@@ -262,6 +263,7 @@ interface PageProps {
 }
 
 export default function ShowEnrollment({ user, enrollment, auth, recent_deletions = [], enrollment_pipeline }: PageProps) {
+    const studentUrl = enrollment.student.student_url || `/administrators/students/${enrollment.student.id}`;
     const { props } = usePage<{ branding?: Branding }>();
     const currency = props.branding?.currency || "PHP";
 
@@ -584,7 +586,7 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                             <DropdownMenuLabel>Administrative actions</DropdownMenuLabel>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem asChild>
-                                <Link href={route("administrators.students.show", enrollment.student.id)} className="flex w-full items-center">
+                                <Link href={studentUrl} className="flex w-full items-center">
                                     <UserIcon className="mr-2 h-4 w-4" /> View student record
                                 </Link>
                             </DropdownMenuItem>
@@ -719,7 +721,7 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                             {enrollment.status}
                         </Badge>
                         <Link
-                            href={route("administrators.students.show", enrollment.student.id)}
+                            href={studentUrl}
                             className={buttonVariants({
                                 variant: "outline",
                                 className: "rounded-full shadow-sm transition-[transform,box-shadow] duration-200 active:scale-[0.98]",
@@ -763,7 +765,7 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                                 <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.16em] uppercase">Student record</p>
                                 <h2 id="student-record-heading" className="mt-1 truncate text-xl font-semibold tracking-[-0.02em] sm:text-2xl">
                                     <Link
-                                        href={route("administrators.students.show", enrollment.student.id)}
+                                        href={studentUrl}
                                         className="hover:text-primary transition-colors hover:underline inline-flex items-center gap-1.5"
                                         title="View Student Record"
                                     >
@@ -776,7 +778,7 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                                     {enrollment.student.email && <span className="truncate">{enrollment.student.email}</span>}
                                     <span className="text-muted-foreground/40">•</span>
                                     <Link
-                                        href={route("administrators.students.show", enrollment.student.id)}
+                                        href={studentUrl}
                                         className="text-primary hover:underline inline-flex items-center gap-1 font-medium text-xs"
                                     >
                                         View profile

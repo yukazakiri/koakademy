@@ -29,6 +29,12 @@ export function AcademicScheduleDashboard({
     onPrintTor,
     onPrintSchedule,
 }: AcademicScheduleDashboardProps) {
+    const currentEnrollmentUrl =
+        student.current_enrollment_url ||
+        (student.current_enrollment_id
+            ? `/administrators/enrollments/${student.current_enrollment_id}`
+            : `/administrators/students/${student.id}/current-enrollment`);
+
     return (
         <div className="space-y-6">
             <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
@@ -37,23 +43,18 @@ export function AcademicScheduleDashboard({
                     <p className="text-muted-foreground text-sm">Interactive weekly class matrix and subject load</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                    {student.current_enrollment_id ? (
-                        <Link
-                            href={route("administrators.enrollments.show", student.current_enrollment_id)}
-                            className={buttonVariants({ variant: "outline", size: "sm", className: "gap-2" })}
-                        >
-                            <ClipboardList className="h-4 w-4" />
-                            View Enrollment
-                        </Link>
-                    ) : (
-                        <Link
-                            href={route("administrators.students.current-enrollment", student.id)}
-                            className={buttonVariants({ variant: "outline", size: "sm", className: "gap-2" })}
-                        >
-                            <ClipboardList className="h-4 w-4" />
-                            View Enrollment
-                        </Link>
-                    )}
+                    <Link
+                        href={currentEnrollmentUrl}
+                        className={buttonVariants({ variant: "outline", size: "sm", className: "gap-2" })}
+                        title={
+                            student.current_enrollment_id
+                                ? "View current semester enrollment"
+                                : "Check or redirect to related enrollment for the current semester and school year"
+                        }
+                    >
+                        <ClipboardList className="h-4 w-4" />
+                        View Enrollment
+                    </Link>
                     <Button variant="outline" size="sm" className="gap-2" onClick={onPrintTor}>
                         <FileText className="h-4 w-4" />
                         Print TOR
@@ -74,25 +75,14 @@ export function AcademicScheduleDashboard({
                                     <h4 className="text-sm font-semibold">Enrolled Subjects</h4>
                                     <Badge variant="secondary">{student.current_enrolled_classes.length}</Badge>
                                 </div>
-                                {student.current_enrollment_id ? (
-                                    <Link
-                                        href={route("administrators.enrollments.show", student.current_enrollment_id)}
-                                        className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs transition-colors"
-                                        title="View Related Enrollment Record"
-                                    >
-                                        <span>Details</span>
-                                        <ExternalLink className="h-3 w-3" />
-                                    </Link>
-                                ) : (
-                                    <Link
-                                        href={route("administrators.students.current-enrollment", student.id)}
-                                        className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs transition-colors"
-                                        title="View Related Enrollment Record"
-                                    >
-                                        <span>Details</span>
-                                        <ExternalLink className="h-3 w-3" />
-                                    </Link>
-                                )}
+                                <Link
+                                    href={currentEnrollmentUrl}
+                                    className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs transition-colors"
+                                    title="View Related Enrollment Record"
+                                >
+                                    <span>Details</span>
+                                    <ExternalLink className="h-3 w-3" />
+                                </Link>
                             </div>
                             <div className="text-muted-foreground flex items-center gap-2 text-xs">
                                 <Clock className="h-3 w-3" />
@@ -144,11 +134,7 @@ export function AcademicScheduleDashboard({
                                 <div className="text-muted-foreground flex flex-col items-center justify-center py-8 text-center text-sm">
                                     <p>No subjects enrolled.</p>
                                     <Link
-                                        href={
-                                            student.current_enrollment_id
-                                                ? route("administrators.enrollments.show", student.current_enrollment_id)
-                                                : route("administrators.students.current-enrollment", student.id)
-                                        }
+                                        href={currentEnrollmentUrl}
                                         className="text-primary mt-2 inline-flex items-center gap-1 text-xs hover:underline"
                                     >
                                         View enrollment record

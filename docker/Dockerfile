@@ -47,7 +47,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends libzip-dev \
 WORKDIR /app
 COPY . .
 COPY --from=vendor /app/vendor ./vendor
-RUN APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= PORTAL_HOST= ADMIN_HOST= php artisan wayfinder:generate --no-interaction
+RUN APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= PORTAL_HOST= ADMIN_HOST= php -d memory_limit=512M artisan wayfinder:generate --no-interaction
 
 # -----------------------------------------------------------------------------
 # Stage 3: Build Frontend Assets

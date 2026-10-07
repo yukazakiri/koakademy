@@ -186,6 +186,17 @@ final class AppServiceProvider extends ServiceProvider
             PennantFeatureAdoptionWidget::class,
         );
 
+        if ($this->app->runningInConsole()) {
+            Event::listen(\Illuminate\Console\Events\CommandStarting::class, function (\Illuminate\Console\Events\CommandStarting $event): void {
+                if ($event->command === 'wayfinder:generate') {
+                    $current = ini_get('memory_limit');
+                    if ($current !== '-1') {
+                        ini_set('memory_limit', '512M');
+                    }
+                }
+            });
+        }
+
         $this->definePennantFeatures();
 
         // Dynamically populate the Filament Feature Showcase config from

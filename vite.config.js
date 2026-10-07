@@ -3,12 +3,48 @@ import tailwindcss from "@tailwindcss/vite";
 import { wayfinder } from "@laravel/vite-plugin-wayfinder";
 import react from "@vitejs/plugin-react";
 import laravel from "laravel-vite-plugin";
+import { execSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { defineConfig } from "vite";
 
 const CONTROL_CHARS_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g;
-const shouldGenerateWayfinder = process.env.WAYFINDER_GENERATE !== "false";
+
+function resolvePhpBinary() {
+    if (process.env.PHP_BINARY && fs.existsSync(process.env.PHP_BINARY)) {
+        return process.env.PHP_BINARY;
+    }
+    try {
+        const detected = execSync("command -v php || which php", { stdio: ["ignore", "pipe", "ignore"] })
+            .toString()
+            .trim();
+        if (detected && fs.existsSync(detected)) {
+            return detected;
+        }
+    } catch {
+        // Fall back to well-known PHP binary locations
+    }
+
+    const wellKnownPaths = [
+        path.join(os.homedir(), ".config/herd-lite/bin/php"),
+        path.join(os.homedir(), "Library/Application Support/Herd/bin/php"),
+        path.join(os.homedir(), ".config/herd/bin/php"),
+        "/usr/local/bin/php",
+        "/usr/bin/php",
+    ];
+
+    for (const binaryPath of wellKnownPaths) {
+        if (fs.existsSync(binaryPath)) {
+            return binaryPath;
+        }
+    }
+
+    return null;
+}
+
+const phpBinary = resolvePhpBinary();
+const shouldGenerateWayfinder = process.env.WAYFINDER_GENERATE !== "false" && Boolean(phpBinary);
 
 // Rolldown plugin so optimizeDeps prebundling (Vite 8+) doesn't choke on
 // the stray control characters shipped inside @tabler/icons-react ESM files.
@@ -50,7 +86,13 @@ export default defineConfig({
                 };
             },
         },
-        ...(shouldGenerateWayfinder ? [wayfinder()] : []),
+        ...(shouldGenerateWayfinder
+            ? [
+                  wayfinder({
+                      command: `"${phpBinary}" -d memory_limit=512M artisan wayfinder:generate`,
+                  }),
+              ]
+            : []),
         tailwindcss({
             config: {
                 content: [
@@ -77,13 +119,13 @@ export default defineConfig({
         preserveSymlinks: true,
         dedupe: ["react", "react-dom"],
         alias: [
-            { find: "@/components", replacement: path.resolve(__dirname, "resources/js/components") },
-            { find: "@/context", replacement: path.resolve(__dirname, "resources/js/context") },
-            { find: "@/hooks", replacement: path.resolve(__dirname, "resources/js/hooks") },
-            { find: "@/lib", replacement: path.resolve(__dirname, "resources/js/lib") },
-            { find: "@/types", replacement: path.resolve(__dirname, "resources/js/types") },
-            { find: "@/wrappers", replacement: path.resolve(__dirname, "resources/js/wrappers") },
-            { find: "@", replacement: path.resolve(__dirname, "resources/js") },
+            { find: "@/components", replacement: path.resolve(import.meta.dirname, "resources/js/components") },
+            { find: "@/context", replacement: path.resolve(import.meta.dirname, "resources/js/context") },
+            { find: "@/hooks", replacement: path.resolve(import.meta.dirname, "resources/js/hooks") },
+            { find: "@/lib", replacement: path.resolve(import.meta.dirname, "resources/js/lib") },
+            { find: "@/types", replacement: path.resolve(import.meta.dirname, "resources/js/types") },
+            { find: "@/wrappers", replacement: path.resolve(import.meta.dirname, "resources/js/wrappers") },
+            { find: "@", replacement: path.resolve(import.meta.dirname, "resources/js") },
         ],
     },
     server: {

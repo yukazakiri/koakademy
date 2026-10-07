@@ -129,7 +129,8 @@ final class AppServiceProvider extends ServiceProvider
             {
                 public function generate(array|string|null $group = null, ?string $nonce = null, ?bool $json = false): string
                 {
-                    $cacheKey = 'ziggy_blade_script_'.md5(serialize([$group, $nonce, $json, config('app.url')]));
+                    $ziggyManifestHash = is_file(config_path('ziggy.php')) ? (string) filemtime(config_path('ziggy.php')) : '';
+                    $cacheKey = 'ziggy_blade_script_'.md5(serialize([$group, $nonce, $json, config('app.url'), config('app.version'), $ziggyManifestHash]));
 
                     return \Illuminate\Support\Facades\Cache::remember($cacheKey, 3600, function () use ($group, $nonce, $json): string {
                         return parent::generate($group, $nonce, $json);

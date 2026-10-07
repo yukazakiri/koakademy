@@ -118,6 +118,7 @@ export type StudentDetail = {
     current_school_year: string;
     current_semester: number;
     current_enrollment_id?: number | null;
+    current_enrollment_url?: string | null;
     current_enrollment?: {
         id: number;
         status?: string | null;

@@ -79,11 +79,13 @@ export function StudentActionMenu({ student, options, setActionDialog, setDelete
                     <DropdownMenuLabel className="text-muted-foreground px-2 py-1 text-xs font-normal">Academic</DropdownMenuLabel>
                     <DropdownMenuItem
                         onClick={() => {
-                            if (student.current_enrollment_id) {
-                                router.visit(route("administrators.enrollments.show", student.current_enrollment_id));
-                            } else {
-                                router.visit(route("administrators.students.current-enrollment", student.id));
-                            }
+                            const targetUrl =
+                                student.current_enrollment_url ||
+                                (student.current_enrollment_id
+                                    ? `/administrators/enrollments/${student.current_enrollment_id}`
+                                    : `/administrators/students/${student.id}/current-enrollment`);
+
+                            router.visit(targetUrl);
                         }}
                     >
                         <ClipboardList className="mr-2 h-4 w-4" /> View Current Enrollment

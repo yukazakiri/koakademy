@@ -847,6 +847,9 @@ final class AdministratorStudentManagementController extends Controller
                 'current_school_year' => $currentSchoolYear,
                 'current_semester' => $currentSemester,
                 'current_enrollment_id' => $activeEnrollment?->id,
+                'current_enrollment_url' => $activeEnrollment
+                    ? route('administrators.enrollments.show', $activeEnrollment->id)
+                    : route('administrators.students.current-enrollment', $student->id),
                 'current_enrollment' => $activeEnrollment ? [
                     'id' => $activeEnrollment->id,
                     'status' => $activeEnrollment->status,

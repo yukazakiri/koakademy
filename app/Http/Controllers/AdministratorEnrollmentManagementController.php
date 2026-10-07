@@ -566,6 +566,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                     'email' => $enrollment->student->email,
                     'student_id' => $enrollment->student->student_id,
                     'course_code' => $enrollment->student->Course?->code,
+                    'student_url' => route('administrators.students.show', $enrollment->student->id),
                 ],
                 'subjects_enrolled' => $enrollment->subjectsEnrolled->map(fn ($se): array => [
                     'id' => $se->id,

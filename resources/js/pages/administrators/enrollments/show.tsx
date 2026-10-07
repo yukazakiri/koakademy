@@ -3,7 +3,7 @@ import { index as tuitionAdjustments } from "@/actions/App/Http/Controllers/Admi
 import AdminLayout from "@/components/administrators/admin-layout";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -35,6 +35,7 @@ import {
     CheckCircle2,
     ClipboardList,
     Download,
+    ExternalLink,
     Files,
     FileText,
     ListChecks,
@@ -45,6 +46,7 @@ import {
     School,
     ShieldAlert,
     Undo2,
+    User as UserIcon,
     UserCheck,
     WalletCards,
 } from "lucide-react";
@@ -581,6 +583,12 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                         <DropdownMenuContent align="end" className="w-56">
                             <DropdownMenuLabel>Administrative actions</DropdownMenuLabel>
                             <DropdownMenuSeparator />
+                            <DropdownMenuItem asChild>
+                                <Link href={route("administrators.students.show", enrollment.student.id)} className="flex w-full items-center">
+                                    <UserIcon className="mr-2 h-4 w-4" /> View student record
+                                </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
                             {enrollment.status === completionStatus && (
                                 <DropdownMenuItem onClick={handleResendAssessment}>
                                     <FileText className="mr-2 h-4 w-4" /> Resend assessment email
@@ -688,12 +696,13 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
             <div className="space-y-6 pb-20">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="flex items-start gap-3 sm:gap-4">
-                        <Button variant="ghost" size="icon" asChild className="mt-1 h-9 w-9 shrink-0 rounded-full">
-                            <Link href={route("administrators.enrollments.index")}>
-                                <ArrowLeft className="size-4" />
-                                <span className="sr-only">Back to enrollments</span>
-                            </Link>
-                        </Button>
+                        <Link
+                            href={route("administrators.enrollments.index")}
+                            className={buttonVariants({ variant: "ghost", size: "icon", className: "mt-1 h-9 w-9 shrink-0 rounded-full" })}
+                        >
+                            <ArrowLeft className="size-4" />
+                            <span className="sr-only">Back to enrollments</span>
+                        </Link>
                         <div>
                             <p className="text-muted-foreground mb-1 text-[11px] font-semibold tracking-[0.16em] uppercase">
                                 Enrollment review · {enrollment.school_year}
@@ -704,21 +713,31 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                             </p>
                         </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                         <Badge variant="outline" className={cn("rounded-full px-3 py-1 text-xs", getStatusColor(enrollment.status))}>
                             <span className="mr-2 size-1.5 rounded-full bg-current" aria-hidden="true" />
                             {enrollment.status}
                         </Badge>
-                        <Button
-                            variant="outline"
-                            asChild
-                            className="rounded-full shadow-sm transition-[transform,box-shadow] duration-200 active:scale-[0.98]"
+                        <Link
+                            href={route("administrators.students.show", enrollment.student.id)}
+                            className={buttonVariants({
+                                variant: "outline",
+                                className: "rounded-full shadow-sm transition-[transform,box-shadow] duration-200 active:scale-[0.98]",
+                            })}
                         >
-                            <Link href={route("administrators.enrollments.edit", enrollment.id)}>
-                                <Pencil className="mr-2 size-4" />
-                                Edit enrollment
-                            </Link>
-                        </Button>
+                            <UserIcon className="mr-2 size-4" />
+                            Student record
+                        </Link>
+                        <Link
+                            href={route("administrators.enrollments.edit", enrollment.id)}
+                            className={buttonVariants({
+                                variant: "outline",
+                                className: "rounded-full shadow-sm transition-[transform,box-shadow] duration-200 active:scale-[0.98]",
+                            })}
+                        >
+                            <Pencil className="mr-2 size-4" />
+                            Edit enrollment
+                        </Link>
                     </div>
                 </div>
 
@@ -743,11 +762,25 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                             <div className="min-w-0">
                                 <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.16em] uppercase">Student record</p>
                                 <h2 id="student-record-heading" className="mt-1 truncate text-xl font-semibold tracking-[-0.02em] sm:text-2xl">
-                                    {enrollment.student.full_name}
+                                    <Link
+                                        href={route("administrators.students.show", enrollment.student.id)}
+                                        className="hover:text-primary transition-colors hover:underline inline-flex items-center gap-1.5"
+                                        title="View Student Record"
+                                    >
+                                        <span>{enrollment.student.full_name}</span>
+                                        <ExternalLink className="size-4 shrink-0 opacity-60" />
+                                    </Link>
                                 </h2>
                                 <div className="text-muted-foreground mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
                                     <span className="font-medium">ID {enrollment.student.student_id}</span>
                                     {enrollment.student.email && <span className="truncate">{enrollment.student.email}</span>}
+                                    <span className="text-muted-foreground/40">•</span>
+                                    <Link
+                                        href={route("administrators.students.show", enrollment.student.id)}
+                                        className="text-primary hover:underline inline-flex items-center gap-1 font-medium text-xs"
+                                    >
+                                        View profile
+                                    </Link>
                                 </div>
                             </div>
                         </div>
@@ -1368,11 +1401,14 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                                                             {new Date(res.created_at).toLocaleString()}
                                                         </p>
                                                     </div>
-                                                    <Button variant="ghost" size="icon" asChild className="text-muted-foreground h-8 w-8">
-                                                        <a href={res.download_url} target="_blank" rel="noreferrer">
-                                                            <Download className="h-4 w-4" />
-                                                        </a>
-                                                    </Button>
+                                                    <a
+                                                        href={res.download_url}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className={buttonVariants({ variant: "ghost", size: "icon", className: "text-muted-foreground h-8 w-8" })}
+                                                    >
+                                                        <Download className="h-4 w-4" />
+                                                    </a>
                                                 </div>
                                             ))}
                                             {enrollment.resources.length === 0 && (

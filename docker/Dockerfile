@@ -6,7 +6,7 @@ ARG APP_URL=https://koakademy.yukazaki.com
 # -----------------------------------------------------------------------------
 # Stage 1: Install PHP Dependencies
 # -----------------------------------------------------------------------------
-FROM composer:2.10@sha256:d8f6343d3fae98107426bc49163ccad46ef85aabd4a27d80a74401fab4aba332 AS vendor
+FROM composer:2.10@sha256:af98f42dfff7c68ba8d53c2164fd9fde1087b7d449514baa38c418b1f6bc4bac AS vendor
 WORKDIR /app
 COPY composer.json composer.lock ./
 RUN composer install \

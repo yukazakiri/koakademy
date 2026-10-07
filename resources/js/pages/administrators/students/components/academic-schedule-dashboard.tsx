@@ -1,14 +1,11 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Separator } from "@/components/ui/separator";
-import { Link } from "@inertiajs/react";
-import { ClipboardList, Clock, ExternalLink, FileText, LayoutGrid, Printer, User as UserIcon } from "lucide-react";
+import { Clock, ExternalLink, FileText, LayoutGrid, Printer, User as UserIcon } from "lucide-react";
 import type { StudentDetail } from "../types";
-
-declare const route: (name: string, params?: Record<string, unknown> | string | number) => string;
 
 const SCHEDULE_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 
@@ -36,24 +33,7 @@ export function AcademicScheduleDashboard({
                     <h3 className="text-xl font-bold tracking-tight">Academic Schedule</h3>
                     <p className="text-muted-foreground text-sm">Interactive weekly class matrix and subject load</p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                    {student.current_enrollment_id ? (
-                        <Link
-                            href={route("administrators.enrollments.show", student.current_enrollment_id)}
-                            className={buttonVariants({ variant: "outline", size: "sm", className: "gap-2" })}
-                        >
-                            <ClipboardList className="h-4 w-4" />
-                            View Enrollment
-                        </Link>
-                    ) : (
-                        <Link
-                            href={route("administrators.students.current-enrollment", student.id)}
-                            className={buttonVariants({ variant: "outline", size: "sm", className: "gap-2" })}
-                        >
-                            <ClipboardList className="h-4 w-4" />
-                            View Enrollment
-                        </Link>
-                    )}
+                <div className="flex gap-2">
                     <Button variant="outline" size="sm" className="gap-2" onClick={onPrintTor}>
                         <FileText className="h-4 w-4" />
                         Print TOR
@@ -70,29 +50,8 @@ export function AcademicScheduleDashboard({
                     <div className="bg-muted/10 flex w-full flex-col border-r lg:w-80">
                         <div className="bg-muted/20 border-b p-4">
                             <div className="mb-2 flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    <h4 className="text-sm font-semibold">Enrolled Subjects</h4>
-                                    <Badge variant="secondary">{student.current_enrolled_classes.length}</Badge>
-                                </div>
-                                {student.current_enrollment_id ? (
-                                    <Link
-                                        href={route("administrators.enrollments.show", student.current_enrollment_id)}
-                                        className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs transition-colors"
-                                        title="View Related Enrollment Record"
-                                    >
-                                        <span>Details</span>
-                                        <ExternalLink className="h-3 w-3" />
-                                    </Link>
-                                ) : (
-                                    <Link
-                                        href={route("administrators.students.current-enrollment", student.id)}
-                                        className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs transition-colors"
-                                        title="View Related Enrollment Record"
-                                    >
-                                        <span>Details</span>
-                                        <ExternalLink className="h-3 w-3" />
-                                    </Link>
-                                )}
+                                <h4 className="text-sm font-semibold">Enrolled Subjects</h4>
+                                <Badge variant="secondary">{student.current_enrolled_classes.length}</Badge>
                             </div>
                             <div className="text-muted-foreground flex items-center gap-2 text-xs">
                                 <Clock className="h-3 w-3" />
@@ -141,20 +100,7 @@ export function AcademicScheduleDashboard({
                                 </div>
                             ))}
                             {student.current_enrolled_classes.length === 0 && (
-                                <div className="text-muted-foreground flex flex-col items-center justify-center py-8 text-center text-sm">
-                                    <p>No subjects enrolled.</p>
-                                    <Link
-                                        href={
-                                            student.current_enrollment_id
-                                                ? route("administrators.enrollments.show", student.current_enrollment_id)
-                                                : route("administrators.students.current-enrollment", student.id)
-                                        }
-                                        className="text-primary mt-2 inline-flex items-center gap-1 text-xs hover:underline"
-                                    >
-                                        View enrollment record
-                                        <ExternalLink className="h-3 w-3" />
-                                    </Link>
-                                </div>
+                                <div className="text-muted-foreground py-8 text-center text-sm">No subjects enrolled.</div>
                             )}
                         </div>
                     </div>

@@ -255,7 +255,6 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/students/education-school-options', [AdministratorStudentManagementController::class, 'educationSchoolOptions'])->name('students.education-school-options');
         Route::patch('/students/{student}/quick-update', [AdministratorStudentManagementController::class, 'quickUpdate'])->name('students.quick-update')->withTrashed();
         Route::get('/students/{student}', [AdministratorStudentManagementController::class, 'show'])->name('students.show')->withTrashed();
-        Route::get('/students/{student}/current-enrollment', [AdministratorStudentManagementController::class, 'currentEnrollment'])->name('students.current-enrollment')->withTrashed();
         Route::get('/students/{student}/tuition/soa', [AdministratorStudentManagementController::class, 'printSoa'])->name('students.tuition.soa');
         Route::get('/students/{student}/documents', [AdministratorStudentDocumentController::class, 'index'])->name('students.documents.index');
         Route::post('/students/{student}/documents/fixed', [AdministratorStudentDocumentController::class, 'updateFixed'])->name('students.documents.fixed.update');

@@ -117,13 +117,6 @@ export type StudentDetail = {
     tuition: any;
     current_school_year: string;
     current_semester: number;
-    current_enrollment_id?: number | null;
-    current_enrollment?: {
-        id: number;
-        status?: string | null;
-        school_year?: string | null;
-        semester?: number | null;
-    } | null;
     current_enrolled_classes: EnrolledClass[];
     checklist: ChecklistYearGroup[];
     non_credited_subjects: Array<{

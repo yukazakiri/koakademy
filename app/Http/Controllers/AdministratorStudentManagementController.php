@@ -692,47 +692,18 @@ final class AdministratorStudentManagementController extends Controller
 
         // Get current enrollment and tuition (including trashed records)
         // $generalSettingsService and current years already initialized at top
-        $schoolYearWithSpaces = $currentSchoolYear;
-        $schoolYearNoSpaces = str_replace(' ', '', $currentSchoolYear);
-        $schoolYearVariants = array_values(array_unique(array_filter([$schoolYearWithSpaces, $schoolYearNoSpaces])));
-
-        $studentIdentifiers = array_values(array_unique(array_filter([
-            (string) $student->id,
-            $student->student_id !== null ? (string) $student->student_id : null,
-        ])));
 
         // Get current enrollment for the student (including soft-deleted)
         $currentEnrollment = StudentEnrollment::withTrashed()
-            ->whereIn('student_id', $studentIdentifiers)
-            ->whereIn('school_year', $schoolYearVariants)
+            ->where('student_id', (string) $student->id)
+            ->where('school_year', $currentSchoolYear)
             ->where('semester', $currentSemester)
             ->with([
                 'studentTuition' => function ($query): void {
                     $query->withTrashed();
                 },
             ])
-            ->latest('id')
             ->first();
-
-        if (! $currentEnrollment) {
-            $fallbackEnrollmentId = SubjectEnrollment::query()
-                ->whereIn('student_id', [(int) $student->id, (int) $student->student_id])
-                ->whereIn('school_year', $schoolYearVariants)
-                ->where('semester', $currentSemester)
-                ->whereNotNull('enrollment_id')
-                ->latest('id')
-                ->value('enrollment_id');
-
-            if ($fallbackEnrollmentId) {
-                $currentEnrollment = StudentEnrollment::withTrashed()
-                    ->with([
-                        'studentTuition' => function ($query): void {
-                            $query->withTrashed();
-                        },
-                    ])
-                    ->find($fallbackEnrollmentId);
-            }
-        }
 
         // Get tuition from enrollment (this is the correct way)
         $tuition = $currentEnrollment?->studentTuition;
@@ -876,13 +847,6 @@ final class AdministratorStudentManagementController extends Controller
                 'tuition' => $tuitionData,
                 'current_school_year' => $currentSchoolYear,
                 'current_semester' => $currentSemester,
-                'current_enrollment_id' => $currentEnrollment?->id,
-                'current_enrollment' => $currentEnrollment ? [
-                    'id' => $currentEnrollment->id,
-                    'status' => $currentEnrollment->status,
-                    'school_year' => $currentEnrollment->school_year,
-                    'semester' => $currentEnrollment->semester,
-                ] : null,
                 'current_enrolled_classes' => $currentEnrolledClasses,
                 'checklist' => $checklist,
                 'non_credited_subjects' => $nonCreditedSubjects,
@@ -1027,51 +991,6 @@ final class AdministratorStudentManagementController extends Controller
         return response()->json([
             'message' => 'SOA PDF generation queued. You will be notified when the file is ready.',
         ], 202);
-    }
-
-    public function currentEnrollment(Request $request, Student $student): RedirectResponse
-    {
-        $generalSettingsService = app(GeneralSettingsService::class);
-        $currentSchoolYear = $generalSettingsService->getCurrentSchoolYearString();
-        $currentSemester = $generalSettingsService->getCurrentSemester();
-
-        $schoolYearWithSpaces = $currentSchoolYear;
-        $schoolYearNoSpaces = str_replace(' ', '', $currentSchoolYear);
-        $schoolYearVariants = array_values(array_unique(array_filter([$schoolYearWithSpaces, $schoolYearNoSpaces])));
-
-        $studentIdentifiers = array_values(array_unique(array_filter([
-            (string) $student->id,
-            $student->student_id !== null ? (string) $student->student_id : null,
-        ])));
-
-        $enrollment = StudentEnrollment::withTrashed()
-            ->whereIn('student_id', $studentIdentifiers)
-            ->whereIn('school_year', $schoolYearVariants)
-            ->where('semester', $currentSemester)
-            ->latest('id')
-            ->first();
-
-        if (! $enrollment) {
-            $fallbackEnrollmentId = SubjectEnrollment::query()
-                ->whereIn('student_id', [(int) $student->id, (int) $student->student_id])
-                ->whereIn('school_year', $schoolYearVariants)
-                ->where('semester', $currentSemester)
-                ->whereNotNull('enrollment_id')
-                ->latest('id')
-                ->value('enrollment_id');
-
-            if ($fallbackEnrollmentId) {
-                $enrollment = StudentEnrollment::withTrashed()->find($fallbackEnrollmentId);
-            }
-        }
-
-        if ($enrollment) {
-            return redirect()->route('administrators.enrollments.show', $enrollment->id);
-        }
-
-        return redirect()
-            ->route('administrators.students.show', $student->id)
-            ->with('error', "No enrollment record found for {$student->full_name} in S.Y. {$currentSchoolYear}, Semester {$currentSemester}.");
     }
 
     public function create(CurriculumCapabilityResolver $capabilityResolver): Response

@@ -201,7 +201,6 @@ return [
         'administrators.students.change-course',
         'administrators.students.courses.subjects',
         'administrators.students.create',
-        'administrators.students.current-enrollment',
         'administrators.students.destroy',
         'administrators.students.documents.dynamic.destroy',
         'administrators.students.documents.dynamic.store',

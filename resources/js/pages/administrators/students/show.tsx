@@ -13,7 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Head, Link, router, useForm } from "@inertiajs/react";
-import { ClipboardList, FileText, Trash2 } from "lucide-react";
+import { FileText, Trash2 } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -285,7 +285,7 @@ export default function AdministratorStudentShow({ user, student, options }: Stu
                         </p>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex gap-2">
                         <Link href={route("administrators.students.index")} className={buttonVariants({ variant: "outline" })}>
                             Back
                         </Link>
@@ -296,25 +296,6 @@ export default function AdministratorStudentShow({ user, student, options }: Stu
                             setActionDialog={setActionDialog}
                             setDeleteAction={setStudentDeleteAction}
                         />
-
-                        {student.current_enrollment_id ? (
-                            <Link
-                                href={route("administrators.enrollments.show", student.current_enrollment_id)}
-                                className={buttonVariants({ variant: "outline", className: "gap-2" })}
-                            >
-                                <ClipboardList className="h-4 w-4" />
-                                Current Enrollment
-                            </Link>
-                        ) : (
-                            <Link
-                                href={route("administrators.students.current-enrollment", student.id)}
-                                className={buttonVariants({ variant: "outline", className: "gap-2" })}
-                                title="Check or redirect to related enrollment for the current semester and school year"
-                            >
-                                <ClipboardList className="h-4 w-4" />
-                                Current Enrollment
-                            </Link>
-                        )}
 
                         <Link
                             href={route("administrators.students.documents.index", student.id)}

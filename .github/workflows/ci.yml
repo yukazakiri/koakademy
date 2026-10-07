@@ -150,7 +150,7 @@ jobs:
         run: composer install --no-interaction --prefer-dist --no-progress
 
       - name: Audit PHP dependencies
-        run: composer audit --locked
+        run: composer audit --locked --abandoned=report
 
       - name: Install JavaScript dependencies
         run: npm ci

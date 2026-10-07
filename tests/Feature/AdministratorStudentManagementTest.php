@@ -662,3 +662,151 @@ it('redirects to the show page when updating student without stay parameter', fu
         ->assertSessionHasNoErrors()
         ->assertRedirect(route('administrators.students.show', $student));
 });
+
+it('redirects to the student current enrollment when an enrollment exists for the current semester', function (): void {
+    $school = School::first() ?? School::factory()->create();
+    $user = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
+    $student = Student::factory()->create([
+        'school_id' => $school->id,
+        'course_id' => $course->id,
+    ]);
+
+    $settings = app(App\Services\GeneralSettingsService::class);
+    $currentSchoolYear = $settings->getCurrentSchoolYearString();
+    $currentSemester = $settings->getCurrentSemester();
+
+    $enrollment = StudentEnrollment::factory()->create([
+        'school_id' => $school->id,
+        'student_id' => (string) $student->id,
+        'course_id' => $course->id,
+        'school_year' => $currentSchoolYear,
+        'semester' => $currentSemester,
+    ]);
+
+    actingAs($user)
+        ->get(route('administrators.students.current-enrollment', $student->id))
+        ->assertRedirect(route('administrators.enrollments.show', $enrollment->id));
+});
+
+it('redirects back to the student show page with an error when no enrollment exists for the current semester', function (): void {
+    $school = School::first() ?? School::factory()->create();
+    $user = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
+    $student = Student::factory()->create([
+        'school_id' => $school->id,
+        'course_id' => $course->id,
+    ]);
+
+    actingAs($user)
+        ->get(route('administrators.students.current-enrollment', $student->id))
+        ->assertRedirect(route('administrators.students.show', $student->id))
+        ->assertSessionHas('error');
+});
+
+it('exposes current_enrollment_id on the student show page', function (): void {
+    $school = School::first() ?? School::factory()->create();
+    $user = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
+    $student = Student::factory()->create([
+        'school_id' => $school->id,
+        'course_id' => $course->id,
+    ]);
+
+    $settings = app(App\Services\GeneralSettingsService::class);
+    $currentSchoolYear = $settings->getCurrentSchoolYearString();
+    $currentSemester = $settings->getCurrentSemester();
+
+    $enrollment = StudentEnrollment::factory()->create([
+        'school_id' => $school->id,
+        'student_id' => (string) $student->id,
+        'course_id' => $course->id,
+        'school_year' => $currentSchoolYear,
+        'semester' => $currentSemester,
+    ]);
+
+    actingAs($user)
+        ->get(route('administrators.students.show', $student->id))
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->component('administrators/students/show', false)
+            ->where('student.current_enrollment_id', $enrollment->id)
+            ->where('student.current_enrollment.id', $enrollment->id)
+        );
+});
+
+it('does not expose or redirect to a soft-deleted current enrollment', function (): void {
+    $school = School::first() ?? School::factory()->create();
+    $user = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
+    $student = Student::factory()->create([
+        'school_id' => $school->id,
+        'course_id' => $course->id,
+    ]);
+
+    $settings = app(App\Services\GeneralSettingsService::class);
+    $currentSchoolYear = $settings->getCurrentSchoolYearString();
+    $currentSemester = $settings->getCurrentSemester();
+
+    $enrollment = StudentEnrollment::factory()->create([
+        'school_id' => $school->id,
+        'student_id' => (string) $student->id,
+        'course_id' => $course->id,
+        'school_year' => $currentSchoolYear,
+        'semester' => $currentSemester,
+        'deleted_at' => now(),
+    ]);
+
+    actingAs($user)
+        ->get(route('administrators.students.current-enrollment', $student->id))
+        ->assertRedirect(route('administrators.students.show', $student->id))
+        ->assertSessionHas('error');
+
+    actingAs($user)
+        ->get(route('administrators.students.show', $student->id))
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->component('administrators/students/show', false)
+            ->where('student.current_enrollment_id', null)
+            ->where('student.current_enrollment', null)
+        );
+});
+
+it('prioritizes student primary key foreign key over a conflicting student number', function (): void {
+    $school = School::first() ?? School::factory()->create();
+    $user = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
+
+    $studentA = Student::factory()->create([
+        'school_id' => $school->id,
+        'course_id' => $course->id,
+        'student_id' => '10001',
+    ]);
+
+    // Student B whose public student_id equals Student A's primary key
+    $studentB = Student::factory()->create([
+        'school_id' => $school->id,
+        'course_id' => $course->id,
+        'student_id' => (string) $studentA->id,
+    ]);
+
+    $settings = app(App\Services\GeneralSettingsService::class);
+    $currentSchoolYear = $settings->getCurrentSchoolYearString();
+    $currentSemester = $settings->getCurrentSemester();
+
+    $enrollmentA = StudentEnrollment::factory()->create([
+        'school_id' => $school->id,
+        'student_id' => (string) $studentA->id,
+        'course_id' => $course->id,
+        'school_year' => $currentSchoolYear,
+        'semester' => $currentSemester,
+    ]);
+
+    actingAs($user)
+        ->get(route('administrators.students.current-enrollment', $studentA->id))
+        ->assertRedirect(route('administrators.enrollments.show', $enrollmentA->id));
+
+    // Student B should not claim Student A's enrollment
+    actingAs($user)
+        ->get(route('administrators.students.current-enrollment', $studentB->id))
+        ->assertRedirect(route('administrators.students.show', $studentB->id))
+        ->assertSessionHas('error');
+});

@@ -14,6 +14,7 @@ import {
     Calendar as CalendarIcon,
     CheckCircle,
     Clock,
+    ExternalLink,
     FileText,
     GraduationCap,
     Printer,
@@ -128,9 +129,24 @@ export function StudentTabs({ student, options, onAdjustTuition }: StudentTabsPr
                                                     </p>
                                                 </div>
                                             ) : (
-                                                <div className="text-sm">
-                                                    Currently <span className="font-medium">{student.status}</span> for S.Y.{" "}
-                                                    {student.current_school_year}
+                                                <div className="flex flex-col gap-1.5 text-sm">
+                                                    <div>
+                                                        Currently <span className="font-medium">{student.status}</span> for S.Y.{" "}
+                                                        {student.current_school_year} (Sem {student.current_semester})
+                                                    </div>
+                                                    <div>
+                                                        <Link
+                                                            href={
+                                                                student.current_enrollment_id
+                                                                    ? route("administrators.enrollments.show", student.current_enrollment_id)
+                                                                    : route("administrators.students.current-enrollment", student.id)
+                                                            }
+                                                            className="text-primary hover:underline inline-flex items-center gap-1 text-xs font-medium"
+                                                        >
+                                                            View Enrollment Record
+                                                            <ExternalLink className="h-3 w-3" />
+                                                        </Link>
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>

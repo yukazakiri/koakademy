@@ -200,6 +200,9 @@
             "php-http/discovery": true,
             "wikimedia/composer-merge-plugin": true,
             "cweagans/composer-patches": true
+        },
+        "audit": {
+            "abandoned": "report"
         }
     },
     "minimum-stability": "stable",

@@ -692,18 +692,17 @@ final class AdministratorStudentManagementController extends Controller
 
         // Get current enrollment and tuition (including trashed records)
         // $generalSettingsService and current years already initialized at top
+        $activeEnrollment = $this->findCurrentEnrollmentForStudent($student, $currentSchoolYear, $currentSemester, includeTrashed: false);
+        $currentEnrollment = $activeEnrollment
+            ?? $this->findCurrentEnrollmentForStudent($student, $currentSchoolYear, $currentSemester, includeTrashed: true);
 
-        // Get current enrollment for the student (including soft-deleted)
-        $currentEnrollment = StudentEnrollment::withTrashed()
-            ->where('student_id', (string) $student->id)
-            ->where('school_year', $currentSchoolYear)
-            ->where('semester', $currentSemester)
-            ->with([
+        if ($currentEnrollment) {
+            $currentEnrollment->loadMissing([
                 'studentTuition' => function ($query): void {
                     $query->withTrashed();
                 },
-            ])
-            ->first();
+            ]);
+        }
 
         // Get tuition from enrollment (this is the correct way)
         $tuition = $currentEnrollment?->studentTuition;
@@ -847,6 +846,13 @@ final class AdministratorStudentManagementController extends Controller
                 'tuition' => $tuitionData,
                 'current_school_year' => $currentSchoolYear,
                 'current_semester' => $currentSemester,
+                'current_enrollment_id' => $activeEnrollment?->id,
+                'current_enrollment' => $activeEnrollment ? [
+                    'id' => $activeEnrollment->id,
+                    'status' => $activeEnrollment->status,
+                    'school_year' => $activeEnrollment->school_year,
+                    'semester' => $activeEnrollment->semester,
+                ] : null,
                 'current_enrolled_classes' => $currentEnrolledClasses,
                 'checklist' => $checklist,
                 'non_credited_subjects' => $nonCreditedSubjects,
@@ -991,6 +997,28 @@ final class AdministratorStudentManagementController extends Controller
         return response()->json([
             'message' => 'SOA PDF generation queued. You will be notified when the file is ready.',
         ], 202);
+    }
+
+    public function currentEnrollment(Request $request, Student $student): RedirectResponse
+    {
+        $generalSettingsService = app(GeneralSettingsService::class);
+        $currentSchoolYear = $generalSettingsService->getCurrentSchoolYearString();
+        $currentSemester = $generalSettingsService->getCurrentSemester();
+
+        $enrollment = $this->findCurrentEnrollmentForStudent(
+            $student,
+            $currentSchoolYear,
+            $currentSemester,
+            includeTrashed: false
+        );
+
+        if ($enrollment) {
+            return redirect()->route('administrators.enrollments.show', $enrollment->id);
+        }
+
+        return redirect()
+            ->route('administrators.students.show', $student->id)
+            ->with('error', "No active enrollment record found for {$student->full_name} in S.Y. {$currentSchoolYear}, Semester {$currentSemester}.");
     }
 
     public function create(CurriculumCapabilityResolver $capabilityResolver): Response
@@ -2532,6 +2560,66 @@ final class AdministratorStudentManagementController extends Controller
         } catch (Exception $e) {
             return back()->with('error', 'Failed to delete student: '.$e->getMessage());
         }
+    }
+
+    /**
+     * Resolve the current-term enrollment for a student, prioritizing primary key matches
+     * and non-trashed active enrollments to prevent collisions with public student numbers.
+     */
+    private function findCurrentEnrollmentForStudent(
+        Student $student,
+        string $currentSchoolYear,
+        int $currentSemester,
+        bool $includeTrashed = false
+    ): ?StudentEnrollment {
+        $schoolYearWithSpaces = $currentSchoolYear;
+        $schoolYearNoSpaces = str_replace(' ', '', $currentSchoolYear);
+        $schoolYearVariants = array_values(array_unique(array_filter([$schoolYearWithSpaces, $schoolYearNoSpaces])));
+
+        $baseQuery = fn () => $includeTrashed ? StudentEnrollment::withTrashed() : StudentEnrollment::query();
+
+        // 1. Canonical query: match on the primary key student_id foreign key
+        $enrollment = $baseQuery()
+            ->where('student_id', (string) $student->id)
+            ->whereIn('school_year', $schoolYearVariants)
+            ->where('semester', $currentSemester)
+            ->latest('id')
+            ->first();
+
+        // 2. Fallback: match through SubjectEnrollment on student's primary key
+        if (! $enrollment) {
+            $fallbackEnrollmentId = SubjectEnrollment::query()
+                ->where('student_id', (int) $student->id)
+                ->whereIn('school_year', $schoolYearVariants)
+                ->where('semester', $currentSemester)
+                ->whereNotNull('enrollment_id')
+                ->latest('id')
+                ->value('enrollment_id');
+
+            if ($fallbackEnrollmentId) {
+                $enrollment = $baseQuery()->find($fallbackEnrollmentId);
+            }
+        }
+
+        // 3. Fallback: match on legacy public student_id string, only if distinct from primary key
+        // and strictly verify ownership
+        if (! $enrollment && $student->student_id !== null && (string) $student->student_id !== (string) $student->id) {
+            $legacyEnrollment = $baseQuery()
+                ->where('student_id', (string) $student->student_id)
+                ->whereIn('school_year', $schoolYearVariants)
+                ->where('semester', $currentSemester)
+                ->latest('id')
+                ->first();
+
+            if ($legacyEnrollment && (
+                (int) $legacyEnrollment->student?->id === (int) $student->id ||
+                $legacyEnrollment->student?->student_id === $student->student_id
+            )) {
+                $enrollment = $legacyEnrollment;
+            }
+        }
+
+        return $enrollment;
     }
 
     /**

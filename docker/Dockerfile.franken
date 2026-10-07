@@ -6,7 +6,7 @@ ARG APP_URL=https://koakademy.yukazaki.com
 # -----------------------------------------------------------------------------
 # Stage 1: Install PHP Dependencies
 # -----------------------------------------------------------------------------
-FROM composer:2.10@sha256:d8f6343d3fae98107426bc49163ccad46ef85aabd4a27d80a74401fab4aba332 AS vendor
+FROM composer:2.10@sha256:af98f42dfff7c68ba8d53c2164fd9fde1087b7d449514baa38c418b1f6bc4bac AS vendor
 WORKDIR /app
 COPY composer.json composer.lock ./
 RUN composer install \
@@ -38,7 +38,7 @@ RUN composer dump-autoload --optimize --classmap-authoritative --no-dev --no-scr
 # -----------------------------------------------------------------------------
 # Stage 2: Generate Wayfinder Files (requires the application's PHP version)
 # -----------------------------------------------------------------------------
-FROM dunglas/frankenphp:1.12-php8.5@sha256:f92d81eb3fe4fd18b35d3d58192b7cc3acc8943817bbf39f2fcf0be02a3916dc AS wayfinder
+FROM dunglas/frankenphp:1.12-php8.5@sha256:81231b570830952baa3e62db06707996a886ff0a61ca64c77d032c8a110e6bc1 AS wayfinder
 # The application boots during wayfinder:generate and config/backup.php
 # instantiates ZipArchive, so the extension must be present in this stage.
 RUN install-php-extensions zip
@@ -68,7 +68,7 @@ RUN npm prune --omit=dev
 # -----------------------------------------------------------------------------
 # Stage 4: Final Runtime Image (FrankenPHP served through Laravel Octane)
 # -----------------------------------------------------------------------------
-FROM dunglas/frankenphp:1.12-php8.5@sha256:f92d81eb3fe4fd18b35d3d58192b7cc3acc8943817bbf39f2fcf0be02a3916dc
+FROM dunglas/frankenphp:1.12-php8.5@sha256:81231b570830952baa3e62db06707996a886ff0a61ca64c77d032c8a110e6bc1
 
 LABEL maintainer="Yuka <128908897+yukazakiri@users.noreply.github.com>"
 LABEL org.opencontainers.image.title="KoAkademy"

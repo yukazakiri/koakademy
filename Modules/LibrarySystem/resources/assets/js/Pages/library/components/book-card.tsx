@@ -1,8 +1,9 @@
-import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/reui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { favorite, show, unfavorite } from "@/routes/library/books";
 import { Link, router } from "@inertiajs/react";
-import { BookOpen, Bookmark, Heart, LibraryBig } from "lucide-react";
+import { BookOpen, Bookmark, Heart, LibraryBig, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { BookCover } from "./book-cover";
 
@@ -42,62 +43,85 @@ export function BookCard({ book, priority = false }: { book: LibraryBookCardData
     };
 
     return (
-        <article className="group border-border/70 bg-card/80 hover:border-primary/35 relative flex min-h-full flex-col overflow-hidden rounded-[1.35rem] border shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-xl">
-            <Link href={show.url(book.id)} prefetch className="relative block aspect-[3/4] overflow-hidden">
+        <article className="group border-border/70 bg-card/90 hover:border-primary/40 relative flex min-h-full flex-col overflow-hidden rounded-2xl border shadow-xs transition-all duration-300 hover:-translate-y-1 hover:shadow-lg">
+            <Link href={show.url(book.id)} prefetch className="relative block aspect-3/4 overflow-hidden">
                 <BookCover title={book.title} author={book.author} coverUrl={book.cover_image_url} priority={priority} />
-                <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/80 via-black/20 to-transparent p-3 pt-12">
-                    <span
-                        className={cn(
-                            "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold backdrop-blur-md",
-                            book.available_online
-                                ? "border-emerald-300/40 bg-emerald-950/75 text-emerald-100"
-                                : "border-white/25 bg-black/45 text-white/85",
-                        )}
-                    >
-                        {book.available_online ? <BookOpen className="size-3.5" /> : <LibraryBig className="size-3.5" />}
-                        {book.available_online ? "Available Online" : "Catalog Only"}
-                    </span>
+                <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-linear-to-t from-black/85 via-black/30 to-transparent p-3 pt-12">
+                    {book.available_online ? (
+                        <Badge
+                            variant="success-light"
+                            radius="full"
+                            size="sm"
+                            className="border border-emerald-400/30 bg-emerald-950/80 font-semibold tracking-wide text-emerald-200 backdrop-blur-md"
+                        >
+                            <Sparkles className="mr-1 size-3 text-emerald-400" />
+                            Available Online
+                        </Badge>
+                    ) : (
+                        <Badge
+                            variant="invert-light"
+                            radius="full"
+                            size="sm"
+                            className="border border-white/20 bg-black/60 font-medium tracking-wide text-white/90 backdrop-blur-md"
+                        >
+                            <LibraryBig className="mr-1 size-3 text-white/70" />
+                            Physical Catalog
+                        </Badge>
+                    )}
                 </div>
             </Link>
 
-            <div className="flex flex-1 flex-col gap-4 p-4">
-                <div className="space-y-2">
-                    <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
-                        {book.category && <span className="font-semibold tracking-[0.12em] uppercase">{book.category}</span>}
+            <div className="flex flex-1 flex-col gap-3 p-4">
+                <div className="space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                        {book.category && (
+                            <Badge
+                                variant="outline"
+                                size="xs"
+                                radius="full"
+                                className="text-muted-foreground text-[10px] font-semibold tracking-wider uppercase"
+                            >
+                                {book.category}
+                            </Badge>
+                        )}
                         {book.publication_year && (
-                            <>
-                                <span aria-hidden="true">•</span>
-                                <span>{book.publication_year}</span>
-                            </>
+                            <span className="text-muted-foreground/80 text-[11px] font-medium tabular-nums">• {book.publication_year}</span>
                         )}
                     </div>
                     <div>
                         <Link href={show.url(book.id)} prefetch className="hover:text-primary transition-colors">
-                            <h2 className="line-clamp-2 font-serif text-lg leading-snug font-semibold text-balance">{book.title}</h2>
+                            <h3 className="line-clamp-2 font-serif text-base leading-snug font-semibold text-balance">{book.title}</h3>
                         </Link>
-                        <p className="text-muted-foreground mt-1 line-clamp-1 text-sm">{book.author || "Unknown author"}</p>
+                        <p className="text-muted-foreground mt-0.5 line-clamp-1 text-xs">{book.author || "Unknown author"}</p>
                     </div>
-                    <p className="text-muted-foreground line-clamp-3 text-sm leading-relaxed">{book.description || "No description available."}</p>
+                    <p className="text-muted-foreground line-clamp-2 text-xs leading-relaxed">
+                        {book.description || "No description available in catalogue records."}
+                    </p>
                 </div>
 
-                <div className="mt-auto flex items-center gap-2">
-                    <Button asChild size="sm" className="flex-1 gap-2 rounded-xl">
-                        <Link href={show.url(book.id)} prefetch>
-                            {book.available_online ? <BookOpen className="size-4" /> : <Bookmark className="size-4" />}
-                            {book.available_online ? "Open book" : "View details"}
-                        </Link>
-                    </Button>
+                <div className="mt-auto flex items-center gap-2 pt-2">
+                    <Link
+                        href={show.url(book.id)}
+                        prefetch
+                        className={cn(
+                            buttonVariants({ size: "sm" }),
+                            "flex-1 gap-1.5 rounded-lg text-xs font-semibold shadow-xs transition-transform active:scale-95",
+                        )}
+                    >
+                        {book.available_online ? <BookOpen className="size-3.5" /> : <Bookmark className="size-3.5" />}
+                        {book.available_online ? "Read eBook" : "View Details"}
+                    </Link>
                     <Button
                         type="button"
-                        size="icon"
+                        size="icon-sm"
                         variant="outline"
-                        className="rounded-xl"
+                        className="shrink-0 rounded-lg transition-colors"
                         onClick={toggleFavorite}
                         disabled={favoritePending}
                         aria-label={isFavorite ? `Remove ${book.title} from favorites` : `Add ${book.title} to favorites`}
                         aria-pressed={isFavorite}
                     >
-                        <Heart className={cn("size-4", isFavorite && "fill-rose-500 text-rose-500")} />
+                        <Heart className={cn("size-3.5", isFavorite && "fill-rose-500 text-rose-500")} />
                     </Button>
                 </div>
             </div>

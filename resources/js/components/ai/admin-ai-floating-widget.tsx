@@ -47,11 +47,6 @@ import { ChatMessageFormatter } from "./chat-message-formatter";
 import { AssistantMessageActions, UserMessageActions } from "./message-actions";
 import { type AgentRoleKey, useAiChat } from "./use-ai-chat";
 
-const PREFERRED_MODEL_KEY = "koakademy_ai_preferred_model";
-const WIDGET_OPEN_KEY = "koakademy_ai_widget_open";
-const WIDGET_EXPANDED_KEY = "koakademy_ai_widget_expanded";
-const WIDGET_AGENT_KEY = "koakademy_ai_widget_agent";
-
 interface AdminAiFloatingWidgetProps {
     user: User;
 }
@@ -119,10 +114,17 @@ const ADMIN_AGENTS: {
 ];
 
 export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
+    const userId = user?.id ? String(user.id) : "guest";
+    const preferredModelKey = `koakademy_ai_preferred_model_${userId}`;
+    const widgetOpenKey = `koakademy_ai_widget_open_${userId}`;
+    const widgetExpandedKey = `koakademy_ai_widget_expanded_${userId}`;
+    const widgetAgentKey = `koakademy_ai_widget_agent_${userId}`;
+    const widgetPersistenceKey = `koakademy_ai_widget_${userId}`;
+
     const [isOpen, setIsOpen] = React.useState<boolean>(() => {
         if (typeof window !== "undefined") {
             try {
-                return sessionStorage.getItem(WIDGET_OPEN_KEY) === "true";
+                return sessionStorage.getItem(widgetOpenKey) === "true";
             } catch {
                 return false;
             }
@@ -132,7 +134,7 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
     const [isExpanded, setIsExpanded] = React.useState<boolean>(() => {
         if (typeof window !== "undefined") {
             try {
-                return sessionStorage.getItem(WIDGET_EXPANDED_KEY) === "true";
+                return sessionStorage.getItem(widgetExpandedKey) === "true";
             } catch {
                 return false;
             }
@@ -142,7 +144,7 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
     const [selectedAgent, setSelectedAgent] = React.useState<AgentRoleKey>(() => {
         if (typeof window !== "undefined") {
             try {
-                const saved = sessionStorage.getItem(WIDGET_AGENT_KEY) as AgentRoleKey;
+                const saved = sessionStorage.getItem(widgetAgentKey) as AgentRoleKey;
                 if (saved && ADMIN_AGENTS.some((a) => a.key === saved)) {
                     return saved;
                 }
@@ -157,34 +159,34 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
         setIsOpen(open);
         if (typeof window !== "undefined") {
             try {
-                sessionStorage.setItem(WIDGET_OPEN_KEY, String(open));
+                sessionStorage.setItem(widgetOpenKey, String(open));
             } catch {
                 // Ignore storage errors
             }
         }
-    }, []);
+    }, [widgetOpenKey]);
 
     const handleExpandedChange = React.useCallback((expanded: boolean) => {
         setIsExpanded(expanded);
         if (typeof window !== "undefined") {
             try {
-                sessionStorage.setItem(WIDGET_EXPANDED_KEY, String(expanded));
+                sessionStorage.setItem(widgetExpandedKey, String(expanded));
             } catch {
                 // Ignore storage errors
             }
         }
-    }, []);
+    }, [widgetExpandedKey]);
 
     const handleAgentChange = React.useCallback((agentKey: AgentRoleKey) => {
         setSelectedAgent(agentKey);
         if (typeof window !== "undefined") {
             try {
-                sessionStorage.setItem(WIDGET_AGENT_KEY, agentKey);
+                sessionStorage.setItem(widgetAgentKey, agentKey);
             } catch {
                 // Ignore storage errors
             }
         }
-    }, []);
+    }, [widgetAgentKey]);
 
     // Dynamic model options from configured providers
     const [availableModels, setAvailableModels] = React.useState<ModelOption[]>(
@@ -222,7 +224,7 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
     } = useAiChat({
         agent: selectedAgent,
         endpoint: "/administrators/ai/chat",
-        persistenceKey: "koakademy_ai_widget",
+        persistenceKey: widgetPersistenceKey,
     });
 
     // Auto-scroll on new message chunks
@@ -237,14 +239,14 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
         setSelectedModel(id);
         if (typeof window !== "undefined") {
             try {
-                localStorage.setItem(PREFERRED_MODEL_KEY, id);
+                localStorage.setItem(preferredModelKey, id);
             } catch {
                 // Ignore storage quotas
             }
         }
         setModelPopoverOpen(false);
         toast.success(`Active model: ${id}`);
-    }, []);
+    }, [preferredModelKey]);
 
     // Fetch available models once when opened
     React.useEffect(() => {
@@ -269,7 +271,7 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
 
                         const saved =
                             typeof window !== "undefined"
-                                ? localStorage.getItem(PREFERRED_MODEL_KEY)
+                                ? localStorage.getItem(preferredModelKey)
                                 : null;
                         if (saved && mapped.some((m) => m.id === saved)) {
                             setSelectedModel(saved);

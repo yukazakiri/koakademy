@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Tools;
 
+use App\Enums\StudentStatus;
 use App\Mcp\Concerns\AuthorizesMcpRequests;
 use App\Models\Classes;
 use App\Models\EnrollmentWorkflowEvent;
@@ -59,8 +60,12 @@ final class EnrollStudentSubjectTool extends Tool
         $idempotencyKey = $validated['idempotency_key'] ?? (string) \Illuminate\Support\Str::uuid();
 
         $enrollment = null;
+        $student = null;
         if (filled($validated['enrollment_id'] ?? null)) {
             $enrollment = StudentEnrollment::query()->find($validated['enrollment_id']);
+            if ($enrollment instanceof StudentEnrollment) {
+                $student = $enrollment->student;
+            }
         } elseif (filled($validated['student_id'] ?? null)) {
             $student = $this->resolveStudent((string) $validated['student_id']);
             if ($student instanceof \App\Models\Student) {
@@ -68,28 +73,61 @@ final class EnrollStudentSubjectTool extends Tool
             }
         }
 
+        // Validate any requested single subject or batch subjects before performing writes
+        $singleSubject = null;
+        if (filled($validated['subject_id'] ?? null)) {
+            $singleSubject = Subject::query()->find($validated['subject_id']);
+            if (! $singleSubject instanceof Subject) {
+                throw ValidationException::withMessages([
+                    'subject_id' => "Subject with ID [{$validated['subject_id']}] not found.",
+                ]);
+            }
+        } elseif (filled($validated['subject_code'] ?? null)) {
+            $codeClean = mb_strtoupper(mb_trim((string) $validated['subject_code']));
+            $courseIdToMatch = $enrollment?->course_id ?? $student?->course_id;
+            $singleSubject = Subject::query()->where('code', $codeClean)
+                ->when($courseIdToMatch, fn ($q) => $q->where('course_id', $courseIdToMatch))
+                ->first() ?? Subject::query()->where('code', $codeClean)->first();
+
+            if (! $singleSubject instanceof Subject) {
+                throw ValidationException::withMessages([
+                    'subject_code' => "Subject with code [{$validated['subject_code']}] not found.",
+                ]);
+            }
+        }
+
+        $courseIdForCheck = $enrollment?->course_id ?? $student?->course_id;
+        if ($singleSubject instanceof Subject && $courseIdForCheck !== null && (int) $singleSubject->course_id !== (int) $courseIdForCheck) {
+            throw new \Illuminate\Auth\Access\AuthorizationException("Subject [{$singleSubject->code}] does not belong to the enrollment program.");
+        }
+
         // If no existing enrollment was found but a valid student was resolved,
-        // create the new StudentEnrollment record so registration can proceed.
-        if (! $enrollment instanceof StudentEnrollment && isset($student) && $student instanceof \App\Models\Student) {
-            $currentSy = (string) (app(\App\Services\GeneralSettingsService::class)->getCurriculumYear() ?: date('Y').'-'.(date('Y') + 1));
-            $currentSem = (int) (app(\App\Services\GeneralSettingsService::class)->getSemester() ?: 1);
+        // create the new StudentEnrollment record safely inside a transaction.
+        if (! $enrollment instanceof StudentEnrollment && $student instanceof \App\Models\Student) {
+            $settings = app(\App\Services\GeneralSettingsService::class);
+            $currentSy = (string) ($settings->getCurrentSchoolYearString() ?: date('Y').' - '.(date('Y') + 1));
+            $currentSem = (int) ($settings->getCurrentSemester() ?: 1);
             $schoolId = $student->school_id ?: $this->school()->id;
 
-            $enrollment = StudentEnrollment::query()->create([
-                'student_id' => (string) $student->student_id,
-                'school_id' => $schoolId,
-                'course_id' => $student->course_id,
-                'academic_year' => $student->academic_year ?: 1,
-                'semester' => $currentSem,
-                'school_year' => $currentSy,
-                'status' => 'enrolled',
-                'workflow_runtime' => StudentEnrollment::WorkflowRuntimePolicyV1,
-            ]);
+            $enrollment = DB::transaction(function () use ($student, $schoolId, $currentSem, $currentSy): StudentEnrollment {
+                $newEnrollment = StudentEnrollment::query()->create([
+                    'student_id' => (string) $student->id,
+                    'school_id' => $schoolId,
+                    'course_id' => $student->course_id,
+                    'academic_year' => $student->academic_year ?: 1,
+                    'semester' => $currentSem,
+                    'school_year' => $currentSy,
+                    'status' => 'enrolled',
+                    'workflow_runtime' => StudentEnrollment::WorkflowRuntimePolicyV1,
+                ]);
 
-            // Update student status if currently applicant
-            if ($student->status === 'applicant' || $student->status === null) {
-                $student->update(['status' => 'enrolled']);
-            }
+                // Update student status if currently applicant
+                if ($student->status === StudentStatus::Applicant || $student->status === 'applicant' || $student->status === null) {
+                    $student->update(['status' => StudentStatus::Enrolled]);
+                }
+
+                return $newEnrollment;
+            });
         }
 
         if (! $enrollment instanceof StudentEnrollment) {
@@ -182,13 +220,15 @@ final class EnrollStudentSubjectTool extends Tool
             ]);
         }
 
-        $subject = null;
-        if (filled($validated['subject_id'] ?? null)) {
-            $subject = Subject::query()->findOrFail($validated['subject_id']);
-        } elseif (filled($validated['subject_code'] ?? null)) {
-            $subject = Subject::query()->where('code', mb_strtoupper(mb_trim((string) $validated['subject_code'])))
-                ->when($enrollment->course_id, fn ($q) => $q->where('course_id', $enrollment->course_id))
-                ->first() ?? Subject::query()->where('code', mb_strtoupper(mb_trim((string) $validated['subject_code'])))->first();
+        $subject = $singleSubject;
+        if (! $subject instanceof Subject) {
+            if (filled($validated['subject_id'] ?? null)) {
+                $subject = Subject::query()->findOrFail($validated['subject_id']);
+            } elseif (filled($validated['subject_code'] ?? null)) {
+                $subject = Subject::query()->where('code', mb_strtoupper(mb_trim((string) $validated['subject_code'])))
+                    ->when($enrollment->course_id, fn ($q) => $q->where('course_id', $enrollment->course_id))
+                    ->first() ?? Subject::query()->where('code', mb_strtoupper(mb_trim((string) $validated['subject_code'])))->first();
+            }
         }
 
         // If no subjects were specified, return success confirmation for the enrollment creation/inspection

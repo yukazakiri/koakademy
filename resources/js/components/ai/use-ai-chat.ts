@@ -433,6 +433,8 @@ export function useAiChat({
                     if (typeof options?.search === "boolean") {
                         formData.append("search", options.search ? "1" : "0");
                     }
+                    const isAutoApproveActive = typeof options?.autoApprove === "boolean" ? options.autoApprove : autoApprove;
+                    formData.append("auto_approve", isAutoApproveActive ? "1" : "0");
                     files.forEach((file) => {
                         formData.append("attachments[]", file);
                     });
@@ -448,15 +450,13 @@ export function useAiChat({
                         signal: controller.signal,
                     };
                 } else {
+                    const isAutoApproveActive = typeof options?.autoApprove === "boolean" ? options.autoApprove : autoApprove;
                     const bodyPayload: Record<string, unknown> = {
                         agent: targetAgent,
                         message: userMessage,
                         conversation_id: conversationId,
+                        auto_approve: Boolean(isAutoApproveActive),
                     };
-                    const isAutoApproveActive = typeof options?.autoApprove === "boolean" ? options.autoApprove : autoApprove;
-                    if (isAutoApproveActive) {
-                        bodyPayload.auto_approve = true;
-                    }
                     if (options?.model) {
                         bodyPayload.model = options.model;
                     }
@@ -539,7 +539,7 @@ export function useAiChat({
                 abortControllerRef.current = null;
             }
         },
-        [agent, targetUrl, conversationId, isLoading, appendMessage, readStream, onError],
+        [agent, targetUrl, conversationId, isLoading, autoApprove, appendMessage, readStream, onError],
     );
 
     /**
@@ -636,6 +636,7 @@ export function useAiChat({
                     body: JSON.stringify({
                         agent,
                         decisions,
+                        auto_approve: autoApprove,
                         conversation_id: conversationId,
                     }),
                     signal: controller.signal,
@@ -690,7 +691,7 @@ export function useAiChat({
                 abortControllerRef.current = null;
             }
         },
-        [agent, targetUrl, conversationId, messages, lastPrompt, readStream],
+        [agent, targetUrl, conversationId, messages, lastPrompt, autoApprove, readStream],
     );
 
     const stop = React.useCallback(() => {
@@ -711,6 +712,7 @@ export function useAiChat({
             try {
                 sessionStorage.removeItem(persistenceKey);
                 sessionStorage.removeItem(`${persistenceKey}_conv_id`);
+                sessionStorage.removeItem(`${persistenceKey}_auto_approve`);
             } catch {
                 // Ignore storage errors
             }
@@ -729,6 +731,13 @@ export function useAiChat({
             });
 
             if (allPendingApprovals.length === 0) return;
+
+            // Preserve pending approvals for rollback if batch submission fails
+            const previousApprovals = new Map(
+                messages
+                    .filter((m) => m.role === "assistant" && m.pendingApprovals && m.pendingApprovals.length > 0)
+                    .map((m) => [m.id, m.pendingApprovals!])
+            );
 
             isSendingRef.current = true;
             setIsLoading(true);
@@ -786,6 +795,15 @@ export function useAiChat({
                     await readStream(response, continuationId, lastPrompt || undefined);
                 }
             } catch (err: unknown) {
+                // Restore approvals on failure so user can retry
+                setMessages((prev) =>
+                    prev.map((m) =>
+                        previousApprovals.has(m.id)
+                            ? { ...m, pendingApprovals: previousApprovals.get(m.id) }
+                            : m
+                    )
+                );
+
                 if (err instanceof Error && err.name === "AbortError") return;
                 const message = err instanceof Error ? err.message : "Failed to submit approval decisions.";
                 toast.error(message);

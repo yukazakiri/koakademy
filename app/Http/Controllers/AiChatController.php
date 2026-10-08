@@ -65,6 +65,7 @@ final class AiChatController extends Controller
             ])],
             'provider' => ['nullable', 'string', 'max:64'],
             'model' => ['nullable', 'string', 'max:255'],
+            'auto_approve' => ['nullable', 'boolean'],
             'conversation_id' => ['nullable', 'string', 'max:36'],
             'message' => ['nullable', 'string', 'required_without:decisions', 'prohibits:decisions'],
             'decisions' => ['nullable', 'array', 'required_without:message', 'prohibits:message'],
@@ -85,6 +86,10 @@ final class AiChatController extends Controller
 
         if (Feature::defined($featureClass) && ! Feature::for($user)->active($featureClass)) {
             abort(403, 'The requested AI assistant is not active for your role.');
+        }
+
+        if (array_key_exists('auto_approve', $validated)) {
+            session(['ai_auto_approve_actions' => (bool) ($validated['auto_approve'] ?? false)]);
         }
 
         $agent = $this->resolveAgent($validated['agent']);

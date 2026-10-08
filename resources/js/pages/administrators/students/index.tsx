@@ -20,8 +20,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AdminLink } from "@/lib/admin-navigation";
+import { cn } from "@/lib/utils";
 import type { User } from "@/types/user";
-import { Head, router } from "@inertiajs/react";
+import { Head, router, useRemember } from "@inertiajs/react";
 import type { SortingState } from "@tanstack/react-table";
 import {
     Award,
@@ -166,9 +167,11 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
     const studentRows = students?.data ?? [];
     const [search, setSearch] = useState(filters.search || "");
     const searchInputRef = useRef<HTMLInputElement>(null);
+    const searchInputFocusedRef = useRef(false);
+    const searchDraftRef = useRef(filters.search || "");
     const debouncedSearchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const [viewMode, setViewMode] = useState<"list" | "grid">("list");
+    const [viewMode, setViewMode] = useRemember<"list" | "grid">("list", "administrators.students.index:viewMode");
     const [sortOption, setSortOption] = useState(`${filters.sort ?? "created_at"}:${filters.direction ?? "desc"}`);
     const [sorting, setSorting] = useState<SortingState>(() => {
         const initialSort = parseSortOption(`${filters.sort ?? "created_at"}:${filters.direction ?? "desc"}`);
@@ -195,9 +198,16 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
         return () => window.removeEventListener("keydown", handleKeyDown);
     }, []);
 
-    // Synchronize initial filters from server props
+    // Synchronize initial filters from server props without clobbering active search drafts
     useEffect(() => {
-        setSearch(filters.search || "");
+        const serverSearch = filters.search || "";
+        if (!searchInputFocusedRef.current && debouncedSearchRef.current === null) {
+            setSearch(serverSearch);
+            searchDraftRef.current = serverSearch;
+        } else if (searchDraftRef.current === serverSearch) {
+            setSearch(serverSearch);
+        }
+
         setActiveFilters(extractFiltersFromProps(filters));
 
         const nextSortOption = `${filters.sort ?? "created_at"}:${filters.direction ?? "desc"}`;
@@ -289,16 +299,18 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
         };
     }, []);
 
-    const navigateWithParams = (params: Record<string, string | number | null>) => {
+    const navigateWithParams = (params: Record<string, string | number | null>, options: { replace?: boolean; only?: string[] } = {}) => {
         cancelPendingSearch();
         router.get(route("administrators.students.index"), params, {
             preserveState: true,
             preserveScroll: true,
-            replace: true,
+            replace: options.replace ?? true,
+            only: options.only ?? ["students", "filters"],
         });
     };
 
     const handleSearchChange = (nextSearch: string) => {
+        searchDraftRef.current = nextSearch;
         setSearch(nextSearch);
         cancelPendingSearch();
         debouncedSearchRef.current = setTimeout(() => {
@@ -307,11 +319,13 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
                 preserveState: true,
                 preserveScroll: true,
                 replace: true,
+                only: ["students", "filters"],
             });
-        }, 350);
+        }, 300);
     };
 
     const handleClearSearch = () => {
+        searchDraftRef.current = "";
         setSearch("");
         cancelPendingSearch();
         navigateWithParams(buildQueryParams({ search: "", page: 1 }));
@@ -341,11 +355,10 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
     };
 
     const clearAllFiltersAndSearch = () => {
-        setActiveFilters([]);
+        searchDraftRef.current = "";
         setSearch("");
-        if (debouncedSearchRef.current) {
-            clearTimeout(debouncedSearchRef.current);
-        }
+        cancelPendingSearch();
+        setActiveFilters([]);
         navigateWithParams(buildQueryParams({ filters: [], search: "", page: 1 }));
     };
 
@@ -373,7 +386,7 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
     };
 
     const handlePageIndexChange = (newPageIndex: number) => {
-        navigateWithParams(buildQueryParams({ page: newPageIndex + 1 }));
+        navigateWithParams(buildQueryParams({ page: newPageIndex + 1 }), { replace: false });
     };
 
     const handlePageSizeChange = (newPageSize: number) => {
@@ -614,9 +627,22 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
         );
     };
 
+    const returnUrl = useMemo(() => {
+        const queryParams = buildQueryParams();
+        const searchParams = new URLSearchParams();
+        for (const [key, value] of Object.entries(queryParams)) {
+            if (value !== null && value !== undefined && value !== "") {
+                searchParams.set(key, String(value));
+            }
+        }
+        const query = searchParams.toString();
+        return query ? `/administrators/students?${query}` : "/administrators/students";
+    }, [activeFilters, search, sorting, students?.current_page, filters.per_page]);
+
     const tableColumns = useMemo(
         () =>
             createColumns({
+                returnUrl,
                 onSoftDelete: setSoftDeleteTarget,
                 onForceDelete: (student) => {
                     setForceDeleteTarget(student);
@@ -624,7 +650,7 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
                 },
                 onRestore: setRestoreTarget,
             }),
-        [],
+        [returnUrl],
     );
 
     const statCards = [
@@ -805,6 +831,12 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
                                     placeholder="Search by student name, ID, course, or status... (Press '/' to focus)"
                                     className="bg-background/50 focus:bg-background h-9 pr-8 pl-9 text-xs sm:text-sm"
                                     value={search}
+                                    onFocus={() => {
+                                        searchInputFocusedRef.current = true;
+                                    }}
+                                    onBlur={() => {
+                                        searchInputFocusedRef.current = false;
+                                    }}
                                     onChange={(event) => handleSearchChange(event.target.value)}
                                 />
                                 {search && (
@@ -933,29 +965,42 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
 
                 {/* Deferred Student Data Directory Section */}
                 <AdminDeferredSection data="students" label="Loading student records" name="admin-administrators-students-index" variant="list">
-                    <DataTable
-                        columns={tableColumns}
-                        data={studentRows}
-                        pageIndex={(students?.current_page ?? 1) - 1}
-                        pageSize={students?.per_page ?? filters.per_page ?? 20}
-                        pageCount={students?.last_page ?? 1}
-                        totalCount={students?.total ?? studentRows.length}
-                        from={students?.from ?? (studentRows.length > 0 ? 1 : 0)}
-                        to={students?.to ?? studentRows.length}
-                        sorting={sorting}
-                        viewMode={viewMode}
-                        onPageIndexChange={handlePageIndexChange}
-                        onPageSizeChange={handlePageSizeChange}
-                        onSortingChange={handleTableSortingChange}
-                        bulkActions={{ statusOptions: options.statuses }}
-                        onSoftDelete={setSoftDeleteTarget}
-                        onForceDelete={(student) => {
-                            setForceDeleteTarget(student);
-                            setConfirmForceText("");
-                        }}
-                        onRestore={setRestoreTarget}
-                        onClearFilters={clearAllFiltersAndSearch}
-                    />
+                    {({ reloading }) => (
+                        <div className={cn("relative transition-opacity duration-150", reloading && "pointer-events-none opacity-60")}>
+                            {reloading && (
+                                <div className="bg-background/20 absolute inset-0 z-20 flex items-start justify-center pt-24 backdrop-blur-[0.5px]">
+                                    <div className="bg-background/95 text-muted-foreground flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium shadow-sm">
+                                        <Loader2 className="text-primary size-3.5 animate-spin" />
+                                        <span>Updating student records…</span>
+                                    </div>
+                                </div>
+                            )}
+                            <DataTable
+                                columns={tableColumns}
+                                data={studentRows}
+                                pageIndex={(students?.current_page ?? 1) - 1}
+                                pageSize={students?.per_page ?? filters.per_page ?? 20}
+                                pageCount={students?.last_page ?? 1}
+                                totalCount={students?.total ?? studentRows.length}
+                                from={students?.from ?? (studentRows.length > 0 ? 1 : 0)}
+                                to={students?.to ?? studentRows.length}
+                                sorting={sorting}
+                                viewMode={viewMode}
+                                returnUrl={returnUrl}
+                                onPageIndexChange={handlePageIndexChange}
+                                onPageSizeChange={handlePageSizeChange}
+                                onSortingChange={handleTableSortingChange}
+                                bulkActions={{ statusOptions: options.statuses }}
+                                onSoftDelete={setSoftDeleteTarget}
+                                onForceDelete={(student) => {
+                                    setForceDeleteTarget(student);
+                                    setConfirmForceText("");
+                                }}
+                                onRestore={setRestoreTarget}
+                                onClearFilters={clearAllFiltersAndSearch}
+                            />
+                        </div>
+                    )}
                 </AdminDeferredSection>
             </div>
 

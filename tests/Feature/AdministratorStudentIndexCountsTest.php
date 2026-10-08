@@ -2,10 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Enums\StudentStatus;
 use App\Enums\StudentType;
 use App\Enums\UserRole;
+use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\GeneralSetting;
 use App\Models\Student;
+use App\Models\StudentStatusRecord;
 use App\Models\User;
 use App\Support\AdministratorSidebarCounts;
 use Illuminate\Http\Request;
@@ -46,6 +49,8 @@ it('returns paginated students on the unfiltered students index', function (): v
                 ->where('students.last_page', 2)
                 ->where('stats.total_students', 21)
             );
+
+        expect(app(AdministratorSidebarCounts::class)->resolve(app('request'))['students'])->toBe(21);
     });
 
     expect(studentAggregateQueries($queries))->toBe([
@@ -80,6 +85,8 @@ it('keeps the global student total when filters are active', function (): void {
                 ->where('students.total', 3)
                 ->where('stats.total_students', 5)
             );
+
+        expect(app(AdministratorSidebarCounts::class)->resolve(app('request'))['students'])->toBe(5);
     });
 
     $studentAggregateQueries = studentAggregateQueries($queries);
@@ -154,6 +161,138 @@ it('filters the dataset without sqlite-specific query errors when search is supp
     'last name first' => ['DOE, JANE'],
 ]);
 
+it('keeps initial Inertia students deferred while resolving global stats and options once', function (): void {
+    GeneralSetting::factory()->create([
+        'semester' => 2,
+        'school_starting_date' => '2024-08-01',
+        'school_ending_date' => '2025-05-31',
+        'enable_clearance_check' => true,
+    ]);
+
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $student = Student::factory()->create();
+    StudentStatusRecord::query()->create([
+        'student_id' => $student->id,
+        'school_id' => $student->school_id,
+        'academic_year' => '2024 - 2025',
+        'semester' => 2,
+        'status' => StudentStatus::Enrolled->value,
+    ]);
+
+    $queries = captureExecutedSql(function () use ($user): void {
+        actingAs($user)
+            ->get(portalUrlForAdministrators('/administrators/students'), [
+                'X-Inertia' => 'true',
+                'X-Inertia-Version' => app(HandleInertiaRequests::class)->version(Request::create('/administrators/students')),
+            ])
+            ->assertOk()
+            ->assertJsonPath('deferredProps.student-directory', ['students'])
+            ->assertJsonMissingPath('props.students')
+            ->assertJsonPath('props.stats.total_students', 1)
+            ->assertJsonPath('props.stats.total_enrolled', 1)
+            ->assertJsonPath('props.stats.total_applicants', 0)
+            ->assertJsonPath('props.stats.total_graduated', 0)
+            ->assertJsonPath('props.user.name', $user->name)
+            ->assertJsonStructure(['props' => ['options' => ['courses', 'departments']]]);
+
+        expect(app(AdministratorSidebarCounts::class)->resolve(app('request'))['students'])->toBe(1);
+    });
+
+    expect(studentAggregateQueries($queries))->toBe([
+        'select count(*) as aggregate from students where students.deleted_at is null',
+    ]);
+    expect(studentIndexOptionQueries($queries))->toHaveCount(2);
+    expect(studentStatusAggregateQueries($queries))->toHaveCount(1);
+    expect(array_values(array_filter(
+        $queries,
+        static fn (string $query): bool => str_starts_with($query, 'select students.id,'),
+    )))->toBe([]);
+    expect(app('request')->attributes->get('admin_students_global_total'))->toBe(1);
+});
+
+it('skips excluded prop queries when loading filtered students through partial or deferred requests', function (string $partialData): void {
+    GeneralSetting::factory()->create([
+        'semester' => 2,
+        'school_starting_date' => '2024-08-01',
+        'school_ending_date' => '2025-05-31',
+        'enable_clearance_check' => true,
+    ]);
+
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $matchingStudent = Student::factory()->minimal()->create([
+        'first_name' => 'DirectoryNeedle',
+        'last_name' => 'Match',
+    ]);
+    Student::factory()->minimal()->create([
+        'first_name' => 'Other',
+        'last_name' => 'Person',
+    ]);
+
+    $queries = captureExecutedSql(function () use ($user, $matchingStudent, $partialData): void {
+        actingAs($user)
+            ->get(portalUrlForAdministrators('/administrators/students?search=DirectoryNeedle'), [
+                'X-Inertia' => 'true',
+                'X-Inertia-Version' => app(HandleInertiaRequests::class)->version(Request::create('/administrators/students')),
+                'X-Inertia-Partial-Component' => 'administrators/students/index',
+                'X-Inertia-Partial-Data' => $partialData,
+            ])
+            ->assertOk()
+            ->assertJsonPath('component', 'administrators/students/index')
+            ->assertJsonCount(1, 'props.students.data')
+            ->assertJsonPath('props.students.data.0.id', $matchingStudent->id)
+            ->assertJsonPath('props.students.total', 1)
+            ->assertJsonMissingPath('props.stats')
+            ->assertJsonMissingPath('props.options')
+            ->assertJsonMissingPath('props.user')
+            ->assertJsonMissingPath('deferredProps');
+    });
+
+    $aggregateQueries = studentAggregateQueries($queries);
+
+    expect($aggregateQueries)->toHaveCount(1);
+    expect($aggregateQueries[0])->toContain('lower(cast(students.student_id as text)) like lower(?)');
+    expect($aggregateQueries)->not->toContain('select count(*) as aggregate from students where students.deleted_at is null');
+    expect(studentIndexOptionQueries($queries))->toBe([]);
+    expect(studentStatusAggregateQueries($queries))->toBe([]);
+    expect(app('request')->attributes->has('admin_students_global_total'))->toBeFalse();
+})->with([
+    'list update' => ['students,filters'],
+    'deferred students load' => ['students'],
+]);
+
+it('does not recount students or load options and stats on filters-only partial requests', function (): void {
+    GeneralSetting::factory()->create([
+        'semester' => 2,
+        'school_starting_date' => '2024-08-01',
+        'school_ending_date' => '2025-05-31',
+        'enable_clearance_check' => true,
+    ]);
+
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    Student::factory()->create();
+
+    $queries = captureExecutedSql(function () use ($user): void {
+        actingAs($user)
+            ->get(portalUrlForAdministrators('/administrators/students?search=DirectoryNeedle'), [
+                'X-Inertia' => 'true',
+                'X-Inertia-Version' => app(HandleInertiaRequests::class)->version(Request::create('/administrators/students')),
+                'X-Inertia-Partial-Component' => 'administrators/students/index',
+                'X-Inertia-Partial-Data' => 'filters',
+            ])
+            ->assertOk()
+            ->assertJsonPath('props.filters.search', 'DirectoryNeedle')
+            ->assertJsonMissingPath('props.students')
+            ->assertJsonMissingPath('props.stats')
+            ->assertJsonMissingPath('props.options')
+            ->assertJsonMissingPath('props.user')
+            ->assertJsonMissingPath('deferredProps');
+    });
+
+    expect(studentAggregateQueries($queries))->toBe([]);
+    expect(studentIndexOptionQueries($queries))->toBe([]);
+    expect(studentStatusAggregateQueries($queries))->toBe([]);
+});
+
 it('casts cached sidebar student counts to int', function (): void {
     GeneralSetting::factory()->create([
         'semester' => 2,
@@ -219,5 +358,31 @@ function studentAggregateQueries(array $queries): array
     return array_values(array_filter(
         $queries,
         static fn (string $query): bool => mb_stripos($query, 'count(*) as aggregate') !== false && mb_stripos($query, 'students') !== false,
+    ));
+}
+
+/**
+ * @param  array<int, string>  $queries
+ * @return array<int, string>
+ */
+function studentIndexOptionQueries(array $queries): array
+{
+    return array_values(array_filter(
+        $queries,
+        static fn (string $query): bool => str_starts_with($query, 'select id, code, title from courses')
+            || str_starts_with($query, 'select id, code, name from departments'),
+    ));
+}
+
+/**
+ * @param  array<int, string>  $queries
+ * @return array<int, string>
+ */
+function studentStatusAggregateQueries(array $queries): array
+{
+    return array_values(array_filter(
+        $queries,
+        static fn (string $query): bool => str_contains($query, 'from student_statuses')
+            && str_contains($query, 'count(case when status = ? then 1 end)'),
     ));
 }

@@ -12,7 +12,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import { Head, Link, router, useForm } from "@inertiajs/react";
+import { studentDirectoryReturnUrl } from "@/lib/student-directory-return";
+import { index as studentsIndex } from "@/routes/administrators/students";
+import { Head, Link, router, useForm, usePage } from "@inertiajs/react";
 import { ClipboardList, FileText, Trash2 } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -53,6 +55,7 @@ function classificationBadgeVariant(classification: string | null | undefined): 
 }
 
 export default function AdministratorStudentShow({ user, student, options }: StudentShowProps) {
+    const backUrl = studentDirectoryReturnUrl(usePage().url, studentsIndex.url());
     const [hoveredSubject, setHoveredSubject] = useState<string | null>(null);
     const [selectedSubject, setSelectedSubject] = useState<ChecklistSubject | null>(null);
     const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<number | "new" | null>(null);
@@ -286,7 +289,7 @@ export default function AdministratorStudentShow({ user, student, options }: Stu
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
-                        <Link href={route("administrators.students.index")} className={buttonVariants({ variant: "outline" })}>
+                        <Link href={backUrl} className={buttonVariants({ variant: "outline" })}>
                             Back
                         </Link>
 

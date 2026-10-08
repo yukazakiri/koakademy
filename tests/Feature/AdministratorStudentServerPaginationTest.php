@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 use App\Enums\EmploymentStatus;
 use App\Enums\ScholarshipType;
+use App\Enums\StudentType;
 use App\Enums\UserRole;
+use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\GeneralSetting;
 use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentClearance;
 use App\Models\User;
 use App\Services\TenantContext;
+use Illuminate\Database\Eloquent\Factories\Sequence;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Inertia\Testing\AssertableInertia;
 
@@ -86,6 +90,77 @@ it('paginates students on the server and navigates between pages', function (): 
             ->where('students.from', 21)
             ->where('students.to', 25)
         );
+});
+
+it('returns search-filtered tenant students immediately on partial paginated list updates', function (): void {
+    $matchingStudents = Student::factory()->minimal()->count(12)
+        ->sequence(fn (Sequence $sequence): array => ['student_id' => 70001 + $sequence->index])
+        ->create([
+            'school_id' => $this->school->id,
+            'institution_id' => $this->school->id,
+            'first_name' => 'DirectoryNeedle',
+            'last_name' => 'Match',
+            'student_type' => StudentType::College->value,
+        ]);
+    Student::factory()->minimal()->create([
+        'school_id' => $this->school->id,
+        'first_name' => 'DirectoryNeedle',
+        'last_name' => 'WrongType',
+        'student_type' => StudentType::SeniorHighSchool->value,
+    ]);
+    Student::factory()->minimal()->create([
+        'school_id' => $this->school->id,
+        'first_name' => 'Other',
+        'last_name' => 'Person',
+        'student_type' => StudentType::College->value,
+    ]);
+    $otherSchool = School::factory()->create();
+    Student::factory()->minimal()->create([
+        'school_id' => $otherSchool->id,
+        'institution_id' => $otherSchool->id,
+        'student_id' => 70000,
+        'first_name' => 'DirectoryNeedle',
+        'last_name' => 'Match',
+        'student_type' => StudentType::College->value,
+    ]);
+
+    $query = http_build_query([
+        'search' => 'DirectoryNeedle',
+        'type' => StudentType::College->value,
+        'sort' => 'student_id',
+        'direction' => 'asc',
+        'page' => 2,
+        'per_page' => 10,
+    ]);
+
+    actingAs($this->user)
+        ->get(portalUrlForAdministrators('/administrators/students?'.$query), [
+            'X-Inertia' => 'true',
+            'X-Inertia-Version' => app(HandleInertiaRequests::class)->version(Request::create('/administrators/students')),
+            'X-Inertia-Partial-Component' => 'administrators/students/index',
+            'X-Inertia-Partial-Data' => 'students,filters',
+        ])
+        ->assertOk()
+        ->assertHeader('X-Inertia', 'true')
+        ->assertJsonPath('component', 'administrators/students/index')
+        ->assertJsonCount(2, 'props.students.data')
+        ->assertJsonPath('props.students.data.0.id', $matchingStudents[10]->id)
+        ->assertJsonPath('props.students.data.1.id', $matchingStudents[11]->id)
+        ->assertJsonPath('props.students.total', 12)
+        ->assertJsonPath('props.students.current_page', 2)
+        ->assertJsonPath('props.students.last_page', 2)
+        ->assertJsonPath('props.students.per_page', 10)
+        ->assertJsonPath('props.students.from', 11)
+        ->assertJsonPath('props.students.to', 12)
+        ->assertJsonPath('props.filters.search', 'DirectoryNeedle')
+        ->assertJsonPath('props.filters.type', StudentType::College->value)
+        ->assertJsonPath('props.filters.sort', 'student_id')
+        ->assertJsonPath('props.filters.direction', 'asc')
+        ->assertJsonPath('props.filters.per_page', 10)
+        ->assertJsonMissingPath('props.stats')
+        ->assertJsonMissingPath('props.options')
+        ->assertJsonMissingPath('props.user')
+        ->assertJsonMissingPath('deferredProps');
 });
 
 it('sorts students on the server by name and student ID in both directions', function (): void {

@@ -11,6 +11,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { AdminLink } from "@/lib/admin-navigation";
+import { show as showStudent } from "@/routes/administrators/students";
 import { ColumnDef } from "@tanstack/react-table";
 import {
     ArrowUpDown,
@@ -61,6 +62,7 @@ export type Student = {
 };
 
 export interface ColumnActionHandlers {
+    returnUrl?: string;
     onSoftDelete?: (student: Student) => void;
     onForceDelete?: (student: Student) => void;
     onRestore?: (student: Student) => void;
@@ -195,7 +197,7 @@ export function createColumns(handlers?: ColumnActionHandlers): ColumnDef<Studen
                         </Avatar>
                         <div className="flex min-w-0 flex-col">
                             <AdminLink
-                                href={route("administrators.students.show", student.id)}
+                                href={showStudent.url(student.id, { query: handlers?.returnUrl ? { return_to: handlers.returnUrl } : undefined })}
                                 className="text-foreground truncate text-sm font-medium hover:underline"
                                 title={student.name}
                             >
@@ -364,7 +366,15 @@ export function createColumns(handlers?: ColumnActionHandlers): ColumnDef<Studen
                                 </DropdownMenuItem>
                             )}
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem render={<AdminLink href={route("administrators.students.show", student.id)} />}>
+                            <DropdownMenuItem
+                                render={
+                                    <AdminLink
+                                        href={showStudent.url(student.id, {
+                                            query: handlers?.returnUrl ? { return_to: handlers.returnUrl } : undefined,
+                                        })}
+                                    />
+                                }
+                            >
                                 <Eye className="mr-2 size-4" /> View Details
                             </DropdownMenuItem>
                             <DropdownMenuItem render={<AdminLink href={route("administrators.students.edit", student.id)} />}>

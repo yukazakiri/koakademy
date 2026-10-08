@@ -43,6 +43,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { AdminLink } from "@/lib/admin-navigation";
+import { show as showStudent } from "@/routes/administrators/students";
 import { router } from "@inertiajs/react";
 import {
     Check,
@@ -87,6 +88,7 @@ interface DataTableProps<TData extends Student, TValue> {
     onPageSizeChange: (pageSize: number) => void;
     onSortingChange: (sorting: SortingState) => void;
     viewMode?: "list" | "grid";
+    returnUrl?: string;
     bulkActions?: {
         statusOptions?: { value: string; label: string }[];
     };
@@ -202,6 +204,7 @@ export function DataTable<TData extends Student, TValue>({
     onPageSizeChange,
     onSortingChange,
     viewMode = "list",
+    returnUrl,
     bulkActions,
     onSoftDelete,
     onForceDelete,
@@ -834,7 +837,9 @@ export function DataTable<TData extends Student, TValue>({
                                                 </Avatar>
                                                 <div className="flex min-w-0 flex-col">
                                                     <AdminLink
-                                                        href={route("administrators.students.show", student.id)}
+                                                        href={showStudent.url(student.id, {
+                                                            query: returnUrl ? { return_to: returnUrl } : undefined,
+                                                        })}
                                                         className="text-foreground truncate text-sm font-semibold hover:underline"
                                                         title={student.name}
                                                     >
@@ -852,7 +857,15 @@ export function DataTable<TData extends Student, TValue>({
                                                     <MoreHorizontal className="size-4" />
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end" className="w-48">
-                                                    <DropdownMenuItem render={<AdminLink href={route("administrators.students.show", student.id)} />}>
+                                                    <DropdownMenuItem
+                                                        render={
+                                                            <AdminLink
+                                                                href={showStudent.url(student.id, {
+                                                                    query: returnUrl ? { return_to: returnUrl } : undefined,
+                                                                })}
+                                                            />
+                                                        }
+                                                    >
                                                         <Eye className="mr-2 size-4" /> View Details
                                                     </DropdownMenuItem>
                                                     <DropdownMenuItem render={<AdminLink href={route("administrators.students.edit", student.id)} />}>
@@ -945,7 +958,7 @@ export function DataTable<TData extends Student, TValue>({
 
                                         <CardFooter className="gap-2 p-4 pt-0">
                                             <AdminLink
-                                                href={route("administrators.students.show", student.id)}
+                                                href={showStudent.url(student.id, { query: returnUrl ? { return_to: returnUrl } : undefined })}
                                                 className={buttonVariants({
                                                     variant: "outline",
                                                     size: "sm",

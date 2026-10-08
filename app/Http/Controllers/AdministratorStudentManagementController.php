@@ -362,96 +362,112 @@ final class AdministratorStudentManagementController extends Controller
 
         if ($request->header('X-Inertia') !== null) {
             $students = Inertia::defer($studentsPayloadResolver, 'student-directory');
-            $globalStudentTotal = Student::query()->count();
         } else {
             $students = $studentsPayloadResolver();
             $globalStudentTotal = $hasActiveFilters ? Student::query()->count() : $students->total();
+            $request->attributes->set('admin_students_global_total', $globalStudentTotal);
         }
 
-        $request->attributes->set('admin_students_global_total', $globalStudentTotal);
+        $optionsResolver = function (): array {
+            $types = collect(StudentType::cases())
+                ->map(fn (StudentType $studentType): array => [
+                    'value' => $studentType->value,
+                    'label' => $studentType->getLabel() ?? $studentType->value,
+                ])
+                ->values()
+                ->all();
 
-        $types = collect(StudentType::cases())
-            ->map(fn (StudentType $studentType): array => [
-                'value' => $studentType->value,
-                'label' => $studentType->getLabel() ?? $studentType->value,
-            ])
-            ->values()
-            ->all();
+            $statuses = collect(StudentStatus::cases())
+                ->map(fn (StudentStatus $studentStatus): array => [
+                    'value' => $studentStatus->value,
+                    'label' => $studentStatus->getLabel() ?? $studentStatus->value,
+                ])
+                ->values()
+                ->all();
 
-        $statuses = collect(StudentStatus::cases())
-            ->map(fn (StudentStatus $studentStatus): array => [
-                'value' => $studentStatus->value,
-                'label' => $studentStatus->getLabel() ?? $studentStatus->value,
-            ])
-            ->values()
-            ->all();
+            $scholarshipTypes = collect(ScholarshipType::cases())
+                ->map(fn (ScholarshipType $type): array => [
+                    'value' => $type->value,
+                    'label' => $type->getLabel(),
+                ])
+                ->values()
+                ->all();
 
-        $scholarshipTypes = collect(ScholarshipType::cases())
-            ->map(fn (ScholarshipType $type): array => [
-                'value' => $type->value,
-                'label' => $type->getLabel(),
-            ])
-            ->values()
-            ->all();
+            $employmentStatuses = collect(EmploymentStatus::cases())
+                ->map(fn (EmploymentStatus $status): array => [
+                    'value' => $status->value,
+                    'label' => $status->getLabel(),
+                ])
+                ->values()
+                ->all();
 
-        $employmentStatuses = collect(EmploymentStatus::cases())
-            ->map(fn (EmploymentStatus $status): array => [
-                'value' => $status->value,
-                'label' => $status->getLabel(),
-            ])
-            ->values()
-            ->all();
+            $courses = Course::query()
+                ->orderBy('code')
+                ->get(['id', 'code', 'title'])
+                ->map(fn (Course $course): array => [
+                    'value' => (string) $course->id,
+                    'label' => "{$course->code} - {$course->title}",
+                ])
+                ->values()
+                ->all();
 
-        $courses = Course::query()
-            ->orderBy('code')
-            ->get(['id', 'code', 'title'])
-            ->map(fn (Course $course): array => [
-                'value' => (string) $course->id,
-                'label' => "{$course->code} - {$course->title}",
-            ])
-            ->values()
-            ->all();
+            $departments = Department::query()
+                ->orderBy('code')
+                ->get(['id', 'code', 'name'])
+                ->map(fn (Department $department): array => [
+                    'value' => (string) $department->id,
+                    'label' => "{$department->code} - {$department->name}",
+                ])
+                ->values()
+                ->all();
 
-        $departments = Department::query()
-            ->orderBy('code')
-            ->get(['id', 'code', 'name'])
-            ->map(fn (Department $department): array => [
-                'value' => (string) $department->id,
-                'label' => "{$department->code} - {$department->name}",
-            ])
-            ->values()
-            ->all();
+            $yearLevels = collect([1, 2, 3, 4])
+                ->map(fn (int $year): array => [
+                    'value' => (string) $year,
+                    'label' => "Year {$year}",
+                ])
+                ->all();
 
-        $yearLevels = collect([1, 2, 3, 4])
-            ->map(fn (int $year): array => [
-                'value' => (string) $year,
-                'label' => "Year {$year}",
-            ])
-            ->all();
+            return [
+                'types' => $types,
+                'statuses' => $statuses,
+                'courses' => $courses,
+                'departments' => $departments,
+                'year_levels' => $yearLevels,
+                'scholarship_types' => $scholarshipTypes,
+                'employment_statuses' => $employmentStatuses,
+            ];
+        };
 
-        $statusCounts = StudentStatusRecord::query()
-            ->where('academic_year', $currentSchoolYear)
-            ->where('semester', $currentSemester)
-            ->selectRaw('
-                COUNT(CASE WHEN status = ? THEN 1 END) as enrolled_count,
-                COUNT(CASE WHEN status = ? THEN 1 END) as applicant_count,
-                COUNT(CASE WHEN status = ? THEN 1 END) as graduated_count
-            ', [
-                StudentStatus::Enrolled->value,
-                StudentStatus::Applicant->value,
-                StudentStatus::Graduated->value,
-            ])
-            ->first();
+        $statsResolver = function () use ($request, $currentSchoolYear, $currentSemester): array {
+            if (! $request->attributes->has('admin_students_global_total')) {
+                $request->attributes->set('admin_students_global_total', Student::query()->count());
+            }
 
-        $stats = [
-            'total_students' => $globalStudentTotal,
-            'total_enrolled' => (int) ($statusCounts?->enrolled_count ?? 0),
-            'total_applicants' => (int) ($statusCounts?->applicant_count ?? 0),
-            'total_graduated' => (int) ($statusCounts?->graduated_count ?? 0),
-        ];
+            $statusCounts = StudentStatusRecord::query()
+                ->where('academic_year', $currentSchoolYear)
+                ->where('semester', $currentSemester)
+                ->selectRaw('
+                    COUNT(CASE WHEN status = ? THEN 1 END) as enrolled_count,
+                    COUNT(CASE WHEN status = ? THEN 1 END) as applicant_count,
+                    COUNT(CASE WHEN status = ? THEN 1 END) as graduated_count
+                ', [
+                    StudentStatus::Enrolled->value,
+                    StudentStatus::Applicant->value,
+                    StudentStatus::Graduated->value,
+                ])
+                ->first();
+
+            return [
+                'total_students' => (int) $request->attributes->get('admin_students_global_total'),
+                'total_enrolled' => (int) ($statusCounts?->enrolled_count ?? 0),
+                'total_applicants' => (int) ($statusCounts?->applicant_count ?? 0),
+                'total_graduated' => (int) ($statusCounts?->graduated_count ?? 0),
+            ];
+        };
 
         return Inertia::render('administrators/students/index', [
-            'user' => $this->getUserProps(),
+            'user' => fn (): array => $this->getUserProps(),
             'filament' => [
                 'students' => [
                     'index_url' => route('filament.admin.resources.students.index'),
@@ -459,7 +475,7 @@ final class AdministratorStudentManagementController extends Controller
                 ],
             ],
             'students' => $students,
-            'stats' => $stats,
+            'stats' => $statsResolver,
             'filters' => [
                 'search' => is_string($search) ? $search : null,
                 'type' => is_string($type) ? $type : null,
@@ -478,15 +494,7 @@ final class AdministratorStudentManagementController extends Controller
                 'direction' => $direction,
                 'per_page' => $perPage,
             ],
-            'options' => [
-                'types' => $types,
-                'statuses' => $statuses,
-                'courses' => $courses,
-                'departments' => $departments,
-                'year_levels' => $yearLevels,
-                'scholarship_types' => $scholarshipTypes,
-                'employment_statuses' => $employmentStatuses,
-            ],
+            'options' => $optionsResolver,
         ]);
     }
 

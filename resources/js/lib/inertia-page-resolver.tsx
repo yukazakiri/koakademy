@@ -8,6 +8,9 @@ export type InertiaPageModule = {
 
 export type InertiaPageModules = Record<string, () => Promise<InertiaPageModule>>;
 
+// Inertia can preserve page state only while the resolved component identity stays stable.
+const resolvedPageWrappers = new WeakMap<ResolvedComponent, ResolvedComponent>();
+
 // Inlined from laravel-vite-plugin/inertia-helpers. That package is a
 // build-time (dev) dependency, but this resolver runs inside the Node SSR
 // bundle where Vite may leave the bare import for Node to resolve at
@@ -30,10 +33,17 @@ async function resolvePageComponent(path: string | string[], pages: InertiaPageM
 }
 
 function wrapResolvedPage(original: ResolvedComponent): ResolvedComponent {
+    const cached = resolvedPageWrappers.get(original);
+
+    if (cached) {
+        return cached;
+    }
+
     const Original = original;
     const Page = ((props: Record<string, unknown>) => <Original {...props} />) as ResolvedComponent;
 
     Page.layout = original.layout ?? ((children: ReactNode) => <AppRootLayout>{children}</AppRootLayout>);
+    resolvedPageWrappers.set(original, Page);
 
     return Page;
 }

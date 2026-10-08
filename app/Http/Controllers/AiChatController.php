@@ -33,6 +33,7 @@ use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Files\Document;
 use Laravel\Ai\Models\Conversation;
 use Laravel\Pennant\Feature;
+use Stringable;
 use Throwable;
 
 final class AiChatController extends Controller
@@ -568,7 +569,7 @@ final class AiChatController extends Controller
 
     private function streamWithDocumentCompatibility(
         mixed $agentInstance,
-        string $prompt,
+        string|Stringable|Decisions $prompt,
         array $attachments,
         ?string $provider,
         ?string $model,

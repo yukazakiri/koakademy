@@ -78,6 +78,19 @@ final class TenantContext
             return $this->currentSchool;
         }
 
+        // Administrator fallback: administrators and super admins without a pinned school_id
+        // operate across the institution; default to the active school or primary school.
+        if ($user && ($user->canAccessAdminPortal() || $user->hasRole('super_admin') || $user->hasRole('admin'))) {
+            $defaultSchool = School::query()->where('is_active', true)->first()
+                ?? School::query()->first();
+            if ($defaultSchool instanceof School) {
+                $this->currentSchool = $defaultSchool;
+                $this->setCurrentSchool($this->currentSchool);
+
+                return $this->currentSchool;
+            }
+        }
+
         $this->resolved = true;
 
         return $this->currentSchool;

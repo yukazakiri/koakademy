@@ -9,6 +9,7 @@ import ImpersonationBanner from "@/components/impersonation-banner";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { User } from "@/types/user";
+import { cn } from "@/lib/utils";
 import { usePage } from "@inertiajs/react";
 import React from "react";
 
@@ -25,10 +26,11 @@ interface AdminLayoutProps {
     user?: User;
     title?: string;
     immersive?: boolean;
+    flush?: boolean;
     children: React.ReactNode;
 }
 
-export default function AdminLayout({ user, title, immersive = false, children }: AdminLayoutProps) {
+export default function AdminLayout({ user, title, immersive = false, flush = false, children }: AdminLayoutProps) {
     const { announcements, auth, institutionOnboarding } = usePage<PageProps>().props;
     const pageUrl = usePage().url;
     const isAiChatPage = pageUrl.startsWith("/administrators/ai");
@@ -53,22 +55,33 @@ export default function AdminLayout({ user, title, immersive = false, children }
         );
     }
 
+    const isFlushLayout = flush || isAiChatPage;
+
     return (
         <ThemeProvider defaultTheme="system" storageKey="ui-theme" colorStorageKey="ui-color-theme">
             <AnalyticsScripts />
             <SidebarProvider>
                 <AdministratorSidebar user={resolvedUser} />
-                <SidebarInset>
+                <SidebarInset className={cn(isFlushLayout && "h-svh max-h-svh overflow-hidden")}>
                     <ImpersonationBanner />
                     <AdminHeader title={title || "Portal"} user={resolvedUser} />
-                    <div className="flex flex-1 flex-col">
-                        <div className="@container/main flex flex-1 flex-col gap-2">
-                            <div className="flex flex-col gap-4 px-4 py-4 pb-24 md:gap-6 md:py-6 md:pb-6 lg:px-6">
-                                <AnnouncementBanner announcements={announcements ?? []} />
+                    {isFlushLayout ? (
+                        <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
+                            <AnnouncementBanner announcements={announcements ?? []} />
+                            <div className="flex-1 min-h-0 overflow-hidden">
                                 {children}
                             </div>
                         </div>
-                    </div>
+                    ) : (
+                        <div className="flex flex-1 flex-col">
+                            <div className="@container/main flex flex-1 flex-col gap-2">
+                                <div className="flex flex-col gap-4 px-4 py-4 pb-24 md:gap-6 md:py-6 md:pb-6 lg:px-6">
+                                    <AnnouncementBanner announcements={announcements ?? []} />
+                                    {children}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </SidebarInset>
                 <GlobalCommandPalette user={resolvedUser} />
                 <InstitutionSchoolLevelOnboarding onboarding={institutionOnboarding ?? null} />

@@ -3,9 +3,6 @@ import {
     FileUploadContent,
     FileUploadTrigger,
     Loader,
-    Message,
-    MessageAvatar,
-    MessageContent,
     PromptInput,
     PromptInputAction,
     PromptInputActions,
@@ -43,7 +40,6 @@ import {
     RotateCcw,
     Send,
     ShieldCheck,
-    Sparkles,
     UploadCloud,
     User,
     X,
@@ -51,6 +47,7 @@ import {
 import * as React from "react";
 import { toast } from "sonner";
 
+import { AiCircleLogo } from "./ai-circle-logo";
 import { ApprovalCard } from "./approval-card";
 import { ChatMessageFormatter } from "./chat-message-formatter";
 import { AssistantMessageActions, UserMessageActions } from "./message-actions";
@@ -77,7 +74,7 @@ const AGENT_METAS: Record<
         name: "Admin Executive",
         badge: "Executive",
         description: "Campus analytics, visual charts, and official document formulation.",
-        icon: Sparkles,
+        icon: AiCircleLogo,
         accent: "text-purple-500",
     },
     student_advisor: {
@@ -91,7 +88,7 @@ const AGENT_METAS: Record<
         name: "Faculty Copilot",
         badge: "Academic Staff",
         description: "Rubric formulations, assignment grading drafts, and student risk intervention.",
-        icon: Sparkles,
+        icon: AiCircleLogo,
         accent: "text-emerald-500",
     },
     registrar_auditor: {
@@ -145,7 +142,6 @@ export function AiChatSheet({
         resendUserMessage,
         regenerateAssistant,
         clearChat,
-        stop,
     } = useAiChat({
         agent: selectedAgent,
     });
@@ -183,13 +179,13 @@ export function AiChatSheet({
                 .then((res) => res.json())
                 .then((data) => {
                     if (Array.isArray(data.models) && data.models.length > 0) {
-                        const mapped: ModelOption[] = data.models.map((m: any) => ({
-                            id: m.id,
-                            name: m.name || m.id,
-                            badge: m.badge,
-                            description: m.description,
-                            provider: m.provider,
-                            provider_name: m.provider_name,
+                        const mapped: ModelOption[] = data.models.map((m: Record<string, unknown>) => ({
+                            id: String(m.id || ""),
+                            name: String(m.name || m.id || ""),
+                            badge: typeof m.badge === "string" ? m.badge : undefined,
+                            description: typeof m.description === "string" ? m.description : undefined,
+                            provider: typeof m.provider === "string" ? m.provider : undefined,
+                            provider_name: typeof m.provider_name === "string" ? m.provider_name : undefined,
                         }));
                         setAvailableModels(mapped);
 

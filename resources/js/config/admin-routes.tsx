@@ -1,5 +1,5 @@
 import type { Route } from "@/components/sidebar-03/nav-main";
-import { index as aiIndex } from "@/routes/administrators/ai";
+import { AiCircleLogo } from "@/components/ai/ai-circle-logo";
 import { index as libraryIndex } from "@/routes/library";
 import {
     ACADEMIC_ADMIN_ROLES,
@@ -263,8 +263,8 @@ export const ADMIN_ROUTES: AdminRoute[] = [
     {
         id: "admin-ai-chat",
         title: "AI Chat",
-        icon: <IconSparkles className="size-4" />,
-        link: aiIndex.url(),
+        icon: <AiCircleLogo className="size-4" />,
+        link: "/administrators/ai",
         section: "core",
         badge: "Copilot",
         allowedRoles: ALL_STAFF_ROLES,

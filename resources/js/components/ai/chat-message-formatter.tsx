@@ -1,34 +1,37 @@
+"use client";
+
+import { CodeBlock } from "@/components/agents/code-block";
+import { ThinkingShimmer } from "@/components/agents/loading-states/thinking-shimmer";
 import {
-    Reasoning,
-    ReasoningContent,
-    ReasoningTrigger,
-} from "@/components/ai-elements/reasoning";
-import {
-    Loader,
-    Source,
-    SourceContent,
-    SourceTrigger,
-    Steps,
-    StepsContent,
-    StepsItem,
-    StepsTrigger,
-    Tool,
-} from "@/components/prompt-kit";
+    StreamingResponse,
+    type StreamingResponseFeedback,
+} from "@/components/agents/streaming-response";
 import { Button } from "@/components/ui/button";
 import { Response } from "@/components/ui/response";
-import { Download, FileText, Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
-    CodeBlock,
-    CodeBlockCopyButton,
-    CodeBlockDownloadButton,
-    CodeBlockHeader,
-    CodeBlockLanguage,
-    CodeBlockTitle,
-} from "@/components/reui/code-block/code-block";
+    BookOpen,
+    Brain,
+    Check,
+    ChevronDown,
+    Copy,
+    Download,
+    FileText,
+    Link2,
+    Loader2,
+    ShieldAlert,
+    TriangleAlert,
+} from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import { AnalyticsChartRenderer, ChartArtifact } from "./analytics-chart-renderer";
-import { DocumentArtifact, DocumentDownloadCard } from "./document-download-card";
+import {
+    AnalyticsChartRenderer,
+    type ChartArtifact,
+} from "./analytics-chart-renderer";
+import {
+    type DocumentArtifact,
+    DocumentDownloadCard,
+} from "./document-download-card";
 import type { CitationSource, ToolInvocation } from "./use-ai-chat";
 
 interface ChatMessageFormatterProps {
@@ -37,18 +40,331 @@ interface ChatMessageFormatterProps {
     toolCalls?: ToolInvocation[];
     sources?: CitationSource[];
     isStreaming?: boolean;
+    onRetry?: () => void;
+    feedback?: StreamingResponseFeedback;
+    onFeedbackChange?: (feedback: StreamingResponseFeedback) => void;
+    className?: string;
+}
+
+function formatToolIdentifier(name: string): string {
+    return name
+        .replace(/Tool$/, "")
+        .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+        .replace(/[-\s]+/g, "_")
+        .toLowerCase();
+}
+
+function getToolStatus(tool: ToolInvocation): "running" | "success" | "failed" | "denied" {
+    if (tool.state === "input-streaming" || tool.state === "input-available") {
+        return "running";
+    }
+
+    let outputObj: Record<string, unknown> | null = null;
+    if (typeof tool.output === "object" && tool.output !== null) {
+        outputObj = tool.output as Record<string, unknown>;
+    } else if (typeof tool.output === "string") {
+        try {
+            outputObj = JSON.parse(tool.output);
+        } catch {
+            outputObj = null;
+        }
+    }
+
+    const errorStr = (tool.errorText || "").toLowerCase();
+    const isDenied =
+        Boolean(outputObj?.denied) ||
+        errorStr.includes("denied") ||
+        errorStr.includes("not permitted") ||
+        errorStr.includes("unauthorized") ||
+        errorStr.includes("permission");
+
+    if (isDenied) {
+        return "denied";
+    }
+
+    if (
+        tool.state === "output-error" ||
+        Boolean(outputObj?.error) ||
+        (tool.errorText && tool.errorText.trim().length > 0)
+    ) {
+        return "failed";
+    }
+
+    return "success";
 }
 
 /**
- * Enhanced Chat Message Formatter using:
- * - ElevenLabs UI Response component (streamdown) for reliable streaming markdown rendering
- * - Prompt-Kit Steps & Tool components for tool executions
- * - AI SDK Elements Reasoning component for model thought processes
- *   (@see https://elements.ai-sdk.dev/components/reasoning)
- * - Prompt-Kit Source component for verifiable citations
- * - Interactive Recharts visualizations & Downloadable Document cards
- *
- * @see https://ui.elevenlabs.io/docs/components/response
+ * Minimalist Tool Call matching user design:
+ * ↻ lookup_plans ⌄ (running)
+ * ✓ lookup_plans ⌄ (success)
+ * ⚠ lookup_plans · failed ⌄ (failed)
+ * ⛨ lookup_plans · denied ⌄ (denied)
+ */
+function MinimalistToolCall({ tool }: { tool: ToolInvocation }) {
+    const [isOpen, setIsOpen] = React.useState(false);
+    const [copied, setCopied] = React.useState(false);
+    const status = getToolStatus(tool);
+    const identifier = formatToolIdentifier(tool.toolName);
+
+    const serializedOutput = React.useMemo(() => {
+        if (typeof tool.output === "object" && tool.output !== null) {
+            return JSON.stringify(tool.output, null, 2);
+        }
+        return (
+            tool.output ||
+            tool.errorText ||
+            (tool.input ? JSON.stringify(tool.input, null, 2) : "")
+        );
+    }, [tool.output, tool.errorText, tool.input]);
+
+    const handleCopy = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!serializedOutput) return;
+        navigator.clipboard.writeText(serializedOutput);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+        toast.success("Output copied");
+    };
+
+    return (
+        <div className="font-mono text-xs select-none">
+            <button
+                type="button"
+                onClick={() => setIsOpen(!isOpen)}
+                className={cn(
+                    "inline-flex items-center gap-2 cursor-pointer transition-colors py-0.5 group",
+                    status === "failed" && "text-red-400 hover:text-red-300",
+                    status === "denied" && "text-amber-400 hover:text-amber-300",
+                    (status === "running" || status === "success") &&
+                        "text-neutral-400 hover:text-neutral-200"
+                )}
+            >
+                {status === "running" && (
+                    <Loader2 className="size-3.5 animate-spin text-neutral-400 shrink-0" />
+                )}
+                {status === "success" && (
+                    <Check className="size-3.5 text-neutral-400 shrink-0" />
+                )}
+                {status === "failed" && (
+                    <TriangleAlert className="size-3.5 text-red-500 shrink-0" />
+                )}
+                {status === "denied" && (
+                    <ShieldAlert className="size-3.5 text-amber-500 shrink-0" />
+                )}
+
+                <span>
+                    {identifier}
+                    {status === "failed" && " · failed"}
+                    {status === "denied" && " · denied"}
+                </span>
+
+                <ChevronDown
+                    className={cn(
+                        "size-3.5 transition-transform opacity-70 group-hover:opacity-100",
+                        status === "failed" && "text-red-400",
+                        status === "denied" && "text-amber-400",
+                        (status === "running" || status === "success") &&
+                            "text-neutral-500",
+                        isOpen && "rotate-180"
+                    )}
+                />
+            </button>
+
+            {isOpen && serializedOutput && (
+                <div className="relative mt-1 mb-2 ml-5 p-2.5 rounded-lg bg-neutral-950/80 border border-neutral-850 text-[11px] font-mono text-neutral-300 overflow-x-auto max-h-56">
+                    <button
+                        type="button"
+                        onClick={handleCopy}
+                        className="absolute top-2 right-2 text-neutral-400 hover:text-white p-1 rounded hover:bg-neutral-800"
+                        title="Copy tool payload"
+                    >
+                        {copied ? (
+                            <Check className="size-3 text-emerald-400" />
+                        ) : (
+                            <Copy className="size-3" />
+                        )}
+                    </button>
+                    <pre className="whitespace-pre-wrap break-all pr-6">
+                        {serializedOutput}
+                    </pre>
+                </div>
+            )}
+        </div>
+    );
+}
+
+/**
+ * Minimalist Reasoning matching user design:
+ * ↻ Reasoning... ⌄ (running)
+ * 🧠 Reasoning ⌄ (completed)
+ */
+function MinimalistReasoning({
+    reasoning,
+    isStreaming = false,
+}: {
+    reasoning?: string;
+    isStreaming?: boolean;
+}) {
+    const [isOpen, setIsOpen] = React.useState(false);
+    const hasReasoning = Boolean(reasoning && reasoning.trim().length > 0);
+
+    return (
+        <div className="text-xs select-none">
+            <button
+                type="button"
+                onClick={() => setIsOpen(!isOpen)}
+                className="inline-flex items-center gap-2 cursor-pointer text-neutral-400 hover:text-neutral-200 transition-colors py-1 group"
+            >
+                {isStreaming && !hasReasoning ? (
+                    <Loader2 className="size-3.5 animate-spin text-neutral-400 shrink-0" />
+                ) : (
+                    <Brain className="size-3.5 text-neutral-400 shrink-0" />
+                )}
+
+                <span className="font-sans">
+                    {isStreaming && !hasReasoning ? "Reasoning..." : "Reasoning"}
+                </span>
+
+                <ChevronDown
+                    className={cn(
+                        "size-3.5 text-neutral-500 transition-transform opacity-70 group-hover:opacity-100",
+                        isOpen && "rotate-180"
+                    )}
+                />
+            </button>
+
+            {isOpen && hasReasoning && (
+                <div className="pl-5 pr-2 py-1 my-1 text-xs leading-relaxed text-neutral-400 font-sans border-l border-neutral-800/80 whitespace-pre-wrap">
+                    {reasoning}
+                </div>
+            )}
+        </div>
+    );
+}
+
+/**
+ * Minimalist Sources matching user design:
+ * 📖 3 sources ⌃
+ * 🔗 Billing overview stripe.com
+ * 🔗 Usage-based pricing, explained paddle.com
+ * 📄 Q3 pricing research pricing-research.pdf
+ */
+function MinimalistSources({ sources }: { sources: CitationSource[] }) {
+    const [isOpen, setIsOpen] = React.useState(true);
+    if (!sources || sources.length === 0) return null;
+
+    return (
+        <div className="text-xs space-y-1.5 select-none my-1">
+            <button
+                type="button"
+                onClick={() => setIsOpen(!isOpen)}
+                className="inline-flex items-center gap-2 cursor-pointer text-neutral-400 hover:text-neutral-200 transition-colors py-0.5 group"
+            >
+                <BookOpen className="size-3.5 text-neutral-400 shrink-0" />
+                <span className="font-sans font-medium text-neutral-300">
+                    {sources.length}{" "}
+                    {sources.length === 1 ? "source" : "sources"}
+                </span>
+                <ChevronDown
+                    className={cn(
+                        "size-3.5 text-neutral-500 transition-transform opacity-70 group-hover:opacity-100",
+                        isOpen && "rotate-180"
+                    )}
+                />
+            </button>
+
+            {isOpen && (
+                <div className="space-y-1 pl-1">
+                    {sources.map((s, idx) => {
+                        let domain = "";
+                        try {
+                            domain = new URL(s.url).hostname.replace(
+                                /^www\./,
+                                ""
+                            );
+                        } catch {
+                            domain = "";
+                        }
+                        const isDoc =
+                            s.url.toLowerCase().endsWith(".pdf") ||
+                            (s.title &&
+                                s.title.toLowerCase().endsWith(".pdf")) ||
+                            s.url.includes("document");
+                        const Icon = isDoc ? FileText : Link2;
+
+                        return (
+                            <div
+                                key={idx}
+                                className="flex items-center gap-2 text-xs py-0.5"
+                            >
+                                <Icon className="size-3.5 text-neutral-400 shrink-0" />
+                                <a
+                                    href={s.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="underline underline-offset-2 text-neutral-200 hover:text-white transition-colors truncate max-w-sm"
+                                    title={s.title || s.url}
+                                >
+                                    {s.title || domain || "Source"}
+                                </a>
+                                {domain && !isDoc && (
+                                    <span className="text-neutral-500 text-xs shrink-0">
+                                        {domain}
+                                    </span>
+                                )}
+                                {isDoc && (
+                                    <span className="text-neutral-500 text-xs shrink-0 font-mono">
+                                        {domain ||
+                                            (s.title &&
+                                            s.title.endsWith(".pdf")
+                                                ? s.title
+                                                : "document.pdf")}
+                                    </span>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function normalizeCodeLang(
+    lang?: string
+): "bash" | "diff" | "json" | "text" | "tsx" | "typescript" {
+    if (!lang) return "text";
+    const lower = lang.toLowerCase().trim();
+    if (["json", "jsonc"].includes(lower)) return "json";
+    if (["bash", "sh", "zsh", "shell"].includes(lower)) return "bash";
+    if (["diff", "patch"].includes(lower)) return "diff";
+    if (["tsx", "jsx"].includes(lower)) return "tsx";
+    if (
+        [
+            "typescript",
+            "ts",
+            "javascript",
+            "js",
+            "php",
+            "sql",
+            "html",
+            "css",
+            "python",
+            "py",
+        ].includes(lower)
+    ) {
+        return "typescript";
+    }
+    return "text";
+}
+
+/**
+ * Chat Message Formatter using @beui/chat-app design system:
+ * - StreamingResponse with status, feedback thumbs, and sources disclosure
+ * - Shiki-highlighted CodeBlock with copy, line numbers, and filename
+ * - AgentActivity and ThinkingShimmer for thought processes
+ * - ToolResult for structured tool execution transparency
+ * - Interactive AnalyticsChartRenderer & DocumentDownloadCard artifacts
  */
 export function ChatMessageFormatter({
     content,
@@ -56,21 +372,34 @@ export function ChatMessageFormatter({
     toolCalls,
     sources,
     isStreaming = false,
+    onRetry,
+    feedback,
+    onFeedbackChange,
+    className,
 }: ChatMessageFormatterProps) {
     const trimmedContent = (content || "").trim();
     const [exportingPdf, setExportingPdf] = React.useState(false);
 
-    const { blocks: parsedBlocks, renderedDocIds, renderedChartKeys } = React.useMemo(() => {
+    // Parse Markdown text chunks, code blocks, and embedded JSON artifacts
+    const {
+        blocks: parsedBlocks,
+        renderedDocIds,
+        renderedChartKeys,
+    } = React.useMemo(() => {
         const docIds = new Set<string>();
         const chartKeys = new Set<string>();
 
         if (!trimmedContent) {
-            return { blocks: [], renderedDocIds: docIds, renderedChartKeys: chartKeys };
+            return {
+                blocks: [],
+                renderedDocIds: docIds,
+                renderedChartKeys: chartKeys,
+            };
         }
 
         const blocks: React.ReactNode[] = [];
-        // Regex matches ```json:chart, ```chart, ```json:document, ```document, ```json, or generic ``` codeblocks
-        const codeBlockRegex = /```(?:json:(chart|document)|(chart|document)|json)?\s*([\s\S]*?)```/g;
+        const codeBlockRegex =
+            /```(?:json:(chart|document)|(chart|document)|json)?\s*([\s\S]*?)```/g;
         let lastIndex = 0;
         let match: RegExpExecArray | null;
 
@@ -78,12 +407,16 @@ export function ChatMessageFormatter({
             const blockStart = match.index;
             const blockEnd = codeBlockRegex.lastIndex;
 
-            // Render preceding text chunk via Response component
             if (blockStart > lastIndex) {
-                const textChunk = content.substring(lastIndex, blockStart).trim();
+                const textChunk = content
+                    .substring(lastIndex, blockStart)
+                    .trim();
                 if (textChunk) {
                     blocks.push(
-                        <Response key={`text_${lastIndex}`} className="leading-relaxed text-sm">
+                        <Response
+                            key={`text_${lastIndex}`}
+                            className="text-sm leading-relaxed"
+                        >
                             {textChunk}
                         </Response>
                     );
@@ -92,14 +425,20 @@ export function ChatMessageFormatter({
 
             const explicitType = match[1] || match[2];
             const body = match[3].trim();
-
             let handled = false;
 
             try {
                 const parsed = JSON.parse(body);
 
-                if (explicitType === "chart" || parsed._type === "chart_artifact" || parsed.chart_type) {
-                    const key = parsed.title || parsed.chart_type || `chart_${blockStart}`;
+                if (
+                    explicitType === "chart" ||
+                    parsed._type === "chart_artifact" ||
+                    parsed.chart_type
+                ) {
+                    const key =
+                        parsed.title ||
+                        parsed.chart_type ||
+                        `chart_${blockStart}`;
                     chartKeys.add(key);
                     blocks.push(
                         <AnalyticsChartRenderer
@@ -108,7 +447,11 @@ export function ChatMessageFormatter({
                         />
                     );
                     handled = true;
-                } else if (explicitType === "document" || parsed._type === "document_artifact" || parsed.document_id) {
+                } else if (
+                    explicitType === "document" ||
+                    parsed._type === "document_artifact" ||
+                    parsed.document_id
+                ) {
                     if (parsed.document_id) {
                         docIds.add(parsed.document_id);
                     }
@@ -125,28 +468,29 @@ export function ChatMessageFormatter({
             }
 
             if (!handled) {
-                // Render code block via ReUI CodeBlock
-                const codeLang = explicitType || (match[0].match(/^```(\w+)/)?.[1] || "text");
-                const codeTitle = body.match(/^(?:\/\/\s*|#\s*)?(?:filename|file|title):\s*([^\n]+)/i)?.[1]?.trim();
+                const rawLang =
+                    explicitType ||
+                    match[0].match(/^```(\w+)/)?.[1] ||
+                    "typescript";
+                const codeLang = normalizeCodeLang(rawLang);
+                const codeTitle = body
+                    .match(
+                        /^(?:\/\/\s*|#\s*)?(?:filename|file|title):\s*([^\n]+)/i
+                    )?.[1]
+                    ?.trim();
+
                 blocks.push(
-                    <div key={`code_${blockStart}`} className="my-2.5 not-prose w-full">
+                    <div
+                        key={`code_${blockStart}`}
+                        className="not-prose my-2.5 w-full"
+                    >
                         <CodeBlock
                             code={body}
                             language={codeLang}
+                            filename={codeTitle || `${codeLang} snippet`}
+                            status={isStreaming ? "streaming" : "complete"}
                             showLineNumbers={body.split("\n").length > 1}
-                            className="border-border/70 dark:border-border/50 shadow-xs"
-                        >
-                            <CodeBlockHeader className="justify-between px-3 py-1 bg-muted/40">
-                                <div className="flex items-center gap-2">
-                                    {codeTitle && <CodeBlockTitle className="text-xs font-mono">{codeTitle}</CodeBlockTitle>}
-                                    <CodeBlockLanguage />
-                                </div>
-                                <div className="flex items-center gap-1">
-                                    <CodeBlockDownloadButton />
-                                    <CodeBlockCopyButton />
-                                </div>
-                            </CodeBlockHeader>
-                        </CodeBlock>
+                        />
                     </div>
                 );
             }
@@ -154,91 +498,139 @@ export function ChatMessageFormatter({
             lastIndex = blockEnd;
         }
 
-        // Render trailing text chunk
         if (lastIndex < content.length) {
             const tail = content.substring(lastIndex).trim();
             if (tail) {
-                // Check if raw tail is a JSON artifact directly
                 if (tail.startsWith("{") && tail.endsWith("}")) {
                     try {
                         const parsed = JSON.parse(tail);
-                        if (parsed._type === "chart_artifact" || parsed.chart_type) {
-                            const key = parsed.title || parsed.chart_type || `chart_tail_${lastIndex}`;
+                        if (
+                            parsed._type === "chart_artifact" ||
+                            parsed.chart_type
+                        ) {
+                            const key =
+                                parsed.title ||
+                                parsed.chart_type ||
+                                `chart_tail_${lastIndex}`;
                             chartKeys.add(key);
-                            blocks.push(<AnalyticsChartRenderer key={`chart_tail_${lastIndex}`} chart={parsed} />);
-                            return { blocks, renderedDocIds: docIds, renderedChartKeys: chartKeys };
+                            blocks.push(
+                                <AnalyticsChartRenderer
+                                    key={`chart_tail_${lastIndex}`}
+                                    chart={parsed}
+                                />
+                            );
+                            return {
+                                blocks,
+                                renderedDocIds: docIds,
+                                renderedChartKeys: chartKeys,
+                            };
                         }
-                        if (parsed._type === "document_artifact" || parsed.document_id) {
+                        if (
+                            parsed._type === "document_artifact" ||
+                            parsed.document_id
+                        ) {
                             if (parsed.document_id) {
                                 docIds.add(parsed.document_id);
                             }
-                            blocks.push(<DocumentDownloadCard key={`doc_tail_${lastIndex}`} document={parsed} />);
-                            return { blocks, renderedDocIds: docIds, renderedChartKeys: chartKeys };
+                            blocks.push(
+                                <DocumentDownloadCard
+                                    key={`doc_tail_${lastIndex}`}
+                                    document={parsed}
+                                />
+                            );
+                            return {
+                                blocks,
+                                renderedDocIds: docIds,
+                                renderedChartKeys: chartKeys,
+                            };
                         }
                     } catch {
-                        // Fallback to text
+                        // Plain text fallback
                     }
                 }
 
                 blocks.push(
-                    <Response key={`tail_${lastIndex}`} className="leading-relaxed text-sm">
+                    <Response
+                        key={`tail_${lastIndex}`}
+                        className="text-sm leading-relaxed"
+                    >
                         {tail}
                     </Response>
                 );
             }
         }
 
-        // Check if raw full content is an unbracketed or standalone JSON artifact
-        if (blocks.length === 0 && trimmedContent.startsWith("{") && trimmedContent.endsWith("}")) {
+        if (
+            blocks.length === 0 &&
+            trimmedContent.startsWith("{") &&
+            trimmedContent.endsWith("}")
+        ) {
             try {
                 const parsed = JSON.parse(trimmedContent);
                 if (parsed._type === "chart_artifact" || parsed.chart_type) {
-                    const key = parsed.title || parsed.chart_type || "single_chart";
+                    const key =
+                        parsed.title || parsed.chart_type || "single_chart";
                     chartKeys.add(key);
                     return {
-                        blocks: [<AnalyticsChartRenderer key="single_chart" chart={parsed} />],
+                        blocks: [
+                            <AnalyticsChartRenderer
+                                key="single_chart"
+                                chart={parsed}
+                            />,
+                        ],
                         renderedDocIds: docIds,
                         renderedChartKeys: chartKeys,
                     };
                 }
-                if (parsed._type === "document_artifact" || parsed.document_id) {
+                if (
+                    parsed._type === "document_artifact" ||
+                    parsed.document_id
+                ) {
                     if (parsed.document_id) {
                         docIds.add(parsed.document_id);
                     }
                     return {
-                        blocks: [<DocumentDownloadCard key="single_doc" document={parsed} />],
+                        blocks: [
+                            <DocumentDownloadCard
+                                key="single_doc"
+                                document={parsed}
+                            />,
+                        ],
                         renderedDocIds: docIds,
                         renderedChartKeys: chartKeys,
                     };
                 }
             } catch {
-                // Fallback to text
+                // Plain text fallback
             }
         }
 
-        const finalBlocks = blocks.length > 0
-            ? blocks
-            : [
-                  <Response key="root_content" className="leading-relaxed text-sm">
-                      {content}
-                  </Response>,
-              ];
+        const finalBlocks =
+            blocks.length > 0
+                ? blocks
+                : [
+                      <Response
+                          key="root_content"
+                          className="text-sm leading-relaxed"
+                      >
+                          {content}
+                      </Response>,
+                  ];
 
-        return { blocks: finalBlocks, renderedDocIds: docIds, renderedChartKeys: chartKeys };
-    }, [content, trimmedContent]);
+        return {
+            blocks: finalBlocks,
+            renderedDocIds: docIds,
+            renderedChartKeys: chartKeys,
+        };
+    }, [content, trimmedContent, isStreaming]);
 
-    // Extract any document or chart artifacts produced by toolCalls that were not explicitly echoed in the text content
+    // Extract tool visual artifacts (e.g. generated charts or documents from tools)
     const toolArtifacts = React.useMemo(() => {
-        if (!toolCalls || toolCalls.length === 0) {
-            return [];
-        }
-
+        if (!toolCalls || toolCalls.length === 0) return [];
         const items: React.ReactNode[] = [];
 
         for (const tool of toolCalls) {
-            if (tool.state !== "output-available" || !tool.output) {
-                continue;
-            }
+            if (tool.state !== "output-available" || !tool.output) continue;
 
             let outputObj = tool.output;
             if (typeof outputObj === "string") {
@@ -249,17 +641,17 @@ export function ChatMessageFormatter({
                 }
             }
 
-            if (!outputObj || typeof outputObj !== "object") {
-                continue;
-            }
+            if (!outputObj || typeof outputObj !== "object") continue;
 
-            // Document artifact check
             if (
                 outputObj._type === "document_artifact" ||
                 outputObj.document_id ||
                 tool.toolName === "GenerateAdministrativeDocumentTool"
             ) {
-                const docId = typeof outputObj.document_id === "string" ? outputObj.document_id : undefined;
+                const docId =
+                    typeof outputObj.document_id === "string"
+                        ? outputObj.document_id
+                        : undefined;
                 if (!docId || !renderedDocIds.has(docId)) {
                     if (docId) renderedDocIds.add(docId);
                     items.push(
@@ -269,14 +661,15 @@ export function ChatMessageFormatter({
                         />
                     );
                 }
-            }
-            // Chart artifact check
-            else if (
+            } else if (
                 outputObj._type === "chart_artifact" ||
                 outputObj.chart_type ||
                 tool.toolName === "GenerateAnalyticsChartTool"
             ) {
-                const key = typeof outputObj.title === "string" ? outputObj.title : tool.id;
+                const key =
+                    typeof outputObj.title === "string"
+                        ? outputObj.title
+                        : tool.id;
                 if (!renderedChartKeys.has(key)) {
                     renderedChartKeys.add(key);
                     items.push(
@@ -292,14 +685,15 @@ export function ChatMessageFormatter({
         return items;
     }, [toolCalls, renderedDocIds, renderedChartKeys]);
 
-    // Show on-demand export when content contains structured report/memo text and no document card is rendered yet
+    // PDF on-demand export for formal reports
     const canExportPdf = React.useMemo(() => {
         if (isStreaming || !content || content.length < 40) return false;
         if (renderedDocIds.size > 0 || toolArtifacts.length > 0) return false;
-
         const hasHeaders = /^#{1,4}\s+/m.test(content);
-        const hasReportKeywords = /(?:memo|report|circular|summary|curriculum|clearance|policy|assessment|transcript)/i.test(content);
-
+        const hasReportKeywords =
+            /(?:memo|report|circular|summary|curriculum|clearance|policy|assessment|transcript)/i.test(
+                content
+            );
         return hasHeaders || hasReportKeywords;
     }, [isStreaming, content, renderedDocIds.size, toolArtifacts.length]);
 
@@ -309,7 +703,9 @@ export function ChatMessageFormatter({
 
         try {
             const headingMatch = content.match(/^#+\s*(.+)$/m);
-            const title = headingMatch ? headingMatch[1].trim() : "Administrative_Report";
+            const title = headingMatch
+                ? headingMatch[1].trim()
+                : "Administrative_Report";
 
             const res = await fetch("/administrators/ai/export-document", {
                 method: "POST",
@@ -317,7 +713,11 @@ export function ChatMessageFormatter({
                     "Content-Type": "application/json",
                     "X-Requested-With": "XMLHttpRequest",
                     "X-CSRF-TOKEN":
-                        (window.document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || "",
+                        (
+                            window.document.querySelector(
+                                'meta[name="csrf-token"]'
+                            ) as HTMLMetaElement
+                        )?.content || "",
                 },
                 body: JSON.stringify({
                     title,
@@ -336,7 +736,6 @@ export function ChatMessageFormatter({
                 a.click();
                 window.document.body.removeChild(a);
                 window.URL.revokeObjectURL(blobUrl);
-
                 toast.success(`Downloaded "${title}.pdf"`);
             } else {
                 throw new Error("Failed to export PDF.");
@@ -351,123 +750,102 @@ export function ChatMessageFormatter({
     const hasContent = parsedBlocks.length > 0;
     const hasReasoning = Boolean(reasoning && reasoning.trim());
     const hasTools = Boolean(toolCalls && toolCalls.length > 0);
-    // A completed turn with no text, reasoning, tools, or artifacts must never
-    // render as a blank bubble (the reported "chat just stops" symptom).
     const isEmptyCompleted =
-        !isStreaming && !hasContent && !hasReasoning && !hasTools && toolArtifacts.length === 0;
+        !isStreaming &&
+        !hasContent &&
+        !hasReasoning &&
+        !hasTools &&
+        toolArtifacts.length === 0;
 
     return (
-        <div className="space-y-3 text-sm text-foreground">
+        <div className={cn("space-y-3 text-sm text-foreground", className)}>
+            {/* Fallback for empty completed turn */}
             {isEmptyCompleted && (
-                <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
-                    <Loader variant="dots" size="sm" className="text-destructive shrink-0" />
+                <div className="flex items-start gap-2.5 rounded-2xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+                    <div className="shrink-0 pt-0.5">⚠️</div>
                     <div>
-                        <p className="font-semibold">The assistant stopped without a response.</p>
-                        <p className="mt-0.5 text-destructive/90">
-                            Your request is preserved — use Retry, or switch to the global default model and try again.
+                        <p className="font-semibold">
+                            Assistant stopped without generating text.
+                        </p>
+                        <p className="text-destructive/90 mt-0.5">
+                            Request preserved — tap Retry or change model.
                         </p>
                     </div>
                 </div>
             )}
-            {/* AI SDK Elements Reasoning — auto-opens while streaming, shows
-                "Thinking..." shimmer, then collapses to "Thought for N seconds" */}
-            {hasReasoning && (
-                <Reasoning
-                    isStreaming={isStreaming}
-                    className="border border-border/60 bg-muted/20 rounded-xl px-2.5 py-2"
-                >
-                    <ReasoningTrigger />
-                    <ReasoningContent>{reasoning ?? ""}</ReasoningContent>
-                </Reasoning>
+
+            {/* Minimalist Sources matching Image 3 */}
+            {sources && sources.length > 0 && (
+                <MinimalistSources sources={sources} />
             )}
 
-            {/* Prompt-Kit Steps for Tool Invocations */}
+            {/* Minimalist Reasoning matching Image 2 */}
+            {(hasReasoning || (isStreaming && !hasContent && !hasTools)) && (
+                <MinimalistReasoning
+                    reasoning={reasoning}
+                    isStreaming={isStreaming && !hasContent}
+                />
+            )}
+
+            {/* Minimalist Tool Invocations matching Image 1 */}
             {hasTools && (
-                <Steps defaultOpen={false} className="border border-border/60 bg-muted/20 rounded-xl overflow-hidden p-2.5">
-                    <StepsTrigger
-                        leftIcon={<Loader variant="dots" size="sm" className="text-primary" />}
-                        className="text-xs font-medium text-muted-foreground hover:text-foreground"
-                    >
-                        <span>Executed {toolCalls!.length} {toolCalls!.length === 1 ? "tool step" : "tool steps"}</span>
-                    </StepsTrigger>
-                    <StepsContent className="mt-2 space-y-1.5 border-t border-border/40 pt-2">
-                        {toolCalls!.map((tool) => (
-                            <StepsItem key={tool.id}>
-                                <Tool
-                                    toolPart={{
-                                        type: tool.toolName,
-                                        state: tool.state,
-                                        input: tool.input,
-                                        output: typeof tool.output === "object" ? tool.output : tool.output ? { result: tool.output } : undefined,
-                                        toolCallId: tool.id,
-                                        errorText: tool.errorText,
-                                    }}
-                                />
-                            </StepsItem>
-                        ))}
-                    </StepsContent>
-                </Steps>
+                <div className="space-y-1 my-1">
+                    {toolCalls!.map((tool) => (
+                        <MinimalistToolCall key={tool.id} tool={tool} />
+                    ))}
+                </div>
             )}
 
-            {/* Formatted Markdown and Visual Artifacts */}
+            {/* Streaming Text Output with StreamingResponse Container */}
             {hasContent ? (
-                parsedBlocks
+                <StreamingResponse
+                    status={isStreaming ? "streaming" : "complete"}
+                    copyText={content}
+                    sources={[]}
+                    onRetry={onRetry}
+                    feedback={feedback}
+                    onFeedbackChange={onFeedbackChange}
+                    className="w-full"
+                >
+                    <div className="space-y-2.5">{parsedBlocks}</div>
+                </StreamingResponse>
             ) : isStreaming && !hasReasoning && !hasTools ? (
-                /* Inline thinking indicator when message is loading before first token */
-                <div className="flex items-center gap-2 py-0.5 text-muted-foreground">
-                    <Loader variant="dots" size="sm" className="text-primary" />
-                    <span className="text-xs font-medium text-muted-foreground/80 animate-pulse">Thinking...</span>
+                /* Animated shimmer while waiting for first token */
+                <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
+                    <ThinkingShimmer duration={1.6}>
+                        Analyzing campus data and formulating response…
+                    </ThinkingShimmer>
                 </div>
             ) : null}
 
-            {/* Visual Artifacts extracted from Tool Invocations (Documents or Charts) */}
+            {/* Extracted Artifacts (Charts & Documents) */}
             {toolArtifacts.length > 0 && (
-                <div className="space-y-2 pt-1">
-                    {toolArtifacts}
-                </div>
+                <div className="space-y-2 pt-1">{toolArtifacts}</div>
             )}
 
             {/* 1-Click Action to Download Report as PDF */}
             {canExportPdf && (
-                <div className="pt-2 flex items-center gap-2">
+                <div className="flex items-center gap-2 pt-1">
                     <Button
                         type="button"
                         size="sm"
                         variant="outline"
                         onClick={handleExportMessageAsPdf}
                         disabled={exportingPdf}
-                        className="h-8 text-xs font-medium gap-1.5 border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 rounded-xl"
+                        className="h-8 rounded-xl border-rose-500/30 text-xs font-medium text-rose-600 hover:bg-rose-500/10 dark:text-rose-400 gap-1.5"
                     >
                         {exportingPdf ? (
                             <Loader2 className="size-3.5 animate-spin" />
                         ) : (
                             <FileText className="size-3.5 text-rose-500" />
                         )}
-                        <span>{exportingPdf ? "Generating PDF..." : "Download as PDF"}</span>
-                        <Download className="size-3 opacity-60 ml-0.5" />
+                        <span>
+                            {exportingPdf
+                                ? "Generating PDF…"
+                                : "Download as PDF"}
+                        </span>
+                        <Download className="ml-0.5 size-3 opacity-60" />
                     </Button>
-                </div>
-            )}
-
-            {/* Prompt-Kit Verified Sources & Citations */}
-            {sources && sources.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-border/40">
-                    <span className="text-[10.5px] font-semibold text-muted-foreground uppercase tracking-wider mr-1">
-                        Sources:
-                    </span>
-                    {sources.map((s, i) => (
-                        <Source key={i} href={s.url}>
-                            <SourceTrigger
-                                label={s.title}
-                                showFavicon={true}
-                                className="text-xs h-6 px-2.5 bg-muted/40 hover:bg-muted font-sans"
-                            />
-                            <SourceContent
-                                title={s.title}
-                                description={s.url}
-                            />
-                        </Source>
-                    ))}
                 </div>
             )}
         </div>

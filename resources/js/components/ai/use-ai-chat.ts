@@ -43,6 +43,7 @@ export interface UseAiChatOptions {
     endpoint?: string;
     initialConversationId?: string;
     initialMessages?: ChatMessage[];
+    persistenceKey?: string;
     onFinish?: (message: ChatMessage) => void;
     onError?: (error: Error) => void;
     onConversationCreated?: (conversationId: string, title?: string) => void;
@@ -55,6 +56,7 @@ export interface PromptOptions {
     supportsDocuments?: boolean;
     thinking?: boolean;
     search?: boolean;
+    autoApprove?: boolean;
 }
 
 export function useAiChat({
@@ -62,16 +64,81 @@ export function useAiChat({
     endpoint,
     initialConversationId,
     initialMessages = [],
+    persistenceKey,
     onFinish,
     onError,
     onConversationCreated,
 }: UseAiChatOptions) {
-    const [messages, setMessages] = React.useState<ChatMessage[]>(initialMessages);
+    const [messages, setMessages] = React.useState<ChatMessage[]>(() => {
+        if (persistenceKey && typeof window !== "undefined") {
+            try {
+                const saved = sessionStorage.getItem(persistenceKey);
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        return parsed;
+                    }
+                }
+            } catch {
+                // Ignore parsing errors
+            }
+        }
+        return initialMessages;
+    });
     const [input, setInput] = React.useState("");
     const [isLoading, setIsLoading] = React.useState(false);
-    const [conversationId, setConversationId] = React.useState<string | undefined>(initialConversationId);
+    const [conversationId, setConversationId] = React.useState<string | undefined>(() => {
+        if (persistenceKey && typeof window !== "undefined") {
+            try {
+                const savedId = sessionStorage.getItem(`${persistenceKey}_conv_id`);
+                if (savedId) return savedId;
+            } catch {
+                // Ignore storage errors
+            }
+        }
+        return initialConversationId;
+    });
+    const [autoApprove, setAutoApproveState] = React.useState<boolean>(() => {
+        if (persistenceKey && typeof window !== "undefined") {
+            try {
+                return sessionStorage.getItem(`${persistenceKey}_auto_approve`) === "true";
+            } catch {
+                return false;
+            }
+        }
+        return false;
+    });
     const [lastError, setLastError] = React.useState<{ title: string; message: string; retryPrompt?: string } | null>(null);
     const [lastPrompt, setLastPrompt] = React.useState<string>("");
+
+    const setAutoApprove = React.useCallback(
+        (val: boolean) => {
+            setAutoApproveState(val);
+            if (persistenceKey && typeof window !== "undefined") {
+                try {
+                    sessionStorage.setItem(`${persistenceKey}_auto_approve`, String(val));
+                } catch {
+                    // Ignore storage errors
+                }
+            }
+        },
+        [persistenceKey]
+    );
+
+    // Save messages and conversationId whenever updated if persistenceKey provided
+    React.useEffect(() => {
+        if (!persistenceKey || typeof window === "undefined") return;
+        try {
+            if (messages.length > 0) {
+                sessionStorage.setItem(persistenceKey, JSON.stringify(messages));
+            }
+            if (conversationId) {
+                sessionStorage.setItem(`${persistenceKey}_conv_id`, conversationId);
+            }
+        } catch {
+            // Ignore storage quotas
+        }
+    }, [messages, conversationId, persistenceKey]);
 
     const abortControllerRef = React.useRef<AbortController | null>(null);
     const isSendingRef = React.useRef(false);
@@ -386,6 +453,10 @@ export function useAiChat({
                         message: userMessage,
                         conversation_id: conversationId,
                     };
+                    const isAutoApproveActive = typeof options?.autoApprove === "boolean" ? options.autoApprove : autoApprove;
+                    if (isAutoApproveActive) {
+                        bodyPayload.auto_approve = true;
+                    }
                     if (options?.model) {
                         bodyPayload.model = options.model;
                     }
@@ -636,7 +707,96 @@ export function useAiChat({
         setMessages([]);
         setConversationId(undefined);
         setLastError(null);
-    }, []);
+        if (persistenceKey && typeof window !== "undefined") {
+            try {
+                sessionStorage.removeItem(persistenceKey);
+                sessionStorage.removeItem(`${persistenceKey}_conv_id`);
+            } catch {
+                // Ignore storage errors
+            }
+        }
+    }, [persistenceKey]);
+
+    const submitAllDecisions = React.useCallback(
+        async (action: "approve" | "reject") => {
+            if (isLoading || isSendingRef.current) return;
+
+            const allPendingApprovals: PendingToolApproval[] = [];
+            messages.forEach((m) => {
+                if (m.role === "assistant" && m.pendingApprovals) {
+                    allPendingApprovals.push(...m.pendingApprovals);
+                }
+            });
+
+            if (allPendingApprovals.length === 0) return;
+
+            isSendingRef.current = true;
+            setIsLoading(true);
+
+            setMessages((prev) =>
+                prev.map((m) => ({
+                    ...m,
+                    pendingApprovals: undefined,
+                })),
+            );
+
+            const controller = new AbortController();
+            abortControllerRef.current = controller;
+
+            try {
+                const decisions: Record<string, { action: string }> = {};
+                allPendingApprovals.forEach((a) => {
+                    decisions[a.id] = { action };
+                });
+
+                const response = await fetch(targetUrl, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Accept: "text/event-stream, text/plain",
+                        "X-Requested-With": "XMLHttpRequest",
+                        "X-CSRF-TOKEN": (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || "",
+                    },
+                    body: JSON.stringify({
+                        agent,
+                        decisions,
+                        auto_approve: autoApprove,
+                        conversation_id: conversationId,
+                    }),
+                    signal: controller.signal,
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Decision submission failed (${response.status})`);
+                }
+
+                toast.success(action === "approve" ? "All actions approved. Continuing execution..." : "All pending actions rejected.");
+
+                const contentType = response.headers.get("content-type") || "";
+                if (contentType.includes("text/event-stream") || contentType.includes("text/plain")) {
+                    const continuationId = "msg_" + Math.random().toString(36).substring(2, 9);
+                    setMessages((prev) => [
+                        ...prev,
+                        {
+                            id: continuationId,
+                            role: "assistant",
+                            content: "",
+                        },
+                    ]);
+                    await readStream(response, continuationId, lastPrompt || undefined);
+                }
+            } catch (err: unknown) {
+                if (err instanceof Error && err.name === "AbortError") return;
+                const message = err instanceof Error ? err.message : "Failed to submit approval decisions.";
+                toast.error(message);
+            } finally {
+                setIsLoading(false);
+                isSendingRef.current = false;
+                abortControllerRef.current = null;
+            }
+        },
+        [isLoading, messages, targetUrl, agent, autoApprove, conversationId, readStream, lastPrompt]
+    );
 
     const clearError = React.useCallback(() => {
         setLastError(null);
@@ -663,6 +823,9 @@ export function useAiChat({
         clearError,
         sendPrompt,
         submitDecision,
+        submitAllDecisions,
+        autoApprove,
+        setAutoApprove,
         resendUserMessage,
         regenerateAssistant,
         stop,

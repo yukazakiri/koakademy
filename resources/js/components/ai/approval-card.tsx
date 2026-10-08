@@ -15,10 +15,11 @@ export interface PendingToolApproval {
 interface ApprovalCardProps {
     approval: PendingToolApproval;
     onDecision: (id: string, action: "approve" | "reject", result?: string) => void;
+    onApproveAll?: () => void;
     disabled?: boolean;
 }
 
-export function ApprovalCard({ approval, onDecision, disabled = false }: ApprovalCardProps) {
+export function ApprovalCard({ approval, onDecision, onApproveAll, disabled = false }: ApprovalCardProps) {
     const [rejecting, setRejecting] = React.useState(false);
     const [rejectReason, setRejectReason] = React.useState("");
 
@@ -108,6 +109,20 @@ export function ApprovalCard({ approval, onDecision, disabled = false }: Approva
                             <X className="size-3.5" />
                             Reject
                         </Button>
+                        {onApproveAll && (
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="text-xs h-8 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 gap-1.5"
+                                onClick={onApproveAll}
+                                disabled={disabled}
+                                title="Approve all pending sensitive actions"
+                            >
+                                <Check className="size-3.5" />
+                                Approve All
+                            </Button>
+                        )}
                         <Button
                             type="button"
                             size="sm"

@@ -16,6 +16,7 @@ use Laravel\Mcp\ResponseFactory;
 use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Tools\Annotations\IsIdempotent;
+use Throwable;
 
 #[Description('Drop or remove a subject enrollment from a student\'s record, releasing any linked class seat. Requires MCP write access, Update:StudentEnrollment permission, and an idempotency key.')]
 #[IsIdempotent]
@@ -156,10 +157,7 @@ final class DropStudentSubjectEnrollmentTool extends Tool
 
     private function resolveStudent(string $identifier): ?\App\Models\Student
     {
-        $school = $this->school();
-
-        return \App\Models\Student::query()
-            ->where(fn ($q) => $q->where('school_id', $school->id)->orWhere('institution_id', $school->id))
+        $query = \App\Models\Student::query()
             ->where(function ($query) use ($identifier) {
                 if (is_numeric($identifier)) {
                     $query->where('id', (int) $identifier)
@@ -167,7 +165,42 @@ final class DropStudentSubjectEnrollmentTool extends Tool
                 }
                 $query->orWhere('student_id', $identifier)
                     ->orWhere('email', $identifier);
-            })
-            ->first();
+            });
+
+        $school = null;
+        try {
+            $school = $this->school();
+        } catch (Throwable) {
+            // Context resolution fallback
+        }
+
+        if ($school instanceof \App\Models\School) {
+            $scoped = (clone $query)
+                ->where(fn ($q) => $q->where('school_id', $school->id)->orWhere('institution_id', $school->id))
+                ->first();
+
+            if ($scoped instanceof \App\Models\Student) {
+                return $scoped;
+            }
+        }
+
+        // Cross-school lookup for administrators
+        $user = $this->currentCaller ?? \Illuminate\Support\Facades\Auth::user();
+        if ($user instanceof \App\Models\User && ($user->canAccessAdminPortal() || $user->hasRole('super_admin') || $user->isAdministrative())) {
+            $student = $query->first();
+            if ($student instanceof \App\Models\Student) {
+                $targetSchoolId = $student->school_id ?: $student->institution_id;
+                if ($targetSchoolId) {
+                    $targetSchool = \App\Models\School::query()->find($targetSchoolId);
+                    if ($targetSchool instanceof \App\Models\School) {
+                        app(\App\Services\TenantContext::class)->setCurrentSchool($targetSchool);
+                    }
+                }
+
+                return $student;
+            }
+        }
+
+        return null;
     }
 }

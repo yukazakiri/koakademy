@@ -22,6 +22,7 @@ use Laravel\Mcp\ResponseFactory;
 use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Tools\Annotations\IsIdempotent;
+use Throwable;
 
 #[Description('Enroll a student in an academic subject under an enrollment record, optionally assigning a scheduled class section. Requires MCP write access, Update:StudentEnrollment permission, and an idempotency key.')]
 #[IsIdempotent]
@@ -59,11 +60,35 @@ final class EnrollStudentSubjectTool extends Tool
 
         $enrollment = null;
         if (filled($validated['enrollment_id'] ?? null)) {
-            $enrollment = StudentEnrollment::query()->findOrFail($validated['enrollment_id']);
+            $enrollment = StudentEnrollment::query()->find($validated['enrollment_id']);
         } elseif (filled($validated['student_id'] ?? null)) {
             $student = $this->resolveStudent((string) $validated['student_id']);
             if ($student instanceof \App\Models\Student) {
                 $enrollment = $student->studentEnrollments()->latest('id')->first();
+            }
+        }
+
+        // If no existing enrollment was found but a valid student was resolved,
+        // create the new StudentEnrollment record so registration can proceed.
+        if (! $enrollment instanceof StudentEnrollment && isset($student) && $student instanceof \App\Models\Student) {
+            $currentSy = (string) (app(\App\Services\GeneralSettingsService::class)->getCurriculumYear() ?: date('Y').'-'.(date('Y') + 1));
+            $currentSem = (int) (app(\App\Services\GeneralSettingsService::class)->getSemester() ?: 1);
+            $schoolId = $student->school_id ?: $this->school()->id;
+
+            $enrollment = StudentEnrollment::query()->create([
+                'student_id' => (string) $student->student_id,
+                'school_id' => $schoolId,
+                'course_id' => $student->course_id,
+                'academic_year' => $student->academic_year ?: 1,
+                'semester' => $currentSem,
+                'school_year' => $currentSy,
+                'status' => 'enrolled',
+                'workflow_runtime' => StudentEnrollment::WorkflowRuntimePolicyV1,
+            ]);
+
+            // Update student status if currently applicant
+            if ($student->status === 'applicant' || $student->status === null) {
+                $student->update(['status' => 'enrolled']);
             }
         }
 
@@ -74,7 +99,14 @@ final class EnrollStudentSubjectTool extends Tool
         }
 
         if (! $enrollment->belongsToCurrentSchool()) {
-            throw new \Illuminate\Auth\Access\AuthorizationException('The enrollment record does not belong to the selected school.');
+            if ($user->canAccessAdminPortal() || $user->hasRole('super_admin')) {
+                $school = \App\Models\School::query()->find($enrollment->school_id);
+                if ($school instanceof \App\Models\School) {
+                    app(\App\Services\TenantContext::class)->setCurrentSchool($school);
+                }
+            } else {
+                throw new \Illuminate\Auth\Access\AuthorizationException('The enrollment record does not belong to the selected school.');
+            }
         }
 
         // Handle batch of subjects if provided
@@ -157,6 +189,27 @@ final class EnrollStudentSubjectTool extends Tool
             $subject = Subject::query()->where('code', mb_strtoupper(mb_trim((string) $validated['subject_code'])))
                 ->when($enrollment->course_id, fn ($q) => $q->where('course_id', $enrollment->course_id))
                 ->first() ?? Subject::query()->where('code', mb_strtoupper(mb_trim((string) $validated['subject_code'])))->first();
+        }
+
+        // If no subjects were specified, return success confirmation for the enrollment creation/inspection
+        if (! $subject instanceof Subject && empty($validated['subjects'])) {
+            $studentName = isset($student) && $student instanceof \App\Models\Student
+                ? "{$student->first_name} {$student->last_name}"
+                : "Student ID {$enrollment->student_id}";
+
+            return Response::structured([
+                'success' => true,
+                'action' => 'create_enrollment',
+                'message' => "Successfully established official enrollment record for {$studentName} in School Year {$enrollment->school_year} (Semester {$enrollment->semester}).",
+                'enrollment' => [
+                    'id' => $enrollment->id,
+                    'student_id' => $enrollment->student_id,
+                    'course_id' => $enrollment->course_id,
+                    'school_year' => $enrollment->school_year,
+                    'semester' => $enrollment->semester,
+                    'status' => $enrollment->status,
+                ],
+            ]);
         }
 
         if (! $subject instanceof Subject) {
@@ -329,10 +382,7 @@ final class EnrollStudentSubjectTool extends Tool
 
     private function resolveStudent(string $identifier): ?\App\Models\Student
     {
-        $school = $this->school();
-
-        return \App\Models\Student::query()
-            ->where(fn ($q) => $q->where('school_id', $school->id)->orWhere('institution_id', $school->id))
+        $query = \App\Models\Student::query()
             ->where(function ($query) use ($identifier) {
                 if (is_numeric($identifier)) {
                     $query->where('id', (int) $identifier)
@@ -340,7 +390,42 @@ final class EnrollStudentSubjectTool extends Tool
                 }
                 $query->orWhere('student_id', $identifier)
                     ->orWhere('email', $identifier);
-            })
-            ->first();
+            });
+
+        $school = null;
+        try {
+            $school = $this->school();
+        } catch (Throwable) {
+            // Context resolution fallback
+        }
+
+        if ($school instanceof \App\Models\School) {
+            $scoped = (clone $query)
+                ->where(fn ($q) => $q->where('school_id', $school->id)->orWhere('institution_id', $school->id))
+                ->first();
+
+            if ($scoped instanceof \App\Models\Student) {
+                return $scoped;
+            }
+        }
+
+        // Cross-school lookup for administrators
+        $user = $this->currentCaller ?? \Illuminate\Support\Facades\Auth::user();
+        if ($user instanceof \App\Models\User && ($user->canAccessAdminPortal() || $user->hasRole('super_admin') || $user->isAdministrative())) {
+            $student = $query->first();
+            if ($student instanceof \App\Models\Student) {
+                $targetSchoolId = $student->school_id ?: $student->institution_id;
+                if ($targetSchoolId) {
+                    $targetSchool = \App\Models\School::query()->find($targetSchoolId);
+                    if ($targetSchool instanceof \App\Models\School) {
+                        app(\App\Services\TenantContext::class)->setCurrentSchool($targetSchool);
+                    }
+                }
+
+                return $student;
+            }
+        }
+
+        return null;
     }
 }

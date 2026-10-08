@@ -28,7 +28,10 @@ it('allows administrative users to view the administrator dashboard', function (
     ]);
 
     $this->actingAs($user)
-        ->get(portalUrlForAdministrators('/administrators/dashboard'))
+        // The role-blind dashboard moved to /administrators/dashboard/overview when the
+        // role-scoped desks landed; /administrators/dashboard now redirects to the viewer's
+        // default desk.
+        ->get(portalUrlForAdministrators('/administrators/dashboard/overview'))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
             ->component('administrators/dashboard', false)

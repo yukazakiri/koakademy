@@ -84,7 +84,12 @@ try {
     await page.type('input[type="email"]', email);
     await page.type('input[type="password"]', password);
     await page.click('button[type="submit"]');
-    await page.waitForFunction(() => window.location.pathname === "/administrators/dashboard", { timeout: 15000 });
+    // Login lands on /administrators/dashboard, which now redirects to the viewer's default
+    // role-scoped desk, so accept either the legacy dashboard or any desk.
+    await page.waitForFunction(
+        () => /^\/administrators\/(dashboard(\/overview)?|desks\/[^/]+)$/.test(window.location.pathname),
+        { timeout: 15000 },
+    );
 
     await page.goto(`${baseUrl}/administrators/library/books/create`, { waitUntil: "networkidle0" });
     await page.waitForFunction(() => window.location.pathname.endsWith("/administrators/library/books/create"), { timeout: 15000 });

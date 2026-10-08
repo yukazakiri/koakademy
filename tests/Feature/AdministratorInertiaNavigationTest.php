@@ -20,7 +20,9 @@ use function Pest\Laravel\actingAs;
 function administratorInertiaPageCatalog(): array
 {
     return [
-        ['administrators.dashboard', 'administrators/dashboard'],
+        // The original role-blind dashboard now lives at /dashboard/overview;
+        // /administrators/dashboard redirects to the viewer's default desk.
+        ['administrators.dashboard.legacy', 'administrators/dashboard'],
         ['administrators.audit-logs.index', 'administrators/audit-logs/index'],
         ['administrators.classes.index', 'administrators/classes/index'],
         ['administrators.classes.create', 'administrators/classes/create'],
@@ -405,7 +407,7 @@ it('advertises the admin shell deferred props on initial Inertia visits', functi
     $user = administratorInertiaAuditUser();
 
     $response = actingAs($user)
-        ->get(route('administrators.dashboard'), administratorInertiaHeaders())
+        ->get(route('administrators.dashboard.legacy'), administratorInertiaHeaders())
         ->assertOk()
         ->assertHeader('X-Inertia', 'true');
 
@@ -418,6 +420,8 @@ it('advertises the admin shell deferred props on initial Inertia visits', functi
             'adminSidebarCounts',
             'institutionOnboarding',
             'announcements',
+            // Role-scoped dashboard desks, shared alongside moduleAdminRoutes.
+            'deskRoutes',
         ]);
 });
 

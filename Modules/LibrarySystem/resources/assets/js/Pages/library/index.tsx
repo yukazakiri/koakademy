@@ -1,15 +1,40 @@
 import PortalLayout from "@/components/portal-layout";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/reui/badge";
+import { Frame, FramePanel } from "@/components/reui/frame";
+import { IconTile } from "@/components/reui/icon-tile";
+import { BeamSearch } from "@/components/spectrumui/beam-search";
+import { KbdKey } from "@/components/spectrumui/kbd-key";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { isAdministratorPortalRole } from "@/lib/portal-role";
+import { cn } from "@/lib/utils";
+import { index as adminLibraryIndex } from "@/routes/administrators/library";
 import { index as libraryIndex } from "@/routes/library";
+import { favorite as favoriteBook, show as showBook, unfavorite as unfavoriteBook } from "@/routes/library/books";
 import type { User } from "@/types/user";
 import { Head, Link, router } from "@inertiajs/react";
-import { BookOpen, ChevronLeft, ChevronRight, Heart, LibraryBig, Search, Sparkles, X } from "lucide-react";
+import {
+    ArrowUpDown,
+    BookMarked,
+    BookOpen,
+    Bookmark,
+    ChevronLeft,
+    ChevronRight,
+    Clock,
+    Compass,
+    Heart,
+    LayoutGrid,
+    LibraryBig,
+    List,
+    RotateCcw,
+    Search,
+    ShieldCheck,
+    Sparkles,
+    X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { BookCard, type LibraryBookCardData } from "./components/book-card";
+import { BookCover } from "./components/book-cover";
 
 interface Pagination<T> {
     data: T[];
@@ -51,15 +76,40 @@ const numberFormatter = new Intl.NumberFormat();
 
 export default function DigitalLibraryIndex({ auth, books, filters, options, stats }: Props) {
     const [search, setSearch] = useState(filters.search);
+    const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+    const searchInputRef = useRef<HTMLInputElement>(null);
     const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    useEffect(() => setSearch(filters.search), [filters.search]);
-    useEffect(
-        () => () => {
+    const isLibrarianOrAdmin = isAdministratorPortalRole(auth.user.role);
+
+    useEffect(() => {
+        setSearch(filters.search);
+    }, [filters.search]);
+
+    useEffect(() => {
+        return () => {
             if (searchTimer.current) clearTimeout(searchTimer.current);
-        },
-        [],
-    );
+        };
+    }, []);
+
+    // Global keyboard shortcut to focus BeamSearch with "/" or "Cmd+K"
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            const activeElement = document.activeElement;
+            const isTyping =
+                activeElement instanceof HTMLInputElement ||
+                activeElement instanceof HTMLTextAreaElement ||
+                (activeElement instanceof HTMLElement && activeElement.isContentEditable);
+
+            if ((event.key === "/" && !isTyping) || ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k")) {
+                event.preventDefault();
+                searchInputRef.current?.focus();
+            }
+        };
+
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, []);
 
     const visitWith = (changes: Partial<Filters>) => {
         const next = { ...filters, ...changes };
@@ -84,13 +134,21 @@ export default function DigitalLibraryIndex({ auth, books, filters, options, sta
         );
     };
 
-    const updateSearch = (value: string) => {
+    const handleSearchChange = (value: string) => {
         setSearch(value);
         if (searchTimer.current) clearTimeout(searchTimer.current);
-        searchTimer.current = setTimeout(() => visitWith({ search: value }), 300);
+        searchTimer.current = setTimeout(() => {
+            visitWith({ search: value });
+        }, 300);
     };
 
-    const clearFilters = () => {
+    const handleSearchClear = () => {
+        setSearch("");
+        if (searchTimer.current) clearTimeout(searchTimer.current);
+        visitWith({ search: "" });
+    };
+
+    const clearAllFilters = () => {
         setSearch("");
         router.get(libraryIndex.url(), {}, { preserveState: true, replace: true });
     };
@@ -103,235 +161,578 @@ export default function DigitalLibraryIndex({ auth, books, filters, options, sta
         filters.collection !== "all" ||
         filters.sort !== "title";
 
+    // Quick shelf tab presets
+    const quickShelves = [
+        {
+            id: "all",
+            label: "All Catalog",
+            count: stats.catalog_books,
+            icon: LibraryBig,
+            isActive: filters.collection === "all" && filters.availability === "all",
+            apply: () => visitWith({ collection: "all", availability: "all" }),
+        },
+        {
+            id: "online",
+            label: "Digital Editions",
+            count: stats.available_online,
+            icon: BookOpen,
+            isActive: filters.availability === "online",
+            apply: () => visitWith({ availability: "online" }),
+        },
+        {
+            id: "favorites",
+            label: "My Saved Shelf",
+            count: stats.favorites,
+            icon: Heart,
+            isActive: filters.collection === "favorites",
+            apply: () => visitWith({ collection: "favorites" }),
+        },
+        {
+            id: "recent",
+            label: "Recently Read",
+            count: null,
+            icon: Clock,
+            isActive: filters.collection === "recent",
+            apply: () => visitWith({ collection: "recent" }),
+        },
+        {
+            id: "catalog_only",
+            label: "Physical Copies",
+            count: Math.max(0, stats.catalog_books - stats.available_online),
+            icon: BookMarked,
+            isActive: filters.availability === "catalog",
+            apply: () => visitWith({ availability: "catalog" }),
+        },
+    ];
+
+    const currentCategory = options.categories.find((c) => c.id === filters.category_id);
+
     return (
         <PortalLayout user={auth.user}>
-            <Head title="Digital Library" />
+            <Head title="Digital Library • KoAkademy" />
 
-            <section className="relative overflow-hidden rounded-[2rem] border border-amber-900/15 bg-[#f4ead4] px-5 py-8 text-stone-950 shadow-sm md:px-9 md:py-10 dark:border-amber-200/10 dark:bg-[#18150f] dark:text-amber-50">
-                <div className="absolute inset-0 [background-image:radial-gradient(circle_at_18%_30%,#92400e_0,transparent_30%),linear-gradient(115deg,transparent_48%,#92400e_49%,transparent_50%)] opacity-[0.14] dark:opacity-[0.2]" />
-                <div className="relative grid gap-8 lg:grid-cols-[1.4fr_0.6fr] lg:items-end">
-                    <div className="max-w-3xl space-y-5">
-                        <div className="inline-flex items-center gap-2 rounded-full border border-amber-900/20 bg-white/45 px-3 py-1.5 text-xs font-semibold tracking-[0.18em] uppercase backdrop-blur-sm dark:border-amber-100/15 dark:bg-black/20">
-                            <Sparkles className="size-3.5 text-amber-700 dark:text-amber-300" />
-                            KoAkademy Digital Library
+            <div className="flex flex-col gap-6">
+                {/* ── Scholarly Hero Banner & Quick Stats ── */}
+                <Frame variant="default" spacing="default" className="border-border/80 bg-card/60 overflow-hidden shadow-xs">
+                    <FramePanel className="via-background relative overflow-hidden bg-linear-to-br from-amber-500/10 to-sky-500/10 p-6 md:p-8">
+                        <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="max-w-3xl space-y-3">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Badge variant="primary-light" radius="full" size="sm" className="font-semibold tracking-wider uppercase">
+                                        <Sparkles className="text-primary mr-1 size-3" />
+                                        KoAkademy Digital Library
+                                    </Badge>
+                                    <Badge variant="outline" radius="full" size="sm" className="text-muted-foreground">
+                                        <ShieldCheck className="mr-1 size-3 text-emerald-600 dark:text-emerald-400" />
+                                        Authenticated Campus Access
+                                    </Badge>
+                                    {isLibrarianOrAdmin && (
+                                        <Link
+                                            href={adminLibraryIndex.url()}
+                                            className={cn(
+                                                buttonVariants({ variant: "outline", size: "xs" }),
+                                                "border-primary/30 text-primary hover:bg-primary/10 gap-1 rounded-full",
+                                            )}
+                                        >
+                                            <Compass className="size-3" />
+                                            Librarian Operations
+                                        </Link>
+                                    )}
+                                </div>
+
+                                <div>
+                                    <h1 className="text-foreground font-serif text-3xl font-semibold tracking-tight md:text-5xl">
+                                        Academic Repository & Digital Editions
+                                    </h1>
+                                    <p className="text-muted-foreground mt-2 max-w-2xl text-sm leading-relaxed md:text-base">
+                                        Welcome, <span className="text-foreground font-medium">{auth.user.name}</span>. Access physical catalog
+                                        records, instant-read digital editions, and personal research bookmarks.
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* ── Quick Stats Grid ── */}
+                            <div className="grid grid-cols-3 gap-2.5 sm:gap-3 lg:grid-cols-3">
+                                <div className="border-border/60 bg-background/80 flex flex-col gap-1 rounded-xl border p-3 shadow-2xs backdrop-blur-xs">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <IconTile variant="soft" size="sm" className="text-primary">
+                                            <LibraryBig />
+                                        </IconTile>
+                                        <span className="text-foreground font-serif text-xl font-bold tabular-nums md:text-2xl">
+                                            {numberFormatter.format(stats.catalog_books)}
+                                        </span>
+                                    </div>
+                                    <span className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">Catalog Titles</span>
+                                </div>
+
+                                <div className="border-border/60 bg-background/80 flex flex-col gap-1 rounded-xl border p-3 shadow-2xs backdrop-blur-xs">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <IconTile variant="soft" size="sm" className="text-emerald-600 dark:text-emerald-400">
+                                            <BookOpen />
+                                        </IconTile>
+                                        <span className="text-foreground font-serif text-xl font-bold tabular-nums md:text-2xl">
+                                            {numberFormatter.format(stats.available_online)}
+                                        </span>
+                                    </div>
+                                    <span className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">Digital eBooks</span>
+                                </div>
+
+                                <div className="border-border/60 bg-background/80 flex flex-col gap-1 rounded-xl border p-3 shadow-2xs backdrop-blur-xs">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <IconTile variant="soft" size="sm" className="text-rose-500">
+                                            <Heart />
+                                        </IconTile>
+                                        <span className="text-foreground font-serif text-xl font-bold tabular-nums md:text-2xl">
+                                            {numberFormatter.format(stats.favorites)}
+                                        </span>
+                                    </div>
+                                    <span className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">Saved Shelf</span>
+                                </div>
+                            </div>
                         </div>
-                        <div className="space-y-3">
-                            <h1 className="max-w-2xl font-serif text-4xl leading-[1.05] font-semibold tracking-tight text-balance md:text-6xl">
-                                Knowledge, kept open for the KoAkademy community.
-                            </h1>
-                            <p className="max-w-2xl text-sm leading-7 text-stone-700 md:text-base dark:text-amber-100/70">
-                                Explore the complete library catalog, save titles for later, and read rights-cleared digital editions from any device.
+                    </FramePanel>
+                </Frame>
+
+                {/* ── Spectrum UI Fast Search & Filtering Deck ── */}
+                <Frame variant="default" spacing="sm" className="border-border/80 bg-card/70 shadow-xs">
+                    <FramePanel className="space-y-4 p-4 md:p-5">
+                        {/* ── Shelf Navigator Tabs ── */}
+                        <div className="flex scrollbar-none items-center gap-1.5 overflow-x-auto pb-1">
+                            {quickShelves.map((shelf) => {
+                                const Icon = shelf.icon;
+                                return (
+                                    <button
+                                        key={shelf.id}
+                                        type="button"
+                                        onClick={shelf.apply}
+                                        className={cn(
+                                            "inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium transition-all select-none",
+                                            shelf.isActive
+                                                ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                                                : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground",
+                                        )}
+                                    >
+                                        <Icon className="size-3.5" />
+                                        <span>{shelf.label}</span>
+                                        {shelf.count !== null && (
+                                            <span
+                                                className={cn(
+                                                    "py-0.2 rounded-full px-1.5 text-[10px] font-semibold tabular-nums",
+                                                    shelf.isActive
+                                                        ? "bg-primary-foreground/20 text-primary-foreground"
+                                                        : "bg-background/80 text-foreground",
+                                                )}
+                                            >
+                                                {numberFormatter.format(shelf.count)}
+                                            </span>
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {/* ── Main Search & Filter Row ── */}
+                        <div className="grid gap-3 lg:grid-cols-[1.8fr_repeat(3,minmax(8rem,1fr))_auto] lg:items-center">
+                            {/* Spectrum UI BeamSearch Input */}
+                            <div className="min-w-0">
+                                <BeamSearch
+                                    ref={searchInputRef}
+                                    value={search}
+                                    onChange={handleSearchChange}
+                                    onClear={handleSearchClear}
+                                    placeholder="Search by title, author, call number, or ISBN..."
+                                    size="default"
+                                    className="bg-background/90"
+                                    trailing={
+                                        <div className="flex items-center gap-1">
+                                            <KbdKey size="sm">/</KbdKey>
+                                        </div>
+                                    }
+                                />
+                            </div>
+
+                            {/* Category Filter */}
+                            <div>
+                                <Select
+                                    value={filters.category_id ? String(filters.category_id) : "all"}
+                                    onValueChange={(val) => visitWith({ category_id: val === "all" ? null : Number(val) })}
+                                >
+                                    <SelectTrigger className="bg-background/90 h-10 w-full rounded-lg text-xs font-medium">
+                                        <SelectValue placeholder="All Categories" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">All Categories</SelectItem>
+                                        {options.categories.map((cat) => (
+                                            <SelectItem key={cat.id} value={String(cat.id)}>
+                                                {cat.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            {/* Publication Year Filter */}
+                            <div>
+                                <Select
+                                    value={filters.year ? String(filters.year) : "all"}
+                                    onValueChange={(val) => visitWith({ year: val === "all" ? null : Number(val) })}
+                                >
+                                    <SelectTrigger className="bg-background/90 h-10 w-full rounded-lg text-xs font-medium">
+                                        <SelectValue placeholder="All Years" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">All Years</SelectItem>
+                                        {options.years.map((year) => (
+                                            <SelectItem key={year} value={String(year)}>
+                                                {year}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            {/* Sort Filter */}
+                            <div>
+                                <Select value={filters.sort} onValueChange={(val) => visitWith({ sort: val })}>
+                                    <SelectTrigger className="bg-background/90 h-10 w-full rounded-lg text-xs font-medium">
+                                        <div className="flex items-center gap-1.5 truncate">
+                                            <ArrowUpDown className="text-muted-foreground size-3 shrink-0" />
+                                            <SelectValue />
+                                        </div>
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="title">Title (A–Z)</SelectItem>
+                                        <SelectItem value="year_newest">Newest Publication</SelectItem>
+                                        <SelectItem value="year_oldest">Oldest Publication</SelectItem>
+                                        <SelectItem value="recently_added">Recently Catalogued</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            {/* Layout Toggle (Grid vs List) & Reset */}
+                            <div className="flex items-center gap-1.5">
+                                <div className="border-border/80 bg-muted/40 inline-flex rounded-lg border p-0.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => setViewMode("grid")}
+                                        className={cn(
+                                            "flex size-9 items-center justify-center rounded-md transition-colors",
+                                            viewMode === "grid"
+                                                ? "bg-background text-foreground shadow-2xs"
+                                                : "text-muted-foreground hover:text-foreground",
+                                        )}
+                                        aria-label="Grid view"
+                                        title="Grid view"
+                                    >
+                                        <LayoutGrid className="size-4" />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setViewMode("list")}
+                                        className={cn(
+                                            "flex size-9 items-center justify-center rounded-md transition-colors",
+                                            viewMode === "list"
+                                                ? "bg-background text-foreground shadow-2xs"
+                                                : "text-muted-foreground hover:text-foreground",
+                                        )}
+                                        aria-label="List view"
+                                        title="Academic list view"
+                                    >
+                                        <List className="size-4" />
+                                    </button>
+                                </div>
+
+                                {hasFilters && (
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={clearAllFilters}
+                                        className="text-muted-foreground hover:text-foreground h-10 w-10"
+                                        aria-label="Reset all filters"
+                                        title="Reset all filters"
+                                    >
+                                        <RotateCcw className="size-4" />
+                                    </Button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* ── Active Filter Pills ── */}
+                        {hasFilters && (
+                            <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs">
+                                <span className="text-muted-foreground mr-1 text-[11px] font-semibold tracking-wider uppercase">Active Filters:</span>
+                                {filters.search && (
+                                    <Badge variant="outline" radius="full" size="sm" className="bg-background gap-1">
+                                        <span>Query: "{filters.search}"</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleSearchClear()}
+                                            className="hover:text-destructive text-muted-foreground"
+                                        >
+                                            <X className="size-3" />
+                                        </button>
+                                    </Badge>
+                                )}
+                                {currentCategory && (
+                                    <Badge variant="outline" radius="full" size="sm" className="bg-background gap-1">
+                                        <span>Category: {currentCategory.name}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => visitWith({ category_id: null })}
+                                            className="hover:text-destructive text-muted-foreground"
+                                        >
+                                            <X className="size-3" />
+                                        </button>
+                                    </Badge>
+                                )}
+                                {filters.year && (
+                                    <Badge variant="outline" radius="full" size="sm" className="bg-background gap-1">
+                                        <span>Year: {filters.year}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => visitWith({ year: null })}
+                                            className="hover:text-destructive text-muted-foreground"
+                                        >
+                                            <X className="size-3" />
+                                        </button>
+                                    </Badge>
+                                )}
+                                {filters.availability !== "all" && (
+                                    <Badge variant="outline" radius="full" size="sm" className="bg-background gap-1">
+                                        <span>Format: {filters.availability === "online" ? "Digital Only" : "Physical Only"}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => visitWith({ availability: "all" })}
+                                            className="hover:text-destructive text-muted-foreground"
+                                        >
+                                            <X className="size-3" />
+                                        </button>
+                                    </Badge>
+                                )}
+                                {filters.collection !== "all" && (
+                                    <Badge variant="outline" radius="full" size="sm" className="bg-background gap-1">
+                                        <span>Shelf: {filters.collection === "favorites" ? "My Favorites" : "Recently Read"}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => visitWith({ collection: "all" })}
+                                            className="hover:text-destructive text-muted-foreground"
+                                        >
+                                            <X className="size-3" />
+                                        </button>
+                                    </Badge>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={clearAllFilters}
+                                    className="text-primary hover:text-primary/80 ml-1 text-[11px] font-semibold underline underline-offset-2"
+                                >
+                                    Clear all
+                                </button>
+                            </div>
+                        )}
+                    </FramePanel>
+                </Frame>
+
+                {/* ── Catalog Results Header & Content ── */}
+                <section aria-labelledby="catalog-results-heading" className="space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+                        <div>
+                            <h2 id="catalog-results-heading" className="text-foreground font-serif text-xl font-semibold tracking-tight md:text-2xl">
+                                {filters.collection === "favorites"
+                                    ? "Your Personal Saved Shelf"
+                                    : filters.collection === "recent"
+                                      ? "Recently Opened Texts"
+                                      : filters.availability === "online"
+                                        ? "Direct-Read Digital Editions"
+                                        : "Campus Library Catalog"}
+                            </h2>
+                            <p className="text-muted-foreground text-xs md:text-sm">
+                                {books.total === 0
+                                    ? "No matching catalog entries"
+                                    : `Showing ${numberFormatter.format(books.from ?? 0)}–${numberFormatter.format(books.to ?? 0)} of ${numberFormatter.format(books.total)} titles`}
                             </p>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2 sm:gap-3 lg:grid-cols-1">
-                        {[
-                            { label: "Catalog titles", value: stats.catalog_books, icon: LibraryBig },
-                            { label: "Available online", value: stats.available_online, icon: BookOpen },
-                            { label: "Your favorites", value: stats.favorites, icon: Heart },
-                        ].map((stat) => (
-                            <div
-                                key={stat.label}
-                                className="rounded-2xl border border-stone-900/10 bg-white/55 p-3 backdrop-blur-sm dark:border-white/10 dark:bg-white/5"
-                            >
-                                <div className="flex items-center gap-2">
-                                    <stat.icon className="size-4 text-amber-800 dark:text-amber-300" />
-                                    <span className="text-xl font-semibold tabular-nums md:text-2xl">{numberFormatter.format(stat.value)}</span>
-                                </div>
-                                <p className="mt-1 text-[10px] font-semibold tracking-[0.12em] text-stone-600 uppercase sm:text-xs dark:text-amber-100/55">
-                                    {stat.label}
-                                </p>
+                    {/* ── Grid View ── */}
+                    {books.data.length > 0 && viewMode === "grid" && (
+                        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6">
+                            {books.data.map((book, index) => (
+                                <BookCard key={book.id} book={book} priority={index < 6} />
+                            ))}
+                        </div>
+                    )}
+
+                    {/* ── Academic List View ── */}
+                    {books.data.length > 0 && viewMode === "list" && (
+                        <Frame variant="default" spacing="xs" className="border-border/80 bg-card/60 overflow-hidden shadow-xs">
+                            <div className="divide-border/60 divide-y">
+                                {books.data.map((book) => (
+                                    <div
+                                        key={book.id}
+                                        className="group hover:bg-muted/40 flex flex-col gap-3 p-3.5 transition-colors sm:flex-row sm:items-center sm:justify-between"
+                                    >
+                                        <div className="flex min-w-0 items-center gap-3.5">
+                                            <div className="h-16 w-12 shrink-0 overflow-hidden rounded-md border shadow-2xs">
+                                                <BookCover
+                                                    title={book.title}
+                                                    author={book.author}
+                                                    coverUrl={book.cover_image_url}
+                                                    className="h-full w-full object-cover"
+                                                />
+                                            </div>
+                                            <div className="min-w-0 space-y-1">
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <Link
+                                                        href={showBook.url(book.id)}
+                                                        prefetch
+                                                        className="text-foreground hover:text-primary line-clamp-1 font-serif text-sm font-semibold transition-colors"
+                                                    >
+                                                        {book.title}
+                                                    </Link>
+                                                    {book.available_online ? (
+                                                        <Badge variant="success-light" size="xs" radius="full">
+                                                            Online eBook
+                                                        </Badge>
+                                                    ) : (
+                                                        <Badge variant="invert-light" size="xs" radius="full">
+                                                            Physical Copy
+                                                        </Badge>
+                                                    )}
+                                                </div>
+                                                <p className="text-muted-foreground truncate text-xs">
+                                                    {book.author || "Unknown author"}
+                                                    {book.category && <span> • {book.category}</span>}
+                                                    {book.publication_year && <span> • {book.publication_year}</span>}
+                                                </p>
+                                                <p className="text-muted-foreground/80 line-clamp-1 text-xs">
+                                                    {book.description || "No catalog synopsis."}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex shrink-0 items-center gap-2 self-end sm:self-center">
+                                            <Link
+                                                href={showBook.url(book.id)}
+                                                prefetch
+                                                className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1.5 rounded-lg text-xs")}
+                                            >
+                                                {book.available_online ? <BookOpen className="size-3.5" /> : <Bookmark className="size-3.5" />}
+                                                {book.available_online ? "Read eBook" : "Details"}
+                                            </Link>
+                                            <Button
+                                                type="button"
+                                                size="icon-sm"
+                                                variant="ghost"
+                                                className="rounded-lg"
+                                                onClick={() => {
+                                                    const next = !book.is_favorite;
+                                                    const routeDefinition = next ? favoriteBook(book.id) : unfavoriteBook(book.id);
+                                                    router.visit(routeDefinition.url, {
+                                                        method: routeDefinition.method,
+                                                        preserveScroll: true,
+                                                        preserveState: true,
+                                                        only: ["books", "stats"],
+                                                    });
+                                                }}
+                                                aria-label={book.is_favorite ? "Remove from shelf" : "Save to shelf"}
+                                            >
+                                                <Heart className={cn("size-3.5", book.is_favorite && "fill-rose-500 text-rose-500")} />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
-                        ))}
-                    </div>
-                </div>
-            </section>
+                        </Frame>
+                    )}
 
-            <Card className="border-border/70 shadow-sm">
-                <CardContent className="grid gap-4 p-4 lg:grid-cols-[minmax(15rem,1.5fr)_repeat(4,minmax(9rem,0.65fr))_auto] lg:items-end">
-                    <div className="space-y-2">
-                        <Label htmlFor="library-search">Search the catalog</Label>
-                        <div className="relative">
-                            <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-                            <Input
-                                id="library-search"
-                                value={search}
-                                onChange={(event) => updateSearch(event.target.value)}
-                                className="pl-9"
-                                placeholder="Title, author, ISBN, or call number"
-                            />
-                        </div>
-                    </div>
-                    <FilterSelect
-                        label="Category"
-                        value={filters.category_id ? String(filters.category_id) : "all"}
-                        onChange={(value) => visitWith({ category_id: value === "all" ? null : Number(value) })}
-                        options={[
-                            { value: "all", label: "All categories" },
-                            ...options.categories.map((category) => ({ value: String(category.id), label: category.name })),
-                        ]}
-                    />
-                    <FilterSelect
-                        label="Year"
-                        value={filters.year ? String(filters.year) : "all"}
-                        onChange={(value) => visitWith({ year: value === "all" ? null : Number(value) })}
-                        options={[
-                            { value: "all", label: "All years" },
-                            ...options.years.map((year) => ({ value: String(year), label: String(year) })),
-                        ]}
-                    />
-                    <FilterSelect
-                        label="Availability"
-                        value={filters.availability}
-                        onChange={(value) => visitWith({ availability: value })}
-                        options={[
-                            { value: "all", label: "All books" },
-                            { value: "online", label: "Available online" },
-                            { value: "catalog", label: "Catalog only" },
-                        ]}
-                    />
-                    <FilterSelect
-                        label="Collection"
-                        value={filters.collection}
-                        onChange={(value) => visitWith({ collection: value })}
-                        options={[
-                            { value: "all", label: "Entire catalog" },
-                            { value: "favorites", label: "My favorites" },
-                            { value: "recent", label: "Recently read" },
-                        ]}
-                    />
-                    <div className="flex gap-2">
-                        <FilterSelect
-                            label="Sort"
-                            value={filters.sort}
-                            onChange={(value) => visitWith({ sort: value })}
-                            options={[
-                                { value: "title", label: "Title A–Z" },
-                                { value: "year_newest", label: "Newest year" },
-                                { value: "year_oldest", label: "Oldest year" },
-                                { value: "recently_added", label: "Recently added" },
-                            ]}
-                        />
-                        {hasFilters && (
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="mt-7 shrink-0"
-                                onClick={clearFilters}
-                                aria-label="Clear filters"
-                            >
-                                <X className="size-4" />
-                            </Button>
-                        )}
-                    </div>
-                </CardContent>
-            </Card>
+                    {/* ── Empty State ── */}
+                    {books.data.length === 0 && (
+                        <Frame variant="default" spacing="default" className="border-border/80 bg-card/60">
+                            <FramePanel className="flex min-h-72 flex-col items-center justify-center gap-4 rounded-xl p-8 text-center">
+                                <IconTile variant="soft" size="lg" className="text-primary">
+                                    <Search />
+                                </IconTile>
+                                <div className="max-w-md space-y-1">
+                                    <h3 className="text-foreground font-serif text-lg font-semibold">No volumes match your criteria</h3>
+                                    <p className="text-muted-foreground text-xs leading-relaxed">
+                                        Try adjusting your search terms, selecting a different classification category, or resetting active filters.
+                                    </p>
+                                </div>
+                                <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                                    <Button type="button" variant="outline" size="sm" onClick={clearAllFilters} className="rounded-lg">
+                                        <RotateCcw className="mr-1.5 size-3.5" />
+                                        Clear all filters
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="secondary"
+                                        size="sm"
+                                        onClick={() => visitWith({ availability: "online" })}
+                                        className="rounded-lg"
+                                    >
+                                        <BookOpen className="mr-1.5 size-3.5" />
+                                        Browse Digital Editions
+                                    </Button>
+                                </div>
+                            </FramePanel>
+                        </Frame>
+                    )}
 
-            <section aria-labelledby="catalog-heading" className="space-y-5">
-                <div className="flex flex-wrap items-end justify-between gap-3">
-                    <div>
-                        <p className="text-muted-foreground text-sm">
-                            {books.total === 0
-                                ? "No matching titles"
-                                : `Showing ${numberFormatter.format(books.from ?? 0)}–${numberFormatter.format(books.to ?? 0)} of ${numberFormatter.format(books.total)}`}
-                        </p>
-                        <h2 id="catalog-heading" className="font-serif text-2xl font-semibold">
-                            {filters.collection === "favorites"
-                                ? "Your saved shelf"
-                                : filters.collection === "recent"
-                                  ? "Continue exploring"
-                                  : "Library catalog"}
-                        </h2>
-                    </div>
-                </div>
+                    {/* ── Pagination ── */}
+                    {books.last_page > 1 && (
+                        <Frame variant="ghost" spacing="xs" className="pt-2">
+                            <FramePanel className="border-border/60 bg-card/50 flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center sm:justify-between">
+                                <p className="text-muted-foreground text-center text-xs tabular-nums sm:text-left">
+                                    Page <span className="text-foreground font-medium">{books.current_page}</span> of{" "}
+                                    <span className="text-foreground font-medium">{books.last_page}</span> ({numberFormatter.format(books.total)}{" "}
+                                    total works)
+                                </p>
+                                <nav className="flex items-center justify-center gap-2" aria-label="Catalog pagination">
+                                    {books.prev_page_url ? (
+                                        <Link
+                                            href={books.prev_page_url}
+                                            preserveScroll
+                                            className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1 rounded-lg text-xs")}
+                                        >
+                                            <ChevronLeft className="size-3.5" />
+                                            Previous
+                                        </Link>
+                                    ) : (
+                                        <Button variant="outline" size="sm" disabled className="gap-1 rounded-lg text-xs">
+                                            <ChevronLeft className="size-3.5" />
+                                            Previous
+                                        </Button>
+                                    )}
 
-                {books.data.length > 0 ? (
-                    <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-                        {books.data.map((book, index) => (
-                            <BookCard key={book.id} book={book} priority={index < 4} />
-                        ))}
-                    </div>
-                ) : (
-                    <div className="border-border bg-muted/25 flex min-h-72 flex-col items-center justify-center gap-4 rounded-[1.5rem] border border-dashed p-8 text-center">
-                        <div className="bg-background flex size-14 items-center justify-center rounded-2xl border shadow-sm">
-                            <Search className="text-muted-foreground size-6" />
-                        </div>
-                        <div className="max-w-md">
-                            <h3 className="font-serif text-xl font-semibold">No books match this shelf</h3>
-                            <p className="text-muted-foreground mt-2 text-sm leading-6">Try a broader search or clear the current filters.</p>
-                        </div>
-                        <Button type="button" variant="outline" onClick={clearFilters}>
-                            Clear filters
-                        </Button>
-                    </div>
-                )}
+                                    <div className="flex items-center gap-1 px-2 text-xs font-medium">
+                                        <span className="bg-primary/10 text-primary rounded-md px-2 py-1 font-semibold tabular-nums">
+                                            {books.current_page}
+                                        </span>
+                                    </div>
 
-                {books.last_page > 1 && (
-                    <nav className="flex items-center justify-between gap-3 border-t pt-5" aria-label="Catalog pagination">
-                        <Button variant="outline" disabled={!books.prev_page_url} asChild={Boolean(books.prev_page_url)}>
-                            {books.prev_page_url ? (
-                                <Link href={books.prev_page_url} preserveScroll>
-                                    <ChevronLeft className="size-4" />
-                                    Previous
-                                </Link>
-                            ) : (
-                                <span>
-                                    <ChevronLeft className="size-4" />
-                                    Previous
-                                </span>
-                            )}
-                        </Button>
-                        <p className="text-muted-foreground text-sm tabular-nums">
-                            Page {books.current_page} of {books.last_page}
-                        </p>
-                        <Button variant="outline" disabled={!books.next_page_url} asChild={Boolean(books.next_page_url)}>
-                            {books.next_page_url ? (
-                                <Link href={books.next_page_url} preserveScroll>
-                                    Next
-                                    <ChevronRight className="size-4" />
-                                </Link>
-                            ) : (
-                                <span>
-                                    Next
-                                    <ChevronRight className="size-4" />
-                                </span>
-                            )}
-                        </Button>
-                    </nav>
-                )}
-            </section>
+                                    {books.next_page_url ? (
+                                        <Link
+                                            href={books.next_page_url}
+                                            preserveScroll
+                                            className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1 rounded-lg text-xs")}
+                                        >
+                                            Next
+                                            <ChevronRight className="size-3.5" />
+                                        </Link>
+                                    ) : (
+                                        <Button variant="outline" size="sm" disabled className="gap-1 rounded-lg text-xs">
+                                            Next
+                                            <ChevronRight className="size-3.5" />
+                                        </Button>
+                                    )}
+                                </nav>
+                            </FramePanel>
+                        </Frame>
+                    )}
+                </section>
+            </div>
         </PortalLayout>
-    );
-}
-
-function FilterSelect({
-    label,
-    value,
-    onChange,
-    options,
-}: {
-    label: string;
-    value: string;
-    onChange: (value: string) => void;
-    options: { value: string; label: string }[];
-}) {
-    return (
-        <div className="min-w-0 space-y-2">
-            <Label>{label}</Label>
-            <Select value={value} onValueChange={onChange}>
-                <SelectTrigger className="w-full">
-                    <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                    {options.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                        </SelectItem>
-                    ))}
-                </SelectContent>
-            </Select>
-        </div>
     );
 }

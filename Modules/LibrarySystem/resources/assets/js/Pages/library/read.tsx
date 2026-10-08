@@ -1,5 +1,5 @@
 import PortalLayout from "@/components/portal-layout";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -192,15 +192,17 @@ export default function DigitalLibraryReader({ auth, book, reader }: Props) {
 
             <div
                 ref={readerShellRef}
-                className="bg-background border-border flex min-h-[calc(100vh-8rem)] flex-col overflow-hidden rounded-[1.5rem] border shadow-xl"
+                className="bg-background border-border flex min-h-[calc(100vh-8rem)] flex-col overflow-hidden rounded-4xl border shadow-xl"
             >
                 <header className="border-border bg-card/95 flex flex-wrap items-center justify-between gap-3 border-b px-3 py-3 backdrop-blur md:px-4">
                     <div className="flex min-w-0 items-center gap-2">
-                        <Button variant="ghost" size="icon" asChild aria-label="Back to book details">
-                            <Link href={show.url(book.id)}>
-                                <ArrowLeft className="size-4" />
-                            </Link>
-                        </Button>
+                        <Link
+                            href={show.url(book.id)}
+                            className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "rounded-lg")}
+                            aria-label="Back to book details"
+                        >
+                            <ArrowLeft className="size-4" />
+                        </Link>
                         <Button variant="ghost" size="icon" onClick={() => setSidebarOpen((open) => !open)} aria-label="Toggle reader sidebar">
                             {sidebarOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
                         </Button>
@@ -284,17 +286,23 @@ export default function DigitalLibraryReader({ auth, book, reader }: Props) {
                         <Button variant="ghost" size="icon" onClick={() => void toggleFullscreen()} aria-label="Enter fullscreen">
                             <Fullscreen className="size-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" asChild aria-label="Open PDF in a new tab">
-                            <a href={reader.content_url} target="_blank" rel="noreferrer">
-                                <ExternalLink className="size-4" />
-                            </a>
-                        </Button>
+                        <a
+                            href={reader.content_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "rounded-lg")}
+                            aria-label="Open PDF in a new tab"
+                        >
+                            <ExternalLink className="size-4" />
+                        </a>
                         {reader.download_url && (
-                            <Button variant="ghost" size="icon" asChild aria-label="Download PDF">
-                                <a href={reader.download_url}>
-                                    <Download className="size-4" />
-                                </a>
-                            </Button>
+                            <a
+                                href={reader.download_url}
+                                className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "rounded-lg")}
+                                aria-label="Download PDF"
+                            >
+                                <Download className="size-4" />
+                            </a>
                         )}
                     </div>
                 </header>
@@ -398,9 +406,9 @@ export default function DigitalLibraryReader({ auth, book, reader }: Props) {
                                 <X className="text-destructive mx-auto size-8" />
                                 <h2 className="mt-4 font-serif text-xl font-semibold">Reader unavailable</h2>
                                 <p className="text-muted-foreground mt-2 text-sm leading-6">{error}</p>
-                                <Button asChild variant="outline" className="mt-5">
-                                    <Link href={show.url(book.id)}>Return to book details</Link>
-                                </Button>
+                                <Link href={show.url(book.id)} className={cn(buttonVariants({ variant: "outline" }), "mt-5 rounded-lg")}>
+                                    Return to book details
+                                </Link>
                             </div>
                         )}
                         {!loading && !error && document && <PdfPageCanvas document={document} pageNumber={currentPage} zoom={zoom} />}
@@ -460,7 +468,7 @@ function PdfPageCanvas({ document, pageNumber, zoom }: { document: PDFDocumentPr
     }, [document, pageNumber, width, zoom]);
 
     return (
-        <div ref={containerRef} className="flex w-full min-w-[20rem] justify-center">
+        <div ref={containerRef} className="flex w-full min-w-xs justify-center">
             <canvas ref={canvasRef} className="bg-white shadow-2xl ring-1 ring-black/10" aria-label={`Page ${pageNumber}`} />
         </div>
     );
@@ -532,7 +540,7 @@ function PdfThumbnail({
             aria-label={`Go to page ${pageNumber}`}
             aria-current={active ? "page" : undefined}
         >
-            <div className="bg-muted flex aspect-[3/4] w-full items-center justify-center overflow-hidden rounded-md">
+            <div className="bg-muted flex aspect-3/4 w-full items-center justify-center overflow-hidden rounded-md">
                 {visible ? (
                     <canvas ref={canvasRef} className="max-h-full max-w-full bg-white" />
                 ) : (

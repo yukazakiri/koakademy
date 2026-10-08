@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Ai\Mcp;
 
 use Illuminate\Auth\Access\AuthorizationException;
+use Laravel\Ai\Approvals\Approval;
 use Laravel\Ai\Tools\McpServerTool;
 use Laravel\Ai\Tools\Request;
 use Throwable;
@@ -42,5 +43,53 @@ final class ResilientMcpServerTool extends McpServerTool
                     : 'The tool could not be completed. Report the failure; do not retry repeatedly or substitute a guess.',
             ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
         }
+    }
+
+    protected function needsApproval(Request $request): Approval|bool
+    {
+        // Check if auto-approve is active via session or request parameter
+        if (session('ai_auto_approve_actions', false) || request()->boolean('auto_approve', false)) {
+            return false;
+        }
+
+        $toolClass = get_class($this->tool);
+        $toolName = class_basename($toolClass);
+
+        return match ($toolName) {
+            'EnrollStudentSubjectTool' => Approval::required(
+                'Enroll student into subject(s) or create official student enrollment record? This will modify academic registration.'
+            ),
+            'DropStudentSubjectEnrollmentTool' => Approval::required(
+                'Drop student from enrolled subject? This will adjust academic units and fee assessment.'
+            ),
+            'AdvanceEnrollmentStepTool' => Approval::required(
+                'Advance student enrollment step in the institutional registration pipeline?'
+            ),
+            'VerifyEnrollmentRequirementTool' => Approval::required(
+                'Confirm verification of official enrollment document/requirement?'
+            ),
+            'UpdateSubjectEnrollmentGradeTool' => Approval::required(
+                'Update subject grade on student record? This modifies official transcripts.'
+            ),
+            'UpdateEnrollmentRemarksTool' => Approval::required(
+                'Update official administrative remarks on enrollment record?'
+            ),
+            'ManageStudentTool' => Approval::required(
+                'Perform student record modification or creation?'
+            ),
+            'TransferStudentSectionTool' => Approval::required(
+                'Transfer student to another class section?'
+            ),
+            'ManageClassScheduleTool' => Approval::required(
+                'Modify class schedule or timetable assignment?'
+            ),
+            'ManageCurriculumSubjectTool' => Approval::required(
+                'Modify curriculum subject catalog?'
+            ),
+            'ApplyApprovedCurriculumImportTool' => Approval::required(
+                'Apply approved curriculum import to institution records?'
+            ),
+            default => false,
+        };
     }
 }

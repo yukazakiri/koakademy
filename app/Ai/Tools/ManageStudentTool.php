@@ -115,6 +115,10 @@ final class ManageStudentTool implements Tool
 
     protected function needsApproval(Request $request): Approval|bool
     {
+        if (session('ai_auto_approve_actions', false) || request()->boolean('auto_approve', false)) {
+            return false;
+        }
+
         $action = mb_strtolower((string) ($request['action'] ?? ''));
 
         if ($action === 'get') {

@@ -1,5 +1,6 @@
 export * from "./admin-ai-floating-widget";
 export * from "./ai-chat-sheet";
+export * from "./ai-circle-logo";
 export * from "./ai-constants";
 export * from "./ai-conversation-sidebar";
 export * from "./analytics-chart-renderer";

@@ -15,6 +15,8 @@ use Laravel\Mcp\Request;
 
 trait AuthorizesMcpRequests
 {
+    protected ?User $currentCaller = null;
+
     protected function user(Request $request): User
     {
         $user = $request->user();
@@ -26,6 +28,8 @@ trait AuthorizesMcpRequests
         if (! $user instanceof User) {
             throw new AuthenticationException('Authentication is required.');
         }
+
+        $this->currentCaller = $user;
 
         // MCP HTTP requests always arrive with a Sanctum token. The testing
         // harness authenticates the user directly, so only tests may resolve
@@ -46,8 +50,28 @@ trait AuthorizesMcpRequests
         $tenantContext = app(TenantContext::class);
         $school = $tenantContext->getCurrentSchool();
 
-        if (! $school instanceof School && Auth::user()?->school_id) {
-            $school = Auth::user()->school;
+        $user = $this->currentCaller ?? Auth::user();
+
+        if (! $school instanceof School && $user?->school_id) {
+            $school = $user->school;
+            if ($school instanceof School) {
+                $tenantContext->setCurrentSchool($school);
+            }
+        }
+
+        if (! $school instanceof School) {
+            if ($user instanceof User && ($user->canAccessAdminPortal() || $user->hasRole('super_admin') || $user->hasRole('admin') || $user->isAdministrative())) {
+                $school = School::query()->where('is_active', true)->first()
+                    ?? School::query()->first();
+                if ($school instanceof School) {
+                    $tenantContext->setCurrentSchool($school);
+                }
+            }
+        }
+
+        if (! $school instanceof School) {
+            $school = School::query()->where('is_active', true)->first()
+                ?? School::query()->first();
             if ($school instanceof School) {
                 $tenantContext->setCurrentSchool($school);
             }
@@ -116,7 +140,7 @@ trait AuthorizesMcpRequests
 
     protected function requirePermission(User $user, string $permission, string $message): void
     {
-        if ($user->hasRole('super_admin')) {
+        if ($user->hasRole('super_admin') || $user->hasRole('developer') || $user->isAdministrative()) {
             return;
         }
 

@@ -1,11 +1,19 @@
 import AdminLayout from "@/components/administrators/admin-layout";
 import {
+    Message,
+    MessageAvatar,
+    MessageContent,
+    MessageFooter,
+} from "@/components/agents/message";
+import { ThinkingShimmer } from "@/components/agents/loading-states/thinking-shimmer";
+import {
     ADMIN_AGENTS,
     DEFAULT_PROMPT_SUGGESTIONS,
     type ConversationItem,
     type PromptSuggestion,
 } from "@/components/ai/ai-constants";
 import { AiConversationSidebar } from "@/components/ai/ai-conversation-sidebar";
+import { AiCircleLogo } from "@/components/ai/ai-circle-logo";
 import { ApprovalCard } from "@/components/ai/approval-card";
 import { ChatMessageFormatter } from "@/components/ai/chat-message-formatter";
 import {
@@ -67,8 +75,8 @@ import {
     RefreshCw,
     RotateCcw,
     Search,
+    ShieldCheck,
     Smartphone,
-    Sparkles,
     Square,
     Sun,
     Moon,
@@ -205,6 +213,9 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
         clearError,
         sendPrompt,
         submitDecision,
+        submitAllDecisions,
+        autoApprove,
+        setAutoApprove,
         resendUserMessage,
         regenerateAssistant,
         stop,
@@ -607,7 +618,6 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
     };
 
     const activeAgentMeta = ADMIN_AGENTS.find((a) => a.key === selectedAgent) || ADMIN_AGENTS[0];
-    const ActiveAgentIcon = activeAgentMeta.icon;
 
     const firstName = user.name?.split(" ")[0] || "Administrator";
     const activeModel = availableModels.find((model) => model.id === selectedModel);
@@ -637,7 +647,7 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
               : "max-w-4xl";
 
     return (
-        <AdminLayout user={user} immersive>
+        <AdminLayout user={user} title="AI Copilot">
             <Head title={`AI Chat - ${activeConversationTitle}`} />
 
             {/* Hidden native file input for robust file selection */}
@@ -938,6 +948,43 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                 </header>
 
                 {/* ------------------------------------------------------------- */}
+                {/* Specialist Agent Tabs Bar (Matching Design System)             */}
+                {/* ------------------------------------------------------------- */}
+                <div className="no-scrollbar flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border/70 bg-muted/20 px-3 py-2 backdrop-blur-sm sm:px-4">
+                    {ADMIN_AGENTS.map((agent) => {
+                        const isSelected = selectedAgent === agent.key;
+                        const Icon = agent.icon;
+                        return (
+                            <button
+                                key={agent.key}
+                                type="button"
+                                onClick={() => {
+                                    setSelectedAgent(agent.key);
+                                    toast.success(`Active specialist: ${agent.label}`);
+                                }}
+                                className={cn(
+                                    "flex shrink-0 cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-all",
+                                    isSelected
+                                        ? "bg-[#9333ea] font-semibold text-white shadow-md shadow-purple-500/20"
+                                        : "border border-border/70 bg-background/80 text-muted-foreground hover:bg-muted hover:text-foreground"
+                                )}
+                            >
+                                <Icon className="size-3.5" />
+                                <span>{agent.label}</span>
+                                <span
+                                    className={cn(
+                                        "ml-0.5 rounded-md px-1.5 py-0.2 font-mono text-[10px]",
+                                        isSelected ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
+                                    )}
+                                >
+                                    {agent.badge}
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
+
+                {/* ------------------------------------------------------------- */}
                 {/* Main Content Workspace (Full Width Canvas)                     */}
                 {/* ------------------------------------------------------------- */}
                 <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -1023,47 +1070,53 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
 
                                         if (isUser) {
                                             return (
-                                                <div key={message.id} className="flex justify-end items-end gap-3">
-                                                    <div className="flex flex-col items-end gap-1.5 max-w-[85%] sm:max-w-[75%]">
-                                                        <div className="rounded-2xl rounded-tr-xs bg-zinc-800 dark:bg-zinc-800 text-zinc-100 border border-zinc-700/60 px-4 py-3 text-sm shadow-sm whitespace-pre-wrap leading-relaxed">
-                                                            <p>{message.content}</p>
+                                                <Message
+                                                    key={message.id}
+                                                    from="user"
+                                                    animateIn={true}
+                                                    className="gap-3"
+                                                >
+                                                    <MessageAvatar className="size-8 rounded-full border border-border/70 shrink-0 self-end mb-2">
+                                                        <Avatar className="size-full">
+                                                            <AvatarImage src={user.avatar || undefined} alt={user.name} />
+                                                            <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
+                                                                {user.name?.slice(0, 2).toUpperCase() || "AD"}
+                                                            </AvatarFallback>
+                                                        </Avatar>
+                                                    </MessageAvatar>
+                                                    <MessageContent className="items-end max-w-[85%] sm:max-w-[75%]">
+                                                        <div className="w-full flex flex-col items-end">
+                                                            <div className="max-w-full text-left">
+                                                                <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-zinc-100 font-medium">{message.content}</p>
+                                                            </div>
                                                             {message.attachments && message.attachments.length > 0 && (
-                                                                <div className="flex flex-wrap gap-1.5 pt-2">
+                                                                <div className="flex flex-wrap gap-1.5 pt-2 justify-end">
                                                                     {message.attachments.map((att, idx) => (
                                                                         <div
                                                                             key={idx}
-                                                                            className="flex items-center gap-1 rounded-md bg-white/10 px-2 py-0.5 font-mono text-xs text-zinc-200"
+                                                                            className="flex items-center gap-1 rounded-md bg-neutral-800/80 border border-neutral-700/60 px-2 py-0.5 font-mono text-xs text-neutral-200"
                                                                         >
-                                                                            <Paperclip className="size-3 text-zinc-400" />
+                                                                            <Paperclip className="size-3 text-neutral-400" />
                                                                             <span className="max-w-[160px] truncate">{att.name}</span>
                                                                         </div>
                                                                     ))}
                                                                 </div>
                                                             )}
                                                         </div>
-                                                        <div className="flex items-center gap-1 text-[11px] text-muted-foreground pr-1">
+                                                        <MessageFooter className="gap-1 pr-1 text-[11px] text-muted-foreground">
                                                             {message.createdAt && <span>{formatMessageTime(message.createdAt)}</span>}
                                                             <UserMessageActions
                                                                 content={message.content}
                                                                 disabled={isLoading}
                                                                 onResend={() => resendUserMessage(message.id, resendOptions())}
                                                             />
-                                                        </div>
-                                                    </div>
-                                                    <Avatar className="size-8 rounded-full border border-border/70 shrink-0 self-end mb-4">
-                                                        <AvatarImage src={user.avatar || undefined} alt={user.name} />
-                                                        <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
-                                                            {user.name?.slice(0, 2).toUpperCase() || "AD"}
-                                                        </AvatarFallback>
-                                                    </Avatar>
-                                                </div>
+                                                        </MessageFooter>
+                                                    </MessageContent>
+                                                </Message>
                                             );
                                         }
 
-                                        // Assistant Message: Clean, natural canvas with Avatar on the left and ReUI code blocks
-                                        // Skip the transient empty placeholder bubble while streaming has
-                                        // not yet produced content / reasoning / tool calls — the dedicated
-                                        // thinking indicator below covers that state (fixes empty bubble in screenshot).
+                                        // Assistant Message: Clean, natural canvas with Avatar on the left and @beui/chat-app formatting
                                         const isStreamingThis = isLoading && message.id === messages.at(-1)?.id;
                                         const hasVisiblePayload =
                                             (message.content && message.content.trim().length > 0) ||
@@ -1074,61 +1127,99 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                                             return null;
                                         }
                                         return (
-                                            <div key={message.id} className="flex items-start gap-3.5">
-                                                <div className="size-7 rounded-full bg-zinc-800 dark:bg-zinc-800 border border-zinc-700/60 text-zinc-200 flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
-                                                    <ActiveAgentIcon className="size-3.5 text-indigo-400" />
-                                                </div>
+                                            <Message
+                                                key={message.id}
+                                                from="assistant"
+                                                animateIn={true}
+                                                className="gap-3.5"
+                                            >
+                                                <MessageAvatar className="size-8 rounded-xl border border-indigo-500/30 bg-neutral-950 text-indigo-400 flex items-center justify-center shrink-0 mt-0.5 shadow-xs overflow-hidden">
+                                                    <AiCircleLogo className="size-4" />
+                                                </MessageAvatar>
 
-                                                <div className="flex-1 min-w-0 space-y-3 pt-0.5 text-sm leading-relaxed text-foreground">
-                                                    <ChatMessageFormatter
-                                                        content={message.content}
-                                                        reasoning={message.reasoning}
-                                                        toolCalls={message.toolCalls}
-                                                        sources={message.sources}
-                                                        isStreaming={isStreamingThis}
-                                                    />
-
-                                                    {/* ReUI reply actions: copy + regenerate */}
-                                                    {!isStreamingThis && (
-                                                        <AssistantMessageActions
+                                                <MessageContent className="items-start flex-1 min-w-0">
+                                                    <div className="w-full space-y-3 min-w-0">
+                                                        <ChatMessageFormatter
                                                             content={message.content}
-                                                            disabled={isLoading}
-                                                            onRegenerate={() => regenerateAssistant(message.id, resendOptions())}
+                                                            reasoning={message.reasoning}
+                                                            toolCalls={message.toolCalls}
+                                                            sources={message.sources}
+                                                            isStreaming={isStreamingThis}
+                                                            onRetry={() => regenerateAssistant(message.id, resendOptions())}
                                                         />
-                                                    )}
 
-                                                    {/* Pending Approvals */}
-                                                    {message.pendingApprovals?.map((approval) => (
-                                                        <ApprovalCard
-                                                            key={approval.id}
-                                                            approval={approval}
-                                                            onDecision={submitDecision}
-                                                            disabled={isLoading}
-                                                        />
-                                                    ))}
-                                                </div>
-                                            </div>
+                                                        {/* Pending Approvals */}
+                                                        {message.pendingApprovals && message.pendingApprovals.length > 0 && (
+                                                            <div className="space-y-2 my-2">
+                                                                {message.pendingApprovals.length > 1 && (
+                                                                    <div className="flex items-center justify-between p-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-xs">
+                                                                        <span className="font-semibold text-amber-500 flex items-center gap-1.5">
+                                                                            <ShieldCheck className="size-4 text-amber-500" />
+                                                                            {message.pendingApprovals.length} Actions Awaiting Confirmation
+                                                                        </span>
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <Button
+                                                                                size="sm"
+                                                                                variant="outline"
+                                                                                className="h-7 text-xs border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                                                                                onClick={() => submitAllDecisions("reject")}
+                                                                                disabled={isLoading}
+                                                                            >
+                                                                                Reject All
+                                                                            </Button>
+                                                                            <Button
+                                                                                size="sm"
+                                                                                className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+                                                                                onClick={() => submitAllDecisions("approve")}
+                                                                                disabled={isLoading}
+                                                                            >
+                                                                                Approve All
+                                                                            </Button>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                                {message.pendingApprovals.map((approval) => (
+                                                                    <ApprovalCard
+                                                                        key={approval.id}
+                                                                        approval={approval}
+                                                                        onDecision={submitDecision}
+                                                                        onApproveAll={message.pendingApprovals!.length > 1 ? () => submitAllDecisions("approve") : undefined}
+                                                                        disabled={isLoading}
+                                                                    />
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    <MessageFooter className="gap-1 pl-1 text-[11px] text-muted-foreground">
+                                                        {!isStreamingThis && (
+                                                            <AssistantMessageActions
+                                                                content={message.content}
+                                                                disabled={isLoading}
+                                                                onRegenerate={() => regenerateAssistant(message.id, resendOptions())}
+                                                            />
+                                                        )}
+                                                    </MessageFooter>
+                                                </MessageContent>
+                                            </Message>
                                         );
                                     })}
 
-                                    {/* Thinking / Streaming Indicator — shows live reasoning status.
-                                        When thinking mode is on, label it Deep reasoning; when search
-                                        mode is on, label it Searching campus records; otherwise the
-                                        active specialist analysis label. */}
+                                    {/* Thinking / Streaming Indicator with ThinkingShimmer */}
                                     {isLoading && (
                                         <div className="flex items-center gap-3 pl-1 text-xs text-muted-foreground">
-                                            <div className="size-7 rounded-full bg-zinc-800 dark:bg-zinc-800 border border-zinc-700/60 text-zinc-200 flex items-center justify-center shrink-0">
-                                                <Sparkles className="size-3.5 text-indigo-400 animate-spin" />
+                                            <div className="size-7 rounded-xl border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 flex items-center justify-center shrink-0">
+                                                <AiCircleLogo className="size-3.5 animate-spin" />
                                             </div>
-                                            <span className="font-medium animate-pulse">
+                                            <ThinkingShimmer duration={1.6}>
                                                 {isThinkingMode && isSearchMode
-                                                    ? `${activeAgentMeta.label} is reasoning and searching campus records...`
+                                                    ? `${activeAgentMeta.label} is reasoning and searching campus records…`
                                                     : isThinkingMode
-                                                      ? `${activeAgentMeta.label} is thinking (deep reasoning)...`
+                                                      ? `${activeAgentMeta.label} is thinking (deep reasoning)…`
                                                       : isSearchMode
-                                                        ? `${activeAgentMeta.label} is searching campus records...`
-                                                        : `${activeAgentMeta.label} is analyzing campus data...`}
-                                            </span>
+                                                        ? `${activeAgentMeta.label} is searching campus records…`
+                                                        : `${activeAgentMeta.label} is analyzing campus data…`}
+                                            </ThinkingShimmer>
                                         </div>
                                     )}
 
@@ -1269,7 +1360,7 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                 <DialogContent className="sm:max-w-lg">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
-                            <Sparkles className="size-5 text-indigo-500" />
+                            <AiCircleLogo className="size-5" />
                             KoAkademy Administrative Copilot
                         </DialogTitle>
                         <DialogDescription>
@@ -1406,7 +1497,7 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                         ref={textareaRef}
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
-                        placeholder="Ask anything, or describe what you want changed..."
+                        placeholder={`Ask ${activeAgentMeta.label} or drop files here...`}
                         rows={2}
                         onKeyDown={(e) => {
                             if (e.key === "Enter" && !e.shiftKey) {
@@ -1473,6 +1564,28 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                             >
                                 <Globe className="size-3.5 text-zinc-300" />
                                 <span>Search</span>
+                            </Button>
+
+                            {/* Auto-Approve Toggle Button */}
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                    const next = !autoApprove;
+                                    setAutoApprove(next);
+                                    toast.info(next ? "Auto-approve enabled for sensitive actions" : "Auto-approve disabled; manual confirmation required");
+                                }}
+                                className={cn(
+                                    "h-7 px-2.5 rounded-lg text-xs font-medium gap-1.5 transition-colors",
+                                    autoApprove
+                                        ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 shadow-xs"
+                                        : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800",
+                                )}
+                                title={autoApprove ? "Sensitive operations execute without confirmation" : "Click to auto-approve sensitive operations"}
+                            >
+                                <ShieldCheck className={cn("size-3.5", autoApprove ? "text-emerald-400" : "text-zinc-400")} />
+                                <span>{autoApprove ? "Auto-Approve ON" : "Auto-Approve"}</span>
                             </Button>
 
                             {/* Tools bound to the active specialist (fixes "1 tool shows agents" bug) */}

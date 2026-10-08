@@ -1,5 +1,6 @@
-import { BarChart3, Calculator, Calendar, GraduationCap, HelpCircle, ReceiptText, ShieldCheck, Sparkles } from "lucide-react";
+import { BarChart3, Calculator, Calendar, GraduationCap, HelpCircle, ReceiptText, ShieldCheck } from "lucide-react";
 import * as React from "react";
+import { AiCircleLogo } from "./ai-circle-logo";
 import type { AgentRoleKey } from "./use-ai-chat";
 
 export interface AdminAgentOption {
@@ -15,7 +16,7 @@ export const ADMIN_AGENTS: AdminAgentOption[] = [
         key: "admin_executive",
         label: "Executive & Analytics",
         description: "Campus analytics, visual charts, and institutional intelligence.",
-        icon: Sparkles,
+        icon: AiCircleLogo,
         badge: "Executive",
     },
     {
@@ -83,7 +84,7 @@ export const DEFAULT_PROMPT_SUGGESTIONS: PromptSuggestion[] = [
         description: "Draft an official policy announcement in PDF format",
         prompt: "Draft an administrative memorandum in PDF format regarding upcoming enrollment deadlines and academic guidelines.",
         agent: "admin_executive",
-        icon: Sparkles,
+        icon: AiCircleLogo,
     },
 ];
 

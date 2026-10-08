@@ -101,6 +101,7 @@ final class AdministratorAiController extends Controller
             'model' => ['nullable', 'string', 'max:255'],
             'thinking' => ['nullable', 'boolean'],
             'search' => ['nullable', 'boolean'],
+            'auto_approve' => ['nullable', 'boolean'],
             'conversation_id' => ['nullable', 'string', 'max:36'],
             'message' => ['nullable', 'string', 'required_without:decisions', 'prohibits:decisions'],
             'decisions' => ['nullable', 'array', 'required_without:message', 'prohibits:message'],
@@ -112,6 +113,10 @@ final class AdministratorAiController extends Controller
 
         $thinkingMode = (bool) ($validated['thinking'] ?? false);
         $searchMode = (bool) ($validated['search'] ?? false);
+
+        if (array_key_exists('auto_approve', $validated)) {
+            session(['ai_auto_approve_actions' => (bool) ($validated['auto_approve'] ?? false)]);
+        }
 
         $agentKey = $validated['agent'] ?? 'admin_executive';
         $agent = $this->resolveAgent($agentKey);
@@ -1046,7 +1051,7 @@ final class AdministratorAiController extends Controller
      */
     private function streamWithDocumentCompatibility(
         mixed $agentInstance,
-        string $prompt,
+        string|Stringable|Decisions $prompt,
         array $attachments,
         ?string $provider,
         ?string $model,

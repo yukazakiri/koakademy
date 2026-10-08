@@ -1,26 +1,24 @@
+"use client";
+
 import {
-    FileUpload,
-    FileUploadContent,
-    FileUploadTrigger,
-    Loader,
-    PromptInput,
-    PromptInputAction,
-    PromptInputActions,
-    PromptInputTextarea,
-} from "@/components/prompt-kit";
-import { ChatEmptyState, ErrorState, ModelOption, ModelSelector } from "@/components/spectrumui";
-import { Badge } from "@/components/ui/badge";
+    Message,
+    MessageAvatar,
+    MessageContent,
+    MessageFooter,
+} from "@/components/agents/message";
+import { ThinkingShimmer } from "@/components/agents/loading-states/thinking-shimmer";
+import { ModelOption, ModelSelector } from "@/components/spectrumui";
 import { Button } from "@/components/ui/button";
 import {
     Popover,
     PopoverContent,
     PopoverTrigger,
 } from "@/components/ui/popover";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { User } from "@/types/user";
+import type { User } from "@/types/user";
+import { router } from "@inertiajs/react";
 import {
-    Bot,
     Calculator,
     ChevronDown,
     Cpu,
@@ -36,23 +34,18 @@ import {
     RotateCcw,
     Send,
     ShieldCheck,
-    Sparkles,
+    Square,
     UploadCloud,
-    User as UserIcon,
     X,
-    CheckCircle2,
-    RefreshCw,
 } from "lucide-react";
-import { router } from "@inertiajs/react";
 import * as React from "react";
 import { toast } from "sonner";
 
+import { AiCircleLogo } from "./ai-circle-logo";
 import { ApprovalCard } from "./approval-card";
 import { ChatMessageFormatter } from "./chat-message-formatter";
 import { AssistantMessageActions, UserMessageActions } from "./message-actions";
-import { AgentRoleKey, useAiChat } from "./use-ai-chat";
-
-const PREFERRED_MODEL_KEY = "koakademy_ai_preferred_model";
+import { type AgentRoleKey, useAiChat } from "./use-ai-chat";
 
 interface AdminAiFloatingWidgetProps {
     user: User;
@@ -64,71 +57,166 @@ const ADMIN_AGENTS: {
     description: string;
     icon: React.ElementType;
     badge: string;
+    suggestions: string[];
 }[] = [
     {
         key: "admin_executive",
         label: "Executive & Analytics",
-        description: "Campus analytics, data charts, and official document formulation.",
-        icon: Sparkles,
+        description:
+            "Campus analytics, data charts, and official document formulation. Upload spreadsheets to analyze, plot interactive charts, or download formal reports.",
+        icon: AiCircleLogo,
         badge: "Executive",
+        suggestions: [
+            "Analyze enrollment demographics and plot a bar chart",
+            "Audit student clearance holds across campus departments",
+            "Generate an executive tuition revenue and billing brief",
+        ],
     },
     {
         key: "registrar_auditor",
         label: "Registrar Auditor",
-        description: "Admissions spreadsheet audits, graduation clearance, and policy simulation.",
+        description:
+            "Admissions spreadsheet audits, graduation clearance, and policy simulation. Verify degree checklists, prerequisite chains, and transcript accuracy.",
         icon: ShieldCheck,
         badge: "Records",
+        suggestions: [
+            "Audit student graduation clearance and identify pending holds",
+            "Run a prerequisite and curriculum audit for CS department",
+            "Simulate academic retention rate across student cohorts",
+        ],
     },
     {
         key: "bursar_finance",
         label: "Bursar & Finance",
-        description: "Statement of Account breakdown, tuition adjustments, and scholarship calculations.",
+        description:
+            "Statement of Account breakdown, tuition adjustments, and scholarship calculations. Audit student ledgers, billing schedules, and account balances.",
         icon: Calculator,
         badge: "Ledger",
+        suggestions: [
+            "Break down student account balances and generate financial brief",
+            "Audit unpaid tuition adjustments and scholarship disbursements",
+            "Generate a revenue collection report by academic term",
+        ],
     },
     {
         key: "campus_support",
         label: "Campus Support",
-        description: "Institutional policies, student handbooks, and ticket escalation.",
+        description:
+            "Institutional policies, student handbooks, and ticket escalation. Lookup operating procedures, official circulars, and departmental contacts.",
         icon: HelpCircle,
         badge: "24/7",
+        suggestions: [
+            "Summarize campus policy on late enrollment and grading appeals",
+            "Draft an official student circular for academic year schedule",
+            "Check standard operating procedure for student clearance dispute",
+        ],
     },
 ];
 
 export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
-    const [isOpen, setIsOpen] = React.useState(false);
-    const [isExpanded, setIsExpanded] = React.useState(false);
-    const [selectedAgent, setSelectedAgent] = React.useState<AgentRoleKey>("admin_executive");
+    const userId = user?.id ? String(user.id) : "guest";
+    const preferredModelKey = `koakademy_ai_preferred_model_${userId}`;
+    const widgetOpenKey = `koakademy_ai_widget_open_${userId}`;
+    const widgetExpandedKey = `koakademy_ai_widget_expanded_${userId}`;
+    const widgetAgentKey = `koakademy_ai_widget_agent_${userId}`;
+    const widgetPersistenceKey = `koakademy_ai_widget_${userId}`;
+
+    const [isOpen, setIsOpen] = React.useState<boolean>(() => {
+        if (typeof window !== "undefined") {
+            try {
+                return sessionStorage.getItem(widgetOpenKey) === "true";
+            } catch {
+                return false;
+            }
+        }
+        return false;
+    });
+    const [isExpanded, setIsExpanded] = React.useState<boolean>(() => {
+        if (typeof window !== "undefined") {
+            try {
+                return sessionStorage.getItem(widgetExpandedKey) === "true";
+            } catch {
+                return false;
+            }
+        }
+        return false;
+    });
+    const [selectedAgent, setSelectedAgent] = React.useState<AgentRoleKey>(() => {
+        if (typeof window !== "undefined") {
+            try {
+                const saved = sessionStorage.getItem(widgetAgentKey) as AgentRoleKey;
+                if (saved && ADMIN_AGENTS.some((a) => a.key === saved)) {
+                    return saved;
+                }
+            } catch {
+                // Ignore storage errors
+            }
+        }
+        return "admin_executive";
+    });
+
+    const handleOpenChange = React.useCallback((open: boolean) => {
+        setIsOpen(open);
+        if (typeof window !== "undefined") {
+            try {
+                sessionStorage.setItem(widgetOpenKey, String(open));
+            } catch {
+                // Ignore storage errors
+            }
+        }
+    }, [widgetOpenKey]);
+
+    const handleExpandedChange = React.useCallback((expanded: boolean) => {
+        setIsExpanded(expanded);
+        if (typeof window !== "undefined") {
+            try {
+                sessionStorage.setItem(widgetExpandedKey, String(expanded));
+            } catch {
+                // Ignore storage errors
+            }
+        }
+    }, [widgetExpandedKey]);
+
+    const handleAgentChange = React.useCallback((agentKey: AgentRoleKey) => {
+        setSelectedAgent(agentKey);
+        if (typeof window !== "undefined") {
+            try {
+                sessionStorage.setItem(widgetAgentKey, agentKey);
+            } catch {
+                // Ignore storage errors
+            }
+        }
+    }, [widgetAgentKey]);
 
     // Dynamic model options from configured providers
-    const [availableModels, setAvailableModels] = React.useState<ModelOption[]>([]);
+    const [availableModels, setAvailableModels] = React.useState<ModelOption[]>(
+        []
+    );
     const [selectedModel, setSelectedModel] = React.useState<string>("");
     const [modelPopoverOpen, setModelPopoverOpen] = React.useState(false);
 
     // File staging state
     const [selectedFiles, setSelectedFiles] = React.useState<File[]>([]);
-
-    // KPI quick summary for administrator empty state
-    const [kpis, setKpis] = React.useState<{ label: string; value: string | number; change: string }[]>([]);
-    const [quickPrompts, setQuickPrompts] = React.useState<string[]>([
-        "Show me the list of students enrolled in CS101",
-        "Generate a visual bar chart of student enrollment by department",
-        "Audit student graduation clearance and identify pending holds",
-        "Draft an official institutional memo regarding enrollment guidelines in PDF format",
-    ]);
+    const [isDragging, setIsDragging] = React.useState(false);
 
     const scrollAreaRef = React.useRef<HTMLDivElement>(null);
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+    const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
     const {
         messages,
         input,
         setInput,
         isLoading,
+        conversationId,
         lastError,
         lastPrompt,
         clearError,
         sendPrompt,
         submitDecision,
+        submitAllDecisions,
+        autoApprove,
+        setAutoApprove,
         resendUserMessage,
         regenerateAssistant,
         clearChat,
@@ -136,6 +224,7 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
     } = useAiChat({
         agent: selectedAgent,
         endpoint: "/administrators/ai/chat",
+        persistenceKey: widgetPersistenceKey,
     });
 
     // Auto-scroll on new message chunks
@@ -150,51 +239,66 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
         setSelectedModel(id);
         if (typeof window !== "undefined") {
             try {
-                localStorage.setItem(PREFERRED_MODEL_KEY, id);
+                localStorage.setItem(preferredModelKey, id);
             } catch {
                 // Ignore storage quotas
             }
         }
         setModelPopoverOpen(false);
         toast.success(`Active model: ${id}`);
-    }, []);
+    }, [preferredModelKey]);
 
-    // Fetch quick KPIs and available models once when opened.
-    // Priority: saved preference (if still configured) > server global default
-    // (primary provider's default_chat_model) > Default badge > primary-provider
-    // model > first model.
+    // Fetch available models once when opened
     React.useEffect(() => {
-        if (isOpen && kpis.length === 0) {
+        if (isOpen && availableModels.length === 0) {
             fetch("/administrators/ai/analytics-summary", {
                 headers: { "X-Requested-With": "XMLHttpRequest" },
             })
                 .then((res) => res.json())
                 .then((data) => {
-                    if (data.kpis) setKpis(data.kpis);
-                    if (data.quick_prompts) setQuickPrompts(data.quick_prompts);
                     if (Array.isArray(data.models) && data.models.length > 0) {
-                        const mapped: ModelOption[] = data.models.map((m: any) => ({
-                            id: m.id,
-                            name: m.name || m.id,
-                            badge: m.badge,
-                            description: m.description,
-                            provider: m.provider,
-                            provider_name: m.provider_name,
-                        }));
+                        const mapped: ModelOption[] = data.models.map(
+                            (m: Record<string, unknown>) => ({
+                                id: String(m.id || ""),
+                                name: String(m.name || m.id || ""),
+                                badge: typeof m.badge === "string" ? m.badge : undefined,
+                                description: typeof m.description === "string" ? m.description : undefined,
+                                provider: typeof m.provider === "string" ? m.provider : undefined,
+                                provider_name: typeof m.provider_name === "string" ? m.provider_name : undefined,
+                            })
+                        );
                         setAvailableModels(mapped);
 
-                        // Resolve initial model: prefer localStorage, else server global default
-                        const saved = typeof window !== "undefined" ? localStorage.getItem(PREFERRED_MODEL_KEY) : null;
+                        const saved =
+                            typeof window !== "undefined"
+                                ? localStorage.getItem(preferredModelKey)
+                                : null;
                         if (saved && mapped.some((m) => m.id === saved)) {
                             setSelectedModel(saved);
                         } else if (!selectedModel) {
-                            const serverDefault = typeof data.default_model === "string" ? data.default_model : "";
-                            const byServerDefault = serverDefault ? mapped.find((m) => m.id === serverDefault) : undefined;
-                            const byDefaultBadge = mapped.find((m) => m.badge?.includes("Default"));
-                            const byPrimary = typeof data.primary_provider === "string"
-                                ? mapped.find((m) => m.provider === data.primary_provider)
+                            const serverDefault =
+                                typeof data.default_model === "string"
+                                    ? data.default_model
+                                    : "";
+                            const byServerDefault = serverDefault
+                                ? mapped.find((m) => m.id === serverDefault)
                                 : undefined;
-                            const recommended = byServerDefault || byDefaultBadge || byPrimary || mapped[0];
+                            const byDefaultBadge = mapped.find((m) =>
+                                m.badge?.includes("Default")
+                            );
+                            const byPrimary =
+                                typeof data.primary_provider === "string"
+                                    ? mapped.find(
+                                          (m) =>
+                                              m.provider ===
+                                              data.primary_provider
+                                      )
+                                    : undefined;
+                            const recommended =
+                                byServerDefault ||
+                                byDefaultBadge ||
+                                byPrimary ||
+                                mapped[0];
                             if (recommended) setSelectedModel(recommended.id);
                         }
                     }
@@ -203,20 +307,24 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                     // Silently keep defaults on network error
                 });
         }
-    }, [isOpen, kpis.length, selectedModel]);
+    }, [isOpen, availableModels.length, selectedModel]);
 
-    const activeMeta = ADMIN_AGENTS.find((a) => a.key === selectedAgent) || ADMIN_AGENTS[0];
+    const activeMeta =
+        ADMIN_AGENTS.find((a) => a.key === selectedAgent) || ADMIN_AGENTS[0];
     const ActiveIcon = activeMeta.icon;
 
-    const handleFilesAdded = (newFiles: File[]) => {
-        const oversized = newFiles.filter((f) => f.size > 20 * 1024 * 1024);
+    const handleFilesAdded = (filesToAdd: FileList | File[]) => {
+        const fileList = Array.from(filesToAdd);
+        const oversized = fileList.filter((f) => f.size > 20 * 1024 * 1024);
         if (oversized.length > 0) {
             toast.error("Files larger than 20MB cannot be uploaded.");
             return;
         }
 
-        setSelectedFiles((prev) => [...prev, ...newFiles]);
-        toast.success(`Attached ${newFiles.length} ${newFiles.length === 1 ? "file" : "files"}.`);
+        setSelectedFiles((prev) => [...prev, ...fileList]);
+        toast.success(
+            `Attached ${fileList.length} ${fileList.length === 1 ? "file" : "files"}.`
+        );
     };
 
     const removeFile = (index: number) => {
@@ -229,60 +337,71 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
             model: selectedModel || undefined,
         });
         setSelectedFiles([]);
+        setInput("");
+        if (textareaRef.current) {
+            textareaRef.current.style.height = "auto";
+        }
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            handleSend();
+        }
+    };
+
+    const handleSuggestionClick = (prompt: string) => {
+        sendPrompt(prompt, [], {
+            model: selectedModel || undefined,
+        });
     };
 
     const getFileIcon = (file: File) => {
         const ext = file.name.split(".").pop()?.toLowerCase();
         if (["xlsx", "xls", "csv"].includes(ext || "")) {
-            return <FileSpreadsheet className="size-3 text-emerald-500" />;
+            return <FileSpreadsheet className="size-3.5 text-emerald-500" />;
         }
-        if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext || "") || file.type.startsWith("image/")) {
-            return <ImageIcon className="size-3 text-indigo-500" />;
+        if (
+            ["png", "jpg", "jpeg", "webp", "gif"].includes(ext || "") ||
+            file.type.startsWith("image/")
+        ) {
+            return <ImageIcon className="size-3.5 text-indigo-500" />;
         }
         if (["pdf"].includes(ext || "")) {
-            return <FileText className="size-3 text-rose-500" />;
+            return <FileText className="size-3.5 text-rose-500" />;
         }
-        return <FileType className="size-3 text-sky-500" />;
+        return <FileType className="size-3.5 text-sky-500" />;
     };
 
     const activeModelName = React.useMemo(() => {
         const found = availableModels.find((m) => m.id === selectedModel);
         if (!found) return selectedModel || "Auto Best Free";
-        const cleanName = found.name.replace(/^(?:no-think\/|dva\/|oc\/|cx\/|cxa\/|agy\/|zed-hosted\/)+/, "");
-        return cleanName.length > 24 ? cleanName.slice(0, 22) + "..." : cleanName;
+        const cleanName = found.name.replace(
+            /^(?:no-think\/|dva\/|oc\/|cx\/|cxa\/|agy\/|zed-hosted\/)+/,
+            ""
+        );
+        return cleanName.length > 20
+            ? cleanName.slice(0, 18) + "…"
+            : cleanName;
     }, [availableModels, selectedModel]);
-
-    // Fallback switch to server global default model (primary provider's default)
-    const switchToRecommendedModel = () => {
-        const fallback =
-            availableModels.find((m) => m.badge?.includes("Default")) || availableModels[0];
-
-        if (fallback) {
-            handleModelChange(fallback.id);
-            clearError();
-            if (lastPrompt) {
-                sendPrompt(lastPrompt, selectedFiles, { model: fallback.id });
-            }
-        }
-    };
 
     return (
         <TooltipProvider>
-            <div className="fixed bottom-6 right-6 z-50 select-none">
+            <div className="fixed right-6 bottom-6 z-50 select-none">
                 {/* 1. Closed State: Floating Action Button (FAB) */}
                 {!isOpen && (
                     <button
                         type="button"
-                        onClick={() => setIsOpen(true)}
-                        className="relative size-14 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-violet-500 text-white shadow-2xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all duration-200 ring-4 ring-indigo-500/25 hover:ring-indigo-500/45 cursor-pointer group"
+                        onClick={() => handleOpenChange(true)}
+                        className="group relative flex size-14 cursor-pointer items-center justify-center rounded-2xl bg-neutral-950 border border-neutral-800 text-white shadow-2xl ring-4 ring-indigo-500/20 transition-all duration-200 hover:scale-105 hover:ring-indigo-500/40 active:scale-95 overflow-hidden"
                         title="Open Administrative AI Copilot"
                     >
-                        <Sparkles className="size-6 text-white group-hover:rotate-12 transition-transform duration-300 drop-shadow-sm" />
+                        <AiCircleLogo size={42} useOrb={true} className="pointer-events-none transition-transform duration-300 group-hover:scale-110" />
 
                         {/* Online status indicator */}
                         <span className="absolute top-1 right-1 flex size-3">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                            <span className="relative inline-flex rounded-full size-3 bg-emerald-500 border-2 border-white dark:border-gray-900 shadow-xs" />
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                            <span className="relative inline-flex size-3 rounded-full border-2 border-white bg-emerald-500 shadow-xs dark:border-gray-900" />
                         </span>
                     </button>
                 )}
@@ -290,47 +409,81 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                 {/* 2. Open State: Floating Chat Modal */}
                 {isOpen && (
                     <div
+                        onDragOver={(e) => {
+                            e.preventDefault();
+                            setIsDragging(true);
+                        }}
+                        onDragLeave={(e) => {
+                            e.preventDefault();
+                            setIsDragging(false);
+                        }}
+                        onDrop={(e) => {
+                            e.preventDefault();
+                            setIsDragging(false);
+                            if (e.dataTransfer.files?.length) {
+                                handleFilesAdded(e.dataTransfer.files);
+                            }
+                        }}
                         className={cn(
-                            "rounded-3xl border border-border/80 bg-background/95 backdrop-blur-2xl shadow-2xl flex flex-col overflow-hidden transition-all duration-200 animate-in fade-in zoom-in-95",
+                            "relative flex flex-col overflow-hidden rounded-3xl border border-neutral-800/90 bg-[#121215]/95 text-foreground shadow-2xl backdrop-blur-2xl transition-all duration-200 animate-in fade-in zoom-in-95",
                             isExpanded
-                                ? "w-[95vw] sm:w-[740px] h-[88vh]"
-                                : "w-[92vw] sm:w-[500px] md:w-[540px] h-[680px] max-h-[88vh]"
+                                ? "h-[88vh] w-[95vw] sm:w-[760px]"
+                                : "h-[680px] max-h-[88vh] w-[92vw] sm:w-[500px] md:w-[540px]"
                         )}
                     >
-                        {/* Header */}
-                        <div className="px-4 py-3 border-b bg-muted/30 dark:bg-muted/15 flex flex-col gap-2.5">
+                        {/* Drag and Drop Overlay */}
+                        {isDragging && (
+                            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-[#121215]/95 p-6 backdrop-blur-md">
+                                <div className="flex size-14 items-center justify-center rounded-2xl border-2 border-dashed border-primary bg-primary/10">
+                                    <UploadCloud className="size-8 text-primary animate-bounce" />
+                                </div>
+                                <p className="text-sm font-semibold text-white">
+                                    Drop files to attach
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                    Excel (.xlsx, .csv), PDF, Word, Images
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Header Matching Screenshot */}
+                        <div className="flex flex-col border-b border-neutral-800/80 bg-neutral-900/40 px-4 pt-3.5 pb-2.5">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2.5">
-                                    <div className="size-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 text-white flex items-center justify-center shadow-xs">
-                                        <Sparkles className="size-4" />
+                                    <div className="flex size-9 items-center justify-center rounded-xl bg-neutral-900 border border-neutral-800 overflow-hidden shadow-md">
+                                        <AiCircleLogo size={32} useOrb={true} className="pointer-events-none" />
                                     </div>
                                     <div>
-                                        <div className="flex items-center gap-1.5">
-                                            <h3 className="text-sm font-bold text-foreground leading-none">
+                                        <div className="flex items-center gap-2">
+                                            <h3 className="text-sm font-bold tracking-tight text-white">
                                                 Administrative Copilot
                                             </h3>
-                                            <span className="flex items-center gap-1 px-1.5 py-0.2 rounded-md bg-emerald-500/15 border border-emerald-500/25 text-[10px] font-mono font-medium text-emerald-600 dark:text-emerald-400">
+                                            <span className="flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-emerald-400">
                                                 <span className="size-1.5 rounded-full bg-emerald-500" />
                                                 Live
                                             </span>
                                         </div>
-                                        <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
-                                            Campus analytics, document drafting & academic audits
+                                        <p className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">
+                                            Campus analytics, document drafting
+                                            & academic audits
                                         </p>
                                     </div>
                                 </div>
 
-                                <div className="flex items-center gap-1">
+                                <div className="flex items-center gap-0.5 text-muted-foreground">
                                     <Button
                                         type="button"
                                         variant="ghost"
                                         size="icon"
-                                        className="size-7.5 text-muted-foreground hover:text-foreground rounded-lg"
+                                        className="size-7.5 rounded-lg text-muted-foreground hover:bg-neutral-800 hover:text-white"
                                         onClick={() => {
                                             clearChat();
-                                            toast.success("Conversation cleared.");
+                                            setSelectedFiles([]);
+                                            toast.success(
+                                                "New chat started. Previous transcript cleared."
+                                            );
                                         }}
-                                        title="Clear conversation"
+                                        title="New chat / Clear conversation"
                                     >
                                         <RotateCcw className="size-3.5" />
                                     </Button>
@@ -339,9 +492,9 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                                         type="button"
                                         variant="ghost"
                                         size="icon"
-                                        className="size-7.5 text-muted-foreground hover:text-foreground rounded-lg"
+                                        className="size-7.5 rounded-lg text-muted-foreground hover:bg-neutral-800 hover:text-white"
                                         onClick={() => {
-                                            setIsOpen(false);
+                                            handleOpenChange(false);
                                             const targetUrl = conversationId
                                                 ? `/administrators/ai?conversation=${conversationId}`
                                                 : "/administrators/ai";
@@ -356,19 +509,29 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                                         type="button"
                                         variant="ghost"
                                         size="icon"
-                                        className="size-7.5 text-muted-foreground hover:text-foreground rounded-lg hidden sm:inline-flex"
-                                        onClick={() => setIsExpanded(!isExpanded)}
-                                        title={isExpanded ? "Collapse view" : "Expand view"}
+                                        className="hidden size-7.5 rounded-lg text-muted-foreground hover:bg-neutral-800 hover:text-white sm:inline-flex"
+                                        onClick={() =>
+                                            handleExpandedChange(!isExpanded)
+                                        }
+                                        title={
+                                            isExpanded
+                                                ? "Collapse view"
+                                                : "Expand view"
+                                        }
                                     >
-                                        {isExpanded ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+                                        {isExpanded ? (
+                                            <Minimize2 className="size-3.5" />
+                                        ) : (
+                                            <Maximize2 className="size-3.5" />
+                                        )}
                                     </Button>
 
                                     <Button
                                         type="button"
                                         variant="ghost"
                                         size="icon"
-                                        className="size-7.5 text-muted-foreground hover:text-foreground rounded-lg"
-                                        onClick={() => setIsOpen(false)}
+                                        className="size-7.5 rounded-lg text-muted-foreground hover:bg-neutral-800 hover:text-white"
+                                        onClick={() => handleOpenChange(false)}
                                         title="Close widget"
                                     >
                                         <X className="size-4" />
@@ -376,25 +539,28 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                                 </div>
                             </div>
 
-                            {/* Specialist Agent Selector Pills */}
-                            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+                            {/* Specialist Tabs Matching Screenshot */}
+                            <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto pt-2.5 pb-0.5">
                                 {ADMIN_AGENTS.map((agent) => {
-                                    const isSelected = selectedAgent === agent.key;
+                                    const isSelected =
+                                        selectedAgent === agent.key;
                                     const Icon = agent.icon;
                                     return (
                                         <button
                                             key={agent.key}
                                             type="button"
-                                            onClick={() => setSelectedAgent(agent.key)}
+                                            onClick={() =>
+                                                handleAgentChange(agent.key)
+                                            }
                                             className={cn(
-                                                "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11.5px] font-medium border transition-all shrink-0 cursor-pointer",
+                                                "flex shrink-0 cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-all",
                                                 isSelected
-                                                    ? "bg-primary text-primary-foreground border-primary shadow-xs font-semibold"
-                                                    : "bg-background/80 hover:bg-muted text-muted-foreground border-border/80"
+                                                    ? "bg-[#9333ea] font-semibold text-white shadow-md shadow-purple-500/20"
+                                                    : "border border-neutral-800/80 bg-neutral-900/60 text-neutral-400 hover:border-neutral-700 hover:bg-neutral-800/70 hover:text-neutral-200"
                                             )}
                                         >
                                             <Icon className="size-3.5" />
-                                            {agent.label}
+                                            <span>{agent.label}</span>
                                         </button>
                                     );
                                 })}
@@ -402,176 +568,302 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                         </div>
 
                         {/* Chat Messages Body */}
-                        <div ref={scrollAreaRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+                        <div
+                            ref={scrollAreaRef}
+                            className="flex-1 space-y-4 overflow-y-auto p-4"
+                        >
                             {messages.length === 0 ? (
-                                <div className="h-full flex flex-col justify-between py-2 space-y-4">
-                                    {/* Spectrum UI ChatEmptyState Component */}
-                                    <div className="flex justify-center pt-2">
-                                        <ChatEmptyState
-                                            title={activeMeta.label}
-                                            subtitle={`${activeMeta.description} Upload spreadsheets to analyze, plot interactive charts, or download formal reports.`}
-                                            prompts={quickPrompts.map((p, idx) => ({
-                                                id: `p_${idx}`,
-                                                label: p,
-                                                prompt: p,
-                                            }))}
-                                            onSelectPrompt={(p) => sendPrompt(p.prompt || p.label)}
-                                            variant="Centered"
-                                        />
+                                /* Empty State Centered Card Matching Screenshot */
+                                <div className="flex h-full flex-col items-center justify-center px-2 py-4 text-center">
+                                    <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-2xl border border-neutral-800 bg-neutral-900/80 text-neutral-300 shadow-inner">
+                                        <ActiveIcon className="size-6 text-neutral-300" />
                                     </div>
 
-                                    {/* Live KPI Summary Cards */}
-                                    {kpis.length > 0 && (
-                                        <div className="grid grid-cols-2 gap-2 p-2.5 rounded-2xl bg-muted/20 border border-border/60">
-                                            {kpis.map((kpi, i) => (
-                                                <div key={i} className="p-2.5 rounded-xl bg-background/80 border border-border/60 shadow-2xs">
-                                                    <span className="text-[10.5px] font-medium text-muted-foreground">{kpi.label}</span>
-                                                    <div className="text-sm font-bold font-mono text-foreground flex items-center justify-between mt-0.5">
-                                                        <span>{kpi.value.toLocaleString()}</span>
-                                                        <span className="text-[10px] text-emerald-500 font-semibold">{kpi.change}</span>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
+                                    <h4 className="text-base font-bold tracking-tight text-white sm:text-lg">
+                                        {activeMeta.label}
+                                    </h4>
+
+                                    <p className="mt-1.5 mb-6 max-w-sm text-xs leading-relaxed text-muted-foreground sm:max-w-md">
+                                        {activeMeta.description}
+                                    </p>
+
+                                    {/* Vertical Stacked Suggestion Pills */}
+                                    <div className="w-full max-w-md space-y-2">
+                                        {activeMeta.suggestions.map(
+                                            (suggestion, idx) => (
+                                                <button
+                                                    key={idx}
+                                                    type="button"
+                                                    onClick={() =>
+                                                        handleSuggestionClick(
+                                                            suggestion
+                                                        )
+                                                    }
+                                                    className="w-full cursor-pointer rounded-full border border-neutral-800/90 bg-neutral-900/70 px-4 py-2 text-center text-xs font-medium text-neutral-300 shadow-xs transition-colors hover:border-neutral-700 hover:bg-neutral-800/90 hover:text-white active:scale-[0.99]"
+                                                >
+                                                    {suggestion}
+                                                </button>
+                                            )
+                                        )}
+                                    </div>
                                 </div>
                             ) : (
                                 messages.map((msg) => {
                                     const isUser = msg.role === "user";
                                     return (
-                                        <div
+                                        <Message
                                             key={msg.id}
-                                            className={cn(
-                                                "flex items-start gap-2.5 w-full text-xs animate-in fade-in-50 duration-150",
-                                                isUser ? "justify-end" : "justify-start"
-                                            )}
+                                            from={
+                                                isUser ? "user" : "assistant"
+                                            }
+                                            animateIn={true}
+                                            className="gap-2.5"
                                         >
-                                            {/* Assistant Avatar on Left */}
-                                            {!isUser && (
-                                                <div className="size-7 rounded-xl border bg-primary/10 border-primary/20 text-primary flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
-                                                    <Bot className="size-4" />
-                                                </div>
-                                            )}
-
-                                            {/* Bubble Column */}
-                                            <div
+                                            {/* Avatar */}
+                                            <MessageAvatar
                                                 className={cn(
-                                                    "flex flex-col gap-1 max-w-[85%]",
-                                                    isUser ? "items-end" : "items-start"
+                                                    "size-7 rounded-xl border text-xs",
+                                                    isUser
+                                                        ? "border-primary/30 bg-primary/20 text-primary"
+                                                        : "border-indigo-500/30 bg-neutral-950 text-indigo-400 overflow-hidden flex items-center justify-center"
                                                 )}
                                             >
-                                                {/* Attachments */}
-                                                {msg.attachments && msg.attachments.length > 0 && (
-                                                    <div className={cn("flex flex-wrap gap-1.5 pb-1", isUser ? "justify-end" : "justify-start")}>
-                                                        {msg.attachments.map((att, i) => (
-                                                            <div
-                                                                key={i}
-                                                                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-muted border border-border/60 text-[11px] font-mono shadow-2xs"
-                                                            >
-                                                                <Paperclip className="size-3 text-muted-foreground" />
-                                                                <span className="truncate max-w-[140px] text-foreground">{att.name}</span>
-                                                                <span className="text-[10px] text-muted-foreground">({Math.round(att.size / 1024)} KB)</span>
+                                                {isUser ? (
+                                                    user.avatar ? (
+                                                        <img
+                                                            src={user.avatar}
+                                                            alt={user.name || "User"}
+                                                            className="size-full rounded-xl object-cover"
+                                                        />
+                                                    ) : (
+                                                        <span className="font-semibold uppercase text-[10px]">
+                                                            {user.name?.slice(0, 2).toUpperCase() || "AD"}
+                                                        </span>
+                                                    )
+                                                ) : (
+                                                    <AiCircleLogo className="size-4" />
+                                                )}
+                                            </MessageAvatar>
+
+                                            <MessageContent
+                                                className={cn(
+                                                    "max-w-[85%]",
+                                                    isUser
+                                                        ? "items-end"
+                                                        : "items-start"
+                                                )}
+                                            >
+                                                {/* File Attachments */}
+                                                {msg.attachments &&
+                                                    msg.attachments.length >
+                                                        0 && (
+                                                        <div
+                                                            className={cn(
+                                                                "flex flex-wrap gap-1.5 pb-1",
+                                                                isUser
+                                                                    ? "justify-end"
+                                                                    : "justify-start"
+                                                            )}
+                                                        >
+                                                            {msg.attachments.map(
+                                                                (att, i) => (
+                                                                    <div
+                                                                        key={i}
+                                                                        className="flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900/90 px-2.5 py-1 font-mono text-[11px] text-neutral-200"
+                                                                    >
+                                                                        <Paperclip className="size-3 text-neutral-400" />
+                                                                        <span className="max-w-[140px] truncate">
+                                                                            {
+                                                                                att.name
+                                                                            }
+                                                                        </span>
+                                                                        <span className="text-[10px] text-muted-foreground">
+                                                                            (
+                                                                            {Math.round(
+                                                                                att.size /
+                                                                                    1024
+                                                                            )}{" "}
+                                                                            KB)
+                                                                        </span>
+                                                                    </div>
+                                                                )
+                                                            )}
+                                                        </div>
+                                                    )}
+
+                                                {/* Minimalist Message Content */}
+                                                {isUser ? (
+                                                    <div className="w-full flex justify-end">
+                                                        <div className="max-w-[88%] text-left">
+                                                            <p className="whitespace-pre-wrap text-sm leading-relaxed text-neutral-100 font-medium">
+                                                                {msg.content}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="w-full space-y-2.5 min-w-0">
+                                                        <ChatMessageFormatter
+                                                            content={
+                                                                msg.content
+                                                            }
+                                                            reasoning={
+                                                                msg.reasoning
+                                                            }
+                                                            toolCalls={
+                                                                msg.toolCalls
+                                                            }
+                                                            sources={
+                                                                msg.sources
+                                                            }
+                                                            isStreaming={
+                                                                isLoading &&
+                                                                msg.id ===
+                                                                    messages.at(
+                                                                        -1
+                                                                    )?.id
+                                                            }
+                                                        />
+
+                                                        {/* Approvals */}
+                                                        {msg.pendingApprovals && msg.pendingApprovals.length > 0 && (
+                                                            <div className="space-y-2 my-2">
+                                                                {msg.pendingApprovals.length > 1 && (
+                                                                    <div className="flex items-center justify-between p-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-xs">
+                                                                        <span className="font-semibold text-amber-400 flex items-center gap-1.5">
+                                                                            <ShieldCheck className="size-4 text-amber-400" />
+                                                                            {msg.pendingApprovals.length} Actions Awaiting Confirmation
+                                                                        </span>
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <Button
+                                                                                size="sm"
+                                                                                variant="outline"
+                                                                                className="h-7 text-xs border-amber-500/40 text-amber-300 hover:bg-amber-500/15"
+                                                                                onClick={() => submitAllDecisions("reject")}
+                                                                                disabled={isLoading}
+                                                                            >
+                                                                                Reject All
+                                                                            </Button>
+                                                                            <Button
+                                                                                size="sm"
+                                                                                className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+                                                                                onClick={() => submitAllDecisions("approve")}
+                                                                                disabled={isLoading}
+                                                                            >
+                                                                                Approve All
+                                                                            </Button>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                                {msg.pendingApprovals.map((approval) => (
+                                                                    <ApprovalCard
+                                                                        key={approval.id}
+                                                                        approval={approval}
+                                                                        onDecision={submitDecision}
+                                                                        onApproveAll={msg.pendingApprovals!.length > 1 ? () => submitAllDecisions("approve") : undefined}
+                                                                        disabled={isLoading}
+                                                                    />
+                                                                ))}
                                                             </div>
-                                                        ))}
+                                                        )}
                                                     </div>
                                                 )}
 
-                                                {/* Content Bubble */}
-                                                <div
-                                                    className={cn(
-                                                        "px-4 py-2.5 rounded-2xl text-sm leading-relaxed transition-all",
-                                                        isUser
-                                                            ? "bg-primary text-primary-foreground rounded-tr-xs shadow-xs font-sans text-left"
-                                                            : "bg-card dark:bg-neutral-900/90 border border-border/80 rounded-tl-xs text-foreground shadow-2xs space-y-2"
-                                                    )}
-                                                >
-                                                    {isUser ? (
-                                                        <p className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</p>
-                                                    ) : (
-                                                        <ChatMessageFormatter
-                                                            content={msg.content}
-                                                            reasoning={msg.reasoning}
-                                                            toolCalls={msg.toolCalls}
-                                                            sources={msg.sources}
-                                                            isStreaming={isLoading && msg.id === messages.at(-1)?.id}
-                                                        />
-                                                    )}
-
-                                                    {/* ReUI reply actions: resend / regenerate */}
+                                                {/* Message Footer Actions */}
+                                                <MessageFooter className="gap-1.5 px-0.5 text-[11px] text-muted-foreground">
                                                     {isUser ? (
                                                         <UserMessageActions
-                                                            content={msg.content}
+                                                            content={
+                                                                msg.content
+                                                            }
                                                             disabled={isLoading}
-                                                            className="justify-end [&_button]:text-primary-foreground/70 [&_button:hover]:text-primary-foreground [&_button:hover]:bg-primary-foreground/10"
                                                             onResend={() =>
-                                                                resendUserMessage(msg.id, {
-                                                                    model: selectedModel || undefined,
-                                                                })
+                                                                resendUserMessage(
+                                                                    msg.id,
+                                                                    {
+                                                                        model:
+                                                                            selectedModel ||
+                                                                            undefined,
+                                                                    }
+                                                                )
                                                             }
                                                         />
                                                     ) : (
-                                                        !(isLoading && msg.id === messages.at(-1)?.id) && (
+                                                        !(
+                                                            isLoading &&
+                                                            msg.id ===
+                                                                messages.at(-1)
+                                                                    ?.id
+                                                        ) && (
                                                             <AssistantMessageActions
-                                                                content={msg.content}
-                                                                disabled={isLoading}
+                                                                content={
+                                                                    msg.content
+                                                                }
+                                                                disabled={
+                                                                    isLoading
+                                                                }
                                                                 onRegenerate={() =>
-                                                                    regenerateAssistant(msg.id, {
-                                                                        model: selectedModel || undefined,
-                                                                    })
+                                                                    regenerateAssistant(
+                                                                        msg.id,
+                                                                        {
+                                                                            model:
+                                                                                selectedModel ||
+                                                                                undefined,
+                                                                        }
+                                                                    )
                                                                 }
                                                             />
                                                         )
                                                     )}
-
-                                                    {/* Approvals */}
-                                                    {msg.pendingApprovals?.map((approval) => (
-                                                        <ApprovalCard
-                                                            key={approval.id}
-                                                            approval={approval}
-                                                            onDecision={submitDecision}
-                                                            disabled={isLoading}
-                                                        />
-                                                    ))}
-                                                </div>
-                                            </div>
-
-                                            {/* User Avatar on Right */}
-                                            {isUser && (
-                                                <div className="size-7 rounded-xl bg-primary/15 border border-primary/25 text-primary flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
-                                                    <UserIcon className="size-4" />
-                                                </div>
-                                            )}
-                                        </div>
+                                                </MessageFooter>
+                                            </MessageContent>
+                                        </Message>
                                     );
                                 })
                             )}
 
-                            {/* Spectrum UI ErrorState with 1-Click Retry & Recommended Model Switch */}
-                            {lastError && (
-                                <div className="pt-2 flex flex-col gap-2">
-                                    <ErrorState
-                                        title={lastError.title}
-                                        message={lastError.message}
-                                        retryLabel="Retry Request"
-                                        onRetry={() => {
-                                            clearError();
-                                            if (lastPrompt) {
-                                                sendPrompt(lastPrompt, selectedFiles, { model: selectedModel });
-                                            }
-                                        }}
-                                        variant="Card"
-                                    />
+                            {/* Live Shimmer Indicator when loading without initial tokens */}
+                            {isLoading &&
+                                messages.at(-1)?.role === "user" && (
+                                    <div className="flex items-center gap-2.5 px-1 py-1 text-xs text-muted-foreground">
+                                        <div className="flex size-6 items-center justify-center rounded-lg border border-indigo-500/30 bg-indigo-500/10 text-indigo-400">
+                                            <AiCircleLogo className="size-3.5 animate-spin" />
+                                        </div>
+                                        <ThinkingShimmer duration={1.6}>
+                                            {activeMeta.label} is analyzing
+                                            campus records…
+                                        </ThinkingShimmer>
+                                    </div>
+                                )}
 
-                                    <div className="flex items-center gap-2 px-1">
+                            {/* Error Banner with retry */}
+                            {lastError && (
+                                <div className="space-y-2 rounded-2xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+                                    <div className="font-semibold">
+                                        {lastError.title}
+                                    </div>
+                                    <div className="text-destructive/90">
+                                        {lastError.message}
+                                    </div>
+                                    <div className="flex items-center gap-2 pt-1">
                                         <Button
                                             type="button"
                                             size="sm"
                                             variant="outline"
-                                            onClick={switchToRecommendedModel}
-                                            className="h-8 text-xs font-medium gap-1.5 border-primary/30 text-primary hover:bg-primary/10 rounded-xl"
+                                            onClick={() => {
+                                                clearError();
+                                                if (lastPrompt) {
+                                                    sendPrompt(
+                                                        lastPrompt,
+                                                        selectedFiles,
+                                                        {
+                                                            model: selectedModel,
+                                                        }
+                                                    );
+                                                }
+                                            }}
+                                            className="h-7 rounded-lg border-destructive/40 text-xs text-destructive hover:bg-destructive/15"
                                         >
-                                            <Sparkles className="size-3.5 text-primary" />
-                                            <span>Switch to Auto Best-Free & Retry</span>
+                                            Retry
                                         </Button>
                                     </div>
                                 </div>
@@ -580,18 +872,20 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
 
                         {/* Staged File Upload Chips */}
                         {selectedFiles.length > 0 && (
-                            <div className="px-3 py-2 border-t bg-muted/20 flex flex-wrap gap-1.5">
+                            <div className="flex flex-wrap gap-1.5 border-t border-neutral-800/80 bg-neutral-900/60 px-3 py-2">
                                 {selectedFiles.map((file, i) => (
                                     <div
                                         key={i}
-                                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-background border border-border/80 text-[11px] font-mono shadow-xs"
+                                        className="flex items-center gap-1.5 rounded-lg border border-neutral-700/80 bg-neutral-800/90 px-2.5 py-1 font-mono text-[11px] text-neutral-200 shadow-xs"
                                     >
                                         {getFileIcon(file)}
-                                        <span className="max-w-[140px] truncate text-foreground">{file.name}</span>
+                                        <span className="max-w-[140px] truncate">
+                                            {file.name}
+                                        </span>
                                         <button
                                             type="button"
                                             onClick={() => removeFile(i)}
-                                            className="text-muted-foreground hover:text-destructive transition-colors ml-0.5 cursor-pointer"
+                                            className="ml-0.5 cursor-pointer text-neutral-400 transition-colors hover:text-rose-400"
                                         >
                                             <X className="size-3" />
                                         </button>
@@ -600,130 +894,189 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                             </div>
                         )}
 
-                        {/* Prompt-Kit Input with Drop-In File Upload */}
-                        <FileUpload
-                            onFilesAdded={handleFilesAdded}
-                            multiple={true}
+                        {/* Hidden Native File Input */}
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            multiple
                             accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.json"
-                            disabled={isLoading}
-                        >
-                            <FileUploadContent>
-                                <div className="flex flex-col items-center gap-2 p-6 rounded-2xl border-2 border-dashed border-primary bg-background/95 shadow-2xl text-center">
-                                    <UploadCloud className="size-10 text-primary animate-bounce" />
-                                    <p className="text-sm font-semibold">Drop files here to attach</p>
-                                    <p className="text-xs text-muted-foreground">Excel, CSV, PDF, Word, Images supported</p>
-                                </div>
-                            </FileUploadContent>
+                            className="hidden"
+                            onChange={(e) => {
+                                if (e.target.files) {
+                                    handleFilesAdded(e.target.files);
+                                }
+                            }}
+                        />
 
-                            <div className="p-3 border-t bg-background/95 backdrop-blur space-y-2">
-                                <PromptInput
-                                    value={input}
-                                    onValueChange={setInput}
-                                    onSubmit={handleSend}
-                                    isLoading={isLoading}
-                                    disabled={isLoading}
-                                    className="rounded-2xl border border-border/80 bg-card dark:bg-[#121215] shadow-xs focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all p-0 overflow-hidden"
-                                >
-                                    {/* Top Toolbar: Searchable Model Selector */}
-                                    <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5 text-xs border-b border-border/40 bg-muted/20">
-                                        <div className="flex items-center gap-1.5">
-                                            {availableModels.length > 0 ? (
-                                                <Popover open={modelPopoverOpen} onOpenChange={setModelPopoverOpen}>
-                                                    <PopoverTrigger asChild>
-                                                        <button
-                                                            type="button"
-                                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border/70 bg-background hover:bg-muted text-foreground text-[11.5px] font-medium transition-colors shadow-2xs cursor-pointer"
-                                                            title="Select AI Model"
-                                                        >
-                                                            <Cpu className="size-3.5 text-indigo-500" />
-                                                            <span className="truncate max-w-[210px] font-mono">{activeModelName}</span>
-                                                            <ChevronDown className="size-3 text-muted-foreground" />
-                                                        </button>
-                                                    </PopoverTrigger>
-                                                    <PopoverContent
-                                                        className="w-[380px] sm:w-[420px] p-3.5 shadow-2xl rounded-2xl border border-border/80 bg-background"
-                                                        align="start"
-                                                    >
-                                                        <div className="space-y-2">
-                                                            <div className="flex items-center justify-between pb-1.5 border-b">
-                                                                <span className="text-xs font-semibold text-foreground">Configured AI Models</span>
-                                                                <span className="text-[10.5px] text-muted-foreground font-mono">
-                                                                    {availableModels.length} models
-                                                                </span>
-                                                            </div>
-
-                                                            <ModelSelector
-                                                                models={availableModels}
-                                                                value={selectedModel}
-                                                                onChange={handleModelChange}
-                                                                variant="List"
-                                                                searchable={true}
-                                                            />
-                                                        </div>
-                                                    </PopoverContent>
-                                                </Popover>
-                                            ) : (
-                                                <a
-                                                    href="/administrators/system-management/ai"
-                                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[11px] font-medium hover:bg-amber-500/15 transition-colors"
+                        {/* Composer Box Matching Screenshot */}
+                        <div className="border-t border-neutral-800/80 bg-neutral-900/20 p-3">
+                            <div className="rounded-2xl border border-neutral-800/90 bg-neutral-950/80 p-2.5 shadow-xl transition-all focus-within:border-neutral-700">
+                                {/* Top Composer Bar: Model Selector / Configure API Key & Specialist Badge */}
+                                <div className="mb-1 flex items-center justify-between pb-1.5">
+                                    {availableModels.length > 0 ? (
+                                        <Popover
+                                            open={modelPopoverOpen}
+                                            onOpenChange={setModelPopoverOpen}
+                                        >
+                                            <PopoverTrigger asChild>
+                                                <button
+                                                    type="button"
+                                                    className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-400 transition-colors hover:bg-amber-500/20"
+                                                    title="Select AI Model"
                                                 >
-                                                    <Cpu className="size-3 text-amber-500" />
-                                                    <span>Configure API Key &rarr;</span>
-                                                </a>
-                                            )}
-                                        </div>
+                                                    <Cpu className="size-3 text-amber-400" />
+                                                    <span className="max-w-[180px] truncate font-mono">
+                                                        {activeModelName}
+                                                    </span>
+                                                    <ChevronDown className="size-3 text-amber-400/70" />
+                                                </button>
+                                            </PopoverTrigger>
+                                            <PopoverContent
+                                                className="w-[340px] rounded-2xl border border-neutral-800 bg-[#121215] p-3 shadow-2xl sm:w-[380px]"
+                                                align="start"
+                                            >
+                                                <div className="space-y-2">
+                                                    <div className="flex items-center justify-between border-b border-neutral-800 pb-1.5">
+                                                        <span className="text-xs font-semibold text-white">
+                                                            Select Model
+                                                        </span>
+                                                        <span className="font-mono text-[10.5px] text-muted-foreground">
+                                                            {
+                                                                availableModels.length
+                                                            }{" "}
+                                                            models
+                                                        </span>
+                                                    </div>
+                                                    <ModelSelector
+                                                        models={availableModels}
+                                                        value={selectedModel}
+                                                        onChange={
+                                                            handleModelChange
+                                                        }
+                                                        variant="List"
+                                                        searchable={true}
+                                                    />
+                                                </div>
+                                            </PopoverContent>
+                                        </Popover>
+                                    ) : (
+                                        <a
+                                            href="/administrators/system-management/ai"
+                                            className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-400 transition-colors hover:bg-amber-500/20"
+                                        >
+                                            <Cpu className="size-3 text-amber-400" />
+                                            <span>Configure API Key &rarr;</span>
+                                        </a>
+                                    )}
 
-                                        <span className="text-[11px] text-muted-foreground font-mono opacity-80">
-                                            {activeMeta.badge}
-                                        </span>
+                                    <span className="font-mono text-xs text-muted-foreground">
+                                        {activeMeta.badge}
+                                    </span>
+                                </div>
+
+                                {/* Textarea Input */}
+                                <textarea
+                                    ref={textareaRef}
+                                    value={input}
+                                    onChange={(e) => setInput(e.target.value)}
+                                    onKeyDown={handleKeyDown}
+                                    placeholder={`Ask ${activeMeta.label} or drop files here...`}
+                                    rows={2}
+                                    disabled={isLoading}
+                                    className="min-h-[58px] max-h-[140px] w-full resize-none border-0 bg-transparent px-1 py-1.5 text-sm leading-relaxed text-white placeholder:text-neutral-500 focus:outline-none focus:ring-0"
+                                />
+
+                                {/* Bottom Composer Bar: Attach + Auto-Approve + Enter to send + Send button */}
+                                <div className="flex items-center justify-between pt-1">
+                                    <div className="flex items-center gap-1.5">
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                fileInputRef.current?.click()
+                                            }
+                                            disabled={isLoading}
+                                            className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-neutral-400 transition-colors hover:bg-neutral-900 hover:text-white"
+                                            title="Attach Excel, CSV, PDF, Word, or Images"
+                                        >
+                                            <Paperclip className="size-3.5" />
+                                            <span>Attach</span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const next = !autoApprove;
+                                                setAutoApprove(next);
+                                                toast.info(
+                                                    next
+                                                        ? "Auto-approve enabled for sensitive actions."
+                                                        : "Auto-approve disabled. Confirmation required."
+                                                );
+                                            }}
+                                            className={cn(
+                                                "inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition-colors",
+                                                autoApprove
+                                                    ? "border border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
+                                                    : "border border-neutral-800 text-neutral-400 hover:border-neutral-700 hover:text-neutral-200"
+                                            )}
+                                            title={
+                                                autoApprove
+                                                    ? "Sensitive operations execute without approval prompt"
+                                                    : "Click to auto-approve sensitive operations"
+                                            }
+                                        >
+                                            <ShieldCheck
+                                                className={cn(
+                                                    "size-3",
+                                                    autoApprove
+                                                        ? "text-emerald-400"
+                                                        : "text-neutral-400"
+                                                )}
+                                            />
+                                            <span>
+                                                {autoApprove
+                                                    ? "Auto-Approve ON"
+                                                    : "Auto-Approve"}
+                                            </span>
+                                        </button>
                                     </div>
 
-                                    {/* PromptInput Textarea */}
-                                    <PromptInputTextarea
-                                        placeholder={`Ask ${activeMeta.label} or drop files here...`}
-                                        className="w-full px-3.5 py-2.5 text-sm leading-relaxed text-foreground dark:text-neutral-100 bg-transparent border-0 resize-none outline-none placeholder:text-muted-foreground/60 dark:placeholder:text-neutral-500 min-h-[64px] max-h-[160px] font-sans"
-                                    />
+                                    <div className="flex items-center gap-2.5">
+                                        <span className="hidden text-[11px] text-neutral-500 sm:inline">
+                                            Enter ↵ to send
+                                        </span>
 
-                                    {/* PromptInput Actions Toolbar */}
-                                    <PromptInputActions className="flex items-center justify-between px-3 pb-2.5 pt-1">
-                                        <div className="flex items-center gap-1">
-                                            <FileUploadTrigger asChild>
-                                                <Button
-                                                    type="button"
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    disabled={isLoading}
-                                                    className="h-8 px-2 text-xs gap-1.5 text-muted-foreground hover:text-foreground rounded-lg cursor-pointer"
-                                                    title="Attach Excel (.xlsx, .csv), PDF, Word, or Images"
-                                                >
-                                                    <Paperclip className="size-3.5" />
-                                                    <span className="hidden sm:inline text-[11.5px]">Attach</span>
-                                                </Button>
-                                            </FileUploadTrigger>
-                                        </div>
-
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-[10.5px] text-muted-foreground/70 hidden sm:inline">
-                                                Enter ↵ to send
-                                            </span>
-
-                                            <PromptInputAction tooltip={isLoading ? "Generating..." : "Send prompt"}>
-                                                <Button
-                                                    type="button"
-                                                    size="sm"
-                                                    onClick={handleSend}
-                                                    disabled={(!input.trim() && selectedFiles.length === 0) || isLoading}
-                                                    className="h-8 px-3.5 text-xs font-semibold gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl shadow-xs transition-transform active:scale-95 cursor-pointer"
-                                                >
-                                                    {isLoading ? <Loader variant="circular" size="sm" /> : <Send className="size-3.5" />}
-                                                    <span>Send</span>
-                                                </Button>
-                                            </PromptInputAction>
-                                        </div>
-                                    </PromptInputActions>
-                                </PromptInput>
+                                        {isLoading ? (
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                variant="destructive"
+                                                onClick={stop}
+                                                className="h-8 gap-1.5 rounded-xl px-3.5 text-xs font-semibold shadow-md active:scale-95"
+                                            >
+                                                <Square className="size-3.5 fill-current" />
+                                                <span>Stop</span>
+                                            </Button>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={handleSend}
+                                                disabled={
+                                                    (!input.trim() &&
+                                                        selectedFiles.length ===
+                                                            0) ||
+                                                    isLoading
+                                                }
+                                                className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-[#9333ea] px-4 py-1.5 text-xs font-semibold text-white shadow-md shadow-purple-500/20 transition-all hover:bg-[#a855f7] disabled:cursor-not-allowed disabled:opacity-40 active:scale-95"
+                                            >
+                                                <Send className="size-3.5" />
+                                                <span>Send</span>
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
-                        </FileUpload>
+                        </div>
                     </div>
                 )}
             </div>

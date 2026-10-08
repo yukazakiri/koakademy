@@ -1303,3 +1303,85 @@ it('searches students case-insensitively and supports batch name queries', funct
         ->and($oversizedRes['count'])->toBe(151)
         ->and($oversizedRes['limit'])->toBe(150);
 });
+
+it('synchronizes auto_approve parameter in administrator AI chat session', function (): void {
+    App\Ai\Agents\AdminExecutiveAgent::fake([
+        'Confirmed.',
+    ]);
+
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+
+    // Send auto_approve = true
+    $this->actingAs($admin)
+        ->post(portalUrlForAdministrators('/administrators/ai/chat'), [
+            'agent' => 'admin_executive',
+            'message' => 'Check enrollment records',
+            'auto_approve' => true,
+        ])
+        ->assertOk();
+
+    expect(session('ai_auto_approve_actions'))->toBeTrue();
+
+    // Send auto_approve = false - session must flip to false
+    $this->actingAs($admin)
+        ->post(portalUrlForAdministrators('/administrators/ai/chat'), [
+            'agent' => 'admin_executive',
+            'message' => 'Check enrollment records again',
+            'auto_approve' => false,
+        ])
+        ->assertOk();
+
+    expect(session('ai_auto_approve_actions'))->toBeFalse();
+});
+
+it('automatically creates official enrollment for applicant using current academic settings in EnrollStudentSubjectTool', function (): void {
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $school = App\Models\School::factory()->create(['is_active' => true]);
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
+    $subject = App\Models\Subject::factory()->create([
+        'school_id' => $school->id,
+        'course_id' => $course->id,
+        'code' => 'TEST101',
+        'units' => 3,
+    ]);
+
+    $student = App\Models\Student::factory()->create([
+        'school_id' => $school->id,
+        'course_id' => $course->id,
+        'student_id' => '20260999',
+        'status' => 'applicant',
+        'academic_year' => 1,
+    ]);
+
+    $tool = new App\Mcp\Tools\EnrollStudentSubjectTool;
+
+    // Call tool acting as admin
+    $response = App\Mcp\Servers\KoAkademyServer::actingAs($admin)
+        ->tool(App\Mcp\Tools\EnrollStudentSubjectTool::class, [
+            'student_id' => (string) $student->student_id,
+            'subject_code' => 'TEST101',
+        ]);
+
+    $response->assertOk();
+
+    // Verify enrollment was created with student primary key
+    $enrollment = App\Models\StudentEnrollment::query()->where('student_id', (string) $student->id)->first();
+    expect($enrollment)->not->toBeNull()
+        ->and($enrollment->student_id)->toBe((string) $student->id)
+        ->and($enrollment->course_id)->toBe($course->id)
+        ->and($enrollment->status)->toBe('enrolled');
+
+    // Verify student relationship works
+    expect($enrollment->student->id)->toBe($student->id);
+
+    // Verify student status was updated from applicant to enrolled
+    expect($student->fresh()->status)->toBe(App\Enums\StudentStatus::Enrolled);
+
+    // Verify subject enrollment was registered
+    $subjectEnrollment = App\Models\SubjectEnrollment::query()
+        ->where('enrollment_id', $enrollment->id)
+        ->where('subject_id', $subject->id)
+        ->first();
+    expect($subjectEnrollment)->not->toBeNull()
+        ->and($subjectEnrollment->subject->units)->toBe(3);
+});

@@ -140,6 +140,11 @@ it('registers all core mcp tools on the server', function (): void {
             App\Mcp\Tools\ManageCurriculumSubjectTool::class,
             App\Mcp\Tools\ManageClassScheduleTool::class,
             App\Mcp\Tools\ManageRoomTool::class,
+            App\Mcp\Tools\ManageEnrollmentTool::class,
+            App\Mcp\Tools\ManageSubjectEnrollmentTool::class,
+            App\Mcp\Tools\InvestigateStudentEnrollmentTool::class,
+            App\Mcp\Tools\InvestigateStudentFinancesTool::class,
+            App\Mcp\Tools\GetStudentChecklistTool::class,
         ]);
 });
 

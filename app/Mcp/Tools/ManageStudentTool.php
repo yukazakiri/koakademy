@@ -8,8 +8,10 @@ use App\Enums\StudentStatus;
 use App\Enums\StudentType;
 use App\Mcp\Concerns\AuthorizesMcpRequests;
 use App\Models\Course;
+use App\Models\GeneralSetting;
 use App\Models\Student;
 use App\Models\StudentClearance;
+use App\Services\StudentDataTransferService;
 use App\Support\RegistrarStudentProfileWorkbook;
 use Carbon\Carbon;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -20,9 +22,11 @@ use Laravel\Mcp\Response;
 use Laravel\Mcp\ResponseFactory;
 use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tool;
+use Laravel\Mcp\Server\Tools\Annotations\IsIdempotent;
 use Throwable;
 
-#[Description('Manage student records in the selected school: create new student profiles, update status or program information, archive records, or fetch details.')]
+#[Description('Manage student lifecycle: create, update, batch upsert, archive, soft-delete, restore, transfer records between students, or retrieve detailed profile and special equity fields. Requires MCP write key and appropriate registrar permissions.')]
+#[IsIdempotent]
 final class ManageStudentTool extends Tool
 {
     use AuthorizesMcpRequests;
@@ -67,6 +71,12 @@ final class ManageStudentTool extends Tool
         'family_income_bracket',
     ];
 
+    public function __construct(
+        private ?StudentDataTransferService $transferService = null,
+    ) {
+        $this->transferService ??= app(StudentDataTransferService::class);
+    }
+
     public function handle(Request $request): ResponseFactory
     {
         $action = mb_strtolower((string) $request->get('action'));
@@ -76,7 +86,8 @@ final class ManageStudentTool extends Tool
             $this->requirePermission($user, 'View:Student', 'You are not permitted to view student records.');
 
             $studentId = $request->get('student_id');
-            $student = $this->resolveStudent((string) $studentId);
+            $includeTrashed = (bool) $request->get('include_trashed', false);
+            $student = $this->resolveStudent((string) $studentId, withTrashed: $includeTrashed);
 
             if (! $student instanceof Student) {
                 return Response::structured(['found' => false, 'message' => "Student '{$studentId}' not found."]);
@@ -89,6 +100,8 @@ final class ManageStudentTool extends Tool
                 'name' => $student->full_name,
                 'email' => $student->email,
                 'status' => $student->status,
+                'is_trashed' => $student->trashed(),
+                'deleted_at' => $student->deleted_at?->toIso8601String(),
                 'year_level' => $student->academic_year,
                 'program' => $student->Course?->code,
                 'equity' => $this->equityPayload($student),
@@ -103,6 +116,12 @@ final class ManageStudentTool extends Tool
             $this->requirePermission($user, 'Update:Student', 'You are not permitted to modify student records.');
         } elseif ($action === 'archive' || $action === 'delete') {
             $this->requirePermission($user, 'Update:Student', 'You are not permitted to archive student records.');
+        } elseif ($action === 'soft_delete') {
+            $this->requirePermission($user, 'Delete:Student', 'You are not permitted to soft-delete student records.');
+        } elseif ($action === 'restore') {
+            $this->requirePermission($user, 'Restore:Student', 'You are not permitted to restore student records.');
+        } elseif ($action === 'transfer_records') {
+            $this->requirePermission($user, 'Update:Student', 'You are not permitted to transfer records between students.');
         } else {
             $this->requirePermission($user, 'Update:Student', 'You are not permitted to modify student records.');
         }
@@ -112,7 +131,10 @@ final class ManageStudentTool extends Tool
             'update' => $this->handleUpdate($request),
             'batch_upsert' => $this->handleBatchUpsert($request),
             'archive', 'delete' => $this->handleArchive($request),
-            default => Response::structured(['error' => true, 'message' => "Unsupported action '{$action}'. Valid: create, update, batch_upsert, archive, get."]),
+            'soft_delete' => $this->handleSoftDelete($request),
+            'restore' => $this->handleRestore($request),
+            'transfer_records' => $this->handleTransferRecords($request, $user),
+            default => Response::structured(['error' => true, 'message' => "Unsupported action '{$action}'. Valid: create, update, batch_upsert, archive, soft_delete, restore, transfer_records, get."]),
         };
     }
 
@@ -120,7 +142,7 @@ final class ManageStudentTool extends Tool
     public function schema(JsonSchema $schema): array
     {
         return [
-            'action' => $schema->string()->enum(['create', 'update', 'batch_upsert', 'archive', 'get'])->required()->description('Operation: create, update, batch_upsert, archive, get.'),
+            'action' => $schema->string()->enum(['create', 'update', 'batch_upsert', 'archive', 'soft_delete', 'restore', 'transfer_records', 'get'])->required()->description('Operation: create, update, batch_upsert, archive, soft_delete, restore, transfer_records, get.'),
             'students' => $schema->array()->description('List of students for batch_upsert.')->items(
                 $schema->object(fn ($s) => [
                     'student_id' => $s->string()->description('Student database ID or student number.'),
@@ -135,6 +157,11 @@ final class ManageStudentTool extends Tool
                 ])
             ),
             'student_id' => $schema->string()->description('Student database ID or student number.'),
+            'target_student_id' => $schema->string()->description('Target student database ID or student number for transfer_records action.'),
+            'enrollment_id' => $schema->integer()->description('Optional specific enrollment ID to move during transfer_records. If omitted, all records are transferred.'),
+            'preview' => $schema->boolean()->description('When true for transfer_records, previews affected records without modifying the database.'),
+            'confirm' => $schema->boolean()->description('Confirmation flag for destructive or high-impact actions like transfer_records or soft_delete.'),
+            'include_trashed' => $schema->boolean()->description('When true for get, includes soft-deleted student records.'),
             'first_name' => $schema->string()->description('Student first name.'),
             'last_name' => $schema->string()->description('Student last name.'),
             'email' => $schema->string()->description('Student email address.'),
@@ -142,6 +169,7 @@ final class ManageStudentTool extends Tool
             'course_id' => $schema->integer()->description('Degree program database ID.'),
             'academic_year' => $schema->integer()->description('Year level (1-5).'),
             'status' => $schema->string()->description('Status: enrolled, applicant, graduated, on_leave, dropped.'),
+            'reason' => $schema->string()->description('Reason for archiving, soft-deleting, or transferring records.'),
             'idempotency_key' => $schema->string()->description('Unique idempotency key for safe retries on create.'),
             'ethnicity' => $schema->string()->description('Ethnicity / ethnolinguistic group, e.g. Ilocano, Kankanaey, Ibaloi.'),
             'region_of_origin' => $this->choiceField($schema, 'region_of_origin', 'Region of origin. Accepts "CAR - Cordillera Administrative Region" style values and normalizes them.'),
@@ -268,8 +296,8 @@ final class ManageStudentTool extends Tool
                 ...$equity,
             ]);
 
-            $generalSetting = \App\Models\GeneralSetting::query()->first();
-            if ($generalSetting instanceof \App\Models\GeneralSetting) {
+            $generalSetting = GeneralSetting::query()->first();
+            if ($generalSetting instanceof GeneralSetting) {
                 StudentClearance::createForCurrentSemester($newStudent, $generalSetting);
             }
 
@@ -366,7 +394,7 @@ final class ManageStudentTool extends Tool
         $updated = [];
         $errors = [];
 
-        $generalSetting = \App\Models\GeneralSetting::query()->first();
+        $generalSetting = GeneralSetting::query()->first();
         $defaultCourse = Course::query()->first();
 
         DB::transaction(function () use ($validated, &$created, &$updated, &$errors, $generalSetting, $defaultCourse) {
@@ -433,7 +461,7 @@ final class ManageStudentTool extends Tool
                             'lrn' => $sData['lrn'] ?? null,
                         ]);
 
-                        if ($generalSetting instanceof \App\Models\GeneralSetting) {
+                        if ($generalSetting instanceof GeneralSetting) {
                             StudentClearance::createForCurrentSemester($newStudent, $generalSetting);
                         }
 
@@ -479,17 +507,123 @@ final class ManageStudentTool extends Tool
         ]);
     }
 
-    private function resolveStudent(string $identifier): ?Student
+    private function handleSoftDelete(Request $request): ResponseFactory
     {
+        $student = $this->resolveStudent((string) $request->get('student_id'));
+        if (! $student instanceof Student) {
+            return Response::structured(['error' => true, 'message' => 'Student not found.']);
+        }
+
+        $studentName = $student->full_name;
+        $studentNumber = (string) $student->student_id;
+        $studentId = $student->id;
+
+        $student->delete();
+
+        return Response::structured([
+            'success' => true,
+            'action' => 'soft_delete',
+            'message' => "Student {$studentName} (ID: {$studentNumber}) was soft-deleted.",
+            'student' => [
+                'id' => $studentId,
+                'student_number' => $studentNumber,
+                'name' => $studentName,
+            ],
+            'reason' => (string) ($request->get('reason') ?? 'Soft-deleted via MCP ManageStudentTool.'),
+        ]);
+    }
+
+    private function handleRestore(Request $request): ResponseFactory
+    {
+        $student = $this->resolveStudent((string) $request->get('student_id'), withTrashed: true);
+        if (! $student instanceof Student) {
+            return Response::structured(['error' => true, 'message' => 'Student not found (including trashed records).']);
+        }
+
+        if (! $student->trashed()) {
+            return Response::structured([
+                'success' => true,
+                'action' => 'restore',
+                'message' => "Student {$student->full_name} is already active.",
+                'already_active' => true,
+            ]);
+        }
+
+        $student->restore();
+
+        return Response::structured([
+            'success' => true,
+            'action' => 'restore',
+            'message' => "Student {$student->full_name} (ID: {$student->student_id}) restored successfully.",
+            'student' => [
+                'id' => $student->id,
+                'student_number' => (string) $student->student_id,
+                'name' => $student->full_name,
+                'status' => $student->status,
+            ],
+        ]);
+    }
+
+    private function handleTransferRecords(Request $request, \App\Models\User $actor): ResponseFactory
+    {
+        $sourceId = (string) $request->get('student_id');
+        $targetId = (string) $request->get('target_student_id');
+
+        if (blank($targetId)) {
+            return Response::structured(['error' => true, 'message' => 'target_student_id is required to transfer records.']);
+        }
+
+        $source = $this->resolveStudent($sourceId, withTrashed: true);
+        if (! $source instanceof Student) {
+            return Response::structured(['error' => true, 'message' => "Source student '{$sourceId}' not found."]);
+        }
+
+        $target = $this->resolveStudent($targetId, withTrashed: true);
+        if (! $target instanceof Student) {
+            return Response::structured(['error' => true, 'message' => "Target student '{$targetId}' not found."]);
+        }
+
+        $options = [
+            'enrollment_id' => $request->get('enrollment_id') ? (int) $request->get('enrollment_id') : null,
+            'reason' => (string) ($request->get('reason') ?? 'Reassigned via MCP ManageStudentTool.'),
+        ];
+
+        try {
+            $previewOnly = (bool) $request->get('preview', false);
+            $confirmed = (bool) $request->get('confirm', false);
+
+            if ($previewOnly || ! $confirmed) {
+                $preview = $this->transferService->preview($source, $target, $options);
+
+                return Response::structured([
+                    'success' => true,
+                    'action' => 'transfer_records_preview',
+                    'confirmation_required' => ! $confirmed,
+                    'message' => 'Review the affected records below. Set confirm=true to commit this permanent reassignment.',
+                    ...$preview,
+                ]);
+            }
+
+            $result = $this->transferService->transfer($source, $target, $actor, $options);
+
+            return Response::structured($result);
+        } catch (Throwable $e) {
+            return Response::structured(['error' => true, 'message' => $e->getMessage()]);
+        }
+    }
+
+    private function resolveStudent(string $identifier, bool $withTrashed = false): ?Student
+    {
+        $query = $withTrashed ? Student::withTrashed() : Student::query();
+
         if (is_numeric($identifier)) {
-            $found = Student::query()->find((int) $identifier);
+            $found = (clone $query)->find((int) $identifier);
             if ($found) {
                 return $found;
             }
         }
 
-        return Student::query()
-            ->where('student_id', $identifier)
+        return $query->where('student_id', $identifier)
             ->orWhere('email', $identifier)
             ->first();
     }

@@ -10,6 +10,7 @@ use App\Models\Course;
 use App\Models\Student;
 use App\Models\StudentClearance;
 use App\Models\User;
+use App\Services\StudentDataTransferService;
 use Carbon\Carbon;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Facades\Auth;
@@ -25,9 +26,15 @@ final class ManageStudentTool implements Tool
 {
     use InteractsWithApprovals;
 
+    public function __construct(
+        private ?StudentDataTransferService $transferService = null,
+    ) {
+        $this->transferService ??= app(StudentDataTransferService::class);
+    }
+
     public function description(): Stringable|string
     {
-        return 'Create, update, archive, or inspect student profiles and status in the institution. Modifications require administrator confirmation.';
+        return 'Create, update, archive, soft-delete, restore, transfer records between students, or inspect student profiles. Modifications require administrator confirmation.';
     }
 
     public function handle(Request $request): Stringable|string
@@ -55,6 +62,18 @@ final class ManageStudentTool implements Tool
             if (! $user->hasRole('super_admin') && ! $user->can('Delete:Student') && ! $user->can('Update:Student')) {
                 return json_encode(['error' => true, 'message' => 'You are not permitted to archive or delete student records.']);
             }
+        } elseif ($action === 'soft_delete') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Delete:Student')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to soft-delete student records.']);
+            }
+        } elseif ($action === 'restore') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Restore:Student') && ! $user->can('Delete:Student')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to restore student records.']);
+            }
+        } elseif ($action === 'transfer_records') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Update:Student')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to transfer records between students.']);
+            }
         } elseif ($action === 'update') {
             if (! $user->hasRole('super_admin') && ! $user->can('Update:Student')) {
                 return json_encode(['error' => true, 'message' => 'You are not permitted to update student records.']);
@@ -66,8 +85,11 @@ final class ManageStudentTool implements Tool
             'update' => $this->handleUpdate($request),
             'batch_upsert' => $this->handleBatchUpsert($request),
             'archive', 'delete' => $this->handleArchive($request),
+            'soft_delete' => $this->handleSoftDelete($request),
+            'restore' => $this->handleRestore($request),
+            'transfer_records' => $this->handleTransferRecords($request, $user),
             'get' => $this->handleGet($request),
-            default => json_encode(['error' => true, 'message' => "Unknown action '{$action}'. Supported actions: create, update, batch_upsert, archive, get."]),
+            default => json_encode(['error' => true, 'message' => "Unknown action '{$action}'. Supported actions: create, update, batch_upsert, archive, soft_delete, restore, transfer_records, get."]),
         };
     }
 
@@ -75,7 +97,7 @@ final class ManageStudentTool implements Tool
     {
         return [
             'action' => $schema->string()
-                ->enum(['create', 'update', 'batch_upsert', 'archive', 'get'])
+                ->enum(['create', 'update', 'batch_upsert', 'archive', 'soft_delete', 'restore', 'transfer_records', 'get'])
                 ->required()
                 ->description('The operation to perform on student records.'),
             'students' => $schema->array()
@@ -97,7 +119,15 @@ final class ManageStudentTool implements Tool
                     ])
                 ),
             'student_id' => $schema->string()
-                ->description('Database ID or official student number (e.g. "2024-0012" or "45") for update/archive/get.'),
+                ->description('Database ID or official student number (e.g. "2024-0012" or "45") for update/archive/soft_delete/restore/transfer_records/get.'),
+            'target_student_id' => $schema->string()
+                ->description('Destination student ID or student number for transfer_records action.'),
+            'enrollment_id' => $schema->integer()
+                ->description('Optional specific enrollment ID to transfer during transfer_records. If omitted, transfers all records.'),
+            'preview' => $schema->boolean()
+                ->description('When true for transfer_records, simulates and reports affected records without committing.'),
+            'include_trashed' => $schema->boolean()
+                ->description('When true for get, includes soft-deleted student records.'),
             'first_name' => $schema->string()->description('Student first name for create/update.'),
             'last_name' => $schema->string()->description('Student last name for create/update.'),
             'middle_name' => $schema->string()->description('Optional middle name.'),
@@ -109,7 +139,7 @@ final class ManageStudentTool implements Tool
             'status' => $schema->string()->enum(['enrolled', 'applicant', 'graduated', 'on_leave', 'dropped'])->description('Student status.'),
             'gender' => $schema->string()->enum(['Male', 'Female', 'Other'])->description('Student gender.'),
             'birth_date' => $schema->string()->description('Date of birth in YYYY-MM-DD format.'),
-            'reason' => $schema->string()->description('Reason for status change or archiving.'),
+            'reason' => $schema->string()->description('Reason for status change, archiving, soft delete, or transfer.'),
         ];
     }
 
@@ -146,9 +176,34 @@ final class ManageStudentTool implements Tool
 
         if ($action === 'archive' || $action === 'delete') {
             $id = $request['student_id'] ?? 'unknown';
-            $reason = $request['reason'] ? " Reason: {$request['reason']}" : '';
+            $reason = ! empty($request['reason']) ? " Reason: {$request['reason']}" : '';
 
             return Approval::required("Archive/deactivate student #{$id}?{$reason}");
+        }
+
+        if ($action === 'soft_delete') {
+            $id = $request['student_id'] ?? 'unknown';
+            $reason = ! empty($request['reason']) ? " Reason: {$request['reason']}" : '';
+
+            return Approval::required("Soft-delete student #{$id}?{$reason} This moves the student record to the trash.");
+        }
+
+        if ($action === 'restore') {
+            $id = $request['student_id'] ?? 'unknown';
+
+            return Approval::required("Restore soft-deleted student record #{$id}?");
+        }
+
+        if ($action === 'transfer_records') {
+            if (request()->boolean('preview', false) || ($request['preview'] ?? false)) {
+                return false;
+            }
+
+            $sourceId = $request['student_id'] ?? 'unknown source';
+            $targetId = $request['target_student_id'] ?? 'unknown target';
+            $scope = ! empty($request['enrollment_id']) ? "enrollment record #{$request['enrollment_id']}" : 'ALL academic, enrollment, and financial records';
+
+            return Approval::required("Permanently transfer {$scope} from student #{$sourceId} to student #{$targetId}?");
         }
 
         return false;
@@ -447,6 +502,116 @@ final class ManageStudentTool implements Tool
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
+    private function handleSoftDelete(Request $request): string
+    {
+        $validated = $request->validate([
+            'student_id' => 'required',
+            'reason' => 'nullable|string|max:500',
+        ]);
+
+        $student = $this->resolveStudent((string) $validated['student_id']);
+        if (! $student instanceof Student) {
+            return json_encode(['error' => true, 'message' => "Student '{$validated['student_id']}' not found."]);
+        }
+
+        $studentName = $student->full_name;
+        $studentNumber = (string) $student->student_id;
+        $studentId = $student->id;
+
+        $student->delete();
+
+        return json_encode([
+            'success' => true,
+            'action' => 'soft_delete',
+            'message' => "Student {$studentName} (ID: {$studentNumber}) was soft-deleted.",
+            'student' => [
+                'id' => $studentId,
+                'student_number' => $studentNumber,
+                'name' => $studentName,
+            ],
+            'reason' => $validated['reason'] ?? 'Soft-deleted via administrative copilot.',
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    }
+
+    private function handleRestore(Request $request): string
+    {
+        $validated = $request->validate([
+            'student_id' => 'required',
+        ]);
+
+        $student = $this->resolveStudent((string) $validated['student_id'], withTrashed: true);
+        if (! $student instanceof Student) {
+            return json_encode(['error' => true, 'message' => "Student '{$validated['student_id']}' not found (including trashed)."]);
+        }
+
+        if (! $student->trashed()) {
+            return json_encode([
+                'success' => true,
+                'action' => 'restore',
+                'message' => "Student {$student->full_name} (ID: {$student->student_id}) is not deleted.",
+                'already_active' => true,
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        }
+
+        $student->restore();
+
+        return json_encode([
+            'success' => true,
+            'action' => 'restore',
+            'message' => "Student {$student->full_name} (ID: {$student->student_id}) restored successfully.",
+            'student' => [
+                'id' => $student->id,
+                'student_number' => (string) $student->student_id,
+                'name' => $student->full_name,
+                'status' => $student->status,
+            ],
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    }
+
+    private function handleTransferRecords(Request $request, User $actor): string
+    {
+        $validated = $request->validate([
+            'student_id' => 'required',
+            'target_student_id' => 'required',
+            'enrollment_id' => 'nullable|integer',
+            'preview' => 'nullable|boolean',
+            'reason' => 'nullable|string|max:500',
+        ]);
+
+        $source = $this->resolveStudent((string) $validated['student_id'], withTrashed: true);
+        if (! $source instanceof Student) {
+            return json_encode(['error' => true, 'message' => "Source student '{$validated['student_id']}' not found."]);
+        }
+
+        $target = $this->resolveStudent((string) $validated['target_student_id'], withTrashed: true);
+        if (! $target instanceof Student) {
+            return json_encode(['error' => true, 'message' => "Target student '{$validated['target_student_id']}' not found."]);
+        }
+
+        $options = [
+            'enrollment_id' => $validated['enrollment_id'] ?? null,
+            'reason' => $validated['reason'] ?? 'Reassigned via administrative assistant.',
+        ];
+
+        try {
+            if ($validated['preview'] ?? false) {
+                $preview = $this->transferService->preview($source, $target, $options);
+
+                return json_encode([
+                    'success' => true,
+                    'action' => 'transfer_records_preview',
+                    ...$preview,
+                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+            }
+
+            $result = $this->transferService->transfer($source, $target, $actor, $options);
+
+            return json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        } catch (Throwable $e) {
+            return json_encode(['error' => true, 'message' => $e->getMessage()]);
+        }
+    }
+
     private function handleGet(Request $request): string
     {
         $id = $request['student_id'] ?? null;
@@ -454,7 +619,8 @@ final class ManageStudentTool implements Tool
             return json_encode(['error' => true, 'message' => 'student_id is required to fetch details.']);
         }
 
-        $student = $this->resolveStudent((string) $id);
+        $includeTrashed = (bool) ($request['include_trashed'] ?? false);
+        $student = $this->resolveStudent((string) $id, withTrashed: $includeTrashed);
         if (! $student instanceof Student) {
             return json_encode(['error' => true, 'message' => "Student '{$id}' not found."]);
         }
@@ -466,6 +632,8 @@ final class ManageStudentTool implements Tool
             'name' => $student->full_name,
             'email' => $student->email,
             'status' => $student->status,
+            'is_trashed' => $student->trashed(),
+            'deleted_at' => $student->deleted_at?->toIso8601String(),
             'program' => $student->Course?->code ?? 'N/A',
             'year_level' => $student->academic_year,
             'gender' => $student->gender,
@@ -473,17 +641,18 @@ final class ManageStudentTool implements Tool
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
-    private function resolveStudent(string $identifier): ?Student
+    private function resolveStudent(string $identifier, bool $withTrashed = false): ?Student
     {
+        $query = $withTrashed ? Student::withTrashed() : Student::query();
+
         if (is_numeric($identifier)) {
-            $found = Student::query()->find((int) $identifier);
+            $found = (clone $query)->find((int) $identifier);
             if ($found) {
                 return $found;
             }
         }
 
-        return Student::query()
-            ->where('student_id', $identifier)
+        return $query->where('student_id', $identifier)
             ->orWhere('email', $identifier)
             ->first();
     }

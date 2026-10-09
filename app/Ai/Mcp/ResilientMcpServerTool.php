@@ -75,7 +75,13 @@ final class ResilientMcpServerTool extends McpServerTool
                 'Update official administrative remarks on enrollment record?'
             ),
             'ManageStudentTool' => Approval::required(
-                'Perform student record modification or creation?'
+                'Perform student record modification, soft-delete, restore, or cross-student transfer?'
+            ),
+            'ManageEnrollmentTool' => Approval::required(
+                'Create, update, cancel, soft-delete, restore, or transfer student enrollment record? This will modify official registration.'
+            ),
+            'ManageSubjectEnrollmentTool' => Approval::required(
+                'Enroll, drop, update grades, modify fees, delete, or transfer subject enrollment? This modifies official coursework.'
             ),
             'TransferStudentSectionTool' => Approval::required(
                 'Transfer student to another class section?'

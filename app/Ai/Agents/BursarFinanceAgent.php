@@ -77,10 +77,12 @@ INSTRUCTIONS;
             new ValidateAdjustmentSpreadsheetTool,
             new SimulateScholarshipAdjustmentTool,
             new ApplyTuitionAdjustmentBatchTool,
+            new \App\Ai\Tools\InvestigateStudentFinancesTool,
             new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\GetStatementOfAccountTool),
             new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\GetStudentProfileTool),
             new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\GetEnrollmentStatusTool),
             new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\SearchStudentsTool),
+            new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\InvestigateStudentFinancesTool),
         ];
     }
 

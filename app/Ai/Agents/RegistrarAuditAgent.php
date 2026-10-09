@@ -80,12 +80,20 @@ INSTRUCTIONS;
             new AuditGraduationClearanceTool,
             new BatchUpdateClearanceTool,
             new AnalyzeTranscriptDocumentTool,
+            new \App\Ai\Tools\InvestigateStudentEnrollmentTool,
+            new \App\Ai\Tools\GetCurriculumProgressTool,
+            new \App\Ai\Tools\ManageEnrollmentTool,
+            new \App\Ai\Tools\ManageSubjectEnrollmentTool,
             new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\SearchStudentsTool),
             new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\GetStudentProfileTool),
             new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\ListPendingEnrollmentsTool),
             new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\GetEnrollmentStatusTool),
             new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\GetEnrollmentAuditTrailTool),
             new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\GetCourseCurriculumTool),
+            new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\InvestigateStudentEnrollmentTool),
+            new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\GetStudentChecklistTool),
+            new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\ManageEnrollmentTool),
+            new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\ManageSubjectEnrollmentTool),
         ];
     }
 

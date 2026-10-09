@@ -52,6 +52,7 @@ INSTRUCTIONS;
             new CheckPrerequisitesTool,
             new AnalyzeTimetableConflictsTool,
             new GetCurriculumProgressTool,
+            new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\GetStudentChecklistTool),
             new DraftEnrollmentCartTool,
             new SubmitEnrollmentPlanTool,
         ];

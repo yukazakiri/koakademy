@@ -188,7 +188,7 @@ final class AdministratorEnrollmentManagementController extends Controller
             ->where('student_enrollment.school_year', $currentSchoolYearString)
             ->where('student_enrollment.semester', $currentSemester)
             ->where('student_enrollment.status', '!=', $pendingStatus)
-            ->join('courses', 'student_enrollment.course_id', '=', 'courses.id')
+            ->join('courses', DB::raw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT)'), '=', 'courses.id')
             ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
             ->selectRaw('TRIM(departments.code) as department, count(*) as count')
             ->groupByRaw('TRIM(departments.code)')

@@ -188,7 +188,7 @@ final class AdministratorEnrollmentManagementController extends Controller
             ->where('student_enrollment.school_year', $currentSchoolYearString)
             ->where('student_enrollment.semester', $currentSemester)
             ->where('student_enrollment.status', '!=', $pendingStatus)
-            ->join('courses', DB::raw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT)'), '=', 'courses.id')
+            ->join('courses', 'student_enrollment.course_id', '=', 'courses.id')
             ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
             ->selectRaw('TRIM(departments.code) as department, count(*) as count')
             ->groupByRaw('TRIM(departments.code)')
@@ -233,16 +233,67 @@ final class AdministratorEnrollmentManagementController extends Controller
         $departmentFilter = request('department_filter', 'all');
         $yearLevelFilter = request('year_level_filter', 'all');
         $courseFilter = request('course_filter', 'all');
+        $sort = request('sort', 'created_at');
+        $direction = request('direction', 'desc') === 'asc' ? 'asc' : 'desc';
+        $perPageInput = request('per_page', 'all');
+        $perPage = $perPageInput === 'all' ? 100000 : max(10, min(150, (int) $perPageInput));
 
         $enrollments = fn () => StudentEnrollment::query()
             ->withTrashed()
             ->where('student_enrollment.school_year', $currentSchoolYearString)
             ->where('student_enrollment.semester', $currentSemester)
+            ->when($statusFilter && $statusFilter !== 'all', function ($query) use ($statusFilter) {
+                if ($statusFilter === 'active') {
+                    $query->whereNull('student_enrollment.deleted_at');
+                } elseif ($statusFilter === 'trashed') {
+                    $query->onlyTrashed();
+                } else {
+                    $query->where('student_enrollment.status', $statusFilter);
+                }
+            })
+            ->when($departmentFilter && $departmentFilter !== 'all', function ($query) use ($departmentFilter) {
+                $query->whereHas('course.department', fn ($q) => $q->where('code', $departmentFilter));
+            })
+            ->when($yearLevelFilter && $yearLevelFilter !== 'all', function ($query) use ($yearLevelFilter) {
+                $query->where('student_enrollment.academic_year', (int) $yearLevelFilter);
+            })
+            ->when($courseFilter && $courseFilter !== 'all', function ($query) use ($courseFilter) {
+                $query->where('student_enrollment.course_id', (int) $courseFilter);
+            })
+            ->when(is_string($search) && mb_trim($search) !== '', function ($query) use ($search) {
+                $searchTerm = mb_trim($search);
+                $like = "%{$searchTerm}%";
+                $query->where(function ($q) use ($like) {
+                    $q->whereHas('student', function ($sq) use ($like) {
+                        $sq->where('first_name', 'like', $like)
+                            ->orWhere('last_name', 'like', $like)
+                            ->orWhere('student_id', 'like', $like)
+                            ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", [$like])
+                            ->orWhereRaw("CONCAT(last_name, ', ', first_name) LIKE ?", [$like]);
+                    })
+                        ->orWhereHas('course', fn ($sq) => $sq->where('code', 'like', $like)->orWhere('title', 'like', $like))
+                        ->orWhere('student_enrollment.status', 'like', $like);
+                });
+            })
             ->with(['student.Course', 'course.department', 'studentTuition'])
             ->withCount('subjectsEnrolled')
-            ->orderByDesc('student_enrollment.created_at')
-            ->orderByDesc('student_enrollment.id')
-            ->paginate(100000, ['*'], 'page', 1)
+            ->when($sort === 'student_name', function ($query) use ($direction) {
+                $query->orderBy(
+                    Student::select('last_name')
+                        ->whereColumn('students.id', 'student_enrollment.student_id')
+                        ->limit(1),
+                    $direction
+                );
+            }, function ($query) use ($sort, $direction) {
+                if ($sort === 'created_at') {
+                    $query->orderBy('student_enrollment.created_at', $direction)
+                        ->orderBy('student_enrollment.id', $direction);
+                } else {
+                    $query->orderByDesc('student_enrollment.created_at')
+                        ->orderByDesc('student_enrollment.id');
+                }
+            })
+            ->paginate($perPage, ['*'], 'page', (int) request('page', 1))
             ->withQueryString()
             ->through(fn (StudentEnrollment $enrollment): array => [
                 'id' => $enrollment->id,
@@ -298,7 +349,10 @@ final class AdministratorEnrollmentManagementController extends Controller
             'flash' => session('flash'),
             'filters' => [
                 'search' => $search,
-                'per_page' => request('per_page', 'all'),
+                'sort' => $sort,
+                'direction' => $direction,
+                'per_page' => $perPageInput,
+                'page' => (int) request('page', 1),
                 'status_filter' => $statusFilter,
                 'department_filter' => $departmentFilter,
                 'year_level_filter' => $yearLevelFilter,
@@ -310,6 +364,15 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'availableSemesters' => $settingsService->getAvailableSemesters(),
                 'availableSchoolYears' => $settingsService->getAvailableSchoolYears(),
             ],
+            'available_courses' => fn () => Course::query()
+                ->orderBy('code')
+                ->get(['id', 'code', 'title'])
+                ->map(fn (Course $c): array => [
+                    'id' => $c->id,
+                    'code' => $c->code,
+                    'title' => $c->title,
+                ])
+                ->values(),
             'enrollment_pipeline' => [
                 ...$this->enrollmentPipelineService->getConfiguration(),
                 'steps' => $this->enrollmentPipelineService->getSteps(),

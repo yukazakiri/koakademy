@@ -27,6 +27,7 @@ export interface EnrollmentManagementProps {
         };
     };
     applicantsCount: number;
+    available_courses?: { id: number; code: string; title: string | null }[];
     enrollments: {
         data: EnrollmentRow[];
         current_page: number;
@@ -50,6 +51,8 @@ export interface EnrollmentManagementProps {
     };
     filters: SemesterSelectorProps & {
         search?: string;
+        sort?: string;
+        direction?: "asc" | "desc";
         per_page?: string | number;
         status_filter?: string;
         department_filter?: string;

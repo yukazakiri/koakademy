@@ -19,7 +19,7 @@ import {
     UserPlus,
     Users,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { route } from "ziggy-js";
 import { createColumns, type EnrollmentRow } from "./columns";
@@ -146,14 +146,161 @@ export default function AdministratorEnrollmentsIndex({
     enrollments,
     analytics,
     filters,
+    available_courses,
     enrollment_pipeline,
 }: EnrollmentManagementProps) {
     const { props } = usePage<{ branding?: Branding }>();
     const currency = props.branding?.currency || "PHP";
 
     const [enrollmentSearch, setEnrollmentSearch] = useState(filters.search || "");
+    const searchInputRef = useRef<HTMLInputElement>(null);
+    const searchInputFocusedRef = useRef(false);
+    const searchDraftRef = useRef(filters.search || "");
+    const debouncedSearchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
     const [activeFilters, setActiveFilters] = useState<FilterType[]>(() => createInitialEnrollmentFilters(filters));
-    const [sortOption, setSortOption] = useState("created_at:desc");
+    const [sortOption, setSortOption] = useState(`${filters.sort ?? "created_at"}:${filters.direction ?? "desc"}`);
+
+    // Keyboard shortcut to focus search input: '/' or 'Cmd+K' / 'Ctrl+K'
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (
+                (event.key === "/" || ((event.metaKey || event.ctrlKey) && event.key === "k")) &&
+                document.activeElement?.tagName !== "INPUT" &&
+                document.activeElement?.tagName !== "TEXTAREA"
+            ) {
+                event.preventDefault();
+                searchInputRef.current?.focus();
+            }
+        };
+
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, []);
+
+    const cancelPendingSearch = () => {
+        if (debouncedSearchRef.current) {
+            clearTimeout(debouncedSearchRef.current);
+            debouncedSearchRef.current = null;
+        }
+    };
+
+    useEffect(() => {
+        return () => {
+            cancelPendingSearch();
+        };
+    }, []);
+
+    // Synchronize initial filters from server props without clobbering active search drafts
+    useEffect(() => {
+        const serverSearch = filters.search || "";
+        if (!searchInputFocusedRef.current && debouncedSearchRef.current === null) {
+            setEnrollmentSearch(serverSearch);
+            searchDraftRef.current = serverSearch;
+        } else if (searchDraftRef.current === serverSearch) {
+            setEnrollmentSearch(serverSearch);
+        }
+
+        setActiveFilters(createInitialEnrollmentFilters(filters));
+
+        if (filters.sort) {
+            setSortOption(`${filters.sort}:${filters.direction ?? "desc"}`);
+        }
+    }, [filters]);
+
+    const buildQueryParams = (
+        overrides: {
+            search?: string;
+            filters?: FilterType[];
+            sort?: string;
+            direction?: "asc" | "desc";
+            page?: number;
+            per_page?: string | number;
+        } = {},
+    ) => {
+        const nextFilters = overrides.filters ?? activeFilters;
+        const filterMap = Object.fromEntries(
+            nextFilters
+                .map((filter) => [filter.field, filter.values[0]] as const)
+                .filter((entry): entry is readonly [string, string | number] => typeof entry[1] === "string" || typeof entry[1] === "number")
+                .map(([field, value]) => [field, String(value)]),
+        );
+
+        const activeSearch = overrides.search !== undefined ? overrides.search : enrollmentSearch;
+        const activeSort = overrides.sort !== undefined ? overrides.sort : (filters.sort ?? "created_at");
+        const activeDirection = overrides.direction !== undefined ? overrides.direction : (filters.direction ?? "desc");
+        const activePerPage = overrides.per_page !== undefined ? overrides.per_page : (filters.per_page ?? "all");
+        const activePage = overrides.page !== undefined ? overrides.page : (enrollments?.current_page ?? 1);
+
+        const params: Record<string, string | number | null> = {
+            search: activeSearch.trim() ? activeSearch.trim() : null,
+            sort: activeSort,
+            direction: activeDirection,
+            per_page: activePerPage,
+            page: activePage,
+        };
+
+        if (filterMap.status_filter && filterMap.status_filter !== "all") params.status_filter = filterMap.status_filter;
+        if (filterMap.department_filter && filterMap.department_filter !== "all") params.department_filter = filterMap.department_filter;
+        if (filterMap.year_level_filter && filterMap.year_level_filter !== "all") params.year_level_filter = filterMap.year_level_filter;
+        if (filterMap.course_filter && filterMap.course_filter !== "all") params.course_filter = filterMap.course_filter;
+
+        return params;
+    };
+
+    const navigateWithParams = (
+        params: Record<string, string | number | null>,
+        options: { replace?: boolean; only?: string[] } = {},
+    ) => {
+        cancelPendingSearch();
+        router.get(route("administrators.enrollments.index"), params, {
+            preserveState: true,
+            preserveScroll: true,
+            replace: options.replace ?? true,
+            only: options.only ?? ["enrollments", "filters"],
+        });
+    };
+
+    const handleEnrollmentSearchChange = (value: string) => {
+        searchDraftRef.current = value;
+        setEnrollmentSearch(value);
+        cancelPendingSearch();
+        debouncedSearchRef.current = setTimeout(() => {
+            debouncedSearchRef.current = null;
+            router.get(route("administrators.enrollments.index"), buildQueryParams({ search: value, page: 1 }), {
+                preserveState: true,
+                preserveScroll: true,
+                replace: true,
+                only: ["enrollments", "filters"],
+            });
+        }, 300);
+    };
+
+    const handleDepartmentFilterChange = (value: string) => {
+        const nextFilters = upsertSingleFilter(activeFilters, "department_filter", value);
+        setActiveFilters(nextFilters);
+        navigateWithParams(buildQueryParams({ filters: nextFilters, page: 1 }));
+    };
+
+    const handleFiltersChange = (nextFilters: FilterType[]) => {
+        setActiveFilters(nextFilters);
+        navigateWithParams(buildQueryParams({ filters: nextFilters, page: 1 }));
+    };
+
+    const handleSortChange = (newSortOption: string) => {
+        setSortOption(newSortOption);
+        const [sort = "created_at", direction = "desc"] = newSortOption.split(":");
+        navigateWithParams(buildQueryParams({ sort, direction: direction as "asc" | "desc", page: 1 }));
+    };
+
+    const clearFilters = () => {
+        searchDraftRef.current = "";
+        setEnrollmentSearch("");
+        setActiveFilters([]);
+        setSortOption("created_at:desc");
+        cancelPendingSearch();
+        navigateWithParams(buildQueryParams({ search: "", filters: [], sort: "created_at", direction: "desc", page: 1 }));
+    };
 
     // Delete/restore dialog states for enrollments
     const [deleteEnrollment, setDeleteEnrollment] = useState<EnrollmentRow | null>(null);
@@ -161,31 +308,16 @@ export default function AdministratorEnrollmentsIndex({
     const [restoreEnrollment, setRestoreEnrollment] = useState<EnrollmentRow | null>(null);
     const [isEnrollmentDeleting, setIsEnrollmentDeleting] = useState(false);
 
-    useEffect(() => {
-        setEnrollmentSearch(filters.search || "");
-        setActiveFilters(createInitialEnrollmentFilters(filters));
-    }, [filters.search, filters.status_filter, filters.department_filter, filters.year_level_filter, filters.course_filter]);
-
-    const handleEnrollmentSearchChange = (value: string) => {
-        setEnrollmentSearch(value);
-    };
-
-    const handleDepartmentFilterChange = (value: string) => {
-        setActiveFilters((currentFilters) => upsertSingleFilter(currentFilters, "department_filter", value));
-    };
-
-    const clearFilters = () => {
-        setEnrollmentSearch("");
-        setActiveFilters([]);
-        setSortOption("created_at:desc");
-    };
-
     const departmentFilter = getActiveFilterValue(activeFilters, "department_filter");
     const hasActiveFilters = enrollmentSearch.trim() !== "" || activeFilters.length > 0 || sortOption !== "created_at:desc";
 
     const enrollmentsData = Array.isArray(enrollments?.data) ? enrollments.data : [];
     const enrollmentsTotal = enrollments?.total ?? 0;
     const enrollmentCourseOptions = useMemo(() => {
+        if (Array.isArray(available_courses) && available_courses.length > 0) {
+            return available_courses;
+        }
+
         const courses = new Map<number, { id: number; code: string; title: string | null }>();
 
         for (const enrollment of enrollmentsData) {
@@ -201,10 +333,11 @@ export default function AdministratorEnrollmentsIndex({
         }
 
         return [...courses.values()].sort((left, right) => left.code.localeCompare(right.code));
-    }, [enrollmentsData]);
+    }, [available_courses, enrollmentsData]);
 
     const visibleEnrollments = useMemo(() => {
         const searchTerm = enrollmentSearch.trim().toLowerCase();
+        // If data is already filtered from server, return directly; otherwise do instant preview
         const filteredEnrollments = enrollmentsData.filter((enrollment) => {
             const matchesSearch = searchTerm === "" || enrollmentMatchesSearch(enrollment, searchTerm);
 
@@ -215,23 +348,23 @@ export default function AdministratorEnrollmentsIndex({
     }, [activeFilters, enrollmentSearch, enrollmentsData, sortOption]);
 
     const stats = useMemo(() => {
-        const activeEnrollments = visibleEnrollments.filter((enrollment) => !enrollment.is_trashed).length;
-        const completedEnrollments = visibleEnrollments.filter(
-            (enrollment) => !enrollment.is_trashed && enrollment.status === enrollment_pipeline.cashier_verified_status,
-        ).length;
-        const workflowExceptions = visibleEnrollments.filter(
-            (enrollment) => enrollment.is_trashed || enrollment.status !== enrollment_pipeline.cashier_verified_status,
-        ).length;
+        const totalEnrolled = analytics?.current_semester_count ?? enrollmentsTotal;
+        const activeCount = analytics?.active_count ?? visibleEnrollments.filter((e) => !e.is_trashed).length;
+        const trashedCount = analytics?.trashed_count ?? visibleEnrollments.filter((e) => e.is_trashed).length;
+        const verifiedByCashier = analytics?.by_status?.find(
+            (s) => s.status === enrollment_pipeline.cashier_verified_status,
+        )?.count ?? visibleEnrollments.filter((e) => !e.is_trashed && e.status === enrollment_pipeline.cashier_verified_status).length;
+        const exceptionsCount = totalEnrolled - verifiedByCashier;
 
         return {
             applicants: applicantsCount,
-            enrolled: visibleEnrollments.length,
-            active: activeEnrollments,
-            deleted: visibleEnrollments.length - activeEnrollments,
-            completed: completedEnrollments,
-            exceptions: workflowExceptions,
+            enrolled: totalEnrolled,
+            active: activeCount,
+            deleted: trashedCount,
+            completed: verifiedByCashier,
+            exceptions: Math.max(0, exceptionsCount),
         };
-    }, [applicantsCount, enrollment_pipeline.cashier_verified_status, visibleEnrollments]);
+    }, [analytics, applicantsCount, enrollment_pipeline.cashier_verified_status, enrollmentsTotal, visibleEnrollments]);
 
     const handleEnrollmentClick = (enrollment: EnrollmentRow) => {
         router.visit(route("administrators.enrollments.show", enrollment.id));
@@ -534,12 +667,18 @@ export default function AdministratorEnrollmentsIndex({
                             enrollmentsData={visibleEnrollments}
                             enrollmentColumns={enrollmentColumns}
                             sortOption={sortOption}
+                            pagination={enrollments}
+                            routeName="administrators.enrollments.index"
+                            dataKey="enrollments"
+                            filters={buildQueryParams()}
+                            searchInputRef={searchInputRef}
+                            searchInputFocusedRef={searchInputFocusedRef}
                             scopeControl={<PTabs10 value={departmentFilter} onValueChange={handleDepartmentFilterChange} tabs={departmentTabs} />}
                             filterControl={
                                 <Filters
                                     fields={filterFields}
                                     filters={activeFilters}
-                                    onChange={setActiveFilters}
+                                    onChange={handleFiltersChange}
                                     trigger={
                                         <Button variant="outline" className="relative gap-2" size="sm">
                                             <Filter className="size-4" aria-hidden="true" />
@@ -565,7 +704,7 @@ export default function AdministratorEnrollmentsIndex({
                                 </Button>
                             }
                             onSearchChange={handleEnrollmentSearchChange}
-                            onSortChange={setSortOption}
+                            onSortChange={handleSortChange}
                             onRowClick={handleEnrollmentClick}
                         />
                     </>

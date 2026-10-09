@@ -95,22 +95,182 @@ final class AdministratorClassManagementController extends Controller
             ])
             ->all();
 
-        $classesQuery = Classes::query()
-            ->currentAcademicPeriod()
-            ->with([
-                'Subject',
-                'SubjectByCodeFallback',
-                'ShsSubject',
-                'subjects',
-                'faculty',
-                'shsTrack',
-                'shsStrand',
-            ])
-            ->withCount('class_enrollments')
-            ->orderByDesc('id');
+        $classesResolver = function () use (
+            $filters,
+            $courseCodeById,
+            $curriculumPlacement,
+            $sort,
+            $direction,
+        ) {
+            $classesQuery = Classes::query()
+                ->currentAcademicPeriod()
+                ->with([
+                    'Subject:id,code,title',
+                    'SubjectByCodeFallback:id,code,title',
+                    'ShsSubject:id,code,title',
+                    'subjects:id,code,title',
+                    'faculty:id,first_name,last_name,middle_name',
+                    'shsTrack:id,track_name',
+                    'shsStrand:id,strand_name',
+                ])
+                ->withCount('class_enrollments')
+                ->orderByDesc('id');
 
-        $classesCollection = $classesQuery->get()
-            ->filter(function (Classes $class) use ($filters, $courseCodeById, $curriculumPlacement): bool {
+            if ($filters['classification'] && in_array($filters['classification'], ['college', 'shs'], true)) {
+                if ($filters['classification'] === 'college') {
+                    $classesQuery->where(fn ($q) => $q->whereNull('classes.classification')->orWhere('classes.classification', 'college'));
+                } else {
+                    $classesQuery->where('classes.classification', $filters['classification']);
+                }
+            }
+
+            if ($filters['room_id']) {
+                $classesQuery->where('classes.room_id', $filters['room_id']);
+            }
+
+            if ($filters['faculty_id']) {
+                $classesQuery->where('classes.faculty_id', $filters['faculty_id']);
+            }
+
+            if ($filters['semester']) {
+                $classesQuery->where('classes.semester', $filters['semester']);
+            }
+
+            if ($filters['grade_level']) {
+                $classesQuery->where('classes.grade_level', $filters['grade_level']);
+            }
+
+            if ($filters['shs_track_id']) {
+                $classesQuery->where('classes.shs_track_id', $filters['shs_track_id']);
+            }
+
+            if ($filters['shs_strand_id']) {
+                $classesQuery->where('classes.shs_strand_id', $filters['shs_strand_id']);
+            }
+
+            $classesCollection = $classesQuery->get()
+                ->filter(function (Classes $class) use ($filters, $courseCodeById, $curriculumPlacement): bool {
+                    $subject = $class->subjects->first();
+
+                    if (! $subject) {
+                        $subject = $class->isShs()
+                            ? $class->ShsSubject
+                            : ($class->Subject ?: $class->SubjectByCodeFallback);
+                    }
+
+                    if ($filters['classification'] && ($class->classification ?? 'college') !== $filters['classification']) {
+                        return false;
+                    }
+
+                    if ($filters['course_id'] && ! in_array($filters['course_id'], array_map(intval(...), is_array($class->course_codes) ? $class->course_codes : []), true)) {
+                        return false;
+                    }
+
+                    if ($filters['shs_track_id'] && (int) $class->shs_track_id !== $filters['shs_track_id']) {
+                        return false;
+                    }
+
+                    if ($filters['shs_strand_id'] && (int) $class->shs_strand_id !== $filters['shs_strand_id']) {
+                        return false;
+                    }
+
+                    if ($filters['room_id'] && (int) $class->room_id !== $filters['room_id']) {
+                        return false;
+                    }
+
+                    if ($filters['faculty_id'] && (string) $class->faculty_id !== $filters['faculty_id']) {
+                        return false;
+                    }
+
+                    if ($filters['academic_year']) {
+                        $years = $filters['course_id']
+                            ? $curriculumPlacement->yearsForCourse($class, $filters['course_id'])
+                            : $curriculumPlacement->yearsForClass($class);
+
+                        if ($years === []) {
+                            $years = [(int) $class->academic_year];
+                        }
+
+                        if (! in_array($filters['academic_year'], $years, true)) {
+                            return false;
+                        }
+                    }
+
+                    if ($filters['grade_level'] && $class->grade_level !== $filters['grade_level']) {
+                        return false;
+                    }
+
+                    if ($filters['semester'] && (string) $class->semester !== $filters['semester']) {
+                        return false;
+                    }
+
+                    if ($filters['subject_code'] && ! str_contains(mb_strtolower((string) ($subject?->code ?? $class->subject_code)), mb_strtolower($filters['subject_code']))) {
+                        return false;
+                    }
+
+                    $studentsCount = (int) ($class->class_enrollments_count ?? 0);
+                    $maximumSlots = (int) ($class->maximum_slots ?? 0);
+
+                    if ($filters['available_slots'] && ($maximumSlots <= 0 || $studentsCount >= $maximumSlots)) {
+                        return false;
+                    }
+
+                    if ($filters['fully_enrolled'] !== null) {
+                        $isFullyEnrolled = $maximumSlots > 0 && $studentsCount >= $maximumSlots;
+
+                        if ($filters['fully_enrolled'] !== $isFullyEnrolled) {
+                            return false;
+                        }
+                    }
+
+                    if ($filters['search']) {
+                        $courseAbbreviations = array_values(array_unique(array_filter(array_map(
+                            fn ($id) => $courseCodeById[(int) $id] ?? null,
+                            is_array($class->course_codes) ? $class->course_codes : []
+                        ))));
+
+                        $searchTerm = mb_strtolower($filters['search']);
+                        $searchableValues = [
+                            $class->record_title,
+                            $subject?->code,
+                            $subject?->title,
+                            $class->section,
+                            $class->school_year,
+                            (string) $class->semester,
+                            $class->classification,
+                            $class->faculty?->full_name,
+                            $class->shsTrack?->track_name,
+                            $class->shsStrand?->strand_name,
+                            implode(' ', $courseAbbreviations),
+                        ];
+
+                        $matchesSearch = collect($searchableValues)
+                            ->filter(fn ($value): bool => filled($value))
+                            ->contains(fn ($value): bool => str_contains(mb_strtolower((string) $value), $searchTerm));
+
+                        if (! $matchesSearch) {
+                            return false;
+                        }
+                    }
+
+                    return true;
+                });
+
+            $sortCallbacks = [
+                'created_at' => fn (Classes $class): int => $class->created_at?->getTimestamp() ?? 0,
+                'record_title' => fn (Classes $class): string => $class->record_title,
+                'subject_code' => fn (Classes $class): string => (string) ($class->subjects->first()?->code ?? $class->subject_code),
+                'students_count' => fn (Classes $class): int => (int) ($class->class_enrollments_count ?? 0),
+            ];
+
+            $sortCallback = $sortCallbacks[$sort] ?? $sortCallbacks['created_at'];
+            $classesCollection = $direction === 'asc'
+                ? $classesCollection->sortBy($sortCallback)
+                : $classesCollection->sortByDesc($sortCallback);
+
+            $filamentClassIndexUrl = route('filament.admin.resources.classes.index');
+
+            return $classesCollection->map(function (Classes $class) use ($courseCodeById, $filamentClassIndexUrl): array {
                 $subject = $class->subjects->first();
 
                 if (! $subject) {
@@ -119,163 +279,40 @@ final class AdministratorClassManagementController extends Controller
                         : ($class->Subject ?: $class->SubjectByCodeFallback);
                 }
 
-                if ($filters['classification'] && ($class->classification ?? 'college') !== $filters['classification']) {
-                    return false;
-                }
+                $courseAbbreviations = array_values(array_unique(array_filter(array_map(
+                    fn ($id) => $courseCodeById[(int) $id] ?? null,
+                    is_array($class->course_codes) ? $class->course_codes : []
+                ))));
 
-                if ($filters['course_id'] && ! in_array($filters['course_id'], array_map(intval(...), is_array($class->course_codes) ? $class->course_codes : []), true)) {
-                    return false;
-                }
+                $shsTrack = $class->shsTrack?->track_name;
+                $shsStrand = $class->shsStrand?->strand_name;
 
-                if ($filters['shs_track_id'] && (int) $class->shs_track_id !== $filters['shs_track_id']) {
-                    return false;
-                }
+                return [
+                    'id' => $class->id,
+                    'record_title' => $class->record_title,
+                    'subject_code' => $subject?->code ?? $class->subject_code ?? 'N/A',
+                    'subject_title' => $subject?->title ?? 'N/A',
+                    'section' => $class->section ?? 'N/A',
+                    'school_year' => $class->school_year ?? 'N/A',
+                    'semester' => $class->semester ?? 'N/A',
+                    'classification' => $class->classification ?? 'college',
+                    'academic_year' => $class->academic_year,
+                    'grade_level' => $class->grade_level,
+                    'course_abbreviations' => $courseAbbreviations === [] ? null : $courseAbbreviations,
+                    'shs_track' => $shsTrack,
+                    'shs_strand' => $shsStrand,
+                    'faculty' => $class->faculty?->full_name ?? 'TBA',
+                    'students_count' => (int) ($class->class_enrollments_count ?? 0),
+                    'maximum_slots' => (int) ($class->maximum_slots ?? 0),
+                    'filament' => [
+                        'view_url' => "{$filamentClassIndexUrl}/{$class->id}",
+                        'edit_url' => "{$filamentClassIndexUrl}/{$class->id}/edit",
+                    ],
+                ];
+            })->values()->all();
+        };
 
-                if ($filters['shs_strand_id'] && (int) $class->shs_strand_id !== $filters['shs_strand_id']) {
-                    return false;
-                }
-
-                if ($filters['room_id'] && (int) $class->room_id !== $filters['room_id']) {
-                    return false;
-                }
-
-                if ($filters['faculty_id'] && (string) $class->faculty_id !== $filters['faculty_id']) {
-                    return false;
-                }
-
-                if ($filters['academic_year']) {
-                    $years = $filters['course_id']
-                        ? $curriculumPlacement->yearsForCourse($class, $filters['course_id'])
-                        : $curriculumPlacement->yearsForClass($class);
-
-                    if ($years === []) {
-                        $years = [(int) $class->academic_year];
-                    }
-
-                    if (! in_array($filters['academic_year'], $years, true)) {
-                        return false;
-                    }
-                }
-
-                if ($filters['grade_level'] && $class->grade_level !== $filters['grade_level']) {
-                    return false;
-                }
-
-                if ($filters['semester'] && (string) $class->semester !== $filters['semester']) {
-                    return false;
-                }
-
-                if ($filters['subject_code'] && ! str_contains(mb_strtolower((string) ($subject?->code ?? $class->subject_code)), mb_strtolower($filters['subject_code']))) {
-                    return false;
-                }
-
-                $studentsCount = (int) ($class->class_enrollments_count ?? 0);
-                $maximumSlots = (int) ($class->maximum_slots ?? 0);
-
-                if ($filters['available_slots'] && ($maximumSlots <= 0 || $studentsCount >= $maximumSlots)) {
-                    return false;
-                }
-
-                if ($filters['fully_enrolled'] !== null) {
-                    $isFullyEnrolled = $maximumSlots > 0 && $studentsCount >= $maximumSlots;
-
-                    if ($filters['fully_enrolled'] !== $isFullyEnrolled) {
-                        return false;
-                    }
-                }
-
-                if ($filters['search']) {
-                    $courseAbbreviations = array_values(array_unique(array_filter(array_map(
-                        fn ($id) => $courseCodeById[(int) $id] ?? null,
-                        is_array($class->course_codes) ? $class->course_codes : []
-                    ))));
-
-                    $searchTerm = mb_strtolower($filters['search']);
-                    $searchableValues = [
-                        $class->record_title,
-                        $subject?->code,
-                        $subject?->title,
-                        $class->section,
-                        $class->school_year,
-                        (string) $class->semester,
-                        $class->classification,
-                        $class->faculty?->full_name,
-                        $class->shsTrack?->track_name,
-                        $class->shsStrand?->strand_name,
-                        implode(' ', $courseAbbreviations),
-                    ];
-
-                    $matchesSearch = collect($searchableValues)
-                        ->filter(fn ($value): bool => filled($value))
-                        ->contains(fn ($value): bool => str_contains(mb_strtolower((string) $value), $searchTerm));
-
-                    if (! $matchesSearch) {
-                        return false;
-                    }
-                }
-
-                return true;
-            });
-
-        $sortCallbacks = [
-            'created_at' => fn (Classes $class): int => $class->created_at?->getTimestamp() ?? 0,
-            'record_title' => fn (Classes $class): string => $class->record_title,
-            'subject_code' => fn (Classes $class): string => (string) ($class->subjects->first()?->code ?? $class->subject_code),
-            'students_count' => fn (Classes $class): int => (int) ($class->class_enrollments_count ?? 0),
-        ];
-
-        $sortCallback = $sortCallbacks[$sort] ?? $sortCallbacks['created_at'];
-        $classesCollection = $direction === 'asc'
-            ? $classesCollection->sortBy($sortCallback)
-            : $classesCollection->sortByDesc($sortCallback);
-
-        $classes = $classesCollection->map(function (Classes $class) use ($courseCodeById): array {
-            $subject = $class->subjects->first();
-
-            if (! $subject) {
-                $subject = $class->isShs()
-                    ? $class->ShsSubject
-                    : ($class->Subject ?: $class->SubjectByCodeFallback);
-            }
-
-            $courseAbbreviations = array_values(array_unique(array_filter(array_map(
-                fn ($id) => $courseCodeById[(int) $id] ?? null,
-                is_array($class->course_codes) ? $class->course_codes : []
-            ))));
-
-            $shsTrack = $class->shsTrack?->track_name;
-            $shsStrand = $class->shsStrand?->strand_name;
-
-            return [
-                'id' => $class->id,
-                'record_title' => $class->record_title,
-                'subject_code' => $subject?->code ?? $class->subject_code ?? 'N/A',
-                'subject_title' => $subject?->title ?? 'N/A',
-                'section' => $class->section ?? 'N/A',
-                'school_year' => $class->school_year ?? 'N/A',
-                'semester' => $class->semester ?? 'N/A',
-                'classification' => $class->classification ?? 'college',
-                'academic_year' => $class->academic_year,
-                'grade_level' => $class->grade_level,
-                'course_abbreviations' => $courseAbbreviations === [] ? null : $courseAbbreviations,
-                'shs_track' => $shsTrack,
-                'shs_strand' => $shsStrand,
-                'faculty' => $class->faculty?->full_name ?? 'TBA',
-                'students_count' => (int) ($class->class_enrollments_count ?? 0),
-                'maximum_slots' => (int) ($class->maximum_slots ?? 0),
-                'filament' => [
-                    'view_url' => route('filament.admin.resources.classes.view', $class),
-                    'edit_url' => route('filament.admin.resources.classes.edit', $class),
-                ],
-            ];
-        })->values();
-
-        $selectedClass = null;
         $selectedId = $this->nullableInt($request->input('selected'));
-
-        if (is_int($selectedId)) {
-            $selectedClass = $this->buildSelectedClassProps($selectedId, $courseCodeById, $courseLabelById);
-        }
 
         return Inertia::render('administrators/classes/index', [
             'user' => $this->getUserProps(),
@@ -285,8 +322,8 @@ final class AdministratorClassManagementController extends Controller
                     'create_url' => route('filament.admin.resources.classes.create'),
                 ],
             ],
-            'classes' => $classes,
-            'selected_class' => fn (): ?array => $selectedClass,
+            'classes' => fn () => $classesResolver(),
+            'selected_class' => fn (): ?array => is_int($selectedId) ? $this->buildSelectedClassProps($selectedId, $courseCodeById, $courseLabelById) : null,
             'filters' => array_merge($filters, [
                 'sort' => $sort,
                 'direction' => $direction,

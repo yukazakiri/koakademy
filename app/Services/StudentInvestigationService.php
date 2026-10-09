@@ -21,10 +21,12 @@ final class StudentInvestigationService
         private ?EnrollmentBillingService $billingService = null,
         private ?GeneralSettingsService $settingsService = null,
         private ?StudentChecklistService $checklistService = null,
+        private ?GradingSystemService $gradingSystem = null,
     ) {
         $this->billingService ??= app(EnrollmentBillingService::class);
         $this->settingsService ??= app(GeneralSettingsService::class);
         $this->checklistService ??= app(StudentChecklistService::class);
+        $this->gradingSystem ??= app(GradingSystemService::class);
     }
 
     /**
@@ -51,6 +53,9 @@ final class StudentInvestigationService
 
         $enrollments = $enrollmentsQuery->get();
 
+        $school = $student->school ?? app(TenantContext::class)->getCurrentSchool();
+        $gradingConfig = $this->gradingSystem->getConfig($school);
+
         // 1. Check for student-level status mismatches
         if (in_array($student->status, ['dropped', 'cancelled', 'withdrawn', 'on_leave'], true)) {
             $activeSubjectCount = SubjectEnrollment::query()->where('student_id', $student->id)->count();
@@ -76,7 +81,7 @@ final class StudentInvestigationService
         foreach ($enrollments as $enrollment) {
             $subjects = SubjectEnrollment::query()
                 ->where('enrollment_id', $enrollment->id)
-                ->with(['subject', 'class'])
+                ->with(['subject', 'class.schedules'])
                 ->get();
 
             // A. Check for soft-deleted enrollment with active subjects
@@ -157,13 +162,10 @@ final class StudentInvestigationService
                                 $q->whereHas('subject', fn ($subQuery) => $subQuery->where('code', $prereqCode))
                                     ->orWhere('external_subject_code', $prereqCode);
                             })
-                            ->where(function ($q): void {
-                                $q->where('grade_outcome', 'passed')
-                                    ->orWhere(function ($q2): void {
-                                        $q2->whereNotNull('grade')->where('grade', '<=', 3.0)->where('grade', '>', 0);
-                                    });
-                            })
-                            ->exists();
+                            ->get()
+                            ->contains(fn (SubjectEnrollment $candidate): bool => in_array(mb_strtolower((string) $candidate->grade_outcome), ['pass', 'passed'], true)
+                                || ($candidate->grade !== null && $this->gradingSystem->isPassingGrade($candidate->grade, $gradingConfig))
+                            );
 
                         if (! $prereqPassed) {
                             $findings[] = [
@@ -194,7 +196,7 @@ final class StudentInvestigationService
 
                     // Check day and time overlap
                     $overlap = $this->classesOverlap($c1, $c2);
-                    if ($overlap) {
+                    if ($overlap !== null) {
                         $findings[] = [
                             'category' => 'schedule_clash',
                             'severity' => 'critical',
@@ -202,8 +204,8 @@ final class StudentInvestigationService
                             'record_id' => $c1->id,
                             'issue' => "Schedule conflict detected between class #{$c1->id} ({$c1->subject_code} Sec {$c1->section}) and class #{$c2->id} ({$c2->subject_code} Sec {$c2->section}).",
                             'evidence' => [
-                                'class_1' => "{$c1->subject_code} ({$c1->day} {$c1->start_time}-{$c1->end_time})",
-                                'class_2' => "{$c2->subject_code} ({$c2->day} {$c2->start_time}-{$c2->end_time})",
+                                'class_1' => "{$c1->subject_code} ({$overlap['day']} {$overlap['time_1']})",
+                                'class_2' => "{$c2->subject_code} ({$overlap['day']} {$overlap['time_2']})",
                             ],
                             'suggested_action' => 'Transfer one subject to an alternate non-conflicting section.',
                         ];
@@ -437,20 +439,27 @@ final class StudentInvestigationService
 
             // 5. Installment schedule totals check
             if ($tuition->installments->isNotEmpty()) {
-                $installmentSum = (float) $tuition->installments->sum('amount');
-                $instDiff = round(abs((float) $tuition->overall_tuition - $installmentSum), 2);
-                if ($instDiff > 1.0 && (float) $tuition->overall_tuition > 0) {
+                $installmentSum = round((float) $tuition->installments->sum('amount'), 2);
+                $overall = round((float) $tuition->overall_tuition, 2);
+                $downpayment = round((float) ($tuition->downpayment ?? 0.0), 2);
+                $scheduledBalance = max(0.0, round($overall - $downpayment, 2));
+
+                $matchesGross = abs($overall - $installmentSum) <= 1.0;
+                $matchesNet = abs($scheduledBalance - $installmentSum) <= 1.0;
+
+                if (! $matchesGross && ! $matchesNet && $overall > 0) {
                     $findings[] = [
                         'category' => 'installment_schedule_error',
                         'severity' => 'warning',
                         'record_type' => 'student_tuition',
                         'record_id' => $tuition->id,
                         'term' => "{$tuition->school_year} Sem {$tuition->semester}",
-                        'issue' => "Sum of installment breakdown amounts (₱{$installmentSum}) does not equal overall tuition (₱{$tuition->overall_tuition}).",
+                        'issue' => "Sum of installment breakdown amounts (₱{$installmentSum}) does not equal overall tuition (₱{$overall}) or scheduled balance after downpayment (₱{$scheduledBalance}).",
                         'evidence' => [
-                            'overall_tuition' => (float) $tuition->overall_tuition,
+                            'overall_tuition' => $overall,
+                            'downpayment' => $downpayment,
                             'installments_sum' => $installmentSum,
-                            'variance' => $instDiff,
+                            'scheduled_balance' => $scheduledBalance,
                         ],
                         'suggested_action' => 'Regenerate installment schedule for tuition #'.$tuition->id.'.',
                     ];
@@ -536,30 +545,67 @@ final class StudentInvestigationService
         ];
     }
 
-    private function classesOverlap(Classes $c1, Classes $c2): bool
+    /** @return array{day: string, time_1: string, time_2: string}|null */
+    private function classesOverlap(Classes $c1, Classes $c2): ?array
     {
-        // Check if both classes meet on the same day
-        $day1 = mb_strtoupper(mb_trim((string) $c1->day));
-        $day2 = mb_strtoupper(mb_trim((string) $c2->day));
+        $schedules1 = $c1->relationLoaded('schedules') ? $c1->schedules : $c1->schedules()->get();
+        $schedules2 = $c2->relationLoaded('schedules') ? $c2->schedules : $c2->schedules()->get();
+
+        if ($schedules1->isNotEmpty() && $schedules2->isNotEmpty()) {
+            foreach ($schedules1 as $s1) {
+                foreach ($schedules2 as $s2) {
+                    if ($this->schedulesOverlap($s1, $s2)) {
+                        return [
+                            'day' => (string) $s1->day_of_week,
+                            'time_1' => "{$s1->start_time}-{$s1->end_time}",
+                            'time_2' => "{$s2->start_time}-{$s2->end_time}",
+                        ];
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        // Fallback for direct properties on class if present
+        $day1 = mb_strtoupper(mb_trim((string) ($c1->day ?? '')));
+        $day2 = mb_strtoupper(mb_trim((string) ($c2->day ?? '')));
+        if ($day1 !== '' && $day1 === $day2 && filled($c1->start_time) && filled($c2->start_time)) {
+            if ($this->rawTimesOverlap((string) $c1->start_time, (string) $c1->end_time, (string) $c2->start_time, (string) $c2->end_time)) {
+                return [
+                    'day' => $day1,
+                    'time_1' => "{$c1->start_time}-{$c1->end_time}",
+                    'time_2' => "{$c2->start_time}-{$c2->end_time}",
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    private function schedulesOverlap(\App\Models\Schedule $s1, \App\Models\Schedule $s2): bool
+    {
+        $day1 = mb_strtoupper(mb_trim((string) $s1->day_of_week));
+        $day2 = mb_strtoupper(mb_trim((string) $s2->day_of_week));
 
         if ($day1 === '' || $day2 === '' || $day1 !== $day2) {
             return false;
         }
 
-        if (blank($c1->start_time) || blank($c1->end_time) || blank($c2->start_time) || blank($c2->end_time)) {
-            return false;
-        }
+        return $this->rawTimesOverlap((string) $s1->start_time, (string) $s1->end_time, (string) $s2->start_time, (string) $s2->end_time);
+    }
 
-        $start1 = strtotime((string) $c1->start_time);
-        $end1 = strtotime((string) $c1->end_time);
-        $start2 = strtotime((string) $c2->start_time);
-        $end2 = strtotime((string) $c2->end_time);
+    private function rawTimesOverlap(string $start1Str, string $end1Str, string $start2Str, string $end2Str): bool
+    {
+        $start1 = strtotime($start1Str);
+        $end1 = strtotime($end1Str);
+        $start2 = strtotime($start2Str);
+        $end2 = strtotime($end2Str);
 
         if (! $start1 || ! $end1 || ! $start2 || ! $end2) {
             return false;
         }
 
-        // Two intervals overlap if start1 < end2 and start2 < end1
         return $start1 < $end2 && $start2 < $end1;
     }
 }

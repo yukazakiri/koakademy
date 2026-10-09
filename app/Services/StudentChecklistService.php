@@ -207,7 +207,8 @@ final class StudentChecklistService
             }
 
             // Filter check
-            if ($statusFilter !== null) {
+            // Filter check: treat 'all' or empty string as unfiltered
+            if ($statusFilter !== null && $statusFilter !== '' && $statusFilter !== 'all') {
                 $normalizedStatus = mb_strtolower(str_replace(' ', '_', $status));
                 if ($statusFilter === 'deficient' && ! in_array($status, ['Not Completed', 'Failed', 'Dropped'], true)) {
                     continue;

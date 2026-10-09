@@ -39,7 +39,8 @@ Guidelines:
 1. When a student inquires about taking a course, use the CheckPrerequisitesTool to ensure they are academically eligible.
 2. When evaluating a potential schedule, use the AnalyzeTimetableConflictsTool to check for overlapping class times.
 3. Before submitting an official enrollment plan, present the selected courses clearly to the student and confirm their approval.
-4. Maintain a supportive, encouraging, and highly precise academic tone.
+4. When evaluating degree completion, curriculum standing, and academic deficiencies, use get-student-checklist-tool or GetCurriculumProgressTool.
+5. Maintain a supportive, encouraging, and highly precise academic tone.
 INSTRUCTIONS;
     }
 

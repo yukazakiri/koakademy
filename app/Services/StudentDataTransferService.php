@@ -63,7 +63,23 @@ final class StudentDataTransferService
                 $q->where('student_id', $source->id)
                     ->orWhere('student_id', $source->student_id);
             });
+
+        if ($scopeEnrollmentId !== null) {
+            $classEnrollmentClassIds = SubjectEnrollment::query()
+                ->whereIn('enrollment_id', $enrollmentIds)
+                ->whereNotNull('class_id')
+                ->pluck('class_id')
+                ->all();
+
+            if (! empty($classEnrollmentClassIds)) {
+                $classEnrollmentsQuery->whereIn('class_id', $classEnrollmentClassIds);
+            } else {
+                $classEnrollmentsQuery->whereRaw('1 = 0');
+            }
+        }
+
         $classEnrollments = $classEnrollmentsQuery->get();
+        $classEnrollmentIds = $classEnrollments->pluck('id')->all();
 
         $tuitionsQuery = StudentTuition::withTrashed()
             ->where(function ($q) use ($source): void {
@@ -85,9 +101,15 @@ final class StudentDataTransferService
             ? StudentClearance::query()->where('student_id', $source->id)->get()
             : collect();
 
-        $attendances = $scopeEnrollmentId === null
-            ? ClassAttendanceRecord::query()->where('student_id', $source->id)->get()
-            : collect();
+        $attendancesQuery = ClassAttendanceRecord::query()->where('student_id', $source->id);
+        if ($scopeEnrollmentId !== null) {
+            if (! empty($classEnrollmentIds)) {
+                $attendancesQuery->whereIn('class_enrollment_id', $classEnrollmentIds);
+            } else {
+                $attendancesQuery->whereRaw('1 = 0');
+            }
+        }
+        $attendances = $attendancesQuery->get();
 
         $warnings = [];
         if ($target->trashed()) {
@@ -193,7 +215,7 @@ final class StudentDataTransferService
                     $q->where('student_id', $source->id)
                         ->orWhere('student_id', $source->student_id);
                 });
-            if ($scopeEnrollmentId !== null && ! empty($enrollmentIds)) {
+            if ($scopeEnrollmentId !== null) {
                 $classEnrollmentClassIds = SubjectEnrollment::query()
                     ->whereIn('enrollment_id', $enrollmentIds)
                     ->whereNotNull('class_id')
@@ -201,8 +223,11 @@ final class StudentDataTransferService
                     ->all();
                 if (! empty($classEnrollmentClassIds)) {
                     $classEnrollmentsQuery->whereIn('class_id', $classEnrollmentClassIds);
+                } else {
+                    $classEnrollmentsQuery->whereRaw('1 = 0');
                 }
             }
+            $transferredClassEnrollmentIds = (clone $classEnrollmentsQuery)->pluck('id')->all();
             $updatedClassEnrollments = $classEnrollmentsQuery->update(['student_id' => $target->id]);
 
             // Tuitions
@@ -242,6 +267,10 @@ final class StudentDataTransferService
             if ($scopeEnrollmentId === null) {
                 $updatedAttendances = ClassAttendanceRecord::query()
                     ->where('student_id', $source->id)
+                    ->update(['student_id' => $target->id]);
+            } elseif (! empty($transferredClassEnrollmentIds)) {
+                $updatedAttendances = ClassAttendanceRecord::query()
+                    ->whereIn('class_enrollment_id', $transferredClassEnrollmentIds)
                     ->update(['student_id' => $target->id]);
             }
 

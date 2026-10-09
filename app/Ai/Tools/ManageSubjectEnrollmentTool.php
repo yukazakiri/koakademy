@@ -242,6 +242,25 @@ final class ManageSubjectEnrollmentTool implements Tool
             return json_encode(['error' => true, 'message' => 'Valid student or enrollment record required.']);
         }
 
+        // If no enrollment exists for the student, establish an official enrollment first
+        if (! $enrollment instanceof StudentEnrollment) {
+            $settings = app(\App\Services\GeneralSettingsService::class);
+            $currentSy = (string) ($settings->getCurrentSchoolYearString() ?: date('Y').' - '.(date('Y') + 1));
+            $currentSem = (int) ($settings->getCurrentSemester() ?: 1);
+            $schoolId = $student->school_id ?: 1;
+
+            $enrollment = StudentEnrollment::query()->create([
+                'student_id' => (string) $student->id,
+                'school_id' => $schoolId,
+                'course_id' => $student->course_id,
+                'academic_year' => $student->academic_year ?: 1,
+                'semester' => $currentSem,
+                'school_year' => $currentSy,
+                'status' => 'enrolled',
+                'workflow_runtime' => StudentEnrollment::WorkflowRuntimePolicyV1,
+            ]);
+        }
+
         $subject = null;
         if (! empty($request['subject_id'])) {
             $subject = Subject::query()->find((int) $request['subject_id']);
@@ -464,6 +483,47 @@ final class ManageSubjectEnrollmentTool implements Tool
             return json_encode(['error' => true, 'message' => "Target student '{$targetId}' not found."]);
         }
 
+        // Resolve or validate enrollment owned by target student
+        $targetEnrollment = null;
+        if ($targetEnrollmentId !== null) {
+            $targetEnrollment = StudentEnrollment::query()
+                ->where('id', $targetEnrollmentId)
+                ->where('student_id', (string) $target->id)
+                ->first();
+
+            if (! $targetEnrollment instanceof StudentEnrollment) {
+                return json_encode([
+                    'error' => true,
+                    'message' => "Target enrollment #{$targetEnrollmentId} does not belong to target student #{$target->student_id}.",
+                ]);
+            }
+        } else {
+            $targetEnrollment = StudentEnrollment::query()
+                ->where('student_id', (string) $target->id)
+                ->where('school_year', $record->school_year)
+                ->where('semester', $record->semester)
+                ->first()
+                ?? StudentEnrollment::query()
+                    ->where('student_id', (string) $target->id)
+                    ->latest('id')
+                    ->first();
+
+            if (! $targetEnrollment instanceof StudentEnrollment) {
+                $targetEnrollment = StudentEnrollment::query()->create([
+                    'student_id' => (string) $target->id,
+                    'school_id' => $target->school_id ?: 1,
+                    'course_id' => $target->course_id,
+                    'academic_year' => $target->academic_year ?: 1,
+                    'semester' => $record->semester ?: 1,
+                    'school_year' => $record->school_year ?: 'Current',
+                    'status' => 'enrolled',
+                    'workflow_runtime' => StudentEnrollment::WorkflowRuntimePolicyV1,
+                ]);
+            }
+        }
+
+        $targetEnrollmentIdResolved = $targetEnrollment->id;
+
         if ($request['preview'] ?? false) {
             return json_encode([
                 'success' => true,
@@ -472,19 +532,18 @@ final class ManageSubjectEnrollmentTool implements Tool
                 'current_student_id' => $record->student_id,
                 'target_student_id' => $target->id,
                 'target_student_name' => $target->full_name,
+                'target_enrollment_id' => $targetEnrollmentIdResolved,
             ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
         }
 
         $oldStudentId = $record->student_id;
         $oldEnrollment = $record->enrollment;
 
-        DB::transaction(function () use ($record, $target, $targetEnrollmentId, $oldEnrollment, $oldStudentId): void {
+        DB::transaction(function () use ($record, $target, $targetEnrollmentIdResolved, $oldEnrollment, $oldStudentId): void {
             $classId = $record->class_id;
 
             $record->student_id = $target->id;
-            if ($targetEnrollmentId !== null) {
-                $record->enrollment_id = $targetEnrollmentId;
-            }
+            $record->enrollment_id = $targetEnrollmentIdResolved;
             $record->save();
 
             if ($classId !== null) {

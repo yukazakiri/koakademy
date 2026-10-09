@@ -50,11 +50,11 @@ final class ManageEnrollmentTool extends Tool
         $user = $this->requireWrite($request);
 
         if ($action === 'create') {
-            $this->requirePermission($user, 'Update:StudentEnrollment', 'You are not permitted to create student enrollments.');
+            $this->requirePermission($user, 'Create:StudentEnrollment', 'You are not permitted to create student enrollments.');
         } elseif ($action === 'soft_delete' || $action === 'delete') {
-            $this->requirePermission($user, 'Update:StudentEnrollment', 'You are not permitted to delete enrollment records.');
+            $this->requirePermission($user, 'Delete:StudentEnrollment', 'You are not permitted to delete enrollment records.');
         } elseif ($action === 'restore') {
-            $this->requirePermission($user, 'Update:StudentEnrollment', 'You are not permitted to restore enrollment records.');
+            $this->requirePermission($user, 'Restore:StudentEnrollment', 'You are not permitted to restore enrollment records.');
         } elseif ($action === 'transfer_to_student') {
             $this->requirePermission($user, 'Update:StudentEnrollment', 'You are not permitted to transfer enrollments between students.');
         } else {
@@ -171,6 +171,24 @@ final class ManageEnrollmentTool extends Tool
 
     private function handleCreate(Request $request, \App\Models\User $actor): ResponseFactory
     {
+        $idempotencyKey = $request->get('idempotency_key');
+        if (filled($idempotencyKey)) {
+            $existing = StudentEnrollment::query()
+                ->where('submission_idempotency_key', (string) $idempotencyKey)
+                ->first();
+
+            if ($existing instanceof StudentEnrollment) {
+                return Response::structured([
+                    'success' => true,
+                    'action' => 'create',
+                    'replayed' => true,
+                    'idempotency_key' => $idempotencyKey,
+                    'message' => "Enrollment #{$existing->id} was already created with this idempotency key.",
+                    'enrollment' => $this->formatEnrollment($existing->fresh(['course', 'student'])),
+                ]);
+            }
+        }
+
         $studentId = $request->get('student_id');
         if (blank($studentId)) {
             return Response::structured(['error' => true, 'message' => 'student_id is required to create an enrollment.']);
@@ -201,7 +219,7 @@ final class ManageEnrollmentTool extends Tool
         $downpayment = (float) ($request->get('downpayment') ?: 0.0);
         $remarks = (string) ($request->get('remarks') ?? 'Created via MCP ManageEnrollmentTool.');
 
-        $enrollment = DB::transaction(function () use ($student, $school, $courseId, $schoolYear, $semester, $academicYear, $status, $downpayment, $remarks, $actor): StudentEnrollment {
+        $enrollment = DB::transaction(function () use ($student, $school, $courseId, $schoolYear, $semester, $academicYear, $status, $downpayment, $remarks, $actor, $idempotencyKey): StudentEnrollment {
             $created = StudentEnrollment::query()->create([
                 'student_id' => (string) $student->id,
                 'school_id' => $school->id,
@@ -214,6 +232,7 @@ final class ManageEnrollmentTool extends Tool
                 'remarks' => $remarks,
                 'current_step_key' => 'registration',
                 'workflow_runtime' => StudentEnrollment::WorkflowRuntimePolicyV1,
+                'submission_idempotency_key' => $idempotencyKey ?: (string) \Illuminate\Support\Str::uuid(),
             ]);
 
             EnrollmentWorkflowEvent::query()->create([
@@ -224,6 +243,7 @@ final class ManageEnrollmentTool extends Tool
                 'from_step_key' => null,
                 'to_step_key' => 'registration',
                 'status' => $status,
+                'idempotency_key' => $idempotencyKey ? "enrollment:create:{$idempotencyKey}" : null,
             ]);
 
             return $created;
@@ -232,6 +252,8 @@ final class ManageEnrollmentTool extends Tool
         return Response::structured([
             'success' => true,
             'action' => 'create',
+            'replayed' => false,
+            'idempotency_key' => $idempotencyKey,
             'message' => "Successfully created enrollment #{$enrollment->id} for {$student->full_name} ({$schoolYear} Sem {$semester}).",
             'enrollment' => $this->formatEnrollment($enrollment->fresh(['course', 'student'])),
         ]);

@@ -55,7 +55,19 @@ final class ManageEnrollmentTool implements Tool
             return $this->handleGet($request);
         }
 
-        if (! $user->hasRole('super_admin') && ! $user->can('Update:StudentEnrollment')) {
+        if ($action === 'create') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Create:StudentEnrollment')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to create enrollment records.']);
+            }
+        } elseif ($action === 'soft_delete' || $action === 'delete') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Delete:StudentEnrollment')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to delete enrollment records.']);
+            }
+        } elseif ($action === 'restore') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Restore:StudentEnrollment') && ! $user->can('Delete:StudentEnrollment')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to restore enrollment records.']);
+            }
+        } elseif (! $user->hasRole('super_admin') && ! $user->can('Update:StudentEnrollment')) {
             return json_encode(['error' => true, 'message' => 'You are not permitted to manage enrollment records.']);
         }
 

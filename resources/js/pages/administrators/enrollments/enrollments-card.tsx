@@ -1,4 +1,4 @@
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -23,6 +23,13 @@ type EnrollmentsCardProps = {
     onSearchChange: (value: string) => void;
     onSortChange: (value: string) => void;
     onRowClick: (row: EnrollmentRow) => void;
+    pagination?: EnrollmentManagementProps["enrollments"];
+    routeName?: string;
+    dataKey?: string;
+    filters?: Record<string, string | number | boolean | null | undefined>;
+    isLoading?: boolean;
+    searchInputRef?: React.RefObject<HTMLInputElement | null>;
+    searchInputFocusedRef?: React.MutableRefObject<boolean>;
 };
 
 export function EnrollmentsCard({
@@ -39,6 +46,13 @@ export function EnrollmentsCard({
     onSearchChange,
     onSortChange,
     onRowClick,
+    pagination,
+    routeName,
+    dataKey,
+    filters,
+    isLoading,
+    searchInputRef,
+    searchInputFocusedRef,
 }: EnrollmentsCardProps) {
     const totalLabel =
         enrollmentsData.length === enrollmentsTotal
@@ -57,12 +71,15 @@ export function EnrollmentsCard({
                         <CardDescription className="text-xs">{totalLabel}</CardDescription>
                     </div>
                 </div>
-                <Button variant="outline" size="sm" asChild className="self-start sm:self-auto">
-                    <a href={filament.student_enrollments.index_url} target="_blank" rel="noreferrer">
-                        <ArrowUpRight aria-hidden="true" />
-                        Advanced view
-                    </a>
-                </Button>
+                <a
+                    href={filament.student_enrollments.index_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={buttonVariants({ variant: "outline", size: "sm", className: "self-start sm:self-auto" })}
+                >
+                    <ArrowUpRight aria-hidden="true" />
+                    Advanced view
+                </a>
             </CardHeader>
             <CardContent className="space-y-0 p-0">
                 {scopeControl ? <div className="border-border/60 border-b px-4 pt-3 sm:px-5">{scopeControl}</div> : null}
@@ -71,9 +88,16 @@ export function EnrollmentsCard({
                     <div className="relative min-w-0 flex-1">
                         <Search className="text-muted-foreground absolute top-2.5 left-3 size-4" aria-hidden="true" />
                         <Input
-                            placeholder="Search by student, ID, course, or status..."
+                            ref={searchInputRef}
+                            placeholder="Search by student, ID, course, or status... (Press '/' to focus)"
                             className="border-border/70 bg-background/60 h-9 pl-9 shadow-none"
                             value={enrollmentSearch}
+                            onFocus={() => {
+                                if (searchInputFocusedRef) searchInputFocusedRef.current = true;
+                            }}
+                            onBlur={() => {
+                                if (searchInputFocusedRef) searchInputFocusedRef.current = false;
+                            }}
                             onChange={(e) => onSearchChange(e.target.value)}
                         />
                     </div>
@@ -103,7 +127,17 @@ export function EnrollmentsCard({
                 </div>
 
                 <div className="px-4 pt-1 pb-4 sm:px-5">
-                    <DataTable columns={enrollmentColumns} data={enrollmentsData} onRowClick={onRowClick} tableVariant="spreadsheet" />
+                    <DataTable
+                        columns={enrollmentColumns}
+                        data={enrollmentsData}
+                        onRowClick={onRowClick}
+                        tableVariant="spreadsheet"
+                        pagination={pagination}
+                        routeName={routeName}
+                        dataKey={dataKey}
+                        filters={filters}
+                        isLoading={isLoading}
+                    />
                 </div>
             </CardContent>
         </Card>

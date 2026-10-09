@@ -2,7 +2,7 @@ import AdminLayout from "@/components/administrators/admin-layout";
 import { ClassScheduleVisualizer } from "@/components/administrators/classes/schedule-visualizer";
 import { Filters, type FilterFieldConfig, type Filter as FilterType } from "@/components/reui/filters";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -17,7 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { VisualRadioButton } from "@/components/ui/visual-radio-button";
 import type { User } from "@/types/user";
-import { Head, Link, router, useForm } from "@inertiajs/react";
+import { Head, Link, router, useForm, useRemember } from "@inertiajs/react";
 import {
     BookOpen,
     CalendarIcon,
@@ -39,7 +39,6 @@ import {
     Users,
 } from "lucide-react";
 import * as React from "react";
-import { useDebouncedCallback } from "use-debounce";
 import { route } from "ziggy-js";
 import { ClassRow, getColumns } from "./columns";
 import { ClassCard } from "./components/class-card";
@@ -519,10 +518,63 @@ export default function AdministratorClassesIndex({
 
     const classList = React.useMemo(() => (Array.isArray(classes) ? classes : []), [classes]);
     const [search, setSearch] = React.useState(filters?.search || "");
+    const searchInputRef = React.useRef<HTMLInputElement>(null);
+    const searchInputFocusedRef = React.useRef(false);
+    const searchDraftRef = React.useRef(filters?.search || "");
+    const debouncedSearchRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [isUpdating, setIsUpdating] = React.useState(false);
+
     const [isSelectedClassLoading, setIsSelectedClassLoading] = React.useState(false);
-    const [viewMode, setViewMode] = React.useState<"grid" | "list">("list");
+    const [viewMode, setViewMode] = useRemember<"grid" | "list">("list", "administrators.classes.index:viewMode");
     const [sortOption, setSortOption] = React.useState(`${filters?.sort ?? "created_at"}:${filters?.direction ?? "desc"}`);
     const [activeFilters, setActiveFilters] = React.useState<FilterType[]>(() => createActiveFilters(filters));
+
+    // Keyboard shortcut to focus search input: '/' or 'Cmd+K' / 'Ctrl+K'
+    React.useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (
+                (event.key === "/" || ((event.metaKey || event.ctrlKey) && event.key === "k")) &&
+                document.activeElement?.tagName !== "INPUT" &&
+                document.activeElement?.tagName !== "TEXTAREA"
+            ) {
+                event.preventDefault();
+                searchInputRef.current?.focus();
+            }
+        };
+
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, []);
+
+    const cancelPendingSearch = () => {
+        if (debouncedSearchRef.current) {
+            clearTimeout(debouncedSearchRef.current);
+            debouncedSearchRef.current = null;
+        }
+    };
+
+    React.useEffect(() => {
+        return () => {
+            cancelPendingSearch();
+        };
+    }, []);
+
+    // Synchronize initial filters from server props without clobbering active search drafts
+    React.useEffect(() => {
+        const serverSearch = filters?.search || "";
+        if (!searchInputFocusedRef.current && debouncedSearchRef.current === null) {
+            setSearch(serverSearch);
+            searchDraftRef.current = serverSearch;
+        } else if (searchDraftRef.current === serverSearch) {
+            setSearch(serverSearch);
+        }
+
+        setActiveFilters(createActiveFilters(filters));
+
+        if (filters?.sort) {
+            setSortOption(`${filters.sort}:${filters.direction ?? "desc"}`);
+        }
+    }, [filters]);
     const [isEditOpen, setIsEditOpen] = React.useState(false);
     const [isCopyOpen, setIsCopyOpen] = React.useState(false);
     const [isManageOpen, setIsManageOpen] = React.useState(false);
@@ -555,60 +607,28 @@ export default function AdministratorClassesIndex({
     const [subjectCodeTouched, setSubjectCodeTouched] = React.useState(false);
 
     const filteredClasses = React.useMemo(() => {
-        let result = classList;
-
-        // Apply search filter
         const searchTerm = search.trim().toLowerCase();
-        if (searchTerm !== "") {
-            result = result.filter((classRow) =>
-                [
-                    classRow.record_title,
-                    classRow.subject_code,
-                    classRow.subject_title,
-                    classRow.section,
-                    classRow.school_year,
-                    String(classRow.semester ?? ""),
-                    classRow.classification,
-                    classRow.faculty,
-                    classRow.shs_track,
-                    classRow.shs_strand,
-                ]
-                    .filter((value): value is string => value !== null && value !== undefined)
-                    .some((value) => value.toLowerCase().includes(searchTerm)),
-            );
+        if (!searchTerm) {
+            return classList;
         }
 
-        // Apply active filters
-        for (const filter of activeFilters) {
-            const values = Array.isArray(filter.values) ? filter.values : [filter.values];
-            if (values.length === 0) continue;
-
-            result = result.filter((classRow) => {
-                switch (filter.field) {
-                    case "classification":
-                        return values.includes(classRow.classification);
-                    case "semester":
-                        return values.some((v) => String(classRow.semester) === String(v));
-                    case "academic_year":
-                        return values.some((v) => String(classRow.academic_year) === String(v));
-                    case "grade_level":
-                        return values.some((v) => classRow.grade_level === String(v));
-                    case "available_slots":
-                        return values.includes("true")
-                            ? classRow.maximum_slots > classRow.students_count
-                            : classRow.maximum_slots <= classRow.students_count;
-                    case "fully_enrolled": {
-                        const isFullyEnrolled = classRow.maximum_slots > 0 && classRow.students_count >= classRow.maximum_slots;
-                        return values.includes("true") ? isFullyEnrolled : !isFullyEnrolled;
-                    }
-                    default:
-                        return true;
-                }
-            });
-        }
-
-        return result;
-    }, [classList, search, activeFilters]);
+        return classList.filter((classRow) =>
+            [
+                classRow.record_title,
+                classRow.subject_code,
+                classRow.subject_title,
+                classRow.section,
+                classRow.school_year,
+                String(classRow.semester ?? ""),
+                classRow.classification,
+                classRow.faculty,
+                classRow.shs_track,
+                classRow.shs_strand,
+            ]
+                .filter((value): value is string => value !== null && value !== undefined)
+                .some((value) => value.toLowerCase().includes(searchTerm)),
+        );
+    }, [classList, search]);
 
     const visibleClasses = filteredClasses;
 
@@ -647,32 +667,59 @@ export default function AdministratorClassesIndex({
         return appliedFilters;
     };
 
-    const refreshClasses = useDebouncedCallback(
-        (searchTerm: string, filterValues: FilterType[], selectedSortOption: string = sortOption) => {
-            router.get(route("administrators.classes.index"), buildFilterParams(searchTerm, filterValues, selectedSortOption), {
-                only: ["classes", "filters"],
-                preserveScroll: true,
-                preserveState: true,
-                replace: true,
-            });
-        },
-        350,
-    );
+    const navigateWithParams = (
+        params: Record<string, string | number>,
+        options: { replace?: boolean } = {},
+    ) => {
+        cancelPendingSearch();
+        setIsUpdating(true);
+        router.get(route("administrators.classes.index"), params, {
+            only: ["classes", "filters"],
+            preserveScroll: true,
+            preserveState: true,
+            replace: options.replace ?? true,
+            onFinish: () => setIsUpdating(false),
+        });
+    };
+
+    const handleSearchChange = (nextSearch: string) => {
+        searchDraftRef.current = nextSearch;
+        setSearch(nextSearch);
+        cancelPendingSearch();
+        debouncedSearchRef.current = setTimeout(() => {
+            debouncedSearchRef.current = null;
+            setIsUpdating(true);
+            router.get(
+                route("administrators.classes.index"),
+                buildFilterParams(nextSearch, activeFilters, sortOption),
+                {
+                    only: ["classes", "filters"],
+                    preserveScroll: true,
+                    preserveState: true,
+                    replace: true,
+                    onFinish: () => setIsUpdating(false),
+                },
+            );
+        }, 300);
+    };
 
     const handleFiltersChange = (newFilters: FilterType[]) => {
         setActiveFilters(newFilters);
-        refreshClasses(search, newFilters);
+        navigateWithParams(buildFilterParams(search, newFilters, sortOption));
     };
 
     const clearFilters = () => {
+        searchDraftRef.current = "";
         setSearch("");
         setActiveFilters([]);
-        refreshClasses("", []);
+        setSortOption("created_at:desc");
+        cancelPendingSearch();
+        navigateWithParams(buildFilterParams("", [], "created_at:desc"));
     };
 
     const handleSortChange = (value: string) => {
         setSortOption(value);
-        refreshClasses(search, activeFilters, value);
+        navigateWithParams(buildFilterParams(search, activeFilters, value));
     };
 
     const filterFields: FilterFieldConfig[] = React.useMemo(
@@ -1278,14 +1325,18 @@ export default function AdministratorClassesIndex({
                         <div className="relative max-w-md flex-1">
                             <Search className="text-muted-foreground absolute top-2.5 left-2.5 h-4 w-4" />
                             <Input
-                                placeholder="Search classes..."
+                                ref={searchInputRef}
+                                placeholder="Search classes... (Press '/' to focus)"
                                 className="bg-background pl-8"
                                 value={search}
+                                onFocus={() => {
+                                    searchInputFocusedRef.current = true;
+                                }}
+                                onBlur={() => {
+                                    searchInputFocusedRef.current = false;
+                                }}
                                 onChange={(event) => {
-                                    const nextSearch = event.target.value;
-
-                                    setSearch(nextSearch);
-                                    refreshClasses(nextSearch, activeFilters);
+                                    handleSearchChange(event.target.value);
                                 }}
                             />
                         </div>
@@ -1373,19 +1424,27 @@ export default function AdministratorClassesIndex({
                                     <span className="hidden sm:inline">Compare</span>
                                     <span className="sm:hidden">Cmp</span>
                                 </Button>
-                                <Button asChild size="sm">
-                                    <Link href={route("administrators.classes.create")}>
-                                        <Plus className="mr-1.5 h-4 w-4" />
-                                        <span className="hidden sm:inline">New class</span>
-                                        <span className="sm:hidden">New</span>
-                                    </Link>
-                                </Button>
+                                <Link
+                                    href={route("administrators.classes.create")}
+                                    className={buttonVariants({ size: "sm" })}
+                                >
+                                    <Plus className="mr-1.5 h-4 w-4" />
+                                    <span className="hidden sm:inline">New class</span>
+                                    <span className="sm:hidden">New</span>
+                                </Link>
                             </div>
                         </div>
                         <ClassStats totalClasses={filteredStatsTotalClasses} totalStudents={filteredStatsTotalStudents} />
 
                         {viewMode === "grid" ? (
-                            <div className="animate-in fade-in slide-in-from-bottom-4 overflow-hidden rounded-lg border duration-500">
+                            <div className="relative animate-in fade-in slide-in-from-bottom-4 overflow-hidden rounded-lg border duration-500">
+                                {isUpdating && (
+                                    <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center">
+                                        <span className="bg-background/90 text-muted-foreground rounded-full border px-3 py-1 text-xs shadow-sm">
+                                            Updating…
+                                        </span>
+                                    </div>
+                                )}
                                 <div className="flex flex-col gap-3 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                                     {toolbarContent}
                                 </div>
@@ -1422,7 +1481,7 @@ export default function AdministratorClassesIndex({
                                 )}
                             </div>
                         ) : (
-                            <DataTable columns={columns} data={visibleClasses} toolbar={toolbarContent} />
+                            <DataTable columns={columns} data={visibleClasses} toolbar={toolbarContent} isLoading={isUpdating} />
                         )}
 
                         {viewMode === "grid" && visibleClasses.length > 0 && (
@@ -2179,11 +2238,12 @@ export default function AdministratorClassesIndex({
                                                 </Table>
                                             </div>
 
-                                            <Button asChild variant="outline">
-                                                <Link href={route("administrators.classes.show", { class: selected_class.id })}>
-                                                    Open full enrollments page
-                                                </Link>
-                                            </Button>
+                                            <Link
+                                                href={route("administrators.classes.show", { class: selected_class.id })}
+                                                className={buttonVariants({ variant: "outline" })}
+                                            >
+                                                Open full enrollments page
+                                            </Link>
                                         </TabsContent>
 
                                         <TabsContent value="posts" className="space-y-3">
@@ -2205,11 +2265,12 @@ export default function AdministratorClassesIndex({
                                                 )}
                                             </div>
 
-                                            <Button asChild variant="outline">
-                                                <Link href={route("administrators.classes.show", { class: selected_class.id })}>
-                                                    Open full posts page
-                                                </Link>
-                                            </Button>
+                                            <Link
+                                                href={route("administrators.classes.show", { class: selected_class.id })}
+                                                className={buttonVariants({ variant: "outline" })}
+                                            >
+                                                Open full posts page
+                                            </Link>
                                         </TabsContent>
                                     </Tabs>
                                 </TabsContent>
@@ -2231,12 +2292,13 @@ export default function AdministratorClassesIndex({
                                 Edit class
                             </Button>
                             {selected_class ? (
-                                <Button asChild variant="outline">
-                                    <Link href={route("administrators.classes.show", { class: selected_class.id })}>
-                                        <BookOpen className="mr-2 h-4 w-4" />
-                                        Open class page
-                                    </Link>
-                                </Button>
+                                <Link
+                                    href={route("administrators.classes.show", { class: selected_class.id })}
+                                    className={buttonVariants({ variant: "outline" })}
+                                >
+                                    <BookOpen className="mr-2 h-4 w-4" />
+                                    Open class page
+                                </Link>
                             ) : null}
                             <Button
                                 type="button"

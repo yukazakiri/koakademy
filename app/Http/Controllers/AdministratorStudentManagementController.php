@@ -360,7 +360,12 @@ final class AdministratorStudentManagementController extends Controller
             || $previousSemesterCleared !== null
             || $trashedFilter !== 'active';
 
-        if ($request->header('X-Inertia') !== null) {
+        $isPaginatedOrFiltered = $request->has('page')
+            || $request->has('search')
+            || $hasActiveFilters
+            || $request->header('X-Inertia-Partial-Data') !== null;
+
+        if ($request->header('X-Inertia') !== null && ! $isPaginatedOrFiltered) {
             $students = Inertia::defer($studentsPayloadResolver, 'student-directory');
         } else {
             $students = $studentsPayloadResolver();

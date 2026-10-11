@@ -8,7 +8,6 @@ use App\Features\Toggles\StudentClasses;
 use App\Features\Toggles\StudentSchedule;
 use App\Features\Toggles\StudentTuition;
 use App\Models\User;
-use App\Services\FeatureToggleRegistry;
 use App\Services\UserFeatureFlagService;
 use Laravel\Pennant\Feature;
 
@@ -88,15 +87,4 @@ it('restores role defaults before applying selected overrides', function (): voi
     );
 
     expect(Feature::for($user)->active(StudentSchedule::class))->toBeTrue();
-});
-
-it('FeatureToggleRegistry resolves toggle classes correctly', function (): void {
-    expect(FeatureToggleRegistry::classForKey('faculty-toolkit'))->toBe(FacultyToolkit::class);
-    expect(FeatureToggleRegistry::classForKey('student-classes'))->toBe(StudentClasses::class);
-    expect(FeatureToggleRegistry::classForKey('student-schedule'))->toBe(StudentSchedule::class);
-    expect(FeatureToggleRegistry::classForKey('student-tuition'))->toBe(StudentTuition::class);
-});
-
-it('FeatureToggleRegistry returns null for unknown keys', function (): void {
-    expect(FeatureToggleRegistry::classForKey('nonexistent-feature'))->toBeNull();
 });

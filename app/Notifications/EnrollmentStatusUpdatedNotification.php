@@ -17,7 +17,7 @@ final class EnrollmentStatusUpdatedNotification extends Notification implements 
     use Queueable;
 
     /**
-     * @param array<string, mixed> $customTemplate
+     * @param  array<string, mixed>  $customTemplate
      */
     public function __construct(
         public StudentEnrollment $record,
@@ -80,33 +80,34 @@ final class EnrollmentStatusUpdatedNotification extends Notification implements 
             $result = $text;
             foreach ($tokens as $key => $val) {
                 $result = str_replace(
-                    ['{{ ' . $key . ' }}', '{{' . $key . '}}'],
+                    ['{{ '.$key.' }}', '{{'.$key.'}}'],
                     $val,
                     $result
                 );
             }
+
             return $result;
         };
 
         // Determine subject
         $rawSubject = $this->customTemplate['subject'] ?? null;
-        $subject = is_string($rawSubject) && trim($rawSubject) !== ''
+        $subject = is_string($rawSubject) && mb_trim($rawSubject) !== ''
             ? ($interpolate($rawSubject) ?? "Enrollment Status Update: {$status} | {$organizationName}")
             : sprintf('Enrollment Status Update: %s | %s', $status, $organizationName);
 
         // Determine headline
         $rawHeadline = $this->customTemplate['headline'] ?? null;
-        $headline = is_string($rawHeadline) && trim($rawHeadline) !== ''
+        $headline = is_string($rawHeadline) && mb_trim($rawHeadline) !== ''
             ? ($interpolate($rawHeadline) ?? 'Application Status Update')
             : 'Application Status Update';
 
         // Determine custom body
         $rawBody = $this->customTemplate['custom_body'] ?? null;
-        $customBody = is_string($rawBody) && trim($rawBody) !== ''
+        $customBody = is_string($rawBody) && mb_trim($rawBody) !== ''
             ? $interpolate($rawBody)
             : null;
 
-        $buttonLabel = is_string($this->customTemplate['button_label'] ?? null) && trim($this->customTemplate['button_label']) !== ''
+        $buttonLabel = is_string($this->customTemplate['button_label'] ?? null) && mb_trim($this->customTemplate['button_label']) !== ''
             ? (string) $this->customTemplate['button_label']
             : 'Visit Student Portal';
 
@@ -147,13 +148,13 @@ final class EnrollmentStatusUpdatedNotification extends Notification implements 
      */
     private function resolvePortalUrl(mixed $buttonUrl): string
     {
-        $base = rtrim((string) config('app.url'), '/');
+        $base = mb_rtrim((string) config('app.url'), '/');
 
         if (! is_string($buttonUrl)) {
             return $base;
         }
 
-        $path = trim($buttonUrl);
+        $path = mb_trim($buttonUrl);
 
         if ($path === '') {
             return $base;

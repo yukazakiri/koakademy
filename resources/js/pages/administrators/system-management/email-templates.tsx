@@ -126,6 +126,7 @@ export default function SystemManagementEmailTemplatesPage({
     }, [email_template_policies, filteredTemplates]);
 
     const configuredCount = templates.filter((template) => template.configured).length;
+    const unconfiguredCount = templates.length - configuredCount;
 
     const buildStep = (template: EmailTemplate): WorkflowStep => ({
         key: template.step_key,
@@ -192,8 +193,7 @@ export default function SystemManagementEmailTemplatesPage({
                                 <CardTitle className="text-base font-semibold">Enrollment email templates</CardTitle>
                                 <CardDescription className="mt-0.5 text-xs">
                                     {configuredCount} of {templates.length} workflow steps dispatch an email. Changes save to the policy draft.
-                                </CardDescription>
-                            </div>
+                                </CardDescription>                            </div>
                         </div>
 
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -216,6 +216,11 @@ export default function SystemManagementEmailTemplatesPage({
                             >
                                 <FileWarning className="size-3.5" />
                                 {showUnconfiguredOnly ? "Showing gaps" : "Show gaps only"}
+                                {unconfiguredCount > 0 && (
+                                    <Badge variant="secondary" className="ml-0.5 h-4 px-1 text-[10px]">
+                                        {unconfiguredCount}
+                                    </Badge>
+                                )}
                             </Button>
                         </div>
                     </CardHeader>
@@ -295,6 +300,11 @@ export default function SystemManagementEmailTemplatesPage({
                                                 <p className="text-muted-foreground truncate text-xs">
                                                     <span className="text-foreground font-medium">Subject:</span> {subject || "Uses the default template subject"}
                                                 </p>
+                                                {!template.configured && (
+                                                    <p className="text-amber-600 dark:text-amber-400 text-[11px]">
+                                                        Sends the built-in default for {notificationLabel ?? "this milestone"}.
+                                                    </p>
+                                                )}
                                                 <p className="text-muted-foreground flex items-center gap-1.5 text-[11px]">
                                                     <Sparkles className="size-3 shrink-0" />
                                                     {notificationLabel ?? "No template selected"}

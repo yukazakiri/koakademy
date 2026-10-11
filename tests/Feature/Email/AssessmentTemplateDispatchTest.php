@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Jobs\SendAssessmentNotificationJob;
+use App\Notifications\ApplicantApprovedForRequirements;
 use App\Notifications\MigrateToStudent;
 
 /**
@@ -44,6 +45,21 @@ it('forwards the assessment template through the queued job', function (): void 
 
     expect($mail->subject)->toBe("Welcome aboard, {$studentName}!")
         ->and((string) $mail->render())->toContain("Your matriculation is confirmed, {$studentName}.");
+});
+
+it('renders no duplicate greeting in the default approval email', function (): void {
+    $applicant = App\Models\Student::factory()->create([
+        'email' => 'nodup@example.com',
+        'first_name' => 'Maria',
+        'last_name' => 'Santos',
+    ]);
+
+    $mail = (new ApplicantApprovedForRequirements('Registrar Office', 'Registrar'))->toMail($applicant);
+    $rendered = strip_tags(preg_replace('/<style.*?<\/style>/s', '', (string) $mail->render()));
+
+    // The blade already greets "Dear <name>," so the intro must not greet again.
+    expect(mb_substr_count($rendered, 'Dear '.$applicant->full_name))->toBe(1);
+    expect(mb_stripos($rendered, 'Hello '.$applicant->full_name))->toBeFalse();
 });
 
 it('keeps the enrollment details table when a template replaces the assessment intro', function (): void {

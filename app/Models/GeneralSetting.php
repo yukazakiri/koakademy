@@ -21,6 +21,10 @@ use Override;
  * @method static Builder<static>|GeneralSetting newQuery()
  * @method static Builder<static>|GeneralSetting query()
  *
+ * @property array<string, mixed>|null $more_configs
+ *
+ * @use HasFactory<GeneralSettingFactory>
+ *
  * @mixin \Eloquent
  */
 final class GeneralSetting extends Model

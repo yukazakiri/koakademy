@@ -17,7 +17,7 @@
 
 Dear {{ $studentName }},
 
-Congratulations! We are pleased to inform you that your online application has been reviewed and approved for the next step of the admission process.
+{{ $intro ?? 'Good news — your application has been reviewed and approved for the next step of the admission process.' }}
 
 <x-mail::panel>
 @if(!empty($program))

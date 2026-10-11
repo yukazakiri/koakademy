@@ -116,6 +116,43 @@ it('lists every template-driven email with a subject, intro and tokens', functio
         ->toContain(EmailTemplateCatalog::SYSTEM_KEYS[0]);
 });
 
+it('every catalog entry maps to an email that actually sends mail', function (): void {
+    // A template for an email that never fires would silently mislead administrators.
+    $slugToClass = [
+        'applicant_approved_for_requirements' => App\Notifications\ApplicantApprovedForRequirements::class,
+        'class_schedule_changed' => App\Notifications\ClassScheduleChangedNotification::class,
+        'student_tuition_adjusted' => App\Notifications\StudentTuitionAdjustedNotification::class,
+        'statement_of_account_adjusted' => App\Notifications\StatementOfAccountAdjustedNotification::class,
+        'timetable_pdf_generated' => App\Notifications\TimetablePdfGeneratedNotification::class,
+        'timetable_pdf_failed' => App\Notifications\TimetablePdfFailedNotification::class,
+    ];
+
+    foreach ($slugToClass as $slug => $class) {
+        expect(EmailTemplateCatalog::keys())->toContain($slug);
+        expect((new ReflectionClass($class))->hasMethod('toMail'))->toBeTrue("{$class} has no mail message");
+    }
+});
+
+it('never advertises a template for database-only or never-dispatched email', function (): void {
+    $keys = EmailTemplateCatalog::keys();
+
+    // Database-only: there is no mail message to template.
+    foreach (['student_tuition_update_reviewed', 'admin_faculty_notice', 'pdf_generation_completed'] as $databaseOnly) {
+        expect($keys)->not->toContain($databaseOnly);
+    }
+
+    // EventReminderNotification only ever uses the database/broadcast channels.
+    expect($keys)->not->toContain('event_reminder');
+
+    // EnrollmentVerified has no dispatch site, so advertising a template would mislead.
+    expect($keys)->not->toContain('enrollment_verified');
+});
+
+it('has no duplicate keys in the catalog', function (): void {
+    $all = EmailTemplateCatalog::all();
+
+    expect(count($all))->toBe(count(EmailTemplateCatalog::keys()));
+});
 it('every token referenced by a default template is declared for that email', function (): void {
     $undeclared = [];
 

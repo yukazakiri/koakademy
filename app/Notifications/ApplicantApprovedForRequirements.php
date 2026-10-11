@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Notifications;
 
+use App\Email\EmailTemplateRenderer;
+use App\Models\Student;
 use App\Settings\SiteSettings;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -14,9 +16,13 @@ final class ApplicantApprovedForRequirements extends Notification implements Sho
 {
     use Queueable;
 
+    /**
+     * @param  array<string, mixed>  $customTemplate
+     */
     public function __construct(
         private readonly string $senderName,
-        private readonly string $senderRole
+        private readonly string $senderRole,
+        private readonly array $customTemplate = [],
     ) {
         $this->afterCommit();
     }
@@ -38,15 +44,25 @@ final class ApplicantApprovedForRequirements extends Notification implements Sho
             $logoUrl = url($logoUrl);
         }
 
+        $renderer = app(EmailTemplateRenderer::class);
+        $course = $notifiable instanceof Student ? $notifiable->Course : null;
+        $departmentCode = $course?->department?->code;
+
+        $tokens = [
+            'applicant_name' => (string) ($notifiable->full_name ?? $notifiable->first_name ?? 'Applicant'),
+            'program' => (string) ($course?->code ?? ''),
+            'department' => (string) ($departmentCode ?? ''),
+            'organization_name' => (string) ($siteSettings['organizationName'] ?? config('app.name')),
+            'sender_name' => $this->senderName,
+        ];
+
         return (new MailMessage)
-            ->subject(sprintf(
-                'Online Application Approved - Visit the Registrar | %s',
-                $siteSettings['organizationName'] ?? config('app.name')
-            ))
+            ->subject($renderer->subject('applicant_approved_for_requirements', $tokens, $this->customTemplate))
             ->markdown('emails.enrollment.applicant-approved', [
                 'studentName' => $notifiable->full_name ?? $notifiable->first_name ?? 'Applicant',
-                'program' => $notifiable->Course?->code,
-                'department' => $notifiable->Course?->department?->code,
+                'intro' => $renderer->intro('applicant_approved_for_requirements', $tokens, $this->customTemplate),
+                'program' => $course?->code,
+                'department' => $departmentCode,
                 'siteSettings' => $siteSettings,
                 'logoUrl' => $logoUrl,
                 'senderName' => $this->senderName,

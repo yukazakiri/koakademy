@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Email\EmailTemplateCatalog;
 use App\Enrollment\EnrollmentPolicyManager;
+use App\Enums\UserRole;
 use App\Models\EnrollmentPolicy;
 use App\Models\EnrollmentPolicyVersion;
 use App\Models\User;
@@ -94,6 +96,104 @@ final class EnrollmentEmailTemplateService
         }
 
         return $templates;
+    }
+
+    /**
+     * Pick the built-in template a workflow step should use by default.
+     *
+     * A step whose key already names an enrollment template (for example
+     * `academic_verified`) gets that template; the terminal enrolment milestone gets
+     * the final assessment certificate; everything else gets the status update.
+     *
+     * @param  array<array-key, mixed>  $step
+     */
+    public function defaultNotificationForStep(array $step): string
+    {
+        $key = is_string($step['key'] ?? null) ? $step['key'] : '';
+
+        if (in_array($key, EmailTemplateCatalog::ENROLLMENT_KEYS, true)) {
+            return $key;
+        }
+
+        if (($step['terminal'] ?? false) === true) {
+            return 'assessment';
+        }
+
+        return 'status_update';
+    }
+
+    /**
+     * Fill in a missing `enrollment.notify` action (or an empty one) so every
+     * workflow step has a working built-in template. Existing explicit choices are
+     * always preserved.
+     */
+    public function backfillDefaultsFor(EnrollmentPolicy $policy): int
+    {
+        $version = $this->editableVersion($policy);
+
+        if (! $version instanceof EnrollmentPolicyVersion) {
+            return 0;
+        }
+
+        $configuration = self::configurationArray($version);
+        $steps = self::arrayAt($configuration, ['workflow', 'steps']);
+        $changed = 0;
+
+        foreach ($steps as $index => $step) {
+            if (! is_array($step)) {
+                continue;
+            }
+
+            $stepKey = is_string($step['key'] ?? null) ? $step['key'] : (string) $index;
+            $actions = array_values(self::arrayAt($step, ['actions']));
+            $notifyIndex = self::notifyIndex($actions);
+
+            if ($notifyIndex !== null && self::arrayAt($actions[$notifyIndex], ['configuration']) !== []) {
+                continue;
+            }
+
+            $notification = $this->defaultNotificationForStep($step);
+            $default = EmailTemplateCatalog::defaultFor($notification) ?? [];
+
+            $action = $notifyIndex !== null && is_array($actions[$notifyIndex]) ? $actions[$notifyIndex] : [];
+            $action['handler'] = self::HANDLER;
+            $action['key'] = is_string($action['key'] ?? null)
+                ? $action['key']
+                : "notify_{$stepKey}";
+            $action['configuration'] = [
+                'notification' => $notification,
+                'subject' => $default['subject'] ?? '',
+                'custom_body' => $default['intro'] ?? '',
+            ];
+
+            if ($notifyIndex !== null) {
+                $actions[$notifyIndex] = $action;
+            } else {
+                $actions[] = $action;
+            }
+
+            $step['actions'] = $actions;
+            $steps[$index] = $step;
+            $changed++;
+        }
+
+        if ($changed === 0) {
+            return 0;
+        }
+
+        $configuration['workflow'] = [
+            ...self::arrayAt($configuration, ['workflow']),
+            'steps' => $steps,
+        ];
+
+        $this->manager->saveDraft(
+            $policy,
+            self::normalizeConfiguration($configuration),
+            'Backfilled the built-in enrollment email templates.',
+            $this->resolveAuthor($policy),
+        );
+
+        return $changed;
     }
 
     /**
@@ -236,17 +336,53 @@ final class EnrollmentEmailTemplateService
     }
 
     /**
+     * Attribute the backfill to whoever authored the version being edited, falling
+     * back to an existing administrator when the author record is unavailable.
+     */
+    private function resolveAuthor(EnrollmentPolicy $policy): User
+    {
+        $version = $this->editableVersion($policy);
+        $author = $version?->author;
+
+        if ($author instanceof User) {
+            return $author;
+        }
+
+        $fallback = User::query()->where('role', UserRole::SuperAdmin)->first()
+            ?? User::query()->first();
+
+        if ($fallback instanceof User) {
+            return $fallback;
+        }
+
+        throw ValidationException::withMessages([
+            'policy' => 'No administrator exists to attribute this backfill to.',
+        ]);
+    }
+
+    /**
      * The draft is what operators edit; fall back to the published version when a
      * policy has never been drafted so the page still renders something editable.
      */
     private function editableVersion(EnrollmentPolicy $policy): ?EnrollmentPolicyVersion
     {
-        $policy->loadMissing(['versions', 'activeVersion']);
+        $versions = EnrollmentPolicyVersion::query()
+            ->where('enrollment_policy_id', $policy->getKey())
+            ->latest('version')
+            ->get();
 
-        $draft = $policy->versions
-            ->sortByDesc('version')
-            ->first(fn (EnrollmentPolicyVersion $version): bool => $version->state === EnrollmentPolicyVersion::Draft);
+        // Always query fresh: a cached relation would serve pre-save data, so a
+        // read immediately after a write would not see the new configuration.
+        $draft = $versions->firstWhere('state', EnrollmentPolicyVersion::Draft);
 
-        return $draft instanceof EnrollmentPolicyVersion ? $draft : $policy->activeVersion;
+        if ($draft instanceof EnrollmentPolicyVersion) {
+            return $draft;
+        }
+
+        $published = $versions->firstWhere('state', EnrollmentPolicyVersion::Published);
+
+        return $published instanceof EnrollmentPolicyVersion
+            ? $published
+            : $versions->first();
     }
 }

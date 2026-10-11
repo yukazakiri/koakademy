@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Notifications;
 
+use App\Email\EmailTemplateRenderer;
 use App\Models\User;
 use App\Settings\SiteSettings;
 use Illuminate\Bus\Queueable;
@@ -29,6 +30,7 @@ final class StatementOfAccountAdjustedNotification extends Notification implemen
         private readonly ?string $adjustmentNote = null,
         private readonly ?int $changedByUserId = null,
         private readonly ?string $changedByName = null,
+        private readonly array $customTemplate = [],
     ) {
         $this->afterCommit();
     }
@@ -50,15 +52,24 @@ final class StatementOfAccountAdjustedNotification extends Notification implemen
 
     public function toMail(object $notifiable): MailMessage
     {
+        $renderer = app(EmailTemplateRenderer::class);
+        $tokens = [
+            'student_name' => $this->studentName,
+            'school_year' => $this->schoolYear,
+            'semester' => (string) $this->semester,
+            'adjustment_note' => (string) ($this->adjustmentNote ?? ''),
+            'changed_by' => (string) ($this->changedByName ?? ''),
+        ];
+
         $mail = (new MailMessage)
-            ->subject('Your Statement of Account has been adjusted')
-            ->greeting('Hello '.$this->studentName.',')
-            ->line(sprintf(
-                'Your Statement of Account for **%s • %s Semester** has been adjusted. Please review the updated assessment below.',
-                $this->schoolYear,
-                $this->semester === 1 ? '1st' : '2nd'
-            ))
-            ->line('**Updated charges:**')
+            ->subject($renderer->subject('statement_of_account_adjusted', $tokens, $this->customTemplate))
+            ->greeting('Hello '.$this->studentName.',');
+
+        foreach ($renderer->introLines('statement_of_account_adjusted', $tokens, $this->customTemplate) as $line) {
+            $mail->line($line);
+        }
+
+        $mail->line('**Updated charges:**')
             ->lines($this->breakdownLines());
 
         if ($this->adjustmentNote !== null && mb_trim($this->adjustmentNote) !== '') {
@@ -70,8 +81,10 @@ final class StatementOfAccountAdjustedNotification extends Notification implemen
         }
 
         return $mail
-            ->action('View Statement of Account', route('student.tuition.index'))
-            ->line('If you believe this adjustment was made in error, please contact the registrar or accounting office as soon as possible.');
+            ->action(
+                $renderer->buttonLabel('statement_of_account_adjusted', $this->customTemplate, 'View Statement of Account'),
+                route('student.tuition.index'),
+            );
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Notifications;
 
+use App\Email\EmailTemplateRenderer;
 use App\Models\User;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -17,12 +18,14 @@ final class StudentTuitionAdjustedNotification extends Notification implements S
     /**
      * @param  array<string, mixed>  $beforeSnapshot
      * @param  array<string, mixed>  $afterSnapshot
+     * @param  array<string, mixed>  $customTemplate
      */
     public function __construct(
         private readonly array $beforeSnapshot,
         private readonly array $afterSnapshot,
         private readonly string $reason,
         private readonly ?string $actorName,
+        private readonly array $customTemplate = [],
     ) {
         $this->afterCommit();
     }
@@ -35,18 +38,30 @@ final class StudentTuitionAdjustedNotification extends Notification implements S
 
     public function toMail(object $notifiable): MailMessage
     {
-        return (new MailMessage)
-            ->subject('Your student tuition was adjusted')
-            ->greeting('Hello,')
-            ->line(sprintf('Your tuition assessment for %s, Semester %s was updated.', $this->afterSnapshot['school_year'], $this->afterSnapshot['semester']))
-            ->line('Reason: '.$this->reason)
+        $renderer = app(EmailTemplateRenderer::class);
+        $tokens = [
+            'student_name' => (string) ($notifiable->name ?? $notifiable->email ?? 'Student'),
+            'school_year' => (string) ($this->afterSnapshot['school_year'] ?? ''),
+            'semester' => (string) ($this->afterSnapshot['semester'] ?? ''),
+            'reason' => $this->reason,
+            'actor_name' => (string) ($this->actorName ?? ''),
+        ];
+
+        $mail = (new MailMessage)
+            ->subject($renderer->subject('student_tuition_adjusted', $tokens, $this->customTemplate))
+            ->greeting('Hello,');
+
+        foreach ($renderer->introLines('student_tuition_adjusted', $tokens, $this->customTemplate) as $line) {
+            $mail->line($line);
+        }
+
+        return $mail
             ->line($this->changeLine('Total fees', 'total_fees'))
             ->line($this->changeLine('Paid / opening amount', 'paid'))
             ->line('Account position: '.$this->accountPosition($this->beforeSnapshot).' → '.$this->accountPosition($this->afterSnapshot))
             ->line($this->installmentLine())
             ->when($this->actorName !== null, fn (MailMessage $mail): MailMessage => $mail->line('Updated by: '.$this->actorName))
-            ->action('View Tuition', url('/student/tuition'))
-            ->line('If anything looks incorrect, please contact the Finance Office.');
+            ->action($renderer->buttonLabel('student_tuition_adjusted', $this->customTemplate, 'View Tuition'), url('/student/tuition'));
     }
 
     /** @return array<string, mixed> */

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Email;
 
 use App\Models\GeneralSetting;
+use App\Settings\SiteSettings;
 
 /**
  * Installation-wide overrides for non-enrollment email templates.
@@ -24,9 +25,24 @@ final class SystemEmailTemplateStore
      */
     public function all(): array
     {
-        $stored = GeneralSetting::query()->first()?->more_configs[self::CONFIG_KEY] ?? [];
+        $stored = $this->nestedArray($this->configuration()[self::CONFIG_KEY] ?? null);
+        $templates = [];
 
-        return is_array($stored) ? $stored : [];
+        foreach ($stored as $key => $override) {
+            if (! is_array($override)) {
+                continue;
+            }
+
+            $template = [];
+
+            foreach ($override as $name => $value) {
+                $template[(string) $name] = $value;
+            }
+
+            $templates[(string) $key] = $template;
+        }
+
+        return $templates;
     }
 
     /**
@@ -36,7 +52,7 @@ final class SystemEmailTemplateStore
      */
     public function get(string $key): array
     {
-        $stored = $this->all()[$key] ?? [];
+        $stored = $this->all()[$key] ?? null;
 
         return is_array($stored) ? $stored : [];
     }
@@ -49,10 +65,10 @@ final class SystemEmailTemplateStore
     public function put(string $key, array $values): void
     {
         $settings = $this->settings();
-        $configs = $settings->more_configs ?? [];
+        $configs = $this->configuration();
 
-        $templates = is_array($configs[self::CONFIG_KEY] ?? null) ? $configs[self::CONFIG_KEY] : [];
-        $existing = is_array($templates[$key] ?? null) ? $templates[$key] : [];
+        $templates = $this->nestedArray($configs[self::CONFIG_KEY] ?? null);
+        $existing = $this->nestedArray($templates[$key] ?? null);
 
         // Empty strings mean "revert to the built-in default" rather than "store blank".
         $merged = array_filter([
@@ -71,14 +87,9 @@ final class SystemEmailTemplateStore
      */
     public function forget(string $key): void
     {
-        $settings = GeneralSetting::query()->first();
-
-        if (! $settings instanceof GeneralSetting) {
-            return;
-        }
-
-        $configs = $settings->more_configs ?? [];
-        $templates = is_array($configs[self::CONFIG_KEY] ?? null) ? $configs[self::CONFIG_KEY] : [];
+        $settings = $this->settings();
+        $configs = $this->configuration();
+        $templates = $this->nestedArray($configs[self::CONFIG_KEY] ?? null);
 
         unset($templates[$key]);
         $configs[self::CONFIG_KEY] = $templates;
@@ -99,7 +110,25 @@ final class SystemEmailTemplateStore
         }
 
         return GeneralSetting::query()->create([
-            'site_name' => (string) config('app.name'),
+            'site_name' => app(SiteSettings::class)->getAppName(),
         ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function configuration(): array
+    {
+        $configs = $this->settings()->more_configs;
+
+        return is_array($configs) ? $configs : [];
+    }
+
+    /**
+     * @return array<array-key, mixed>
+     */
+    private function nestedArray(mixed $value): array
+    {
+        return is_array($value) ? $value : [];
     }
 }

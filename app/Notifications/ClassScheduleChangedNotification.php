@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Notifications;
 
+use App\Email\EmailTemplateRenderer;
 use App\Models\User;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -30,6 +31,7 @@ final class ClassScheduleChangedNotification extends Notification implements Sho
         private readonly ?string $section = null,
         private readonly ?string $facultyName = null,
         private readonly ?Carbon $changedAt = null,
+        private readonly array $customTemplate = [],
     ) {}
 
     /**
@@ -46,14 +48,21 @@ final class ClassScheduleChangedNotification extends Notification implements Sho
 
     public function toMail(object $notifiable): MailMessage
     {
+        $renderer = app(EmailTemplateRenderer::class);
+        $tokens = [
+            'student_name' => (string) ($notifiable->name ?? $notifiable->email ?? 'Student'),
+            'class_title' => $this->classTitle,
+            'class_display_name' => $this->classDisplayName(),
+            'changed_by' => (string) ($this->changedByName ?? ''),
+        ];
+
         $mail = (new MailMessage)
-            ->subject(sprintf('Schedule Update: %s', $this->classTitle))
-            ->greeting($this->greeting($notifiable))
-            ->line(sprintf(
-                'The schedule for **%s** has been updated%s.',
-                $this->classDisplayName(),
-                $this->changedAt instanceof Carbon ? ' as of '.$this->changedAt->format('F j, Y \a\t g:i A') : ''
-            ));
+            ->subject($renderer->subject('class_schedule_changed', $tokens, $this->customTemplate))
+            ->greeting($this->greeting($notifiable));
+
+        foreach ($renderer->introLines('class_schedule_changed', $tokens, $this->customTemplate) as $line) {
+            $mail->line($line);
+        }
 
         if ($this->contextLine() !== null) {
             $mail->line($this->contextLine());

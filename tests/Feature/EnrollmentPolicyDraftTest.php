@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Enums\UserRole;
 use App\Enrollment\EnrollmentPolicyManager;
+use App\Enums\UserRole;
 use App\Models\EnrollmentPolicy;
 use App\Models\User;
 

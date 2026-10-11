@@ -122,17 +122,18 @@ export function CreatePolicyDialog({
                                         )}
                                     >
                                         <div className="flex items-start justify-between gap-3">
-                                            <span className="font-semibold">{preset.label}</span>
+                                            <span className="text-sm font-semibold">{preset.label}</span>
                                             {selected ? (
-                                                <span className="bg-primary text-primary-foreground flex size-6 items-center justify-center rounded-full">
-                                                    <Check className="size-3.5" />
+                                                <span className="bg-primary text-primary-foreground flex size-5 shrink-0 items-center justify-center rounded-full">
+                                                    <Check className="size-3" />
                                                 </span>
                                             ) : null}
                                         </div>
-                                        <p className="text-muted-foreground mt-2 text-sm leading-5 text-pretty">{preset.description}</p>
+                                        <p className="text-muted-foreground mt-1.5 text-xs leading-relaxed text-pretty">{preset.description}</p>
+                                        <PresetFlowBadges presetKey={key} />
                                         {index === 0 ? (
-                                            <Badge variant="secondary" className="mt-3 gap-1">
-                                                <Sparkles className="size-3" /> Safest for existing schools
+                                            <Badge variant="secondary" className="mt-3 h-5 gap-1 text-[10px]">
+                                                <Sparkles className="size-2.5" /> Recommended for initial setup
                                             </Badge>
                                         ) : null}
                                     </button>
@@ -230,6 +231,29 @@ export function CreatePolicyDialog({
                 </DialogFooter>
             </DialogContent>
         </Dialog>
+    );
+}
+
+const PRESET_PIPELINE_FLOWS: Record<string, string[]> = {
+    legacy: ["Intake", "Dept Review", "Cashier", "Enrolled"],
+    registrar_cashier: ["Intake", "Registrar", "Cashier", "Enrolled"],
+    manual: ["Intake", "Manual Review", "Sectioning", "Enrolled"],
+    automatic_curriculum: ["Curriculum", "Dean Clearance", "Cashier", "Enrolled"],
+    no_payment: ["Intake", "Academic Clearance", "Enrolled"],
+};
+
+function PresetFlowBadges({ presetKey }: { presetKey: string }) {
+    const stages = PRESET_PIPELINE_FLOWS[presetKey] ?? ["Intake", "Approval", "Cashier", "Enrolled"];
+
+    return (
+        <div className="flex flex-wrap items-center gap-1 pt-2">
+            {stages.map((stage, i) => (
+                <span key={i} className="inline-flex items-center gap-1 text-[10px]">
+                    <span className="bg-muted text-foreground border-border/50 rounded-md border px-1.5 py-0.5 font-medium">{stage}</span>
+                    {i < stages.length - 1 && <ArrowRight className="text-muted-foreground size-2.5 shrink-0" />}
+                </span>
+            ))}
+        </div>
     );
 }
 

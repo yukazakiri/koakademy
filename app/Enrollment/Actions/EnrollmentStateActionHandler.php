@@ -89,6 +89,11 @@ final readonly class EnrollmentStateActionHandler implements EnrollmentActionHan
             return ActionResult::failure('A compatibility status is required.');
         }
 
+        $enrollment = $context->enrollment;
+        if ($enrollment instanceof \App\Models\StudentEnrollment) {
+            $enrollment->forceFill(['status' => $status])->save();
+        }
+
         return ActionResult::success(['compatibility_status' => $status, 'owned_by_engine' => true]);
     }
 
@@ -98,6 +103,11 @@ final readonly class EnrollmentStateActionHandler implements EnrollmentActionHan
         $outcome = (string) ($configuration['outcome'] ?? 'completed');
         if (! in_array($outcome, ['completed', 'rejected', 'cancelled'], true)) {
             return ActionResult::failure('Terminal outcome must be completed, rejected, or cancelled.');
+        }
+
+        $enrollment = $context->enrollment;
+        if ($enrollment instanceof \App\Models\StudentEnrollment) {
+            $enrollment->forceFill(['terminal_outcome' => $outcome])->save();
         }
 
         return ActionResult::success(['terminal_outcome' => $outcome, 'owned_by_engine' => true]);

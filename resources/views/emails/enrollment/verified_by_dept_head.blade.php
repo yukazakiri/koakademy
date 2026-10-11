@@ -30,16 +30,18 @@ You are now one step away from being officially enrolled!
 @endforeach
 </x-mail::table>
 
+@if(!empty($tuition))
 ### Financial Summary
 Please proceed to the Cashier's Office to settle your downpayment.
 
 <x-mail::panel>
-**Total Tuition:** ₱{{ number_format($tuition->overall_tuition, 2) }}
+**Total Tuition:** ₱{{ number_format($tuition->overall_tuition ?? 0, 2) }}
 <br>
-**Downpayment Due:** ₱{{ number_format($tuition->downpayment, 2) }}
+**Downpayment Due:** ₱{{ number_format($tuition->downpayment ?? 0, 2) }}
 </x-mail::panel>
 
 Please visit the school within **3 to 5 days** to complete your payment.
+@endif
 
 <x-mail::button :url="config('app.url')">
 Visit Student Portal

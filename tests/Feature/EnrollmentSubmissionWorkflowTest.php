@@ -26,6 +26,8 @@ use App\Models\StudentTransaction;
 use App\Models\Subject;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Notifications\EnrollmentStatusUpdatedNotification;
+use Illuminate\Support\Facades\Notification as NotificationFacade;
 use Illuminate\Support\Facades\Queue;
 use Laravel\Pennant\Feature;
 use Laravel\Sanctum\Sanctum;
@@ -331,6 +333,104 @@ it('executes the explicit default journey through synchronization and completion
         ]);
     Queue::assertPushed(GenerateAssessmentPdfJob::class, 1);
     Queue::assertPushed(SendAssessmentNotificationJob::class, 1);
+});
+
+it('updates enrollment status in database before executing notification action so student receives email with new status', function (): void {
+    NotificationFacade::fake();
+    $school = School::factory()->create();
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
+    $student = Student::factory()->create([
+        'school_id' => $school->id,
+        'course_id' => $course->id,
+        'email' => 'status-change-order@example.test',
+        'first_name' => 'Juan',
+    ]);
+    $subject = Subject::factory()->create(['course_id' => $course->id, 'academic_year' => 1, 'semester' => 1]);
+
+    $configuration = [
+        'schema_version' => 1,
+        'rules' => [],
+        'requirements' => [],
+        'assignment' => ['strategy' => 'assignment.manual', 'configuration' => []],
+        'billing' => ['strategy' => 'billing.course_rate', 'configuration' => []],
+        'workflow' => [
+            'steps' => [
+                [
+                    'key' => 'intake',
+                    'label' => 'Intake',
+                    'entry' => true,
+                    'terminal' => false,
+                    'status' => 'Pending Review',
+                    'actions' => [],
+                    'transitions' => [
+                        [
+                            'key' => 'to_interview',
+                            'label' => 'Schedule interview',
+                            'to' => 'interview',
+                            'fallback' => true,
+                            'conditions' => [],
+                        ],
+                    ],
+                ],
+                [
+                    'key' => 'interview',
+                    'label' => 'Interview Stage',
+                    'entry' => false,
+                    'terminal' => false,
+                    'status' => 'Interview Scheduled',
+                    'actions' => [
+                        [
+                            'key' => 'notify_status',
+                            'handler' => 'enrollment.notify',
+                            'configuration' => ['notification' => 'status_update'],
+                        ],
+                    ],
+                    'transitions' => [
+                        [
+                            'key' => 'to_enrolled',
+                            'label' => 'Complete enrollment',
+                            'to' => 'enrolled',
+                            'fallback' => true,
+                            'conditions' => [],
+                        ],
+                    ],
+                ],
+                [
+                    'key' => 'enrolled',
+                    'label' => 'Enrolled',
+                    'entry' => false,
+                    'terminal' => true,
+                    'outcome' => 'completed',
+                    'status' => 'Officially Enrolled',
+                    'actions' => [],
+                    'transitions' => [],
+                ],
+            ],
+        ],
+    ];
+
+    ($this->publishEnrollmentPolicy)($configuration, $school);
+    $coordinator = app(EnrollmentWorkflowCoordinator::class);
+    $enrollment = $coordinator->submit(($this->submissionFor)($student, $subject, 'status-order-submit-1'));
+
+    expect($enrollment->status)->toBe('Pending Review');
+
+    // Transition from Intake to Interview
+    $result = $coordinator->transition($enrollment, $this->actor, 'to_interview', [], 'status-order-transition-1');
+
+    expect($result->successful)->toBeTrue()
+        ->and($result->toStepKey)->toBe('interview')
+        ->and($enrollment->refresh()->status)->toBe('Interview Scheduled');
+
+    NotificationFacade::assertSentTo(
+        new Illuminate\Notifications\AnonymousNotifiable,
+        EnrollmentStatusUpdatedNotification::class,
+        function ($notification, $channels, $notifiable) {
+            return $notifiable->routes['mail'] === 'status-change-order@example.test'
+                && $notification->record->status === 'Interview Scheduled'
+                && $notification->record->current_step_key === 'interview';
+        }
+    );
 });
 
 it('defers minimum payment rules until the terminal transition', function (string $type, float $value): void {

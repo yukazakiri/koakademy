@@ -10,7 +10,7 @@ use Illuminate\Validation\ValidationException;
 final readonly class EnrollmentConfigurationValidator
 {
     private const array SupportedControls = [
-        'boolean', 'text', 'number', 'money', 'percentage', 'date', 'date_range',
+        'boolean', 'text', 'textarea', 'number', 'money', 'percentage', 'date', 'date_range',
         'select', 'multi_select', 'role', 'permission', 'school', 'program',
         'period', 'notification_channel',
     ];

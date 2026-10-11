@@ -54,6 +54,13 @@ final readonly class EnrollmentTransitionEngine
             }
 
             $this->requirements->materialize($locked, $snapshot, $submission->requirementEvidence);
+
+            $locked->forceFill([
+                'current_step_key' => (string) $entry['key'],
+                'status' => (string) ($entry['status'] ?? $locked->status),
+                'terminal_outcome' => ($entry['terminal'] ?? false) ? ($entry['outcome'] ?? null) : null,
+            ])->save();
+
             $context = EnrollmentContext::fromEnrollment(
                 $locked,
                 $submission->channel,
@@ -68,12 +75,6 @@ final readonly class EnrollmentTransitionEngine
                 );
             }
             $actionResults = $this->executeActions($entry['actions'] ?? [], $context, $actionPayloads, $idempotencyKey);
-
-            $locked->forceFill([
-                'current_step_key' => (string) $entry['key'],
-                'status' => (string) ($entry['status'] ?? $locked->status),
-                'terminal_outcome' => ($entry['terminal'] ?? false) ? ($entry['outcome'] ?? null) : null,
-            ])->save();
 
             EnrollmentWorkflowEvent::query()->create([
                 'student_enrollment_id' => $locked->id,
@@ -161,6 +162,14 @@ final readonly class EnrollmentTransitionEngine
                 }
 
                 $this->requirements->assertSatisfiedForStep($locked, (string) $target['key']);
+
+                $locked->current_step_key = (string) $target['key'];
+                $locked->status = (string) ($target['status'] ?? $locked->status);
+                $locked->terminal_outcome = ($target['terminal'] ?? false) ? ($target['outcome'] ?? $locked->terminal_outcome) : null;
+                $locked->save();
+
+                $context = EnrollmentContext::fromEnrollment($locked, actor: $actor);
+
                 $actionResults = $this->executeActions($target['actions'] ?? [], $context, $payload, $idempotencyKey);
                 if (($target['terminal'] ?? false) === true) {
                     $this->assertCompletionRules($snapshot->configuration['rules'] ?? [], $context);
@@ -183,9 +192,11 @@ final readonly class EnrollmentTransitionEngine
                         throw new EnrollmentTransitionException('The core notification action currently supports email only.');
                     }
 
+                    $template = (string) ($notification['template'] ?? (($target['terminal'] ?? false) ? 'assessment' : 'status_update'));
+
                     $result = $this->registry->action('enrollment.notify')->execute(
                         $context,
-                        ['notification' => 'assessment'],
+                        ['notification' => $template],
                         "{$idempotencyKey}:notification:{$index}",
                     );
                     $actionResults[] = ['key' => 'enrollment.notify', 'successful' => $result->successful, 'message' => $result->message, 'metadata' => $result->metadata];
@@ -193,11 +204,6 @@ final readonly class EnrollmentTransitionEngine
                         throw new EnrollmentTransitionException($result->message);
                     }
                 }
-
-                $locked->current_step_key = (string) $target['key'];
-                $locked->status = (string) ($target['status'] ?? $locked->status);
-                $locked->terminal_outcome = ($target['terminal'] ?? false) ? ($target['outcome'] ?? $locked->terminal_outcome) : null;
-                $locked->save();
 
                 EnrollmentWorkflowEvent::query()->create([
                     'student_enrollment_id' => $locked->id,

@@ -31,6 +31,8 @@
 
 @import "tw-animate-css";
 
+@import "@xyflow/react/dist/style.css";
+
 @import "./themes/resolve-a-i-app.css";
 @import "./themes/notebook.css";
 @import "./themes/offworld.css";

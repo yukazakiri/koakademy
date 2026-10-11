@@ -34,6 +34,7 @@ interface MultiSelectProps {
   badgeClassName?: string
   disabled?: boolean
   emptyText?: string
+  maxCount?: number
 }
 
 export function MultiSelect({
@@ -46,6 +47,7 @@ export function MultiSelect({
   badgeClassName,
   disabled = false,
   emptyText = "No item found.",
+  maxCount = 3,
 }: MultiSelectProps) {
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState("")
@@ -125,52 +127,57 @@ export function MultiSelect({
           onClick={handleTriggerClick}
           onKeyDown={handleTriggerKeyDown}
           className={cn(
-            buttonVariants({ variant: "outline" }),
-            "w-full justify-between h-auto min-h-10 px-3 py-2 cursor-pointer select-none",
+            "border-input bg-background ring-offset-background placeholder:text-muted-foreground focus:ring-ring flex min-h-9 w-full items-center justify-between rounded-xl border px-3 py-1.5 text-xs shadow-2xs transition-[color,box-shadow] outline-none focus:ring-2 focus:ring-offset-1 cursor-pointer select-none",
             disabled && "pointer-events-none opacity-50",
             className
           )}
         >
-          <ScrollArea className="max-h-24 flex-1 pr-1 text-left **:data-[slot=scroll-area-scrollbar]:m-0">
-            <div className="flex flex-wrap gap-1 pb-2">
-              {selected.length === 0 && (
-                <span className="text-muted-foreground font-normal">
-                  {placeholder}
-                </span>
-              )}
-              {selectedOptions.map((option) => (
-                <Badge
-                  variant="secondary"
-                  key={option.value}
-                  className={cn("mr-1 mb-1 cursor-pointer", badgeClassName)}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Remove ${option.label}`}
-                  title={`Remove ${option.label}`}
-                  onClick={(event) => {
+          <div className="flex flex-1 flex-wrap items-center gap-1 overflow-hidden py-0.5">
+            {selected.length === 0 && (
+              <span className="text-muted-foreground font-normal text-xs">
+                {placeholder}
+              </span>
+            )}
+            {selectedOptions.slice(0, maxCount).map((option) => (
+              <Badge
+                variant="secondary"
+                key={option.value}
+                className={cn("h-5 px-1.5 text-[11px] font-normal cursor-pointer gap-1", badgeClassName)}
+                role="button"
+                tabIndex={0}
+                aria-label={`Remove ${option.label}`}
+                title={`Remove ${option.label}`}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  handleUnselect(option.value)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault()
                     event.stopPropagation()
                     handleUnselect(option.value)
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault()
-                      event.stopPropagation()
-                      handleUnselect(option.value)
-                    }
-                  }}
+                  }
+                }}
+              >
+                <span className="truncate max-w-[120px]">{option.label}</span>
+                <span
+                  aria-hidden="true"
+                  className="inline-flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
                 >
-                  {option.label}
-                  <span
-                    aria-hidden="true"
-                    className="ml-1 inline-flex items-center justify-center rounded-full"
-                  >
-                    <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
-                  </span>
-                </Badge>
-              ))}
-            </div>
-          </ScrollArea>
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  <X className="size-2.5" />
+                </span>
+              </Badge>
+            ))}
+            {selectedOptions.length > maxCount && (
+              <Badge
+                variant="outline"
+                className="h-5 px-1.5 font-mono text-[10px] text-muted-foreground border-border/80"
+              >
+                +{selectedOptions.length - maxCount} more
+              </Badge>
+            )}
+          </div>
+          <ChevronsUpDown className="ml-1.5 size-3.5 shrink-0 opacity-50" />
         </div>
       </PopoverTrigger>
       <PopoverContent

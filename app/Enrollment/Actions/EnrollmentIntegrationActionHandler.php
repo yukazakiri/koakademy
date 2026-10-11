@@ -16,7 +16,10 @@ use App\Enrollment\EnrollmentPolicyRegistry;
 use App\Jobs\GenerateAssessmentPdfJob;
 use App\Jobs\SendAssessmentNotificationJob;
 use App\Models\StudentEnrollment;
+use App\Notifications\EnrollmentStatusUpdatedNotification;
+use App\Notifications\StudentEnrolledVerified;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification as NotificationFacade;
 
 final readonly class EnrollmentIntegrationActionHandler implements EnrollmentActionHandler, EnrollmentOperatorSchemaProvider
 {
@@ -122,7 +125,20 @@ final readonly class EnrollmentIntegrationActionHandler implements EnrollmentAct
             ],
             'enrollment.notify' => [
                 'type' => 'object',
-                'properties' => ['notification' => ['type' => 'string', 'enum' => ['assessment']]],
+                'properties' => [
+                    'notification' => [
+                        'type' => 'string',
+                        'enum' => ['assessment', 'official_enrollment', 'academic_verified', 'status_update', 'custom'],
+                    ],
+                    'subject' => ['type' => 'string'],
+                    'headline' => ['type' => 'string'],
+                    'custom_body' => ['type' => 'string'],
+                    'button_label' => ['type' => 'string'],
+                    'button_url' => ['type' => 'string'],
+                    'include_details' => ['type' => 'boolean'],
+                    'include_subjects' => ['type' => 'boolean'],
+                    'include_tuition' => ['type' => 'boolean'],
+                ],
             ],
             default => ['type' => 'object'],
         };
@@ -185,10 +201,28 @@ final readonly class EnrollmentIntegrationActionHandler implements EnrollmentAct
                 'enrollment.generate_assessment' => [[
                     'key' => 'create_new_file', 'label' => 'Always create a new assessment file', 'control' => 'boolean',
                 ]],
-                'enrollment.notify' => [[
-                    'key' => 'notification', 'label' => 'Notification', 'control' => 'select', 'required' => true,
-                    'options' => [['value' => 'assessment', 'label' => 'Assessment email']],
-                ]],
+                'enrollment.notify' => [
+                    [
+                        'key' => 'notification',
+                        'label' => 'Confirmation email template',
+                        'control' => 'select',
+                        'required' => true,
+                        'options' => [
+                            ['value' => 'assessment', 'label' => 'Official enrollment & assessment certificate (with PDF)'],
+                            ['value' => 'academic_verified', 'label' => 'Academic clearance notice (Subjects & fees)'],
+                            ['value' => 'status_update', 'label' => 'Status change progression notice'],
+                            ['value' => 'custom', 'label' => 'Customized email template'],
+                        ],
+                    ],
+                    ['key' => 'subject', 'label' => 'Custom subject line', 'control' => 'text'],
+                    ['key' => 'headline', 'label' => 'Custom headline', 'control' => 'text'],
+                    ['key' => 'custom_body', 'label' => 'Custom message body', 'control' => 'textarea'],
+                    ['key' => 'button_label', 'label' => 'Button label', 'control' => 'text'],
+                    ['key' => 'button_url', 'label' => 'Button URL', 'control' => 'text'],
+                    ['key' => 'include_details', 'label' => 'Include application details table', 'control' => 'boolean'],
+                    ['key' => 'include_subjects', 'label' => 'Include curriculum subjects table', 'control' => 'boolean'],
+                    ['key' => 'include_tuition', 'label' => 'Include tuition and balance panel', 'control' => 'boolean'],
+                ],
                 default => [],
             },
         ];
@@ -306,21 +340,44 @@ final readonly class EnrollmentIntegrationActionHandler implements EnrollmentAct
     {
         $runtimePayload = $this->runtimePayload($configuration);
         $notification = (string) ($runtimePayload['notification'] ?? $configuration['notification'] ?? 'assessment');
-        if ($notification !== 'assessment') {
-            return ActionResult::failure("Notification [{$notification}] is not supported by the core enrollment integration.");
+
+        $enrollment->refresh();
+        $enrollment->loadMissing(['student', 'Course', 'SubjectsEnrolled.subject', 'studentTuition']);
+        $studentEmail = $enrollment->student?->email;
+        if (! is_string($studentEmail) || $studentEmail === '') {
+            return ActionResult::failure('The student must have an email address before an enrollment notification can be queued.');
         }
 
-        $enrollment->loadMissing('student');
-        if (! is_string($enrollment->student?->email) || $enrollment->student->email === '') {
-            return ActionResult::failure('The student must have an email address before an assessment notification can be queued.');
+        if (in_array($notification, ['status_update', 'custom'], true)) {
+            $jobId = $this->jobId('policy_status_notification', $idempotencyKey);
+            DB::afterCommit(
+                fn () => NotificationFacade::route('mail', $studentEmail)
+                    ->notify(new EnrollmentStatusUpdatedNotification($enrollment, customTemplate: $configuration))
+            );
+
+            return ActionResult::success(['job_id' => $jobId, 'notification' => $notification, 'queued_after_commit' => true]);
         }
 
-        $jobId = $this->jobId('policy_notification', $idempotencyKey);
-        DB::afterCommit(
-            fn () => SendAssessmentNotificationJob::dispatch($enrollment->id, $jobId),
-        );
+        if ($notification === 'academic_verified') {
+            $jobId = $this->jobId('policy_academic_notification', $idempotencyKey);
+            DB::afterCommit(
+                fn () => NotificationFacade::route('mail', $studentEmail)
+                    ->notify(new StudentEnrolledVerified($enrollment))
+            );
 
-        return ActionResult::success(['job_id' => $jobId, 'notification' => $notification, 'queued_after_commit' => true]);
+            return ActionResult::success(['job_id' => $jobId, 'notification' => $notification, 'queued_after_commit' => true]);
+        }
+
+        if (in_array($notification, ['assessment', 'official_enrollment'], true)) {
+            $jobId = $this->jobId('policy_notification', $idempotencyKey);
+            DB::afterCommit(
+                fn () => SendAssessmentNotificationJob::dispatch($enrollment->id, $jobId),
+            );
+
+            return ActionResult::success(['job_id' => $jobId, 'notification' => $notification, 'queued_after_commit' => true]);
+        }
+
+        return ActionResult::failure("Notification [{$notification}] is not supported by the core enrollment integration.");
     }
 
     /** @param array<string, mixed> $configuration @return array<string, mixed> */

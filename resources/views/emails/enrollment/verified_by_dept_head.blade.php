@@ -15,6 +15,8 @@
 
 # Enrollment Verified
 
+Dear {{ $student_name }},
+
 {!! nl2br(e($intro)) !!}
 
 ### Approved Subjects

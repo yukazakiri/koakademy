@@ -52,6 +52,13 @@ final class EmailTemplateRenderer
             ?? $this->stringOrNull($stored['intro'] ?? $stored['custom_body'] ?? null)
             ?? $default;
 
+        // Enrollment blades render "Dear <student>," themselves, so an enrollment intro
+        // must never repeat one. System emails rely on the intro for their greeting and
+        // are left untouched.
+        if (in_array($key, EmailTemplateCatalog::ENROLLMENT_KEYS, true)) {
+            $intro = EmailTemplateCatalog::stripSalutation($intro);
+        }
+
         return mb_trim($this->interpolate($intro, $tokens));
     }
 

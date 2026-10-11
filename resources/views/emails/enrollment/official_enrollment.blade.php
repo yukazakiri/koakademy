@@ -46,6 +46,8 @@ Welcome to {{ $organizationName }}!
 </h1>
 </div>
 
+Dear {{ $student_name }},
+
 {!! nl2br(e($intro)) !!}
 
 ### Your Enrollment Details

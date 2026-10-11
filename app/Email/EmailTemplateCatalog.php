@@ -104,6 +104,39 @@ final class EmailTemplateCatalog
     }
 
     /**
+     * Strip a leading salutation from stored intro copy.
+     *
+     * The enrollment blades already render "Dear <student>," as part of the email
+     * chrome, so an intro that also opened with a salutation produced a double
+     * greeting. Earlier default presets carried one, so stored copies need
+     * normalizing before they are rendered again.
+     */
+    public static function stripSalutation(string $intro): string
+    {
+        $patterns = [
+            // "Hello {{ student_name }},", "Dear {{student_name}}", ...
+            '/^\s*(?:hello|hi|dear|greetings)\s*\{\{\s*student_name\s*\}\}\s*,?\s*/i',
+            // "Congratulations {{ student_name }}!"
+            '/^\s*congratulations\s*\{\{\s*student_name\s*\}\}\s*!?,?/i',
+        ];
+
+        $stripped = $intro;
+
+        foreach ($patterns as $pattern) {
+            $stripped = preg_replace($pattern, '', $stripped, 1) ?? $stripped;
+        }
+
+        return mb_ltrim($stripped, " \t\n\r\0\x0B");
+    }
+
+    /**
+     * @return array<string, array{subject: string, intro: string, tokens: array<string, string>, protected: bool}>
+     */
+    /**
+     * Enrollment emails. The "Dear <student>," greeting is rendered by the email
+     * chrome (each blade), so these intros must not repeat it — otherwise recipients
+     * get a double greeting and the admin preview stops matching the real email.
+     *
      * @return array<string, array{subject: string, intro: string, tokens: array<string, string>, protected: bool}>
      */
     private static function enrollment(): array
@@ -111,25 +144,25 @@ final class EmailTemplateCatalog
         return [
             'status_update' => [
                 'subject' => 'Enrollment Status Update: {{ status }} | {{ organization_name }}',
-                'intro' => "Hello {{ student_name }},\n\nYour enrollment application has advanced to the following milestone in our admissions pipeline. Please review your updated status and next steps below.",
+                'intro' => 'Your enrollment application has advanced to the following milestone in our admissions pipeline. Please review your updated status and next steps below.',
                 'tokens' => self::enrollmentTokens(),
                 'protected' => false,
             ],
             'custom' => [
                 'subject' => 'Important Update Regarding Your Application | {{ organization_name }}',
-                'intro' => "Dear {{ student_name }},\n\nWe have an important announcement regarding your admission record for {{ program }}.\n\nPlease check the instructions below and log in to your account.",
+                'intro' => "We have an important announcement regarding your admission record for {{ program }}.\n\nPlease check the instructions below and log in to your account.",
                 'tokens' => self::enrollmentTokens(),
                 'protected' => false,
             ],
             'academic_verified' => [
                 'subject' => 'Academic Clearance Approved - Subjects & Fees | {{ organization_name }}',
-                'intro' => "Dear {{ student_name }},\n\nWe are pleased to inform you that your subject enrollment and curriculum evaluation have been officially verified and approved by the Academic Department.\n\nPlease proceed to settle your downpayment to finalize your matriculation.",
+                'intro' => 'We are pleased to inform you that your subject enrollment and curriculum evaluation have been officially verified and approved by the Academic Department.',
                 'tokens' => self::enrollmentTokens(),
                 'protected' => false,
             ],
             'assessment' => [
                 'subject' => 'Enrollment Confirmed & Assessment Certificate | {{ organization_name }}',
-                'intro' => "Congratulations {{ student_name }}!\n\nYour enrollment has been successfully completed and approved. You are now officially enrolled for {{ school_year }} · Semester {{ semester }}.\n\nYour official Certificate of Matriculation is attached as a PDF to this email.",
+                'intro' => "Congratulations! Your enrollment has been successfully completed and approved. You are now officially enrolled for {{ school_year }} · Semester {{ semester }}.\n\nYour official Certificate of Matriculation is attached as a PDF to this email.",
                 'tokens' => self::enrollmentTokens(),
                 'protected' => false,
             ],

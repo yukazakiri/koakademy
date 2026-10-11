@@ -45,7 +45,7 @@ const TEMPLATE_PRESETS: Record<
         subject: "Enrollment Status Update: {{ status }} | {{ organization_name }}",
         headline: "Application Status Update",
         custom_body:
-            "Hello {{ student_name }},\n\nYour enrollment application has advanced to the following milestone in our admissions pipeline. Please review your updated status and next steps below.",
+            "Your enrollment application has advanced to the following milestone in our admissions pipeline. Please review your updated status and next steps below.",
         button_label: "View Application Status",
         include_details: true,
         include_subjects: false,
@@ -58,7 +58,7 @@ const TEMPLATE_PRESETS: Record<
         subject: "Academic Clearance Approved - Subjects & Fees | {{ organization_name }}",
         headline: "Enrollment Clearance Approved",
         custom_body:
-            "Dear {{ student_name }},\n\nWe are pleased to inform you that your subject enrollment and curriculum evaluation have been officially verified and approved by the Academic Department.\n\nPlease proceed to settle your downpayment to finalize your matriculation.",
+            "We are pleased to inform you that your subject enrollment and curriculum evaluation have been officially verified and approved by the Academic Department.",
         button_label: "View Cleared Subjects & Pay",
         include_details: true,
         include_subjects: true,
@@ -71,7 +71,7 @@ const TEMPLATE_PRESETS: Record<
         subject: "Enrollment Confirmed & Assessment Certificate | {{ organization_name }}",
         headline: "Official Matriculation Confirmed",
         custom_body:
-            "Congratulations {{ student_name }}!\n\nYour enrollment has been successfully completed and approved. You are now officially enrolled for {{ school_year }} · Semester {{ semester }}.\n\nYour official Certificate of Matriculation is attached as a PDF to this email.",
+            "Congratulations! Your enrollment has been successfully completed and approved. You are now officially enrolled for {{ school_year }} · Semester {{ semester }}.\n\nYour official Certificate of Matriculation is attached as a PDF to this email.",
         button_label: "Access Student Portal",
         include_details: true,
         include_subjects: true,
@@ -84,7 +84,7 @@ const TEMPLATE_PRESETS: Record<
         subject: "Important Update Regarding Your Application | {{ organization_name }}",
         headline: "Notice from Admissions Office",
         custom_body:
-            "Dear {{ student_name }},\n\nWe have an important announcement regarding your admission record for {{ program }}.\n\nPlease check the instructions below and log in to your account.",
+            "We have an important announcement regarding your admission record for {{ program }}.\n\nPlease check the instructions below and log in to your account.",
         button_label: "Open Student Portal",
         include_details: true,
         include_subjects: false,
@@ -112,6 +112,17 @@ interface EmailTemplateEditorDialogProps {
     onSave: (updatedConfig: Record<string, unknown>) => void;
 }
 
+/**
+ * The enrollment email chrome renders its own "Dear <student>," salutation, so a
+ * salutation inside the template body would be rendered twice. Older presets carried
+ * one, and saved copies still can, so strip it before the body is displayed or sent.
+ */
+function stripSalutation(body: string): string {
+    return body
+        .replace(/^\s*(?:hello|hi|dear|greetings)\s*\{\{\s*student_name\s*\}\}\s*,?\s*/i, "")
+        .replace(/^\s*congratulations\s*\{\{\s*student_name\s*\}\}\s*!?,?\s*/i, "");
+}
+
 export function EmailTemplateEditorDialog({ open, onOpenChange, step, action, onSave }: EmailTemplateEditorDialogProps) {
     const initialConfig = (action?.configuration ?? {}) as Partial<EmailTemplateConfig>;
 
@@ -125,7 +136,11 @@ export function EmailTemplateEditorDialog({ open, onOpenChange, step, action, on
     );
     const [subject, setSubject] = useState<string>(initialConfig.subject ?? presetDef.subject);
     const [headline, setHeadline] = useState<string>(initialConfig.headline ?? presetDef.headline);
-    const [customBody, setCustomBody] = useState<string>(initialConfig.custom_body ?? presetDef.custom_body);
+    const [customBody, setCustomBody] = useState<string>(
+        // The email chrome already renders "Dear <student>,", so a salutation saved by an
+        // older template is dropped here instead of being rendered twice.
+        stripSalutation(initialConfig.custom_body ?? presetDef.custom_body),
+    );
     const [buttonLabel, setButtonLabel] = useState<string>(initialConfig.button_label ?? presetDef.button_label);
     const [buttonUrl, setButtonUrl] = useState<string>(initialConfig.button_url ?? "");
     const [includeDetails, setIncludeDetails] = useState<boolean>(initialConfig.include_details ?? presetDef.include_details);
@@ -142,7 +157,7 @@ export function EmailTemplateEditorDialog({ open, onOpenChange, step, action, on
         setNotificationType(p.notification);
         setSubject(p.subject);
         setHeadline(p.headline);
-        setCustomBody(p.custom_body);
+        setCustomBody(stripSalutation(p.custom_body));
         setButtonLabel(p.button_label);
         setIncludeDetails(p.include_details);
         setIncludeSubjects(p.include_subjects);
@@ -201,7 +216,7 @@ export function EmailTemplateEditorDialog({ open, onOpenChange, step, action, on
             notification: notificationType,
             subject: subject.trim(),
             headline: headline.trim(),
-            custom_body: customBody.trim(),
+            custom_body: stripSalutation(customBody).trim(),
             button_label: buttonLabel.trim(),
             button_url: buttonUrl.trim() || undefined,
             include_details: includeDetails,
@@ -478,7 +493,7 @@ export function EmailTemplateEditorDialog({ open, onOpenChange, step, action, on
                                     </div>
 
                                     <div className="text-foreground/90 space-y-1.5 leading-relaxed">
-                                        <p className="font-semibold">Dear Maria Santos,</p>
+                                        <p className="font-semibold">Dear {sampleTokens.student_name},</p>
                                         <p className="text-muted-foreground leading-relaxed whitespace-pre-line">{previewBody}</p>
                                     </div>
 

@@ -23,7 +23,7 @@ it('falls back to the built-in catalog default when no override is stored', func
     expect($subject)->toBe('Enrollment Status Update: Cleared | KoAkademy');
 
     $intro = $renderer->intro('status_update', ['student_name' => 'Maria Santos']);
-    expect($intro)->toContain('Hello Maria Santos,');
+    expect($intro)->toBe('Your enrollment application has advanced to the following milestone in our admissions pipeline. Please review your updated status and next steps below.');
 });
 
 it('prefers a stored override over the built-in default', function (): void {
@@ -179,6 +179,8 @@ it('applies a custom academic_verified template to the rendered email', function
         'current_step_key' => 'academic_verified',
     ]);
 
+    // The academic clearance blade already renders "Dear <student>,", so a salutation
+    // inside the intro is dropped rather than rendered twice.
     $notification = new StudentEnrolledVerified($enrollment->fresh(), [
         'subject' => 'CLEARED: {{ student_name }} is ready to pay',
         'custom_body' => 'Hi {{ student_name }}, clearance is done.',
@@ -191,7 +193,8 @@ it('applies a custom academic_verified template to the rendered email', function
     $expectedName = $student->full_name;
 
     expect($mail->subject)->toBe("CLEARED: {$expectedName} is ready to pay")
-        ->and($rendered)->toContain("Hi {$expectedName}, clearance is done.");
+        ->and($rendered)->toContain('clearance is done.')
+        ->and(mb_stripos($rendered, 'Hi '.$expectedName))->toBeFalse();
 });
 
 it('keeps the structured approval tables when a template replaces the intro', function (): void {

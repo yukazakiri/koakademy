@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Notifications;
 
+use App\Email\EmailTemplateCatalog;
+use App\Email\EmailTemplateRenderer;
 use App\Models\GeneralSetting;
 use App\Models\StudentEnrollment;
 use App\Settings\SiteSettings;
@@ -73,39 +75,21 @@ final class EnrollmentStatusUpdatedNotification extends Notification implements 
             'organization_name' => $organizationName,
         ];
 
-        $interpolate = function (?string $text) use ($tokens): ?string {
-            if ($text === null || $text === '') {
-                return null;
-            }
-            $result = $text;
-            foreach ($tokens as $key => $val) {
-                $result = str_replace(
-                    ['{{ '.$key.' }}', '{{'.$key.'}}'],
-                    $val,
-                    $result
-                );
-            }
-
-            return $result;
-        };
-
-        // Determine subject
-        $rawSubject = $this->customTemplate['subject'] ?? null;
-        $subject = is_string($rawSubject) && mb_trim($rawSubject) !== ''
-            ? ($interpolate($rawSubject) ?? "Enrollment Status Update: {$status} | {$organizationName}")
-            : sprintf('Enrollment Status Update: %s | %s', $status, $organizationName);
+        $renderer = app(EmailTemplateRenderer::class);
+        $templateKey = ($this->customTemplate['notification'] ?? null) === 'custom' ? 'custom' : 'status_update';
+        $subject = $renderer->subject($templateKey, $tokens, $this->customTemplate);
 
         // Determine headline
         $rawHeadline = $this->customTemplate['headline'] ?? null;
         $headline = is_string($rawHeadline) && mb_trim($rawHeadline) !== ''
-            ? ($interpolate($rawHeadline) ?? 'Application Status Update')
+            ? $renderer->interpolate($rawHeadline, $tokens)
             : 'Application Status Update';
 
-        // Determine custom body
-        $rawBody = $this->customTemplate['custom_body'] ?? null;
-        $customBody = is_string($rawBody) && mb_trim($rawBody) !== ''
-            ? $interpolate($rawBody)
-            : null;
+        $customBody = $renderer->intro($templateKey, $tokens, $this->customTemplate);
+        $rawIntro = $this->customTemplate['intro'] ?? $this->customTemplate['custom_body'] ?? null;
+        // Catalog fallback copy is not an administrator-authored replacement for
+        // the existing status-specific guidance below the application details.
+        $showStatusGuidance = ! is_string($rawIntro) || mb_trim(EmailTemplateCatalog::stripSalutation($rawIntro)) === '';
 
         $buttonLabel = is_string($this->customTemplate['button_label'] ?? null) && mb_trim($this->customTemplate['button_label']) !== ''
             ? (string) $this->customTemplate['button_label']
@@ -122,6 +106,7 @@ final class EnrollmentStatusUpdatedNotification extends Notification implements 
                 'status' => $status,
                 'headline' => $headline,
                 'custom_body' => $customBody,
+                'show_status_guidance' => $showStatusGuidance,
                 'button_label' => $buttonLabel,
                 'portalUrl' => $portalUrl,
                 'step_name' => $formattedStep,

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Notifications;
 
-use App\Email\EmailTemplateRenderer;
+use App\Email\EnrollmentAssessmentMailMessage;
 use App\Models\Account;
 use App\Models\GeneralSetting;
 use App\Models\Student;
@@ -118,7 +118,6 @@ final class MigrateToStudent extends Notification implements ShouldQueue
         // can either prompt them to create one or simply link them in.
         $portalAccount = $this->resolveStudentPortalAccount();
 
-        $renderer = app(EmailTemplateRenderer::class);
         $studentName = (string) (
             $this->record->student_name
             ?? $this->record->student?->full_name
@@ -139,28 +138,13 @@ final class MigrateToStudent extends Notification implements ShouldQueue
             'organization_name' => $organizationName,
         ];
 
-        $mailMessage = (new MailMessage)
-            ->subject($renderer->subject('assessment', $templateTokens, $this->customTemplate))
-            ->markdown('emails.enrollment.official_enrollment', [
-                'student_name' => $studentName,
-                'intro' => $renderer->intro('assessment', $templateTokens, $this->customTemplate),
-                'school_year' => mb_convert_encoding(
-                    (string) ($generalSettings?->getSchoolYearString() ?? ''),
-                    'UTF-8',
-                    'auto'
-                ),
-                'semester' => mb_convert_encoding(
-                    (string) ($generalSettings?->getSemester() ?? ''),
-                    'UTF-8',
-                    'auto'
-                ),
-                'siteSettings' => $siteSettings,
-                'logoUrl' => $logoUrl,
-                'has_portal_account' => $portalAccount['has_account'],
-                'student_id_display' => $portalAccount['student_id_display'],
-                'student_email' => $portalAccount['student_email'],
-                'signup_url' => $portalAccount['signup_url'],
-            ]);
+        $mailMessage = app(EnrollmentAssessmentMailMessage::class)->build(
+            $templateTokens,
+            $this->customTemplate,
+            $siteSettings,
+            $logoUrl,
+            $portalAccount,
+        );
 
         $pdfAttached = false;
         $attachment = $this->resolveAssessmentAttachment($assessmentPath);

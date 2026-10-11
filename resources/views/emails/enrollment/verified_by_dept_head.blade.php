@@ -17,7 +17,7 @@
 
 Dear {{ $student_name }},
 
-{!! nl2br(e($intro)) !!}
+<p>{!! nl2br(e($intro)) !!}</p>
 
 ### Approved Subjects
 <x-mail::table>

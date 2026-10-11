@@ -74,6 +74,11 @@ final class EnrollmentEmailTemplateService
             $notify = $notifyIndex !== null ? $actions[$notifyIndex] : null;
             $template = self::arrayAt(is_array($notify) ? $notify : [], ['configuration']);
 
+            // The integration handler also accepts this legacy assessment alias.
+            if (($template['notification'] ?? null) === 'official_enrollment') {
+                $template['notification'] = 'assessment';
+            }
+
             $templates[] = [
                 'policy_id' => $policy->id,
                 'policy_name' => $policy->name,

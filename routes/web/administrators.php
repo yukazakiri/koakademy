@@ -417,6 +417,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/system-management/mail', [App\Http\Controllers\AdministratorSystemManagementController::class, 'mail'])->name('system-management.mail.index');
         Route::get('/system-management/email-templates', [App\Http\Controllers\AdministratorSystemManagementController::class, 'emailTemplates'])->name('system-management.email-templates.index');
         Route::get('/system-management/email-templates/{policy}/edit', [App\Http\Controllers\AdministratorSystemManagementController::class, 'editEmailTemplate'])->whereNumber('policy')->name('system-management.email-templates.edit');
+        Route::post('/system-management/email-templates/{policy}/preview', [App\Http\Controllers\AdministratorSystemManagementController::class, 'previewEmailTemplate'])->whereNumber('policy')->name('system-management.email-templates.preview');
         Route::get('/system-management/newsletter', [App\Http\Controllers\AdministratorSystemManagementController::class, 'newsletter'])->name('system-management.newsletter.index');
         Route::get('/system-management/api', [App\Http\Controllers\AdministratorSystemManagementController::class, 'api'])->name('system-management.api.index');
         Route::get('/system-management/ai', [App\Http\Controllers\AdministratorSystemManagementController::class, 'ai'])->name('system-management.ai.index');

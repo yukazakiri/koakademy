@@ -13,12 +13,12 @@
     @endif
 </div>
 
-# {{ $headline ?? 'Application Status Update' }}
+<h1>{{ $headline ?? 'Application Status Update' }}</h1>
 
 Dear {{ $student_name }},
 
 @if(!empty($custom_body))
-{!! nl2br(e($custom_body)) !!}
+<p>{!! nl2br(e($custom_body)) !!}</p>
 @else
 Your enrollment application status has been officially updated to:
 @endif
@@ -67,7 +67,7 @@ Your enrollment application status has been officially updated to:
 </x-mail::panel>
 @endif
 
-@if(empty($custom_body))
+@if($show_status_guidance ?? empty($custom_body))
 ### What This Means For You
 
 @php

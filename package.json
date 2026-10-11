@@ -11,6 +11,8 @@
         "lint": "eslint . --fix",
         "format": "prettier --write resources/",
         "format:check": "prettier --check resources/",
+        "test:email-canvas": "node --test tests/Unit/email-template-canvas.test.mjs",
+        "test:browser:email-canvas": "node --test tests/Browser/email-template-canvas.mjs",
         "test:browser:library-book": "node tests/Browser/library-book-create.mjs"
     },
     "devDependencies": {

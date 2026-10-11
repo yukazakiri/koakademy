@@ -14,6 +14,7 @@ use App\Enums\StudentType;
 use App\Enums\UserRole;
 use App\Features\DynamicEnrollmentPolicies;
 use App\Http\Requests\Administrators\FetchAiModelsRequest;
+use App\Http\Requests\Administrators\PreviewEnrollmentEmailTemplateRequest;
 use App\Http\Requests\Administrators\StoreSchoolRequest;
 use App\Http\Requests\Administrators\TestAiConnectionRequest;
 use App\Http\Requests\Administrators\UpdateAiSettingsRequest;
@@ -44,6 +45,7 @@ use App\Services\Ai\AiSettingsService;
 use App\Services\Ai\McpServerService;
 use App\Services\AnalyticsSettingsService;
 use App\Services\CurriculumCapabilityResolver;
+use App\Services\EnrollmentEmailTemplatePreviewService;
 use App\Services\EnrollmentEmailTemplateService;
 use App\Services\EnrollmentPipelineService;
 use App\Services\ErrorReportingService;
@@ -277,7 +279,10 @@ final class AdministratorSystemManagementController extends Controller
         Request $request,
         EnrollmentPolicy $policy,
         EnrollmentEmailTemplateService $emailTemplates,
+        EnrollmentEmailTemplatePreviewService $preview,
     ): Response {
+        $this->authorize('viewEmailTemplates', GeneralSetting::class);
+
         $stepKey = (string) $request->query('step_key', '');
         $template = collect($emailTemplates->templatesFor($policy))->firstWhere('step_key', $stepKey);
 
@@ -291,8 +296,29 @@ final class AdministratorSystemManagementController extends Controller
             'administrators/system-management/email-template-editor',
             'email_templates',
             'viewEmailTemplates',
-            ['email_template' => $template],
+            [
+                'email_template' => $template,
+                'email_template_editor' => $preview->editorProps($template),
+            ],
         );
+    }
+
+    public function previewEmailTemplate(
+        PreviewEnrollmentEmailTemplateRequest $request,
+        EnrollmentPolicy $policy,
+        EnrollmentEmailTemplateService $emailTemplates,
+        EnrollmentEmailTemplatePreviewService $preview,
+    ): JsonResponse {
+        $validated = $request->validated();
+        $template = collect($emailTemplates->templatesFor($policy))->firstWhere('step_key', $validated['step_key']);
+
+        if (! is_array($template)) {
+            throw ValidationException::withMessages([
+                'step_key' => 'That workflow step does not exist in this policy.',
+            ]);
+        }
+
+        return response()->json($preview->preview($template, $validated['configuration']));
     }
 
     public function updateEmailTemplate(

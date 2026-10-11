@@ -1,10 +1,11 @@
 import { Badge } from "@/components/reui/badge";
 import { IconTile } from "@/components/reui/icon-tile";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Head } from "@inertiajs/react";
-import { ArrowRight, CheckCircle2, FileWarning, Info, MailCheck, Pencil, Search, Send, Sparkles } from "lucide-react";
+import { edit as emailTemplateEdit } from "@/routes/administrators/system-management/email-templates";
+import { Head, Link } from "@inertiajs/react";
+import { ArrowRight, CheckCircle2, Eye, FileWarning, Info, MailCheck, Pencil, Search, Send, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import SystemManagementLayout from "./layout";
@@ -54,10 +55,7 @@ export default function SystemManagementEmailTemplatesPage({
     const [showUnconfiguredOnly, setShowUnconfiguredOnly] = useState(false);
 
     const notificationLabels = useMemo(
-        () =>
-            new Map(
-                email_template_notification_types.map((type) => [type.value, type.label] as const),
-            ),
+        () => new Map(email_template_notification_types.map((type) => [type.value, type.label] as const)),
         [email_template_notification_types],
     );
 
@@ -109,10 +107,6 @@ export default function SystemManagementEmailTemplatesPage({
     const configuredCount = templates.filter((template) => template.configured).length;
     const unconfiguredCount = templates.length - configuredCount;
 
-    const editTemplate = (template: EmailTemplate) => {
-        window.location.href = `/administrators/system-management/email-templates/${template.policy_id}/edit?step_key=${encodeURIComponent(template.step_key)}`;
-    };
-
     return (
         <SystemManagementLayout
             user={user}
@@ -135,7 +129,8 @@ export default function SystemManagementEmailTemplatesPage({
                                 <CardTitle className="text-base font-semibold">Enrollment email templates</CardTitle>
                                 <CardDescription className="mt-0.5 text-xs">
                                     {configuredCount} of {templates.length} workflow steps dispatch an email. Changes save to the policy draft.
-                                </CardDescription>                            </div>
+                                </CardDescription>{" "}
+                            </div>
                         </div>
 
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -172,9 +167,9 @@ export default function SystemManagementEmailTemplatesPage({
                             <Info className="mt-0.5 size-3.5 shrink-0" />
                             <span>
                                 Each card maps to one workflow step of an enrollment policy. Use{" "}
-                                <strong className="text-foreground font-semibold">Edit template</strong> to customize the subject,
-                                headline, body, and call-to-action with a live preview. The same values are editable from the Pipeline
-                                Studio canvas.
+                                <strong className="text-foreground font-semibold">Edit template</strong> to customize the subject, intro paragraphs,
+                                and supported call-to-action fields on the drag-and-drop email canvas. Pipeline Studio opens the same editor. Saves
+                                update the policy draft.
                             </span>
                         </div>
                     </CardContent>
@@ -204,12 +199,19 @@ export default function SystemManagementEmailTemplatesPage({
                                             {policyTemplates.length} step{policyTemplates.length === 1 ? "" : "s"}
                                         </Badge>
                                         {!policy.is_enabled && (
-                                            <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 h-5 px-1.5 text-[10px]">
+                                            <Badge
+                                                variant="outline"
+                                                className="h-5 border-amber-500/40 bg-amber-500/10 px-1.5 text-[10px] text-amber-700 dark:text-amber-300"
+                                            >
                                                 Disabled
                                             </Badge>
                                         )}
                                     </div>
-                                    <span className="text-muted-foreground text-[11px]">{Object.values(policy.scope ?? {}).filter(Boolean).join(" · ")}</span>
+                                    <span className="text-muted-foreground text-[11px]">
+                                        {Object.values(policy.scope ?? {})
+                                            .filter(Boolean)
+                                            .join(" · ")}
+                                    </span>
                                 </div>
                             </CardHeader>
 
@@ -219,7 +221,10 @@ export default function SystemManagementEmailTemplatesPage({
                                     const notificationLabel = notificationLabels.get(template.notification ?? "");
 
                                     return (
-                                        <div key={`${template.policy_id}-${template.step_key}`} className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between">
+                                        <div
+                                            key={`${template.policy_id}-${template.step_key}`}
+                                            className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between"
+                                        >
                                             <div className="min-w-0 space-y-1.5">
                                                 <div className="flex flex-wrap items-center gap-2">
                                                     <span className="text-sm font-medium">{template.step_label}</span>
@@ -240,10 +245,11 @@ export default function SystemManagementEmailTemplatesPage({
                                                 </div>
 
                                                 <p className="text-muted-foreground truncate text-xs">
-                                                    <span className="text-foreground font-medium">Subject:</span> {subject || "Uses the default template subject"}
+                                                    <span className="text-foreground font-medium">Subject:</span>{" "}
+                                                    {subject || "Uses the default template subject"}
                                                 </p>
                                                 {!template.configured && (
-                                                    <p className="text-amber-600 dark:text-amber-400 text-[11px]">
+                                                    <p className="text-[11px] text-amber-600 dark:text-amber-400">
                                                         Sends the built-in default for {notificationLabel ?? "this milestone"}.
                                                     </p>
                                                 )}
@@ -253,17 +259,18 @@ export default function SystemManagementEmailTemplatesPage({
                                                 </p>
                                             </div>
 
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="sm"
-                                                disabled={!canUpdate}
-                                                className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"
-                                                onClick={() => editTemplate(template)}
+                                            <Link
+                                                href={emailTemplateEdit.url(template.policy_id, { query: { step_key: template.step_key } })}
+                                                className={buttonVariants({
+                                                    variant: "outline",
+                                                    size: "sm",
+                                                    className: "h-10 shrink-0 gap-1.5 px-2.5 text-xs",
+                                                })}
                                             >
-                                                <Pencil className="size-3.5" /> Edit template
+                                                {canUpdate ? <Pencil className="size-3.5" /> : <Eye className="size-3.5" />}
+                                                {canUpdate ? "Edit template" : "View template"}
                                                 <ArrowRight className="size-3.5" />
-                                            </Button>
+                                            </Link>
                                         </div>
                                     );
                                 })}
@@ -275,8 +282,8 @@ export default function SystemManagementEmailTemplatesPage({
                 {!canUpdate && (
                     <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
                         <Send className="size-3.5" />
-                        You have read-only access to email templates. Ask an administrator to grant “Update System Management Email
-                        Templates” to make changes.
+                        You have read-only access to email templates. Ask an administrator to grant “Update System Management Email Templates” to make
+                        changes.
                     </p>
                 )}
             </div>

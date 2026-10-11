@@ -34,7 +34,7 @@ import { ActionInspectorSheet } from "./action-inspector-sheet";
 import { EdgeInspectorDialog } from "./edge-inspector-dialog";
 import { ActionEdge } from "./edges/action-edge";
 import { TransitionEdge } from "./edges/transition-edge";
-import { EmailTemplateEditorDialog } from "./email-template-editor-dialog";
+
 import { computeAutoLayout } from "./layout";
 import { NodeInspectorSheet } from "./node-inspector-sheet";
 import { ActionNode } from "./nodes/action-node";
@@ -63,13 +63,12 @@ function uniqueKey(seed: string, steps: WorkflowStep[]): string {
     return candidate;
 }
 
-function WorkflowCanvasInner({ steps, actions, rules, options, onChange }: WorkflowCanvasProps) {
+function WorkflowCanvasInner({ steps, actions, rules, options, onChange, onEditEmailTemplate }: WorkflowCanvasProps) {
     const { fitView } = useReactFlow();
     const [direction, setDirection] = useState<LayoutDirection>("LR");
     const [selectedStepKey, setSelectedStepKey] = useState<string | null>(null);
     const [inspectorOpen, setInspectorOpen] = useState(false);
     const [actionInspectorOpen, setActionInspectorOpen] = useState(false);
-    const [globalEmailEditorOpen, setGlobalEmailEditorOpen] = useState(false);
     const [inspectingAction, setInspectingAction] = useState<{
         stepKey: string;
         actionIndex: number;
@@ -528,8 +527,8 @@ function WorkflowCanvasInner({ steps, actions, rules, options, onChange }: Workf
                                 variant="ghost"
                                 size="sm"
                                 className="h-7 gap-1 rounded-full px-2 text-xs font-medium"
-                                onClick={() => setGlobalEmailEditorOpen(true)}
-                                title="Open interactive email template designer"
+                                onClick={() => onEditEmailTemplate?.(selectedStep?.key ?? steps[0]?.key ?? "")}
+                                title="Open the email template designer"
                             >
                                 <MailCheck className="size-3.5 text-sky-500" /> Emails
                             </Button>
@@ -688,6 +687,7 @@ function WorkflowCanvasInner({ steps, actions, rules, options, onChange }: Workf
                 onDelete={handleDeleteStep}
                 onEditTransition={handleEditTransition}
                 onOpenActionInspector={handleEditAction}
+                onEditEmailTemplate={onEditEmailTemplate}
             />
 
             {/* Dedicated Sub-Action Inspector Slide-out */}
@@ -713,40 +713,6 @@ function WorkflowCanvasInner({ steps, actions, rules, options, onChange }: Workf
                 rules={rules}
                 options={options}
                 onSave={handleSaveTransition}
-            />
-
-            {/* Interactive Email Template Editor Dialog from Toolbar */}
-            <EmailTemplateEditorDialog
-                open={globalEmailEditorOpen}
-                onOpenChange={setGlobalEmailEditorOpen}
-                step={selectedStep ?? steps[0] ?? null}
-                action={(selectedStep ?? steps[0])?.actions.find((a) => a.handler === "enrollment.notify") ?? null}
-                onSave={(updatedConfig) => {
-                    const targetKey = selectedStep?.key ?? steps[0]?.key;
-                    if (!targetKey) return;
-                    const nextSteps = steps.map((s) => {
-                        if (s.key !== targetKey) return s;
-                        const existingIdx = s.actions.findIndex((a) => a.handler === "enrollment.notify");
-                        const nextActions = [...s.actions];
-                        if (existingIdx >= 0) {
-                            nextActions[existingIdx] = {
-                                ...nextActions[existingIdx],
-                                configuration: {
-                                    ...nextActions[existingIdx].configuration,
-                                    ...updatedConfig,
-                                },
-                            };
-                        } else {
-                            nextActions.push({
-                                key: `notify_${s.key}`,
-                                handler: "enrollment.notify",
-                                configuration: updatedConfig,
-                            });
-                        }
-                        return { ...s, actions: nextActions };
-                    });
-                    onChange(nextSteps);
-                }}
             />
         </div>
     );

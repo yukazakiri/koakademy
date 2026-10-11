@@ -179,6 +179,11 @@ const definitions: PageDefinitionInput[] = [
         variant: "settings",
     },
     {
+        routePattern: /^\/administrators\/system-management\/email-templates\/[^/]+\/edit$/,
+        component: "administrators/system-management/email-template-editor",
+        variant: "settings",
+    },
+    {
         routePattern: /^\/administrators\/system-management\/newsletter$/,
         component: "administrators/system-management/newsletter",
         variant: "settings",

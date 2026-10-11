@@ -21,10 +21,9 @@ import {
     UserCheck,
     Zap,
 } from "lucide-react";
-import { useState } from "react";
+
 import type { Action, Option, RegistryItem, WorkflowStep } from "../../types";
 import { SchemaFields } from "../schema-fields";
-import { EmailTemplateEditorDialog } from "./email-template-editor-dialog";
 
 const actionMeta: Record<string, { label: string; icon: typeof Zap; color: string; desc: string }> = {
     "enrollment.notify": {
@@ -109,9 +108,9 @@ export function ActionInspectorSheet({
     onUpdateAction: (parentStepKey: string, actionIndex: number, action: Action) => void;
     onDeleteAction: (parentStepKey: string, actionIndex: number) => void;
     onReorderAction: (parentStepKey: string, fromIndex: number, toIndex: number) => void;
+    /** Opens the full-page email template editor for a step's notify action. */
+    onEditEmailTemplate?: (stepKey: string) => void;
 }) {
-    const [emailEditorOpen, setEmailEditorOpen] = useState(false);
-
     if (!step || actionIndex === null || actionIndex < 0 || !step.actions[actionIndex]) {
         return null;
     }
@@ -255,15 +254,15 @@ export function ActionInspectorSheet({
                                 </div>
                             </div>
 
-                            {/* Primary Button to Open Full Interactive Editor */}
+                            {/* Primary Button to Open the Full-Page Editor */}
                             <Button
                                 type="button"
                                 variant="default"
                                 size="sm"
                                 className="h-9 w-full gap-2 text-xs font-semibold shadow-sm"
-                                onClick={() => setEmailEditorOpen(true)}
+                                onClick={() => onEditEmailTemplate?.(step.key)}
                             >
-                                <Sliders className="size-3.5" /> Open Interactive Email Template Editor
+                                <Sliders className="size-3.5" /> Open Email Template Editor
                             </Button>
 
                             <p className="text-muted-foreground bg-background/80 border-border/50 rounded-lg border p-2.5 text-[11px] leading-relaxed">
@@ -319,22 +318,6 @@ export function ActionInspectorSheet({
                     </div>
                 </div>
             </SheetContent>
-
-            {/* Interactive Email Template Editor Dialog */}
-            {action.handler === "enrollment.notify" && (
-                <EmailTemplateEditorDialog
-                    open={emailEditorOpen}
-                    onOpenChange={setEmailEditorOpen}
-                    step={step}
-                    action={action}
-                    onSave={(updatedConfig) => {
-                        handleConfigChange({
-                            ...cfg,
-                            ...updatedConfig,
-                        });
-                    }}
-                />
-            )}
         </Sheet>
     );
 }

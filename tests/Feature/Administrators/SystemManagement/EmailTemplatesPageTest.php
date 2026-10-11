@@ -11,6 +11,66 @@ use Spatie\Permission\Models\Permission;
 
 use function Pest\Laravel\actingAs;
 
+it('renders the dedicated email template editor page', function (): void {
+    $user = User::factory()->create(['role' => UserRole::SuperAdmin]);
+    $policy = EnrollmentPolicy::first() ?? app(EnrollmentPolicyManager::class)->create(['name' => 'Editor Policy'], $user);
+    $stepKey = data_get($policy->versions()->draft()->firstOrFail()->configuration, 'workflow.steps.0.key');
+
+    actingAs($user)
+        ->get(portalUrlForAdministrators("/administrators/system-management/email-templates/{$policy->id}/edit?step_key={$stepKey}"))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('administrators/system-management/email-template-editor', false)
+            ->where('email_template.step_key', $stepKey)
+            ->where('email_template.policy_id', $policy->id)
+            ->has('email_template.step_label')
+            ->has('email_template.configuration')
+            ->where('access.sections.email_templates.can_update', true)
+        );
+});
+
+it('returns 404 when the editor is opened for a step the policy does not have', function (): void {
+    $user = User::factory()->create(['role' => UserRole::SuperAdmin]);
+    $policy = EnrollmentPolicy::first() ?? app(EnrollmentPolicyManager::class)->create(['name' => 'Editor Policy'], $user);
+
+    actingAs($user)
+        ->get(portalUrlForAdministrators("/administrators/system-management/email-templates/{$policy->id}/edit?step_key=not_a_step"))
+        ->assertNotFound();
+});
+
+it('forbids the editor page without the view permission', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+
+    $policy = EnrollmentPolicy::first() ?? app(EnrollmentPolicyManager::class)->create(['name' => 'Editor Policy'], $user);
+    $stepKey = data_get($policy->versions()->draft()->firstOrFail()->configuration, 'workflow.steps.0.key');
+
+    actingAs($user)
+        ->get(portalUrlForAdministrators("/administrators/system-management/email-templates/{$policy->id}/edit?step_key={$stepKey}"))
+        ->assertForbidden();
+});
+
+it('hands the stored template to the editor so it pre-fills', function (): void {
+    $user = User::factory()->create(['role' => UserRole::SuperAdmin]);
+    $policy = EnrollmentPolicy::first() ?? app(EnrollmentPolicyManager::class)->create(['name' => 'Editor Policy'], $user);
+    $stepKey = data_get($policy->versions()->draft()->firstOrFail()->configuration, 'workflow.steps.0.key');
+
+    actingAs($user)->put(
+        portalUrlForAdministrators("/administrators/system-management/email-templates/{$policy->id}"),
+        [
+            'step_key' => $stepKey,
+            'configuration' => ['notification' => 'custom', 'subject' => 'PRE-FILLED SUBJECT'],
+        ],
+    )->assertSessionHasNoErrors();
+
+    actingAs($user)
+        ->get(portalUrlForAdministrators("/administrators/system-management/email-templates/{$policy->id}/edit?step_key={$stepKey}"))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('email_template.configuration.subject', 'PRE-FILLED SUBJECT')
+            ->where('email_template.notification', 'custom')
+        );
+});
+
 it('renders the email templates page with a card per workflow step', function (): void {
     $user = User::factory()->create(['role' => UserRole::SuperAdmin]);
 

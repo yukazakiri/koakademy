@@ -73,4 +73,6 @@ export type WorkflowCanvasProps = {
     rules: Record<string, RegistryItem>;
     options: Record<string, Option[]>;
     onChange: (steps: WorkflowStep[]) => void;
+    /** Navigates to the full-page email template editor for a workflow step. */
+    onEditEmailTemplate?: (stepKey: string) => void;
 };

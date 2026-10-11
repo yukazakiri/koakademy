@@ -213,6 +213,10 @@ export default function EnrollmentBlueprintWorkspace({
                                     workflow: { steps },
                                 }))
                             }
+                            onEditEmailTemplate={(stepKey) => {
+                                // A full page navigation closes the inspector sheet.
+                                window.location.href = `/administrators/system-management/email-templates/${editor.policy?.id ?? 0}/edit?step_key=${encodeURIComponent(stepKey)}`;
+                            }}
                         />
                     </div>
                 ) : (

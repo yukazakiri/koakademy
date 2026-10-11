@@ -273,6 +273,28 @@ final class AdministratorSystemManagementController extends Controller
         );
     }
 
+    public function editEmailTemplate(
+        Request $request,
+        EnrollmentPolicy $policy,
+        EnrollmentEmailTemplateService $emailTemplates,
+    ): Response {
+        $stepKey = (string) $request->query('step_key', '');
+        $template = collect($emailTemplates->templatesFor($policy))->firstWhere('step_key', $stepKey);
+
+        if (! is_array($template)) {
+            $available = array_column($emailTemplates->templatesFor($policy), 'step_key');
+
+            abort(404, 'That workflow step has no email template to edit. Available steps: '.implode(', ', $available));
+        }
+
+        return $this->renderSystemManagementPage(
+            'administrators/system-management/email-template-editor',
+            'email_templates',
+            'viewEmailTemplates',
+            ['email_template' => $template],
+        );
+    }
+
     public function updateEmailTemplate(
         UpdateEnrollmentEmailTemplateRequest $request,
         EnrollmentPolicy $policy,

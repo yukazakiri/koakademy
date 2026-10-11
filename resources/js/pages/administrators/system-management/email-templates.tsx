@@ -3,14 +3,10 @@ import { IconTile } from "@/components/reui/icon-tile";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Head, router } from "@inertiajs/react";
+import { Head } from "@inertiajs/react";
 import { ArrowRight, CheckCircle2, FileWarning, Info, MailCheck, Pencil, Search, Send, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
-import { toast } from "sonner";
 
-import { update as updateEmailTemplate } from "@/routes/administrators/system-management/email-templates";
-import { EmailTemplateEditorDialog } from "./enrollment-policy/components/workflow-canvas/email-template-editor-dialog";
-import type { Action, WorkflowStep } from "./enrollment-policy/types";
 import SystemManagementLayout from "./layout";
 import type { SystemManagementPageProps } from "./types";
 
@@ -43,19 +39,6 @@ type EmailTemplateNotificationType = {
     label: string;
 };
 
-/** The exact shape `EnrollmentEmailTemplateService` persists for `enrollment.notify`. */
-type EmailTemplatePayload = {
-    notification: string;
-    subject?: string;
-    headline?: string;
-    custom_body?: string;
-    button_label?: string;
-    button_url?: string;
-    include_details?: boolean;
-    include_subjects?: boolean;
-    include_tuition?: boolean;
-};
-
 export default function SystemManagementEmailTemplatesPage({
     user,
     access,
@@ -69,8 +52,6 @@ export default function SystemManagementEmailTemplatesPage({
 
     const [search, setSearch] = useState("");
     const [showUnconfiguredOnly, setShowUnconfiguredOnly] = useState(false);
-    const [activeTemplate, setActiveTemplate] = useState<EmailTemplate | null>(null);
-    const [saving, setSaving] = useState(false);
 
     const notificationLabels = useMemo(
         () =>
@@ -128,47 +109,8 @@ export default function SystemManagementEmailTemplatesPage({
     const configuredCount = templates.filter((template) => template.configured).length;
     const unconfiguredCount = templates.length - configuredCount;
 
-    const buildStep = (template: EmailTemplate): WorkflowStep => ({
-        key: template.step_key,
-        label: template.step_label,
-        entry: template.position === 0,
-        terminal: template.terminal,
-        status: template.step_status ?? "Under Review",
-        actions: [],
-        transitions: [],
-    });
-
-    const buildAction = (template: EmailTemplate): Action =>
-        template.configured
-            ? {
-                  key: template.action_key,
-                  handler: "enrollment.notify",
-                  configuration: template.configuration,
-              }
-            : { key: template.action_key, handler: "enrollment.notify", configuration: {} };
-
-    const handleSave = (updatedConfig: Record<string, unknown>) => {
-        // The editor dialog emits the fixed `enrollment.notify` payload shape.
-        if (!activeTemplate) return;
-
-        setSaving(true);
-        router.put(
-            updateEmailTemplate.url(activeTemplate.policy_id),
-            {
-                step_key: activeTemplate.step_key,
-                configuration: updatedConfig as EmailTemplatePayload,
-                change_notes: `Email template updated for step [${activeTemplate.step_key}].`,
-            },
-            {
-                preserveScroll: true,
-                onSuccess: () => toast.success(`Email template saved for “${activeTemplate.step_label}”.`),
-                onError: (errors) => {
-                    const first = Object.values(errors)[0];
-                    toast.error(typeof first === "string" ? first : "The email template could not be saved.");
-                },
-                onFinish: () => setSaving(false),
-            },
-        );
+    const editTemplate = (template: EmailTemplate) => {
+        window.location.href = `/administrators/system-management/email-templates/${template.policy_id}/edit?step_key=${encodeURIComponent(template.step_key)}`;
     };
 
     return (
@@ -315,9 +257,9 @@ export default function SystemManagementEmailTemplatesPage({
                                                 type="button"
                                                 variant="outline"
                                                 size="sm"
-                                                disabled={!canUpdate || saving}
+                                                disabled={!canUpdate}
                                                 className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"
-                                                onClick={() => setActiveTemplate(template)}
+                                                onClick={() => editTemplate(template)}
                                             >
                                                 <Pencil className="size-3.5" /> Edit template
                                                 <ArrowRight className="size-3.5" />
@@ -338,20 +280,6 @@ export default function SystemManagementEmailTemplatesPage({
                     </p>
                 )}
             </div>
-
-            {activeTemplate && (
-                <EmailTemplateEditorDialog
-                    // Remount on selection change so every field resets to the chosen template.
-                    key={`${activeTemplate.policy_id}:${activeTemplate.step_key}`}
-                    open
-                    onOpenChange={(open) => {
-                        if (!open) setActiveTemplate(null);
-                    }}
-                    step={buildStep(activeTemplate)}
-                    action={buildAction(activeTemplate)}
-                    onSave={handleSave}
-                />
-            )}
         </SystemManagementLayout>
     );
 }

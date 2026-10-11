@@ -415,6 +415,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/system-management/brand/appearance', [App\Http\Controllers\AdministratorSystemManagementController::class, 'brand'])->name('system-management.brand.appearance.index');
         Route::get('/system-management/socialite', [App\Http\Controllers\AdministratorSystemManagementController::class, 'socialite'])->name('system-management.socialite.index');
         Route::get('/system-management/mail', [App\Http\Controllers\AdministratorSystemManagementController::class, 'mail'])->name('system-management.mail.index');
+        Route::get('/system-management/email-templates', [App\Http\Controllers\AdministratorSystemManagementController::class, 'emailTemplates'])->name('system-management.email-templates.index');
         Route::get('/system-management/newsletter', [App\Http\Controllers\AdministratorSystemManagementController::class, 'newsletter'])->name('system-management.newsletter.index');
         Route::get('/system-management/api', [App\Http\Controllers\AdministratorSystemManagementController::class, 'api'])->name('system-management.api.index');
         Route::get('/system-management/ai', [App\Http\Controllers\AdministratorSystemManagementController::class, 'ai'])->name('system-management.ai.index');
@@ -448,6 +449,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::delete('/system-management/ai/mcp-servers/{mcpServer}', [App\Http\Controllers\AdministratorSystemManagementController::class, 'destroyMcpServer'])->name('system-management.ai.mcp-servers.destroy');
         Route::post('/system-management/ai/mcp-servers/{mcpServer}/discover', [App\Http\Controllers\AdministratorSystemManagementController::class, 'discoverMcpServerTools'])->name('system-management.ai.mcp-servers.discover');
         Route::put('/system-management/enrollment-pipeline', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateEnrollmentPipeline'])->name('system-management.enrollment-pipeline.update');
+        Route::put('/system-management/email-templates/{policy}', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateEmailTemplate'])->whereNumber('policy')->name('system-management.email-templates.update');
         Route::post('/system-management/enrollment-policies', [AdministratorEnrollmentPolicyController::class, 'store'])->name('system-management.enrollment-policies.store');
         Route::get('/system-management/enrollment-policies/compatibility', [AdministratorEnrollmentPolicyController::class, 'compatibility'])->name('system-management.enrollment-policies.compatibility');
         Route::get('/system-management/enrollment-policies/{policy}/inheritance', [AdministratorEnrollmentPolicyController::class, 'inheritance'])->whereNumber('policy')->name('system-management.enrollment-policies.inheritance');

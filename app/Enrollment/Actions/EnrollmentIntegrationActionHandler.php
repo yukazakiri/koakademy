@@ -362,7 +362,7 @@ final readonly class EnrollmentIntegrationActionHandler implements EnrollmentAct
             $jobId = $this->jobId('policy_academic_notification', $idempotencyKey);
             DB::afterCommit(
                 fn () => NotificationFacade::route('mail', $studentEmail)
-                    ->notify(new StudentEnrolledVerified($enrollment))
+                    ->notify(new StudentEnrolledVerified($enrollment, customTemplate: $configuration))
             );
 
             return ActionResult::success(['job_id' => $jobId, 'notification' => $notification, 'queued_after_commit' => true]);
@@ -371,7 +371,7 @@ final readonly class EnrollmentIntegrationActionHandler implements EnrollmentAct
         if (in_array($notification, ['assessment', 'official_enrollment'], true)) {
             $jobId = $this->jobId('policy_notification', $idempotencyKey);
             DB::afterCommit(
-                fn () => SendAssessmentNotificationJob::dispatch($enrollment->id, $jobId),
+                fn () => SendAssessmentNotificationJob::dispatch($enrollment->id, $jobId, $configuration),
             );
 
             return ActionResult::success(['job_id' => $jobId, 'notification' => $notification, 'queued_after_commit' => true]);

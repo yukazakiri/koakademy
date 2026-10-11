@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Notifications;
 
+use App\Email\EmailTemplateRenderer;
 use App\Models\Account;
 use App\Models\GeneralSetting;
 use App\Models\Student;
@@ -30,9 +31,15 @@ final class MigrateToStudent extends Notification implements ShouldQueue
 
     /**
      * Create a new notification instance.
+     *
+     * @param  array<string, mixed>  $customTemplate  Enrollment email template resolved at dispatch time.
      */
-    public function __construct(StudentEnrollment $record, private ?string $generatedPdfPath = null, private bool $requiresAttachment = false)
-    {
+    public function __construct(
+        StudentEnrollment $record,
+        private ?string $generatedPdfPath = null,
+        private bool $requiresAttachment = false,
+        private array $customTemplate = []
+    ) {
         $this->record = $record->withoutRelations();
         $this->afterCommit();
     }
@@ -111,13 +118,32 @@ final class MigrateToStudent extends Notification implements ShouldQueue
         // can either prompt them to create one or simply link them in.
         $portalAccount = $this->resolveStudentPortalAccount();
 
+        $renderer = app(EmailTemplateRenderer::class);
+        $studentName = (string) (
+            $this->record->student_name
+            ?? $this->record->student?->full_name
+            ?? $this->record->student?->first_name
+            ?? 'Student'
+        );
+        $organizationName = (string) ($siteSettings['organizationName'] ?? config('app.name'));
+        $course = $this->record->Course ?? null;
+
+        $templateTokens = [
+            'student_name' => $studentName,
+            'program' => (string) ($course?->code ?? $course?->title ?? ''),
+            'school_year' => (string) ($generalSettings?->getSchoolYearString() ?? ''),
+            'semester' => (string) ($generalSettings?->getSemester() ?? ''),
+            'status' => (string) ($this->record->status ?? 'Enrolled'),
+            'step_name' => ucwords(str_replace(['_', '-'], ' ', (string) ($this->record->current_step_key ?? 'Enrollment'))),
+            'portal_url' => (string) config('app.url'),
+            'organization_name' => $organizationName,
+        ];
+
         $mailMessage = (new MailMessage)
-            ->subject(sprintf(
-                'Enrollment Confirmation - %s',
-                $siteSettings['organizationName'] ?? config('app.name')
-            ))
+            ->subject($renderer->subject('assessment', $templateTokens, $this->customTemplate))
             ->markdown('emails.enrollment.official_enrollment', [
-                'student_name' => $this->record->first_name ?? 'Student',
+                'student_name' => $studentName,
+                'intro' => $renderer->intro('assessment', $templateTokens, $this->customTemplate),
                 'school_year' => mb_convert_encoding(
                     (string) ($generalSettings?->getSchoolYearString() ?? ''),
                     'UTF-8',

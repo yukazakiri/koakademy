@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Notifications;
 
+use App\Email\EmailTemplateRenderer;
 use Filament\Notifications\Notification as FilamentNotification;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\DatabaseMessage;
@@ -16,11 +17,14 @@ final class TimetablePdfGeneratedNotification extends Notification
 
     /**
      * Create a new notification instance.
+     *
+     * @param  array<string, mixed>  $customTemplate
      */
     public function __construct(
         private string $filename,
         private string $studentName,
-        private string $downloadUrl
+        private string $downloadUrl,
+        private array $customTemplate = []
     ) {}
 
     /**
@@ -38,13 +42,23 @@ final class TimetablePdfGeneratedNotification extends Notification
      */
     public function toMail(object $notifiable): MailMessage
     {
-        return (new MailMessage)
-            ->subject('Timetable PDF Generated Successfully')
-            ->greeting('Hello '.$notifiable->name.'!')
-            ->line("The timetable PDF for {$this->studentName} has been generated successfully.")
-            ->line('You can download the PDF using the link below:')
-            ->action('Download PDF', $this->downloadUrl)
-            ->line('This link will be available for 24 hours.')
+        $renderer = app(EmailTemplateRenderer::class);
+        $tokens = [
+            'student_name' => $this->studentName,
+            'filename' => $this->filename,
+            'download_url' => $this->downloadUrl,
+        ];
+
+        $mail = (new MailMessage)
+            ->subject($renderer->subject('timetable_pdf_generated', $tokens, $this->customTemplate))
+            ->greeting('Hello '.$notifiable->name.'!');
+
+        foreach ($renderer->introLines('timetable_pdf_generated', $tokens, $this->customTemplate) as $line) {
+            $mail->line($line);
+        }
+
+        return $mail
+            ->action($this->customTemplate['button_label'] ?? 'Download PDF', $this->downloadUrl)
             ->line('Thank you for using our application!');
     }
 

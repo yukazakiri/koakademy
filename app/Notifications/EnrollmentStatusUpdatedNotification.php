@@ -58,7 +58,9 @@ final class EnrollmentStatusUpdatedNotification extends Notification implements 
         $schoolYear = (string) ($this->record->school_year ?? $generalSettings?->getSchoolYearString() ?? '');
         $semester = (string) ($this->record->semester ?? $generalSettings?->getSemester() ?? '');
         $program = (string) ($this->record->Course?->code ?? $this->record->Course?->title ?? '');
-        $portalUrl = (string) ($this->customTemplate['button_url'] ?? config('app.url'));
+        // The policy compiler rejects absolute URLs, so a configured button_url is
+        // always a same-portal path. Resolve it against the application URL.
+        $portalUrl = $this->resolvePortalUrl($this->customTemplate['button_url'] ?? null);
 
         $tokens = [
             'student_name' => $studentName,
@@ -133,5 +135,38 @@ final class EnrollmentStatusUpdatedNotification extends Notification implements 
                 'siteSettings' => $siteSettings,
                 'logoUrl' => $logoUrl,
             ]);
+    }
+
+    /**
+     * The policy compiler rejects absolute URLs inside stored policy configuration,
+     * so an administrator-supplied button_url is always a same-portal path. Resolve
+     * it against the application URL so the rendered call-to-action stays clickable.
+     *
+     * Absolute URLs are passed through untouched for callers that construct the
+     * template directly (for example the enrollment action handler's own defaults).
+     */
+    private function resolvePortalUrl(mixed $buttonUrl): string
+    {
+        $base = rtrim((string) config('app.url'), '/');
+
+        if (! is_string($buttonUrl)) {
+            return $base;
+        }
+
+        $path = trim($buttonUrl);
+
+        if ($path === '') {
+            return $base;
+        }
+
+        if (filter_var($path, FILTER_VALIDATE_URL) !== false) {
+            return $path;
+        }
+
+        if (! str_starts_with($path, '/') || str_starts_with($path, '//')) {
+            return $base;
+        }
+
+        return $base.$path;
     }
 }

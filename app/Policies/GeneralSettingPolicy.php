@@ -145,6 +145,16 @@ final class GeneralSettingPolicy
         return $this->canUpdateSection($user, 'observability');
     }
 
+    public function viewEmailTemplates(User $user): bool
+    {
+        return $this->canViewSection($user, 'email_templates');
+    }
+
+    public function updateEmailTemplates(User $user): bool
+    {
+        return $this->canUpdateSection($user, 'email_templates');
+    }
+
     public function viewGrading(User $user): bool
     {
         return $this->canViewSection($user, 'grading');

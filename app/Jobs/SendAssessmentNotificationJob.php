@@ -42,10 +42,13 @@ final class SendAssessmentNotificationJob implements ShouldQueue
 
     /**
      * Create a new job instance.
+     *
+     * @param  array<string, mixed>  $customTemplate  Enrollment email template resolved at dispatch time.
      */
     public function __construct(
         StudentEnrollment|int $studentEnrollment,
-        ?string $jobId = null
+        ?string $jobId = null,
+        private array $customTemplate = []
     ) {
         $this->enrollmentId = $studentEnrollment instanceof StudentEnrollment
             ? (int) $studentEnrollment->getKey()
@@ -94,7 +97,8 @@ final class SendAssessmentNotificationJob implements ShouldQueue
             )->notifyNow(new MigrateToStudent(
                 $this->studentEnrollment,
                 $assessmentPath,
-                requiresAttachment: true
+                requiresAttachment: true,
+                customTemplate: $this->customTemplate
             ));
 
             Log::info('Assessment email sent with pre-validated PDF attachment path.', [

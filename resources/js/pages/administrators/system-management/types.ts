@@ -9,6 +9,7 @@ export type SystemManagementSectionKey =
     | "brand"
     | "socialite"
     | "mail"
+    | "email_templates"
     | "newsletter"
     | "api"
     | "notifications"

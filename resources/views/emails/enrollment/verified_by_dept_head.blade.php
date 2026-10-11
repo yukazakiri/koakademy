@@ -15,11 +15,7 @@
 
 # Enrollment Verified
 
-Dear {{ $student_name }},
-
-We are pleased to inform you that your subject enrollment has been **verified and approved** by the Department Head.
-
-You are now one step away from being officially enrolled!
+{!! nl2br(e($intro)) !!}
 
 ### Approved Subjects
 <x-mail::table>
@@ -44,7 +40,7 @@ Please visit the school within **3 to 5 days** to complete your payment.
 @endif
 
 <x-mail::button :url="config('app.url')">
-Visit Student Portal
+{{ $buttonLabel ?? 'Visit Student Portal' }}
 </x-mail::button>
 
 Best regards,<br>

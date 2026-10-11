@@ -218,7 +218,7 @@ export function EmailTemplateEditorDialog({ open, onOpenChange, step, action, on
                 {/* Header with Title and Presets */}
                 <DialogHeader className="border-border/50 bg-card/60 flex shrink-0 flex-row items-center justify-between border-b p-4 px-6">
                     <div className="flex items-center gap-3">
-                        <IconTile variant="soft" size="md" className="text-primary">
+                        <IconTile variant="soft" size="default" className="text-primary">
                             <MailCheck className="size-5" />
                         </IconTile>
                         <div>
@@ -486,7 +486,7 @@ export function EmailTemplateEditorDialog({ open, onOpenChange, step, action, on
                                     <div className="border-primary/30 bg-primary/5 space-y-1 rounded-xl border p-3.5 shadow-2xs">
                                         <div className="flex items-center justify-between">
                                             <span className="text-primary text-[10px] font-bold tracking-wider uppercase">Active Status</span>
-                                            <Badge variant="primary" size="sm" className="text-[10px] font-semibold">
+                                            <Badge variant="primary-light" size="sm" className="text-[10px] font-semibold">
                                                 {step?.status || "Under Review"}
                                             </Badge>
                                         </div>

@@ -46,11 +46,7 @@ Welcome to {{ $organizationName }}!
 </h1>
 </div>
 
-Dear {{ $student_name }},
-
-**Congratulations!** Your enrollment has been successfully processed and verified. You are now officially enrolled for the upcoming academic term.
-
-We are excited to welcome you to our academic community!
+{!! nl2br(e($intro)) !!}
 
 ### Your Enrollment Details
 

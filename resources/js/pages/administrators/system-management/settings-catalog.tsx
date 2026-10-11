@@ -24,6 +24,7 @@ import {
     List,
     Lock,
     Mail,
+    MailCheck,
     Palette,
     Search,
     Settings2,
@@ -251,6 +252,15 @@ export const systemSettingsItems: SystemSettingsItem[] = [
         keywords: ["email", "mail", "smtp", "delivery", "transport"],
         icon: Mail,
         mode: "deployment",
+    },
+    {
+        key: "email_templates",
+        group: "communications",
+        label: "Email Templates",
+        description: "Customize the enrollment emails sent to applicants at every workflow milestone.",
+        href: "/administrators/system-management/email-templates",
+        keywords: ["email", "template", "enrollment", "notification", "subject", "message", "smtp"],
+        icon: MailCheck,
     },
     {
         key: "notifications",

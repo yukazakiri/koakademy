@@ -40,6 +40,10 @@ final class SystemManagementPermissions
                 'view' => 'View:SystemManagementMail',
                 'update' => null,
             ],
+            'email_templates' => [
+                'view' => 'View:SystemManagementEmailTemplates',
+                'update' => 'Update:SystemManagementEmailTemplates',
+            ],
             'newsletter' => [
                 'view' => 'View:SystemManagementNewsletter',
                 'update' => 'Update:SystemManagementNewsletter',

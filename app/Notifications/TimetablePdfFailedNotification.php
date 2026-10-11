@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Notifications;
 
+use App\Email\EmailTemplateRenderer;
 use Filament\Notifications\Notification as FilamentNotification;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\DatabaseMessage;
@@ -16,10 +17,13 @@ final class TimetablePdfFailedNotification extends Notification
 
     /**
      * Create a new notification instance.
+     *
+     * @param  array<string, mixed>  $customTemplate
      */
     public function __construct(
         private string $studentName,
-        private string $errorMessage
+        private string $errorMessage,
+        private array $customTemplate = []
     ) {}
 
     /**
@@ -37,13 +41,22 @@ final class TimetablePdfFailedNotification extends Notification
      */
     public function toMail(object $notifiable): MailMessage
     {
-        return (new MailMessage)
-            ->subject('Timetable PDF Generation Failed')
-            ->greeting('Hello '.$notifiable->name.'!')
-            ->line("There was an error generating the timetable PDF for {$this->studentName}.")
-            ->line('Error details: '.$this->errorMessage)
-            ->line('Please try again or contact support if the problem persists.')
-            ->action('Try Again', route('filament.admin.resources.students.view', ['record' => $this->studentName]))
+        $renderer = app(EmailTemplateRenderer::class);
+        $tokens = [
+            'student_name' => $this->studentName,
+            'error_message' => $this->errorMessage,
+        ];
+
+        $mail = (new MailMessage)
+            ->subject($renderer->subject('timetable_pdf_failed', $tokens, $this->customTemplate))
+            ->greeting('Hello '.$notifiable->name.'!');
+
+        foreach ($renderer->introLines('timetable_pdf_failed', $tokens, $this->customTemplate) as $line) {
+            $mail->line($line);
+        }
+
+        return $mail
+            ->action($this->customTemplate['button_label'] ?? 'Try Again', route('filament.admin.resources.students.view', ['record' => $this->studentName]))
             ->line('Thank you for your patience.');
     }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Notifications;
 
+use App\Email\EmailTemplateRenderer;
 use App\Settings\SiteSettings;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -17,9 +18,9 @@ final class StudentEnrolledVerified extends Notification implements ShouldQueue
     // public $student_name;
 
     /**
-     * Create a new notification instance.
+     * @param  array<string, mixed>  $customTemplate
      */
-    public function __construct(public $record)
+    public function __construct(public $record, private array $customTemplate = [])
     {
         // $this->student_name = $student_name;
     }
@@ -46,13 +47,29 @@ final class StudentEnrolledVerified extends Notification implements ShouldQueue
             $logoUrl = url($logoUrl);
         }
 
+        $studentName = (string) ($this->record->student_name ?? $this->record->student?->full_name ?? 'Student');
+        $organizationName = (string) ($siteSettings['organizationName'] ?? config('app.name'));
+        $course = $this->record->Course ?? null;
+
+        $tokens = [
+            'student_name' => $studentName,
+            'program' => (string) ($course?->code ?? $course?->title ?? ''),
+            'school_year' => (string) ($this->record->school_year ?? ''),
+            'semester' => (string) ($this->record->semester ?? ''),
+            'status' => (string) ($this->record->status ?? 'Verified'),
+            'step_name' => ucwords(str_replace(['_', '-'], ' ', (string) ($this->record->current_step_key ?? 'Academic Verification'))),
+            'portal_url' => (string) config('app.url'),
+            'organization_name' => $organizationName,
+        ];
+
+        $renderer = app(EmailTemplateRenderer::class);
+
         return (new MailMessage)
-            ->subject(sprintf(
-                'Enrollment Verified - Next Steps | %s',
-                $siteSettings['organizationName'] ?? config('app.name')
-            ))
+            ->subject($renderer->subject('academic_verified', $tokens, $this->customTemplate))
             ->markdown('emails.enrollment.verified_by_dept_head', [
-                'student_name' => $this->record->student_name,
+                'student_name' => $studentName,
+                'intro' => $renderer->intro('academic_verified', $tokens, $this->customTemplate),
+                'buttonLabel' => $this->customTemplate['button_label'] ?? 'Visit Student Portal',
                 'subjects' => $this->record->SubjectsEnrolled,
                 'tuition' => $this->record->studentTuition,
                 'siteSettings' => $siteSettings,

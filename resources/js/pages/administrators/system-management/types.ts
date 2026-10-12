@@ -20,6 +20,7 @@ export type SystemManagementSectionKey =
     | "faculty_fields"
     | "pulse"
     | "observability"
+    | "log_retention"
     | "ai";
 
 export type AiProviderKey = "anthropic" | "openai" | "gemini" | "groq" | "deepseek" | "mistral" | "openrouter" | "ollama" | "openai-compatible";

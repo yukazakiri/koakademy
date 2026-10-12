@@ -269,6 +269,12 @@ final class AdminPanelProvider extends PanelProvider
                     ->openUrlInNewTab()
                     ->isActiveWhen(fn (): bool => request()->is(mb_trim((string) config('horizon.path', 'horizon'), '/').'*'))
                     ->visible(fn (): bool => class_exists(\Laravel\Horizon\HorizonApplicationServiceProvider::class) && Gate::allows('viewHorizon')),
+                NavigationItem::make('Logs & Retention')
+                    ->url(fn (): string => route('administrators.system-management.log-retention.index'))
+                    ->icon(Heroicon::OutlinedClock)
+                    ->group('Observability')
+                    ->sort(5)
+                    ->visible(fn (): bool => Gate::allows('viewLogRetention', \App\Models\GeneralSetting::class)),
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')

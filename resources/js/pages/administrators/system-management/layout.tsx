@@ -36,6 +36,7 @@ interface SystemManagementLayoutProps {
     heading: string;
     description: string;
     children: ReactNode;
+    allowReadOnlyInteractions?: boolean;
 }
 
 export default function SystemManagementLayout({
@@ -45,6 +46,7 @@ export default function SystemManagementLayout({
     heading,
     description,
     children,
+    allowReadOnlyInteractions = false,
 }: SystemManagementLayoutProps) {
     const reducedMotion = useReducedMotion();
     const item = getSystemSettingsItem(activeSection);
@@ -254,7 +256,7 @@ export default function SystemManagementLayout({
                             initial={reducedMotion ? false : { opacity: 0, y: 6 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={transitionConfig}
-                            disabled={!canUpdateActiveSection}
+                            disabled={!canUpdateActiveSection && !allowReadOnlyInteractions}
                             className="min-w-0 space-y-6 border-0 p-0 disabled:cursor-not-allowed"
                         >
                             {children}

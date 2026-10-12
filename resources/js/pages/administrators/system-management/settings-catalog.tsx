@@ -5,6 +5,7 @@ import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTi
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { Link } from "@inertiajs/react";
+import { index as logRetentionIndex } from "@/routes/administrators/system-management/log-retention";
 import { motion, useReducedMotion } from "framer-motion";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -325,6 +326,15 @@ export const systemSettingsItems: SystemSettingsItem[] = [
         href: "/administrators/system-management/observability",
         keywords: ["sentry", "flare", "bugsnag", "honeybadger", "error", "exception", "observability", "tracing", "monitoring", "dsn"],
         icon: Siren,
+    },
+    {
+        key: "log_retention",
+        group: "system",
+        label: "Logs & Retention",
+        description: "Purge diagnostic logs and manage automatic cleanup schedules.",
+        href: logRetentionIndex.url(),
+        keywords: ["logs", "purge", "retention", "schedule", "pulse", "telescope", "mail", "activity"],
+        icon: CalendarClock,
     },
 ];
 

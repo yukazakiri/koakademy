@@ -1,6 +1,6 @@
 ---
 title: Observability
-description: Developer observability tools in KoAkademy — Laralyze, Pulse, Telescope, and Horizon access, roles, and enable flags.
+description: Developer observability tools in KoAkademy — Laralyze, Pulse, Telescope, and Horizon access, roles, enable flags, plus log purge and retention scheduling.
 ---
 
 # Observability
@@ -45,6 +45,40 @@ Debug assistant for exceptions, failed requests/jobs, and scheduled tasks. Gate 
 ## Horizon
 
 Redis queue dashboard. Only installed in the production Docker images and only registered when the package exists. Gate `viewHorizon` (`app/Providers/AuthServiceProvider.php`) allows primary `super_admin` or Spatie `super_admin`.
+
+## Logs & retention
+
+**System Management → Logs & Retention** (`View:SystemManagementLogRetention`, `Update:SystemManagementLogRetention`) purges or schedules cleanup of what those tools record.
+
+| Source | Tables / model | Deleted by cleanup |
+| ------ | -------------- | ------------------ |
+| Pulse | `pulse_entries`, `pulse_values`, `pulse_aggregates` | Records older than the retention period, or all of them on purge |
+| Telescope | `telescope_entries` (tags cascade) | Entries older than the retention period, or all of them on purge |
+| Mail | the configured mail model plus its events, attachments, and mailables | Logged messages older than the retention period, or all of them on purge — with their stored attachment files |
+| Activity | the configured activity model | Audit records older than the retention period, or all of them on purge |
+
+What cleanup deliberately leaves alone:
+
+- Students, enrollments, finance, and every other school record.
+- Mail records with an **unsuppressed** hard bounce, complaint, or unsubscribe — the suppression list keeps working after a purge.
+- Telescope **monitored tags** (`telescope_monitoring`); only the entries and their per-entry tags go.
+- Activity records under the `system-log-maintenance` log name, which hold the cleanup audit trail.
+
+Behavior worth knowing:
+
+- Deletion is instance-wide. A purge affects every school, so the page says so before you confirm.
+- Each action requires typing `PRUNE` or `PURGE`. Cleanup runs on the queue in bounded batches (`CleanSystemLogs`), continues in a fresh job for large sources, and is serialized per source by both a queue lock and the overlap middleware. A second request for a source that already has a queued or running cleanup is rejected.
+- A run snapshots the highest primary key per table when it is queued, so records written *after* you confirm are never deleted by that run.
+- Recording is never switched off by cleanup. Pulse, Telescope, and the mail and activity loggers keep collecting, and dashboards fill with fresh data immediately. Pulse also keeps its own `PULSE_STORAGE_KEEP` trim, which is independent of the schedule here.
+- Sources whose storage is not usable (non-database Pulse/Telescope driver, missing tables, unreadable connection) are reported as **Storage not configured** or **Storage unavailable** with a Retry action; the rest of the page still loads, and cleanup for that source is refused instead of silently doing nothing.
+- Schedule fields are read from `general_settings.more_configs['log_retention']` on every scheduler tick, so saving a schedule needs no deploy and no container restart.
+- Defaults match the package configuration: Pulse 7 days, Telescope 1 day (enabled in production, which preserves the previous daily `telescope:prune --hours=24` behavior), Mail 30 days (`mails.database.pruning.after`), Activity 365 days (`activitylog.delete_records_older_than_days`). The other schedules start disabled.
+- `php artisan system-logs:prune-due` runs every minute via `onOneServer()` and queues each due source at most once per minute. Cleanup needs the scheduler **and** a queue worker; a worker that is not running leaves runs queued and visible in **Cleanup history**.
+
+Deploy notes:
+
+- Run `php artisan migrate --force`. Two migrations are involved: `log_cleanup_runs` (run history) and the permission grant for the new section. Without them the page loads with a **Migration required** notice and cleanup stays disabled.
+- After changing this area's code, run `php artisan optimize:clear` and reload Octane / restart the container, since gates and policies are held in worker memory.
 
 ## Troubleshooting 403
 

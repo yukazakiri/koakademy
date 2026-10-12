@@ -17,7 +17,7 @@ final class FeatureDiscovery
         $manual = config('pennant-manager.discovered_features', []);
         $scanned = self::scanPaths();
 
-        return array_values(array_unique(array_merge($scanned, $manual)));
+        return array_values(array_unique(array_merge($scanned, $manual, \App\Services\FeatureToggleRegistry::allClasses())));
     }
 
     private static function scanPaths(): array

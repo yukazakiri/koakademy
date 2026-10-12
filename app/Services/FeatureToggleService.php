@@ -7,7 +7,6 @@ namespace App\Services;
 use App\Features\Concerns\ResolvesFeatureToggle;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Laravel\Pennant\Feature;
 
 /**
@@ -21,6 +20,11 @@ final class FeatureToggleService
      */
     public function activateGlobally(string $featureKey): void
     {
+        if ($this->managed($featureKey)) {
+            $this->setManagedEnabled($featureKey, true);
+
+            return;
+        }
         $featureClass = FeatureToggleRegistry::classForKey($featureKey);
         $featureRef = $featureClass ?? $featureKey;
 
@@ -32,6 +36,11 @@ final class FeatureToggleService
      */
     public function deactivateGlobally(string $featureKey): void
     {
+        if ($this->managed($featureKey)) {
+            $this->setManagedEnabled($featureKey, false);
+
+            return;
+        }
         $featureClass = FeatureToggleRegistry::classForKey($featureKey);
         $featureRef = $featureClass ?? $featureKey;
 
@@ -43,6 +52,11 @@ final class FeatureToggleService
      */
     public function activateForUser(string $featureKey, User $user): void
     {
+        if ($this->managed($featureKey)) {
+            $this->setManagedUser($featureKey, $user, 'allow');
+
+            return;
+        }
         $featureClass = FeatureToggleRegistry::classForKey($featureKey);
         $featureRef = $featureClass ?? $featureKey;
 
@@ -54,6 +68,11 @@ final class FeatureToggleService
      */
     public function deactivateForUser(string $featureKey, User $user): void
     {
+        if ($this->managed($featureKey)) {
+            $this->setManagedUser($featureKey, $user, 'deny');
+
+            return;
+        }
         $featureClass = FeatureToggleRegistry::classForKey($featureKey);
         $featureRef = $featureClass ?? $featureKey;
 
@@ -65,10 +84,11 @@ final class FeatureToggleService
      */
     public function purgeOverrides(string $featureKey): void
     {
-        $featureClass = FeatureToggleRegistry::classForKey($featureKey);
-        $featureRef = $featureClass ?? $featureKey;
-
-        Feature::forget($featureRef);
+        // Legacy provenance is unknowable. Do not delete automatic evaluations
+        // under a label claiming they are explicit assignments.
+        DB::table('feature_assignments')->where('feature_key', FeatureToggleRegistry::canonicalKey($featureKey))
+            ->where('subject_type', 'user')->delete();
+        app(FeatureManagementService::class)->flush();
     }
 
     /**
@@ -77,6 +97,9 @@ final class FeatureToggleService
      */
     public function isGloballyActivated(string $featureKey): bool
     {
+        if ($this->managed($featureKey)) {
+            return (bool) app(FeatureAccessService::class)->definition($featureKey)->enabled;
+        }
         $featureClass = FeatureToggleRegistry::classForKey($featureKey);
 
         if ($featureClass === null) {
@@ -101,16 +124,8 @@ final class FeatureToggleService
      */
     public function getUserOverrideCount(string $featureKey): int
     {
-        $featureClass = FeatureToggleRegistry::classForKey($featureKey);
-
-        if ($featureClass === null) {
-            return 0;
-        }
-
-        return DB::table('features')
-            ->where('name', $featureClass)
-            ->where('scope', 'not like', '%__laravel_null%')
-            ->count();
+        return DB::table('feature_assignments')->where('feature_key', FeatureToggleRegistry::canonicalKey($featureKey))
+            ->where('subject_type', 'user')->count();
     }
 
     /**
@@ -120,37 +135,8 @@ final class FeatureToggleService
      */
     public function getOverriddenUsers(string $featureKey): array
     {
-        $featureClass = FeatureToggleRegistry::classForKey($featureKey);
-
-        if ($featureClass === null) {
-            return [];
-        }
-
-        $userScopes = DB::table('features')
-            ->where('name', $featureClass)
-            ->where('scope', 'not like', '%__laravel_null%')
-            ->pluck('scope')
-            ->all();
-
-        $userIds = collect($userScopes)
-            ->map(fn (string $scope) => Str::afterLast($scope, '|'))
-            ->filter()
-            ->map(fn (string $id): int => (int) $id)
-            ->unique()
-            ->values()
-            ->all();
-
-        return User::query()
-            ->whereIn('id', $userIds)
-            ->get()
-            ->map(fn (User $user): array => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'role' => $user->role?->value,
-                'is_active' => Feature::for($user)->active($featureClass),
-            ])
-            ->all();
+        return array_values(array_filter(app(FeatureManagementService::class)->assignments(FeatureToggleRegistry::canonicalKey($featureKey)),
+            fn (array $row): bool => $row['subject_type'] === 'user'));
     }
 
     /**
@@ -217,5 +203,27 @@ final class FeatureToggleService
         } else {
             Feature::deactivateForEveryone($featureRef);
         }
+    }
+
+    private function managed(string $key): bool
+    {
+        return app(FeatureAccessService::class)->definition($key)?->mode === 'enforced';
+    }
+
+    private function setManagedEnabled(string $key, bool $enabled): void
+    {
+        $actor = auth()->user();
+        abort_unless(FeatureManagementService::canManage($actor), 403);
+        $service = app(FeatureManagementService::class);
+        $data = $service->policyPayload(app(FeatureAccessService::class)->definition($key));
+        $data['enabled'] = $enabled;
+        $service->updatePolicy(FeatureToggleRegistry::canonicalKey($key), $data, $actor);
+    }
+
+    private function setManagedUser(string $key, User $user, string $effect): void
+    {
+        $actor = auth()->user();
+        abort_unless(FeatureManagementService::canManage($actor), 403);
+        app(FeatureManagementService::class)->assign(FeatureToggleRegistry::canonicalKey($key), 'user', (string) $user->id, $effect, $actor);
     }
 }

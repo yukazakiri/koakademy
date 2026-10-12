@@ -391,6 +391,14 @@ Route::middleware(['auth', 'administrators.only'])
         Route::delete('/permissions/{permission}', [AdministratorRolesController::class, 'destroyPermission'])->name('permissions.destroy');
 
         // Feature Toggles Management
+        Route::get('/feature-toggles/users', [App\Http\Controllers\AdministratorFeatureToggleController::class, 'searchUsers'])->name('feature-toggles.users');
+        Route::post('/feature-toggles/groups', [App\Http\Controllers\AdministratorFeatureToggleController::class, 'saveGroup'])->name('feature-toggles.groups.store');
+        Route::put('/feature-toggles/{featureKey}/policy', [App\Http\Controllers\AdministratorFeatureToggleController::class, 'update'])->name('feature-toggles.policy.update');
+        Route::get('/feature-toggles/{featureKey}/details', [App\Http\Controllers\AdministratorFeatureToggleController::class, 'details'])->name('feature-toggles.details');
+        Route::post('/feature-toggles/{featureKey}/impact', [App\Http\Controllers\AdministratorFeatureToggleController::class, 'impact'])->middleware('throttle:20,1')->name('feature-toggles.impact');
+        Route::post('/feature-toggles/{featureKey}/assignments', [App\Http\Controllers\AdministratorFeatureToggleController::class, 'assign'])->name('feature-toggles.assignments.store');
+        Route::delete('/feature-toggles/{featureKey}/assignments/{assignment}', [App\Http\Controllers\AdministratorFeatureToggleController::class, 'removeAssignment'])->whereNumber('assignment')->name('feature-toggles.assignments.destroy');
+        Route::get('/feature-toggles/{featureKey}/preview', [App\Http\Controllers\AdministratorFeatureToggleController::class, 'preview'])->name('feature-toggles.preview');
         Route::get('/feature-toggles', [App\Http\Controllers\AdministratorFeatureToggleController::class, 'index'])->name('feature-toggles.index');
         Route::post('/feature-toggles/{featureKey}/toggle', [App\Http\Controllers\AdministratorFeatureToggleController::class, 'toggle'])->name('feature-toggles.toggle');
         Route::post('/feature-toggles/{featureKey}/activate-for-user', [App\Http\Controllers\AdministratorFeatureToggleController::class, 'activateForUser'])->name('feature-toggles.activate-for-user');

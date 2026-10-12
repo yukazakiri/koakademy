@@ -27,6 +27,10 @@ final class PennantActivateScheduledFeatures extends Command
         $activated = 0;
 
         foreach ($features as $feature) {
+            $key = \App\Services\FeatureToggleRegistry::keyForClass($feature->name);
+            if ($key && app(\App\Services\FeatureAccessService::class)->definition($key)?->mode === 'enforced') {
+                continue;
+            }
             $data = FeatureValue::decode($feature->value);
 
             if (empty($data['activate_at']) || ($data['enabled'] ?? false)) {

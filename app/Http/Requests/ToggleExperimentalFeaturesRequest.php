@@ -19,8 +19,8 @@ final class ToggleExperimentalFeaturesRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'features' => ['array'],
-            'features.*' => ['string'],
+            'features' => ['present', 'array'],
+            'features.*' => ['string', 'distinct'],
         ];
     }
 

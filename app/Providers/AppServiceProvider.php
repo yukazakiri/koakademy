@@ -6,46 +6,6 @@ namespace App\Providers;
 
 use App\Contracts\AssessmentFormPdfRenderer;
 use App\Enums\UserRole;
-use App\Features\Toggles\AdminDeveloperMode;
-use App\Features\Toggles\AiFacultyAssistant;
-use App\Features\Toggles\AiFinanceAssistant;
-use App\Features\Toggles\AiHelpDeskAssistant;
-use App\Features\Toggles\AiRegistrarAuditor;
-use App\Features\Toggles\AiStudentAdvisor;
-use App\Features\Toggles\FacultyActionCenter;
-use App\Features\Toggles\FacultyAnnouncements;
-use App\Features\Toggles\FacultyAssessments;
-use App\Features\Toggles\FacultyAtRiskAlerts;
-use App\Features\Toggles\FacultyAttendance;
-use App\Features\Toggles\FacultyClasses;
-use App\Features\Toggles\FacultyDashboard;
-use App\Features\Toggles\FacultyDeveloperMode;
-use App\Features\Toggles\FacultyForms;
-use App\Features\Toggles\FacultyGrades;
-use App\Features\Toggles\FacultyHelp;
-use App\Features\Toggles\FacultyInbox;
-use App\Features\Toggles\FacultyInsights;
-use App\Features\Toggles\FacultyOfficeHours;
-use App\Features\Toggles\FacultyRequestsApprovals;
-use App\Features\Toggles\FacultyResources;
-use App\Features\Toggles\FacultySchedule;
-use App\Features\Toggles\FacultySettings;
-use App\Features\Toggles\FacultyToolkit;
-use App\Features\Toggles\OnlineCollegeEnrollment;
-use App\Features\Toggles\OnlineTesdaEnrollment;
-use App\Features\Toggles\StudentAnnouncements;
-use App\Features\Toggles\StudentAttendanceTracker;
-use App\Features\Toggles\StudentAvatarUpload;
-use App\Features\Toggles\StudentClasses;
-use App\Features\Toggles\StudentDashboard;
-use App\Features\Toggles\StudentDeveloperMode;
-use App\Features\Toggles\StudentGradesPreview;
-use App\Features\Toggles\StudentHelp;
-use App\Features\Toggles\StudentInformationUpdates;
-use App\Features\Toggles\StudentSchedule;
-use App\Features\Toggles\StudentSettings;
-use App\Features\Toggles\StudentSignaturePad;
-use App\Features\Toggles\StudentTuition;
 use App\Filament\Handlers\ExportFailureHandler;
 use App\Filament\Plugins\Widgets\PennantFeatureAdoptionWidget;
 use App\Models\Passkey;
@@ -123,6 +83,7 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->scoped(\App\Services\SentrySettingsService::class);
         $this->app->scoped(\App\Services\ErrorReportingService::class);
         $this->app->scoped(\App\Services\TenantContext::class);
+        $this->app->scoped(\App\Services\FeatureAccessService::class);
         $this->app->bind(AssessmentFormPdfRenderer::class, LaravelAssessmentFormPdfRenderer::class);
 
         $this->app->singleton(\Tighten\Ziggy\BladeRouteGenerator::class, function (): \Tighten\Ziggy\BladeRouteGenerator {
@@ -260,50 +221,18 @@ final class AppServiceProvider extends ServiceProvider
             JobFailed::class,
             JobExceptionOccurred::class,
         ], $reset);
+
+        Event::listen(JobProcessing::class, static function (): void {
+            Feature::flushCache();
+            app(\App\Services\FeatureAccessService::class)->reset();
+        });
     }
 
     private function definePennantFeatures(): void
     {
-        Feature::define(FacultyDashboard::class);
-        Feature::define(FacultyActionCenter::class);
-        Feature::define(FacultyClasses::class);
-        Feature::define(FacultySchedule::class);
-        Feature::define(FacultyAnnouncements::class);
-        Feature::define(FacultySettings::class);
-        Feature::define(FacultyHelp::class);
-        Feature::define(FacultyToolkit::class);
-        Feature::define(FacultyAtRiskAlerts::class);
-        Feature::define(FacultyAssessments::class);
-        Feature::define(FacultyInbox::class);
-        Feature::define(FacultyOfficeHours::class);
-        Feature::define(FacultyRequestsApprovals::class);
-        Feature::define(FacultyInsights::class);
-        Feature::define(FacultyGrades::class);
-        Feature::define(FacultyAttendance::class);
-        Feature::define(FacultyResources::class);
-        Feature::define(FacultyForms::class);
-        Feature::define(FacultyDeveloperMode::class);
-        Feature::define(AdminDeveloperMode::class);
-        Feature::define(StudentDashboard::class);
-        Feature::define(StudentClasses::class);
-        Feature::define(StudentTuition::class);
-        Feature::define(StudentSchedule::class);
-        Feature::define(StudentAnnouncements::class);
-        Feature::define(StudentSettings::class);
-        Feature::define(StudentInformationUpdates::class);
-        Feature::define(StudentHelp::class);
-        Feature::define(StudentGradesPreview::class);
-        Feature::define(StudentAttendanceTracker::class);
-        Feature::define(StudentDeveloperMode::class);
-        Feature::define(StudentSignaturePad::class);
-        Feature::define(StudentAvatarUpload::class);
-        Feature::define(OnlineCollegeEnrollment::class);
-        Feature::define(OnlineTesdaEnrollment::class);
-        Feature::define(AiStudentAdvisor::class);
-        Feature::define(AiFacultyAssistant::class);
-        Feature::define(AiRegistrarAuditor::class);
-        Feature::define(AiFinanceAssistant::class);
-        Feature::define(AiHelpDeskAssistant::class);
+        foreach (\App\Services\FeatureToggleRegistry::allClasses() as $class) {
+            Feature::define($class);
+        }
     }
 
     /**

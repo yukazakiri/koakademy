@@ -91,8 +91,15 @@ final class UserFeatureFlagService
         UserRole|string|null $role,
         bool $resetToRoleDefaults = false,
     ): void {
+        // Managed policy is edited only in Feature access, not incidentally
+        // rewritten when a Filament user form is saved.
+        $managedKeys = collect(FeatureToggleRegistry::allKeys())->filter(
+            fn (string $key): bool => app(FeatureAccessService::class)->definition($key)?->mode === 'enforced'
+        )->all();
         $allFeatureKeys = $this->featureKeys();
+        $allFeatureKeys = array_values(array_filter($allFeatureKeys, fn (string $key): bool => ! in_array(FeatureToggleRegistry::canonicalKey($key), $managedKeys, true)));
         $applicableFeatureKeys = $this->featureKeysForRole($role);
+        $applicableFeatureKeys = array_values(array_intersect($applicableFeatureKeys, $allFeatureKeys));
         $selected = array_values(array_intersect($selectedFeatureKeys, $applicableFeatureKeys));
 
         $scopedFeatures = Feature::for($user);

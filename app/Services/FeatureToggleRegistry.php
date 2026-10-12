@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\UserRole;
 use App\Features\Contracts\FeatureToggle;
 use App\Features\Toggles\AdminDeveloperMode;
 use App\Features\Toggles\AiFacultyAssistant;
@@ -45,7 +46,6 @@ use App\Features\Toggles\StudentSchedule;
 use App\Features\Toggles\StudentSettings;
 use App\Features\Toggles\StudentSignaturePad;
 use App\Features\Toggles\StudentTuition;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Registry mapping feature keys to their Pennant feature class names.
@@ -111,21 +111,49 @@ final class FeatureToggleRegistry
     ];
 
     /**
-     * In-memory cache of global feature states (__laravel_null scope)
-     * shared across all feature toggle classes.
-     *
-     * @var array<string, mixed>|null
-     */
-    private static ?array $globalFeatureStates = null;
-
-    /**
      * Get the class name for a feature key.
      *
      * @return class-string<FeatureToggle>|null
      */
     public static function classForKey(string $key): ?string
     {
-        return self::KEY_TO_CLASS[$key] ?? null;
+        return self::KEY_TO_CLASS[self::canonicalKey($key)] ?? null;
+    }
+
+    public static function canonicalKey(string $key): string
+    {
+        return str_starts_with($key, 'onboarding-') ? mb_substr($key, 11) : $key;
+    }
+
+    /** @return array{roles: list<string>, default_enabled: bool, tier: string, opt_in: bool, public: bool} */
+    public static function definition(string $key): array
+    {
+        $key = self::canonicalKey($key);
+        $public = in_array($key, ['online-college-enrollment', 'online-tesda-enrollment'], true);
+        $roles = array_values(array_map(fn (UserRole $role): string => $role->value,
+            array_filter(UserRole::cases(), static function (UserRole $role) use ($key, $public): bool {
+                return match (true) {
+                    $public => true,
+                    str_starts_with($key, 'student-'), $key === 'ai-student-advisor' => $role->isStudent(),
+                    str_starts_with($key, 'faculty-'), $key === 'ai-faculty-assistant' => $role->isFaculty(),
+                    $key === 'admin-developer-mode', $key === 'ai-registrar-auditor' => $role->canAccessAdminPortal(),
+                    $key === 'ai-finance-assistant' => $role->canAccessAdminPortal() || $role->isStudent(),
+                    $key === 'ai-help-desk-assistant' => true,
+                    default => false,
+                };
+            })));
+        $experimental = in_array($key, [
+            'student-grades-preview', 'student-attendance-tracker', 'faculty-at-risk-alerts',
+            'faculty-assessments', 'faculty-inbox', 'faculty-office-hours',
+            'faculty-requests-approvals', 'faculty-insights', 'faculty-forms',
+        ], true);
+        $privileged = str_ends_with($key, '-developer-mode') || str_starts_with($key, 'ai-');
+
+        return [
+            'roles' => $roles, 'default_enabled' => ! $experimental && ! $privileged,
+            'tier' => $privileged ? 'restricted' : ($experimental ? 'beta' : 'built_in'),
+            'opt_in' => $experimental, 'public' => $public,
+        ];
     }
 
     /**
@@ -153,7 +181,7 @@ final class FeatureToggleRegistry
      */
     public static function flushGlobalFeatureStates(): void
     {
-        self::$globalFeatureStates = null;
+        app(FeatureAccessService::class)->reset();
     }
 
     /**
@@ -163,14 +191,7 @@ final class FeatureToggleRegistry
      */
     public static function getGlobalFeatureStates(): array
     {
-        if (self::$globalFeatureStates === null) {
-            self::$globalFeatureStates = DB::table('features')
-                ->where('scope', '__laravel_null')
-                ->pluck('value', 'name')
-                ->all();
-        }
-
-        return self::$globalFeatureStates;
+        return app(FeatureAccessService::class)->legacyGlobalStates();
     }
 
     /**

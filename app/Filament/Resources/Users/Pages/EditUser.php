@@ -29,6 +29,10 @@ final class EditUser extends EditRecord
     {
         $state = $this->form->getState();
 
+        if (! array_key_exists('feature_flags', $state)) {
+            return;
+        }
+
         app(UserFeatureFlagService::class)->syncFeatureOverrides(
             $this->record,
             array_values(array_intersect($state['feature_flags'] ?? [], UserForm::getExperimentalFeatureKeys($state['role'] ?? $this->record->role))),

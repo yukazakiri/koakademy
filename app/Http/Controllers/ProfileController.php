@@ -115,6 +115,19 @@ final class ProfileController extends Controller
 
         $availableForRole = collect($experimentalKeys)
             ->filter(fn (string $featureKey): bool => isset($experimentalRoles[$featureKey]) && in_array($roleType, $experimentalRoles[$featureKey], true))
+            ->filter(function (string $featureKey) use ($user): bool {
+                $key = FeatureToggleRegistry::canonicalKey($featureKey);
+                if (str_ends_with($key, '-developer-mode') || FeatureToggleRegistry::classForKey($key) === null) {
+                    return false;
+                }
+                $definition = app(\App\Services\FeatureAccessService::class)->definition($key);
+                if ($definition?->mode !== 'enforced') {
+                    return true;
+                }
+                $catalog = FeatureToggleRegistry::definition($key);
+
+                return $catalog['opt_in'] && $definition->allow_opt_in && in_array($user->role?->value, $catalog['roles'], true);
+            })
             ->values()
             ->all();
 
@@ -399,10 +412,37 @@ final class ProfileController extends Controller
     {
         $user = Auth::user();
         $allowedFeatures = config('onboarding.experimental_feature_keys', []);
-        $requestedFeatures = array_values(array_intersect($request->input('features', []), $allowedFeatures));
+        $requestedFeatures = $request->validated('features', []);
+
+        foreach ($requestedFeatures as $featureKey) {
+            $key = FeatureToggleRegistry::canonicalKey($featureKey);
+            $catalog = FeatureToggleRegistry::definition($key);
+            $definition = app(\App\Services\FeatureAccessService::class)->definition($key);
+            $eligible = in_array($featureKey, $allowedFeatures, true)
+                && FeatureToggleRegistry::classForKey($key) !== null
+                && in_array($user->role?->value, $catalog['roles'], true)
+                && ! str_ends_with($key, '-developer-mode');
+            if (! $eligible || ($definition?->mode === 'enforced' && (! $catalog['opt_in'] || ! $definition->allow_opt_in))) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['features' => 'One or more features are not available for self-service opt-in.']);
+            }
+        }
 
         foreach ($allowedFeatures as $featureKey) {
-            $featureRef = FeatureToggleRegistry::classForKey(str_replace('onboarding-', '', $featureKey)) ?? $featureKey;
+            $key = FeatureToggleRegistry::canonicalKey($featureKey);
+            $featureRef = FeatureToggleRegistry::classForKey($key);
+            $catalog = FeatureToggleRegistry::definition($key);
+            if (! $featureRef || ! in_array($user->role?->value, $catalog['roles'], true) || str_ends_with($key, '-developer-mode')) {
+                continue;
+            }
+            $definition = app(\App\Services\FeatureAccessService::class)->definition($key);
+            if ($definition?->mode === 'enforced') {
+                if ($catalog['opt_in'] && $definition->allow_opt_in) {
+                    app(\App\Services\FeatureManagementService::class)->assign($key, 'user', (string) $user->id,
+                        in_array($featureKey, $requestedFeatures, true) ? 'allow' : 'deny', $user, 'self_service');
+                }
+
+                continue;
+            }
 
             if (in_array($featureKey, $requestedFeatures, true)) {
                 Feature::for($user)->activate($featureRef);

@@ -38,6 +38,15 @@ abstract class TestCase extends BaseTestCase
 
         config(['inertia.ssr.enabled' => false]);
 
+        // Existing fixtures represent upgraded installations and write Pennant
+        // values directly. Managed-distribution tests explicitly opt in, while
+        // fresh-install tests exercise the initialization migration itself.
+        if (\Illuminate\Support\Facades\Schema::hasTable('feature_definitions')) {
+            \Illuminate\Support\Facades\DB::table('feature_definitions')->update(['mode' => 'legacy']);
+            $this->app->make(\App\Services\FeatureAccessService::class)->reset();
+            \Laravel\Pennant\Feature::flushCache();
+        }
+
         $this->app->singleton(\Faker\Generator::class, function (): \Faker\Generator {
             return \Faker\Factory::create('en_US');
         });

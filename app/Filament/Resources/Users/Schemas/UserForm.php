@@ -151,9 +151,10 @@ final class UserForm
                 ]),
 
             Section::make('Feature Flags')
-                ->description('Control experimental feature access for this user.')
+                ->description('Manage feature access and beta participation in Administrators → Feature access. Existing assignments are not changed when this user is saved.')
                 ->schema([
                     CheckboxList::make('feature_flags')
+                        ->disabled()
                         ->label('Experimental Features')
                         ->options(fn (Get $get, $record): array => self::getExperimentalFeatureOptions($get('role') ?? $record?->role))
                         ->columns(2)

@@ -5,26 +5,40 @@ declare(strict_types=1);
 namespace App\Features\Concerns;
 
 use App\Models\User;
+use App\Services\FeatureAccessService;
 use App\Services\FeatureToggleRegistry;
 use Illuminate\Support\Lottery;
 
 /**
- * Provides common resolution logic for feature toggles.
- * Feature classes use this trait and override methods as needed.
+ * Default resolution plus the managed-policy hook.
+ *
+ * A feature class used to read a `__laravel_null` row as "is this feature
+ * on". That sentinel is also how Pennant serializes a null scope, so the public
+ * enrollment form and the signed-in portal disagreed about the same feature.
+ * Managed policy is the single source of truth now; legacy installations keep
+ * working through the batch-cached legacy values.
  */
 trait ResolvesFeatureToggle
 {
-    /**
-     * Flush the cached global feature states in the central registry.
-     */
+    /** Compatibility for existing callers that invalidate legacy state. */
     public static function flushGlobalFeatureStates(): void
     {
         FeatureToggleRegistry::flushGlobalFeatureStates();
     }
 
     /**
-     * Default resolution: check global activation state first, then audience matching.
-     * Override in feature classes for custom logic.
+     * Run an always-in-memory check ahead of any stored value.
+     *
+     * Returns null unless the feature is under managed policy, which is what
+     * preserves existing installations during the roll out.
+     */
+    public function before(?User $scope): ?bool
+    {
+        return app(FeatureAccessService::class)->before($this->key(), $scope);
+    }
+
+    /**
+     * Default resolution: legacy audiences still apply in compatibility mode.
      */
     public function resolve(User $scope): bool
     {
@@ -79,6 +93,12 @@ trait ResolvesFeatureToggle
         return $lottery->choose();
     }
 
+    /**
+     * Legacy compatibility mode only; batch-cached per request.
+     *
+     * Kept under its original name: feature classes that override resolve()
+     * call this directly.
+     */
     private function globalFeatureState(): ?bool
     {
         $globalState = FeatureToggleRegistry::getGlobalFeatureState(static::class);

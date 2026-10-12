@@ -32,11 +32,14 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->trustHosts(at: HostingSecurity::trustedHostPatterns());
 
         $middleware->web(append: [
+            App\Http\Middleware\ResetFeatureAccessState::class,
             App\Http\Middleware\EnsureSystemIsSetup::class,
             HandleInertiaRequests::class,
             App\Http\Middleware\OnlineUserTrackingMiddleware::class,
             SetTenantContext::class,
         ]);
+
+        $middleware->api(prepend: [App\Http\Middleware\ResetFeatureAccessState::class]);
 
         $middleware->alias([
             'faculty.verified' => FacultyIdValidationMiddleware::class,

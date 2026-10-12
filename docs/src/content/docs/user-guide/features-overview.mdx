@@ -38,15 +38,37 @@ and the [Module Registry guide](/koakademy/maintainers/module-registry/).
 
 ## How features are switched
 
-KoAkademy has two layers of feature control, both managed by administrators without code changes:
+KoAkademy has three separate layers of feature control:
 
 1. **Module status** — installed code-level domains enabled or disabled from **Administrators → Marketplace**. The Marketplace does not install Composer packages; a standalone package must already be present in the application image.
-2. **Feature toggles** — runtime flags (managed under the admin Feature Toggles page) that enable or disable portal areas such as faculty attendance, student tuition pages, online enrollment, and developer tools. Faculty and student portals check these flags before showing a page.
+2. **Feature access** — runtime release policy at `/administrators/feature-toggles`. System administrators manage built-in role defaults, explicit user/role/school targets, named beta groups, percentage rollouts, and scheduled releases. This controls availability, not action permissions or code installation.
 3. **General settings** — institution-wide switches in General Settings, including the student portal, online enrollment, clearances, signature capture, QR codes, and the inventory and library modules.
 
 :::note[What this does]
-Disabling a toggle hides the feature immediately for affected users without deleting any data. Re-enabling restores the same records.
+Managed policies take effect on the next request without deleting records or assignments. Existing installations retain legacy feature behavior until an administrator deliberately adopts managed policy. The legacy Filament Features page is read-only.
 :::
+
+### Fresh installations and upgrades
+
+Fresh installations enable baseline student and faculty functions for their intended roles, including future users. Beta, AI, and developer features are not broadly enabled by default. Public college and TESDA enrollment use installation-wide policy.
+
+Upgrades start with **Legacy preserved**. Review a feature's managed impact before adopting it. Existing Pennant rows are not relabeled as confirmed administrator assignments: automatic evaluations and older manual overrides have indistinguishable storage. They remain intact for compatibility rollback.
+
+### Releasing a feature
+
+1. Select the feature and review its built-in role destinations.
+2. Choose **Built-in role defaults**, **Targets only**, or **Stable percentage**. Targets can allow or deny a user, eligible role, school, or beta group. Deny wins, and targeting cannot grant another role's feature or action permissions.
+3. For supported beta features, optionally allow user opt-in. Developer tools remain administrator-controlled.
+4. Optionally set **Release from** and **Retire at**. Dates display in your browser's local time and round-trip with explicit offsets. Retirement must follow release; a retirement-only schedule is also supported. No cron task is needed: availability is checked against time on each new request.
+5. Review impact, then explicitly adopt/save. Impact compares the current state with the draft, counts at most the first 500 eligible users in their primary school, and labels bounded results. Editing the draft invalidates the review. Future schedules and later membership changes can alter access beyond the current-time estimate.
+
+Percentage cohorts are stable per feature, user, and school. Increasing a percentage includes earlier members; lowering it intentionally rolls back that portion of the release. Explicit grants and exclusions remain separate from cohort membership.
+
+Users outside a managed release receive a dashboard notice when following a page link. Administrator exclusions, wrong-role access, JSON requests, and blocked mutations still return 403; an unavailable write is never disguised as a successful redirect.
+
+### Rollback
+
+Switch a feature back to **Legacy compatibility** to use its preserved legacy results. This does not delete managed policy or targets. Do not purge legacy rows before reviewing that rollback path. Downgrading to an older binary requires separate operator review because older code does not read managed policy.
 
 ## Security and access control
 

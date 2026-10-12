@@ -4,12 +4,13 @@ import { InstitutionOnboarding, InstitutionSchoolLevelOnboarding } from "@/compo
 import { AdminAiFloatingWidget } from "@/components/ai";
 import { AnalyticsScripts } from "@/components/analytics-scripts";
 import { AnnouncementBanner } from "@/components/announcement-banner";
+import { FeatureNoticeBanner } from "@/components/feature-notice-banner";
 import { GlobalCommandPalette } from "@/components/global-command-palette";
 import ImpersonationBanner from "@/components/impersonation-banner";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { ThemeProvider } from "@/hooks/use-theme";
-import { User } from "@/types/user";
 import { cn } from "@/lib/utils";
+import { User } from "@/types/user";
 import { usePage } from "@inertiajs/react";
 import React from "react";
 
@@ -51,6 +52,7 @@ export default function AdminLayout({ user, title, immersive = false, flush = fa
                 </div>
                 <GlobalCommandPalette user={resolvedUser} />
                 <InstitutionSchoolLevelOnboarding onboarding={institutionOnboarding ?? null} />
+                <FeatureNoticeBanner />
             </ThemeProvider>
         );
     }
@@ -66,14 +68,13 @@ export default function AdminLayout({ user, title, immersive = false, flush = fa
                     <ImpersonationBanner />
                     <AdminHeader title={title || "Portal"} user={resolvedUser} />
                     {isFlushLayout ? (
-                        <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
+                        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                             <AnnouncementBanner announcements={announcements ?? []} />
-                            <div className="flex-1 min-h-0 overflow-hidden">
-                                {children}
-                            </div>
+                            <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
                         </div>
                     ) : (
                         <div className="flex flex-1 flex-col">
+                            <FeatureNoticeBanner />
                             <div className="@container/main flex flex-1 flex-col gap-2">
                                 <div className="flex flex-col gap-4 px-4 py-4 pb-24 md:gap-6 md:py-6 md:pb-6 lg:px-6">
                                     <AnnouncementBanner announcements={announcements ?? []} />

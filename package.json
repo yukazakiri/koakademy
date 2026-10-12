@@ -85,6 +85,8 @@
         "@sanity/client": "^7.27.0",
         "@tabler/icons-react": "^3.46.0",
         "@tanstack/react-table": "^8.21.3",
+        "@tanstack/react-table-v9": "npm:@tanstack/react-table@^9.2.8",
+        "@tanstack/react-virtual": "^3.14.15",
         "@tiptap/extension-bubble-menu": "^3.31.3",
         "@tiptap/extension-character-count": "^3.31.3",
         "@tiptap/extension-image": "^3.31.3",

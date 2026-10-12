@@ -11,6 +11,7 @@ import { isAdministratorPortalRole, isFacultyPortalRole, isStudentPortalRole } f
 import { User } from "@/types/user";
 import { usePage } from "@inertiajs/react";
 import { AnnouncementBanner } from "./announcement-banner";
+import { FeatureNoticeBanner } from "./feature-notice-banner";
 import ImpersonationBanner from "./impersonation-banner";
 import { PortalSidebar } from "./portal-sidebar";
 
@@ -41,6 +42,7 @@ export default function PortalLayout({ user, children }: PortalLayoutProps) {
             <SidebarInset>
                 <SiteHeader user={user} />
                 <ImpersonationBanner />
+                <FeatureNoticeBanner />
                 <AnnouncementBanner announcements={announcements ?? []} />
                 <div className="flex flex-1 flex-col">
                     <div className="@container/main flex flex-1 flex-col gap-2">

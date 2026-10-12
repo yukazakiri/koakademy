@@ -84,6 +84,10 @@ final class SystemManagementPermissions
                 'view' => 'View:SystemManagementObservability',
                 'update' => 'Update:SystemManagementObservability',
             ],
+            'log_retention' => [
+                'view' => 'View:SystemManagementLogRetention',
+                'update' => 'Update:SystemManagementLogRetention',
+            ],
             'ai' => [
                 'view' => 'View:SystemManagementAi',
                 'update' => 'Update:SystemManagementAi',

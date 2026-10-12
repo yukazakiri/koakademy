@@ -13,6 +13,7 @@ use App\Enums\SchoolLevel;
 use App\Enums\StudentType;
 use App\Enums\UserRole;
 use App\Features\DynamicEnrollmentPolicies;
+use App\Http\Requests\Administrators\CleanSystemLogsRequest;
 use App\Http\Requests\Administrators\FetchAiModelsRequest;
 use App\Http\Requests\Administrators\PreviewEnrollmentEmailTemplateRequest;
 use App\Http\Requests\Administrators\StoreSchoolRequest;
@@ -23,6 +24,7 @@ use App\Http\Requests\Administrators\UpdateEnrollmentEmailTemplateRequest;
 use App\Http\Requests\Administrators\UpdateEnrollmentPipelineRequest;
 use App\Http\Requests\Administrators\UpdateFinanceDocumentSettingsRequest;
 use App\Http\Requests\Administrators\UpdateGradingPolicyRequest;
+use App\Http\Requests\Administrators\UpdateLogRetentionRequest;
 use App\Http\Requests\Administrators\UpdateNewsletterSettingsRequest;
 use App\Http\Requests\Administrators\UpdateSchoolCurriculumCapabilitiesRequest;
 use App\Http\Requests\Administrators\UpdateSchoolLevelRequest;
@@ -55,6 +57,7 @@ use App\Services\GeneralSettingsService;
 use App\Services\GradingSystemService;
 use App\Services\IdentifierGenerator;
 use App\Services\LogoConversionService;
+use App\Services\LogRetentionService;
 use App\Services\Newsletter\NewsletterProviderManager;
 use App\Services\Newsletter\NewsletterSettingsService;
 use App\Services\RegistrarReportingSettingsService;
@@ -376,6 +379,31 @@ final class AdministratorSystemManagementController extends Controller
         $errorReporting->save($request->validated());
 
         return Redirect::back()->with('success', 'Error reporting settings updated successfully.');
+    }
+
+    public function logRetention(LogRetentionService $retention): Response
+    {
+        return $this->renderSystemManagementPage(
+            'administrators/system-management/log-retention',
+            'log_retention',
+            'viewLogRetention',
+            ['log_retention' => $retention->overview()],
+        );
+    }
+
+    public function updateLogRetention(UpdateLogRetentionRequest $request, LogRetentionService $retention): RedirectResponse
+    {
+        $retention->save($request->validated('policies'), $request->user());
+
+        return Redirect::back()->with('success', 'Log retention schedules saved.');
+    }
+
+    public function cleanSystemLogs(CleanSystemLogsRequest $request, LogRetentionService $retention): RedirectResponse
+    {
+        $validated = $request->validated();
+        $retention->queue($validated['source'], $validated['mode'], $request->user());
+
+        return Redirect::back()->with('success', 'Log cleanup queued. Check cleanup history for progress.');
     }
 
     public function ai(AiSettingsService $aiSettings, McpServerService $mcpServers): Response

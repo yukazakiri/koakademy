@@ -423,6 +423,9 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/system-management/ai', [App\Http\Controllers\AdministratorSystemManagementController::class, 'ai'])->name('system-management.ai.index');
         Route::get('/system-management/pulse', [App\Http\Controllers\AdministratorSystemManagementController::class, 'pulse'])->name('system-management.pulse.index');
         Route::get('/system-management/observability', [App\Http\Controllers\AdministratorSystemManagementController::class, 'observability'])->name('system-management.observability.index');
+        Route::get('/system-management/log-retention', [App\Http\Controllers\AdministratorSystemManagementController::class, 'logRetention'])->name('system-management.log-retention.index');
+        Route::put('/system-management/log-retention', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateLogRetention'])->name('system-management.log-retention.update');
+        Route::post('/system-management/log-retention/clean', [App\Http\Controllers\AdministratorSystemManagementController::class, 'cleanSystemLogs'])->middleware('throttle:6,1')->name('system-management.log-retention.clean');
         Route::get('/system-management/identifiers', [App\Http\Controllers\AdministratorSystemManagementController::class, 'identifiers'])->name('system-management.identifiers.index');
         Route::get('/system-management/faculty-fields', [App\Http\Controllers\AdministratorSystemManagementController::class, 'facultyFields'])->name('system-management.faculty-fields.index');
         Route::post('/system-management/school', [App\Http\Controllers\AdministratorSystemManagementController::class, 'storeSchool'])->name('system-management.school.store');

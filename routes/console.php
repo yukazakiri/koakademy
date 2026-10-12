@@ -25,9 +25,11 @@ Schedule::command('assessment-exports:maintain')
     ->onOneServer()
     ->withoutOverlapping();
 
-Schedule::command('telescope:prune --hours=24')
-    ->daily()
-    ->environments(['production'])
+// Replaces the former daily `telescope:prune --hours=24` entry. Which sources run,
+// how old a record must be, and the run time are settings the administrator controls
+// in System Settings -> Logs & Retention; this command only queues the due runs.
+Schedule::command('system-logs:prune-due')
+    ->everyMinute()
     ->onOneServer()
     ->withoutOverlapping();
 

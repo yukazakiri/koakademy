@@ -77,6 +77,7 @@ it('renders all refactored system management pages', function (string $url, stri
     'api page' => ['/administrators/system-management/api', 'administrators/system-management/api'],
     'pulse page' => ['/administrators/system-management/pulse', 'administrators/system-management/pulse'],
     'observability page' => ['/administrators/system-management/observability', 'administrators/system-management/observability'],
+    'log retention page' => ['/administrators/system-management/log-retention', 'administrators/system-management/log-retention'],
 ]);
 
 it('renders a focused settings home with only the sections the administrator can access', function (): void {

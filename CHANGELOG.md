@@ -1,5 +1,47 @@
 # Changelog
 
+## [1.28.0](https://github.com/yukazakiri/koakademy/compare/v1.27.0...v1.28.0) (2026-10-13)
+
+
+### Features
+
+* **administrators:** revamp faculty management with Re UI design system ([#383](https://github.com/yukazakiri/koakademy/issues/383)) ([fa3dc41](https://github.com/yukazakiri/koakademy/commit/fa3dc418345e1444fa58119289d7cda510bec316))
+* **ai-mcp:** add student lifecycle, cross-student transfer, and audit tools ([#378](https://github.com/yukazakiri/koakademy/issues/378)) ([d8f00c9](https://github.com/yukazakiri/koakademy/commit/d8f00c9f9072833b50e13dded0ffd444fafc49b8))
+* **ai:** integrate AI chat in admin shell with persistent widget and approval gates ([#376](https://github.com/yukazakiri/koakademy/issues/376)) ([7c8c6c3](https://github.com/yukazakiri/koakademy/commit/7c8c6c34aec2db4aefd082bf6052f1d2caa5a41a))
+* **enrollment:** Interactive Enrollment Pipeline Studio & Email Template Editor ([#379](https://github.com/yukazakiri/koakademy/issues/379)) ([bcec55d](https://github.com/yukazakiri/koakademy/commit/bcec55d712645ee520e5e5645afe575a2f70450e))
+* **features:** revamp local feature access and distribution ([#382](https://github.com/yukazakiri/koakademy/issues/382)) ([4642d64](https://github.com/yukazakiri/koakademy/commit/4642d64f969ce059a6eda59e421705809fd6a568))
+* **finance:** add email delivery and resend capability for tuition update requests ([#385](https://github.com/yukazakiri/koakademy/issues/385)) ([b6f2470](https://github.com/yukazakiri/koakademy/commit/b6f2470848a89dde0efdea06ba5c61d633e347df))
+* **finance:** revamp tuition update requests UI with Re UI and resolve unrecorded payments ([#384](https://github.com/yukazakiri/koakademy/issues/384)) ([74c1267](https://github.com/yukazakiri/koakademy/commit/74c12673d8bda919520873cb9d1653f5f6b8e2f3))
+* **library:** redesign library portal and admin center with ReUI and Spectrum UI ([#377](https://github.com/yukazakiri/koakademy/issues/377)) ([79abdcc](https://github.com/yukazakiri/koakademy/commit/79abdccf244f611176a9c7e63b3fa8281cabbfa1))
+* **observability:** install Laralyze for production ([0e9295a](https://github.com/yukazakiri/koakademy/commit/0e9295a69ccb71964c0131086574c9e372a7178a))
+* **observability:** purge or schedule cleanup of Pulse, Telescope, mail, and activity logs ([#381](https://github.com/yukazakiri/koakademy/issues/381)) ([7cb1471](https://github.com/yukazakiri/koakademy/commit/7cb14710a39974b08411b736a4b7ef9d0303b642))
+
+
+### Bug Fixes
+
+* **build:** raise Wayfinder memory limit and resolve PHP binary during asset build ([d6819d6](https://github.com/yukazakiri/koakademy/commit/d6819d6614af120b715aa88ff4b4efdffb676442))
+* **db:** alter student_enrollment.course_id varchar to bigint ([7ef0c57](https://github.com/yukazakiri/koakademy/commit/7ef0c573a8b36947d20c04532632bbcc7da1c435))
+* **db:** alter student_enrollment.student_id varchar to bigint ([59cff92](https://github.com/yukazakiri/koakademy/commit/59cff92363ec0ebf14b2a75627da8b6f053b4b7c))
+* **enrollments:** restore CAST join for varchar course_id to fix 500 on admin enrollments index ([7d3a7a8](https://github.com/yukazakiri/koakademy/commit/7d3a7a85cf26dcea47b8edc3171f1baeeedbcadb))
+* **observability:** allow Spatie super_admin/developer to view Laralyze ([54eb1e9](https://github.com/yukazakiri/koakademy/commit/54eb1e9e4526fb96aa0cd99050c1caff5faaad03))
+* **routing:** support loopback hosts in local dev and streamline dev stack ([#371](https://github.com/yukazakiri/koakademy/issues/371)) ([af04b68](https://github.com/yukazakiri/koakademy/commit/af04b68f8b22dad9897213258af370ecb6867b95))
+* **students:** optimize search persistence, resolver stability, and list reloads ([862e813](https://github.com/yukazakiri/koakademy/commit/862e81365b19234de2094cc556ef09f5235c0332))
+
+
+### Performance Improvements
+
+* optimize search, pagination, and data loading for admin enrollments, classes, and students ([fef100c](https://github.com/yukazakiri/koakademy/commit/fef100cb72e5b57309bb26befdf917085d4b2ffd))
+
+
+### Documentation
+
+* **observability:** document tool access and add admin sidebar group ([5e9b8ca](https://github.com/yukazakiri/koakademy/commit/5e9b8ca4612aa4a47e58ad4641f8cdd0d775d6d9))
+
+
+### Tests
+
+* remove non-behavioral tests and guard finance authorization ([#380](https://github.com/yukazakiri/koakademy/issues/380)) ([2d75aa9](https://github.com/yukazakiri/koakademy/commit/2d75aa9b17879875e6e0b6654c485ebe77c12d5f))
+
 ## [1.27.0](https://github.com/yukazakiri/koakademy/compare/v1.26.0...v1.27.0) (2026-10-07)
 
 

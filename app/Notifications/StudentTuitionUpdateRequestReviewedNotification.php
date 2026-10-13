@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Notifications;
 
 use App\Models\StudentTuitionUpdateRequest;
+use App\Models\User;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 final class StudentTuitionUpdateRequestReviewedNotification extends Notification implements ShouldQueue
@@ -21,7 +23,49 @@ final class StudentTuitionUpdateRequestReviewedNotification extends Notification
     /** @return list<string> */
     public function via(object $notifiable): array
     {
-        return ['database'];
+        return $notifiable instanceof User ? ['database', 'mail'] : ['mail'];
+    }
+
+    public function toMail(object $notifiable): MailMessage
+    {
+        $this->request->loadMissing(['resolvedTransaction', 'tuitionAdjustment']);
+        $resolved = $this->request->status === StudentTuitionUpdateRequest::StatusResolved;
+        $studentName = (string) ($notifiable->name ?? $notifiable->email ?? 'Student');
+        $period = "{$this->request->school_year} · ".($this->request->semester === 1 ? '1st' : '2nd').' Semester';
+
+        $subject = $resolved
+            ? "Tuition Update Request #{$this->request->id} Resolved ({$period})"
+            : "Tuition Update Request #{$this->request->id} Review Update ({$period})";
+
+        $mail = (new MailMessage)
+            ->subject($subject)
+            ->greeting("Hello {$studentName},");
+
+        if ($resolved) {
+            $mail->line("Your tuition update request (#{$this->request->id}) for {$period} has been reviewed and resolved by Finance.");
+            if ($this->request->resolvedTransaction) {
+                $tx = $this->request->resolvedTransaction;
+                $txLine = "Payment Transaction: #{$tx->transaction_number}";
+                if ($tx->invoicenumber) {
+                    $txLine .= " (OR: {$tx->invoicenumber})";
+                }
+                $mail->line($txLine);
+            }
+            if ($this->request->tuitionAdjustment) {
+                $adj = $this->request->tuitionAdjustment;
+                $mail->line("Linked Tuition Adjustment: #{$adj->id} ({$adj->reason})");
+            }
+        } else {
+            $mail->line("Your tuition update request (#{$this->request->id}) for {$period} was reviewed by Finance but could not be approved.");
+        }
+
+        if (filled($this->request->resolution_note)) {
+            $mail->line("Finance note: {$this->request->resolution_note}");
+        }
+
+        return $mail
+            ->action('View Tuition Requests', route('student.tuition.update-requests.index'))
+            ->line('Thank you for keeping your academic financial records up to date.');
     }
 
     /** @return array<string, mixed> */

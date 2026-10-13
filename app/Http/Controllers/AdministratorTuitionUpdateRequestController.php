@@ -196,6 +196,49 @@ final class AdministratorTuitionUpdateRequestController extends Controller
         return back()->with('flash', ['success' => 'Request rejected and the student was notified.']);
     }
 
+    public function resendEmail(
+        Request $request,
+        StudentTuitionUpdateRequest $tuitionUpdateRequest,
+        StudentTuitionUpdateRequestService $requests,
+    ): RedirectResponse {
+        abort_unless($request->user()?->can('manage_tuition_fees'), 403);
+        abort_unless(
+            in_array($tuitionUpdateRequest->status, [
+                StudentTuitionUpdateRequest::StatusResolved,
+                StudentTuitionUpdateRequest::StatusRejected,
+            ], true),
+            422,
+            'Only reviewed requests can have notifications resent.'
+        );
+
+        $tuitionUpdateRequest->loadMissing(['submitter', 'student', 'resolvedTransaction', 'tuitionAdjustment']);
+        $recipientUser = $tuitionUpdateRequest->submitter;
+        if (! $recipientUser instanceof User && $tuitionUpdateRequest->student?->user_id) {
+            $recipientUser = User::query()->find($tuitionUpdateRequest->student->user_id);
+        }
+
+        $recipientEmail = $recipientUser?->email ?? $tuitionUpdateRequest->student?->email;
+
+        abort_unless(filled($recipientEmail), 422, 'No student email address found for this request.');
+
+        $requests->sendReviewedNotification($tuitionUpdateRequest);
+
+        $tuitionUpdateRequest->events()->create([
+            'actor_user_id' => $request->user()?->id,
+            'event' => 'notification_email_resent',
+            'from_status' => $tuitionUpdateRequest->status,
+            'to_status' => $tuitionUpdateRequest->status,
+            'note' => "Resent review notification email to {$recipientEmail}.",
+            'metadata' => [
+                'recipient_email' => $recipientEmail,
+            ],
+        ]);
+
+        return back()->with('flash', [
+            'success' => "Review notification email resent to {$recipientEmail}.",
+        ]);
+    }
+
     /** @return array<string, mixed> */
     private function serialize(StudentTuitionUpdateRequest $request, bool $withTimeline = false): array
     {

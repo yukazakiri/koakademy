@@ -316,3 +316,84 @@ it('lets Finance resolve a request with a verified student payment when receipt 
         ->and($request->resolved_transaction_id)->toBe($transaction->id)
         ->and($request->receipt_number)->toBe('OR-ACTUAL-1000');
 });
+
+it('sends email and database notification and builds expected mail message', function (): void {
+    [$studentUser] = tuitionRequestStudent();
+    $finance = tuitionRequestFinanceUser();
+
+    $this->actingAs($studentUser)->post(route('student.tuition.update-requests.store'), [
+        'school_year' => '2026 - 2027', 'semester' => 1, 'concern_type' => 'other',
+        'details' => 'Reviewing my assessment breakdown.',
+    ]);
+    $request = StudentTuitionUpdateRequest::query()->sole();
+
+    $this->actingAs($finance)->post(route('administrators.finance.tuition-update-requests.claim', $request));
+    $this->actingAs($finance)->post(route('administrators.finance.tuition-update-requests.reject', $request), [
+        'resolution_note' => 'Please visit the cashier counter to complete the assessment correction.',
+    ]);
+
+    $request->refresh();
+    $notification = new StudentTuitionUpdateRequestReviewedNotification($request);
+
+    expect($notification->via($studentUser))->toBe(['database', 'mail']);
+
+    $mail = $notification->toMail($studentUser);
+    expect($mail->subject)->toContain('Tuition Update Request #'.$request->id)
+        ->and($mail->introLines)->toContain('Finance note: Please visit the cashier counter to complete the assessment correction.');
+});
+
+it('lets Finance resend email notifications on resolved requests', function (): void {
+    Notification::fake();
+    [$studentUser, $student, $enrollment] = tuitionRequestStudent();
+    $finance = tuitionRequestFinanceUser();
+
+    $this->actingAs($studentUser)->post(route('student.tuition.update-requests.store'), [
+        'school_year' => '2026 - 2027', 'semester' => 1, 'concern_type' => 'missing_payment',
+        'receipt_number' => 'OR-2026-777', 'details' => 'Cashier payment not reflected.',
+    ]);
+    $request = StudentTuitionUpdateRequest::query()->sole();
+
+    $transaction = Transaction::query()->create([
+        'description' => 'Tuition payment', 'status' => 'paid', 'transaction_date' => now(),
+        'settlements' => ['tuition_fee' => 1000], 'invoicenumber' => 'OR-2026-777',
+    ]);
+    StudentTransaction::query()->create([
+        'student_id' => $student->id, 'student_enrollment_id' => $enrollment->id, 'transaction_id' => $transaction->id, 'amount' => 1000, 'status' => 'paid',
+    ]);
+
+    $this->actingAs($finance)->post(route('administrators.finance.tuition-update-requests.claim', $request));
+    $this->actingAs($finance)->post(route('administrators.finance.tuition-update-requests.resolve-payment', $request), [
+        'transaction_id' => $transaction->id, 'resolution_note' => 'Payment verified.',
+    ]);
+
+    // Resend email
+    $this->actingAs($finance)
+        ->post(route('administrators.finance.tuition-update-requests.resend-email', $request))
+        ->assertRedirect()
+        ->assertSessionHas('flash.success');
+
+    Notification::assertSentTo($studentUser, StudentTuitionUpdateRequestReviewedNotification::class);
+
+    expect($request->refresh()->events()->where('event', 'notification_email_resent')->count())->toBe(1);
+});
+
+it('prevents non-finance users or pending requests from resending notifications', function (): void {
+    [$studentUser] = tuitionRequestStudent();
+    $finance = tuitionRequestFinanceUser();
+
+    $this->actingAs($studentUser)->post(route('student.tuition.update-requests.store'), [
+        'school_year' => '2026 - 2027', 'semester' => 1, 'concern_type' => 'other',
+        'details' => 'Reviewing my assessment breakdown.',
+    ]);
+    $request = StudentTuitionUpdateRequest::query()->sole();
+
+    // Student cannot resend
+    $this->actingAs($studentUser)
+        ->post(route('administrators.finance.tuition-update-requests.resend-email', $request))
+        ->assertForbidden();
+
+    // Pending request cannot resend
+    $this->actingAs($finance)
+        ->post(route('administrators.finance.tuition-update-requests.resend-email', $request))
+        ->assertStatus(422);
+});

@@ -3,6 +3,7 @@ import {
     claim,
     recordAndResolvePayment,
     reject,
+    resendEmail,
     resolveAdjustment,
     resolvePayment,
     index as tuitionUpdateRequestsIndex,
@@ -31,6 +32,7 @@ import {
     Info,
     Link2,
     Loader2,
+    Mail,
     PlusCircle,
     Receipt,
     ReceiptText,
@@ -140,6 +142,9 @@ export default function TuitionUpdateRequestShow({
     // Form 4: Reject Request
     const rejectionForm = useForm({ resolution_note: "" });
 
+    // Resend Email Form
+    const resendForm = useForm({});
+
     // Active resolution tab: default to "record" if no matching transaction, else "link"
     const [paymentResolveMode, setPaymentResolveMode] = useState<"link" | "record">(matching_transactions.length === 0 ? "record" : "link");
 
@@ -165,6 +170,10 @@ export default function TuitionUpdateRequestShow({
     function handleReject(event: React.FormEvent) {
         event.preventDefault();
         rejectionForm.post(reject.url(request.id), { preserveScroll: true });
+    }
+
+    function handleResendEmail() {
+        resendForm.post(resendEmail.url(request.id), { preserveScroll: true });
     }
 
     const currentStatus = statusMeta[request.status] ?? { label: request.status, variant: "outline" as const };
@@ -198,6 +207,13 @@ export default function TuitionUpdateRequestShow({
                         <Button onClick={claimRequest}>
                             <ClipboardCheck className="mr-2 size-4" />
                             Claim for review
+                        </Button>
+                    )}
+
+                    {can_manage && ["resolved", "rejected"].includes(request.status) && (
+                        <Button variant="outline" size="sm" disabled={resendForm.processing} onClick={handleResendEmail}>
+                            {resendForm.processing ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : <Mail className="mr-1.5 size-3.5" />}
+                            Resend Email Notification
                         </Button>
                     )}
                 </header>
@@ -620,9 +636,21 @@ export default function TuitionUpdateRequestShow({
                             <Frame className="border-success/30">
                                 <FramePanel>
                                     <div className="flex flex-col gap-3">
-                                        <div className="text-foreground flex items-center gap-2 font-semibold">
-                                            <CheckCircle2 className="text-success size-5" />
-                                            <span>Request Successfully Resolved</span>
+                                        <div className="flex flex-wrap items-center justify-between gap-3">
+                                            <div className="text-foreground flex items-center gap-2 font-semibold">
+                                                <CheckCircle2 className="text-success size-5" />
+                                                <span>Request Successfully Resolved</span>
+                                            </div>
+                                            {can_manage && (
+                                                <Button variant="outline" size="sm" disabled={resendForm.processing} onClick={handleResendEmail}>
+                                                    {resendForm.processing ? (
+                                                        <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                                                    ) : (
+                                                        <Mail className="mr-1.5 size-3.5" />
+                                                    )}
+                                                    Resend Email Notification
+                                                </Button>
+                                            )}
                                         </div>
                                         <p className="text-muted-foreground text-sm whitespace-pre-wrap">{request.resolution_note}</p>
                                         <div className="text-muted-foreground flex flex-wrap gap-4 border-t pt-3 text-xs">

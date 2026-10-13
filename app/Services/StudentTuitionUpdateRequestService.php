@@ -17,6 +17,7 @@ use App\Notifications\StudentTuitionUpdateRequestReviewedNotification;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -243,6 +244,22 @@ final class StudentTuitionUpdateRequestService
             ->first();
     }
 
+    public function sendReviewedNotification(StudentTuitionUpdateRequest $request): void
+    {
+        $request->loadMissing(['submitter', 'student']);
+        $recipient = $request->submitter;
+        if (! $recipient instanceof User && $request->student?->user_id) {
+            $recipient = User::query()->find($request->student->user_id);
+        }
+
+        if ($recipient instanceof User) {
+            $recipient->notify(new StudentTuitionUpdateRequestReviewedNotification($request));
+        } elseif (filled($request->student?->email)) {
+            Notification::route('mail', $request->student->email)
+                ->notify(new StudentTuitionUpdateRequestReviewedNotification($request));
+        }
+    }
+
     /** @return array{0: StudentEnrollment|null, 1: StudentTuition|null} */
     private function periodRecords(Student $student, string $schoolYear, int $semester): array
     {
@@ -318,10 +335,7 @@ final class StudentTuitionUpdateRequestService
     private function notifyAfterCommit(StudentTuitionUpdateRequest $request): void
     {
         DB::afterCommit(function () use ($request): void {
-            $request->loadMissing('submitter');
-            if ($request->submitter instanceof User) {
-                $request->submitter->notify(new StudentTuitionUpdateRequestReviewedNotification($request));
-            }
+            $this->sendReviewedNotification($request);
         });
     }
 

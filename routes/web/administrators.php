@@ -208,6 +208,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/finance/tuition-update-requests/{tuitionUpdateRequest}/record-and-resolve-payment', [AdministratorTuitionUpdateRequestController::class, 'recordAndResolvePayment'])->whereNumber('tuitionUpdateRequest')->middleware('throttle:30,1')->name('finance.tuition-update-requests.record-and-resolve-payment');
         Route::post('/finance/tuition-update-requests/{tuitionUpdateRequest}/resolve-adjustment', [AdministratorTuitionUpdateRequestController::class, 'resolveAdjustment'])->whereNumber('tuitionUpdateRequest')->middleware('throttle:30,1')->name('finance.tuition-update-requests.resolve-adjustment');
         Route::post('/finance/tuition-update-requests/{tuitionUpdateRequest}/reject', [AdministratorTuitionUpdateRequestController::class, 'reject'])->whereNumber('tuitionUpdateRequest')->middleware('throttle:30,1')->name('finance.tuition-update-requests.reject');
+        Route::post('/finance/tuition-update-requests/{tuitionUpdateRequest}/resend-email', [AdministratorTuitionUpdateRequestController::class, 'resendEmail'])->whereNumber('tuitionUpdateRequest')->middleware('throttle:30,1')->name('finance.tuition-update-requests.resend-email');
         Route::post('/finance/tuition-adjustments/resolve', [AdministratorTuitionAdjustmentController::class, 'resolve'])
             ->middleware('throttle:120,1')
             ->name('finance.tuition-adjustments.resolve');

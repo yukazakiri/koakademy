@@ -1,9 +1,32 @@
 import AdminLayout from "@/components/administrators/admin-layout";
+import { Alert, AlertDescription, AlertTitle } from "@/components/reui/alert";
+import { Badge } from "@/components/reui/badge";
+import { IconTile } from "@/components/reui/icon-tile";
+import {
+    Timeline,
+    TimelineContent,
+    TimelineDate,
+    TimelineHeader,
+    TimelineIndicator,
+    TimelineItem,
+    TimelineSeparator,
+    TimelineTitle,
+} from "@/components/reui/timeline";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
@@ -17,26 +40,41 @@ import type { User } from "@/types/user";
 import { Head, Link, router, useForm } from "@inertiajs/react";
 import {
     AlertTriangle,
+    ArrowLeft,
     BookOpen,
+    Building2,
+    Calendar,
     CalendarClock,
     CheckCircle2,
+    Clock,
+    Copy,
     ExternalLink,
+    FileText,
     GraduationCap,
+    History,
     IdCard,
     KeyRound,
     Mail,
     Megaphone,
     Phone,
+    Plus,
     Save,
+    Search,
+    Send,
     Trash2,
+    UserCheck,
     UserCog,
+    UserRound,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import { route } from "ziggy-js";
 
 type Option = { value: string; label: string };
 
 type ScheduleSlot = {
+    start_time?: string;
+    end_time?: string;
     time_range: string;
     room: { id: number; name: string };
 };
@@ -77,8 +115,10 @@ type FacultyDetail = {
     email: string;
     phone_number: string | null;
     department: string | null;
+    position: string | null;
     office_hours: string | null;
     birth_date: string | null;
+    date_employed: string | null;
     address_line1: string | null;
     biography: string | null;
     education: string | null;
@@ -87,6 +127,8 @@ type FacultyDetail = {
     status: string | null;
     gender: string | null;
     age: number | null;
+    created_at: string;
+    updated_at: string;
     classes: ClassRow[];
     current_classes: ClassRow[];
     profile_completion: {
@@ -152,59 +194,37 @@ interface FacultyShowProps {
     };
 }
 
-function statusLabel(status: string | null | undefined): string {
-    if (!status) return "Unknown";
-    if (status === "active") return "Active";
-    if (status === "inactive") return "Inactive";
-    if (status === "on_leave") return "On Leave";
-
-    return status;
-}
-
-function formatSchedule(schedule: WeeklySchedule | null | undefined) {
-    if (!schedule) return <span className="text-muted-foreground">TBA</span>;
-
-    const entries = Object.entries(schedule)
-        .flatMap(([day, slots]) => slots.map((slot) => ({ day, slot })))
-        .filter((entry) => entry.slot);
-
-    if (entries.length === 0) return <span className="text-muted-foreground">TBA</span>;
-
-    return (
-        <div className="space-y-1">
-            {entries.map((entry, index) => (
-                <div key={`${entry.day}-${index}`} className="text-muted-foreground flex items-center gap-2 text-xs">
-                    <Badge variant="outline" className="h-5 px-1.5 py-0 font-mono text-[10px]">
-                        {entry.day.slice(0, 3).toUpperCase()}
-                    </Badge>
-                    <span>{entry.slot.time_range}</span>
-                    <span>{entry.slot.room.name}</span>
-                </div>
-            ))}
-        </div>
-    );
-}
-
 export default function AdministratorFacultyShow({ user, faculty, assignment_planner, options }: FacultyShowProps) {
+    const [activeTab, setActiveTab] = useState("overview");
     const [assignmentSearch, setAssignmentSearch] = useState("");
+    const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+    const [unassignModal, setUnassignModal] = useState<{ open: boolean; classId: number; title: string }>({
+        open: false,
+        classId: 0,
+        title: "",
+    });
 
     const idForm = useForm({ faculty_id_number: faculty.faculty_id_number ?? "" });
+
     const assignmentForm = useForm({
         class_ids: [] as number[],
         allow_reassignment: false,
         notify_faculty: true,
     });
+
     const portalForm = useForm({
         mode: faculty.portal_account.status === "not_linked" ? "create" : "repair",
         role: faculty.portal_account.role ?? options.faculty_roles[0]?.value ?? "instructor",
         send_reset_link: true,
     });
+
     const noticeForm = useForm({
         title: "",
         message: "",
         priority: "normal",
         action_url: "",
     });
+
     const deadlineForm = useForm({
         title: "",
         description: "",
@@ -214,6 +234,55 @@ export default function AdministratorFacultyShow({ user, faculty, assignment_pla
         class_id: "none",
     });
 
+    const copyToClipboard = (text: string, label: string) => {
+        navigator.clipboard.writeText(text);
+        toast.success(`${label} copied to clipboard`);
+    };
+
+    const totalEnrolledStudents = useMemo(() => {
+        return faculty.current_classes.reduce((sum, item) => sum + (item.student_count || 0), 0);
+    }, [faculty.current_classes]);
+
+    const weeklyScheduleByDay = useMemo(() => {
+        const days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+        const dayLabels: Record<string, string> = {
+            monday: "Monday",
+            tuesday: "Tuesday",
+            wednesday: "Wednesday",
+            thursday: "Thursday",
+            friday: "Friday",
+            saturday: "Saturday",
+        };
+
+        const result: Record<string, { class: ClassRow; slot: ScheduleSlot }[]> = {
+            monday: [],
+            tuesday: [],
+            wednesday: [],
+            thursday: [],
+            friday: [],
+            saturday: [],
+        };
+
+        faculty.current_classes.forEach((cls) => {
+            if (cls.schedule) {
+                Object.entries(cls.schedule).forEach(([day, slots]) => {
+                    const normalizedDay = day.toLowerCase();
+                    if (result[normalizedDay] && Array.isArray(slots)) {
+                        slots.forEach((slot) => {
+                            result[normalizedDay].push({ class: cls, slot });
+                        });
+                    }
+                });
+            }
+        });
+
+        return { days, dayLabels, schedule: result };
+    }, [faculty.current_classes]);
+
+    const hasAnySchedule = useMemo(() => {
+        return Object.values(weeklyScheduleByDay.schedule).some((slots) => slots.length > 0);
+    }, [weeklyScheduleByDay]);
+
     const filteredPlannerClasses = useMemo(() => {
         const query = assignmentSearch.trim().toLowerCase();
         if (!query) return assignment_planner.classes;
@@ -222,7 +291,8 @@ export default function AdministratorFacultyShow({ user, faculty, assignment_pla
             return (
                 item.label.toLowerCase().includes(query) ||
                 item.subject_code.toLowerCase().includes(query) ||
-                item.section.toLowerCase().includes(query)
+                item.section.toLowerCase().includes(query) ||
+                (item.subject_title && item.subject_title.toLowerCase().includes(query))
             );
         });
     }, [assignmentSearch, assignment_planner.classes]);
@@ -246,6 +316,7 @@ export default function AdministratorFacultyShow({ user, faculty, assignment_pla
         assignmentForm.post(route("administrators.faculties.assign-classes", faculty.id), {
             preserveScroll: true,
             onSuccess: () => {
+                toast.success("Classes assigned successfully");
                 assignmentForm.reset("class_ids", "allow_reassignment");
                 setAssignmentSearch("");
             },
@@ -253,288 +324,728 @@ export default function AdministratorFacultyShow({ user, faculty, assignment_pla
     };
 
     const submitPortal = () => {
-        portalForm.post(route("administrators.faculties.portal-account", faculty.id), { preserveScroll: true });
+        portalForm.post(route("administrators.faculties.portal-account", faculty.id), {
+            preserveScroll: true,
+            onSuccess: () => toast.success("Faculty portal access configured"),
+        });
     };
 
     const submitNotice = () => {
         noticeForm.post(route("administrators.faculties.notice", faculty.id), {
             preserveScroll: true,
-            onSuccess: () => noticeForm.reset(),
+            onSuccess: () => {
+                toast.success("Notice sent to faculty portal");
+                noticeForm.reset();
+            },
         });
     };
 
     const submitDeadline = () => {
-        deadlineForm.transform((data) => ({
-            ...data,
-            class_id: data.class_id === "none" ? null : Number(data.class_id),
+        deadlineForm.transform((d) => ({
+            ...d,
+            class_id: d.class_id === "none" ? null : Number(d.class_id),
         }));
 
         deadlineForm.post(route("administrators.faculties.deadlines.store", faculty.id), {
             preserveScroll: true,
-            onSuccess: () => deadlineForm.reset(),
+            onSuccess: () => {
+                toast.success("Faculty deadline created");
+                deadlineForm.reset();
+            },
         });
     };
 
     const submitFacultyId = () => {
-        idForm.put(route("administrators.faculties.update-id-number", faculty.id), { preserveScroll: true });
+        idForm.put(route("administrators.faculties.update-id-number", faculty.id), {
+            preserveScroll: true,
+            onSuccess: () => toast.success("Faculty ID number updated"),
+        });
     };
 
-    const removeClass = (classId: number) => {
-        if (!confirm("Unassign this class from the faculty?")) return;
+    const confirmUnassign = () => {
+        if (!unassignModal.classId) return;
 
-        router.delete(route("administrators.faculties.classes.unassign", { faculty: faculty.id, class: classId }), { preserveScroll: true });
+        router.delete(route("administrators.faculties.classes.unassign", { faculty: faculty.id, class: unassignModal.classId }), {
+            preserveScroll: true,
+            onSuccess: () => {
+                toast.success("Class unassigned from faculty");
+                setUnassignModal({ open: false, classId: 0, title: "" });
+            },
+        });
     };
 
-    const deleteFaculty = () => {
-        if (!confirm(`Delete ${faculty.name}? This cannot be undone.`)) return;
-
-        router.delete(route("administrators.faculties.destroy", faculty.id));
+    const confirmDeleteFaculty = () => {
+        router.delete(route("administrators.faculties.destroy", faculty.id), {
+            onSuccess: () => toast.success(`Faculty profile ${faculty.name} deleted`),
+        });
     };
+
+    const statusBadge =
+        faculty.status === "active"
+            ? {
+                  variant: "success-light" as const,
+                  dot: "bg-success",
+                  label: "Active",
+              }
+            : faculty.status === "on_leave"
+              ? {
+                    variant: "warning-light" as const,
+                    dot: "bg-warning",
+                    label: "On Leave",
+                }
+              : {
+                    variant: "invert-light" as const,
+                    dot: "bg-muted-foreground",
+                    label: "Inactive",
+                };
 
     return (
-        <AdminLayout user={user} title="Faculty Details">
-            <Head title={`Faculty - ${faculty.name}`} />
+        <AdminLayout user={user} title={`Faculty - ${faculty.name}`}>
+            <Head title={`Administrators - ${faculty.name} (Faculty Details)`} />
 
-            <div className="space-y-6">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                        <div className="text-muted-foreground flex items-center gap-2 text-sm">
-                            <Link href={route("administrators.faculties.index")} className="hover:text-foreground transition-colors">
-                                Faculty Operations
-                            </Link>
-                            <span>/</span>
-                            <span className="text-foreground font-medium">{faculty.name}</span>
-                        </div>
-                        <h2 className="mt-2 text-2xl font-bold tracking-tight">{faculty.name}</h2>
-                        <p className="text-muted-foreground">Teaching load, portal access, notices, and profile records.</p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                        <Button asChild variant="outline" size="sm">
-                            <Link href={route("administrators.faculties.edit", faculty.id)}>
-                                <UserCog className="mr-2 h-4 w-4" />
-                                Edit Profile
-                            </Link>
-                        </Button>
-                        <Button asChild variant="outline" size="sm">
-                            <a href={faculty.filament.view_url} target="_blank" rel="noreferrer">
-                                <ExternalLink className="mr-2 h-4 w-4" />
-                                Filament
-                            </a>
-                        </Button>
-                        <Button variant="destructive" size="sm" onClick={deleteFaculty}>
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Delete
-                        </Button>
-                    </div>
-                </div>
+            <div className="flex flex-col gap-6">
+                {/* Profile Hero Header Card */}
+                <Card className="border-border/80 overflow-hidden shadow-xs">
+                    <div className="from-primary/10 via-primary/5 to-muted h-24 bg-gradient-to-r" />
 
-                <div className="grid gap-4 md:grid-cols-4">
-                    <MetricCard
-                        title="Current load"
-                        value={`${faculty.current_classes.length}`}
-                        detail={faculty.workload_summary.label}
-                        icon={BookOpen}
-                    />
-                    <MetricCard
-                        title="Portal"
-                        value={faculty.portal_account.label}
-                        detail={faculty.portal_account.role_label ?? "No role"}
-                        icon={KeyRound}
-                    />
-                    <MetricCard
-                        title="Profile"
-                        value={`${faculty.profile_completion.percent}%`}
-                        detail={`${faculty.profile_completion.completed}/${faculty.profile_completion.total} fields`}
-                        icon={CheckCircle2}
-                    />
-                    <MetricCard
-                        title="Status"
-                        value={statusLabel(faculty.status)}
-                        detail={faculty.department ?? "No department"}
-                        icon={GraduationCap}
-                    />
-                </div>
+                    <CardContent className="relative px-6 pt-0 pb-6">
+                        <div className="-mt-12 mb-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                            <div className="flex items-end gap-4">
+                                <div className="relative">
+                                    <Avatar className="border-background ring-border h-24 w-24 border-4 shadow-xs ring-1">
+                                        <AvatarImage src={faculty.avatar_url ?? undefined} alt={faculty.name} />
+                                        <AvatarFallback className="text-2xl font-bold">
+                                            {(faculty.name || "?").slice(0, 2).toUpperCase()}
+                                        </AvatarFallback>
+                                    </Avatar>
+                                    <span
+                                        className={cn("ring-background absolute right-1 bottom-1 h-4 w-4 rounded-full ring-2", statusBadge.dot)}
+                                        title={`Status: ${statusBadge.label}`}
+                                    />
+                                </div>
 
-                {faculty.recommended_actions.length > 0 ? (
-                    <div className="grid gap-3 md:grid-cols-3">
-                        {faculty.recommended_actions.map((action) => (
-                            <Card key={action.title} className="border-yellow-200 bg-yellow-50/40">
-                                <CardContent className="flex gap-3 p-4">
-                                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-700" />
-                                    <div>
-                                        <div className="text-sm font-medium">{action.title}</div>
-                                        <div className="text-muted-foreground text-xs">{action.description}</div>
+                                <div className="mb-1 flex flex-col gap-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <h1 className="text-2xl font-bold tracking-tight">{faculty.name}</h1>
+                                        <Badge variant={statusBadge.variant} size="xs" radius="full" className="gap-1">
+                                            <span className={cn("h-1.5 w-1.5 rounded-full", statusBadge.dot)} />
+                                            {statusBadge.label}
+                                        </Badge>
                                     </div>
-                                </CardContent>
-                            </Card>
+                                    <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
+                                        <span>{faculty.position || "Faculty Member"}</span>
+                                        <span>&bull;</span>
+                                        <span className="text-foreground flex items-center gap-1 font-medium">
+                                            <Building2 className="text-muted-foreground h-3.5 w-3.5" />
+                                            {faculty.department || "Unassigned Department"}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Header Buttons */}
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Link
+                                    href={route("administrators.faculties.edit", faculty.id)}
+                                    className={buttonVariants({ variant: "outline", size: "sm" })}
+                                >
+                                    <UserCog className="mr-1.5 h-4 w-4" /> Edit Profile
+                                </Link>
+
+                                <a
+                                    href={faculty.filament.view_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className={buttonVariants({ variant: "outline", size: "sm" })}
+                                >
+                                    <ExternalLink className="mr-1.5 h-4 w-4" /> Filament
+                                </a>
+
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                    onClick={() => setDeleteModalOpen(true)}
+                                >
+                                    <Trash2 className="mr-1.5 h-4 w-4" /> Delete
+                                </Button>
+                            </div>
+                        </div>
+
+                        <Separator className="my-4" />
+
+                        {/* Quick Contact & Credentials Strip */}
+                        <div className="text-muted-foreground flex flex-wrap items-center justify-between gap-4 text-xs">
+                            <div className="flex flex-wrap items-center gap-4">
+                                {faculty.faculty_id_number ? (
+                                    <div className="flex items-center gap-1.5">
+                                        <IdCard className="text-muted-foreground h-3.5 w-3.5" />
+                                        <span className="text-foreground font-mono font-medium">#{faculty.faculty_id_number}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => copyToClipboard(faculty.faculty_id_number ?? "", "Faculty ID")}
+                                            className="hover:text-foreground cursor-pointer p-0.5"
+                                            title="Copy ID"
+                                        >
+                                            <Copy className="h-3 w-3" />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <span className="text-warning font-medium">No ID Assigned</span>
+                                )}
+
+                                <div className="flex items-center gap-1.5">
+                                    <Mail className="text-muted-foreground h-3.5 w-3.5" />
+                                    <a href={`mailto:${faculty.email}`} className="text-foreground hover:underline">
+                                        {faculty.email}
+                                    </a>
+                                    <button
+                                        type="button"
+                                        onClick={() => copyToClipboard(faculty.email, "Email")}
+                                        className="hover:text-foreground cursor-pointer p-0.5"
+                                        title="Copy email"
+                                    >
+                                        <Copy className="h-3 w-3" />
+                                    </button>
+                                </div>
+
+                                {faculty.phone_number ? (
+                                    <div className="flex items-center gap-1.5">
+                                        <Phone className="text-muted-foreground h-3.5 w-3.5" />
+                                        <a href={`tel:${faculty.phone_number}`} className="text-foreground hover:underline">
+                                            {faculty.phone_number}
+                                        </a>
+                                    </div>
+                                ) : null}
+
+                                {faculty.office_hours ? (
+                                    <div className="flex items-center gap-1.5">
+                                        <Clock className="text-muted-foreground h-3.5 w-3.5" />
+                                        <span className="text-foreground max-w-64 truncate">{faculty.office_hours}</span>
+                                    </div>
+                                ) : null}
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <Link
+                                    href={route("administrators.faculties.index")}
+                                    className="text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                                >
+                                    <ArrowLeft className="h-3.5 w-3.5" /> Back to Directory
+                                </Link>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* KPI Metrics Row with ReUI IconTile */}
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between pb-2">
+                            <CardTitle className="text-muted-foreground text-xs font-medium tracking-wider uppercase">Active Teaching Load</CardTitle>
+                            <IconTile variant="soft" size="sm" className="text-primary">
+                                <BookOpen />
+                            </IconTile>
+                        </CardHeader>
+                        <CardContent className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2">
+                                <span className="text-2xl font-bold tracking-tight tabular-nums">{faculty.current_classes.length}</span>
+                                <Badge variant="secondary" size="xs" radius="full" className="capitalize">
+                                    {faculty.workload_summary.label}
+                                </Badge>
+                            </div>
+                            <div className="text-muted-foreground text-xs">
+                                <span className="text-foreground font-medium tabular-nums">{totalEnrolledStudents}</span> total student(s) enrolled
+                                across classes
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between pb-2">
+                            <CardTitle className="text-muted-foreground text-xs font-medium tracking-wider uppercase">Portal Account</CardTitle>
+                            <IconTile variant="soft" size="sm" className="text-success">
+                                <KeyRound />
+                            </IconTile>
+                        </CardHeader>
+                        <CardContent className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2">
+                                <span className="truncate text-base font-bold tracking-tight capitalize">{faculty.portal_account.label}</span>
+                            </div>
+                            <div className="text-muted-foreground text-xs">Role: {faculty.portal_account.role_label || "No role specified"}</div>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between pb-2">
+                            <CardTitle className="text-muted-foreground text-xs font-medium tracking-wider uppercase">Profile Quality</CardTitle>
+                            <IconTile variant="soft" size="sm" className="text-info">
+                                <CheckCircle2 />
+                            </IconTile>
+                        </CardHeader>
+                        <CardContent className="flex flex-col gap-1.5">
+                            <div className="flex items-center justify-between">
+                                <span className="text-2xl font-bold tracking-tight tabular-nums">{faculty.profile_completion.percent}%</span>
+                                <span className="text-muted-foreground text-xs tabular-nums">
+                                    {faculty.profile_completion.completed}/{faculty.profile_completion.total} fields
+                                </span>
+                            </div>
+                            <Progress value={faculty.profile_completion.percent} className="h-1.5" />
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between pb-2">
+                            <CardTitle className="text-muted-foreground text-xs font-medium tracking-wider uppercase">Tasks & Notices</CardTitle>
+                            <IconTile variant="soft" size="sm" className="text-warning">
+                                <CalendarClock />
+                            </IconTile>
+                        </CardHeader>
+                        <CardContent className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2">
+                                <span className="text-2xl font-bold tracking-tight tabular-nums">{faculty.deadlines.length}</span>
+                                <span className="text-muted-foreground text-xs">active deadlines</span>
+                            </div>
+                            <div className="text-muted-foreground text-xs">
+                                <span className="text-foreground font-medium tabular-nums">{faculty.recent_notifications.length}</span> recent portal
+                                notices
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+
+                {/* ReUI Alert Banners for Recommended Actions */}
+                {faculty.recommended_actions.length > 0 ? (
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {faculty.recommended_actions.map((act) => (
+                            <Alert key={act.title} variant="warning">
+                                <AlertTriangle />
+                                <AlertTitle>{act.title}</AlertTitle>
+                                <AlertDescription>{act.description}</AlertDescription>
+                            </Alert>
                         ))}
                     </div>
                 ) : null}
 
-                <Tabs defaultValue="overview" className="w-full">
-                    <TabsList className="grid w-full grid-cols-5">
-                        <TabsTrigger value="overview">Overview</TabsTrigger>
-                        <TabsTrigger value="load">Teaching load</TabsTrigger>
-                        <TabsTrigger value="portal">Portal access</TabsTrigger>
-                        <TabsTrigger value="notices">Notices</TabsTrigger>
-                        <TabsTrigger value="records">Records</TabsTrigger>
+                {/* Interactive Workspace Tabs */}
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                    <TabsList className="bg-muted/60 grid h-auto w-full grid-cols-2 p-1 sm:grid-cols-6">
+                        <TabsTrigger value="overview" className="gap-1.5 py-2 text-xs sm:text-sm">
+                            <UserRound className="h-4 w-4 shrink-0" />
+                            <span>Overview</span>
+                        </TabsTrigger>
+
+                        <TabsTrigger value="load" className="gap-1.5 py-2 text-xs sm:text-sm">
+                            <BookOpen className="h-4 w-4 shrink-0" />
+                            <span>Teaching Load</span>
+                            <Badge variant="secondary" size="xs" radius="full" className="ml-1 tabular-nums">
+                                {faculty.current_classes.length}
+                            </Badge>
+                        </TabsTrigger>
+
+                        <TabsTrigger value="portal" className="gap-1.5 py-2 text-xs sm:text-sm">
+                            <KeyRound className="h-4 w-4 shrink-0" />
+                            <span>Portal Access</span>
+                        </TabsTrigger>
+
+                        <TabsTrigger value="notices" className="gap-1.5 py-2 text-xs sm:text-sm">
+                            <Megaphone className="h-4 w-4 shrink-0" />
+                            <span>Notices</span>
+                            {faculty.recent_notifications.length > 0 ? (
+                                <Badge variant="secondary" size="xs" radius="full" className="ml-1 tabular-nums">
+                                    {faculty.recent_notifications.length}
+                                </Badge>
+                            ) : null}
+                        </TabsTrigger>
+
+                        <TabsTrigger value="deadlines" className="gap-1.5 py-2 text-xs sm:text-sm">
+                            <CalendarClock className="h-4 w-4 shrink-0" />
+                            <span>Deadlines</span>
+                            {faculty.deadlines.length > 0 ? (
+                                <Badge variant="secondary" size="xs" radius="full" className="ml-1 tabular-nums">
+                                    {faculty.deadlines.length}
+                                </Badge>
+                            ) : null}
+                        </TabsTrigger>
+
+                        <TabsTrigger value="dossier" className="gap-1.5 py-2 text-xs sm:text-sm">
+                            <FileText className="h-4 w-4 shrink-0" />
+                            <span>Dossier</span>
+                        </TabsTrigger>
                     </TabsList>
 
-                    <TabsContent value="overview" className="mt-4 grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+                    {/* Tab 1: Overview & Schedule Timetable */}
+                    <TabsContent value="overview" className="mt-4 flex flex-col gap-4">
+                        {/* Weekly Schedule Visualizer */}
                         <Card>
-                            <CardHeader>
-                                <div className="flex items-center gap-3">
-                                    <Avatar className="h-14 w-14">
-                                        <AvatarImage src={faculty.avatar_url ?? undefined} alt={faculty.name} />
-                                        <AvatarFallback>{faculty.name.slice(0, 2).toUpperCase()}</AvatarFallback>
-                                    </Avatar>
-                                    <div className="min-w-0">
-                                        <CardTitle className="truncate">{faculty.name}</CardTitle>
-                                        <CardDescription className="truncate">{faculty.email}</CardDescription>
+                            <CardHeader className="bg-muted/10 border-b pb-3">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                    <div>
+                                        <CardTitle className="flex items-center gap-2 text-base">
+                                            <IconTile variant="soft" size="xs" className="text-primary">
+                                                <Calendar />
+                                            </IconTile>
+                                            Weekly Teaching Schedule
+                                        </CardTitle>
+                                        <CardDescription>Scheduled class meeting times and room allocations for the active term.</CardDescription>
                                     </div>
-                                </div>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                                <InfoRow icon={IdCard} label="Faculty ID" value={faculty.faculty_id_number ?? "Missing"} />
-                                <InfoRow icon={Mail} label="Email" value={faculty.email} />
-                                <InfoRow icon={Phone} label="Phone" value={faculty.phone_number ?? "None"} />
-                                <InfoRow icon={CalendarClock} label="Office hours" value={faculty.office_hours ?? "Not listed"} />
-                                <Separator />
-                                <div className="space-y-2">
-                                    <div className="flex items-center justify-between text-sm">
-                                        <span className="font-medium">Profile completion</span>
-                                        <span className="text-muted-foreground">{faculty.profile_completion.percent}%</span>
-                                    </div>
-                                    <Progress value={faculty.profile_completion.percent} className="h-2" />
-                                    {faculty.profile_completion.missing.length > 0 ? (
-                                        <div className="text-muted-foreground text-xs">Missing: {faculty.profile_completion.missing.join(", ")}</div>
-                                    ) : null}
-                                </div>
-                            </CardContent>
-                        </Card>
-
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Quick Corrections</CardTitle>
-                                <CardDescription>Small administrative repairs that do not require opening the full edit form.</CardDescription>
-                            </CardHeader>
-                            <CardContent className="grid gap-4 md:grid-cols-[1fr_auto]">
-                                <div className="space-y-2">
-                                    <Label htmlFor="faculty_id_number">Faculty ID Number</Label>
-                                    <Input
-                                        id="faculty_id_number"
-                                        value={idForm.data.faculty_id_number}
-                                        onChange={(event) => idForm.setData("faculty_id_number", event.target.value)}
-                                    />
-                                    {idForm.errors.faculty_id_number ? (
-                                        <p className="text-sm text-red-500">{idForm.errors.faculty_id_number}</p>
-                                    ) : null}
-                                </div>
-                                <div className="flex items-end">
-                                    <Button onClick={submitFacultyId} disabled={idForm.processing}>
-                                        <Save className="mr-2 h-4 w-4" />
-                                        Save ID
+                                    <Button variant="outline" size="sm" onClick={() => setActiveTab("load")} className="h-8 text-xs">
+                                        <Plus className="mr-1 h-3.5 w-3.5" /> Manage Teaching Load
                                     </Button>
                                 </div>
-                            </CardContent>
-                        </Card>
-                    </TabsContent>
-
-                    <TabsContent value="load" className="mt-4 space-y-4">
-                        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle>Current Classes</CardTitle>
-                                    <CardDescription>Classes assigned in the active academic period.</CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <ClassTable classes={faculty.current_classes} onUnassign={removeClass} />
-                                </CardContent>
-                            </Card>
-
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle>Assignment Planner</CardTitle>
-                                    <CardDescription>Select classes, review warnings, and optionally notify the faculty.</CardDescription>
-                                </CardHeader>
-                                <CardContent className="space-y-4">
-                                    <Input
-                                        value={assignmentSearch}
-                                        onChange={(event) => setAssignmentSearch(event.target.value)}
-                                        placeholder="Search classes"
-                                    />
-                                    <div className="max-h-[440px] space-y-2 overflow-auto pr-1">
-                                        {filteredPlannerClasses.map((classItem) => {
-                                            const isSelected = assignmentForm.data.class_ids.includes(classItem.id);
-                                            const isAssignedHere = classItem.assignment_status === "assigned_here";
+                            </CardHeader>
+                            <CardContent className="pt-4">
+                                {hasAnySchedule ? (
+                                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+                                        {weeklyScheduleByDay.days.map((dayKey) => {
+                                            const daySlots = weeklyScheduleByDay.schedule[dayKey] || [];
+                                            const dayLabel = weeklyScheduleByDay.dayLabels[dayKey];
 
                                             return (
-                                                <button
-                                                    key={classItem.id}
-                                                    type="button"
-                                                    disabled={isAssignedHere}
-                                                    onClick={() => toggleAssignmentClass(classItem.id)}
+                                                <div
+                                                    key={dayKey}
                                                     className={cn(
-                                                        "w-full rounded-md border p-3 text-left transition",
-                                                        isSelected ? "border-primary bg-primary/5" : "hover:bg-muted/50",
-                                                        isAssignedHere && "cursor-not-allowed opacity-60",
+                                                        "flex flex-col gap-2 rounded-lg border p-3 text-xs",
+                                                        daySlots.length > 0
+                                                            ? "border-border/80 bg-background"
+                                                            : "border-border/50 bg-muted/10 border-dashed opacity-70",
                                                     )}
                                                 >
-                                                    <div className="flex items-start justify-between gap-3">
-                                                        <div>
-                                                            <div className="text-sm font-medium">{classItem.label}</div>
-                                                            <div className="text-muted-foreground text-xs">{formatSchedule(classItem.schedule)}</div>
-                                                        </div>
-                                                        <Checkbox checked={isSelected || isAssignedHere} />
-                                                    </div>
-                                                    {classItem.assigned_faculty && classItem.assignment_status === "assigned_elsewhere" ? (
-                                                        <Badge variant="secondary" className="mt-2">
-                                                            Assigned to {classItem.assigned_faculty.name}
+                                                    <div className="flex items-center justify-between border-b pb-1.5">
+                                                        <span className="text-sm font-semibold">{dayLabel}</span>
+                                                        <Badge
+                                                            variant={daySlots.length > 0 ? "secondary" : "outline"}
+                                                            size="xs"
+                                                            radius="full"
+                                                            className="tabular-nums"
+                                                        >
+                                                            {daySlots.length} {daySlots.length === 1 ? "class" : "classes"}
                                                         </Badge>
-                                                    ) : null}
-                                                    {classItem.warnings.length > 0 ? (
-                                                        <div className="mt-2 space-y-1">
-                                                            {classItem.warnings.map((warning) => (
-                                                                <div key={warning.message} className="text-xs text-yellow-700">
-                                                                    {warning.message}
+                                                    </div>
+
+                                                    {daySlots.length === 0 ? (
+                                                        <span className="text-muted-foreground py-3 text-center italic">No classes scheduled</span>
+                                                    ) : (
+                                                        <div className="flex flex-col gap-2 pt-1">
+                                                            {daySlots.map(({ class: cls, slot }, idx) => (
+                                                                <div
+                                                                    key={`${cls.id}-${idx}`}
+                                                                    className="border-primary/20 bg-primary/[0.03] flex flex-col gap-1 rounded-md border p-2"
+                                                                >
+                                                                    <div className="text-foreground flex items-center justify-between font-semibold">
+                                                                        <span>{cls.subject_code}</span>
+                                                                        <Badge variant="outline" size="xs" radius="full" className="font-mono">
+                                                                            Sec {cls.section}
+                                                                        </Badge>
+                                                                    </div>
+                                                                    <div className="text-muted-foreground truncate text-[11px]">
+                                                                        {cls.subject_title || "No subject title"}
+                                                                    </div>
+                                                                    <div className="text-muted-foreground flex items-center justify-between pt-0.5 text-[11px]">
+                                                                        <span className="text-primary font-mono font-medium">{slot.time_range}</span>
+                                                                        <span className="bg-muted rounded px-1.5 py-0.5 text-[10px]">
+                                                                            {slot.room?.name || "TBA Room"}
+                                                                        </span>
+                                                                    </div>
                                                                 </div>
                                                             ))}
                                                         </div>
-                                                    ) : null}
-                                                </button>
+                                                    )}
+                                                </div>
                                             );
                                         })}
                                     </div>
-                                    {selectedWarnings.length > 0 ? (
-                                        <div className="rounded-md border border-yellow-200 bg-yellow-50 p-3 text-xs text-yellow-800">
-                                            {selectedWarnings.slice(0, 3).map((warning) => (
-                                                <div key={`${warning.classLabel}-${warning.message}`}>
-                                                    {warning.classLabel}: {warning.message}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    ) : null}
-                                    <label className="flex items-center gap-2 text-sm">
-                                        <Checkbox
-                                            checked={assignmentForm.data.notify_faculty}
-                                            onCheckedChange={(checked) => assignmentForm.setData("notify_faculty", checked === true)}
+                                ) : (
+                                    <div className="py-8 text-center">
+                                        <Empty>
+                                            <EmptyHeader>
+                                                <EmptyMedia variant="icon">
+                                                    <Calendar className="text-muted-foreground h-6 w-6" />
+                                                </EmptyMedia>
+                                                <EmptyTitle>No classes scheduled this term</EmptyTitle>
+                                                <EmptyDescription>
+                                                    Assign classes in the Teaching Load tab to populate this faculty member's weekly timetable.
+                                                </EmptyDescription>
+                                            </EmptyHeader>
+                                            <EmptyContent>
+                                                <Button size="sm" onClick={() => setActiveTab("load")}>
+                                                    <BookOpen className="mr-1.5 h-4 w-4" /> Go to Class Assignment Planner
+                                                </Button>
+                                            </EmptyContent>
+                                        </Empty>
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+
+                        {/* Side by side: ID quick update & profile snapshot */}
+                        <div className="grid gap-4 lg:grid-cols-2">
+                            {/* Quick ID Correction */}
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2 text-base">
+                                        <IconTile variant="soft" size="xs" className="text-primary">
+                                            <IdCard />
+                                        </IconTile>
+                                        Faculty ID Number
+                                    </CardTitle>
+                                    <CardDescription>
+                                        Update the administrative employee identification number without editing full profile.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent className="flex flex-col gap-3">
+                                    <div className="flex gap-2">
+                                        <Input
+                                            value={idForm.data.faculty_id_number}
+                                            onChange={(e) => idForm.setData("faculty_id_number", e.target.value)}
+                                            placeholder="e.g. FAC-2026-001"
+                                            className={cn(idForm.errors.faculty_id_number && "border-destructive")}
                                         />
-                                        Notify faculty after assignment changes
-                                    </label>
+                                        <Button
+                                            onClick={submitFacultyId}
+                                            disabled={idForm.processing || idForm.data.faculty_id_number === faculty.faculty_id_number}
+                                        >
+                                            <Save className="mr-1.5 h-4 w-4" /> Save
+                                        </Button>
+                                    </div>
+                                    {idForm.errors.faculty_id_number ? (
+                                        <p className="text-destructive text-xs">{idForm.errors.faculty_id_number}</p>
+                                    ) : null}
+                                </CardContent>
+                            </Card>
+
+                            {/* Office Hours & Consultation */}
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2 text-base">
+                                        <IconTile variant="soft" size="xs" className="text-primary">
+                                            <Clock />
+                                        </IconTile>
+                                        Office Hours & Consultation
+                                    </CardTitle>
+                                    <CardDescription>Published times students and staff can consult with this instructor.</CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <p className="text-muted-foreground text-xs whitespace-pre-line">
+                                        {faculty.office_hours || "No consultation hours currently listed for this faculty member."}
+                                    </p>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    </TabsContent>
+
+                    {/* Tab 2: Teaching Load & Assignments */}
+                    <TabsContent value="load" className="mt-4 flex flex-col gap-4">
+                        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+                            {/* Current Classes Table */}
+                            <Card>
+                                <CardHeader>
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <CardTitle className="flex items-center gap-2 text-base">
+                                                <IconTile variant="soft" size="xs" className="text-primary">
+                                                    <BookOpen />
+                                                </IconTile>
+                                                Active Term Teaching Load
+                                            </CardTitle>
+                                            <CardDescription>Classes assigned to this faculty member for the active period.</CardDescription>
+                                        </div>
+                                        <Badge variant="outline" size="sm" radius="full" className="font-mono tabular-nums">
+                                            {faculty.current_classes.length} class(es)
+                                        </Badge>
+                                    </div>
+                                </CardHeader>
+                                <CardContent>
+                                    {faculty.current_classes.length === 0 ? (
+                                        <div className="text-muted-foreground py-8 text-center text-xs">
+                                            No classes assigned in the active term. Use the Assignment Planner on the right to add classes.
+                                        </div>
+                                    ) : (
+                                        <div className="rounded-md border">
+                                            <Table>
+                                                <TableHeader>
+                                                    <TableRow>
+                                                        <TableHead>Code</TableHead>
+                                                        <TableHead>Subject Title</TableHead>
+                                                        <TableHead>Sec</TableHead>
+                                                        <TableHead>Schedule</TableHead>
+                                                        <TableHead className="text-right">Enrolled</TableHead>
+                                                        <TableHead className="text-right">Actions</TableHead>
+                                                    </TableRow>
+                                                </TableHeader>
+                                                <TableBody>
+                                                    {faculty.current_classes.map((c) => (
+                                                        <TableRow key={c.id}>
+                                                            <TableCell className="text-xs font-semibold">{c.subject_code}</TableCell>
+                                                            <TableCell className="max-w-48 truncate text-xs">{c.subject_title || "-"}</TableCell>
+                                                            <TableCell className="font-mono text-xs">{c.section}</TableCell>
+                                                            <TableCell className="text-xs">
+                                                                {c.schedule ? (
+                                                                    <div className="flex flex-col gap-0.5">
+                                                                        {Object.entries(c.schedule).flatMap(([d, slots]) =>
+                                                                            slots.map((s, idx) => (
+                                                                                <div
+                                                                                    key={`${d}-${idx}`}
+                                                                                    className="text-muted-foreground text-[11px]"
+                                                                                >
+                                                                                    <span className="text-foreground font-medium uppercase">
+                                                                                        {d.slice(0, 3)}:
+                                                                                    </span>{" "}
+                                                                                    {s.time_range} ({s.room?.name || "TBA"})
+                                                                                </div>
+                                                                            )),
+                                                                        )}
+                                                                    </div>
+                                                                ) : (
+                                                                    <span className="text-muted-foreground text-xs">TBA</span>
+                                                                )}
+                                                            </TableCell>
+                                                            <TableCell className="text-right text-xs font-medium tabular-nums">
+                                                                {c.student_count ?? "-"}
+                                                            </TableCell>
+                                                            <TableCell className="text-right">
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon-xs"
+                                                                    className="text-destructive hover:bg-destructive/10 hover:text-destructive h-7 w-7"
+                                                                    onClick={() =>
+                                                                        setUnassignModal({
+                                                                            open: true,
+                                                                            classId: c.id,
+                                                                            title: `${c.subject_code} - Sec ${c.section}`,
+                                                                        })
+                                                                    }
+                                                                    title="Unassign Class"
+                                                                >
+                                                                    <Trash2 className="h-3.5 w-3.5" />
+                                                                </Button>
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    ))}
+                                                </TableBody>
+                                            </Table>
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
+
+                            {/* Class Assignment Planner */}
+                            <Card className="h-fit">
+                                <CardHeader className="bg-muted/10 border-b pb-3">
+                                    <CardTitle className="flex items-center gap-2 text-base">
+                                        <IconTile variant="soft" size="xs" className="text-primary">
+                                            <Plus />
+                                        </IconTile>
+                                        Assignment Planner
+                                    </CardTitle>
+                                    <CardDescription className="text-xs">
+                                        Select and assign open academic period classes to this faculty.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent className="flex flex-col gap-3 pt-3">
+                                    <div className="relative">
+                                        <Search className="text-muted-foreground absolute top-2.5 left-2.5 h-3.5 w-3.5" />
+                                        <Input
+                                            placeholder="Search classes by code/section..."
+                                            value={assignmentSearch}
+                                            onChange={(e) => setAssignmentSearch(e.target.value)}
+                                            className="h-8 pl-8 text-xs"
+                                        />
+                                    </div>
+
+                                    <div className="flex max-h-[360px] flex-col gap-2 overflow-y-auto pr-1">
+                                        {filteredPlannerClasses.length === 0 ? (
+                                            <div className="text-muted-foreground py-6 text-center text-xs">
+                                                No available classes matching search.
+                                            </div>
+                                        ) : (
+                                            filteredPlannerClasses.map((item) => {
+                                                const isSelected = assignmentForm.data.class_ids.includes(item.id);
+                                                const isAssignedHere = item.assignment_status === "assigned_here";
+
+                                                return (
+                                                    <div
+                                                        key={item.id}
+                                                        onClick={() => !isAssignedHere && toggleAssignmentClass(item.id)}
+                                                        className={cn(
+                                                            "flex cursor-pointer flex-col gap-1.5 rounded-md border p-2.5 text-xs transition-colors",
+                                                            isSelected ? "border-primary bg-primary/5 ring-primary/40 ring-1" : "hover:bg-muted/40",
+                                                            isAssignedHere && "bg-muted/20 cursor-default opacity-50",
+                                                        )}
+                                                    >
+                                                        <div className="flex items-start justify-between gap-2">
+                                                            <div>
+                                                                <div className="font-semibold">{item.label}</div>
+                                                                <div className="text-muted-foreground line-clamp-1 text-[11px]">
+                                                                    {item.subject_title || "No title"}
+                                                                </div>
+                                                            </div>
+                                                            <Checkbox checked={isSelected || isAssignedHere} disabled={isAssignedHere} />
+                                                        </div>
+
+                                                        {item.assigned_faculty && item.assignment_status === "assigned_elsewhere" ? (
+                                                            <Badge variant="warning-light" size="xs" radius="full">
+                                                                Assigned to {item.assigned_faculty.name}
+                                                            </Badge>
+                                                        ) : null}
+
+                                                        {item.warnings.length > 0 ? (
+                                                            <div className="flex flex-col gap-0.5">
+                                                                {item.warnings.map((w, idx) => (
+                                                                    <div key={idx} className="text-destructive flex items-center gap-1 text-[10px]">
+                                                                        <AlertTriangle className="h-2.5 w-2.5 shrink-0" />
+                                                                        <span>{w.message}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        ) : null}
+                                                    </div>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+
+                                    {/* Warnings summary */}
+                                    {selectedWarnings.length > 0 ? (
+                                        <Alert variant="warning" className="p-2.5 text-xs">
+                                            <AlertTriangle />
+                                            <AlertTitle className="text-xs">Warnings on selection</AlertTitle>
+                                            <AlertDescription className="text-[11px]">
+                                                {selectedWarnings.slice(0, 3).map((w, idx) => (
+                                                    <div key={idx}>
+                                                        &bull; {w.classLabel}: {w.message}
+                                                    </div>
+                                                ))}
+                                            </AlertDescription>
+                                        </Alert>
+                                    ) : null}
+
                                     {selectedHasReassignment ? (
-                                        <label className="flex items-center gap-2 text-sm">
+                                        <div className="text-warning-foreground bg-warning/10 border-warning/20 flex items-center gap-2 rounded border p-2 text-xs">
                                             <Checkbox
                                                 checked={assignmentForm.data.allow_reassignment}
-                                                onCheckedChange={(checked) => assignmentForm.setData("allow_reassignment", checked === true)}
+                                                onCheckedChange={(c) => assignmentForm.setData("allow_reassignment", c === true)}
+                                                id="confirm-reassign"
                                             />
-                                            Confirm reassignment from another faculty
+                                            <label htmlFor="confirm-reassign" className="cursor-pointer font-medium">
+                                                Confirm reassignment from another instructor
+                                            </label>
+                                        </div>
+                                    ) : null}
+
+                                    <div className="text-muted-foreground flex items-center gap-2 text-xs">
+                                        <Checkbox
+                                            checked={assignmentForm.data.notify_faculty}
+                                            onCheckedChange={(c) => assignmentForm.setData("notify_faculty", c === true)}
+                                            id="notify-faculty-check"
+                                        />
+                                        <label htmlFor="notify-faculty-check" className="cursor-pointer">
+                                            Notify faculty member via portal
                                         </label>
-                                    ) : null}
-                                    {assignmentForm.errors.class_ids ? (
-                                        <p className="text-sm text-red-500">{assignmentForm.errors.class_ids}</p>
-                                    ) : null}
+                                    </div>
+
                                     <Button
-                                        className="w-full"
+                                        className="w-full text-xs"
                                         onClick={submitAssignments}
                                         disabled={
                                             assignmentForm.processing ||
@@ -542,377 +1053,627 @@ export default function AdministratorFacultyShow({ user, faculty, assignment_pla
                                             (selectedHasReassignment && !assignmentForm.data.allow_reassignment)
                                         }
                                     >
-                                        Assign {assignmentForm.data.class_ids.length} class(es)
+                                        Assign {assignmentForm.data.class_ids.length} Selected Class(es)
                                     </Button>
                                 </CardContent>
                             </Card>
                         </div>
 
+                        {/* Historical Classes Record */}
                         <Card>
                             <CardHeader>
-                                <CardTitle>Class History</CardTitle>
-                                <CardDescription>Previous and current records tied to this faculty profile.</CardDescription>
+                                <CardTitle className="flex items-center gap-2 text-base">
+                                    <IconTile variant="soft" size="xs" className="text-primary">
+                                        <History />
+                                    </IconTile>
+                                    Complete Teaching History
+                                </CardTitle>
+                                <CardDescription>All historical class records assigned to this faculty across academic terms.</CardDescription>
                             </CardHeader>
                             <CardContent>
-                                <ClassTable classes={faculty.classes} />
+                                {faculty.classes.length === 0 ? (
+                                    <div className="text-muted-foreground py-6 text-center text-xs">No historical class records found.</div>
+                                ) : (
+                                    <div className="rounded-md border">
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow>
+                                                    <TableHead>School Year</TableHead>
+                                                    <TableHead>Semester</TableHead>
+                                                    <TableHead>Subject Code</TableHead>
+                                                    <TableHead>Title</TableHead>
+                                                    <TableHead>Section</TableHead>
+                                                    <TableHead className="text-right">Students</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {faculty.classes.map((cls) => (
+                                                    <TableRow key={cls.id}>
+                                                        <TableCell className="font-mono text-xs">{cls.school_year}</TableCell>
+                                                        <TableCell className="text-xs">
+                                                            {cls.semester === 1 ? "1st" : cls.semester === 2 ? "2nd" : "Summer"}
+                                                        </TableCell>
+                                                        <TableCell className="text-xs font-semibold">{cls.subject_code}</TableCell>
+                                                        <TableCell className="max-w-56 truncate text-xs">{cls.subject_title || "-"}</TableCell>
+                                                        <TableCell className="font-mono text-xs">{cls.section}</TableCell>
+                                                        <TableCell className="text-right text-xs font-medium tabular-nums">
+                                                            {cls.student_count ?? "-"}
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                )}
                             </CardContent>
                         </Card>
                     </TabsContent>
 
-                    <TabsContent value="portal" className="mt-4 grid gap-4 lg:grid-cols-2">
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Portal Account</CardTitle>
-                                <CardDescription>Repair or create the linked faculty user account.</CardDescription>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                                <div className="rounded-md border p-4">
-                                    <div className="flex items-center justify-between gap-3">
-                                        <div>
-                                            <div className="font-medium">{faculty.portal_account.label}</div>
-                                            <div className="text-muted-foreground text-sm">
-                                                {faculty.portal_account.role_label ?? "No faculty role linked"}
+                    {/* Tab 3: Portal Account & Security */}
+                    <TabsContent value="portal" className="mt-4 flex flex-col gap-4">
+                        <div className="grid gap-4 lg:grid-cols-2">
+                            {/* Current Portal Account Status */}
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2 text-base">
+                                        <IconTile variant="soft" size="xs" className="text-primary">
+                                            <KeyRound />
+                                        </IconTile>
+                                        Linked User Account
+                                    </CardTitle>
+                                    <CardDescription>Authentication record used to log in to the faculty portal.</CardDescription>
+                                </CardHeader>
+                                <CardContent className="flex flex-col gap-4">
+                                    <div className="bg-muted/10 flex flex-col gap-3 rounded-lg border p-4 text-xs">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-sm font-semibold">{faculty.portal_account.label}</span>
+                                            <Badge
+                                                variant={faculty.portal_account.status === "linked" ? "success-light" : "warning-light"}
+                                                size="xs"
+                                                radius="full"
+                                                className="capitalize"
+                                            >
+                                                {faculty.portal_account.status}
+                                            </Badge>
+                                        </div>
+
+                                        <Separator />
+
+                                        <div className="grid gap-2">
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Assigned Role:</span>
+                                                <span className="font-semibold">{faculty.portal_account.role_label || "No role"}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Email Verified:</span>
+                                                <span>{faculty.portal_account.email_verified_at || "Not verified"}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Last Login:</span>
+                                                <span>{faculty.portal_account.last_login_at || "Never logged in"}</span>
                                             </div>
                                         </div>
-                                        <Badge variant={faculty.portal_account.status === "linked" ? "default" : "secondary"}>
-                                            {faculty.portal_account.status}
+                                    </div>
+
+                                    <div className="bg-primary/[0.02] text-muted-foreground flex flex-col gap-1 rounded-lg border p-3 text-xs">
+                                        <div className="text-foreground flex items-center gap-1.5 font-semibold">
+                                            <CheckCircle2 className="text-primary h-3.5 w-3.5" />
+                                            Portal Permissions & Access
+                                        </div>
+                                        <p>
+                                            Linked faculty accounts can access class rosters, input preliminary/midterm/final grades, record student
+                                            attendance, and view administrative notices.
+                                        </p>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            {/* Provisioning / Repair Form */}
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2 text-base">
+                                        <IconTile variant="soft" size="xs" className="text-primary">
+                                            <UserCheck />
+                                        </IconTile>
+                                        Configure Portal Credentials
+                                    </CardTitle>
+                                    <CardDescription>Provision a new user account or repair link to existing faculty user.</CardDescription>
+                                </CardHeader>
+                                <CardContent className="flex flex-col gap-4">
+                                    <div className="grid gap-3 sm:grid-cols-2">
+                                        <div className="flex flex-col gap-1.5">
+                                            <Label>Operation Mode</Label>
+                                            <Select
+                                                value={portalForm.data.mode}
+                                                onValueChange={(val) => portalForm.setData("mode", val as "create" | "repair")}
+                                            >
+                                                <SelectTrigger>
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="create">Create New Account</SelectItem>
+                                                    <SelectItem value="repair">Repair Link</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+
+                                        <div className="flex flex-col gap-1.5">
+                                            <Label>Faculty Role</Label>
+                                            <Select value={portalForm.data.role} onValueChange={(val) => portalForm.setData("role", val)}>
+                                                <SelectTrigger>
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {options.faculty_roles.map((r) => (
+                                                        <SelectItem key={r.value} value={r.value}>
+                                                            {r.label}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 text-xs">
+                                        <Checkbox
+                                            checked={portalForm.data.send_reset_link}
+                                            onCheckedChange={(c) => portalForm.setData("send_reset_link", c === true)}
+                                            id="send-reset-check"
+                                        />
+                                        <label htmlFor="send-reset-check" className="cursor-pointer">
+                                            Send password setup / reset email to {faculty.email}
+                                        </label>
+                                    </div>
+
+                                    {portalForm.errors.mode ? <p className="text-destructive text-xs">{portalForm.errors.mode}</p> : null}
+
+                                    <Button onClick={submitPortal} disabled={portalForm.processing} className="w-full">
+                                        <KeyRound className="mr-1.5 h-4 w-4" /> Save Portal Access
+                                    </Button>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    </TabsContent>
+
+                    {/* Tab 4: Communications & Notices with ReUI Timeline */}
+                    <TabsContent value="notices" className="mt-4 flex flex-col gap-4">
+                        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+                            {/* Sent Notices Stream using ReUI Timeline */}
+                            <Card>
+                                <CardHeader>
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <CardTitle className="flex items-center gap-2 text-base">
+                                                <IconTile variant="soft" size="xs" className="text-primary">
+                                                    <Megaphone />
+                                                </IconTile>
+                                                Recent Portal Notices
+                                            </CardTitle>
+                                            <CardDescription>Communications sent to this faculty member's portal dashboard.</CardDescription>
+                                        </div>
+                                        <Badge variant="outline" size="xs" radius="full" className="font-mono tabular-nums">
+                                            {faculty.recent_notifications.length} notice(s)
                                         </Badge>
                                     </div>
-                                    <Separator className="my-3" />
-                                    <div className="text-muted-foreground space-y-1 text-sm">
-                                        <div>Email verified: {faculty.portal_account.email_verified_at ?? "No"}</div>
-                                        <div>Last login: {faculty.portal_account.last_login_at ?? "Never"}</div>
-                                    </div>
-                                </div>
-
-                                <div className="grid gap-3 sm:grid-cols-2">
-                                    <div className="space-y-2">
-                                        <Label>Mode</Label>
-                                        <Select value={portalForm.data.mode} onValueChange={(value) => portalForm.setData("mode", value ?? "create")}>
-                                            <SelectTrigger>
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="create">Create</SelectItem>
-                                                <SelectItem value="repair">Repair</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>Role</Label>
-                                        <Select
-                                            value={portalForm.data.role}
-                                            onValueChange={(value) => portalForm.setData("role", value ?? "instructor")}
-                                        >
-                                            <SelectTrigger>
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {options.faculty_roles.map((role) => (
-                                                    <SelectItem key={role.value} value={role.value}>
-                                                        {role.label}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                </div>
-                                <label className="flex items-center gap-2 text-sm">
-                                    <Checkbox
-                                        checked={portalForm.data.send_reset_link}
-                                        onCheckedChange={(checked) => portalForm.setData("send_reset_link", checked === true)}
-                                    />
-                                    Send password reset link
-                                </label>
-                                {portalForm.errors.mode ? <p className="text-sm text-red-500">{portalForm.errors.mode}</p> : null}
-                                <Button onClick={submitPortal} disabled={portalForm.processing}>
-                                    <KeyRound className="mr-2 h-4 w-4" />
-                                    Prepare portal access
-                                </Button>
-                            </CardContent>
-                        </Card>
-
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Recent Notices</CardTitle>
-                                <CardDescription>Latest database notifications visible to the linked portal user.</CardDescription>
-                            </CardHeader>
-                            <CardContent className="space-y-3">
-                                {faculty.recent_notifications.length === 0 ? (
-                                    <div className="text-muted-foreground rounded-md border p-4 text-sm">No recent notices.</div>
-                                ) : (
-                                    faculty.recent_notifications.map((notice) => (
-                                        <div key={notice.id} className="rounded-md border p-3">
-                                            <div className="flex items-start justify-between gap-3">
-                                                <div className="font-medium">{notice.title}</div>
-                                                <Badge variant="outline">{notice.priority}</Badge>
-                                            </div>
-                                            <div className="text-muted-foreground mt-1 text-sm">{notice.message}</div>
-                                            <div className="text-muted-foreground mt-2 text-xs">{notice.created_at}</div>
+                                </CardHeader>
+                                <CardContent>
+                                    {faculty.recent_notifications.length === 0 ? (
+                                        <div className="text-muted-foreground py-8 text-center text-xs">
+                                            No notices sent to this faculty member yet.
                                         </div>
-                                    ))
-                                )}
-                            </CardContent>
-                        </Card>
+                                    ) : (
+                                        <Timeline defaultValue={1} orientation="vertical" className="px-3">
+                                            {faculty.recent_notifications.map((n, idx) => (
+                                                <TimelineItem key={n.id} step={idx + 1}>
+                                                    <TimelineIndicator />
+                                                    <TimelineHeader className="flex flex-col gap-1">
+                                                        <div className="flex items-center justify-between gap-2">
+                                                            <TimelineTitle className="text-sm font-semibold">{n.title}</TimelineTitle>
+                                                            <Badge
+                                                                variant={
+                                                                    n.priority === "urgent" || n.priority === "high"
+                                                                        ? "destructive-light"
+                                                                        : "invert-light"
+                                                                }
+                                                                size="xs"
+                                                                radius="full"
+                                                                className="capitalize"
+                                                            >
+                                                                {n.priority}
+                                                            </Badge>
+                                                        </div>
+                                                        <TimelineDate className="text-muted-foreground text-[11px]">
+                                                            Sent: {n.created_at || "Recently"} &bull; {n.read_at ? "Read" : "Unread"}
+                                                        </TimelineDate>
+                                                    </TimelineHeader>
+                                                    <TimelineContent className="text-muted-foreground mt-1 text-xs whitespace-pre-line">
+                                                        {n.message}
+                                                    </TimelineContent>
+                                                    <TimelineSeparator />
+                                                </TimelineItem>
+                                            ))}
+                                        </Timeline>
+                                    )}
+                                </CardContent>
+                            </Card>
+
+                            {/* Compose Notice Card */}
+                            <Card className="h-fit">
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2 text-base">
+                                        <IconTile variant="soft" size="xs" className="text-primary">
+                                            <Send />
+                                        </IconTile>
+                                        Send Admin Notice
+                                    </CardTitle>
+                                    <CardDescription className="text-xs">
+                                        Broadcasts an in-app portal notification to this instructor.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent className="flex flex-col gap-3">
+                                    <div className="flex flex-col gap-1.5">
+                                        <Label htmlFor="notice-title">Notice Title</Label>
+                                        <Input
+                                            id="notice-title"
+                                            placeholder="e.g. Grade Submission Deadline Reminder"
+                                            value={noticeForm.data.title}
+                                            onChange={(e) => noticeForm.setData("title", e.target.value)}
+                                            className={cn(noticeForm.errors.title && "border-destructive")}
+                                        />
+                                        {noticeForm.errors.title ? <p className="text-destructive text-xs">{noticeForm.errors.title}</p> : null}
+                                    </div>
+
+                                    <div className="flex flex-col gap-1.5">
+                                        <Label htmlFor="notice-msg">Message Body</Label>
+                                        <Textarea
+                                            id="notice-msg"
+                                            placeholder="Write message content..."
+                                            rows={4}
+                                            value={noticeForm.data.message}
+                                            onChange={(e) => noticeForm.setData("message", e.target.value)}
+                                            className={cn(noticeForm.errors.message && "border-destructive")}
+                                        />
+                                        {noticeForm.errors.message ? <p className="text-destructive text-xs">{noticeForm.errors.message}</p> : null}
+                                    </div>
+
+                                    <div className="grid gap-3 sm:grid-cols-2">
+                                        <div className="flex flex-col gap-1.5">
+                                            <Label>Priority</Label>
+                                            <Select value={noticeForm.data.priority} onValueChange={(val) => noticeForm.setData("priority", val)}>
+                                                <SelectTrigger>
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {options.notice_priorities.map((p) => (
+                                                        <SelectItem key={p.value} value={p.value}>
+                                                            {p.label}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+
+                                        <div className="flex flex-col gap-1.5">
+                                            <Label htmlFor="notice-url">Action URL</Label>
+                                            <Input
+                                                id="notice-url"
+                                                placeholder="/grades"
+                                                value={noticeForm.data.action_url}
+                                                onChange={(e) => noticeForm.setData("action_url", e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <Button onClick={submitNotice} disabled={noticeForm.processing} className="w-full text-xs">
+                                        <Send className="mr-1.5 h-3.5 w-3.5" /> Dispatch Notice
+                                    </Button>
+                                </CardContent>
+                            </Card>
+                        </div>
                     </TabsContent>
 
-                    <TabsContent value="notices" className="mt-4 grid gap-4 lg:grid-cols-2">
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Send Admin Notice</CardTitle>
-                                <CardDescription>Creates a portal notification for the linked faculty user.</CardDescription>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                                <div className="space-y-2">
-                                    <Label>Title</Label>
-                                    <Input value={noticeForm.data.title} onChange={(event) => noticeForm.setData("title", event.target.value)} />
-                                    {noticeForm.errors.title ? <p className="text-sm text-red-500">{noticeForm.errors.title}</p> : null}
-                                </div>
-                                <div className="space-y-2">
-                                    <Label>Message</Label>
-                                    <Textarea
-                                        rows={4}
-                                        value={noticeForm.data.message}
-                                        onChange={(event) => noticeForm.setData("message", event.target.value)}
-                                    />
-                                    {noticeForm.errors.message ? <p className="text-sm text-red-500">{noticeForm.errors.message}</p> : null}
-                                </div>
-                                <div className="grid gap-3 sm:grid-cols-2">
-                                    <div className="space-y-2">
-                                        <Label>Priority</Label>
-                                        <Select
-                                            value={noticeForm.data.priority}
-                                            onValueChange={(value) => noticeForm.setData("priority", value ?? "normal")}
-                                        >
-                                            <SelectTrigger>
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {options.notice_priorities.map((priority) => (
-                                                    <SelectItem key={priority.value} value={priority.value}>
-                                                        {priority.label}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>Action URL</Label>
-                                        <Input
-                                            value={noticeForm.data.action_url}
-                                            onChange={(event) => noticeForm.setData("action_url", event.target.value)}
-                                        />
-                                    </div>
-                                </div>
-                                <Button onClick={submitNotice} disabled={noticeForm.processing}>
-                                    <Megaphone className="mr-2 h-4 w-4" />
-                                    Send notice
-                                </Button>
-                            </CardContent>
-                        </Card>
-
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Create Faculty Deadline</CardTitle>
-                                <CardDescription>Track an administrative or class-related task for this faculty member.</CardDescription>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                                <div className="space-y-2">
-                                    <Label>Title</Label>
-                                    <Input value={deadlineForm.data.title} onChange={(event) => deadlineForm.setData("title", event.target.value)} />
-                                    {deadlineForm.errors.title ? <p className="text-sm text-red-500">{deadlineForm.errors.title}</p> : null}
-                                </div>
-                                <div className="space-y-2">
-                                    <Label>Description</Label>
-                                    <Textarea
-                                        rows={3}
-                                        value={deadlineForm.data.description}
-                                        onChange={(event) => deadlineForm.setData("description", event.target.value)}
-                                    />
-                                </div>
-                                <div className="grid gap-3 sm:grid-cols-2">
-                                    <div className="space-y-2">
-                                        <Label>Due date</Label>
-                                        <Input
-                                            type="datetime-local"
-                                            value={deadlineForm.data.due_date}
-                                            onChange={(event) => deadlineForm.setData("due_date", event.target.value)}
-                                        />
-                                        {deadlineForm.errors.due_date ? <p className="text-sm text-red-500">{deadlineForm.errors.due_date}</p> : null}
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>Priority</Label>
-                                        <Select
-                                            value={deadlineForm.data.priority}
-                                            onValueChange={(value) => deadlineForm.setData("priority", value ?? "medium")}
-                                        >
-                                            <SelectTrigger>
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {options.deadline_priorities.map((priority) => (
-                                                    <SelectItem key={priority.value} value={priority.value}>
-                                                        {priority.label}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                </div>
-                                <div className="grid gap-3 sm:grid-cols-2">
-                                    <div className="space-y-2">
-                                        <Label>Type</Label>
-                                        <Input
-                                            value={deadlineForm.data.type}
-                                            onChange={(event) => deadlineForm.setData("type", event.target.value)}
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>Related class</Label>
-                                        <Select
-                                            value={deadlineForm.data.class_id}
-                                            onValueChange={(value) => deadlineForm.setData("class_id", value ?? "none")}
-                                        >
-                                            <SelectTrigger>
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="none">No class</SelectItem>
-                                                {faculty.current_classes.map((classItem) => (
-                                                    <SelectItem key={classItem.id} value={String(classItem.id)}>
-                                                        {classItem.subject_code} {classItem.section}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                </div>
-                                <Button onClick={submitDeadline} disabled={deadlineForm.processing}>
-                                    <CalendarClock className="mr-2 h-4 w-4" />
-                                    Create deadline
-                                </Button>
-                            </CardContent>
-                        </Card>
-
-                        <Card className="lg:col-span-2">
-                            <CardHeader>
-                                <CardTitle>Open Deadlines</CardTitle>
-                            </CardHeader>
-                            <CardContent className="grid gap-3 md:grid-cols-2">
-                                {faculty.deadlines.length === 0 ? (
-                                    <div className="text-muted-foreground rounded-md border p-4 text-sm md:col-span-2">No active deadlines.</div>
-                                ) : (
-                                    faculty.deadlines.map((deadline) => (
-                                        <div key={deadline.id} className="rounded-md border p-3">
-                                            <div className="flex items-start justify-between gap-3">
-                                                <div className="font-medium">{deadline.title}</div>
-                                                <Badge variant="outline">{deadline.priority}</Badge>
-                                            </div>
-                                            <div className="text-muted-foreground mt-1 text-sm">{deadline.description ?? "No description"}</div>
-                                            <div className="text-muted-foreground mt-2 text-xs">
-                                                {deadline.due_date ?? "No due date"} {deadline.class_label ? `- ${deadline.class_label}` : ""}
-                                            </div>
+                    {/* Tab 5: Deadlines & Tasks */}
+                    <TabsContent value="deadlines" className="mt-4 flex flex-col gap-4">
+                        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+                            {/* Active Deadlines Grid */}
+                            <Card>
+                                <CardHeader>
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <CardTitle className="flex items-center gap-2 text-base">
+                                                <IconTile variant="soft" size="xs" className="text-primary">
+                                                    <CalendarClock />
+                                                </IconTile>
+                                                Active Deadlines & Milestones
+                                            </CardTitle>
+                                            <CardDescription>Academic submissions and departmental responsibilities.</CardDescription>
                                         </div>
-                                    ))
-                                )}
-                            </CardContent>
-                        </Card>
+                                        <Badge variant="outline" size="xs" radius="full" className="font-mono tabular-nums">
+                                            {faculty.deadlines.length} task(s)
+                                        </Badge>
+                                    </div>
+                                </CardHeader>
+                                <CardContent>
+                                    {faculty.deadlines.length === 0 ? (
+                                        <div className="text-muted-foreground py-8 text-center text-xs">
+                                            No active deadlines registered for this faculty member.
+                                        </div>
+                                    ) : (
+                                        <div className="grid gap-3 sm:grid-cols-2">
+                                            {faculty.deadlines.map((d) => (
+                                                <div key={d.id} className="bg-muted/10 flex flex-col gap-2 rounded-lg border p-3.5 text-xs">
+                                                    <div className="flex items-start justify-between gap-2">
+                                                        <span className="text-foreground text-sm font-semibold">{d.title}</span>
+                                                        <Badge
+                                                            variant={
+                                                                d.priority === "high"
+                                                                    ? "destructive-light"
+                                                                    : d.priority === "medium"
+                                                                      ? "warning-light"
+                                                                      : "invert-light"
+                                                            }
+                                                            size="xs"
+                                                            radius="full"
+                                                            className="capitalize"
+                                                        >
+                                                            {d.priority}
+                                                        </Badge>
+                                                    </div>
+
+                                                    <p className="text-muted-foreground">{d.description || "No additional description."}</p>
+
+                                                    <div className="text-muted-foreground flex items-center justify-between border-t pt-2 text-[11px]">
+                                                        <span className="flex items-center gap-1">
+                                                            <Calendar className="h-3 w-3" />
+                                                            {d.due_date || "No due date"}
+                                                        </span>
+                                                        {d.class_label ? (
+                                                            <span className="bg-muted rounded px-1.5 py-0.5 font-mono text-[10px]">
+                                                                {d.class_label}
+                                                            </span>
+                                                        ) : null}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
+
+                            {/* Create Deadline Form */}
+                            <Card className="h-fit">
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2 text-base">
+                                        <IconTile variant="soft" size="xs" className="text-primary">
+                                            <Plus />
+                                        </IconTile>
+                                        Assign Deadline
+                                    </CardTitle>
+                                    <CardDescription className="text-xs">Record a milestone or due date for this instructor.</CardDescription>
+                                </CardHeader>
+                                <CardContent className="flex flex-col gap-3">
+                                    <div className="flex flex-col gap-1.5">
+                                        <Label htmlFor="deadline-title">Deadline Title</Label>
+                                        <Input
+                                            id="deadline-title"
+                                            placeholder="e.g. Midterm Grades Submission"
+                                            value={deadlineForm.data.title}
+                                            onChange={(e) => deadlineForm.setData("title", e.target.value)}
+                                            className={cn(deadlineForm.errors.title && "border-destructive")}
+                                        />
+                                        {deadlineForm.errors.title ? <p className="text-destructive text-xs">{deadlineForm.errors.title}</p> : null}
+                                    </div>
+
+                                    <div className="flex flex-col gap-1.5">
+                                        <Label htmlFor="deadline-desc">Description</Label>
+                                        <Textarea
+                                            id="deadline-desc"
+                                            placeholder="Specific instructions or requirements..."
+                                            rows={3}
+                                            value={deadlineForm.data.description}
+                                            onChange={(e) => deadlineForm.setData("description", e.target.value)}
+                                        />
+                                    </div>
+
+                                    <div className="grid gap-3 sm:grid-cols-2">
+                                        <div className="flex flex-col gap-1.5">
+                                            <Label htmlFor="deadline-due">Due Date</Label>
+                                            <Input
+                                                id="deadline-due"
+                                                type="datetime-local"
+                                                value={deadlineForm.data.due_date}
+                                                onChange={(e) => deadlineForm.setData("due_date", e.target.value)}
+                                                className={cn(deadlineForm.errors.due_date && "border-destructive")}
+                                            />
+                                            {deadlineForm.errors.due_date ? (
+                                                <p className="text-destructive text-xs">{deadlineForm.errors.due_date}</p>
+                                            ) : null}
+                                        </div>
+
+                                        <div className="flex flex-col gap-1.5">
+                                            <Label>Priority</Label>
+                                            <Select value={deadlineForm.data.priority} onValueChange={(val) => deadlineForm.setData("priority", val)}>
+                                                <SelectTrigger>
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {options.deadline_priorities.map((p) => (
+                                                        <SelectItem key={p.value} value={p.value}>
+                                                            {p.label}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex flex-col gap-1.5">
+                                        <Label>Related Class (Optional)</Label>
+                                        <Select value={deadlineForm.data.class_id} onValueChange={(val) => deadlineForm.setData("class_id", val)}>
+                                            <SelectTrigger>
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="none">No Class Association</SelectItem>
+                                                {faculty.current_classes.map((cls) => (
+                                                    <SelectItem key={cls.id} value={String(cls.id)}>
+                                                        {cls.subject_code} - Sec {cls.section}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+                                    <Button onClick={submitDeadline} disabled={deadlineForm.processing} className="w-full text-xs">
+                                        <CalendarClock className="mr-1.5 h-3.5 w-3.5" /> Save Deadline
+                                    </Button>
+                                </CardContent>
+                            </Card>
+                        </div>
                     </TabsContent>
 
-                    <TabsContent value="records" className="mt-4 grid gap-4 lg:grid-cols-3">
-                        <RecordCard title="Biography" value={faculty.biography} />
-                        <RecordCard title="Education" value={faculty.education} />
-                        <RecordCard title="Courses Taught" value={faculty.courses_taught} />
-                        <RecordCard title="Address" value={faculty.address_line1} />
-                        <RecordCard
-                            title="Personal"
-                            value={[faculty.gender, faculty.age ? `${faculty.age} years old` : null, faculty.birth_date].filter(Boolean).join(" - ")}
-                        />
-                        <RecordCard title="Department" value={faculty.department} />
+                    {/* Tab 6: Complete Dossier */}
+                    <TabsContent value="dossier" className="mt-4 flex flex-col gap-4">
+                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2 text-base">
+                                        <IconTile variant="soft" size="xs" className="text-primary">
+                                            <GraduationCap />
+                                        </IconTile>
+                                        Educational Background
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <p className="text-muted-foreground text-xs whitespace-pre-line">
+                                        {faculty.education || "No educational degrees recorded."}
+                                    </p>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2 text-base">
+                                        <IconTile variant="soft" size="xs" className="text-primary">
+                                            <BookOpen />
+                                        </IconTile>
+                                        Courses & Specializations
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <p className="text-muted-foreground text-xs whitespace-pre-line">
+                                        {faculty.courses_taught || "No courses or specializations specified."}
+                                    </p>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2 text-base">
+                                        <IconTile variant="soft" size="xs" className="text-primary">
+                                            <Clock />
+                                        </IconTile>
+                                        Office Hours Policy
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <p className="text-muted-foreground text-xs whitespace-pre-line">
+                                        {faculty.office_hours || "No office hours specified."}
+                                    </p>
+                                </CardContent>
+                            </Card>
+
+                            <Card className="sm:col-span-2">
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2 text-base">
+                                        <IconTile variant="soft" size="xs" className="text-primary">
+                                            <FileText />
+                                        </IconTile>
+                                        Faculty Biography
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <p className="text-muted-foreground text-xs whitespace-pre-line">
+                                        {faculty.biography || "No biography provided for this faculty member."}
+                                    </p>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2 text-base">
+                                        <IconTile variant="soft" size="xs" className="text-primary">
+                                            <Calendar />
+                                        </IconTile>
+                                        Personal Records
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="flex flex-col gap-2 text-xs">
+                                    <div className="flex justify-between border-b py-1">
+                                        <span className="text-muted-foreground">Birth Date:</span>
+                                        <span className="font-medium">{faculty.birth_date || "Not recorded"}</span>
+                                    </div>
+                                    <div className="flex justify-between border-b py-1">
+                                        <span className="text-muted-foreground">Age:</span>
+                                        <span className="font-medium tabular-nums">{faculty.age ? `${faculty.age} years old` : "Not recorded"}</span>
+                                    </div>
+                                    <div className="flex justify-between border-b py-1">
+                                        <span className="text-muted-foreground">Gender:</span>
+                                        <span className="font-medium capitalize">{faculty.gender || "Not specified"}</span>
+                                    </div>
+                                    <div className="flex justify-between border-b py-1">
+                                        <span className="text-muted-foreground">Date Employed:</span>
+                                        <span className="font-medium">{faculty.date_employed || "Not recorded"}</span>
+                                    </div>
+                                    <div className="pt-1">
+                                        <span className="text-muted-foreground mb-0.5 block">Address:</span>
+                                        <span className="text-foreground">{faculty.address_line1 || "No address on file"}</span>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </div>
                     </TabsContent>
                 </Tabs>
             </div>
+
+            {/* Accessible Radix Alert Dialog for Delete Faculty */}
+            <AlertDialog open={deleteModalOpen} onOpenChange={setDeleteModalOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Delete Faculty Member</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Are you sure you want to permanently delete <strong>{faculty.name}</strong>? This action will remove their faculty
+                            profile, unassign any assigned teaching classes, and revoke portal access. This action cannot be undone.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={confirmDeleteFaculty}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                            <Trash2 className="mr-1.5 h-4 w-4" /> Delete Faculty
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            {/* Accessible Radix Alert Dialog for Unassign Class */}
+            <AlertDialog open={unassignModal.open} onOpenChange={(open) => !open && setUnassignModal({ open: false, classId: 0, title: "" })}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Unassign Class</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Are you sure you want to unassign <strong>{unassignModal.title}</strong> from {faculty.name}? The class will become
+                            unassigned and available for reassignment to another faculty member.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={confirmUnassign}>Unassign Class</AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </AdminLayout>
-    );
-}
-
-function MetricCard({ title, value, detail, icon: Icon }: { title: string; value: string; detail: string; icon: typeof BookOpen }) {
-    return (
-        <Card>
-            <CardContent className="flex items-center gap-3 p-4">
-                <div className="bg-muted rounded-md p-2">
-                    <Icon className="h-4 w-4" />
-                </div>
-                <div className="min-w-0">
-                    <div className="text-muted-foreground text-xs">{title}</div>
-                    <div className="truncate font-semibold">{value}</div>
-                    <div className="text-muted-foreground truncate text-xs">{detail}</div>
-                </div>
-            </CardContent>
-        </Card>
-    );
-}
-
-function InfoRow({ icon: Icon, label, value }: { icon: typeof BookOpen; label: string; value: string }) {
-    return (
-        <div className="flex items-start justify-between gap-3 text-sm">
-            <span className="text-muted-foreground flex items-center gap-2">
-                <Icon className="h-4 w-4" />
-                {label}
-            </span>
-            <span className="max-w-44 text-right font-medium">{value}</span>
-        </div>
-    );
-}
-
-function ClassTable({ classes, onUnassign }: { classes: ClassRow[]; onUnassign?: (classId: number) => void }) {
-    if (classes.length === 0) {
-        return <div className="text-muted-foreground rounded-md border p-6 text-center text-sm">No classes found.</div>;
-    }
-
-    return (
-        <Table>
-            <TableHeader>
-                <TableRow>
-                    <TableHead>Code</TableHead>
-                    <TableHead>Subject</TableHead>
-                    <TableHead>Section</TableHead>
-                    <TableHead>Schedule</TableHead>
-                    <TableHead className="text-right">Students</TableHead>
-                    {onUnassign ? <TableHead className="text-right">Actions</TableHead> : null}
-                </TableRow>
-            </TableHeader>
-            <TableBody>
-                {classes.map((classItem) => (
-                    <TableRow key={classItem.id}>
-                        <TableCell className="font-medium">{classItem.subject_code}</TableCell>
-                        <TableCell className="max-w-56 truncate">{classItem.subject_title ?? "No title"}</TableCell>
-                        <TableCell>{classItem.section}</TableCell>
-                        <TableCell>{formatSchedule(classItem.schedule)}</TableCell>
-                        <TableCell className="text-right">{classItem.student_count ?? "-"}</TableCell>
-                        {onUnassign ? (
-                            <TableCell className="text-right">
-                                <Button variant="ghost" size="sm" onClick={() => onUnassign(classItem.id)}>
-                                    <Trash2 className="h-4 w-4" />
-                                </Button>
-                            </TableCell>
-                        ) : null}
-                    </TableRow>
-                ))}
-            </TableBody>
-        </Table>
-    );
-}
-
-function RecordCard({ title, value }: { title: string; value: string | null | undefined }) {
-    return (
-        <Card>
-            <CardHeader>
-                <CardTitle className="text-base">{title}</CardTitle>
-            </CardHeader>
-            <CardContent>
-                <p className="text-muted-foreground text-sm whitespace-pre-line">{value || "No record provided."}</p>
-            </CardContent>
-        </Card>
     );
 }

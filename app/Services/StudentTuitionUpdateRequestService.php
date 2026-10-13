@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Finance\RecordFinancePayment;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\StudentTransaction;
@@ -16,6 +17,7 @@ use App\Notifications\StudentTuitionUpdateRequestReviewedNotification;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 final class StudentTuitionUpdateRequestService
@@ -82,9 +84,9 @@ final class StudentTuitionUpdateRequestService
         });
     }
 
-    public function resolveWithPayment(StudentTuitionUpdateRequest $request, Transaction $transaction, User $actor, string $note): StudentTuitionUpdateRequest
+    public function resolveWithPayment(StudentTuitionUpdateRequest $request, Transaction $transaction, User $actor, string $note, bool $allowMismatch = false): StudentTuitionUpdateRequest
     {
-        return $this->complete($request, $actor, $note, function (StudentTuitionUpdateRequest $locked) use ($transaction): array {
+        return $this->complete($request, $actor, $note, function (StudentTuitionUpdateRequest $locked) use ($transaction, $allowMismatch): array {
             if ($locked->concern_type !== StudentTuitionUpdateRequest::ConcernMissingPayment) {
                 throw ValidationException::withMessages(['transaction_id' => 'Only missing-payment requests may be resolved with a payment transaction.']);
             }
@@ -102,11 +104,97 @@ final class StudentTuitionUpdateRequestService
             if (! $matches) {
                 throw ValidationException::withMessages(['transaction_id' => 'The selected transaction is not a verified payment for this student and academic period.']);
             }
-            if ($locked->receipt_number !== null && mb_strtolower(mb_trim((string) $payment->invoicenumber)) !== mb_strtolower(mb_trim($locked->receipt_number))) {
+            if (! $allowMismatch && $locked->receipt_number !== null && mb_strtolower(mb_trim((string) $payment->invoicenumber)) !== mb_strtolower(mb_trim($locked->receipt_number))) {
                 throw ValidationException::withMessages(['transaction_id' => 'The selected transaction does not match the submitted official receipt number.']);
             }
 
+            if ($payment->invoicenumber && $locked->receipt_number !== $payment->invoicenumber) {
+                $locked->receipt_number = $payment->invoicenumber;
+            }
+
             return ['resolved_transaction_id' => $payment->id, 'tuition_adjustment_id' => null, 'event' => 'resolved_with_payment'];
+        });
+    }
+
+    /**
+     * Record a new verified payment transaction for the student and resolve this request in one action.
+     *
+     * @param  array{amount: float|int|string, payment_method: string, reference_number: string}  $paymentData
+     */
+    public function recordAndResolvePayment(
+        StudentTuitionUpdateRequest $request,
+        User $actor,
+        array $paymentData,
+        string $note,
+        RecordFinancePayment $payments,
+    ): StudentTuitionUpdateRequest {
+        return DB::transaction(function () use ($request, $actor, $paymentData, $note, $payments): StudentTuitionUpdateRequest {
+            $locked = $this->reviewable($request, $actor);
+            if ($locked->concern_type !== StudentTuitionUpdateRequest::ConcernMissingPayment) {
+                throw ValidationException::withMessages(['amount' => 'Only missing-payment requests can be resolved with a new payment recording.']);
+            }
+
+            $tuition = $locked->tuition;
+            if (! $tuition instanceof StudentTuition && $locked->student instanceof Student) {
+                [, $periodTuition] = $this->periodRecords($locked->student, $locked->school_year, (int) $locked->semester);
+                $tuition = $periodTuition;
+            }
+
+            if (! $tuition instanceof StudentTuition) {
+                throw ValidationException::withMessages(['amount' => 'No active tuition assessment found for this student and academic period.']);
+            }
+
+            $amount = round((float) ($paymentData['amount'] ?? 0), 2);
+            if ($amount <= 0) {
+                throw ValidationException::withMessages(['amount' => 'Payment amount must be greater than zero.']);
+            }
+
+            $referenceNumber = mb_trim((string) ($paymentData['reference_number'] ?? $locked->receipt_number ?? ''));
+            $payload = [
+                'student_id' => $locked->student_id,
+                'payment_method' => $paymentData['payment_method'],
+                'reference_number' => $referenceNumber ?: null,
+                'remarks' => Str::limit("Tuition request #{$locked->id}: {$note}", 2000),
+                'items' => [
+                    [
+                        'type' => 'tuition',
+                        'tuition_id' => $tuition->id,
+                        'amount' => $amount,
+                    ],
+                ],
+            ];
+
+            $recorded = $payments->record($actor, $payload);
+            $transaction = $recorded->transaction;
+
+            $from = $locked->status;
+            $locked->forceFill([
+                'status' => StudentTuitionUpdateRequest::StatusResolved,
+                'resolution_note' => mb_trim($note),
+                'resolved_transaction_id' => $transaction->id,
+                'tuition_adjustment_id' => null,
+                'receipt_number' => $referenceNumber ?: $locked->receipt_number,
+                'resolved_at' => now(),
+                'open_key' => null,
+            ])->save();
+
+            $this->event(
+                $locked,
+                $actor,
+                'resolved_with_recorded_payment',
+                $from,
+                StudentTuitionUpdateRequest::StatusResolved,
+                $locked->resolution_note,
+                [
+                    'transaction_id' => $transaction->id,
+                    'transaction_number' => $transaction->transaction_number,
+                    'amount' => $amount,
+                    'invoicenumber' => $transaction->invoicenumber,
+                ],
+            );
+            $this->notifyAfterCommit($locked);
+
+            return $locked->refresh();
         });
     }
 

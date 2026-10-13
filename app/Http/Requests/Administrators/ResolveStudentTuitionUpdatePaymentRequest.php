@@ -18,6 +18,7 @@ final class ResolveStudentTuitionUpdatePaymentRequest extends FormRequest
         return [
             'transaction_id' => ['required', 'integer', 'exists:transactions,id'],
             'resolution_note' => ['required', 'string', 'min:5', 'max:2000'],
+            'allow_mismatch' => ['nullable', 'boolean'],
         ];
     }
 }

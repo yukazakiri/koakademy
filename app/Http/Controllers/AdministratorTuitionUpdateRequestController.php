@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enums\PaymentMethod;
+use App\Finance\RecordFinancePayment;
 use App\Http\Requests\Administrators\ClaimStudentTuitionUpdateRequest;
+use App\Http\Requests\Administrators\RecordAndResolveStudentTuitionUpdatePaymentRequest;
 use App\Http\Requests\Administrators\RejectStudentTuitionUpdateRequest;
 use App\Http\Requests\Administrators\ResolveStudentTuitionUpdateAdjustmentRequest;
 use App\Http\Requests\Administrators\ResolveStudentTuitionUpdatePaymentRequest;
@@ -98,10 +101,32 @@ final class AdministratorTuitionUpdateRequestController extends Controller
                 'created_at' => $adjustment->created_at?->toIso8601String(),
             ]);
 
+        $matchingIds = $matchingTransactions->pluck('id');
+        $otherTransactions = Transaction::query()
+            ->select(['id', 'transaction_number', 'invoicenumber', 'status', 'transaction_date', 'settlements'])
+            ->whereHas('studentTransactions', function ($transactions) use ($tuitionUpdateRequest): void {
+                $transactions->where('student_id', $tuitionUpdateRequest->student_id);
+            })
+            ->whereNotIn('id', $matchingIds)
+            ->whereIn('status', ['Paid', 'Completed', 'paid', 'completed'])
+            ->latest('transaction_date')->latest('id')
+            ->limit(10)
+            ->get()
+            ->map(fn (Transaction $transaction): array => [
+                'id' => $transaction->id,
+                'transaction_number' => $transaction->transaction_number,
+                'receipt_number' => $transaction->invoicenumber,
+                'status' => $transaction->status,
+                'amount' => (float) $transaction->raw_total_amount,
+                'date' => $transaction->transaction_date?->toIso8601String(),
+            ]);
+
         return Inertia::render('administrators/finance/tuition-update-requests/show', [
             'request' => $this->serialize($tuitionUpdateRequest, true),
             'matching_transactions' => $matchingTransactions,
+            'other_transactions' => $otherTransactions,
             'matching_adjustments' => $matchingAdjustments,
+            'payment_methods' => PaymentMethod::options(),
             'can_manage' => $request->user()?->can('manage_tuition_fees') ?? false,
             'is_current_reviewer' => $tuitionUpdateRequest->reviewed_by_user_id === $request->user()?->id,
         ]);
@@ -121,9 +146,35 @@ final class AdministratorTuitionUpdateRequestController extends Controller
         $user = $request->user();
         abort_unless($user instanceof User, 403);
         $transaction = Transaction::query()->findOrFail($request->integer('transaction_id'));
-        $requests->resolveWithPayment($tuitionUpdateRequest, $transaction, $user, $request->string('resolution_note')->toString());
+        $allowMismatch = $request->boolean('allow_mismatch');
+        $requests->resolveWithPayment(
+            $tuitionUpdateRequest,
+            $transaction,
+            $user,
+            $request->string('resolution_note')->toString(),
+            $allowMismatch,
+        );
 
         return back()->with('flash', ['success' => 'Request resolved and linked to the verified payment.']);
+    }
+
+    public function recordAndResolvePayment(
+        RecordAndResolveStudentTuitionUpdatePaymentRequest $request,
+        StudentTuitionUpdateRequest $tuitionUpdateRequest,
+        StudentTuitionUpdateRequestService $requests,
+        RecordFinancePayment $payments,
+    ): RedirectResponse {
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
+        $requests->recordAndResolvePayment(
+            $tuitionUpdateRequest,
+            $user,
+            $request->validated(),
+            $request->string('resolution_note')->toString(),
+            $payments,
+        );
+
+        return back()->with('flash', ['success' => 'Verified payment was recorded and request resolved successfully.']);
     }
 
     public function resolveAdjustment(ResolveStudentTuitionUpdateAdjustmentRequest $request, StudentTuitionUpdateRequest $tuitionUpdateRequest, StudentTuitionUpdateRequestService $requests): RedirectResponse

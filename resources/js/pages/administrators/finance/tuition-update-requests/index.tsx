@@ -3,14 +3,16 @@ import {
     index as tuitionUpdateRequestsIndex,
 } from "@/actions/App/Http/Controllers/AdministratorTuitionUpdateRequestController";
 import AdminLayout from "@/components/administrators/admin-layout";
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@/components/reui/badge";
+import { Frame, FramePanel } from "@/components/reui/frame";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { User } from "@/types/user";
 import { Head, Link, router } from "@inertiajs/react";
-import { ArrowRight, ClipboardCheck, Clock3, Search, UserRound } from "lucide-react";
+import { ArrowRight, ClipboardCheck, FileSpreadsheet, RotateCcw, Search, UserRound } from "lucide-react";
 import { useMemo, useState } from "react";
 
 type Row = {
@@ -24,6 +26,7 @@ type Row = {
     reviewer_name: string | null;
     submitted_at: string | null;
 };
+
 type Props = {
     user: User;
     requests: { data: Row[]; links: Array<{ url: string | null; label: string; active: boolean }>; total: number };
@@ -33,28 +36,32 @@ type Props = {
     can_manage: boolean;
 };
 
-const concernLabel: Record<string, string> = {
+const concernLabels: Record<string, string> = {
     missing_payment: "Payment not reflected",
-    discount: "Discount concern",
-    subject_change: "Subject enrollment change",
-    other: "Other concern",
+    discount: "Discount / Scholarship",
+    subject_change: "Subject enrollment mismatch",
+    other: "Other assessment inquiry",
 };
-const statusTone: Record<string, string> = {
-    pending: "bg-amber-500/10 text-amber-700 border-amber-500/25",
-    in_review: "bg-sky-500/10 text-sky-700 border-sky-500/25",
-    resolved: "bg-emerald-500/10 text-emerald-700 border-emerald-500/25",
-    rejected: "bg-rose-500/10 text-rose-700 border-rose-500/25",
+
+const statusMeta: Record<string, { label: string; variant: "warning-light" | "info-light" | "success-light" | "destructive-light" }> = {
+    pending: { label: "Pending", variant: "warning-light" },
+    in_review: { label: "In Review", variant: "info-light" },
+    resolved: { label: "Resolved", variant: "success-light" },
+    rejected: { label: "Rejected", variant: "destructive-light" },
 };
 
 export default function TuitionUpdateRequestsIndex({ user, requests, filters, statuses, concerns, can_manage }: Props) {
     const [search, setSearch] = useState(String(filters.search ?? ""));
-    const activeCount = useMemo(
-        () => requests.data.filter((item) => item.status === "pending" || item.status === "in_review").length,
-        [requests.data],
-    );
+
+    const counts = useMemo(() => {
+        const pending = requests.data.filter((r) => r.status === "pending").length;
+        const inReview = requests.data.filter((r) => r.status === "in_review").length;
+        const resolved = requests.data.filter((r) => r.status === "resolved").length;
+        return { pending, inReview, resolved, totalOnPage: requests.data.length };
+    }, [requests.data]);
 
     function updateFilter(key: string, value: string) {
-        const next = { ...filters, [key]: value === "all" ? undefined : value, search };
+        const next = { ...filters, [key]: value === "all" ? undefined : value, search: search || undefined };
         router.get(tuitionUpdateRequestsIndex.url({ query: next }), {}, { preserveState: true, replace: true });
     }
 
@@ -67,138 +74,252 @@ export default function TuitionUpdateRequestsIndex({ user, requests, filters, st
         );
     }
 
+    function resetFilters() {
+        setSearch("");
+        router.get(tuitionUpdateRequestsIndex.url(), {}, { preserveState: true, replace: true });
+    }
+
+    const hasActiveFilters = Boolean(filters.search || filters.status || filters.concern_type);
+
     return (
         <AdminLayout user={user} title="Tuition Update Requests">
             <Head title="Finance · Tuition Update Requests" />
-            <div className="mx-auto w-full max-w-7xl space-y-6">
+            <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+                {/* Header */}
                 <header className="flex flex-col justify-between gap-4 border-b pb-5 md:flex-row md:items-end">
-                    <div>
-                        <div className="text-primary mb-2 flex items-center gap-2 text-xs font-semibold tracking-[0.16em] uppercase">
-                            <ClipboardCheck className="size-4" /> Finance review queue
+                    <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                            <Badge variant="primary-light" className="gap-1.5 tracking-wider uppercase">
+                                <ClipboardCheck className="size-3.5" />
+                                Finance Queue
+                            </Badge>
                         </div>
                         <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Tuition Update Requests</h1>
-                        <p className="text-muted-foreground mt-2 max-w-2xl text-sm">
-                            Review student-reported payment and assessment discrepancies, then link each result to the official payment or tuition
-                            adjustment record.
+                        <p className="text-muted-foreground max-w-3xl text-sm">
+                            Verify and reconcile student-reported tuition discrepancies. Link official receipt payments or tuition adjustments to
+                            resolve requests.
                         </p>
                     </div>
-                    <Badge variant="outline" className="w-fit gap-2 px-3 py-2 text-sm">
-                        <Clock3 className="size-4" />
-                        {activeCount} active on this page
-                    </Badge>
                 </header>
-                <Card>
-                    <CardContent className="grid gap-3 p-4 lg:grid-cols-[minmax(0,1fr)_180px_220px]">
-                        <form className="flex gap-2" onSubmit={submitSearch}>
-                            <Input
-                                value={search}
-                                onChange={(event) => setSearch(event.target.value)}
-                                placeholder="Search student, ID, or OR number"
-                            />
-                            <Button type="submit" variant="secondary">
-                                <Search className="mr-2 size-4" />
+
+                {/* KPI Metrics Row */}
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <Card className="p-4">
+                        <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground text-xs font-medium">Pending Review</span>
+                            <Badge variant="warning-light">Action Needed</Badge>
+                        </div>
+                        <p className="mt-2 text-2xl font-bold tracking-tight tabular-nums">{counts.pending}</p>
+                        <p className="text-muted-foreground mt-0.5 text-xs">On current page</p>
+                    </Card>
+
+                    <Card className="p-4">
+                        <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground text-xs font-medium">In Review</span>
+                            <Badge variant="info-light">Active</Badge>
+                        </div>
+                        <p className="mt-2 text-2xl font-bold tracking-tight tabular-nums">{counts.inReview}</p>
+                        <p className="text-muted-foreground mt-0.5 text-xs">Claimed by reviewers</p>
+                    </Card>
+
+                    <Card className="p-4">
+                        <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground text-xs font-medium">Resolved</span>
+                            <Badge variant="success-light">Completed</Badge>
+                        </div>
+                        <p className="mt-2 text-2xl font-bold tracking-tight tabular-nums">{counts.resolved}</p>
+                        <p className="text-muted-foreground mt-0.5 text-xs">Reconciled & notified</p>
+                    </Card>
+
+                    <Card className="p-4">
+                        <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground text-xs font-medium">Total Requests</span>
+                            <Badge variant="outline">All records</Badge>
+                        </div>
+                        <p className="mt-2 text-2xl font-bold tracking-tight tabular-nums">{requests.total}</p>
+                        <p className="text-muted-foreground mt-0.5 text-xs">Across all pages</p>
+                    </Card>
+                </div>
+
+                {/* Filter Toolbar Card */}
+                <Card className="p-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <form onSubmit={submitSearch} className="flex flex-1 items-center gap-2">
+                            <div className="relative flex-1">
+                                <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+                                <Input
+                                    value={search}
+                                    onChange={(e) => setSearch(e.target.value)}
+                                    placeholder="Search by student name, ID, or OR number..."
+                                    className="pl-8"
+                                />
+                            </div>
+                            <Button type="submit" variant="secondary" size="sm">
                                 Search
                             </Button>
                         </form>
-                        <Select value={String(filters.status ?? "all")} onValueChange={(value) => updateFilter("status", value)}>
-                            <SelectTrigger>
-                                <SelectValue placeholder="All statuses" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">All statuses</SelectItem>
-                                {statuses.map((status) => (
-                                    <SelectItem key={status} value={status}>
-                                        {status.replace("_", " ")}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        <Select value={String(filters.concern_type ?? "all")} onValueChange={(value) => updateFilter("concern_type", value)}>
-                            <SelectTrigger>
-                                <SelectValue placeholder="All concerns" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">All concerns</SelectItem>
-                                {concerns.map((concern) => (
-                                    <SelectItem key={concern} value={concern}>
-                                        {concernLabel[concern]}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Requests</CardTitle>
-                        <CardDescription>
-                            {requests.total} request{requests.total === 1 ? "" : "s"} match the current filters.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="p-0">
-                        <div className="divide-y">
-                            {requests.data.length === 0 ? (
-                                <div className="text-muted-foreground px-6 py-16 text-center text-sm">
-                                    No tuition update requests match these filters.
-                                </div>
-                            ) : (
-                                requests.data.map((request) => (
-                                    <article
-                                        key={request.id}
-                                        className="hover:bg-muted/35 flex flex-col gap-4 px-5 py-4 transition-colors md:flex-row md:items-center"
-                                    >
-                                        <div className="bg-primary/10 text-primary flex size-10 shrink-0 items-center justify-center rounded-full">
-                                            <UserRound className="size-4" />
-                                        </div>
-                                        <div className="min-w-0 flex-1">
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                <p className="font-semibold">{request.student.name || "Student record"}</p>
-                                                <span className="text-muted-foreground text-xs">{request.student.student_number}</span>
-                                                <Badge variant="outline" className={statusTone[request.status]}>
-                                                    {request.status.replace("_", " ")}
-                                                </Badge>
-                                            </div>
-                                            <p className="text-muted-foreground mt-1 text-sm">
-                                                {concernLabel[request.concern_type]} · {request.school_year} ·{" "}
-                                                {request.semester === 1 ? "1st" : "2nd"} Semester
-                                                {request.receipt_number ? ` · OR ${request.receipt_number}` : ""}
-                                            </p>
-                                        </div>
-                                        <div className="flex items-center gap-3">
-                                            <p className="text-muted-foreground hidden text-right text-xs lg:block">
-                                                {request.reviewer_name ? `Reviewer: ${request.reviewer_name}` : "Unassigned"}
-                                                <br />
-                                                {request.submitted_at ? new Date(request.submitted_at).toLocaleDateString() : ""}
-                                            </p>
-                                            <Button variant={can_manage && request.status === "pending" ? "default" : "outline"} asChild>
-                                                <Link href={showTuitionUpdateRequest.url(request.id)}>
-                                                    {can_manage && request.status === "pending" ? "Review" : "View"}
-                                                    <ArrowRight className="ml-2 size-4" />
-                                                </Link>
-                                            </Button>
-                                        </div>
-                                    </article>
-                                ))
+
+                        <div className="flex flex-wrap items-center gap-2">
+                            <div className="w-44">
+                                <Select value={String(filters.status ?? "all")} onValueChange={(val) => updateFilter("status", val)}>
+                                    <SelectTrigger size="sm" className="w-full">
+                                        <SelectValue placeholder="All statuses" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">All statuses</SelectItem>
+                                        {statuses.map((s) => (
+                                            <SelectItem key={s} value={s}>
+                                                {statusMeta[s]?.label ?? s.replace("_", " ")}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <div className="w-52">
+                                <Select value={String(filters.concern_type ?? "all")} onValueChange={(val) => updateFilter("concern_type", val)}>
+                                    <SelectTrigger size="sm" className="w-full">
+                                        <SelectValue placeholder="All concerns" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">All concerns</SelectItem>
+                                        {concerns.map((c) => (
+                                            <SelectItem key={c} value={c}>
+                                                {concernLabels[c] ?? c}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            {hasActiveFilters && (
+                                <Button variant="ghost" size="sm" onClick={resetFilters} className="text-muted-foreground">
+                                    <RotateCcw className="mr-1.5 size-3.5" />
+                                    Reset
+                                </Button>
                             )}
                         </div>
-                    </CardContent>
+                    </div>
                 </Card>
+
+                {/* Queue List in ReUI Frame */}
+                <Frame>
+                    <FramePanel className="p-0">
+                        <div className="divide-border divide-y">
+                            {requests.data.length === 0 ? (
+                                <div className="py-12">
+                                    <Empty>
+                                        <EmptyMedia variant="icon">
+                                            <FileSpreadsheet aria-hidden="true" />
+                                        </EmptyMedia>
+                                        <EmptyHeader>
+                                            <EmptyTitle>No tuition update requests found</EmptyTitle>
+                                            <EmptyDescription>
+                                                {hasActiveFilters
+                                                    ? "No requests match the selected search terms or filters. Try adjusting your query."
+                                                    : "There are currently no tuition update requests awaiting review."}
+                                            </EmptyDescription>
+                                        </EmptyHeader>
+                                        {hasActiveFilters && (
+                                            <Button variant="outline" size="sm" onClick={resetFilters}>
+                                                Clear filters
+                                            </Button>
+                                        )}
+                                    </Empty>
+                                </div>
+                            ) : (
+                                requests.data.map((req) => {
+                                    const meta = statusMeta[req.status] ?? {
+                                        label: req.status,
+                                        variant: "outline" as const,
+                                    };
+                                    const canClaimAndReview = can_manage && req.status === "pending";
+
+                                    return (
+                                        <article
+                                            key={req.id}
+                                            className="hover:bg-muted/30 flex flex-col justify-between gap-4 p-4 transition-colors md:flex-row md:items-center"
+                                        >
+                                            <div className="flex items-start gap-3.5">
+                                                <div className="bg-primary/10 text-primary flex size-9 shrink-0 items-center justify-center rounded-sm">
+                                                    <UserRound className="size-4" />
+                                                </div>
+
+                                                <div className="flex flex-col gap-1">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <span className="text-foreground font-semibold">{req.student.name || "Student Record"}</span>
+                                                        <span className="text-muted-foreground font-mono text-xs">#{req.student.student_number}</span>
+                                                        <Badge variant={meta.variant}>{meta.label}</Badge>
+                                                    </div>
+
+                                                    <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                                                        <span className="text-foreground font-medium">
+                                                            {concernLabels[req.concern_type] ?? req.concern_type}
+                                                        </span>
+                                                        <span>·</span>
+                                                        <span>
+                                                            {req.school_year} ({req.semester === 1 ? "1st Sem" : "2nd Sem"})
+                                                        </span>
+                                                        {req.receipt_number && (
+                                                            <>
+                                                                <span>·</span>
+                                                                <span className="text-foreground font-mono">OR #{req.receipt_number}</span>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-center justify-between gap-4 md:justify-end">
+                                                <div className="text-muted-foreground hidden text-right text-xs lg:block">
+                                                    <div>{req.reviewer_name ? `Reviewer: ${req.reviewer_name}` : "Unassigned"}</div>
+                                                    <div>
+                                                        {req.submitted_at
+                                                            ? new Date(req.submitted_at).toLocaleDateString(undefined, {
+                                                                  month: "short",
+                                                                  day: "numeric",
+                                                                  year: "numeric",
+                                                              })
+                                                            : ""}
+                                                    </div>
+                                                </div>
+
+                                                <Button
+                                                    size="sm"
+                                                    variant={canClaimAndReview ? "default" : "outline"}
+                                                    nativeButton={false}
+                                                    render={<Link href={showTuitionUpdateRequest.url(req.id)} />}
+                                                >
+                                                    {canClaimAndReview ? "Review" : "View Details"}
+                                                    <ArrowRight className="ml-1.5 size-3.5" />
+                                                </Button>
+                                            </div>
+                                        </article>
+                                    );
+                                })
+                            )}
+                        </div>
+                    </FramePanel>
+                </Frame>
+
+                {/* Pagination */}
                 {requests.links.length > 3 && (
-                    <nav className="flex flex-wrap justify-center gap-1">
-                        {requests.links.map((link, index) => (
+                    <nav className="flex flex-wrap justify-center gap-1" aria-label="Pagination">
+                        {requests.links.map((link, idx) => (
                             <Button
-                                key={`${link.label}-${index}`}
+                                key={`${link.label}-${idx}`}
                                 variant={link.active ? "default" : "outline"}
                                 size="sm"
                                 disabled={!link.url}
-                                asChild={Boolean(link.url)}
-                            >
-                                {link.url ? (
-                                    <Link href={link.url}>{link.label.replace(/&laquo;|&raquo;/g, "")}</Link>
-                                ) : (
-                                    <span>{link.label.replace(/&laquo;|&raquo;/g, "")}</span>
-                                )}
-                            </Button>
+                                nativeButton={false}
+                                render={
+                                    link.url ? (
+                                        <Link href={link.url}>{link.label.replace(/&laquo;|&raquo;/g, "").trim()}</Link>
+                                    ) : (
+                                        <span>{link.label.replace(/&laquo;|&raquo;/g, "").trim()}</span>
+                                    )
+                                }
+                            />
                         ))}
                     </nav>
                 )}

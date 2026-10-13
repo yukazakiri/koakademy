@@ -253,3 +253,66 @@ it('links a reviewed assessment request only to its matching tuition adjustment 
         ->and($request->events()->count())->toBe(3);
     Notification::assertSentTo($studentUser, StudentTuitionUpdateRequestReviewedNotification::class);
 });
+
+it('lets Finance record a new verified payment transaction and resolve a missing payment request', function (): void {
+    Notification::fake();
+    [$studentUser, $student, $enrollment, $tuition] = tuitionRequestStudent();
+    $finance = tuitionRequestFinanceUser();
+
+    $this->actingAs($studentUser)->post(route('student.tuition.update-requests.store'), [
+        'school_year' => '2026 - 2027', 'semester' => 1, 'concern_type' => 'missing_payment',
+        'receipt_number' => 'OR-MANUAL-789', 'details' => 'I paid ₱3,500 at the cashier counter but it does not appear on my tuition page.',
+    ]);
+    $request = StudentTuitionUpdateRequest::query()->sole();
+
+    $this->actingAs($finance)->post(route('administrators.finance.tuition-update-requests.claim', $request))->assertRedirect();
+
+    $this->actingAs($finance)->post(route('administrators.finance.tuition-update-requests.record-and-resolve-payment', $request), [
+        'amount' => 3500.00,
+        'payment_method' => 'Cash',
+        'reference_number' => 'OR-MANUAL-789',
+        'resolution_note' => 'We verified your counter receipt and recorded the ₱3,500.00 payment into your tuition account.',
+    ])->assertRedirect();
+
+    $request->refresh();
+    expect($request->status)->toBe(StudentTuitionUpdateRequest::StatusResolved)
+        ->and($request->resolved_transaction_id)->not->toBeNull()
+        ->and($request->resolvedTransaction)->not->toBeNull()
+        ->and((float) $request->resolvedTransaction->raw_total_amount)->toBe(3500.00)
+        ->and($request->events()->where('event', 'resolved_with_recorded_payment')->count())->toBe(1);
+
+    expect((float) $tuition->refresh()->total_balance)->toBe(6500.00);
+    Notification::assertSentTo($studentUser, StudentTuitionUpdateRequestReviewedNotification::class);
+});
+
+it('lets Finance resolve a request with a verified student payment when receipt number differs if allowed', function (): void {
+    Notification::fake();
+    [$studentUser, $student, $enrollment] = tuitionRequestStudent();
+    $finance = tuitionRequestFinanceUser();
+
+    $this->actingAs($studentUser)->post(route('student.tuition.update-requests.store'), [
+        'school_year' => '2026 - 2027', 'semester' => 1, 'concern_type' => 'missing_payment',
+        'receipt_number' => 'OR-TYPO-999', 'details' => 'Payment made via bank transfer.',
+    ]);
+    $request = StudentTuitionUpdateRequest::query()->sole();
+
+    $transaction = Transaction::query()->create([
+        'description' => 'Tuition payment', 'status' => 'paid', 'transaction_date' => now(),
+        'settlements' => ['tuition_fee' => 2000], 'invoicenumber' => 'OR-ACTUAL-1000',
+    ]);
+    StudentTransaction::query()->create([
+        'student_id' => $student->id, 'student_enrollment_id' => $enrollment->id, 'transaction_id' => $transaction->id, 'amount' => 2000, 'status' => 'paid',
+    ]);
+
+    $this->actingAs($finance)->post(route('administrators.finance.tuition-update-requests.claim', $request));
+    $this->actingAs($finance)->post(route('administrators.finance.tuition-update-requests.resolve-payment', $request), [
+        'transaction_id' => $transaction->id,
+        'allow_mismatch' => true,
+        'resolution_note' => 'Linked to transaction with corrected OR number.',
+    ])->assertRedirect();
+
+    $request->refresh();
+    expect($request->status)->toBe(StudentTuitionUpdateRequest::StatusResolved)
+        ->and($request->resolved_transaction_id)->toBe($transaction->id)
+        ->and($request->receipt_number)->toBe('OR-ACTUAL-1000');
+});

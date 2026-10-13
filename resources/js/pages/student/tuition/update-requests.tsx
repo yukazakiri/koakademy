@@ -1,17 +1,36 @@
+import { index as tuitionIndex } from "@/actions/App/Http/Controllers/StudentTuitionController";
+import { store as storeTuitionUpdateRequest } from "@/actions/App/Http/Controllers/StudentTuitionUpdateRequestController";
+import { Alert, AlertDescription, AlertTitle } from "@/components/reui/alert";
+import { Badge } from "@/components/reui/badge";
+import { Frame, FrameDescription, FrameFooter, FrameHeader, FramePanel, FrameTitle } from "@/components/reui/frame";
 import StudentLayout from "@/components/student/student-layout";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { User } from "@/types/user";
 import { Head, Link, useForm } from "@inertiajs/react";
-import { ArrowDown, ArrowLeft, CheckCircle2, Clock3, Loader2, ReceiptText } from "lucide-react";
+import {
+    AlertCircle,
+    ArrowLeft,
+    CheckCircle2,
+    Clock,
+    CreditCard,
+    FileQuestion,
+    HelpCircle,
+    History,
+    Loader2,
+    PlusCircle,
+    Receipt,
+    ReceiptText,
+    Sparkles,
+    UserCheck,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { index as tuitionIndex } from "@/actions/App/Http/Controllers/StudentTuitionController";
-import { store as storeTuitionUpdateRequest } from "@/actions/App/Http/Controllers/StudentTuitionUpdateRequestController";
 
 type Period = { school_year: string; semester: number; label: string };
 type Concern = { value: string; label: string; description: string };
@@ -38,44 +57,57 @@ type Props = {
     submitted_request_id?: number | null;
 };
 
-const statuses = {
-    pending: { label: "Awaiting review", style: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300" },
-    in_review: { label: "In review", style: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300" },
-    resolved: { label: "Resolved", style: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" },
-    rejected: { label: "Not approved", style: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300" },
+const statusConfig: Record<string, { label: string; variant: "warning-light" | "info-light" | "success-light" | "destructive-light" }> = {
+    pending: { label: "Awaiting review", variant: "warning-light" },
+    in_review: { label: "In review", variant: "info-light" },
+    resolved: { label: "Resolved", variant: "success-light" },
+    rejected: { label: "Not approved", variant: "destructive-light" },
 };
-const guidance: Record<string, { label: string; hint: string }> = {
+
+const concernMeta: Record<string, { label: string; hint: string; icon: typeof Receipt }> = {
     missing_payment: {
-        label: "My payment is missing",
-        hint: "Include the payment date, amount, and how you paid. For example: I paid ₱2,000 at the cashier on September 12, but my balance has not changed.",
+        label: "Payment not reflected",
+        hint: "Include payment date, amount, method (Cash, Bank, GCash), and official receipt / reference number. Example: 'Paid ₱3,500 at cashier counter on Oct 10, receipt OR-12345.'",
+        icon: CreditCard,
     },
     discount: {
-        label: "My discount is missing or incorrect",
-        hint: "Tell us the discount or scholarship name and what you expected to see on your assessment.",
+        label: "Discount / scholarship concern",
+        hint: "Specify scholarship or discount name (e.g. Academic Excellence, Sibling Discount) and what percentage or amount is missing.",
+        icon: Sparkles,
     },
     subject_change: {
-        label: "My subjects or assessment are incorrect",
-        hint: "List the subjects added or removed and explain which assessment amount looks incorrect.",
+        label: "Subject enrollment mismatch",
+        hint: "List dropped or added subjects, course codes, and unit counts that differ from your tuition fee assessment.",
+        icon: ReceiptText,
     },
-    other: { label: "Something else", hint: "Explain what looks incorrect on your tuition record and what you expected to see." },
+    other: {
+        label: "General assessment inquiry",
+        hint: "Explain what looks incorrect on your tuition record and what you expected to see.",
+        icon: HelpCircle,
+    },
 };
-function periodLabel(period: { school_year: string; semester: number }) {
+
+function formatPeriod(period: { school_year: string; semester: number }) {
     return `${period.school_year} · ${period.semester === 1 ? "1st" : "2nd"} Semester`;
 }
 
 export default function TuitionUpdateRequests({ auth, requests, periods, selected_period, concerns, error, submitted_request_id }: Props) {
     const initialPeriod =
         periods.find((period) => period.school_year === selected_period.school_year && period.semester === selected_period.semester) ?? periods[0];
+
     const form = useForm({
         school_year: initialPeriod?.school_year ?? "",
         semester: initialPeriod?.semester ?? 1,
-        concern_type: concerns[0]?.value ?? "",
+        concern_type: concerns[0]?.value ?? "missing_payment",
         receipt_number: "",
         details: "",
     });
-    const errorSummary = useRef<HTMLDivElement>(null);
+
+    const [activeTab, setActiveTab] = useState<string>(submitted_request_id && requests.length > 0 ? "history" : "new");
     const [submissionError, setSubmissionError] = useState<string | null>(null);
-    const confirmation = useRef<HTMLDivElement>(null);
+    const errorSummaryRef = useRef<HTMLDivElement>(null);
+    const confirmationRef = useRef<HTMLDivElement>(null);
+
     const isPaymentConcern = form.data.concern_type === "missing_payment";
     const existingRequest = requests.find(
         (request) =>
@@ -89,11 +121,15 @@ export default function TuitionUpdateRequests({ auth, requests, periods, selecte
 
     useEffect(() => {
         if (form.hasErrors || submissionError) {
-            errorSummary.current?.focus();
+            errorSummaryRef.current?.focus();
         }
     }, [form.errors, form.hasErrors, submissionError]);
+
     useEffect(() => {
-        if (submitted_request_id) confirmation.current?.focus();
+        if (submitted_request_id) {
+            setActiveTab("history");
+            confirmationRef.current?.focus();
+        }
     }, [submitted_request_id]);
 
     function submit(event: React.FormEvent) {
@@ -107,351 +143,421 @@ export default function TuitionUpdateRequests({ auth, requests, periods, selecte
         }));
         form.post(storeTuitionUpdateRequest.url(), {
             preserveScroll: true,
-            onSuccess: () => form.reset("receipt_number", "details"),
+            onSuccess: () => {
+                form.reset("receipt_number", "details");
+                setActiveTab("history");
+            },
             onNetworkError: () => {
                 setSubmissionError(
-                    "We couldn’t confirm your submission. Your details are still here. Check your connection and My requests before trying again.",
+                    "We couldn’t confirm your submission. Your details are preserved. Check connection and My requests before retrying.",
                 );
                 return false;
             },
         });
     }
 
+    const currentPeriodValue = `${form.data.school_year}|${form.data.semester}`;
+
     return (
         <StudentLayout user={auth.user}>
             <Head title="Report a tuition issue" />
-            <main className="mx-auto w-full max-w-3xl space-y-8 p-4 pb-24 md:p-8">
-                <header className="space-y-4">
-                    <Button variant="ghost" asChild className="-ml-3 min-h-11">
-                        <Link href={tuitionIndex.url()}>
-                            <ArrowLeft aria-hidden="true" className="mr-2 size-4" />
-                            Back to tuition
-                        </Link>
-                    </Button>
-                    <div className="space-y-2">
-                        <p className="text-primary flex items-center gap-2 text-sm font-medium">
-                            <ReceiptText aria-hidden="true" className="size-4" />
-                            Finance support
-                        </p>
-                                <h1 className="text-balance text-3xl font-semibold tracking-tight">Report a tuition issue</h1>
-                                <p className="text-muted-foreground text-pretty leading-6">
-                            Tell Finance what looks wrong with your tuition record. You can follow their response here.
-                        </p>
+            <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-4 pb-24 md:p-8">
+                {/* Header Section */}
+                <header className="flex flex-col gap-3">
+                    <div>
+                        <Button variant="ghost" size="sm" nativeButton={false} render={<Link href={tuitionIndex.url()} />}>
+                            <ArrowLeft aria-hidden="true" className="mr-1.5 size-4" />
+                            Back to tuition ledger
+                        </Button>
                     </div>
-                    <a
-                        href="#my-requests"
-                        className="text-primary inline-flex min-h-11 items-center gap-2 text-sm font-medium underline-offset-4 hover:underline"
-                    >
-                        My requests ({requests.length})<ArrowDown aria-hidden="true" className="size-4" />
-                    </a>
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <h1 className="text-2xl font-bold tracking-tight">Tuition Update Requests</h1>
+                                <Badge variant="primary-light">Finance Support</Badge>
+                            </div>
+                            <p className="text-muted-foreground mt-1 text-sm">
+                                Report discrepancies in payments, scholarships, or subject enrollments for finance review.
+                            </p>
+                        </div>
+                    </div>
                 </header>
 
+                {/* Submitted Confirmation Banner */}
                 {submittedRequest && (
-                    <div
-                        ref={confirmation}
-                        tabIndex={-1}
-                        role="status"
-                        className="scroll-mt-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-5 outline-offset-4"
-                    >
-                        <h2 className="flex items-center gap-2 font-semibold">
-                            <CheckCircle2 aria-hidden="true" className="size-5" />
-                            Your request was sent to Finance.
-                        </h2>
-                        <p className="mt-2 text-sm">
-                            Request #{submittedRequest.id} · {periodLabel(submittedRequest)} · {statuses[submittedRequest.status].label}
-                        </p>
-                        <a
-                            href={`#request-${submittedRequest.id}`}
-                            className="mt-2 inline-flex min-h-11 items-center text-sm font-medium underline underline-offset-4"
-                        >
-                            View submitted request
-                        </a>
+                    <div ref={confirmationRef} tabIndex={-1} outline-none="true">
+                        <Alert variant="success">
+                            <CheckCircle2 aria-hidden="true" />
+                            <AlertTitle>Your request was submitted to Finance</AlertTitle>
+                            <AlertDescription>
+                                Request #{submittedRequest.id} for {formatPeriod(submittedRequest)} is currently{" "}
+                                <span className="text-foreground font-medium">
+                                    {statusConfig[submittedRequest.status]?.label ?? submittedRequest.status}
+                                </span>
+                                . You will be notified once reviewed.
+                            </AlertDescription>
+                        </Alert>
                     </div>
                 )}
 
+                {/* System Error or Missing Records Gate */}
                 {error || !periods.length || !concerns.length ? (
-                    <Card>
-                        <CardContent className="space-y-2 p-6" role="status">
-                            <h2 className="font-semibold">We can’t accept a request yet</h2>
-                            <p className="text-muted-foreground text-sm leading-6">
-                                {error ??
-                                    (!periods.length
-                                        ? "No enrollment or tuition record is available for your account. Please contact the registrar to check your academic period."
-                                        : "Tuition concern options are unavailable. Please contact Finance for help.")}
-                            </p>
-                        </CardContent>
-                    </Card>
+                    <Frame>
+                        <FramePanel>
+                            <Empty>
+                                <EmptyMedia variant="icon">
+                                    <FileQuestion aria-hidden="true" />
+                                </EmptyMedia>
+                                <EmptyHeader>
+                                    <EmptyTitle>Requests currently unavailable</EmptyTitle>
+                                    <EmptyDescription>
+                                        {error ??
+                                            (!periods.length
+                                                ? "No tuition or enrollment record exists for your account. Please consult the registrar to check academic enrollment."
+                                                : "Tuition concern options are temporarily unavailable. Please contact the Finance office directly.")}
+                                    </EmptyDescription>
+                                </EmptyHeader>
+                            </Empty>
+                        </FramePanel>
+                    </Frame>
                 ) : (
-                    <Card className="overflow-hidden py-0 shadow-sm">
-                        <CardContent className="p-0">
-                            <form onSubmit={submit} noValidate>
-                                {(errors.length > 0 || submissionError) && (
-                                    <div
-                                        ref={errorSummary}
-                                        tabIndex={-1}
-                                        role="alert"
-                                        aria-labelledby="request-errors-title"
-                                        className="border-destructive/30 bg-destructive/5 m-6 rounded-lg border p-4 outline-offset-4"
-                                    >
-                                        <h2 id="request-errors-title" className="font-semibold">
-                                            Check these details before sending
-                                        </h2>
-                                        {submissionError && <p className="mt-2 text-sm">{submissionError}</p>}
-                                        <ul className="text-destructive mt-2 list-inside list-disc space-y-2 text-sm">
-                                            {errors.map(([field, message]) => (
-                                                <li key={field}>{message}</li>
-                                            ))}
-                                        </ul>
-                                    </div>
+                    <Tabs value={activeTab} onValueChange={(val) => setActiveTab(val)}>
+                        <TabsList className="grid w-full grid-cols-2 sm:w-80">
+                            <TabsTab value="new" className="gap-2">
+                                <PlusCircle className="size-4" />
+                                <span>New Request</span>
+                            </TabsTab>
+                            <TabsTab value="history" className="gap-2">
+                                <History className="size-4" />
+                                <span>My Requests</span>
+                                {requests.length > 0 && (
+                                    <Badge variant="outline" className="ml-1 px-1.5 py-0 text-xs">
+                                        {requests.length}
+                                    </Badge>
                                 )}
-                                <fieldset disabled={form.processing} className="min-w-0 divide-y disabled:opacity-70">
-                                    <section className="space-y-4 p-5 sm:p-6" aria-labelledby="period-title">
-                                        <h2 id="period-title" className="font-semibold">
-                                            <span className="text-primary mr-3 text-sm">01</span>Choose your academic period
-                                        </h2>
-                                        <div className="space-y-2">
-                                            <Label htmlFor="request-period">Academic period (required)</Label>
-                                            <select
-                                                id="request-period"
-                                                value={`${form.data.school_year}|${form.data.semester}`}
-                                                aria-invalid={Boolean(form.errors.school_year || form.errors.semester)}
-                                                aria-describedby="period-help period-error"
-                                                className="border-input bg-background focus-visible:border-ring focus-visible:ring-ring/50 min-h-11 w-full rounded-md border px-3 text-sm outline-none focus-visible:ring-2"
-                                                onChange={(event) => {
-                                                    const [schoolYear, semester] = event.target.value.split("|");
-                                                    form.setData((data) => ({ ...data, school_year: schoolYear, semester: Number(semester) }));
+                            </TabsTab>
+                        </TabsList>
+
+                        {/* TAB 1: NEW REQUEST FORM */}
+                        <TabsPanel value="new" className="mt-4">
+                            <form onSubmit={submit} noValidate>
+                                <Frame>
+                                    {/* Error Summary */}
+                                    {(errors.length > 0 || submissionError) && (
+                                        <FramePanel className="bg-destructive/5 border-destructive/25">
+                                            <div ref={errorSummaryRef} tabIndex={-1} role="alert" className="flex flex-col gap-2">
+                                                <div className="text-destructive flex items-center gap-2 font-semibold">
+                                                    <AlertCircle className="size-4" />
+                                                    <span>Please correct the errors before sending</span>
+                                                </div>
+                                                {submissionError && <p className="text-destructive text-sm">{submissionError}</p>}
+                                                <ul className="text-destructive list-inside list-disc text-sm">
+                                                    {errors.map(([field, message]) => (
+                                                        <li key={field}>{message}</li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        </FramePanel>
+                                    )}
+
+                                    {/* Step 1: Period Selection */}
+                                    <FramePanel>
+                                        <FrameHeader>
+                                            <FrameTitle>1. Select Academic Period</FrameTitle>
+                                            <FrameDescription>Choose the school year and semester where the discrepancy appears.</FrameDescription>
+                                        </FrameHeader>
+                                        <div className="mt-3 flex flex-col gap-2">
+                                            <Label htmlFor="period-selector">Academic period</Label>
+                                            <Select
+                                                value={currentPeriodValue}
+                                                onValueChange={(val) => {
+                                                    const [sy, sem] = val.split("|");
+                                                    form.setData((prev) => ({
+                                                        ...prev,
+                                                        school_year: sy,
+                                                        semester: Number(sem),
+                                                    }));
                                                     form.clearErrors("school_year", "semester", "concern_type");
                                                 }}
                                             >
-                                                {periods.map((period) => (
-                                                    <option
-                                                        key={`${period.school_year}|${period.semester}`}
-                                                        value={`${period.school_year}|${period.semester}`}
-                                                    >
-                                                        {period.label}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                            <p id="period-help" className="text-muted-foreground text-sm">
-                                                Choose the period with the incorrect record. Changing it keeps your details below.
-                                            </p>
-                                            <p id="period-error" className="text-destructive text-sm">
-                                                {form.errors.school_year || form.errors.semester}
-                                            </p>
+                                                <SelectTrigger id="period-selector" className="w-full">
+                                                    <SelectValue placeholder="Select academic period" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {periods.map((p) => (
+                                                        <SelectItem key={`${p.school_year}|${p.semester}`} value={`${p.school_year}|${p.semester}`}>
+                                                            {p.label}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            {(form.errors.school_year || form.errors.semester) && (
+                                                <p className="text-destructive text-xs">{form.errors.school_year || form.errors.semester}</p>
+                                            )}
                                         </div>
-                                    </section>
-                                    <fieldset aria-describedby="concern-error" className="min-w-0 p-5 sm:p-6">
-                                        <legend className="float-left mb-4 w-full font-semibold">
-                                            <span className="text-primary mr-3 text-sm">02</span>What’s wrong?{" "}
-                                            <span className="text-muted-foreground text-sm font-normal">(required)</span>
-                                        </legend>
-                                        <div className="clear-both space-y-2">
-                                            {concerns.map((concern) => (
-                                                <label
-                                                    key={concern.value}
-                                                    className={cn(
-                                                        "border-input hover:border-primary/50 flex min-h-14 cursor-pointer items-start gap-3 rounded-lg border p-4 transition-colors",
-                                                        form.data.concern_type === concern.value && "border-primary bg-primary/5",
-                                                    )}
-                                                >
-                                                    <input
-                                                        type="radio"
-                                                        name="concern_type"
-                                                        value={concern.value}
-                                                        checked={form.data.concern_type === concern.value}
-                                                        aria-invalid={Boolean(form.errors.concern_type)}
-                                                        aria-describedby="concern-error"
-                                                        className="accent-primary mt-0.5 size-4 shrink-0"
-                                                        onChange={() => {
-                                                            form.setData((data) => ({ ...data, concern_type: concern.value, receipt_number: "" }));
+                                    </FramePanel>
+
+                                    {/* Step 2: Concern Type Cards */}
+                                    <FramePanel>
+                                        <FrameHeader>
+                                            <FrameTitle>2. What is your concern?</FrameTitle>
+                                            <FrameDescription>Select the category that best describes your tuition fee update.</FrameDescription>
+                                        </FrameHeader>
+                                        <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
+                                            {concerns.map((concern) => {
+                                                const meta = concernMeta[concern.value] ?? {
+                                                    label: concern.label,
+                                                    hint: concern.description,
+                                                    icon: HelpCircle,
+                                                };
+                                                const Icon = meta.icon;
+                                                const isSelected = form.data.concern_type === concern.value;
+
+                                                return (
+                                                    <button
+                                                        key={concern.value}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            form.setData((prev) => ({
+                                                                ...prev,
+                                                                concern_type: concern.value,
+                                                                receipt_number: "",
+                                                            }));
                                                             form.clearErrors("concern_type", "receipt_number");
                                                         }}
-                                                    />
-                                                    <span>
-                                                        <span className="block text-sm font-medium">
-                                                            {guidance[concern.value]?.label ?? concern.label}
-                                                        </span>
-                                                        <span className="text-muted-foreground mt-1 block text-sm leading-5">
-                                                            {concern.description}
-                                                        </span>
-                                                    </span>
-                                                </label>
-                                            ))}
+                                                        className={cn(
+                                                            "flex flex-col items-start gap-2 border p-3.5 text-left transition-colors",
+                                                            isSelected
+                                                                ? "border-primary bg-primary/5 text-foreground ring-primary ring-1"
+                                                                : "border-border bg-card hover:bg-muted/50 text-muted-foreground",
+                                                        )}
+                                                    >
+                                                        <div className="flex w-full items-center justify-between">
+                                                            <div className="flex items-center gap-2">
+                                                                <div
+                                                                    className={cn(
+                                                                        "flex size-7 items-center justify-center rounded-sm",
+                                                                        isSelected
+                                                                            ? "bg-primary text-primary-foreground"
+                                                                            : "bg-muted text-foreground",
+                                                                    )}
+                                                                >
+                                                                    <Icon className="size-4" />
+                                                                </div>
+                                                                <span className={cn("text-sm font-semibold", isSelected && "text-foreground")}>
+                                                                    {meta.label}
+                                                                </span>
+                                                            </div>
+                                                            {isSelected && <Badge variant="primary-light">Selected</Badge>}
+                                                        </div>
+                                                        <p className="text-muted-foreground text-xs leading-relaxed">{concern.description}</p>
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
-                                        <p id="concern-error" className="text-destructive mt-2 text-sm">
-                                            {form.errors.concern_type}
-                                        </p>
-                                        {existingRequest && (
-                                            <div role="status" className="bg-muted mt-4 rounded-lg p-4 text-sm leading-6">
-                                                <p id="duplicate-message" className="font-medium">
-                                                    Finance already has a request for this issue.
-                                                </p>
-                                                <p>You don’t need to send it again. Check request #{existingRequest.id} for updates.</p>
-                                                <a
-                                                    className="text-primary inline-flex min-h-11 items-center font-medium underline underline-offset-4"
-                                                    href={`#request-${existingRequest.id}`}
-                                                >
-                                                    View existing request
-                                                </a>
-                                            </div>
-                                        )}
-                                    </fieldset>
-                                    <section className="space-y-5 p-5 sm:p-6" aria-labelledby="details-title">
-                                        <h2 id="details-title" className="font-semibold">
-                                            <span className="text-primary mr-3 text-sm">03</span>Tell us more
-                                        </h2>
-                                        {isPaymentConcern && (
-                                            <div className="space-y-2">
-                                                <Label htmlFor="receipt-number">Official receipt / OR number (required)</Label>
-                                                <Input
-                                                    id="receipt-number"
-                                                    className="min-h-11"
-                                                    value={form.data.receipt_number}
-                                                    maxLength={255}
-                                                    required
-                                                    autoComplete="off"
-                                                    aria-invalid={Boolean(form.errors.receipt_number)}
-                                                    aria-describedby="receipt-help receipt-error"
-                                                    onChange={(event) => form.setData("receipt_number", event.target.value)}
-                                                />
-                                                <p id="receipt-help" className="text-muted-foreground text-sm">
-                                                    Look for “OR No.” or “Receipt No.” on your official payment receipt. If you can’t find it, ask the
-                                                    cashier before submitting.
-                                                </p>
-                                                <p id="receipt-error" className="text-destructive text-sm">
-                                                    {form.errors.receipt_number}
-                                                </p>
-                                            </div>
-                                        )}
-                                        <div className="space-y-2">
-                                            <Label htmlFor="request-details">What should Finance check? (required)</Label>
-                                            <p id="details-help" className="text-muted-foreground text-sm leading-6">
-                                                {guidance[form.data.concern_type]?.hint ?? guidance.other.hint}
-                                            </p>
-                                            <Textarea
-                                                id="request-details"
-                                                className="min-h-36 resize-y"
-                                                value={form.data.details}
-                                                required
-                                                minLength={10}
-                                                maxLength={2000}
-                                                aria-invalid={Boolean(form.errors.details)}
-                                                aria-describedby="details-help details-count details-error"
-                                                onChange={(event) => form.setData("details", event.target.value)}
-                                            />
-                                            <p id="details-count" className="text-muted-foreground flex justify-between gap-3 text-xs">
-                                                <span>10–2,000 characters</span>
-                                                <span className="tabular-nums">{form.data.details.length.toLocaleString()} / 2,000</span>
-                                            </p>
-                                            <p id="details-error" className="text-destructive text-sm">
-                                                {form.errors.details}
-                                            </p>
-                                        </div>
-                                    </section>
-                                    <div className="bg-muted/30 space-y-4 p-5 sm:p-6">
-                                        <p className="text-muted-foreground text-sm leading-6">
-                                            Finance will verify your receipt or assessment before making changes. Sending a request does not
-                                            automatically change your balance. You’ll receive a portal notification after review.
-                                        </p>
-                                        <Button
-                                            type="submit"
-                                            disabled={form.processing || Boolean(existingRequest)}
-                                            className="min-h-11 w-full sm:w-auto"
-                                            aria-describedby={existingRequest ? "duplicate-message" : undefined}
-                                        >
-                                            {form.processing && (
-                                                <Loader2 aria-hidden="true" className="mr-2 size-4 animate-spin motion-reduce:animate-none" />
-                                            )}
-                                            {form.processing ? "Sending request…" : "Send request to Finance"}
-                                        </Button>
-                                    </div>
-                                </fieldset>
-                            </form>
-                        </CardContent>
-                    </Card>
-                )}
+                                        {form.errors.concern_type && <p className="text-destructive mt-2 text-xs">{form.errors.concern_type}</p>}
 
-                <section id="my-requests" tabIndex={-1} className="scroll-mt-6 space-y-4" aria-labelledby="history-title">
-                    <div>
-                        <h2 id="history-title" className="text-xl font-semibold tracking-tight">
-                            My requests
-                        </h2>
-                        <p className="text-muted-foreground mt-1 text-sm">All academic periods · Most recent first</p>
-                    </div>
-                    {requests.length === 0 ? (
-                        <Card>
-                            <CardContent className="space-y-2 p-6">
-                                <Clock3 aria-hidden="true" className="text-muted-foreground size-5" />
-                                <p className="font-medium">No requests yet</p>
-                                <p className="text-muted-foreground text-sm">
-                                    After you send a request, its progress and Finance’s response will appear here.
-                                </p>
-                            </CardContent>
-                        </Card>
-                    ) : (
-                        requests.map((request) => (
-                            <Card
-                                key={request.id}
-                                id={`request-${request.id}`}
-                                tabIndex={-1}
-                                className="target:ring-primary scroll-mt-6 target:ring-2"
-                            >
-                                <CardContent className="space-y-4 p-5 sm:p-6">
-                                    <div className="flex flex-wrap items-center justify-between gap-2">
-                                        <p className="text-muted-foreground text-xs font-medium">REQUEST #{request.id}</p>
-                                        <Badge variant="outline" className={statuses[request.status].style}>
-                                            {statuses[request.status].label}
-                                        </Badge>
-                                    </div>
-                                    <div className="space-y-1">
-                                        <h3 className="font-semibold">
-                                            {guidance[request.concern_type]?.label ??
-                                                concerns.find((concern) => concern.value === request.concern_type)?.label ??
-                                                "Tuition concern"}
-                                        </h3>
-                                        <p className="text-muted-foreground text-sm">{periodLabel(request)}</p>
-                                    </div>
-                                    <p className="text-sm leading-6 [overflow-wrap:anywhere] whitespace-pre-wrap">{request.details}</p>
-                                    {request.receipt_number && (
-                                        <p className="text-muted-foreground text-sm [overflow-wrap:anywhere]">Receipt: {request.receipt_number}</p>
-                                    )}
-                                    <p className="text-muted-foreground text-xs">
-                                        Submitted{" "}
-                                        {request.submitted_at ? (
-                                            <time dateTime={request.submitted_at}>{new Date(request.submitted_at).toLocaleDateString()}</time>
-                                        ) : (
-                                            "—"
+                                        {existingRequest && (
+                                            <Alert variant="info" className="mt-4">
+                                                <Clock aria-hidden="true" />
+                                                <AlertTitle>Active request already pending</AlertTitle>
+                                                <AlertDescription>
+                                                    Finance is currently reviewing request #{existingRequest.id} for this period and category. You can
+                                                    check its status in the "My Requests" tab.
+                                                </AlertDescription>
+                                            </Alert>
                                         )}
-                                    </p>
-                                    {request.resolution_note ? (
-                                        <div className="bg-muted/50 space-y-2 rounded-lg border p-4">
-                                            <h4 className="text-sm font-medium">
-                                                Finance’s response{request.reviewer_name ? ` · ${request.reviewer_name}` : ""}
-                                            </h4>
-                                            <p className="text-sm leading-6 [overflow-wrap:anywhere] whitespace-pre-wrap">
-                                                {request.resolution_note}
-                                            </p>
-                                            {request.resolved_at && (
-                                                <p className="text-muted-foreground text-xs">
-                                                    Reviewed{" "}
-                                                    <time dateTime={request.resolved_at}>{new Date(request.resolved_at).toLocaleDateString()}</time>
-                                                </p>
+                                    </FramePanel>
+
+                                    {/* Step 3: Details & Receipt */}
+                                    <FramePanel>
+                                        <FrameHeader>
+                                            <FrameTitle>3. Provide Details</FrameTitle>
+                                            <FrameDescription>
+                                                Share supporting information so Finance can verify your records quickly.
+                                            </FrameDescription>
+                                        </FrameHeader>
+                                        <div className="mt-3 flex flex-col gap-4">
+                                            {isPaymentConcern && (
+                                                <div className="flex flex-col gap-1.5">
+                                                    <Label htmlFor="receipt-input">Official Receipt / Reference No.</Label>
+                                                    <Input
+                                                        id="receipt-input"
+                                                        value={form.data.receipt_number}
+                                                        onChange={(e) => form.setData("receipt_number", e.target.value)}
+                                                        placeholder="e.g. OR-2026-001, BDO-REF-45892, or Counter Receipt #"
+                                                        maxLength={255}
+                                                        required
+                                                        autoComplete="off"
+                                                    />
+                                                    <p className="text-muted-foreground text-xs">
+                                                        Enter the official receipt (OR) number or bank/cashier payment reference. If you don't have an
+                                                        OR yet, write your payment transaction or deposit reference number.
+                                                    </p>
+                                                    {form.errors.receipt_number && (
+                                                        <p className="text-destructive text-xs">{form.errors.receipt_number}</p>
+                                                    )}
+                                                </div>
                                             )}
+
+                                            <div className="flex flex-col gap-1.5">
+                                                <Label htmlFor="details-input">Explanation of discrepancy</Label>
+                                                <p className="text-muted-foreground text-xs">
+                                                    {concernMeta[form.data.concern_type]?.hint ?? concernMeta.other.hint}
+                                                </p>
+                                                <Textarea
+                                                    id="details-input"
+                                                    value={form.data.details}
+                                                    onChange={(e) => form.setData("details", e.target.value)}
+                                                    placeholder="Provide clear details regarding what you paid or what needs adjustment..."
+                                                    className="min-h-32 resize-y"
+                                                    minLength={10}
+                                                    maxLength={2000}
+                                                    required
+                                                />
+                                                <div className="text-muted-foreground flex items-center justify-between text-xs">
+                                                    <span>Minimum 10 characters</span>
+                                                    <span className="tabular-nums">{form.data.details.length} / 2,000</span>
+                                                </div>
+                                                {form.errors.details && <p className="text-destructive text-xs">{form.errors.details}</p>}
+                                            </div>
                                         </div>
-                                    ) : (
-                                        ["pending", "in_review"].includes(request.status) && (
-                                            <p className="text-muted-foreground border-t pt-3 text-sm">
-                                                {request.status === "pending"
-                                                    ? "Your request is waiting for Finance to review."
-                                                    : "Finance is checking your receipt or assessment."}
-                                            </p>
-                                        )
-                                    )}
-                                </CardContent>
-                            </Card>
-                        ))
-                    )}
-                </section>
+                                    </FramePanel>
+
+                                    {/* Footer & Submit */}
+                                    <FrameFooter className="bg-muted/30 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+                                        <p className="text-muted-foreground text-xs">
+                                            Finance will inspect the cashier ledger or assessment records before adjusting your balance.
+                                        </p>
+                                        <Button type="submit" disabled={form.processing || Boolean(existingRequest)} className="w-full sm:w-auto">
+                                            {form.processing && <Loader2 className="mr-2 size-4 animate-spin" />}
+                                            {form.processing ? "Submitting..." : "Send Request to Finance"}
+                                        </Button>
+                                    </FrameFooter>
+                                </Frame>
+                            </form>
+                        </TabsPanel>
+
+                        {/* TAB 2: MY REQUESTS HISTORY */}
+                        <TabsPanel value="history" className="mt-4">
+                            {requests.length === 0 ? (
+                                <Frame>
+                                    <FramePanel>
+                                        <Empty>
+                                            <EmptyMedia variant="icon">
+                                                <Clock aria-hidden="true" />
+                                            </EmptyMedia>
+                                            <EmptyHeader>
+                                                <EmptyTitle>No tuition requests yet</EmptyTitle>
+                                                <EmptyDescription>
+                                                    Once you submit a request, its review status, assigned reviewer, and Finance’s official response
+                                                    will be tracked here.
+                                                </EmptyDescription>
+                                            </EmptyHeader>
+                                            <Button variant="outline" size="sm" onClick={() => setActiveTab("new")}>
+                                                <PlusCircle className="mr-1.5 size-4" />
+                                                Submit a request
+                                            </Button>
+                                        </Empty>
+                                    </FramePanel>
+                                </Frame>
+                            ) : (
+                                <div className="flex flex-col gap-3">
+                                    {requests.map((req) => {
+                                        const config = statusConfig[req.status] ?? {
+                                            label: req.status,
+                                            variant: "outline" as const,
+                                        };
+                                        const isTarget = req.id === submitted_request_id;
+
+                                        return (
+                                            <Frame key={req.id} className={cn(isTarget && "ring-primary ring-2")}>
+                                                <FramePanel>
+                                                    <div className="flex flex-col gap-3">
+                                                        <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2.5">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+                                                                    Request #{req.id}
+                                                                </span>
+                                                                <span className="text-muted-foreground">·</span>
+                                                                <span className="text-muted-foreground text-xs font-medium">{formatPeriod(req)}</span>
+                                                            </div>
+                                                            <Badge variant={config.variant}>{config.label}</Badge>
+                                                        </div>
+
+                                                        <div className="flex flex-col gap-1">
+                                                            <h3 className="text-foreground font-semibold">
+                                                                {concernMeta[req.concern_type]?.label ?? req.concern_type}
+                                                            </h3>
+                                                            {req.receipt_number && (
+                                                                <div className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                                                                    <Receipt className="size-3.5" />
+                                                                    <span>Receipt / Reference:</span>
+                                                                    <code className="bg-muted text-foreground rounded px-1.5 py-0.5 font-mono">
+                                                                        {req.receipt_number}
+                                                                    </code>
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        <p className="text-muted-foreground text-sm leading-relaxed whitespace-pre-wrap">
+                                                            {req.details}
+                                                        </p>
+
+                                                        <div className="text-muted-foreground text-xs">
+                                                            Submitted:{" "}
+                                                            {req.submitted_at
+                                                                ? new Date(req.submitted_at).toLocaleDateString(undefined, {
+                                                                      year: "numeric",
+                                                                      month: "short",
+                                                                      day: "numeric",
+                                                                      hour: "2-digit",
+                                                                      minute: "2-digit",
+                                                                  })
+                                                                : "—"}
+                                                        </div>
+
+                                                        {/* Resolution Note or Pending State */}
+                                                        {req.resolution_note ? (
+                                                            <div className="border-border bg-muted/40 flex flex-col gap-2 rounded-md border p-3.5">
+                                                                <div className="text-foreground flex items-center justify-between text-xs font-medium">
+                                                                    <span className="flex items-center gap-1.5">
+                                                                        <UserCheck className="text-primary size-3.5" />
+                                                                        Finance Response
+                                                                        {req.reviewer_name ? ` (${req.reviewer_name})` : ""}
+                                                                    </span>
+                                                                    {req.resolved_at && (
+                                                                        <span className="text-muted-foreground">
+                                                                            {new Date(req.resolved_at).toLocaleDateString()}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <p className="text-foreground text-sm leading-relaxed whitespace-pre-wrap">
+                                                                    {req.resolution_note}
+                                                                </p>
+                                                            </div>
+                                                        ) : (
+                                                            ["pending", "in_review"].includes(req.status) && (
+                                                                <div className="text-muted-foreground flex items-center gap-2 border-t pt-2.5 text-xs">
+                                                                    <Clock className="size-3.5" />
+                                                                    <span>
+                                                                        {req.status === "pending"
+                                                                            ? "Awaiting review by Finance officer."
+                                                                            : "Currently under active verification by Finance."}
+                                                                    </span>
+                                                                </div>
+                                                            )
+                                                        )}
+                                                    </div>
+                                                </FramePanel>
+                                            </Frame>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </TabsPanel>
+                    </Tabs>
+                )}
             </main>
         </StudentLayout>
     );

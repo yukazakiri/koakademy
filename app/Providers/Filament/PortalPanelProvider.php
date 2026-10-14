@@ -15,6 +15,7 @@ use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
 use Filament\Widgets\AccountWidget;
 use Filament\Widgets\FilamentInfoWidget;
+use HoceineEl\UndoToast\UndoToastPlugin;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
@@ -61,6 +62,7 @@ final class PortalPanelProvider extends PanelProvider
             ])
             ->plugins([
                 ApiServicePlugin::make(),
+                UndoToastPlugin::make(),
             ])
             ->middleware([
                 EncryptCookies::class,

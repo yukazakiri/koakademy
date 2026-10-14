@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "5b5173f7e9ac9a7f6545bba691aa1d67",
+    "content-hash": "d0e63c77deb683b3c276a790d3d90feb",
     "packages": [
         {
             "name": "achyutn/filament-log-viewer",
@@ -4816,6 +4816,75 @@
                 "source": "https://github.com/helios-live/filament-feature-showcase/tree/v1.3.0"
             },
             "time": "2026-06-01T05:12:28+00:00"
+        },
+        {
+            "name": "hoceineel/filament-undo-toast",
+            "version": "v0.2.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/HoceineEl/filament-undo-toast.git",
+                "reference": "f3624b99bac3cd5bf29bff55cf9dcddad39fcc36"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/HoceineEl/filament-undo-toast/zipball/f3624b99bac3cd5bf29bff55cf9dcddad39fcc36",
+                "reference": "f3624b99bac3cd5bf29bff55cf9dcddad39fcc36",
+                "shasum": ""
+            },
+            "require": {
+                "filament/filament": "^4.0|^5.0",
+                "illuminate/contracts": "^11.0|^12.0|^13.0",
+                "php": "^8.3",
+                "spatie/laravel-package-tools": "^1.16"
+            },
+            "require-dev": {
+                "larastan/larastan": "^3.0",
+                "laravel/pint": "^1.24",
+                "orchestra/testbench": "^10.0|^11.0",
+                "pestphp/pest": "^4.0",
+                "pestphp/pest-plugin-laravel": "^4.0",
+                "pestphp/pest-plugin-livewire": "^4.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "HoceineEl\\UndoToast\\UndoToastServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "HoceineEl\\UndoToast\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Hoceine El Idrissi",
+                    "email": "contact@hoceine.com",
+                    "role": "Developer"
+                }
+            ],
+            "description": "Gmail-style undo toasts for Filament delete, restore, edit and detach actions, with a countdown and mod+z.",
+            "homepage": "https://github.com/HoceineEl/filament-undo-toast",
+            "keywords": [
+                "filament",
+                "hoceineel",
+                "laravel",
+                "notifications",
+                "soft-deletes",
+                "toast",
+                "undo"
+            ],
+            "support": {
+                "issues": "https://github.com/HoceineEl/filament-undo-toast/issues",
+                "source": "https://github.com/HoceineEl/filament-undo-toast/tree/v0.2.0"
+            },
+            "time": "2026-10-08T21:38:53+00:00"
         },
         {
             "name": "http-interop/http-factory-guzzle",

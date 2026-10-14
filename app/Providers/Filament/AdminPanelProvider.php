@@ -36,6 +36,7 @@ use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
 use Filament\Widgets\AccountWidget;
 use HeliosLive\FilamentFeatureShowcase\FeatureShowcasePlugin;
+use HoceineEl\UndoToast\UndoToastPlugin;
 use Illuminate\Contracts\View\Factory;
 use Illuminate\Contracts\View\View;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
@@ -142,6 +143,7 @@ final class AdminPanelProvider extends PanelProvider
                 ->showSidebarVersion(true)     // Show version in sidebar footer (default: true)
                 ->showButton(true)             // Show the floating "What's New" button (default: true)
                 ->buttonPosition('bottom-left'),
+            UndoToastPlugin::make(),
         ];
 
         $isTestingEnvironment = ($_ENV['APP_ENV'] ?? $_SERVER['APP_ENV'] ?? null) === 'testing';

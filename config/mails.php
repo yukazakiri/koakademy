@@ -19,6 +19,7 @@ return [
     'database' => [
         'tables' => [
             'mails' => 'mails',
+            'recipients' => 'mail_recipients',
             'attachments' => 'mail_attachments',
             'events' => 'mail_events',
             'polymorph' => 'mailables',

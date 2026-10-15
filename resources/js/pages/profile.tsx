@@ -3,15 +3,17 @@ import React, { useEffect, useRef, useState } from "react";
 import { useTheme } from "@/hooks/use-theme";
 import { Head, Link, router, useForm, usePage } from "@inertiajs/react";
 import { motion } from "framer-motion";
-import { ArrowLeft, BookOpen, CheckCircle2, Contact, GraduationCap, ListChecks, Palette, Plug, QrCode, Share2, User, X } from "lucide-react";
+import { ArrowLeft, BookOpen, CheckCircle2, Contact, GraduationCap, ListChecks, Palette, Plug, QrCode, RotateCcw, Save, Share2, ShieldCheck, Sparkles, User, X } from "lucide-react";
 
 import { toast } from "sonner";
 
 import PortalLayout from "@/components/portal-layout";
 import { Badge } from "@/components/ui/badge";
+import { Badge as ReUiBadge } from "@/components/reui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Frame, FrameHeader, FramePanel, FrameTitle } from "@/components/reui/frame";
 
 import { type IdCardData } from "@/components/digital-id-card";
 import {
@@ -205,6 +207,7 @@ export default function ProfilePage() {
         sessions,
         endpoints,
         connected_accounts = { providers: {}, accounts: [] },
+        calendar_feed,
         can_view_newsletter_settings = false,
         newsletter_settings_url = null,
         can_configure_payment_workspace = false,
@@ -382,6 +385,11 @@ export default function ProfilePage() {
             studentInformationUpdates?: boolean;
         };
         student_profile_completion?: StudentProfileCompletion;
+        calendar_feed?: {
+            feed_url: string;
+            webcal_url: string;
+            download_url: string;
+        };
         income_modes?: Array<{ value: string; label: string; brackets: Array<{ value: string; label: string }> }>;
         default_income_mode?: string;
         branding?: {
@@ -423,6 +431,13 @@ export default function ProfilePage() {
                 ? "personal"
                 : "basic";
     const [studentProfileTab, setStudentProfileTab] = useState(initialStudentTab);
+
+    const profileTabValues = ["profile", "id-card", "accounts", "personalization", "experimental", "connections", "integrations"];
+    const [activeProfileTab, setActiveProfileTab] = useState(() => {
+        if (typeof window === "undefined") return "profile";
+        const requestedTab = new URLSearchParams(window.location.search).get("tab");
+        return requestedTab && profileTabValues.includes(requestedTab) ? requestedTab : "profile";
+    });
 
     const paths = {
         profile_update: endpoints?.profile_update || "/profile",
@@ -566,6 +581,19 @@ export default function ProfilePage() {
     const [guidedFieldKey, setGuidedFieldKey] = useState<string | null>(null);
     const [guidanceFocusVersion, setGuidanceFocusVersion] = useState(0);
     const [reportingConfirmed, setReportingConfirmed] = useState(Boolean(student?.profile_reporting_confirmed_at));
+
+    useEffect(() => {
+        if (!hasChanges) return;
+
+        const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+            event.preventDefault();
+            event.returnValue = "";
+        };
+
+        window.addEventListener("beforeunload", handleBeforeUnload);
+
+        return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+    }, [hasChanges]);
     const studentFormDataRef = useRef<GuidedStudentFormData>(studentForm.data);
 
     const courses = (facultyForm.data.courses_taught || "")
@@ -591,15 +619,50 @@ export default function ProfilePage() {
     const completionFields = [
         userForm.data.name,
         userForm.data.email,
+        userForm.data.phone,
+        userForm.data.address,
+        userForm.data.city,
+        userForm.data.country,
         userForm.data.bio,
-        facultyForm.data.office_hours,
-        facultyForm.data.education,
-        facultyForm.data.courses_taught,
-        facultyForm.data.biography,
+        userForm.data.website,
+        ...(isFaculty
+            ? [
+                  facultyForm.data.department,
+                  facultyForm.data.office_hours,
+                  facultyForm.data.education,
+                  facultyForm.data.courses_taught,
+                  facultyForm.data.biography,
+                  facultyForm.data.gender,
+              ]
+            : []),
     ];
 
     const filledFields = completionFields.filter((value) => Boolean(value && `${value}`.trim())).length;
     const accountProfileCompletion = Math.min(100, Math.round((filledFields / completionFields.length) * 100));
+
+    const accountCompletionChecklist = isStudent
+        ? []
+        : [
+              { label: "Name", complete: Boolean(userForm.data.name.trim()) },
+              { label: "Email", complete: Boolean(userForm.data.email.trim()) },
+              { label: "Phone", complete: Boolean(userForm.data.phone.trim()) },
+              { label: "Address", complete: Boolean(userForm.data.address.trim()) },
+              { label: "City", complete: Boolean(userForm.data.city.trim()) },
+              { label: "Country", complete: Boolean(userForm.data.country.trim()) },
+              { label: "Bio", complete: Boolean(userForm.data.bio.trim()) },
+              { label: "Website", complete: Boolean(userForm.data.website.trim()) },
+              ...(isFaculty
+                  ? [
+                        { label: "Department", complete: Boolean(facultyForm.data.department.trim()) },
+                        { label: "Office hours", complete: Boolean(facultyForm.data.office_hours.trim()) },
+                        { label: "Education", complete: Boolean(facultyForm.data.education.trim()) },
+                        { label: "Courses taught", complete: Boolean(facultyForm.data.courses_taught.trim()) },
+                        { label: "Biography", complete: Boolean(facultyForm.data.biography.trim()) },
+                    ]
+                  : []),
+          ];
+
+    const missingAccountCompletionItems = accountCompletionChecklist.filter((item) => !item.complete);
     const profileCompletion = isStudent ? (student_profile_completion?.percentage ?? 0) : accountProfileCompletion;
     const missingStudentItems = student_profile_completion?.missing ?? [];
     const missingBySection = (section: StudentProfileMissingItem["section"]) => missingStudentItems.filter((item) => item.section === section).length;
@@ -686,40 +749,40 @@ export default function ProfilePage() {
         }
     }, [user.avatar_url, userForm.data.avatar]);
 
+    const hasUserChanges =
+        userForm.data.name !== user.name ||
+        userForm.data.email !== user.email ||
+        userForm.data.phone !== (user.phone || "") ||
+        userForm.data.address !== (user.address || "") ||
+        userForm.data.city !== (user.city || "") ||
+        userForm.data.state !== (user.state || "") ||
+        userForm.data.country !== (user.country || "") ||
+        userForm.data.postal_code !== (user.postal_code || "") ||
+        userForm.data.bio !== (user.bio || "") ||
+        userForm.data.website !== (user.website || "") ||
+        userForm.data.avatar !== null;
+
+    const hasFacultyChanges =
+        facultyForm.data.first_name !== (faculty?.first_name || "") ||
+        facultyForm.data.last_name !== (faculty?.last_name || "") ||
+        facultyForm.data.middle_name !== (faculty?.middle_name || "") ||
+        facultyForm.data.email !== (faculty?.email || user.email || "") ||
+        facultyForm.data.phone_number !== (faculty?.phone_number || "") ||
+        facultyForm.data.department !== (faculty?.department || "") ||
+        facultyForm.data.office_hours !== (faculty?.office_hours || "") ||
+        facultyForm.data.birth_date !== (faculty?.birth_date || "") ||
+        facultyForm.data.address_line1 !== (faculty?.address_line1 || "") ||
+        facultyForm.data.biography !== (faculty?.biography || "") ||
+        facultyForm.data.education !== (faculty?.education || "") ||
+        facultyForm.data.courses_taught !== (faculty?.courses_taught || "") ||
+        facultyForm.data.gender !== (faculty?.gender || "") ||
+        facultyForm.data.age !== (faculty?.age || undefined);
+
+    const hasStudentChanges = JSON.stringify(studentForm.data) !== JSON.stringify(initialStudentFormData);
+
     useEffect(() => {
-        const hasUserChanges =
-            userForm.data.name !== user.name ||
-            userForm.data.email !== user.email ||
-            userForm.data.phone !== (user.phone || "") ||
-            userForm.data.address !== (user.address || "") ||
-            userForm.data.city !== (user.city || "") ||
-            userForm.data.state !== (user.state || "") ||
-            userForm.data.country !== (user.country || "") ||
-            userForm.data.postal_code !== (user.postal_code || "") ||
-            userForm.data.bio !== (user.bio || "") ||
-            userForm.data.website !== (user.website || "") ||
-            userForm.data.avatar !== null;
-
-        const hasFacultyChanges =
-            facultyForm.data.first_name !== (faculty?.first_name || "") ||
-            facultyForm.data.last_name !== (faculty?.last_name || "") ||
-            facultyForm.data.middle_name !== (faculty?.middle_name || "") ||
-            facultyForm.data.email !== (faculty?.email || user.email || "") ||
-            facultyForm.data.phone_number !== (faculty?.phone_number || "") ||
-            facultyForm.data.department !== (faculty?.department || "") ||
-            facultyForm.data.office_hours !== (faculty?.office_hours || "") ||
-            facultyForm.data.birth_date !== (faculty?.birth_date || "") ||
-            facultyForm.data.address_line1 !== (faculty?.address_line1 || "") ||
-            facultyForm.data.biography !== (faculty?.biography || "") ||
-            facultyForm.data.education !== (faculty?.education || "") ||
-            facultyForm.data.courses_taught !== (faculty?.courses_taught || "") ||
-            facultyForm.data.gender !== (faculty?.gender || "") ||
-            facultyForm.data.age !== (faculty?.age || undefined);
-
-        const hasStudentChanges = JSON.stringify(studentForm.data) !== JSON.stringify(initialStudentFormData);
-
         setHasChanges(hasUserChanges || hasFacultyChanges || hasStudentChanges);
-    }, [userForm.data, facultyForm.data, studentForm.data, user, faculty, student]);
+    }, [hasUserChanges, hasFacultyChanges, hasStudentChanges]);
 
     useEffect(() => {
         if (typeof window === "undefined") return;
@@ -837,17 +900,110 @@ export default function ProfilePage() {
         });
     };
 
-    const handleSaveClick = () => {
-        const userSection = document.getElementById("profile-form");
-        const facultySection = document.getElementById("faculty-form");
-        const studentSection = document.getElementById("student-form");
-        if (userSection) {
-            userSection.scrollIntoView({ behavior: "smooth", block: "start" });
-        } else if (facultySection) {
-            facultySection.scrollIntoView({ behavior: "smooth", block: "start" });
-        } else if (studentSection) {
-            studentSection.scrollIntoView({ behavior: "smooth", block: "start" });
+    const handleDiscardAllChanges = () => {
+        userForm.reset();
+        userForm.setData("avatar", null);
+        if (isFaculty) {
+            facultyForm.reset();
         }
+        if (isStudent) {
+            studentForm.reset();
+        }
+        setAvatarPreview(user.avatar_url);
+        setHasChanges(false);
+        toast.info("All unsaved changes were discarded.");
+    };
+
+    const handleSaveAllChanges = () => {
+        if (isStudent && (studentProfileTab !== "basic" || hasStudentChanges)) {
+            studentForm.transform((data) => ({
+                ...data,
+                reporting_confirmed: studentProfileTab === "reporting",
+            }));
+            studentForm.put(paths.student_update, {
+                onSuccess: () => {
+                    toast.success("Student details saved successfully!");
+                    setHasChanges(false);
+                    if (studentProfileTab === "reporting") {
+                        setReportingConfirmed(true);
+                    }
+                    router.visit(window.location.pathname, {
+                        replace: true,
+                        preserveScroll: true,
+                        only: ["student", "student_profile_completion", "announcements", "feature_flags"],
+                    });
+                },
+                onError: (errors) => {
+                    const errorTab = tabForStudentFormErrors(errors);
+                    setStudentProfileTab(errorTab);
+                    toast.error("Please check highlighted student fields.");
+                },
+            });
+            return;
+        }
+
+        if (isFaculty && hasFacultyChanges) {
+            if (hasUserChanges) {
+                userForm.put(paths.profile_update, {
+                    forceFormData: true,
+                    onSuccess: () => {
+                        userForm.setData("avatar", null);
+                        facultyForm.put(paths.faculty_update, {
+                            preserveScroll: true,
+                            onSuccess: () => {
+                                toast.success("Profile and faculty details saved successfully!");
+                                setHasChanges(false);
+                                router.visit(window.location.pathname, {
+                                    replace: true,
+                                    preserveScroll: true,
+                                    only: ["faculty", "user"],
+                                });
+                            },
+                            onError: () => {
+                                toast.error("Please check highlighted faculty fields.");
+                            },
+                        });
+                    },
+                    onError: () => {
+                        toast.error("Failed to update user profile.");
+                    },
+                });
+                return;
+            }
+
+            facultyForm.put(paths.faculty_update, {
+                preserveScroll: true,
+                onSuccess: () => {
+                    toast.success("Faculty details saved successfully!");
+                    setHasChanges(false);
+                    router.visit(window.location.pathname, {
+                        replace: true,
+                        preserveScroll: true,
+                        only: ["faculty", "user"],
+                    });
+                },
+                onError: () => {
+                    toast.error("Please check highlighted faculty fields.");
+                },
+            });
+            return;
+        }
+
+        userForm.put(paths.profile_update, {
+            forceFormData: true,
+            onSuccess: () => {
+                toast.success("Profile updated successfully!");
+                setHasChanges(false);
+                userForm.setData("avatar", null);
+                router.visit(window.location.pathname, {
+                    replace: true,
+                    only: ["user"],
+                });
+            },
+            onError: () => {
+                toast.error("Failed to update profile. Please check your input.");
+            },
+        });
     };
 
     const experimentalAvailable = feature_flags?.experimental_available || [];
@@ -891,88 +1047,117 @@ export default function ProfilePage() {
                         department={isFaculty ? facultyForm.data.department : undefined}
                         campusLocation={campusLocation}
                         facultyName={facultyName}
-                        onAvatarSelect={handleAvatarSelect}
-                        onTriggerAvatarPicker={triggerAvatarPicker}
-                        onSaveClick={handleSaveClick}
-                    />
-
-                    <ProfileStats
-                        isFaculty={isFaculty}
-                        isStudent={isStudent}
                         coursesCount={courses.length}
                         officeHoursDisplay={officeHoursDisplay}
-                        profileCompletion={profileCompletion}
-                        educationItemsCount={educationItems.length}
+                        onAvatarSelect={handleAvatarSelect}
+                        onTriggerAvatarPicker={triggerAvatarPicker}
+                        onSaveClick={handleSaveAllChanges}
                     />
 
-                    <Tabs defaultValue="profile" className="grid w-full min-w-0 gap-4 lg:grid-cols-[17rem_minmax(0,1fr)] lg:gap-6">
+                    <Tabs
+                        value={activeProfileTab}
+                        onValueChange={(value) => {
+                            if (hasChanges && value !== activeProfileTab && !window.confirm("You have unsaved changes. Switch tabs anyway?")) {
+                                return;
+                            }
+                            setActiveProfileTab(value);
+                            if (typeof window !== "undefined") {
+                                const url = new URL(window.location.href);
+                                url.searchParams.set("tab", value);
+                                window.history.replaceState({}, "", url);
+                            }
+                        }}
+                        className="grid w-full min-w-0 gap-4 lg:grid-cols-[17rem_minmax(0,1fr)] lg:gap-6"
+                    >
                         <aside className="lg:sticky lg:top-24 lg:self-start">
-                            <Card className={dashboardPanelClass}>
-                                <CardContent className="p-2">
-                                    <TabsList className="bg-muted/20 grid h-auto w-full grid-cols-2 gap-1 rounded-lg p-1 sm:grid-cols-3 lg:flex lg:flex-col lg:items-stretch">
+                            <Frame spacing="sm" className="border-border/70 shadow-sm rounded-2xl">
+                                <FramePanel className="p-1.5">
+                                    <TabsList className="bg-transparent flex w-full gap-1 overflow-x-auto rounded-xl p-0.5 [scrollbar-width:none] lg:flex-col lg:items-stretch lg:overflow-visible">
                                         <TabsTrigger
                                             value="profile"
-                                            className="min-w-0 justify-center rounded-lg px-2 py-2 text-xs sm:text-sm lg:w-full lg:justify-start lg:px-3"
+                                            className="shrink-0 whitespace-nowrap min-w-0 justify-center rounded-xl px-3 py-2 text-xs sm:text-sm lg:w-full lg:justify-start lg:px-3.5 data-[state=active]:bg-background data-[state=active]:shadow-xs"
                                         >
-                                            <User className="mr-1.5 h-4 w-4 shrink-0 lg:mr-2" />
+                                            <User className="mr-1.5 h-4 w-4 shrink-0 lg:mr-2 text-primary" />
                                             Profile
                                         </TabsTrigger>
                                         {id_card && (isFaculty || isStudent) && (
                                             <TabsTrigger
                                                 value="id-card"
-                                                className="min-w-0 justify-center rounded-lg px-2 py-2 text-xs sm:text-sm lg:w-full lg:justify-start lg:px-3"
+                                                className="shrink-0 whitespace-nowrap min-w-0 justify-center rounded-xl px-3 py-2 text-xs sm:text-sm lg:w-full lg:justify-start lg:px-3.5 data-[state=active]:bg-background data-[state=active]:shadow-xs"
                                             >
-                                                <QrCode className="mr-1.5 h-4 w-4 shrink-0 lg:mr-2" />
+                                                <QrCode className="mr-1.5 h-4 w-4 shrink-0 lg:mr-2 text-primary" />
                                                 <span className="truncate">Digital ID</span>
                                             </TabsTrigger>
                                         )}
                                         <TabsTrigger
                                             value="accounts"
-                                            className="min-w-0 justify-center rounded-lg px-2 py-2 text-xs sm:text-sm lg:w-full lg:justify-start lg:px-3"
+                                            className="shrink-0 whitespace-nowrap min-w-0 justify-center rounded-xl px-3 py-2 text-xs sm:text-sm lg:w-full lg:justify-start lg:px-3.5 data-[state=active]:bg-background data-[state=active]:shadow-xs"
                                         >
-                                            <Plug className="mr-1.5 h-4 w-4 shrink-0 lg:mr-2" />
+                                            <ShieldCheck className="mr-1.5 h-4 w-4 shrink-0 lg:mr-2 text-primary" />
                                             <span className="truncate sm:hidden">Security</span>
                                             <span className="hidden truncate sm:inline lg:hidden">Accounts</span>
-                                            <span className="hidden truncate lg:inline">Accounts & Security</span>
+                                            <span className="hidden truncate lg:inline">Security & Access</span>
+                                        </TabsTrigger>
+                                        <TabsTrigger
+                                            value="integrations"
+                                            className="shrink-0 whitespace-nowrap min-w-0 justify-center rounded-xl px-3 py-2 text-xs sm:text-sm lg:w-full lg:justify-start lg:px-3.5 data-[state=active]:bg-background data-[state=active]:shadow-xs"
+                                        >
+                                            <Plug className="mr-1.5 h-4 w-4 shrink-0 lg:mr-2 text-primary" />
+                                            <span className="truncate sm:hidden">Apps</span>
+                                            <span className="hidden truncate sm:inline lg:hidden">Integrations</span>
+                                            <span className="hidden truncate lg:inline">Connected Apps & SSO</span>
                                         </TabsTrigger>
                                         <TabsTrigger
                                             value="personalization"
-                                            className="min-w-0 justify-center rounded-lg px-2 py-2 text-xs sm:text-sm lg:w-full lg:justify-start lg:px-3"
+                                            className="shrink-0 whitespace-nowrap min-w-0 justify-center rounded-xl px-3 py-2 text-xs sm:text-sm lg:w-full lg:justify-start lg:px-3.5 data-[state=active]:bg-background data-[state=active]:shadow-xs"
                                         >
-                                            <Palette className="mr-1.5 h-4 w-4 shrink-0 lg:mr-2" />
+                                            <Palette className="mr-1.5 h-4 w-4 shrink-0 lg:mr-2 text-primary" />
                                             <span className="truncate sm:hidden">Theme</span>
                                             <span className="hidden truncate sm:inline">Personalization</span>
                                         </TabsTrigger>
                                         {experimentalAvailable.length > 0 && (
                                             <TabsTrigger
                                                 value="experimental"
-                                                className="min-w-0 justify-center rounded-lg px-2 py-2 text-xs sm:text-sm lg:w-full lg:justify-start lg:px-3"
+                                                className="shrink-0 whitespace-nowrap min-w-0 justify-center rounded-xl px-3 py-2 text-xs sm:text-sm lg:w-full lg:justify-start lg:px-3.5 data-[state=active]:bg-background data-[state=active]:shadow-xs"
                                             >
-                                                <Plug className="mr-1.5 h-4 w-4 shrink-0 lg:mr-2" />
-                                                <span className="truncate">Experimental</span>
+                                                <Sparkles className="mr-1.5 h-4 w-4 shrink-0 lg:mr-2 text-primary" />
+                                                <span className="truncate">Experimental Labs</span>
                                             </TabsTrigger>
                                         )}
-                                        <TabsTrigger
-                                            value="connections"
-                                            className="min-w-0 justify-center rounded-lg px-2 py-2 text-xs sm:text-sm lg:w-full lg:justify-start lg:px-3"
-                                        >
-                                            <Share2 className="mr-1.5 h-4 w-4 shrink-0 lg:mr-2" />
-                                            <span className="truncate">Connections</span>
-                                        </TabsTrigger>
-                                        <TabsTrigger
-                                            value="integrations"
-                                            className="min-w-0 justify-center rounded-lg px-2 py-2 text-xs sm:text-sm lg:w-full lg:justify-start lg:px-3"
-                                        >
-                                            <Plug className="mr-1.5 h-4 w-4 shrink-0 lg:mr-2" />
-                                            <span className="truncate">Integrations</span>
-                                        </TabsTrigger>
                                     </TabsList>
-                                </CardContent>
-                            </Card>
+                                </FramePanel>
+                            </Frame>
                         </aside>
 
                         <div className="min-w-0">
                             <TabsContent value="profile" className="mt-0 min-w-0 outline-none">
+                                {!isStudent && missingAccountCompletionItems.length > 0 && (
+                                    <Frame spacing="sm" className="border-border/70 mb-4 bg-card/60 backdrop-blur-sm rounded-2xl shadow-sm">
+                                        <FrameHeader>
+                                            <div className="flex items-center justify-between">
+                                                <FrameTitle className="text-sm font-semibold flex items-center gap-2">
+                                                    <Sparkles className="h-4 w-4 text-warning" />
+                                                    Complete your institutional profile
+                                                </FrameTitle>
+                                                <ReUiBadge variant="warning-light" size="xs">
+                                                    {accountProfileCompletion}% complete
+                                                </ReUiBadge>
+                                            </div>
+                                            <p className="text-muted-foreground text-xs">
+                                                Add these remaining details to ensure institutional directory accuracy.
+                                            </p>
+                                        </FrameHeader>
+                                        <FramePanel className="bg-background/50">
+                                            <div className="flex flex-wrap gap-2">
+                                                {missingAccountCompletionItems.map((item) => (
+                                                    <ReUiBadge key={item.label} variant="outline" size="sm" className="bg-background/80 font-normal">
+                                                        + {item.label}
+                                                    </ReUiBadge>
+                                                ))}
+                                            </div>
+                                        </FramePanel>
+                                    </Frame>
+                                )}
                                 <motion.div
                                     variants={containerVariants}
                                     initial="hidden"
@@ -1276,18 +1461,67 @@ export default function ProfilePage() {
                             )}
 
                             <TabsContent value="connections" className="mt-0 outline-none">
-                                <ConnectionsTab connectedAccounts={connected_accounts} />
+                                <IntegrationsTab
+                                    connectedAccounts={connected_accounts}
+                                    calendarFeed={calendar_feed}
+                                    canViewNewsletterSettings={can_view_newsletter_settings}
+                                    newsletterSettingsUrl={newsletter_settings_url}
+                                />
                             </TabsContent>
 
                             <TabsContent value="integrations" className="mt-0 outline-none">
                                 <IntegrationsTab
                                     connectedAccounts={connected_accounts}
+                                    calendarFeed={calendar_feed}
                                     canViewNewsletterSettings={can_view_newsletter_settings}
                                     newsletterSettingsUrl={newsletter_settings_url}
                                 />
                             </TabsContent>
                         </div>
                     </Tabs>
+
+                    {/* Floating Unsaved Changes Bar */}
+                    {hasChanges && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 20 }}
+                            className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-border/80 bg-background/95 px-4 py-3 shadow-2xl backdrop-blur-md sm:px-6"
+                        >
+                            <div className="flex items-center gap-2">
+                                <span className="relative flex h-2.5 w-2.5">
+                                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+                                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-500" />
+                                </span>
+                                <span className="text-xs font-semibold sm:text-sm text-foreground">
+                                    Unsaved changes
+                                </span>
+                            </div>
+                            <div className="h-4 w-[1px] bg-border" />
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={handleDiscardAllChanges}
+                                className="h-8 rounded-xl px-2.5 text-xs text-muted-foreground hover:text-foreground"
+                            >
+                                <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                                Discard
+                            </Button>
+                            <Button
+                                type="button"
+                                size="sm"
+                                disabled={userForm.processing || facultyForm.processing || studentForm.processing}
+                                onClick={handleSaveAllChanges}
+                                className="h-8 rounded-xl px-3.5 text-xs font-semibold shadow-xs"
+                            >
+                                <Save className="mr-1.5 h-3.5 w-3.5" />
+                                {userForm.processing || facultyForm.processing || studentForm.processing
+                                    ? "Saving..."
+                                    : "Save changes"}
+                            </Button>
+                        </motion.div>
+                    )}
                 </div>
             </PortalLayout>
         </>

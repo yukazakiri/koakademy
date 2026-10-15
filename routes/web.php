@@ -370,9 +370,10 @@ Route::middleware(['auth'])->group(function () {
     // Profile Redirection
     Route::get('/profile', [App\Http\Controllers\ProfileController::class, 'redirect'])->name('profile.redirect');
 
-    // Specific Sync Routes
+    // Specific Sync & Calendar Feed Routes
     Route::post('/integrations/google/sync', [App\Http\Controllers\GoogleCalendarController::class, 'sync'])->name('integrations.google.sync');
     Route::post('/integrations/google/unsync', [App\Http\Controllers\GoogleCalendarController::class, 'unsync'])->name('integrations.google.unsync');
+    Route::get('/calendar/download', [App\Http\Controllers\CalendarFeedController::class, 'download'])->name('calendar.download');
 
     // Organization Routes
     Route::post('/organizations/switch', [App\Http\Controllers\Api\OrganizationController::class, 'switch'])->name('organizations.switch');
@@ -389,3 +390,6 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/export-document', [App\Http\Controllers\AiChatController::class, 'exportDocument'])->name('export-document');
     });
 });
+
+// Public Calendar Subscription Feed (Token Verified for Outlook, Apple Calendar, Google Calendar)
+Route::get('/calendar/feed/{user}/{token}.ics', [App\Http\Controllers\CalendarFeedController::class, 'feed'])->name('calendar.feed');

@@ -165,6 +165,11 @@ final class ProfileController extends Controller
 
         return Inertia::render('profile', [
             'connected_accounts' => $connectedAccounts,
+            'calendar_feed' => [
+                'feed_url' => app(\App\Services\CalendarFeedService::class)->getFeedUrl($user),
+                'webcal_url' => app(\App\Services\CalendarFeedService::class)->getWebcalUrl($user),
+                'download_url' => route('calendar.download', absolute: false),
+            ],
             'can_view_newsletter_settings' => $canViewNewsletterSettings,
             'newsletter_settings_url' => $canViewNewsletterSettings
                 ? route('administrators.settings.newsletter.index', absolute: false)
@@ -891,17 +896,19 @@ final class ProfileController extends Controller
     public function redirect()
     {
         $user = Auth::user();
+        $query = request()->getQueryString();
+        $target = null;
 
         if ($user->isFaculty()) {
-            return redirect()->route('faculty.profile');
+            $target = route('faculty.profile');
+        } elseif ($user->isStudentRole()) {
+            $target = route('student.profile');
+        } elseif ($user->isAdministrative()) {
+            $target = route('filament.admin.auth.profile');
         }
 
-        if ($user->isStudentRole()) {
-            return redirect()->route('student.profile');
-        }
-
-        if ($user->isAdministrative()) {
-            return redirect()->route('filament.admin.auth.profile');
+        if ($target) {
+            return redirect($query ? "{$target}?{$query}" : $target);
         }
 
         // Fallback

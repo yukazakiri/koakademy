@@ -1,7 +1,7 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { Frame, FrameHeader, FramePanel, FrameTitle } from "@/components/reui/frame";
 import { SiFacebook, SiGithub, SiGoogle, SiX } from "@icons-pack/react-simple-icons";
 import { router, usePage } from "@inertiajs/react";
 import { Link2, Plus, Share2, Trash2 } from "lucide-react";
@@ -101,15 +101,15 @@ export function ConnectionsTab({ connectedAccounts }: ConnectionsTabProps) {
     };
 
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                    <Share2 className="h-5 w-5" />
-                    Social Profiles
-                </CardTitle>
-                <CardDescription>Connect social accounts for easier login and account access</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-6">
+        <Frame spacing="sm">
+            <FrameHeader>
+                <FrameTitle className="flex items-center gap-2">
+                    <Share2 className="h-5 w-5 text-primary" />
+                    Social profiles
+                </FrameTitle>
+                <p className="text-muted-foreground text-sm">Connect social accounts for easier login and account access.</p>
+            </FrameHeader>
+            <FramePanel className="grid gap-4">
                 {providerConfigs.map((provider) => {
                     const Icon = provider.icon;
                     const accounts = connectedAccounts.accounts.filter((account) => account.provider === provider.key);
@@ -175,7 +175,7 @@ export function ConnectionsTab({ connectedAccounts }: ConnectionsTabProps) {
                         </div>
                     );
                 })}
-            </CardContent>
-        </Card>
+            </FramePanel>
+        </Frame>
     );
 }

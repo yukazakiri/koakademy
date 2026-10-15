@@ -55,9 +55,11 @@ final class CalendarFeedService
      */
     public function renderIcs(User $user): string
     {
-        $appName = (string) config('app.name', 'KoAkademy');
+        $integrationService = app(ApplicationIntegrationSettingsService::class);
+        $appName = $integrationService->getCalendarFeedTitlePrefix();
         $calendarName = "{$appName} Schedule - {$user->name}";
         $schedules = $this->getUserSchedules($user);
+        $rruleWeeks = $integrationService->getCalendarFeedRruleWeeks();
 
         $lines = [
             'BEGIN:VCALENDAR',
@@ -81,7 +83,7 @@ final class CalendarFeedService
             $lines[] = "DTSTAMP:{$dtStamp}";
             $lines[] = "DTSTART:{$dtStart}";
             $lines[] = "DTEND:{$dtEnd}";
-            $lines[] = 'RRULE:FREQ=WEEKLY;COUNT=18';
+            $lines[] = "RRULE:FREQ=WEEKLY;COUNT={$rruleWeeks}";
             $lines[] = 'SUMMARY:'.$this->escapeIcsText($item['title']);
             $lines[] = 'LOCATION:'.$this->escapeIcsText($item['room']);
             $lines[] = 'DESCRIPTION:'.$this->escapeIcsText($item['description']);

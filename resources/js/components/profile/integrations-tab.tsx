@@ -63,6 +63,13 @@ type CalendarFeedData = {
 interface IntegrationsTabProps {
     connectedAccounts: ConnectedAccountsPayload;
     calendarFeed?: CalendarFeedData;
+    integrationsStatus?: {
+        google_calendar_enabled?: boolean;
+        calendar_feed_enabled?: boolean;
+        microsoft_enabled?: boolean;
+        google_drive_enabled?: boolean;
+        onedrive_enabled?: boolean;
+    };
     canViewNewsletterSettings?: boolean;
     newsletterSettingsUrl?: string | null;
 }
@@ -113,11 +120,15 @@ const socialProviderConfigs = [
 export function IntegrationsTab({
     connectedAccounts,
     calendarFeed,
+    integrationsStatus,
     canViewNewsletterSettings = false,
     newsletterSettingsUrl = null,
 }: IntegrationsTabProps) {
     const { socialAuthProviders = [] } = usePage<{ socialAuthProviders?: SocialAuthProvider[] }>().props;
     const enabledProviderKeys = new Set(socialAuthProviders.map((provider) => provider.key));
+
+    const isGoogleEnabledByAdmin = integrationsStatus?.google_calendar_enabled !== false;
+    const isCalendarFeedEnabledByAdmin = integrationsStatus?.calendar_feed_enabled !== false && Boolean(calendarFeed?.feed_url);
 
     const [activeSection, setActiveSection] = useState<"services" | "social">("services");
     const [confirmingUnsync, setConfirmingUnsync] = useState(false);
@@ -299,15 +310,23 @@ export function IntegrationsTab({
                                     <div className="space-y-1">
                                         <div className="flex flex-wrap items-center gap-2">
                                             <h3 className="font-semibold text-foreground text-base">Google Calendar</h3>
-                                            <ReUiBadge
-                                                variant={isGoogleConnected ? "success-light" : "secondary"}
-                                                size="sm"
-                                            >
-                                                {isGoogleConnected ? "Connected & Active" : "Not connected"}
-                                            </ReUiBadge>
+                                            {!isGoogleEnabledByAdmin ? (
+                                                <ReUiBadge variant="secondary" size="sm">
+                                                    Disabled by Admin
+                                                </ReUiBadge>
+                                            ) : (
+                                                <ReUiBadge
+                                                    variant={isGoogleConnected ? "success-light" : "secondary"}
+                                                    size="sm"
+                                                >
+                                                    {isGoogleConnected ? "Connected & Active" : "Not connected"}
+                                                </ReUiBadge>
+                                            )}
                                         </div>
                                         <p className="text-muted-foreground text-xs sm:text-sm max-w-xl">
-                                            {isGoogleConnected
+                                            {!isGoogleEnabledByAdmin
+                                                ? "Google Calendar synchronization is currently disabled institution-wide by the administrator."
+                                                : isGoogleConnected
                                                 ? `Synchronized with ${primaryGoogleAccount?.email || primaryGoogleAccount?.name || "your Google account"}. Updates export on demand or during roster changes.`
                                                 : "Automatically sync teaching rosters, exam schedules, and consultation appointments to your Google Calendar."}
                                         </p>
@@ -315,7 +334,16 @@ export function IntegrationsTab({
                                 </div>
 
                                 <div className="flex flex-wrap items-center gap-2 pt-2 md:pt-0">
-                                    {isGoogleConnected ? (
+                                    {!isGoogleEnabledByAdmin ? (
+                                        <Button
+                                            size="sm"
+                                            disabled
+                                            variant="outline"
+                                            className="rounded-xl text-xs font-semibold gap-1.5 opacity-60"
+                                        >
+                                            Unavailable
+                                        </Button>
+                                    ) : isGoogleConnected ? (
                                         <>
                                             <Button
                                                 variant="outline"
@@ -346,7 +374,8 @@ export function IntegrationsTab({
                                         </Button>
                                     )}
                                     <Switch
-                                        checked={isGoogleConnected}
+                                        disabled={!isGoogleEnabledByAdmin}
+                                        checked={isGoogleConnected && isGoogleEnabledByAdmin}
                                         onCheckedChange={handleGoogleToggle}
                                         aria-label="Toggle Google Calendar connection"
                                     />
@@ -365,12 +394,14 @@ export function IntegrationsTab({
                                         <div className="space-y-1">
                                             <div className="flex flex-wrap items-center gap-2">
                                                 <h3 className="font-semibold text-foreground text-base">Microsoft Outlook & Universal Calendar Feed</h3>
-                                                <ReUiBadge variant="success-light" size="sm">
-                                                    Live Feed (iCal / Webcal)
+                                                <ReUiBadge variant={isCalendarFeedEnabledByAdmin ? "success-light" : "secondary"} size="sm">
+                                                    {isCalendarFeedEnabledByAdmin ? "Live Feed (iCal / Webcal)" : "Disabled by Admin"}
                                                 </ReUiBadge>
                                             </div>
                                             <p className="text-muted-foreground text-xs sm:text-sm max-w-xl">
-                                                Universal real-time subscription feed. Syncs class timetables, consultation hours, and academic deadlines directly with Microsoft 365 Outlook, Apple Calendar, and mobile devices.
+                                                {isCalendarFeedEnabledByAdmin
+                                                    ? "Universal real-time subscription feed. Syncs class timetables, consultation hours, and academic deadlines directly with Microsoft 365 Outlook, Apple Calendar, and mobile devices."
+                                                    : "Calendar subscription feeds are currently disabled for your account role by the institutional administrator in System Settings."}
                                             </p>
                                         </div>
                                     </div>
@@ -380,6 +411,7 @@ export function IntegrationsTab({
                                             type="button"
                                             variant="outline"
                                             size="sm"
+                                            disabled={!isCalendarFeedEnabledByAdmin}
                                             onClick={handleCopyFeed}
                                             className="rounded-xl text-xs font-semibold gap-1.5"
                                             title="Copy calendar subscription feed URL"
@@ -399,6 +431,7 @@ export function IntegrationsTab({
                                         <Button
                                             type="button"
                                             size="sm"
+                                            disabled={!isCalendarFeedEnabledByAdmin}
                                             onClick={handleWebcalSubscribe}
                                             className="rounded-xl text-xs font-semibold gap-1.5"
                                         >
@@ -409,6 +442,7 @@ export function IntegrationsTab({
                                             type="button"
                                             variant="ghost"
                                             size="sm"
+                                            disabled={!isCalendarFeedEnabledByAdmin}
                                             onClick={handleDownloadIcs}
                                             className="rounded-xl text-xs font-medium gap-1 text-muted-foreground"
                                             title="Download static .ics file"

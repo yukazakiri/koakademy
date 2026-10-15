@@ -208,6 +208,7 @@ export default function ProfilePage() {
         endpoints,
         connected_accounts = { providers: {}, accounts: [] },
         calendar_feed,
+        integrations_status,
         can_view_newsletter_settings = false,
         newsletter_settings_url = null,
         can_configure_payment_workspace = false,
@@ -389,6 +390,13 @@ export default function ProfilePage() {
             feed_url: string;
             webcal_url: string;
             download_url: string;
+        };
+        integrations_status?: {
+            google_calendar_enabled?: boolean;
+            calendar_feed_enabled?: boolean;
+            microsoft_enabled?: boolean;
+            google_drive_enabled?: boolean;
+            onedrive_enabled?: boolean;
         };
         income_modes?: Array<{ value: string; label: string; brackets: Array<{ value: string; label: string }> }>;
         default_income_mode?: string;
@@ -1464,6 +1472,7 @@ export default function ProfilePage() {
                                 <IntegrationsTab
                                     connectedAccounts={connected_accounts}
                                     calendarFeed={calendar_feed}
+                                    integrationsStatus={integrations_status}
                                     canViewNewsletterSettings={can_view_newsletter_settings}
                                     newsletterSettingsUrl={newsletter_settings_url}
                                 />
@@ -1473,6 +1482,7 @@ export default function ProfilePage() {
                                 <IntegrationsTab
                                     connectedAccounts={connected_accounts}
                                     calendarFeed={calendar_feed}
+                                    integrationsStatus={integrations_status}
                                     canViewNewsletterSettings={can_view_newsletter_settings}
                                     newsletterSettingsUrl={newsletter_settings_url}
                                 />

@@ -424,6 +424,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/system-management/brand', [App\Http\Controllers\AdministratorSystemManagementController::class, 'brand'])->name('system-management.brand.index');
         Route::get('/system-management/brand/appearance', [App\Http\Controllers\AdministratorSystemManagementController::class, 'brand'])->name('system-management.brand.appearance.index');
         Route::get('/system-management/socialite', [App\Http\Controllers\AdministratorSystemManagementController::class, 'socialite'])->name('system-management.socialite.index');
+        Route::get('/system-management/integrations', [App\Http\Controllers\AdministratorSystemManagementController::class, 'integrations'])->name('system-management.integrations.index');
         Route::get('/system-management/mail', [App\Http\Controllers\AdministratorSystemManagementController::class, 'mail'])->name('system-management.mail.index');
         Route::get('/system-management/email-templates', [App\Http\Controllers\AdministratorSystemManagementController::class, 'emailTemplates'])->name('system-management.email-templates.index');
         Route::get('/system-management/email-templates/{policy}/edit', [App\Http\Controllers\AdministratorSystemManagementController::class, 'editEmailTemplate'])->whereNumber('policy')->name('system-management.email-templates.edit');
@@ -454,6 +455,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/system-management/observability/test', [App\Http\Controllers\AdministratorSystemManagementController::class, 'testObservability'])->name('system-management.observability.test');
         Route::put('/system-management/brand', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateBrand'])->name('system-management.brand.update');
         Route::put('/system-management/socialite', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateSocialite'])->name('system-management.socialite.update');
+        Route::put('/system-management/integrations', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateIntegrations'])->name('system-management.integrations.update');
         Route::put('/system-management/newsletter', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateNewsletter'])->name('system-management.newsletter.update');
         Route::put('/system-management/api', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateApiManagement'])->name('system-management.api.update');
         Route::put('/system-management/ai', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateAi'])->name('system-management.ai.update');

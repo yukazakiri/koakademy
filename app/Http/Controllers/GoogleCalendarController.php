@@ -8,6 +8,7 @@ use App\Models\ConnectedAccount;
 use App\Models\Faculty;
 use App\Models\Student;
 use App\Models\User;
+use App\Services\ApplicationIntegrationSettingsService;
 use Exception;
 use Google\Client;
 use Google\Service\Calendar;
@@ -22,6 +23,13 @@ final class GoogleCalendarController extends Controller
 {
     public function connect()
     {
+        $settings = app(ApplicationIntegrationSettingsService::class);
+        if (! $settings->isGoogleCalendarEnabled()) {
+            return redirect('/profile')->with('error', 'Google Calendar integration is disabled by the administrator.');
+        }
+
+        $settings->applyRuntimeConfig();
+
         return Socialite::driver('google')
             ->scopes(['https://www.googleapis.com/auth/calendar'])
             ->with(['access_type' => 'offline', 'prompt' => 'consent select_account'])
@@ -31,6 +39,7 @@ final class GoogleCalendarController extends Controller
     public function callback()
     {
         try {
+            app(ApplicationIntegrationSettingsService::class)->applyRuntimeConfig();
             $googleUser = Socialite::driver('google')->user();
             $user = Auth::user();
 
@@ -69,6 +78,11 @@ final class GoogleCalendarController extends Controller
 
     public function sync(Request $request)
     {
+        $settings = app(ApplicationIntegrationSettingsService::class);
+        if (! $settings->isGoogleCalendarEnabled()) {
+            return response()->json(['message' => 'Google Calendar integration is disabled by system administrator.'], 403);
+        }
+
         $user = Auth::user();
         $account = ConnectedAccount::where('user_id', $user->id)
             ->where('provider', 'google')
@@ -206,6 +220,8 @@ final class GoogleCalendarController extends Controller
 
     private function getGoogleClient(ConnectedAccount $account): Client
     {
+        app(ApplicationIntegrationSettingsService::class)->applyRuntimeConfig();
+
         $client = new Client();
         $client->setClientId(config('services.google.client_id'));
         $client->setClientSecret(config('services.google.client_secret'));

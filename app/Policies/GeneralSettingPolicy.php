@@ -205,6 +205,16 @@ final class GeneralSettingPolicy
         return $this->canUpdateSection($user, 'ai');
     }
 
+    public function viewIntegrations(User $user): bool
+    {
+        return $this->canViewSection($user, 'integrations');
+    }
+
+    public function updateIntegrations(User $user): bool
+    {
+        return $this->canUpdateSection($user, 'integrations');
+    }
+
     private function canViewSection(User $user, string $section): bool
     {
         if ($this->hasFullSystemManagementAccess($user)) {

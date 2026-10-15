@@ -46,6 +46,7 @@ use App\Services\Ai\AiModelFetchService;
 use App\Services\Ai\AiSettingsService;
 use App\Services\Ai\McpServerService;
 use App\Services\AnalyticsSettingsService;
+use App\Services\ApplicationIntegrationSettingsService;
 use App\Services\CurriculumCapabilityResolver;
 use App\Services\EnrollmentEmailTemplatePreviewService;
 use App\Services\EnrollmentEmailTemplateService;
@@ -244,6 +245,18 @@ final class AdministratorSystemManagementController extends Controller
     public function socialite(): Response
     {
         return $this->renderSystemManagementPage('administrators/system-management/socialite', 'socialite', 'viewSocialite');
+    }
+
+    public function integrations(ApplicationIntegrationSettingsService $service): Response
+    {
+        return $this->renderSystemManagementPage(
+            'administrators/system-management/integrations',
+            'integrations',
+            'viewIntegrations',
+            [
+                'application_integrations' => $service->get(),
+            ]
+        );
     }
 
     public function mail(): Response
@@ -1163,6 +1176,15 @@ final class AdministratorSystemManagementController extends Controller
         return Redirect::back()->with('success', 'Socialite configuration updated and environment synced.');
     }
 
+    public function updateIntegrations(Request $request, ApplicationIntegrationSettingsService $service): RedirectResponse
+    {
+        $this->authorize('updateIntegrations', GeneralSetting::class);
+
+        $service->update($request->all());
+
+        return Redirect::back()->with('success', 'Application integrations updated successfully.');
+    }
+
     public function updateNewsletter(
         UpdateNewsletterSettingsRequest $request,
         NewsletterSettingsService $newsletterSettings,
@@ -1611,6 +1633,7 @@ final class AdministratorSystemManagementController extends Controller
             'tuition_payment_schedule_settings' => $activeSection === 'tuition_payment_schedule'
                 ? app(TuitionPaymentScheduleSettingsService::class)->get()
                 : ($settings->more_configs['tuition_payment_schedule'] ?? []),
+            'application_integrations' => app(ApplicationIntegrationSettingsService::class)->get(),
             'third_party_services' => $settings->more_configs['third_party_services'] ?? $thirdPartyServices,
             'branding' => [
                 'app_name' => $this->siteSettings->app_name,

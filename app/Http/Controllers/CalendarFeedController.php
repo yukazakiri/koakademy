@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Services\ApplicationIntegrationSettingsService;
 use App\Services\CalendarFeedService;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
@@ -12,7 +13,8 @@ use Illuminate\Support\Facades\Auth;
 final class CalendarFeedController extends Controller
 {
     public function __construct(
-        private readonly CalendarFeedService $calendarFeedService
+        private readonly CalendarFeedService $calendarFeedService,
+        private readonly ApplicationIntegrationSettingsService $integrationSettings
     ) {}
 
     /**
@@ -20,6 +22,10 @@ final class CalendarFeedController extends Controller
      */
     public function feed(User $user, string $token): Response
     {
+        if (! $this->integrationSettings->isCalendarFeedAllowedFor($user)) {
+            abort(403, 'Calendar subscription feeds are disabled by the institutional administrator.');
+        }
+
         if (! $this->calendarFeedService->validateToken($user, $token)) {
             abort(403, 'Invalid or expired calendar feed token.');
         }
@@ -42,6 +48,11 @@ final class CalendarFeedController extends Controller
     {
         /** @var User $user */
         $user = Auth::user();
+
+        if (! $this->integrationSettings->isCalendarFeedAllowedFor($user)) {
+            abort(403, 'Calendar export is disabled by the institutional administrator.');
+        }
+
         $icsContent = $this->calendarFeedService->renderIcs($user);
 
         return response($icsContent, 200, [

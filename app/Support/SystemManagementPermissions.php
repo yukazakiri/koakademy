@@ -92,6 +92,10 @@ final class SystemManagementPermissions
                 'view' => 'View:SystemManagementAi',
                 'update' => 'Update:SystemManagementAi',
             ],
+            'integrations' => [
+                'view' => 'View:SystemManagementIntegrations',
+                'update' => 'Update:SystemManagementIntegrations',
+            ],
         ];
     }
 

@@ -291,6 +291,15 @@ export const systemSettingsItems: SystemSettingsItem[] = [
         icon: Share2,
     },
     {
+        key: "integrations",
+        group: "integrations",
+        label: "Connected Services & Apps",
+        description: "Configure Google Workspace, Microsoft 365, iCal/Webcal calendar feeds, and cloud storage providers for the whole application.",
+        href: "/administrators/system-management/integrations",
+        keywords: ["integrations", "calendar", "google", "microsoft", "outlook", "ical", "webcal", "storage", "drive", "onedrive", "zoom", "canvas"],
+        icon: CalendarClock,
+    },
+    {
         key: "api",
         group: "integrations",
         label: "API & Integrations",

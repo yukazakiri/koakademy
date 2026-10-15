@@ -8,6 +8,7 @@ export type SystemManagementSectionKey =
     | "analytics"
     | "brand"
     | "socialite"
+    | "integrations"
     | "mail"
     | "email_templates"
     | "newsletter"
@@ -267,6 +268,46 @@ export interface SocialiteConfig {
     linkedin_client_secret?: string;
     linkedin_enabled?: boolean;
     linkedin_redirect_uri?: string;
+}
+
+export interface ApplicationIntegrationsConfig {
+    google_calendar: {
+        enabled: boolean;
+        client_id: string | null;
+        client_secret: string | null;
+        redirect_uri: string | null;
+        auto_sync: boolean;
+    };
+    calendar_feed: {
+        enabled: boolean;
+        students_enabled: boolean;
+        faculty_enabled: boolean;
+        title_prefix: string | null;
+        rrule_weeks: number;
+    };
+    microsoft: {
+        enabled: boolean;
+        client_id: string | null;
+        client_secret: string | null;
+        tenant_id: string | null;
+        redirect_uri: string | null;
+    };
+    cloud_storage: {
+        google_drive_enabled: boolean;
+        google_drive_api_key: string | null;
+        google_drive_client_id: string | null;
+        onedrive_enabled: boolean;
+        onedrive_client_id: string | null;
+    };
+    conferencing_and_lms: {
+        zoom_enabled: boolean;
+        zoom_account_id: string | null;
+        zoom_client_id: string | null;
+        zoom_client_secret: string | null;
+        canvas_enabled: boolean;
+        canvas_base_url: string | null;
+        canvas_client_id: string | null;
+    };
 }
 
 export interface MailConfig {
@@ -627,6 +668,7 @@ export interface SystemManagementPageProps {
     notification_channels: NotificationChannelConfig;
     finance_document_settings: FinanceDocumentSettings;
     tuition_payment_schedule_settings: TuitionPaymentScheduleSettings;
+    application_integrations?: ApplicationIntegrationsConfig;
     third_party_services: ThirdPartyServicesConfig;
     access: SystemManagementAccess;
     system_semester?: number | null;

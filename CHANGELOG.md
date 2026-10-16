@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.29.0](https://github.com/yukazakiri/koakademy/compare/v1.28.0...v1.29.0) (2026-10-16)
+
+
+### Features
+
+* **ai:** integrate Astro Trail observability for Laravel AI agents ([5d0e377](https://github.com/yukazakiri/koakademy/commit/5d0e37732c25564625dde0e52453fd5bc984f21f))
+* **enrollment:** truthful workflow builder, runtime fixes, and enrollment cancellation ([#390](https://github.com/yukazakiri/koakademy/issues/390)) ([99a4995](https://github.com/yukazakiri/koakademy/commit/99a49957d200b60339b1b3a6ee47e6149ee4db0c))
+* **filament:** install and configure undo toast plugin ([#386](https://github.com/yukazakiri/koakademy/issues/386)) ([32e294b](https://github.com/yukazakiri/koakademy/commit/32e294bbcfda9ceb66ea8502c7dd5969881cd345))
+* **profile:** revamp profile UI with ReUI and add universal calendar sync (Phase 1) ([#389](https://github.com/yukazakiri/koakademy/issues/389)) ([6df5ba3](https://github.com/yukazakiri/koakademy/commit/6df5ba35bab359f4b663a24430f404b76994b2d5))
+
 ## [1.28.0](https://github.com/yukazakiri/koakademy/compare/v1.27.0...v1.28.0) (2026-10-13)
 
 

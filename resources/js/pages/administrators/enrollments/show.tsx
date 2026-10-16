@@ -227,6 +227,7 @@ interface PageProps {
         can_manage_tuition: boolean;
         can_advance_pipeline: boolean;
         can_review_requirements: boolean;
+        can_reopen: boolean;
     };
     recent_deletions?: RecentDeletion[];
     enrollment_pipeline: {
@@ -366,6 +367,30 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
             {
                 onSuccess: () => toast.success("Cashier verification undone"),
                 onError: () => toast.error("Action failed"),
+            },
+        );
+    };
+
+    const [showUndoCancellationDialog, setShowUndoCancellationDialog] = useState(false);
+    const [undoCancellationReason, setUndoCancellationReason] = useState("");
+
+    const handleUndoCancellation = () => {
+        setUndoCancellationReason("");
+        setShowUndoCancellationDialog(true);
+    };
+
+    const submitUndoCancellation = (e: React.FormEvent) => {
+        e.preventDefault();
+        router.post(
+            route("administrators.enrollments.undo-cancellation", enrollment.id),
+            { reason: undoCancellationReason },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setShowUndoCancellationDialog(false);
+                    toast.success("Cancellation undone. The enrollment is active again.");
+                },
+                onError: () => toast.error("The cancellation could not be undone."),
             },
         );
     };
@@ -628,6 +653,11 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                                 !enrollment.workflow.terminal_outcome &&
                                 ((enrollment.workflow_runtime === "legacy" && enrollment.status === pendingStatus) ||
                                     enrollment.allows_no_receipt_transition) && <QuickEnrollDialog enrollmentId={enrollment.id} />}
+                            {enrollment.workflow.terminal_outcome === "cancelled" && auth.can_reopen && (
+                                <DropdownMenuItem onClick={handleUndoCancellation} className="text-emerald-600 focus:text-emerald-600">
+                                    <Undo2 className="mr-2 h-4 w-4" /> Undo cancellation
+                                </DropdownMenuItem>
+                            )}
                             {enrollment.workflow.can_cancel && (
                                 <>
                                     <DropdownMenuSeparator />
@@ -1537,6 +1567,42 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                     </main>
                 </div>
             </div>
+
+            {/* Undo Cancellation Dialog */}
+            <Dialog open={showUndoCancellationDialog} onOpenChange={setShowUndoCancellationDialog}>
+                <DialogContent className="sm:max-w-[500px]">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Undo2 className="h-5 w-5" /> Undo cancellation
+                        </DialogTitle>
+                        <DialogDescription>
+                            This restores {enrollment.student.full_name} to the step they were on before the cancellation. Recorded payments are never
+                            reversed here.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <form onSubmit={submitUndoCancellation} className="space-y-4 py-2">
+                        <div className="grid gap-2">
+                            <Label htmlFor="undo-cancellation-reason">Reason (required)</Label>
+                            <Textarea
+                                id="undo-cancellation-reason"
+                                required
+                                rows={3}
+                                placeholder="Why was the cancellation recorded in error?"
+                                value={undoCancellationReason}
+                                onChange={(e) => setUndoCancellationReason(e.target.value)}
+                            />
+                        </div>
+
+                        <DialogFooter>
+                            <Button type="button" variant="ghost" onClick={() => setShowUndoCancellationDialog(false)}>
+                                Keep cancelled
+                            </Button>
+                            <Button type="submit">Undo cancellation</Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
 
             {/* Restore Deleted Subjects Dialog */}
             <RestoreSubjectsDialog

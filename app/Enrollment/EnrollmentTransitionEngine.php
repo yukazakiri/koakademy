@@ -303,7 +303,7 @@ final readonly class EnrollmentTransitionEngine
 
             $fromStepKey = $locked->current_step_key;
             $studentStateReversal = $this->reverseStudentSynchronization($locked, (string) $fromStepKey);
-            $reversal = $this->payments->reverseLinked($locked);
+            $reversal = $this->reversePaymentsForReopen($locked);
             $locked->update([
                 'current_step_key' => $target['key'],
                 'terminal_outcome' => null,
@@ -350,6 +350,29 @@ final readonly class EnrollmentTransitionEngine
         $context = EnrollmentContext::fromEnrollment($enrollment, actor: $actor);
 
         return array_values(array_filter($current['transitions'] ?? [], fn (array $transition): bool => ($transition['fallback'] ?? false) === true || $this->conditionsPass($transition['conditions'] ?? [], $context)));
+    }
+
+    /** @return array<string, mixed> */
+    private function reversePaymentsForReopen(StudentEnrollment $enrollment): array
+    {
+        $terminalEvent = EnrollmentWorkflowEvent::query()
+            ->where('student_enrollment_id', $enrollment->id)
+            ->whereIn('event_type', ['cancelled', 'transition_succeeded'])
+            ->latest('id')
+            ->first();
+
+        // An administrative cancellation promises that recorded payments stay in place for a
+        // separate refund, so undoing that cancellation must not delete them. Reopening a
+        // transition-completed enrollment still reverses everything that transition recorded.
+        if ($terminalEvent?->event_type === 'cancelled') {
+            return [
+                'skipped' => true,
+                'reason' => 'Cancellation left recorded payments in place; reopening does not reverse them.',
+                ...$this->payments->linkedSummary($enrollment),
+            ];
+        }
+
+        return $this->payments->reverseLinked($enrollment);
     }
 
     /** @return array<string, mixed> */

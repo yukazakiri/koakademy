@@ -222,6 +222,12 @@ final readonly class EnrollmentWorkflowCoordinator
             return $this->engine->reopen($enrollment, $actor, $targetStepKey, $reason, $idempotencyKey ?? (string) Str::uuid());
         }
 
+        // The legacy pipeline has no step graph to roll back to: a cancellation is undone by
+        // restoring the status it interrupted, not by reverting a verification.
+        if ($enrollment->terminal_outcome === EnrollmentCancellationService::OUTCOME) {
+            return $this->undoLegacyCancellation($enrollment, $actor, $reason, $idempotencyKey ?? (string) Str::uuid());
+        }
+
         $successful = $this->legacyPipeline->isCashierVerified($enrollment->status)
             ? $this->legacyEnrollmentService->undoCashierVerification((int) $enrollment->id)
             : $this->legacyEnrollmentService->undoHeadDeptVerification($enrollment);
@@ -293,6 +299,71 @@ final readonly class EnrollmentWorkflowCoordinator
         );
     }
 
+    private function undoLegacyCancellation(
+        StudentEnrollment $enrollment,
+        ?User $actor,
+        string $reason,
+        string $idempotencyKey,
+    ): TransitionResult {
+        $scopedIdempotencyKey = hash('sha256', "legacy-cancel-reopen:{$enrollment->id}:{$idempotencyKey}");
+
+        $existing = EnrollmentWorkflowEvent::query()->where('idempotency_key', $scopedIdempotencyKey)->first();
+        if ($existing instanceof EnrollmentWorkflowEvent) {
+            return new TransitionResult(
+                successful: true,
+                fromStepKey: $existing->from_step_key,
+                toStepKey: $existing->to_step_key,
+                terminalOutcome: $existing->terminal_outcome,
+                message: 'This reopen attempt was already processed.',
+            );
+        }
+
+        return DB::transaction(function () use ($enrollment, $actor, $reason, $scopedIdempotencyKey): TransitionResult {
+            $locked = StudentEnrollment::query()->lockForUpdate()->findOrFail($enrollment->id);
+            if ($locked->terminal_outcome !== EnrollmentCancellationService::OUTCOME) {
+                throw new EnrollmentTransitionException('This enrollment is not cancelled.');
+            }
+
+            $cancellation = EnrollmentWorkflowEvent::query()
+                ->where('student_enrollment_id', $locked->id)
+                ->where('event_type', 'cancelled')
+                ->latest('id')
+                ->first();
+            $restoredStatus = data_get($cancellation?->result, 'from_status');
+
+            $locked->forceFill([
+                'terminal_outcome' => null,
+                'status' => is_string($restoredStatus) && $restoredStatus !== '' ? $restoredStatus : $locked->status,
+            ])->save();
+
+            EnrollmentWorkflowEvent::query()->create([
+                'student_enrollment_id' => $locked->id,
+                'actor_id' => $actor?->id,
+                'event_type' => 'reopened',
+                'from_step_key' => $cancellation?->to_step_key,
+                'status' => $locked->status,
+                'idempotency_key' => $scopedIdempotencyKey,
+                'reason' => $reason,
+                'result' => [
+                    'cancellation_event_id' => $cancellation?->id,
+                    'restored_status' => $locked->status,
+                    'payment_reversal' => [
+                        'skipped' => true,
+                        'reason' => 'Cancellation never reversed payments; reopening does not either.',
+                    ],
+                ],
+            ]);
+
+            return new TransitionResult(
+                successful: true,
+                fromStepKey: $cancellation?->to_step_key,
+                toStepKey: null,
+                terminalOutcome: null,
+                message: 'Enrollment cancellation reversed.',
+            );
+        }, 3);
+    }
+
     private function transitionResultFromEvent(EnrollmentWorkflowEvent $event): TransitionResult
     {
         return new TransitionResult(
@@ -305,7 +376,9 @@ final readonly class EnrollmentWorkflowCoordinator
         );
     }
 
-    /** @param array<string, mixed> $payload */
+    /**
+     * @param  array<string, mixed>  $payload
+     */
     private function transitionByAction(StudentEnrollment $enrollment, User $actor, string $handler, array $payload, ?string $idempotencyKey, ?string $transitionKey = null): TransitionResult
     {
         if ($enrollment->workflow_runtime !== StudentEnrollment::WorkflowRuntimePolicyV1) {

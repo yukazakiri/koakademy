@@ -30,6 +30,7 @@ final readonly class EnrollmentCancellationService
     public const string OUTCOME = 'cancelled';
 
     public function __construct(
+        private EnrollmentPaymentService $payments,
         private EnrollmentStudentSynchronizationService $studentSynchronization,
     ) {}
 
@@ -120,7 +121,8 @@ final readonly class EnrollmentCancellationService
                     'reason' => $reason,
                     'result' => [
                         'from_status' => $fromStatus,
-                        'class_seats_released' => $releasedSeats,
+                        'class_seats_released' => $releasedSeats['released'],
+                        'class_seats_retained' => $releasedSeats['retained'],
                         'student_state_reversal' => $studentStateReversal,
                         'outstanding_payments' => $outstandingPayments,
                     ],
@@ -157,12 +159,7 @@ final readonly class EnrollmentCancellationService
     /** @return array{transactions: int, amount: float} */
     public function outstandingPayments(StudentEnrollment $enrollment): array
     {
-        $links = $enrollment->enrollmentTransactions()->get(['id', 'amount']);
-
-        return [
-            'transactions' => $links->count(),
-            'amount' => (float) $links->sum('amount'),
-        ];
+        return $this->payments->linkedSummary($enrollment);
     }
 
     /** @return array<string, mixed>|null */
@@ -186,7 +183,11 @@ final readonly class EnrollmentCancellationService
      * deleted, and the subject rows keep their audit trail with the class link cleared so
      * a later reopen can assign classes again.
      *
-     * @return array<int, array<string, mixed>>
+     * A `class_enrollments` row is unique per student and class, so a seat another
+     * enrollment also points at is left alone: it belongs to both records and releasing it
+     * would unenrol a student the surviving enrollment still needs.
+     *
+     * @return array{released: array<int, array<string, mixed>>, retained: array<int, array<string, mixed>>}
      */
     private function releaseReservedSeats(StudentEnrollment $enrollment): array
     {
@@ -197,6 +198,7 @@ final readonly class EnrollmentCancellationService
             ->get();
 
         $released = [];
+        $retained = [];
         foreach ($subjects as $subject) {
             $class = Classes::query()->find($subject->class_id);
             if (! $class instanceof Classes
@@ -215,6 +217,17 @@ final readonly class EnrollmentCancellationService
                 continue;
             }
 
+            if ($this->classIsReferencedByAnotherEnrollment($enrollment, (int) $class->id)) {
+                $retained[] = [
+                    'class_enrollment_id' => $seat->id,
+                    'class_id' => (int) $class->id,
+                    'subject_enrollment_id' => $subject->id,
+                    'reason' => 'another enrollment still references this class seat',
+                ];
+
+                continue;
+            }
+
             $seat->forceFill(['status' => false])->save();
             $subject->forceFill(['class_id' => null])->save();
 
@@ -225,7 +238,15 @@ final readonly class EnrollmentCancellationService
             ];
         }
 
-        return $released;
+        return ['released' => $released, 'retained' => $retained];
+    }
+
+    private function classIsReferencedByAnotherEnrollment(StudentEnrollment $enrollment, int $classId): bool
+    {
+        return SubjectEnrollment::query()
+            ->where('class_id', $classId)
+            ->where('enrollment_id', '!=', $enrollment->id)
+            ->exists();
     }
 
     private function resultFromEvent(EnrollmentWorkflowEvent $event): TransitionResult

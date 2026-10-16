@@ -717,6 +717,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                     )
                 ),
                 'is_super_admin' => Auth::user()->hasRole('super_admin'),
+                'can_reopen' => Auth::user()->can('Reopen:StudentEnrollment') || Auth::user()->hasRole('super_admin'),
                 'can_manage_tuition' => Auth::user()->can('manage_tuition_fees'),
                 'can_advance_pipeline' => $this->enrollmentPipelineService->canUserAdvanceToNextStep(Auth::user(), $enrollment->status),
                 'can_review_requirements' => Auth::user()->can('Update:StudentEnrollment') || Auth::user()->hasRole('super_admin'),
@@ -881,6 +882,34 @@ final class AdministratorEnrollmentManagementController extends Controller
         }
 
         return back()->with('flash', ['error' => 'Enrollment failed.']);
+    }
+
+    public function undoCancellation(Request $request, StudentEnrollment $enrollment): RedirectResponse
+    {
+        $user = Auth::user();
+        abort_unless($user instanceof User, 403);
+        abort_unless(
+            $user->can('Reopen:StudentEnrollment') || $user->hasRole('super_admin'),
+            403,
+        );
+
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'max:2000'],
+        ]);
+
+        try {
+            $this->workflowCoordinator->reopen(
+                $enrollment,
+                $user,
+                null,
+                $validated['reason'],
+                'undo-cancellation:'.$request->header('Idempotency-Key', (string) Str::uuid()),
+            );
+
+            return back()->with('flash', ['success' => 'Cancellation undone. The enrollment is active again.']);
+        } catch (Throwable $throwable) {
+            return back()->with('flash', ['error' => $throwable->getMessage()]);
+        }
     }
 
     public function undoCashierVerification(StudentEnrollment $enrollment): RedirectResponse

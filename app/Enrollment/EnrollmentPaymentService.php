@@ -185,6 +185,17 @@ final readonly class EnrollmentPaymentService
         ]);
     }
 
+    /** @return array{transactions: int, amount: float} */
+    public function linkedSummary(StudentEnrollment $enrollment): array
+    {
+        $links = $enrollment->enrollmentTransactions()->get(['id', 'amount']);
+
+        return [
+            'transactions' => $links->count(),
+            'amount' => (float) $links->sum('amount'),
+        ];
+    }
+
     /** @return array{transactions:int, amount:float, documents_revoked:int} */
     public function reverseLinked(StudentEnrollment $enrollment): array
     {

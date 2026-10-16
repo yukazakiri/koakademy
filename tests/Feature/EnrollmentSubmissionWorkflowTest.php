@@ -24,6 +24,7 @@ use App\Models\StudentEnrollment;
 use App\Models\StudentStatusRecord;
 use App\Models\StudentTransaction;
 use App\Models\Subject;
+use App\Models\SubjectEnrollment;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Notifications\EnrollmentStatusUpdatedNotification;
@@ -1289,4 +1290,122 @@ it('cancels a policy enrollment through the configured cancellation stage', func
     expect($enrollment->refresh()->terminal_outcome)->toBe('cancelled')
         ->and($enrollment->current_step_key)->toBe('cancelled')
         ->and($enrollment->status)->toBe('Cancelled');
+});
+
+it('keeps preserved payments and shared class seats when a cancellation is undone', function (): void {
+    Queue::fake();
+    $school = School::factory()->create();
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
+    $student = Student::factory()->create([
+        'school_id' => $school->id,
+        'course_id' => $course->id,
+        'academic_year' => 1,
+        'status' => StudentStatus::Applicant,
+    ]);
+    $subject = Subject::factory()->create(['course_id' => $course->id, 'academic_year' => 1, 'semester' => 1]);
+    $class = App\Models\Classes::factory()->create([
+        'subject_id' => $subject->id,
+        'subject_ids' => [$subject->id],
+        'course_codes' => [$course->id],
+        'academic_year' => 1,
+        'semester' => 1,
+        'school_year' => '2035 - 2036',
+    ]);
+    ($this->publishEnrollmentPolicy)(EnrollmentPolicyPreset::standard(), $school);
+    $coordinator = app(EnrollmentWorkflowCoordinator::class);
+    $enrollment = $coordinator->submit(($this->submissionFor)($student, $subject, 'undo-cancel-submission'));
+    $enrollment->subjectsEnrolled()->sole()->update(['class_id' => $class->id]);
+    $seat = App\Models\ClassEnrollment::factory()->createOne([
+        'class_id' => $class->id,
+        'student_id' => $student->id,
+        'status' => true,
+    ]);
+
+    // A second enrollment record for the same student and period reuses the same class seat.
+    $sibling = StudentEnrollment::factory()->create([
+        'school_id' => $school->id,
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'school_year' => '2035 - 2036',
+        'semester' => 1,
+        'academic_year' => 1,
+        'status' => App\Enums\EnrollStat::VerifiedByDeptHead->value,
+        'workflow_runtime' => StudentEnrollment::WorkflowRuntimeLegacy,
+    ]);
+    SubjectEnrollment::factory()->create([
+        'enrollment_id' => $sibling->id,
+        'subject_id' => $subject->id,
+        'student_id' => $student->id,
+        'class_id' => $class->id,
+        'school_year' => '2035 - 2036',
+        'semester' => 1,
+    ]);
+
+    $transaction = Transaction::query()->create([
+        'description' => 'Preserved downpayment',
+        'payment_method' => 'Cash',
+        'settlements' => ['tuition_fee' => 500],
+        'status' => 'Paid',
+        'transaction_date' => now(),
+        'invoicenumber' => 'INV-UNDO-CANCEL',
+        'user_id' => $this->actor->id,
+    ]);
+    $link = StudentTransaction::query()->create([
+        'student_id' => $student->id,
+        'student_enrollment_id' => $enrollment->id,
+        'transaction_id' => $transaction->id,
+        'amount' => 500,
+        'status' => 'Paid',
+        'idempotency_key' => 'undo-cancel-payment',
+    ]);
+
+    $this->actor->givePermissionTo(Permission::findOrCreate('Cancel:StudentEnrollment', 'web'));
+    $this->actor->givePermissionTo(Permission::findOrCreate('Reopen:StudentEnrollment', 'web'));
+
+    $coordinator->cancel(
+        $enrollment->refresh(),
+        $this->actor,
+        'Applicant withdrew.',
+        'undo-cancel-1',
+        true,
+    );
+
+    expect($seat->refresh()->status)->toBeTrue()
+        ->and(data_get(EnrollmentWorkflowEvent::query()->where('event_type', 'cancelled')->latest('id')->value('result'), 'class_seats_retained.0.class_id'))
+        ->toBe($class->id);
+
+    $coordinator->reopen($enrollment->refresh(), $this->actor, null, 'Cancellation recorded in error.', 'undo-cancel-reopen-1');
+
+    expect($enrollment->refresh()->terminal_outcome)->toBeNull()
+        ->and($link->refresh()->exists)->toBeTrue()
+        ->and($transaction->refresh()->exists)->toBeTrue()
+        ->and(StudentTransaction::query()->where('student_enrollment_id', $enrollment->id)->count())->toBe(1)
+        ->and(Transaction::query()->count())->toBe(1)
+        ->and(data_get(EnrollmentWorkflowEvent::query()->where('event_type', 'reopened')->latest('id')->value('result'), 'payment_reversal.skipped'))
+        ->toBeTrue();
+});
+
+it('still reverses payments when reopening a completed transition', function (): void {
+    Queue::fake();
+    $school = School::factory()->create();
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
+    $student = Student::factory()->create(['school_id' => $school->id, 'course_id' => $course->id, 'academic_year' => 1]);
+    $subject = Subject::factory()->create(['course_id' => $course->id, 'academic_year' => 1, 'semester' => 1]);
+    ($this->publishEnrollmentPolicy)(EnrollmentPolicyPreset::standard(), $school);
+    $coordinator = app(EnrollmentWorkflowCoordinator::class);
+    $enrollment = $coordinator->submit(($this->submissionFor)($student, $subject, 'undo-completed-submission'));
+    $coordinator->verifyAcademic($enrollment, $this->actor, 'undo-completed-academic');
+    $coordinator->verifyPayment($enrollment->refresh(), $this->actor, [
+        'invoicenumber' => 'INV-UNDO-COMPLETED',
+        'payment_method' => 'Cash',
+        'settlements' => ['tuition_fee' => 500],
+    ], 'undo-completed-payment');
+    $this->actor->givePermissionTo(Permission::findOrCreate('Reopen:StudentEnrollment', 'web'));
+
+    $coordinator->reopen($enrollment->refresh(), $this->actor, null, 'Cashier correction.', 'undo-completed-reopen-1');
+
+    expect(StudentTransaction::query()->where('student_enrollment_id', $enrollment->id)->exists())->toBeFalse()
+        ->and(Transaction::query()->count())->toBe(0)
+        ->and(data_get(EnrollmentWorkflowEvent::query()->where('event_type', 'reopened')->latest('id')->value('result'), 'payment_reversal.skipped'))
+        ->toBeNull();
 });

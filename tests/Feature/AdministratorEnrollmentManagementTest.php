@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\EnrollStat;
 use App\Enums\UserRole;
 use App\Jobs\SendAssessmentNotificationJob;
 use App\Models\Classes;
@@ -1773,7 +1774,7 @@ it('exposes the student profile url on the enrollment show page', function (): v
 it('cancels a legacy enrollment through the administrator endpoint and records the audited outcome', function (): void {
     $user = User::factory()->create(['role' => UserRole::Admin]);
     $enrollment = StudentEnrollment::factory()->create([
-        'status' => App\Enums\EnrollStat::Pending->value,
+        'status' => EnrollStat::Pending->value,
         'workflow_runtime' => StudentEnrollment::WorkflowRuntimeLegacy,
     ]);
     $user->givePermissionTo(Spatie\Permission\Models\Permission::findOrCreate('Cancel:StudentEnrollment', 'web'));
@@ -1787,7 +1788,7 @@ it('cancels a legacy enrollment through the administrator endpoint and records t
         ->assertJsonPath('terminalOutcome', 'cancelled');
 
     expect($enrollment->refresh()->terminal_outcome)->toBe('cancelled')
-        ->and($enrollment->status)->toBe(App\Enums\EnrollStat::Pending->value)
+        ->and($enrollment->status)->toBe(EnrollStat::Pending->value)
         ->and(App\Models\EnrollmentWorkflowEvent::query()
             ->where('student_enrollment_id', $enrollment->id)
             ->where('event_type', 'cancelled')
@@ -1801,7 +1802,7 @@ it('cancels a legacy enrollment through the administrator endpoint and records t
 it('refuses an unauthorized or unreasoned cancellation request', function (): void {
     $user = User::factory()->create(['role' => UserRole::Admin]);
     $enrollment = StudentEnrollment::factory()->create([
-        'status' => App\Enums\EnrollStat::Pending->value,
+        'status' => EnrollStat::Pending->value,
         'workflow_runtime' => StudentEnrollment::WorkflowRuntimeLegacy,
     ]);
 
@@ -1829,7 +1830,7 @@ it('refuses to cancel a cashier-verified legacy enrollment before it is undone',
     $user = User::factory()->create(['role' => UserRole::Admin]);
     $user->givePermissionTo(Spatie\Permission\Models\Permission::findOrCreate('Cancel:StudentEnrollment', 'web'));
     $enrollment = StudentEnrollment::factory()->create([
-        'status' => App\Enums\EnrollStat::VerifiedByCashier->value,
+        'status' => EnrollStat::VerifiedByCashier->value,
         'workflow_runtime' => StudentEnrollment::WorkflowRuntimeLegacy,
     ]);
 
@@ -1848,7 +1849,7 @@ it('refuses to cancel a cashier-verified legacy enrollment before it is undone',
 it('exposes cancellation availability on the enrollment detail page', function (): void {
     $user = User::factory()->create(['role' => UserRole::Admin]);
     $enrollment = StudentEnrollment::factory()->create([
-        'status' => App\Enums\EnrollStat::Pending->value,
+        'status' => EnrollStat::Pending->value,
         'workflow_runtime' => StudentEnrollment::WorkflowRuntimeLegacy,
     ]);
 
@@ -1913,14 +1914,14 @@ it('filters the enrollment list by cancelled outcome without hiding the reportin
     $cancelled = StudentEnrollment::factory()->create([
         'school_year' => '2024 - 2025',
         'semester' => 1,
-        'status' => App\Enums\EnrollStat::Pending->value,
+        'status' => EnrollStat::Pending->value,
         'workflow_runtime' => StudentEnrollment::WorkflowRuntimeLegacy,
         'terminal_outcome' => 'cancelled',
     ]);
     $active = StudentEnrollment::factory()->create([
         'school_year' => '2024 - 2025',
         'semester' => 1,
-        'status' => App\Enums\EnrollStat::Pending->value,
+        'status' => EnrollStat::Pending->value,
         'workflow_runtime' => StudentEnrollment::WorkflowRuntimeLegacy,
     ]);
 
@@ -1931,8 +1932,74 @@ it('filters the enrollment list by cancelled outcome without hiding the reportin
             ->has('enrollments.data', 1)
             ->where('enrollments.data.0.id', $cancelled->id)
             ->where('enrollments.data.0.terminal_outcome', 'cancelled')
-            ->where('enrollments.data.0.status', App\Enums\EnrollStat::Pending->value)
+            ->where('enrollments.data.0.status', EnrollStat::Pending->value)
         );
 
     expect($active->refresh()->terminal_outcome)->toBeNull();
 });
+
+it('reopens a cancelled legacy enrollment through the undo cancellation endpoint', function (string $status): void {
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $user->givePermissionTo(Spatie\Permission\Models\Permission::findOrCreate('Cancel:StudentEnrollment', 'web'));
+    $enrollment = StudentEnrollment::factory()->create([
+        'status' => $status,
+        'workflow_runtime' => StudentEnrollment::WorkflowRuntimeLegacy,
+    ]);
+    $class = Classes::factory()->create([
+        'semester' => $enrollment->semester,
+        'school_year' => $enrollment->school_year,
+    ]);
+    $seat = App\Models\ClassEnrollment::factory()->createOne([
+        'class_id' => $class->id,
+        'student_id' => $enrollment->student_id,
+        'status' => true,
+    ]);
+    App\Models\SubjectEnrollment::factory()->create([
+        'enrollment_id' => $enrollment->id,
+        'student_id' => $enrollment->student_id,
+        'class_id' => $class->id,
+        'school_year' => $enrollment->school_year,
+        'semester' => $enrollment->semester,
+    ]);
+
+    $this->actingAs($user)
+        ->postJson(portalUrlForAdministrators("/administrators/enrollments/{$enrollment->id}/cancel"), [
+            'reason' => 'Applicant withdrew.',
+            'idempotency_key' => 'legacy-undo-cancel-1',
+        ])
+        ->assertOk();
+
+    expect($enrollment->refresh()->terminal_outcome)->toBe('cancelled')
+        ->and($seat->refresh()->status)->toBeFalse();
+
+    $this->actingAs($user)
+        ->postJson(portalUrlForAdministrators("/administrators/enrollments/{$enrollment->id}/undo-cancellation"), [
+            'reason' => 'Cancellation recorded in error.',
+        ])
+        ->assertForbidden();
+
+    $user->givePermissionTo(Spatie\Permission\Models\Permission::findOrCreate('Reopen:StudentEnrollment', 'web'));
+
+    $this->actingAs($user)
+        ->post(portalUrlForAdministrators("/administrators/enrollments/{$enrollment->id}/undo-cancellation"), [
+            'reason' => 'Cancellation recorded in error.',
+        ])
+        ->assertRedirect();
+
+    expect($enrollment->refresh()->terminal_outcome)->toBeNull()
+        ->and($enrollment->status)->toBe($status)
+        ->and(App\Models\EnrollmentWorkflowEvent::query()
+            ->where('student_enrollment_id', $enrollment->id)
+            ->where('event_type', 'reopened')
+            ->value('reason'))->toBe('Cancellation recorded in error.');
+
+    // The enrollment is actionable again exactly once per cancellation.
+    expect($enrollment->refresh()->terminal_outcome)->toBeNull()
+        ->and(App\Models\EnrollmentWorkflowEvent::query()
+            ->where('student_enrollment_id', $enrollment->id)
+            ->where('event_type', 'reopened')
+            ->count())->toBe(1);
+})->with([
+    'pending enrollment' => [EnrollStat::Pending->value],
+    'department verified enrollment' => [EnrollStat::VerifiedByDeptHead->value],
+]);

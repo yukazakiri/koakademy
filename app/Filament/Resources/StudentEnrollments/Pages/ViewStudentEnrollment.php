@@ -815,6 +815,51 @@ final class ViewStudentEnrollment extends ViewRecord
                         $this->refreshFormData(['status']);
                     }),
 
+                Action::make('undoCancellation')
+                    ->label('Undo Cancellation')
+                    ->icon('heroicon-o-arrow-uturn-left')
+                    ->color('success')
+                    ->requiresConfirmation()
+                    ->modalHeading('Undo cancellation?')
+                    ->modalDescription(
+                        'This restores the enrollment to the step it was on before it was cancelled. Recorded payments are never reversed here.'
+                    )
+                    ->visible(function (StudentEnrollment $record): bool {
+                        $actor = Auth::user();
+
+                        return $record->terminal_outcome === 'cancelled'
+                            && $actor instanceof \App\Models\User
+                            && ($actor->can('Reopen:StudentEnrollment') || $actor->hasRole('super_admin'));
+                    })
+                    ->form([
+                        Textarea::make('reason')
+                            ->label('Reason (required)')
+                            ->required()
+                            ->maxLength(2000)
+                            ->rows(3)
+                            ->columnSpanFull(),
+                    ])
+                    ->action(function (StudentEnrollment $record, array $data): void {
+                        $actor = Auth::user();
+                        if (! $actor instanceof \App\Models\User) {
+                            $this->halt();
+                        }
+
+                        app(\App\Enrollment\EnrollmentWorkflowCoordinator::class)->reopen(
+                            $record,
+                            $actor,
+                            null,
+                            (string) $data['reason'],
+                        );
+
+                        Notification::make()
+                            ->title('Cancellation undone')
+                            ->success()
+                            ->send();
+
+                        $this->refreshFormData(['status']);
+                    }),
+
                 Action::make('Resend Assessment')
                     ->label('Resend Assessment Notification')
                     ->icon('heroicon-o-envelope')

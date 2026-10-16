@@ -50,9 +50,7 @@ export function SimulationReport({ result, onFix }: { result: Simulation | null;
                             ) : (
                                 <ShieldCheck className="size-5 text-emerald-600 dark:text-emerald-400" />
                             )}
-                            {blockers.length
-                                ? `${blockers.length} blocker${blockers.length === 1 ? "" : "s"} to fix`
-                                : "Journey completed successfully"}
+                            {blockers.length ? `${blockers.length} blocker${blockers.length === 1 ? "" : "s"} to fix` : "Policy checks passed"}
                         </CardTitle>
                         <CardDescription className="mt-1">
                             Preview checksum {result.checksum?.slice(0, 10) ?? "not available"} · no student data changed
@@ -62,6 +60,9 @@ export function SimulationReport({ result, onFix }: { result: Simulation | null;
                 </div>
             </CardHeader>
             <CardContent className="space-y-6">
+                <p className="text-muted-foreground text-sm">
+                    Dry run only. No actions, payments, class assignments, or emails were executed. {result.route_basis}
+                </p>
                 <JourneySection icon={Layers3} title="Matched blueprints">
                     <div className="flex flex-wrap gap-2">
                         {(result.matched_policies ?? []).map((policy) => (

@@ -1,4 +1,5 @@
 import { deactivate } from "@/actions/App/Http/Controllers/AdministratorEnrollmentPolicyController";
+import { editEmailTemplate } from "@/actions/App/Http/Controllers/AdministratorSystemManagementController";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
     AlertDialog,
@@ -92,6 +93,11 @@ export default function EnrollmentBlueprintWorkspace({
                 {/* STUDIO MODE: Clean, dedicated full-width node studio */}
                 {workspaceMode === "studio" && editor.policy && editor.version ? (
                     <div className="space-y-3">
+                        <RolloutBanner rollout={enrollment_rollout} canUpdate={canUpdate} />
+                        <p className="text-muted-foreground text-sm">
+                            Editing version {editor.version.version}. Save creates a draft; only publication changes future enrollments. Existing
+                            enrollments keep their pinned version.
+                        </p>
                         {/* Streamlined Studio Command Bar */}
                         <div className="border-border/70 bg-card/85 flex flex-col gap-3 rounded-2xl border p-3 shadow-xs backdrop-blur-md xl:flex-row xl:items-center xl:justify-between">
                             {/* Left: Policy Switcher & Details */}
@@ -207,6 +213,8 @@ export default function EnrollmentBlueprintWorkspace({
                             actions={enrollment_registry.actions}
                             rules={enrollment_registry.rules}
                             options={enrollment_operator_options}
+                            entryRules={editor.effectiveConfiguration.rules}
+                            readOnly={!canUpdate}
                             onChange={(steps) =>
                                 editor.updateConfiguration((curr) => ({
                                     ...curr,
@@ -214,8 +222,8 @@ export default function EnrollmentBlueprintWorkspace({
                                 }))
                             }
                             onEditEmailTemplate={(stepKey) => {
-                                // A full page navigation closes the inspector sheet.
-                                window.location.href = `/administrators/system-management/email-templates/${editor.policy?.id ?? 0}/edit?step_key=${encodeURIComponent(stepKey)}`;
+                                if (editor.dirty && !window.confirm("Unsaved workflow changes will be lost. Continue to the email editor?")) return;
+                                window.location.href = editEmailTemplate.url(editor.policy!.id, { query: { step_key: stepKey } });
                             }}
                         />
                     </div>
@@ -530,7 +538,7 @@ function RolloutBanner({ rollout, canUpdate }: { rollout: EnrollmentPolicyPagePr
                         <AlertDescription className="text-muted-foreground mt-0.5 text-xs leading-relaxed">
                             {active
                                 ? "New admissions follow matching blueprints. Prior enrollments remain locked to their pinned policy snapshot."
-                                : "Authoritative workflow is active. Simulate your blueprint, verify calculations, then switch live mode."}
+                                : "New enrollments use legacy behavior. Publishing a blueprint alone does not activate it; simulate, publish, then activate."}
                         </AlertDescription>
                     </div>
                 </div>

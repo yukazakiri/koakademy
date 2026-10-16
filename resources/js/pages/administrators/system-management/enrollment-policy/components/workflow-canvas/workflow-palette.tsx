@@ -19,7 +19,7 @@ import {
     Zap,
 } from "lucide-react";
 import React from "react";
-import type { Action } from "../types";
+import type { Action } from "../../types";
 
 export type PaletteTemplate = {
     type: string;
@@ -375,7 +375,7 @@ export function WorkflowPalette({ onAddTemplate, onClose }: { onAddTemplate: (te
     const terminals = PALETTE_TEMPLATES.filter((t) => t.category === "terminal");
 
     return (
-        <aside className="border-border/70 bg-card/95 absolute top-3 bottom-3 left-3 z-30 flex w-72 flex-col rounded-2xl border shadow-xl backdrop-blur-md transition-all select-none">
+        <aside className="border-border/70 bg-card/95 absolute top-3 bottom-3 left-3 z-30 flex w-72 flex-col rounded-2xl border shadow-xl backdrop-blur-md select-none">
             <div className="border-border/40 flex items-center justify-between border-b p-3.5">
                 <div className="flex items-center gap-2">
                     <span className="text-foreground text-xs font-bold tracking-wider uppercase">Step Catalog</span>
@@ -414,7 +414,7 @@ export function WorkflowPalette({ onAddTemplate, onClose }: { onAddTemplate: (te
                                     draggable
                                     onDragStart={(e) => onDragStart(e, template)}
                                     className={cn(
-                                        "group border-border/60 bg-background/80 relative flex items-start gap-2.5 rounded-xl border p-2 text-left transition-all duration-150",
+                                        "group border-border/60 bg-background/80 relative flex items-start gap-2.5 rounded-xl border p-2 text-left transition-colors",
                                         "hover:border-primary/60 hover:bg-muted/40 cursor-grab hover:shadow-xs active:cursor-grabbing",
                                     )}
                                 >
@@ -430,7 +430,8 @@ export function WorkflowPalette({ onAddTemplate, onClose }: { onAddTemplate: (te
                                     <button
                                         type="button"
                                         onClick={() => onAddTemplate(template)}
-                                        className="text-muted-foreground hover:text-foreground hover:bg-muted rounded p-1 opacity-0 transition-opacity group-hover:opacity-100"
+                                        className="text-muted-foreground hover:text-foreground hover:bg-muted rounded p-1 transition-colors"
+                                        aria-label={`Add ${template.label}`}
                                         title="Click to add to canvas"
                                     >
                                         <Plus className="size-3.5" />
@@ -458,7 +459,7 @@ export function WorkflowPalette({ onAddTemplate, onClose }: { onAddTemplate: (te
                                     draggable
                                     onDragStart={(e) => onDragStart(e, template)}
                                     className={cn(
-                                        "group border-border/60 bg-background/80 relative flex items-start gap-2.5 rounded-xl border p-2 text-left transition-all duration-150",
+                                        "group border-border/60 bg-background/80 relative flex items-start gap-2.5 rounded-xl border p-2 text-left transition-colors",
                                         "hover:border-primary/60 hover:bg-muted/40 cursor-grab hover:shadow-xs active:cursor-grabbing",
                                     )}
                                 >
@@ -474,7 +475,8 @@ export function WorkflowPalette({ onAddTemplate, onClose }: { onAddTemplate: (te
                                     <button
                                         type="button"
                                         onClick={() => onAddTemplate(template)}
-                                        className="text-muted-foreground hover:text-foreground hover:bg-muted rounded p-1 opacity-0 transition-opacity group-hover:opacity-100"
+                                        className="text-muted-foreground hover:text-foreground hover:bg-muted rounded p-1 transition-colors"
+                                        aria-label={`Add ${template.label}`}
                                         title="Attach sub-action to selected step"
                                     >
                                         <Plus className="size-3.5" />
@@ -497,7 +499,7 @@ export function WorkflowPalette({ onAddTemplate, onClose }: { onAddTemplate: (te
                                     draggable
                                     onDragStart={(e) => onDragStart(e, template)}
                                     className={cn(
-                                        "group border-border/60 bg-background/80 relative flex items-start gap-2.5 rounded-xl border p-2 text-left transition-all duration-150",
+                                        "group border-border/60 bg-background/80 relative flex items-start gap-2.5 rounded-xl border p-2 text-left transition-colors",
                                         "hover:border-primary/60 hover:bg-muted/40 cursor-grab hover:shadow-xs active:cursor-grabbing",
                                     )}
                                 >
@@ -513,7 +515,8 @@ export function WorkflowPalette({ onAddTemplate, onClose }: { onAddTemplate: (te
                                     <button
                                         type="button"
                                         onClick={() => onAddTemplate(template)}
-                                        className="text-muted-foreground hover:text-foreground hover:bg-muted rounded p-1 opacity-0 transition-opacity group-hover:opacity-100"
+                                        className="text-muted-foreground hover:text-foreground hover:bg-muted rounded p-1 transition-colors"
+                                        aria-label={`Add ${template.label}`}
                                         title="Click to add to canvas"
                                     >
                                         <Plus className="size-3.5" />

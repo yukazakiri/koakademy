@@ -138,3 +138,18 @@ it('detects when enrollment workflow setup exists', function () {
 
     expect($hasSetup)->toBeTrue();
 });
+
+it('recognizes an active published policy without requiring obsolete legacy settings', function (): void {
+    GeneralSetting::query()->delete();
+    app(App\Enrollment\EnrollmentPolicyRolloutService::class)->activate();
+
+    expect(app(EnrollmentPipelineService::class)->hasWorkflowSetup())->toBeTrue();
+});
+
+it('keeps pinned policy enrollments visible after deactivation without legacy settings', function (): void {
+    GeneralSetting::query()->delete();
+    $enrollment = App\Models\StudentEnrollment::factory()->create();
+    $enrollment->forceFill(['workflow_runtime' => App\Models\StudentEnrollment::WorkflowRuntimePolicyV1])->save();
+
+    expect(app(EnrollmentPipelineService::class)->hasWorkflowSetup())->toBeTrue();
+});

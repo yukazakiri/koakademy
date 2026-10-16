@@ -8,9 +8,11 @@ use App\Data\Enrollment\ActionResult;
 use App\Data\Enrollment\EnrollmentContext;
 use App\Enrollment\Exceptions\EnrollmentTransitionException;
 use App\Models\Account;
+use App\Models\EnrollmentWorkflowEvent;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\StudentStatusRecord;
+use BackedEnum;
 
 final readonly class EnrollmentStudentSynchronizationService
 {
@@ -100,6 +102,71 @@ final readonly class EnrollmentStudentSynchronizationService
     }
 
     /**
+     * Reverse every student synchronization this enrollment applied, newest first.
+     *
+     * The workflow event trail is the audit source. A snapshot whose applied value no
+     * longer matches the student's current state is treated as already reversed (a
+     * reopen restored it, or a later event superseded it) and is skipped, so an
+     * operation never replays a reversal that already happened.
+     *
+     * @return array{restored: bool, skipped: bool, actions: array<int, array<string, mixed>>}
+     */
+    public function reverseAppliedSynchronizations(StudentEnrollment $enrollment): array
+    {
+        $events = EnrollmentWorkflowEvent::query()
+            ->where('student_enrollment_id', $enrollment->id)
+            ->whereIn('event_type', ['initialized', 'transition_succeeded'])
+            ->orderBy('id')
+            ->get();
+
+        $snapshots = [];
+        foreach ($events as $event) {
+            $actions = is_array($event->result['actions'] ?? null) ? $event->result['actions'] : [];
+            foreach ($actions as $action) {
+                if (! is_array($action) || ($action['key'] ?? null) !== 'enrollment.sync_student') {
+                    continue;
+                }
+
+                $metadata = $action['metadata'] ?? null;
+                if (! is_array($metadata)) {
+                    throw new EnrollmentTransitionException('Student synchronization cannot be safely reversed because its audit snapshot is unavailable.');
+                }
+
+                $snapshots[] = $metadata;
+            }
+        }
+
+        if ($snapshots === []) {
+            return ['restored' => false, 'skipped' => true, 'actions' => []];
+        }
+
+        $student = Student::query()->lockForUpdate()->find($enrollment->student_id);
+        $current = $student instanceof Student ? $this->comparableValue($student->status) : null;
+
+        $reversals = [];
+        foreach (array_reverse($snapshots) as $metadata) {
+            $studentSnapshot = data_get($metadata, 'reversal.student');
+            if (! is_array($studentSnapshot)) {
+                throw new EnrollmentTransitionException('Student synchronization cannot be safely reversed because its audit snapshot is unavailable.');
+            }
+
+            $applied = $this->comparableValue($studentSnapshot['applied_value'] ?? null);
+            if (($studentSnapshot['attribute'] ?? null) === 'status' && $applied !== null && $current !== $applied) {
+                continue;
+            }
+
+            $reversals[] = $this->reverse($enrollment, $metadata);
+            $current = $this->comparableValue($studentSnapshot['previous_value'] ?? null);
+        }
+
+        return [
+            'restored' => $reversals !== [],
+            'skipped' => $reversals === [],
+            'actions' => $reversals,
+        ];
+    }
+
+    /**
      * @param  array<string, mixed>  $metadata
      * @return array<string, mixed>
      */
@@ -156,5 +223,14 @@ final readonly class EnrollmentStudentSynchronizationService
             'status_record_id' => $statusMetadata['id'],
             'account_id' => is_array($accountMetadata) ? ($accountMetadata['id'] ?? null) : null,
         ];
+    }
+
+    /**
+     * Audit snapshots store raw column values while the model may hand back an enum,
+     * so both sides are reduced to their scalar form before they are compared.
+     */
+    private function comparableValue(mixed $value): mixed
+    {
+        return $value instanceof BackedEnum ? $value->value : $value;
     }
 }

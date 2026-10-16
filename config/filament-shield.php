@@ -228,7 +228,10 @@ return [
     |
     */
 
-    'custom_permissions' => [],
+    'custom_permissions' => [
+        'Cancel:StudentEnrollment' => 'Cancel enrollment',
+        'Reopen:StudentEnrollment' => 'Reopen enrollment',
+    ],
 
     /*
     |--------------------------------------------------------------------------

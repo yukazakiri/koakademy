@@ -18,6 +18,36 @@ Enrollment is KoAkademy's deepest subsystem. It has two cooperating layers: an *
 
 For policy enrollments, configured actions run in their listed order: entry-step actions during creation and target-step actions during transitions. An omitted action has no side effect. Every status change goes through the **transition engine** rather than direct edits, so the history of an enrollment is reconstructable. Assessment PDFs and notifications are queued only after the transaction commits (see [Queues & PDF](./queues-pdf/)).
 
+### Reading the execution map
+
+- **Enrollment submitted** is the trigger, not a staff approval. Public registration, staff registration, continuing enrollment, and API submissions enter through the coordinator. Channel rules determine which sources are allowed; scope and eligibility checks select and validate the published policy.
+- **Status on entry** describes the state already reached. Actions inside that stage run in numbered order when it is entered. Entry-stage actions run during submission, not when a department later approves.
+- **Wait for staff action** is a pause. Its roles/permission govern leaving that stage. The route label is the staff command; it is not automatic advancement.
+- **Otherwise / default** is the last route checked when no conditional route matches. Explicit route selection still checks that route's conditions. Academic/payment compatibility commands resolve eligible destinations under the same enrollment lock.
+- **Final stage** completes only after its actions and completion rules succeed. Failure rolls back status, linked payments, and other transactional writes; post-commit jobs are not dispatched.
+
+Graph checks validate structure, not production readiness. Test Run evaluates policy rules and previews connected routes using the current sample facts. It does **not** execute payments, reserve seats, create PDFs, send emails, or prove later runtime payloads are valid.
+
+### Cancelling an enrollment
+
+Cancellation is an administrative termination (`EnrollmentCancellationService`), not a workflow transition. It is available for both runtimes and for policies that never configured a cancellation stage, because an abandoned enrollment must always be stoppable.
+
+- **Authorized separately.** It needs `Cancel:StudentEnrollment` (or super admin) and a written reason; both are stored on a `cancelled` workflow event. The action lives under **More options → Cancel enrollment** on the enrollment record, and the enrollment list can filter by outcome.
+- **Terminal.** `terminal_outcome` becomes `cancelled`, which stops every later transition, transition command, and compatibility verification. Reopening restores the enrollment to a non-terminal stage.
+- **Reverses only what the enrollment applied.** Student synchronization applied by its own workflow events is restored from the audit snapshot (a snapshot that no longer matches the student's current state is treated as already reversed), and class seats reserved through its subject enrollments are released. Subjects, tuition, and the reporting status are kept as history.
+- **Never destroys money.** Recorded enrollment payments stay linked and reported; the operator must confirm that they will refund separately, or reverse them first. A completed policy enrollment must be reopened before it can be cancelled, and a cashier-verified legacy enrollment must be undone through the existing undo path first.
+- **Reporting.** `cancelled` is an outcome, not a reporting status, so the last real stage status is preserved and shown as "was …". Enrolment analytics and student-directory population counts already exclude abandoned outcomes.
+
+### Safe recovery after migration
+
+1. Capture an affected enrollment's `workflow_runtime`, `current_step_key`, snapshot ID, reporting status, and latest `transition_failed` reason. Do not replay actions or alter snapshots to diagnose it.
+2. Check the rollout banner. Saving a draft and publishing do not activate the engine. Deactivation affects future submissions only; existing policy enrollments still use their pinned snapshot.
+3. Compare the pinned snapshot with the active published version. The historical import can contain status actions only, while its compatibility draft contains explicit assignment, tuition, student synchronization, PDF, and notification actions. Publishing the draft does not repair older snapshots.
+4. Test a new enrollment on a staging copy through submission, academic review, payment, retry, and reopen. Verify linked transactions and student state, not only the canvas preview.
+5. For affected in-flight records, investigate and approve a record-specific repair separately. Never bulk replay billing or enrollment actions against production.
+
+The enrollment list recognizes active published policies and existing policy-runtime records even without old pipeline settings. Rollout activation also persists a shared default so staff/public scopes first seen after activation inherit the intended runtime.
+
 ## The policy engine (blueprints)
 
 The engine lives in `app/Enrollment/` and is configured from the admin workspace (React UI under System Management → Enrollment Policy): blueprint shell, rule editor, workflow editor, and simulation reports.
@@ -30,6 +60,7 @@ The engine lives in `app/Enrollment/` and is configured from the admin workspace
 | `PolicySimulationService` | Dry-runs representative students against a draft, reporting blockers before publication |
 | `PolicyRolloutService` | Staged activation and rollback of published versions |
 | `EnrollmentTransitionEngine` / `EnrollmentWorkflowCoordinator` | Approval timelines, branches, and post-commit actions |
+| `EnrollmentCancellationService` | Authorized, audited cancellation of in-flight enrollments for both runtimes |
 | Strategies & handlers | Assignment/billing strategies and integration action handlers (extension points) |
 
 Persistence: `EnrollmentPolicy` (the blueprint), `EnrollmentPolicyVersion` (immutable published versions), `EnrollmentPolicySnapshot` (what a given enrollment started with), and `EnrollmentWorkflowEvent` (the audit trail).

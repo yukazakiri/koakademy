@@ -66,10 +66,13 @@ export function PolicyHelpDrawer({
                         </section>
                     ) : null}
 
-                    <Button asChild variant="outline" className="h-11 w-full justify-between">
-                        <a href={docsUrl} target="_blank" rel="noreferrer">
-                            Read the full operator guide <ExternalLink className="size-4" />
-                        </a>
+                    <Button
+                        nativeButton={false}
+                        render={<a href={docsUrl} target="_blank" rel="noopener noreferrer" />}
+                        variant="outline"
+                        className="w-full justify-between"
+                    >
+                        Read the full operator guide <ExternalLink />
                     </Button>
                 </div>
             </SheetContent>

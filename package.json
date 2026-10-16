@@ -12,6 +12,8 @@
         "format": "prettier --write resources/",
         "format:check": "prettier --check resources/",
         "test:email-canvas": "node --test tests/Unit/email-template-canvas.test.mjs",
+        "test:enrollment-workflow": "node --test tests/Unit/enrollment-workflow.test.mjs",
+        "test:browser:enrollment-workflow": "node --test tests/Browser/enrollment-workflow.mjs",
         "test:browser:email-canvas": "node --test tests/Browser/email-template-canvas.mjs",
         "test:browser:library-book": "node tests/Browser/library-book-create.mjs"
     },

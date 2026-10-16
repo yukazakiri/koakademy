@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Data\Enrollment\EnrollmentSubmissionData;
+use App\Enrollment\EnrollmentCancellationService;
+use App\Enrollment\EnrollmentTransitionEngine;
 use App\Enrollment\EnrollmentWorkflowCoordinator;
 use App\Enums\StudentStatus;
 use App\Exceptions\AssessmentExportLimitReached;
@@ -38,6 +40,7 @@ use App\Services\EnrollmentService;
 use App\Services\GeneralSettingsService;
 use App\Services\PdfGenerationService;
 use App\Services\QueueAssessmentExportService;
+use App\Services\StudentDirectoryQuery;
 use App\Services\TenantContext;
 use App\Services\TuitionAdjustmentRecalculationService;
 use App\Settings\SiteSettings;
@@ -71,6 +74,8 @@ final class AdministratorEnrollmentManagementController extends Controller
         private readonly ClassScheduleChangeNotificationService $classScheduleChangeNotificationService,
         private readonly EnrollmentWorkflowCoordinator $workflowCoordinator,
         private readonly TuitionAdjustmentRecalculationService $tuitionAdjustmentRecalculation,
+        private readonly EnrollmentTransitionEngine $transitionEngine,
+        private readonly EnrollmentCancellationService $enrollmentCancellationService,
     ) {}
 
     public function index(GeneralSettingsService $settingsService): Response|RedirectResponse
@@ -163,42 +168,49 @@ final class AdministratorEnrollmentManagementController extends Controller
 
         $pendingStatus = $this->enrollmentPipelineService->getPendingStatus();
 
-        $enrolledThisSemester = fn () => StudentEnrollment::query()
+        // Cancelled or rejected enrollments keep their last reporting status, so enrolment
+        // counts have to exclude the abandoned outcomes explicitly.
+        $excludingAbandoned = static fn ($query) => $query->where(function ($outcomes): void {
+            $outcomes->whereNull('terminal_outcome')
+                ->orWhereNotIn('terminal_outcome', StudentDirectoryQuery::ABANDONED_TERMINAL_OUTCOMES);
+        });
+
+        $enrolledThisSemester = fn () => $excludingAbandoned(StudentEnrollment::query()
             ->withTrashed()
             ->where('school_year', $currentSchoolYearString)
             ->where('semester', $currentSemester)
-            ->where('status', '!=', $pendingStatus)
+            ->where('status', '!=', $pendingStatus))
             ->count();
 
-        $enrolledThisSchoolYear = fn () => StudentEnrollment::query()
+        $enrolledThisSchoolYear = fn () => $excludingAbandoned(StudentEnrollment::query()
             ->withTrashed()
             ->where('school_year', $currentSchoolYearString)
-            ->where('status', '!=', $pendingStatus)
+            ->where('status', '!=', $pendingStatus))
             ->count();
 
-        $enrolledPreviousSemester = fn () => StudentEnrollment::query()
+        $enrolledPreviousSemester = fn () => $excludingAbandoned(StudentEnrollment::query()
             ->withTrashed()
             ->where('school_year', $previousSchoolYearString)
             ->where('semester', $previousSemester)
-            ->where('status', '!=', $pendingStatus)
+            ->where('status', '!=', $pendingStatus))
             ->count();
 
-        $enrolledByDepartment = fn () => StudentEnrollment::query()
+        $enrolledByDepartment = fn () => $excludingAbandoned(StudentEnrollment::query()
             ->withTrashed()
             ->where('student_enrollment.school_year', $currentSchoolYearString)
             ->where('student_enrollment.semester', $currentSemester)
-            ->where('student_enrollment.status', '!=', $pendingStatus)
+            ->where('student_enrollment.status', '!=', $pendingStatus))
             ->join('courses', DB::raw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT)'), '=', 'courses.id')
             ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
             ->selectRaw('TRIM(departments.code) as department, count(*) as count')
             ->groupByRaw('TRIM(departments.code)')
             ->get();
 
-        $enrolledByYearLevel = fn () => StudentEnrollment::query()
+        $enrolledByYearLevel = fn () => $excludingAbandoned(StudentEnrollment::query()
             ->withTrashed()
             ->where('school_year', $currentSchoolYearString)
             ->where('semester', $currentSemester)
-            ->where('status', '!=', $pendingStatus)
+            ->where('status', '!=', $pendingStatus))
             ->selectRaw('academic_year as year_level, count(*) as count')
             ->groupBy('academic_year')
             ->get();
@@ -247,6 +259,9 @@ final class AdministratorEnrollmentManagementController extends Controller
                     $query->whereNull('student_enrollment.deleted_at');
                 } elseif ($statusFilter === 'trashed') {
                     $query->onlyTrashed();
+                } elseif ($statusFilter === 'cancelled') {
+                    // Cancellation is a terminal outcome, not a reporting status.
+                    $query->where('student_enrollment.terminal_outcome', EnrollmentCancellationService::OUTCOME);
                 } else {
                     $query->where('student_enrollment.status', $statusFilter);
                 }
@@ -304,6 +319,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'course_title' => $enrollment->course?->title,
                 'department' => $enrollment->course?->department?->code,
                 'status' => $enrollment->status ?? 'N/A',
+                'terminal_outcome' => $enrollment->terminal_outcome,
                 'school_year' => $enrollment->school_year,
                 'semester' => $enrollment->semester,
                 'academic_year' => $enrollment->academic_year,
@@ -819,11 +835,12 @@ final class AdministratorEnrollmentManagementController extends Controller
             'settlements.others' => ['nullable', 'numeric', 'min:0'],
             'payment_method' => ['required', 'string'],
             'reason' => ['nullable', 'string', 'max:2000'],
+            'transition_key' => ['nullable', 'string', 'max:255'],
             ...$separateFeeTransactionKeys,
         ]);
 
         try {
-            $this->workflowCoordinator->verifyPayment($enrollment, $user, $validated);
+            $this->workflowCoordinator->verifyPayment($enrollment, $user, $validated, transitionKey: $validated['transition_key'] ?? null);
 
             return back()->with('flash', ['success' => 'Successfully enrolled student.']);
         } catch (Throwable $throwable) {
@@ -2353,26 +2370,34 @@ final class AdministratorEnrollmentManagementController extends Controller
     /** @return array<string, mixed> */
     private function workflowView(StudentEnrollment $enrollment, mixed $actor): array
     {
+        $outstandingPayments = $this->enrollmentCancellationService->outstandingPayments($enrollment);
+
         if ($enrollment->workflow_runtime !== StudentEnrollment::WorkflowRuntimePolicyV1) {
             return [
                 'current_step_key' => null,
-                'terminal_outcome' => null,
+                'terminal_outcome' => $enrollment->terminal_outcome,
                 'steps' => [],
                 'allowed_transitions' => [],
                 'allowed_payment_methods' => [],
+                'can_cancel' => $actor instanceof User
+                    && $enrollment->terminal_outcome === null
+                    && ! $this->enrollmentPipelineService->isCashierVerified($enrollment->status)
+                    && ($actor->can('Cancel:StudentEnrollment') || $actor->hasRole('super_admin')),
+                'outstanding_payments' => $outstandingPayments,
             ];
         }
 
         $enrollment->loadMissing('policySnapshot');
         $steps = collect(data_get($enrollment->policySnapshot?->configuration, 'workflow.steps', []));
-        $current = $steps->firstWhere('key', $enrollment->current_step_key);
-        $permission = is_array($current) ? ($current['permission'] ?? null) : null;
-        $canTransition = $actor instanceof User
-            && (! is_string($permission) || $permission === '' || $actor->can($permission));
+        $available = $actor instanceof User ? $this->transitionEngine->availableTransitions($enrollment, $actor) : [];
 
         return [
             'current_step_key' => $enrollment->current_step_key,
             'terminal_outcome' => $enrollment->terminal_outcome,
+            'can_cancel' => $actor instanceof User
+                && $enrollment->terminal_outcome === null
+                && ($actor->can('Cancel:StudentEnrollment') || $actor->hasRole('super_admin')),
+            'outstanding_payments' => $outstandingPayments,
             'allowed_payment_methods' => array_values(data_get(
                 $enrollment->policySnapshot?->configuration,
                 'billing.allowed_payment_methods',
@@ -2383,27 +2408,25 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'label' => $step['label'] ?? $step['key'],
                 'terminal' => (bool) ($step['terminal'] ?? false),
             ])->values()->all(),
-            'allowed_transitions' => $canTransition && is_array($current)
-                ? collect($current['transitions'] ?? [])->map(function (array $transition) use ($steps): array {
-                    $target = $steps->firstWhere('key', $transition['to'] ?? null);
-                    $paymentAction = is_array($target)
-                        ? collect($target['actions'] ?? [])->firstWhere('handler', 'enrollment.verify_payment')
-                        : null;
+            'allowed_transitions' => collect($available)->map(function (array $transition) use ($steps): array {
+                $target = $steps->firstWhere('key', $transition['to'] ?? null);
+                $paymentAction = is_array($target)
+                    ? collect($target['actions'] ?? [])->firstWhere('handler', 'enrollment.verify_payment')
+                    : null;
 
-                    return [
-                        'key' => $transition['key'],
-                        'label' => $transition['label'] ?? $transition['key'],
-                        'to' => $transition['to'],
-                        'requires_reason' => (bool) ($transition['requires_reason'] ?? false),
-                        'target_actions' => is_array($target)
-                            ? collect($target['actions'] ?? [])->pluck('handler')->filter()->values()->all()
-                            : [],
-                        'payment_configuration' => is_array($paymentAction)
-                            ? $paymentAction['configuration'] ?? []
-                            : null,
-                    ];
-                })->values()->all()
-                : [],
+                return [
+                    'key' => $transition['key'],
+                    'label' => $transition['label'] ?? $transition['key'],
+                    'to' => $transition['to'],
+                    'requires_reason' => (bool) ($transition['requires_reason'] ?? false),
+                    'target_actions' => is_array($target)
+                        ? collect($target['actions'] ?? [])->pluck('handler')->filter()->values()->all()
+                        : [],
+                    'payment_configuration' => is_array($paymentAction)
+                        ? $paymentAction['configuration'] ?? []
+                        : null,
+                ];
+            })->values()->all(),
         ];
     }
 

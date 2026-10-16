@@ -30,6 +30,7 @@ import axios from "axios";
 import {
     AlertTriangle,
     ArrowLeft,
+    Ban,
     Banknote,
     CalendarDays,
     CheckCircle2,
@@ -46,8 +47,8 @@ import {
     School,
     ShieldAlert,
     Undo2,
-    User as UserIcon,
     UserCheck,
+    User as UserIcon,
     WalletCards,
 } from "lucide-react";
 import React, { useState } from "react";
@@ -68,6 +69,8 @@ interface EnrollmentData {
     workflow: {
         current_step_key: string | null;
         terminal_outcome: string | null;
+        can_cancel: boolean;
+        outstanding_payments: { transactions: number; amount: number };
         allowed_payment_methods: string[];
         steps: Array<{ key: string; label: string; terminal: boolean }>;
         allowed_transitions: Array<{
@@ -499,9 +502,11 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
     const currentWorkflowStep = steps.find((step) => step.status === "current") ?? null;
     const workflowProgress = workflowTotalSteps > 0 ? (workflowCompletedSteps / workflowTotalSteps) * 100 : 0;
     const nextActionLabel =
-        enrollment.workflow.allowed_transitions[0]?.label ??
-        nextStep?.label ??
-        (enrollment.workflow.terminal_outcome ? "Workflow complete" : "Review workflow");
+        enrollment.workflow.terminal_outcome === "cancelled"
+            ? "Enrollment cancelled"
+            : (enrollment.workflow.allowed_transitions[0]?.label ??
+              nextStep?.label ??
+              (enrollment.workflow.terminal_outcome ? "Workflow complete" : "Review workflow"));
     const totalAssessment = enrollment.tuition?.overall_tuition ?? 0;
     const paymentProgress = totalAssessment > 0 ? Math.min(100, Math.round((totalPaid / totalAssessment) * 100)) : 0;
     const headerActions = (
@@ -522,6 +527,7 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                                     tuition={enrollment.tuition}
                                     additionalFees={enrollment.additional_fees}
                                     label={workflowTransition.label}
+                                    transitionKey={workflowTransition.key}
                                     requiresReason={workflowTransition.requires_reason}
                                     receiptMode={workflowTransition.payment_configuration?.receipt_mode ?? "required"}
                                     allowedPaymentMethods={enrollment.workflow.allowed_payment_methods}
@@ -539,23 +545,30 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                             ),
                         )}
 
-                    {enrollment.workflow_runtime === "legacy" && nextStep?.action_type === "department_verification" && auth.can_verify_head && (
-                        <Button onClick={handleVerifyHeadDept} className="h-10 rounded-xl bg-blue-600 px-4 shadow-sm hover:bg-blue-700">
-                            <UserCheck className="mr-2 size-4" />
-                            Verify step
-                        </Button>
-                    )}
-
-                    {enrollment.workflow_runtime === "legacy" && nextStep?.action_type === "cashier_verification" && auth.can_verify_cashier && (
-                        <VerifyCashierDialog
-                            enrollmentId={enrollment.id}
-                            tuition={enrollment.tuition}
-                            additionalFees={enrollment.additional_fees}
-                            buttonClassName="w-auto min-w-[10rem] rounded-xl"
-                        />
-                    )}
+                    {enrollment.workflow_runtime === "legacy" &&
+                        !enrollment.workflow.terminal_outcome &&
+                        nextStep?.action_type === "department_verification" &&
+                        auth.can_verify_head && (
+                            <Button onClick={handleVerifyHeadDept} className="h-10 rounded-xl bg-blue-600 px-4 shadow-sm hover:bg-blue-700">
+                                <UserCheck className="mr-2 size-4" />
+                                Verify step
+                            </Button>
+                        )}
 
                     {enrollment.workflow_runtime === "legacy" &&
+                        !enrollment.workflow.terminal_outcome &&
+                        nextStep?.action_type === "cashier_verification" &&
+                        auth.can_verify_cashier && (
+                            <VerifyCashierDialog
+                                enrollmentId={enrollment.id}
+                                tuition={enrollment.tuition}
+                                additionalFees={enrollment.additional_fees}
+                                buttonClassName="w-auto min-w-[10rem] rounded-xl"
+                            />
+                        )}
+
+                    {enrollment.workflow_runtime === "legacy" &&
+                        !enrollment.workflow.terminal_outcome &&
                         auth.can_advance_pipeline &&
                         nextStep &&
                         nextStep.action_type !== "cashier_verification" &&
@@ -612,8 +625,20 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                                 </DropdownMenuItem>
                             )}
                             {auth.is_super_admin &&
+                                !enrollment.workflow.terminal_outcome &&
                                 ((enrollment.workflow_runtime === "legacy" && enrollment.status === pendingStatus) ||
                                     enrollment.allows_no_receipt_transition) && <QuickEnrollDialog enrollmentId={enrollment.id} />}
+                            {enrollment.workflow.can_cancel && (
+                                <>
+                                    <DropdownMenuSeparator />
+                                    <CancelEnrollmentDialog
+                                        enrollmentId={enrollment.id}
+                                        studentName={enrollment.student.full_name}
+                                        outstandingPayments={enrollment.workflow.outstanding_payments}
+                                        formatMoney={formatMoney}
+                                    />
+                                </>
+                            )}
                             <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={handleRetryEnrollment}>
                                 <RefreshCcw className="mr-2 h-4 w-4" /> Retry class enrollment
@@ -766,7 +791,7 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                                 <h2 id="student-record-heading" className="mt-1 truncate text-xl font-semibold tracking-[-0.02em] sm:text-2xl">
                                     <Link
                                         href={studentUrl}
-                                        className="hover:text-primary transition-colors hover:underline inline-flex items-center gap-1.5"
+                                        className="hover:text-primary inline-flex items-center gap-1.5 transition-colors hover:underline"
                                         title="View Student Record"
                                     >
                                         <span>{enrollment.student.full_name}</span>
@@ -779,7 +804,7 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                                     <span className="text-muted-foreground/40">•</span>
                                     <Link
                                         href={studentUrl}
-                                        className="text-primary hover:underline inline-flex items-center gap-1 font-medium text-xs"
+                                        className="text-primary inline-flex items-center gap-1 text-xs font-medium hover:underline"
                                     >
                                         View profile
                                     </Link>
@@ -867,6 +892,17 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                                         {enrollment.status}
                                     </Badge>
                                 </div>
+                                {enrollment.workflow.terminal_outcome === "cancelled" && (
+                                    <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50/70 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+                                        <Ban className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                                        <div>
+                                            <p className="font-semibold">Enrollment cancelled</p>
+                                            <p className="mt-0.5 text-xs">
+                                                No further workflow action is available. Reopen it if this was recorded in error.
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
                                 <div className="pt-3">
                                     <div className="mb-2 flex items-center justify-between gap-3 text-xs">
                                         <span className="text-muted-foreground font-medium">Review progress</span>
@@ -876,11 +912,13 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                                     </div>
                                     <Progress value={workflowProgress} className="h-1.5" />
                                     <p className="text-muted-foreground mt-2 text-xs leading-5">
-                                        {currentWorkflowStep
-                                            ? `Current step: ${currentWorkflowStep.label}`
-                                            : enrollment.workflow.terminal_outcome
-                                              ? "All workflow steps are complete."
-                                              : "Review the available action to continue."}
+                                        {enrollment.workflow.terminal_outcome === "cancelled"
+                                            ? "This enrollment stopped at cancellation and can no longer transition."
+                                            : currentWorkflowStep
+                                              ? `Current step: ${currentWorkflowStep.label}`
+                                              : enrollment.workflow.terminal_outcome
+                                                ? "All workflow steps are complete."
+                                                : "Review the available action to continue."}
                                     </p>
                                 </div>
                             </CardHeader>
@@ -1407,7 +1445,11 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                                                         href={res.download_url}
                                                         target="_blank"
                                                         rel="noreferrer"
-                                                        className={buttonVariants({ variant: "ghost", size: "icon", className: "text-muted-foreground h-8 w-8" })}
+                                                        className={buttonVariants({
+                                                            variant: "ghost",
+                                                            size: "icon",
+                                                            className: "text-muted-foreground h-8 w-8",
+                                                        })}
                                                     >
                                                         <Download className="h-4 w-4" />
                                                     </a>
@@ -1620,6 +1662,7 @@ function EditTransactionDialog({ enrollmentId, transaction }: { enrollmentId: nu
 
 type SeparateFeeTransactionField = `separate_fee_${number}_transaction`;
 type CashierPaymentForm = {
+    transition_key: string | null;
     invoicenumber: string;
     payment_method: string;
     reason: string;
@@ -1636,6 +1679,7 @@ function VerifyCashierDialog({
     tuition,
     additionalFees,
     label = "Verify & Enroll",
+    transitionKey,
     requiresReason = false,
     receiptMode = "required",
     allowedPaymentMethods = [],
@@ -1645,6 +1689,7 @@ function VerifyCashierDialog({
     tuition: EnrollmentData["tuition"];
     additionalFees: EnrollmentData["additional_fees"];
     label?: string;
+    transitionKey?: string;
     requiresReason?: boolean;
     receiptMode?: "required" | "optional" | "none";
     allowedPaymentMethods?: string[];
@@ -1663,6 +1708,7 @@ function VerifyCashierDialog({
         separateTransactionFees.map((fee) => [`separate_fee_${fee.id}_transaction`, fee.transaction_number ?? ""]),
     ) as Partial<Record<SeparateFeeTransactionField, string>>;
     const { data, setData, post, processing, errors, reset } = useForm<CashierPaymentForm>({
+        transition_key: transitionKey ?? null,
         invoicenumber: "",
         payment_method: allowedPaymentMethods[0] ?? "Cash",
         reason: "",
@@ -1954,6 +2000,121 @@ function QuickEnrollDialog({ enrollmentId }: { enrollmentId: number }) {
                         </Button>
                         <Button type="submit" variant="destructive" disabled={processing}>
                             Quick Enroll
+                        </Button>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function CancelEnrollmentDialog({
+    enrollmentId,
+    studentName,
+    outstandingPayments,
+    formatMoney,
+}: {
+    enrollmentId: number;
+    studentName: string;
+    outstandingPayments: { transactions: number; amount: number };
+    formatMoney: (amount: number | null | undefined) => string;
+}) {
+    const [open, setOpen] = useState(false);
+    const [reason, setReason] = useState("");
+    const [acknowledgePayments, setAcknowledgePayments] = useState(false);
+    const [processing, setProcessing] = useState(false);
+    const hasPayments = outstandingPayments.transactions > 0;
+    const idempotencyKey = () => (typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `cancel-${Date.now()}-${Math.random()}`);
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        setProcessing(true);
+
+        axios
+            .post(route("administrators.enrollments.cancel", enrollmentId), {
+                reason,
+                idempotency_key: idempotencyKey(),
+                acknowledge_outstanding_payments: acknowledgePayments,
+            })
+            .then(() => {
+                setOpen(false);
+                setReason("");
+                toast.success("Enrollment cancelled");
+                router.reload({ only: ["enrollment"] });
+            })
+            .catch((error: unknown) => {
+                const message = axios.isAxiosError(error)
+                    ? ((error.response?.data?.message as string | undefined) ??
+                      (Object.values(error.response?.data?.errors ?? {})[0] as string[] | undefined)?.[0])
+                    : null;
+                toast.error(message ?? "The enrollment could not be cancelled.");
+            })
+            .finally(() => setProcessing(false));
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-red-600 focus:text-red-600">
+                    <Ban className="mr-2 h-4 w-4" /> Cancel enrollment
+                </DropdownMenuItem>
+            </DialogTrigger>
+            <DialogContent className="border-red-200 sm:max-w-[520px]">
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2 text-red-600">
+                        <Ban className="h-5 w-5" /> Cancel this enrollment
+                    </DialogTitle>
+                    <DialogDescription>
+                        Cancelling stops the workflow for {studentName}. The outcome is recorded in the enrollment history and the student stops
+                        counting as enrolled for this term. This can be undone with &ldquo;Undo step verification&rdquo; if it was recorded in error.
+                    </DialogDescription>
+                </DialogHeader>
+
+                <form onSubmit={handleSubmit} className="space-y-4 py-2">
+                    <div className="grid gap-2">
+                        <Label htmlFor="cancel-reason">Reason (required)</Label>
+                        <Textarea
+                            id="cancel-reason"
+                            required
+                            rows={3}
+                            placeholder="Why is this enrollment being cancelled? e.g. applicant withdrew, duplicate application."
+                            value={reason}
+                            onChange={(e) => setReason(e.target.value)}
+                        />
+                        <p className="text-muted-foreground text-xs">
+                            Reserved class seats held by this enrollment are released. Subjects, tuition, and the reporting status are kept as
+                            history.
+                        </p>
+                    </div>
+
+                    {hasPayments && (
+                        <div className="space-y-2 rounded-lg border border-red-200 bg-red-50/60 p-3 dark:bg-red-950/30">
+                            <div className="flex items-start gap-2 text-sm">
+                                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                                <span>
+                                    {formatMoney(outstandingPayments.amount)} across {outstandingPayments.transactions} payment transaction(s) is
+                                    still linked. Cancelling does not refund it.
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Checkbox
+                                    id="cancel-acknowledge-payments"
+                                    checked={acknowledgePayments}
+                                    onCheckedChange={(checked) => setAcknowledgePayments(checked === true)}
+                                />
+                                <Label htmlFor="cancel-acknowledge-payments" className="text-xs font-normal">
+                                    I will handle the refund separately in the finance module.
+                                </Label>
+                            </div>
+                        </div>
+                    )}
+
+                    <DialogFooter>
+                        <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+                            Keep enrollment
+                        </Button>
+                        <Button type="submit" variant="destructive" disabled={processing || (hasPayments && !acknowledgePayments)}>
+                            {processing ? "Cancelling…" : "Cancel enrollment"}
                         </Button>
                     </DialogFooter>
                 </form>

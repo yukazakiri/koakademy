@@ -17,6 +17,7 @@ export function EdgeInspectorDialog({
     rules,
     options,
     onSave,
+    onDelete,
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -26,6 +27,7 @@ export function EdgeInspectorDialog({
     rules: Record<string, RegistryItem>;
     options: Record<string, Option[]>;
     onSave: (sourceStepKey: string, updatedTransition: Transition) => void;
+    onDelete?: (sourceStepKey: string, transitionKey: string) => void;
 }) {
     const [draft, setDraft] = useState<Transition | null>(transition);
 
@@ -36,7 +38,7 @@ export function EdgeInspectorDialog({
     if (!draft || !sourceStep) return null;
 
     const condition = draft.conditions[0];
-    const destinationOptions = steps.filter((s) => s.key !== sourceStep.key).map((s) => ({ value: s.key, label: s.label }));
+    const destinationOptions = steps.filter((s) => s.key !== sourceStep.key && !s.entry).map((s) => ({ value: s.key, label: s.label }));
 
     const handleRuleChange = (handler: string) => {
         const ruleItem = rules[handler];
@@ -48,6 +50,7 @@ export function EdgeInspectorDialog({
                     handler,
                     configuration: operatorDefaults(ruleItem),
                 },
+                ...draft.conditions.slice(1),
             ],
         });
     };
@@ -139,7 +142,7 @@ export function EdgeInspectorDialog({
                                         onChange={(configuration) =>
                                             setDraft({
                                                 ...draft,
-                                                conditions: [{ ...condition, configuration }],
+                                                conditions: [{ ...condition, configuration }, ...draft.conditions.slice(1)],
                                             })
                                         }
                                     />
@@ -165,6 +168,11 @@ export function EdgeInspectorDialog({
                 </div>
 
                 <DialogFooter className="gap-2 sm:gap-0">
+                    {onDelete && !draft.fallback && (
+                        <Button type="button" variant="destructive" size="sm" onClick={() => onDelete(sourceStep.key, draft.key)}>
+                            Delete route
+                        </Button>
+                    )}
                     <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)} className="h-8 text-xs">
                         Cancel
                     </Button>

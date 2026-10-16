@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Enums\EnrollStat;
+use App\Features\DynamicEnrollmentPolicies;
+use App\Models\EnrollmentPolicy;
 use App\Models\StudentEnrollment;
 use App\Models\User;
+use Laravel\Pennant\Feature;
 
 final class EnrollmentPipelineService
 {
@@ -26,6 +29,14 @@ final class EnrollmentPipelineService
 
     public function hasWorkflowSetup(): bool
     {
+        if (Feature::active(DynamicEnrollmentPolicies::class)
+            && EnrollmentPolicy::query()->where('is_enabled', true)->whereHas('activeVersion')->exists()) {
+            return true;
+        }
+        if (StudentEnrollment::query()->where('workflow_runtime', StudentEnrollment::WorkflowRuntimePolicyV1)->exists()) {
+            return true;
+        }
+
         $settings = $this->generalSettingsService->getGlobalSettingsModel();
         $raw = data_get($settings?->more_configs, 'enrollment_pipeline', []);
 

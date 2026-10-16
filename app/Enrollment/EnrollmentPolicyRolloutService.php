@@ -64,10 +64,12 @@ final readonly class EnrollmentPolicyRolloutService
         }
 
         Feature::activateForEveryone(DynamicEnrollmentPolicies::class);
+        Feature::for(null)->activate(DynamicEnrollmentPolicies::class);
     }
 
     public function deactivate(): void
     {
         Feature::deactivateForEveryone(DynamicEnrollmentPolicies::class);
+        Feature::for(null)->deactivate(DynamicEnrollmentPolicies::class);
     }
 }

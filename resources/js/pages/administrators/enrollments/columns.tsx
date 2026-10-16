@@ -26,6 +26,7 @@ export type EnrollmentRow = {
     course_title: string | null;
     department: string | null;
     status: string | null;
+    terminal_outcome: string | null;
     school_year: string | null;
     semester: number | null;
     academic_year: number | null;
@@ -194,13 +195,19 @@ export const createColumns = (actions?: EnrollmentActions, currency: string = "P
         header: "Status",
         cell: ({ row }) => {
             const status = row.original.status;
-            const statusClass =
-                (status ? pipeline?.statusClasses?.[status] : undefined) ??
-                "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 border-gray-200";
+            const isCancelled = row.original.terminal_outcome === "cancelled";
+            const statusClass = isCancelled
+                ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 border-red-200"
+                : ((status ? pipeline?.statusClasses?.[status] : undefined) ??
+                  "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 border-gray-200");
+
             return (
-                <Badge variant="secondary" className={cn("rounded-full px-2.5 font-medium", statusClass)}>
-                    {status ?? "Unspecified"}
-                </Badge>
+                <div className="flex flex-wrap items-center gap-1.5">
+                    <Badge variant="secondary" className={cn("rounded-full px-2.5 font-medium", statusClass)}>
+                        {isCancelled ? "Cancelled" : (status ?? "Unspecified")}
+                    </Badge>
+                    {isCancelled && status && <span className="text-muted-foreground text-[11px]">was {status}</span>}
+                </div>
             );
         },
     },

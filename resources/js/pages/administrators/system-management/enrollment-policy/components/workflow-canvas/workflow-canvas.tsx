@@ -1,5 +1,7 @@
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@/components/reui/badge";
+import { Frame, FrameHeader, FrameTitle } from "@/components/reui/frame";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
     Background,
@@ -14,46 +16,32 @@ import {
     useNodesState,
     useReactFlow,
 } from "@xyflow/react";
-import {
-    AlertTriangle,
-    ArrowDownUp,
-    ArrowRightLeft,
-    CheckCircle2,
-    Flag,
-    HelpCircle,
-    MailCheck,
-    Maximize2,
-    PanelLeft,
-    Plus,
-    RefreshCw,
-    ShieldAlert,
-} from "lucide-react";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowDownUp, ArrowRightLeft, Flag, MailCheck, Maximize2, PanelLeft, Plus, RefreshCw, Route } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Action, Transition, WorkflowStep } from "../../types";
+import { OptionSelect } from "../schema-fields";
 import { ActionInspectorSheet } from "./action-inspector-sheet";
 import { EdgeInspectorDialog } from "./edge-inspector-dialog";
-import { ActionEdge } from "./edges/action-edge";
 import { TransitionEdge } from "./edges/transition-edge";
 
 import { computeAutoLayout } from "./layout";
 import { NodeInspectorSheet } from "./node-inspector-sheet";
-import { ActionNode } from "./nodes/action-node";
 import { StepNode } from "./nodes/step-node";
-import { TerminalNode } from "./nodes/terminal-node";
+import { TriggerNode } from "./nodes/trigger-node";
 import type { LayoutDirection, WorkflowCanvasProps, WorkflowEdge, WorkflowNode } from "./types";
 import { validateWorkflowGraph, workflowToGraph } from "./workflow-graph-adapter";
+import { appendActions, appendTransition, canConnectSteps, removeStep, replaceTransition } from "./workflow-model";
 import { PALETTE_TEMPLATES, WorkflowPalette, type PaletteTemplate } from "./workflow-palette";
 
 const nodeTypes = {
     stepNode: StepNode,
-    terminalNode: TerminalNode,
-    actionNode: ActionNode,
+    triggerNode: TriggerNode,
 };
 
 const edgeTypes = {
     transitionEdge: TransitionEdge,
-    actionEdge: ActionEdge,
 };
+const NO_ENTRY_RULES: NonNullable<WorkflowCanvasProps["entryRules"]> = [];
 
 function uniqueKey(seed: string, steps: WorkflowStep[]): string {
     const existing = new Set(steps.map((s) => s.key));
@@ -63,9 +51,21 @@ function uniqueKey(seed: string, steps: WorkflowStep[]): string {
     return candidate;
 }
 
-function WorkflowCanvasInner({ steps, actions, rules, options, onChange, onEditEmailTemplate }: WorkflowCanvasProps) {
-    const { fitView } = useReactFlow();
-    const [direction, setDirection] = useState<LayoutDirection>("LR");
+function WorkflowCanvasInner({
+    steps,
+    actions,
+    rules,
+    options,
+    entryRules = NO_ENTRY_RULES,
+    readOnly = false,
+    onChange,
+    onEditEmailTemplate,
+}: WorkflowCanvasProps) {
+    const { fitView, setViewport } = useReactFlow();
+    const canvasRef = useRef<HTMLDivElement>(null);
+    const [direction, setDirection] = useState<LayoutDirection>(() =>
+        typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches ? "TB" : "LR",
+    );
     const [selectedStepKey, setSelectedStepKey] = useState<string | null>(null);
     const [inspectorOpen, setInspectorOpen] = useState(false);
     const [actionInspectorOpen, setActionInspectorOpen] = useState(false);
@@ -74,6 +74,7 @@ function WorkflowCanvasInner({ steps, actions, rules, options, onChange, onEditE
         actionIndex: number;
     } | null>(null);
     const [paletteOpen, setPaletteOpen] = useState(false);
+    const [pendingRouteSource, setPendingRouteSource] = useState("");
 
     const [edgeModalOpen, setEdgeModalOpen] = useState(false);
     const [editingEdge, setEditingEdge] = useState<{
@@ -105,6 +106,7 @@ function WorkflowCanvasInner({ steps, actions, rules, options, onChange, onEditE
 
     const handleEditAction = useCallback((parentStepKey: string, actionIndex: number) => {
         setInspectorOpen(false);
+        setSelectedStepKey(parentStepKey);
         setInspectingAction({ stepKey: parentStepKey, actionIndex });
         setActionInspectorOpen(true);
     }, []);
@@ -167,15 +169,7 @@ function WorkflowCanvasInner({ steps, actions, rules, options, onChange, onEditE
 
     const handleDeleteStep = useCallback(
         (stepKey: string) => {
-            if (steps.length <= 2) return;
-            const nextSteps = steps
-                .filter((s) => s.key !== stepKey)
-                .map((step, idx) => ({
-                    ...step,
-                    entry: idx === 0,
-                    transitions: step.transitions.filter((t) => t.to !== stepKey),
-                }));
-            onChange(nextSteps);
+            onChange(removeStep(steps, stepKey));
         },
         [steps, onChange],
     );
@@ -207,6 +201,8 @@ function WorkflowCanvasInner({ steps, actions, rules, options, onChange, onEditE
                 actions,
                 rules,
                 direction: currentDir,
+                entryRules,
+                readOnly,
                 onEditStep: handleEditStep,
                 onDeleteStep: handleDeleteStep,
                 onEditTransition: handleEditTransition,
@@ -222,13 +218,23 @@ function WorkflowCanvasInner({ steps, actions, rules, options, onChange, onEditE
             setEdges(layoutedEdges);
 
             if (doFit) {
-                setTimeout(() => fitView({ padding: 0.28, duration: 400 }), 50);
+                setTimeout(() => {
+                    const trigger = layoutedNodes.find((node) => node.type === "triggerNode");
+                    const width = canvasRef.current?.clientWidth ?? 0;
+                    if (trigger && width > 0 && width < 640) {
+                        setViewport({ x: (width - 360 * 0.8) / 2 - trigger.position.x * 0.8, y: 72 - trigger.position.y * 0.8, zoom: 0.8 });
+                    } else {
+                        fitView({ padding: 0.15, maxZoom: 0.9 });
+                    }
+                }, 50);
             }
         },
         [
             actions,
             rules,
             options.roles,
+            entryRules,
+            readOnly,
             handleEditStep,
             handleDeleteStep,
             handleEditTransition,
@@ -239,6 +245,7 @@ function WorkflowCanvasInner({ steps, actions, rules, options, onChange, onEditE
             setNodes,
             setEdges,
             fitView,
+            setViewport,
         ],
     );
 
@@ -263,13 +270,13 @@ function WorkflowCanvasInner({ steps, actions, rules, options, onChange, onEditE
     };
 
     const handleFitView = () => {
-        fitView({ padding: 0.28, duration: 350 });
+        fitView({ padding: 0.15, maxZoom: 0.9 });
     };
 
     // User draws an edge between nodes
     const onConnect = useCallback(
         (connection: Connection) => {
-            if (!connection.source || !connection.target || connection.source === connection.target) return;
+            if (readOnly || !connection.source || !connection.target || !canConnectSteps(steps, connection.source, connection.target)) return;
 
             const sourceStep = steps.find((s) => s.key === connection.source);
             if (!sourceStep || sourceStep.terminal) return;
@@ -282,7 +289,7 @@ function WorkflowCanvasInner({ steps, actions, rules, options, onChange, onEditE
             const targetStep = steps.find((s) => s.key === connection.target);
 
             const newTransition: Transition = {
-                key: `trans_${sourceStep.key}_${connection.target}_${Date.now()}`,
+                key: `trans_${sourceStep.key}_${connection.target}`,
                 label: hasFallback ? `When path to ${targetStep?.label ?? connection.target}` : "Otherwise",
                 to: connection.target,
                 fallback: !hasFallback,
@@ -294,17 +301,18 @@ function WorkflowCanvasInner({ steps, actions, rules, options, onChange, onEditE
                 if (s.key !== sourceStep.key) return s;
                 return {
                     ...s,
-                    transitions: [...s.transitions, newTransition],
+                    transitions: appendTransition(s.transitions, newTransition),
                 };
             });
 
             onChange(nextSteps);
         },
-        [steps, onChange],
+        [steps, onChange, readOnly],
     );
 
     const addTemplateNode = useCallback(
         (template: PaletteTemplate) => {
+            if (readOnly) return;
             if (template.category === "subaction" && template.defaultActions) {
                 // Attach sub-action to currently selected step, or the last non-terminal step, or the first step
                 const targetKey = selectedStepKey ?? steps.find((s) => !s.terminal)?.key ?? steps[0]?.key;
@@ -315,7 +323,7 @@ function WorkflowCanvasInner({ steps, actions, rules, options, onChange, onEditE
                     if (s.key !== targetKey) return s;
                     return {
                         ...s,
-                        actions: [...s.actions, ...actionsToAdd],
+                        actions: appendActions(s.actions, actionsToAdd),
                     };
                 });
                 onChange(nextSteps);
@@ -377,7 +385,7 @@ function WorkflowCanvasInner({ steps, actions, rules, options, onChange, onEditE
             setSelectedStepKey(key);
             setInspectorOpen(true);
         },
-        [steps, onChange],
+        [steps, onChange, selectedStepKey, readOnly],
     );
 
     // HTML5 Drag and drop handlers
@@ -410,7 +418,7 @@ function WorkflowCanvasInner({ steps, actions, rules, options, onChange, onEditE
             if (s.key !== sourceStepKey) return s;
             return {
                 ...s,
-                transitions: s.transitions.map((t) => (t.key === updatedTransition.key ? updatedTransition : t)),
+                transitions: replaceTransition(s.transitions, updatedTransition),
             };
         });
         onChange(nextSteps);
@@ -421,300 +429,316 @@ function WorkflowCanvasInner({ steps, actions, rules, options, onChange, onEditE
     const warningCount = issues.filter((i) => i.severity === "warning").length;
 
     return (
-        <div
-            className="border-border/70 bg-card/40 relative flex h-[780px] w-full overflow-hidden rounded-2xl border shadow-xs backdrop-blur-xs"
-            onDragOver={onDragOver}
-            onDrop={onDrop}
-        >
-            {/* Overlay Draggable Component Palette (Floats without squeezing the canvas) */}
-            {paletteOpen && <WorkflowPalette onAddTemplate={(tmpl) => addTemplateNode(tmpl)} onClose={() => setPaletteOpen(false)} />}
+        <Frame spacing="default" className="min-w-0" data-workflow-canvas>
+            <FrameHeader>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-col gap-1">
+                        <FrameTitle>Execution map</FrameTitle>
+                        <p className="text-muted-foreground text-xs">
+                            Submission runs entry actions. Each route waits for staff, then runs destination actions in order.
+                        </p>
+                    </div>
+                    <Badge variant="outline">{readOnly ? "Read only" : "Draft editor"}</Badge>
+                </div>
+            </FrameHeader>
+            <div className="relative flex h-[780px] w-full min-w-0 overflow-hidden" onDragOver={onDragOver} onDrop={onDrop}>
+                {/* Overlay Draggable Component Palette (Floats without squeezing the canvas) */}
+                {paletteOpen && <WorkflowPalette onAddTemplate={(tmpl) => addTemplateNode(tmpl)} onClose={() => setPaletteOpen(false)} />}
 
-            {/* Full-Width Interactive Flow Canvas */}
-            <div className="relative h-full w-full min-w-0 flex-1">
-                <ReactFlow
-                    nodes={nodes}
-                    edges={edges}
-                    nodeTypes={nodeTypes}
-                    edgeTypes={edgeTypes}
-                    onNodesChange={onNodesChange}
-                    onEdgesChange={onEdgesChange}
-                    onConnect={onConnect}
-                    onNodeClick={(_, node) => {
-                        if (node.type === "actionNode") {
-                            const actData = node.data as import("./types").ActionNodeData;
-                            handleEditAction(actData.parentStepKey, actData.actionIndex);
-                        } else {
-                            handleEditStep(node.id);
-                        }
-                    }}
-                    fitView
-                    fitViewOptions={{ padding: 0.28 }}
-                    minZoom={0.25}
-                    maxZoom={1.5}
-                    snapToGrid
-                    snapGrid={[16, 16]}
-                    defaultEdgeOptions={{ type: "transitionEdge" }}
-                    proOptions={{ hideAttribution: true }}
-                    className="bg-dot-pattern"
-                >
-                    <Background variant={BackgroundVariant.Dots} gap={24} size={1} className="opacity-30" />
-
-                    <Controls
-                        position="bottom-left"
-                        showInteractive={false}
-                        className="!bg-card/90 !border-border/60 [&>button]:!border-border/40 overflow-hidden !rounded-xl !shadow-sm"
-                    />
-
-                    <MiniMap
-                        position="bottom-right"
-                        nodeStrokeWidth={2}
-                        nodeColor={(node) => {
-                            if (node.type === "terminalNode") return "var(--primary)";
-                            return "var(--muted-foreground)";
+                {/* Full-Width Interactive Flow Canvas */}
+                <div ref={canvasRef} className="relative h-full w-full min-w-0 flex-1">
+                    <ReactFlow
+                        nodes={nodes}
+                        edges={edges}
+                        nodeTypes={nodeTypes}
+                        edgeTypes={edgeTypes}
+                        onNodesChange={onNodesChange}
+                        onEdgesChange={onEdgesChange}
+                        onConnect={onConnect}
+                        onNodeClick={(_, node) => {
+                            if (!readOnly && node.type !== "triggerNode") {
+                                handleEditStep(node.id);
+                            }
                         }}
-                        zoomable
-                        pannable
-                        className="!border-border/60 !bg-card/85 hidden !h-20 !w-32 !rounded-xl !border !shadow-sm sm:block"
-                    />
+                        fitView
+                        fitViewOptions={{ padding: 0.15, minZoom: 0.65, maxZoom: 0.9 }}
+                        minZoom={0.4}
+                        maxZoom={1.5}
+                        nodesConnectable={!readOnly}
+                        deleteKeyCode={null}
+                        snapToGrid
+                        snapGrid={[16, 16]}
+                        defaultEdgeOptions={{ type: "transitionEdge" }}
+                        className="bg-dot-pattern"
+                    >
+                        <Background variant={BackgroundVariant.Dots} gap={24} size={1} className="opacity-30" />
 
-                    {/* Clean Centered Floating Pill Toolbar (Fixed nowrap: never wraps over nodes!) */}
-                    <Panel position="top-center" className="m-3">
-                        <div className="border-border/70 bg-card/95 flex items-center gap-1.5 rounded-full border px-2 py-1 whitespace-nowrap shadow-md backdrop-blur-md">
-                            <Button
-                                type="button"
-                                variant={paletteOpen ? "secondary" : "ghost"}
-                                size="sm"
-                                className="h-7 gap-1.5 rounded-full px-2.5 text-xs font-semibold"
-                                onClick={() => setPaletteOpen(!paletteOpen)}
-                                title={paletteOpen ? "Close catalog" : "Open catalog of draggable blocks"}
-                            >
-                                <PanelLeft className="size-3.5" />
-                                <span>Blocks</span>
-                            </Button>
+                        <Controls
+                            position="bottom-left"
+                            showInteractive={false}
+                            className="!bg-card/90 !border-border/60 [&>button]:!border-border/40 overflow-hidden !rounded-xl !shadow-sm"
+                        />
 
-                            <div className="bg-border/60 mx-0.5 h-3.5 w-px" />
+                        <MiniMap
+                            position="bottom-right"
+                            nodeStrokeWidth={2}
+                            nodeColor={(node) => (node.type === "triggerNode" ? "var(--primary)" : "var(--muted-foreground)")}
+                            zoomable
+                            pannable
+                            className="!border-border/60 !bg-card/85 hidden !h-20 !w-32 !rounded-xl !border !shadow-sm sm:block"
+                        />
 
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 gap-1 rounded-full px-2 text-xs font-medium"
-                                onClick={() => {
-                                    const template = PALETTE_TEMPLATES[0];
-                                    addTemplateNode(template);
-                                }}
-                                title="Quickly add an approval step"
-                            >
-                                <Plus className="text-primary size-3.5" /> Step
-                            </Button>
+                        {/* Toolbar scrolls inside canvas on narrow screens. */}
+                        <Panel position="top-left" className="!inset-x-0 !top-0 !m-0 max-w-full overflow-x-auto">
+                            <div className="bg-card flex w-max items-center gap-2 border-b p-2 whitespace-nowrap [&_button]:text-xs">
+                                <Button
+                                    type="button"
+                                    disabled={readOnly}
+                                    variant="ghost"
+                                    size="sm"
+                                    aria-pressed={paletteOpen}
+                                    onClick={() => setPaletteOpen(!paletteOpen)}
+                                    title={paletteOpen ? "Close catalog" : "Open catalog of draggable blocks"}
+                                >
+                                    <PanelLeft />
+                                    <span>Blocks</span>
+                                </Button>
 
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 gap-1 rounded-full px-2 text-xs font-medium"
-                                onClick={() => {
-                                    const terminalTemplate = PALETTE_TEMPLATES.find((t) => t.type === "terminal_completed") ?? PALETTE_TEMPLATES[6];
-                                    addTemplateNode(terminalTemplate);
-                                }}
-                                title="Quickly add a terminal outcome"
-                            >
-                                <Flag className="size-3.5 text-emerald-600 dark:text-emerald-400" /> Outcome
-                            </Button>
+                                <div className="bg-border/60 mx-0.5 h-3.5 w-px" />
 
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 gap-1 rounded-full px-2 text-xs font-medium"
-                                onClick={() => onEditEmailTemplate?.(selectedStep?.key ?? steps[0]?.key ?? "")}
-                                title="Open the email template designer"
-                            >
-                                <MailCheck className="size-3.5 text-sky-500" /> Emails
-                            </Button>
+                                <Button
+                                    type="button"
+                                    disabled={readOnly}
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                        const template = PALETTE_TEMPLATES[0];
+                                        addTemplateNode(template);
+                                    }}
+                                    title="Quickly add an approval step"
+                                >
+                                    <Plus /> Step
+                                </Button>
 
-                            <div className="bg-border/60 mx-0.5 h-3.5 w-px" />
+                                <Button
+                                    type="button"
+                                    disabled={readOnly}
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                        const terminalTemplate =
+                                            PALETTE_TEMPLATES.find((t) => t.type === "terminal_completed") ?? PALETTE_TEMPLATES[6];
+                                        addTemplateNode(terminalTemplate);
+                                    }}
+                                    title="Quickly add a terminal outcome"
+                                >
+                                    <Flag /> Outcome
+                                </Button>
 
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="text-muted-foreground hover:text-foreground h-7 gap-1 rounded-full px-2 text-xs font-medium"
-                                onClick={handleAutoLayout}
-                                title="Auto align nodes via Dagre"
-                            >
-                                <RefreshCw className="size-3" /> Auto Align
-                            </Button>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled={readOnly || steps.length < 2}
+                                    onClick={() => {
+                                        setPendingRouteSource(selectedStepKey ?? steps.find((step) => !step.terminal)?.key ?? "");
+                                        setEdgeModalOpen(true);
+                                        setEditingEdge(null);
+                                    }}
+                                >
+                                    <Route /> Route
+                                </Button>
 
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="text-muted-foreground hover:text-foreground h-7 gap-1 rounded-full px-2 text-xs font-medium"
-                                onClick={toggleDirection}
-                                title={`Toggle orientation (Currently ${direction === "LR" ? "Horizontal" : "Vertical"})`}
-                            >
-                                {direction === "LR" ? (
-                                    <>
-                                        <ArrowRightLeft className="size-3" /> Horiz
-                                    </>
-                                ) : (
-                                    <>
-                                        <ArrowDownUp className="size-3" /> Vert
-                                    </>
-                                )}
-                            </Button>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled={readOnly || !onEditEmailTemplate}
+                                    onClick={() => onEditEmailTemplate?.(selectedStep?.key ?? steps[0]?.key ?? "")}
+                                    title="Open the email template designer"
+                                >
+                                    <MailCheck /> Emails
+                                </Button>
 
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="text-muted-foreground hover:text-foreground size-7 rounded-full"
-                                onClick={handleFitView}
-                                title="Zoom to fit all nodes"
-                            >
-                                <Maximize2 className="size-3.5" />
-                            </Button>
+                                <div className="bg-border/60 mx-0.5 h-3.5 w-px" />
 
-                            <div className="bg-border/60 mx-0.5 h-3.5 w-px" />
+                                <Button type="button" variant="ghost" size="sm" onClick={handleAutoLayout} title="Auto align nodes via Dagre">
+                                    <RefreshCw /> Auto Align
+                                </Button>
 
-                            {/* Graph Health Popover */}
-                            <Popover>
-                                <PopoverTrigger asChild>
-                                    <button
-                                        type="button"
-                                        className="bg-background/80 hover:bg-muted flex cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium shadow-2xs backdrop-blur-xs transition-colors"
-                                    >
-                                        {errorCount === 0 && warningCount === 0 ? (
-                                            <>
-                                                <CheckCircle2 className="size-3 text-emerald-600 dark:text-emerald-400" />
-                                                <span className="text-foreground">Valid</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <AlertTriangle className="size-3 text-amber-600 dark:text-amber-400" />
-                                                <span className="text-foreground font-semibold">
-                                                    {errorCount + warningCount} alert{errorCount + warningCount > 1 ? "s" : ""}
-                                                </span>
-                                            </>
-                                        )}
-                                    </button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-80 space-y-2 p-3 text-xs">
-                                    <div className="flex items-center justify-between border-b pb-2">
-                                        <span className="text-foreground font-semibold">Graph Health Check</span>
-                                        <Badge variant="outline" className="text-[10px]">
-                                            {steps.length} Steps
-                                        </Badge>
-                                    </div>
-
-                                    {issues.length === 0 ? (
-                                        <p className="text-muted-foreground py-1 text-[11px] leading-relaxed">
-                                            All steps have connected outgoing paths, fallback safety paths, and reach a final terminal outcome.
-                                        </p>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={toggleDirection}
+                                    title={`Toggle orientation (Currently ${direction === "LR" ? "Horizontal" : "Vertical"})`}
+                                >
+                                    {direction === "LR" ? (
+                                        <>
+                                            <ArrowRightLeft /> Horizontal
+                                        </>
                                     ) : (
-                                        <div className="max-h-48 space-y-1.5 overflow-y-auto pr-1">
-                                            {issues.map((issue, idx) => (
-                                                <div
-                                                    key={idx}
-                                                    className="bg-muted/40 border-border/40 flex items-start gap-1.5 rounded-lg border p-1.5 text-[11px]"
-                                                >
-                                                    {issue.severity === "error" ? (
-                                                        <ShieldAlert className="text-destructive mt-0.5 size-3.5 shrink-0" />
-                                                    ) : (
-                                                        <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
-                                                    )}
-                                                    <span className="text-muted-foreground leading-tight">{issue.message}</span>
-                                                </div>
-                                            ))}
-                                        </div>
+                                        <>
+                                            <ArrowDownUp /> Vertical
+                                        </>
                                     )}
-                                </PopoverContent>
-                            </Popover>
+                                </Button>
 
-                            {/* Legend Popover */}
-                            <Popover>
-                                <PopoverTrigger asChild>
-                                    <button
-                                        type="button"
-                                        className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-6 cursor-pointer items-center justify-center rounded-full transition-colors"
-                                        title="Flow notation legend"
-                                    >
-                                        <HelpCircle className="size-3.5" />
-                                    </button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-64 space-y-2 p-3 text-xs">
-                                    <span className="text-foreground block border-b pb-1.5 font-semibold">Pipeline Notation</span>
-                                    <div className="text-muted-foreground space-y-2 text-[11px]">
-                                        <div className="flex items-center gap-2">
-                                            <span className="size-2 rounded-full bg-emerald-500" />
-                                            <span>Entry: Starting intake point</span>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={handleFitView}
+                                    title="Zoom to fit all nodes"
+                                    aria-label="Fit workflow"
+                                >
+                                    <Maximize2 />
+                                </Button>
+
+                                <div className="bg-border/60 mx-0.5 h-3.5 w-px" />
+
+                                {/* Graph Health Popover */}
+                                <Popover>
+                                    {/* Installed Popover is Radix; its trigger uses asChild even with Base UI buttons. */}
+                                    <PopoverTrigger asChild>
+                                        <Button type="button" variant="ghost" size="sm">
+                                            {errorCount === 0 && warningCount === 0 ? (
+                                                <>
+                                                    <Badge variant="success-light">Graph checked</Badge>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Badge variant="warning-light">
+                                                        {errorCount + warningCount} alert{errorCount + warningCount > 1 ? "s" : ""}
+                                                    </Badge>
+                                                </>
+                                            )}
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="flex w-80 flex-col gap-3 text-xs">
+                                        <div className="flex items-center justify-between border-b pb-2">
+                                            <span className="text-foreground font-semibold">Graph Health Check</span>
+                                            <Badge variant="outline">{steps.length} stages</Badge>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <span className="bg-primary size-2 rounded-full" />
-                                            <span>Approval: Staff review & actions</span>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <span className="size-2 rounded-full bg-indigo-500" />
-                                            <span>Outcome: Matriculation terminal</span>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <span className="bg-muted-foreground h-0.5 w-3.5" />
-                                            <span>Solid line: Normal Otherwise path</span>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <span className="border-primary h-0.5 w-3.5 border-b border-dashed" />
-                                            <span>Dashed line: Conditional rule path</span>
-                                        </div>
-                                    </div>
-                                </PopoverContent>
-                            </Popover>
+
+                                        {issues.length === 0 ? (
+                                            <p className="text-muted-foreground leading-relaxed">
+                                                Structure checked only. Test Run checks policy rules; payment, class capacity, and action payloads are
+                                                enforced at runtime.
+                                            </p>
+                                        ) : (
+                                            <div className="flex max-h-48 flex-col gap-3 overflow-y-auto">
+                                                {issues.map((issue, idx) => (
+                                                    <div key={idx} className="flex flex-col gap-1">
+                                                        <Badge variant={issue.severity === "error" ? "destructive-light" : "warning-light"}>
+                                                            {issue.severity}
+                                                        </Badge>
+                                                        <span className="text-muted-foreground leading-tight">{issue.message}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </PopoverContent>
+                                </Popover>
+                            </div>
+                        </Panel>
+                    </ReactFlow>
+                    {steps.length === 0 && (
+                        <div className="bg-background absolute inset-0 flex flex-col items-center justify-center gap-3 text-sm">
+                            <p>No enrollment stages configured.</p>
+                            {!readOnly && (
+                                <Button type="button" onClick={() => addTemplateNode(PALETTE_TEMPLATES[0])}>
+                                    Add entry stage
+                                </Button>
+                            )}
                         </div>
-                    </Panel>
-                </ReactFlow>
+                    )}
+                </div>
+
+                {/* Step Inspector Slide-out */}
+                <NodeInspectorSheet
+                    open={inspectorOpen}
+                    onOpenChange={setInspectorOpen}
+                    step={selectedStep}
+                    steps={steps}
+                    actions={actions}
+                    rules={rules}
+                    options={options}
+                    onSave={handleSaveStep}
+                    onDelete={handleDeleteStep}
+                    onEditTransition={handleEditTransition}
+                    onOpenActionInspector={handleEditAction}
+                />
+
+                {/* Dedicated Sub-Action Inspector Slide-out */}
+                <ActionInspectorSheet
+                    open={actionInspectorOpen}
+                    onOpenChange={setActionInspectorOpen}
+                    step={inspectingStep}
+                    actionIndex={inspectingAction?.actionIndex ?? null}
+                    actions={actions}
+                    options={options}
+                    onUpdateAction={handleUpdateAction}
+                    onDeleteAction={handleDeleteAction}
+                    onReorderAction={handleReorderAction}
+                    onEditEmailTemplate={onEditEmailTemplate}
+                />
+
+                {/* Transition Dialog */}
+                <EdgeInspectorDialog
+                    open={edgeModalOpen}
+                    onOpenChange={setEdgeModalOpen}
+                    transition={editingTransition}
+                    sourceStep={editingSourceStep}
+                    steps={steps}
+                    rules={rules}
+                    options={options}
+                    onSave={handleSaveTransition}
+                    onDelete={(source, key) => {
+                        handleDeleteTransition(source, key);
+                        setEdgeModalOpen(false);
+                    }}
+                />
+                <Dialog open={edgeModalOpen && !editingEdge} onOpenChange={setEdgeModalOpen}>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Connect stages</DialogTitle>
+                            <DialogDescription>Choose a source, then a destination. Conditional routes stay before Otherwise.</DialogDescription>
+                        </DialogHeader>
+                        <label className="flex flex-col gap-2 text-sm">
+                            From stage
+                            <OptionSelect
+                                value={pendingRouteSource}
+                                onChange={setPendingRouteSource}
+                                options={steps.filter((step) => !step.terminal).map((step) => ({ value: step.key, label: step.label }))}
+                                placeholder="Source stage"
+                                allowEmpty={false}
+                            />
+                        </label>
+                        <div className="flex flex-col gap-2">
+                            {steps
+                                .filter((step) => canConnectSteps(steps, pendingRouteSource, step.key))
+                                .map((step) => (
+                                    <Button
+                                        key={step.key}
+                                        type="button"
+                                        variant="outline"
+                                        onClick={() => {
+                                            onConnect({ source: pendingRouteSource, target: step.key, sourceHandle: null, targetHandle: null });
+                                            setEdgeModalOpen(false);
+                                        }}
+                                    >
+                                        To {step.label}
+                                    </Button>
+                                ))}
+                        </div>
+                        <Button type="button" variant="ghost" onClick={() => setEdgeModalOpen(false)}>
+                            Cancel
+                        </Button>
+                    </DialogContent>
+                </Dialog>
             </div>
-
-            {/* Step Inspector Slide-out */}
-            <NodeInspectorSheet
-                open={inspectorOpen}
-                onOpenChange={setInspectorOpen}
-                step={selectedStep}
-                steps={steps}
-                actions={actions}
-                rules={rules}
-                options={options}
-                onSave={handleSaveStep}
-                onDelete={handleDeleteStep}
-                onEditTransition={handleEditTransition}
-                onOpenActionInspector={handleEditAction}
-                onEditEmailTemplate={onEditEmailTemplate}
-            />
-
-            {/* Dedicated Sub-Action Inspector Slide-out */}
-            <ActionInspectorSheet
-                open={actionInspectorOpen}
-                onOpenChange={setActionInspectorOpen}
-                step={inspectingStep}
-                actionIndex={inspectingAction?.actionIndex ?? null}
-                actions={actions}
-                options={options}
-                onUpdateAction={handleUpdateAction}
-                onDeleteAction={handleDeleteAction}
-                onReorderAction={handleReorderAction}
-            />
-
-            {/* Transition Dialog */}
-            <EdgeInspectorDialog
-                open={edgeModalOpen}
-                onOpenChange={setEdgeModalOpen}
-                transition={editingTransition}
-                sourceStep={editingSourceStep}
-                steps={steps}
-                rules={rules}
-                options={options}
-                onSave={handleSaveTransition}
-            />
-        </div>
+        </Frame>
     );
 }
 

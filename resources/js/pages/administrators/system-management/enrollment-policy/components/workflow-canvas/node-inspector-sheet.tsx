@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { operatorDefaults, slug } from "../../configuration";
 import type { Action, Option, RegistryItem, Transition, WorkflowStep } from "../../types";
 import { SchemaFields } from "../schema-fields";
+import { appendActions, appendTransition, canConnectSteps } from "./workflow-model";
 
 export function NodeInspectorSheet({
     open,
@@ -61,11 +62,13 @@ export function NodeInspectorSheet({
                 : draft.key.includes("academic") || draft.key.includes("dean")
                   ? "academic_verified"
                   : "status_update";
-            nextActions.push({
-                key: "notify_student",
-                handler: "enrollment.notify",
-                configuration: { notification: defaultType },
-            });
+            nextActions = appendActions(nextActions, [
+                {
+                    key: "notify_student",
+                    handler: "enrollment.notify",
+                    configuration: { notification: defaultType },
+                },
+            ]);
         } else {
             nextActions = nextActions.filter((a) => a.handler !== "enrollment.notify");
         }
@@ -88,19 +91,21 @@ export function NodeInspectorSheet({
     };
 
     const handleAddTransition = () => {
-        const availableDestinations = steps.filter((s) => s.key !== draft.key);
+        const availableDestinations = steps.filter((s) => canConnectSteps(steps, draft.key, s.key));
         if (availableDestinations.length === 0) return;
 
         const destKey = availableDestinations[0].key;
+        let key = `branch_${draft.key}_${draft.transitions.length + 1}`;
+        while (draft.transitions.some((transition) => transition.key === key)) key += "_next";
         const newTrans: Transition = {
-            key: `branch_${draft.key}_${draft.transitions.length + 1}`,
+            key,
             label: `Path to ${destKey}`,
             to: destKey,
             fallback: draft.transitions.length === 0,
             requires_reason: false,
             conditions: [],
         };
-        const updated = { ...draft, transitions: [...draft.transitions, newTrans] };
+        const updated = { ...draft, transitions: appendTransition(draft.transitions, newTrans) };
         setDraft(updated);
         onSave(updated);
         onEditTransition(draft.key, newTrans.key);
@@ -131,7 +136,7 @@ export function NodeInspectorSheet({
             handler,
             configuration: operatorDefaults(item),
         };
-        const updated = { ...draft, actions: [...draft.actions, newAction] };
+        const updated = { ...draft, actions: appendActions(draft.actions, [newAction]) };
         setDraft(updated);
         onSave(updated);
     };
@@ -144,7 +149,7 @@ export function NodeInspectorSheet({
                     <div className="flex items-start gap-3">
                         <IconTile
                             variant="soft"
-                            size="md"
+                            size="default"
                             className={draft.entry ? "text-emerald-500" : draft.terminal ? "text-rose-500" : "text-primary"}
                         >
                             {draft.entry ? (
@@ -161,7 +166,7 @@ export function NodeInspectorSheet({
                                 <SheetTitle className="text-foreground text-base font-bold">{draft.label}</SheetTitle>
                                 {draft.entry && (
                                     <Badge variant="success-light" size="sm">
-                                        Start Node
+                                        Entry stage
                                     </Badge>
                                 )}
                                 {draft.terminal && (
@@ -198,7 +203,7 @@ export function NodeInspectorSheet({
                                 value="actions"
                                 className="data-[state=active]:bg-background h-8 rounded-lg text-xs font-semibold data-[state=active]:shadow-2xs"
                             >
-                                <Zap className="mr-1.5 size-3.5" /> Sub-Actions ({draft.actions.length})
+                                <Zap className="mr-1.5 size-3.5" /> On entry ({draft.actions.length})
                             </TabsTrigger>
                             {!draft.terminal && (
                                 <TabsTrigger
@@ -246,16 +251,7 @@ export function NodeInspectorSheet({
 
                                     <div className="space-y-1.5">
                                         <Label className="text-xs font-semibold">Technical Key</Label>
-                                        <Input
-                                            value={draft.key}
-                                            onChange={(e) => {
-                                                const updated = { ...draft, key: slug(e.target.value) };
-                                                setDraft(updated);
-                                                onSave(updated);
-                                            }}
-                                            className="h-8.5 font-mono text-[11px]"
-                                            disabled={draft.entry}
-                                        />
+                                        <Input value={draft.key} className="h-8.5 font-mono text-[11px]" readOnly />
                                     </div>
                                 </div>
                             </div>
@@ -322,7 +318,7 @@ export function NodeInspectorSheet({
                                             </Label>
                                         </div>
                                         <p className="text-muted-foreground text-[11px]">
-                                            Email applicant automatically when this step is approved or completed.
+                                            Email applicant on entering this stage, after preceding actions succeed.
                                         </p>
                                     </div>
                                     <Switch id="notify-switch" checked={hasNotification} onCheckedChange={handleNotifyToggle} />
@@ -363,7 +359,7 @@ export function NodeInspectorSheet({
                             </div>
 
                             {/* Delete Step Trigger */}
-                            {!draft.entry && steps.length > 2 && (
+                            {!draft.entry && (!draft.terminal || steps.filter((stage) => stage.terminal).length > 1) && (
                                 <div className="border-border/40 border-t pt-2">
                                     <Button
                                         type="button"
@@ -387,7 +383,7 @@ export function NodeInspectorSheet({
                                 <div>
                                     <Label className="text-foreground text-xs font-semibold">Authorized Staff Roles</Label>
                                     <p className="text-muted-foreground mt-0.5 text-[11px]">
-                                        Choose which staff roles are permitted to review, verify, or approve this step.
+                                        Choose who may leave this stage through its routes. Entry actions run before this staff gate.
                                     </p>
                                 </div>
 
@@ -410,7 +406,7 @@ export function NodeInspectorSheet({
                                     </div>
                                     <p className="text-[10px] leading-relaxed">
                                         {(draft.authorized_role_ids ?? []).length === 0
-                                            ? "All authorized admission staff can complete this step."
+                                            ? "No roles selected. Publishing creates a permission granted to no roles; only permission overrides can advance this stage."
                                             : "Only staff with the designated roles above may advance students through this stage."}
                                     </p>
                                 </div>
@@ -423,7 +419,7 @@ export function NodeInspectorSheet({
                                 <div>
                                     <Label className="text-foreground text-xs font-semibold">Sequential Sub-Action Pipeline</Label>
                                     <p className="text-muted-foreground text-[11px]">
-                                        Executed in exact waterfall order when staff approves this step.
+                                        Runs in this order on entering the stage. Entry stage runs on submission, before staff review.
                                     </p>
                                 </div>
                             </div>
@@ -589,6 +585,8 @@ export function NodeInspectorSheet({
                                                     type="button"
                                                     variant="ghost"
                                                     size="icon"
+                                                    disabled={trans.fallback}
+                                                    aria-label={`Delete route ${trans.label}`}
                                                     className="text-muted-foreground hover:text-destructive size-7"
                                                     onClick={() => {
                                                         const updated = {

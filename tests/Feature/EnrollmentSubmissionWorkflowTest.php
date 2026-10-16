@@ -27,6 +27,7 @@ use App\Models\Subject;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Notifications\EnrollmentStatusUpdatedNotification;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Notification as NotificationFacade;
 use Illuminate\Support\Facades\Queue;
 use Laravel\Pennant\Feature;
@@ -176,6 +177,108 @@ it('executes configured entry actions in order and makes submission retries idem
             'enrollment.assign_subjects',
             'enrollment.calculate_tuition',
         ]);
+});
+
+it('skips ineligible verification branches and replays retries after leaving the source step', function (): void {
+    $school = School::factory()->create();
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
+    $student = Student::factory()->create(['school_id' => $school->id, 'course_id' => $course->id]);
+    $subject = Subject::factory()->create(['course_id' => $course->id]);
+    $configuration = EnrollmentPolicyPreset::standard();
+    $configuration['workflow']['steps'][0]['actions'] = [];
+    $configuration['workflow']['steps'][0]['transitions'] = [
+        [
+            'key' => 'public_review', 'label' => 'Public review', 'to' => 'academic_verified', 'fallback' => false,
+            'conditions' => [['handler' => 'availability.channel', 'configuration' => ['allowed' => ['public']]]],
+        ],
+        ['key' => 'assisted_review', 'label' => 'Assisted review', 'to' => 'academic_verified', 'fallback' => true, 'conditions' => []],
+    ];
+    ($this->publishEnrollmentPolicy)($configuration, $school);
+    $coordinator = app(EnrollmentWorkflowCoordinator::class);
+    $enrollment = $coordinator->submit(($this->submissionFor)($student, $subject, 'branched-academic'));
+
+    $available = app(App\Enrollment\EnrollmentTransitionEngine::class)->availableTransitions($enrollment, $this->actor);
+    expect(array_column($available, 'key'))->toBe(['assisted_review']);
+    expect(fn () => $coordinator->transition($enrollment, $this->actor, 'public_review', [], 'ineligible-explicit-route'))
+        ->toThrow(EnrollmentTransitionException::class, 'No transition is available');
+    expect($enrollment->refresh()->current_step_key)->toBe('submitted');
+
+    $result = $coordinator->verifyAcademic($enrollment, $this->actor, 'branched-review');
+    $retry = $coordinator->verifyAcademic($enrollment->refresh(), $this->actor, 'branched-review');
+
+    expect($result->successful)->toBeTrue()
+        ->and($retry->successful)->toBeTrue()
+        ->and($retry->message)->toContain('already processed')
+        ->and($enrollment->refresh()->current_step_key)->toBe('academic_verified')
+        ->and(EnrollmentWorkflowEvent::query()->where('event_type', 'transition_succeeded')->sole()->result['transition_key'])
+        ->toBe('assisted_review');
+});
+
+it('does not advertise routes to unauthorized staff or from terminal stages', function (): void {
+    $school = School::factory()->create();
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
+    $student = Student::factory()->create(['school_id' => $school->id, 'course_id' => $course->id]);
+    $subject = Subject::factory()->create(['course_id' => $course->id]);
+    $configuration = EnrollmentPolicyPreset::standard();
+    $configuration['workflow']['steps'][0]['actions'] = [];
+    ($this->publishEnrollmentPolicy)($configuration, $school);
+    $enrollment = app(EnrollmentWorkflowCoordinator::class)->submit(($this->submissionFor)($student, $subject, 'route-authorization'));
+    $unauthorized = User::factory()->create();
+    $engine = app(App\Enrollment\EnrollmentTransitionEngine::class);
+
+    expect($engine->availableTransitions($enrollment, $unauthorized))->toBe([]);
+    expect(fn () => $engine->transition($enrollment, $unauthorized, null, [], 'unauthorized-route'))
+        ->toThrow(AuthorizationException::class);
+    expect($enrollment->refresh()->current_step_key)->toBe('submitted');
+    $enrollment->forceFill(['current_step_key' => 'completed', 'terminal_outcome' => 'completed'])->save();
+    expect($engine->availableTransitions($enrollment, $this->actor))->toBe([]);
+});
+
+it('honors the selected cashier route and refuses unknown routes without recording payment', function (): void {
+    $this->actor->update(['role' => UserRole::Admin]);
+    $school = School::factory()->create();
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
+    $student = Student::factory()->create(['school_id' => $school->id, 'course_id' => $course->id]);
+    $subject = Subject::factory()->create(['course_id' => $course->id]);
+    $configuration = EnrollmentPolicyPreset::standard();
+    $configuration['workflow']['steps'][0]['actions'] = [];
+    $configuration['workflow']['steps'][1]['transitions'] = [
+        [
+            'key' => 'alternate_payment', 'label' => 'Alternate payment', 'to' => 'alternate_completed', 'fallback' => false,
+            'conditions' => [['handler' => 'availability.channel', 'configuration' => ['allowed' => ['administrator']]]],
+        ],
+        ['key' => 'payment_review', 'label' => 'Standard payment', 'to' => 'completed', 'fallback' => true, 'conditions' => []],
+    ];
+    $configuration['workflow']['steps'][2]['actions'] = [[
+        'key' => 'payment_status', 'handler' => 'enrollment.verify_payment',
+        'configuration' => ['receipt_mode' => 'required', 'record_transaction' => true],
+    ]];
+    $alternate = $configuration['workflow']['steps'][2];
+    $alternate['key'] = 'alternate_completed';
+    $configuration['workflow']['steps'][] = $alternate;
+    ($this->publishEnrollmentPolicy)($configuration, $school);
+    $coordinator = app(EnrollmentWorkflowCoordinator::class);
+    $enrollment = $coordinator->submit(($this->submissionFor)($student, $subject, 'selected-cashier'));
+    $coordinator->verifyAcademic($enrollment, $this->actor, 'selected-cashier-academic');
+
+    $this->post(route('administrators.enrollments.verify-cashier', $enrollment), [
+        'transition_key' => 'missing-route',
+        'invoicenumber' => 'INV-INVALID-ROUTE',
+        'payment_method' => 'Cash',
+        'settlements' => ['tuition_fee' => 500],
+    ])->assertRedirect()->assertSessionHas('flash.error', 'No transition is available for the current enrollment context.');
+    expect($enrollment->refresh()->current_step_key)->toBe('academic_verified')
+        ->and(Transaction::query()->count())->toBe(0);
+
+    $this->post(route('administrators.enrollments.verify-cashier', $enrollment), [
+        'transition_key' => 'payment_review',
+        'invoicenumber' => 'INV-SELECTED-ROUTE',
+        'payment_method' => 'Cash',
+        'settlements' => ['tuition_fee' => 500],
+    ])->assertRedirect()->assertSessionHas('flash.success', 'Successfully enrolled student.');
+
+    expect($enrollment->refresh()->current_step_key)->toBe('completed')
+        ->and(StudentTransaction::query()->where('student_enrollment_id', $enrollment->id)->count())->toBe(1);
 });
 
 it('does not run enrollment behavior that the blueprint omits', function (): void {
@@ -943,4 +1046,247 @@ it('rolls back payments and after-commit jobs when a later configured action fai
         ->and($fee->refresh()->transaction_number)->toBeNull();
     Queue::assertNotPushed(GenerateAssessmentPdfJob::class);
     Queue::assertNotPushed(SendAssessmentNotificationJob::class);
+});
+
+it('cancels a policy enrollment, releases its reserved class seats and blocks further transitions', function (): void {
+    Queue::fake();
+    $school = School::factory()->create();
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
+    $student = Student::factory()->create([
+        'school_id' => $school->id,
+        'course_id' => $course->id,
+        'academic_year' => 1,
+        'status' => StudentStatus::Applicant,
+    ]);
+    $subject = Subject::factory()->create(['course_id' => $course->id, 'academic_year' => 1, 'semester' => 1]);
+    $class = App\Models\Classes::factory()->create([
+        'subject_id' => $subject->id,
+        'subject_ids' => [$subject->id],
+        'course_codes' => [$course->id],
+        'academic_year' => 1,
+        'semester' => 1,
+        'school_year' => '2035 - 2036',
+    ]);
+    ($this->publishEnrollmentPolicy)(EnrollmentPolicyPreset::standard(), $school);
+    $coordinator = app(EnrollmentWorkflowCoordinator::class);
+    $enrollment = $coordinator->submit(($this->submissionFor)($student, $subject, 'cancel-seat-submission'));
+    $subjectEnrollment = $enrollment->subjectsEnrolled()->sole();
+    $subjectEnrollment->update(['class_id' => $class->id]);
+    $seat = App\Models\ClassEnrollment::factory()->createOne([
+        'class_id' => $class->id,
+        'student_id' => $student->id,
+        'status' => true,
+    ]);
+    $this->actor->givePermissionTo(Permission::findOrCreate('Cancel:StudentEnrollment', 'web'));
+
+    $result = $coordinator->cancel(
+        $enrollment->refresh(),
+        $this->actor,
+        'Applicant withdrew before verification.',
+        'cancel-seat-1',
+    );
+
+    expect($result->successful)->toBeTrue()
+        ->and($result->terminalOutcome)->toBe('cancelled')
+        ->and($enrollment->refresh()->terminal_outcome)->toBe('cancelled')
+        ->and($enrollment->current_step_key)->toBe('submitted')
+        ->and($seat->refresh()->status)->toBeFalse()
+        ->and($subjectEnrollment->refresh()->class_id)->toBeNull()
+        ->and($student->refresh()->status)->toBe(StudentStatus::Applicant)
+        ->and(data_get(EnrollmentWorkflowEvent::query()->where('event_type', 'cancelled')->latest('id')->value('result'), 'class_seats_released.0.class_id'))
+        ->toBe($class->id)
+        ->and(EnrollmentWorkflowEvent::query()->where('event_type', 'cancelled')->latest('id')->value('reason'))
+        ->toBe('Applicant withdrew before verification.');
+
+    expect(fn () => $coordinator->verifyAcademic($enrollment->refresh(), $this->actor, 'cancel-seat-academic'))
+        ->toThrow(EnrollmentTransitionException::class, 'must be reopened');
+    expect($enrollment->refresh()->current_step_key)->toBe('submitted')
+        ->and(app(App\Enrollment\EnrollmentTransitionEngine::class)->availableTransitions($enrollment->refresh(), $this->actor))->toBe([]);
+
+    $retry = $coordinator->cancel($enrollment->refresh(), $this->actor, 'Retried cancel.', 'cancel-seat-1');
+    expect($retry->message)->toContain('already processed')
+        ->and(EnrollmentWorkflowEvent::query()->where('event_type', 'cancelled')->count())->toBe(1);
+
+    $again = $coordinator->cancel($enrollment->refresh(), $this->actor, 'Already cancelled.', 'cancel-seat-2');
+    expect($again->successful)->toBeTrue()
+        ->and($again->message)->toContain('already cancelled')
+        ->and(EnrollmentWorkflowEvent::query()->where('event_type', 'cancelled')->count())->toBe(1);
+
+    $this->actor->givePermissionTo(Permission::findOrCreate('Reopen:StudentEnrollment', 'web'));
+    $coordinator->reopen($enrollment->refresh(), $this->actor, 'academic_verified', 'Cancellation recorded in error.', 'cancel-seat-reopen-1');
+
+    expect($enrollment->refresh()->terminal_outcome)->toBeNull()
+        ->and($enrollment->current_step_key)->toBe('academic_verified');
+});
+
+it('reverses student synchronization applied before a cancellation', function (): void {
+    Queue::fake();
+    $school = School::factory()->create();
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
+    $student = Student::factory()->create([
+        'school_id' => $school->id,
+        'course_id' => $course->id,
+        'academic_year' => 1,
+        'email' => 'cancel-sync-student@example.com',
+        'status' => StudentStatus::Applicant,
+    ]);
+    $account = Account::factory()->create([
+        'email' => $student->email,
+        'role' => 'guest',
+        'person_id' => null,
+        'person_type' => null,
+        'is_active' => true,
+    ]);
+    $subject = Subject::factory()->create(['course_id' => $course->id, 'academic_year' => 1, 'semester' => 1]);
+    $configuration = EnrollmentPolicyPreset::standard();
+    $configuration['workflow']['steps'][0]['entry'] = false;
+    array_splice($configuration['workflow']['steps'], 0, 0, [[
+        'key' => 'pre_registered',
+        'label' => 'Pre-registered',
+        'entry' => true,
+        'terminal' => false,
+        'status' => StudentStatus::Applicant->value,
+        'permission' => 'Update:StudentEnrollment',
+        'actions' => [
+            ['key' => 'subjects', 'handler' => 'enrollment.assign_subjects', 'configuration' => ['source' => 'runtime_payload']],
+            ['key' => 'tuition', 'handler' => 'enrollment.calculate_tuition', 'configuration' => []],
+            ['key' => 'sync_student', 'handler' => 'enrollment.sync_student', 'configuration' => ['attribute' => 'status', 'value' => StudentStatus::OnLeave->value, 'sync_account' => true]],
+        ],
+        'transitions' => [['key' => 'staff_review', 'label' => 'Staff review', 'to' => 'submitted', 'fallback' => true, 'conditions' => []]],
+    ]]);
+    $configuration['workflow']['steps'][2]['transitions'] = [['key' => 'finish', 'label' => 'Finish', 'to' => 'completed', 'fallback' => true, 'conditions' => []]];
+    ($this->publishEnrollmentPolicy)($configuration, $school);
+    $coordinator = app(EnrollmentWorkflowCoordinator::class);
+    $enrollment = $coordinator->submit(($this->submissionFor)($student, $subject, 'cancel-sync-submission'));
+
+    expect($enrollment->current_step_key)->toBe('pre_registered')
+        ->and($student->refresh()->status)->toBe(StudentStatus::OnLeave)
+        ->and($account->refresh()->role)->toBe('student');
+
+    $this->actor->givePermissionTo(Permission::findOrCreate('Cancel:StudentEnrollment', 'web'));
+    $coordinator->cancel($enrollment->refresh(), $this->actor, 'Pre-registration withdrawn.', 'cancel-sync-1');
+
+    expect($enrollment->refresh()->terminal_outcome)->toBe('cancelled')
+        ->and($student->refresh()->status)->toBe(StudentStatus::Applicant)
+        ->and($account->refresh()->role)->toBe('guest')
+        ->and($account->person_id)->toBeNull()
+        ->and(data_get(EnrollmentWorkflowEvent::query()->where('event_type', 'cancelled')->latest('id')->value('result'), 'student_state_reversal.restored'))
+        ->toBeTrue();
+});
+
+it('requires a reason, an authorized actor and a payment acknowledgement before cancelling', function (): void {
+    $school = School::factory()->create();
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
+    $student = Student::factory()->create(['school_id' => $school->id, 'course_id' => $course->id, 'academic_year' => 1]);
+    $subject = Subject::factory()->create(['course_id' => $course->id, 'academic_year' => 1, 'semester' => 1]);
+    ($this->publishEnrollmentPolicy)(EnrollmentPolicyPreset::standard(), $school);
+    $coordinator = app(EnrollmentWorkflowCoordinator::class);
+    $enrollment = $coordinator->submit(($this->submissionFor)($student, $subject, 'cancel-guard-submission'));
+    $this->actor->givePermissionTo(Permission::findOrCreate('Cancel:StudentEnrollment', 'web'));
+
+    expect(fn () => $coordinator->cancel($enrollment->refresh(), $this->actor, '   ', 'cancel-guard-reason'))
+        ->toThrow(EnrollmentTransitionException::class, 'reason is required');
+
+    $unauthorized = User::factory()->create();
+    expect(fn () => $coordinator->cancel($enrollment->refresh(), $unauthorized, 'No permission.', 'cancel-guard-permission'))
+        ->toThrow(AuthorizationException::class, 'not allowed to cancel');
+    expect($enrollment->refresh()->terminal_outcome)->toBeNull();
+    StudentTransaction::query()->create([
+        'student_id' => $student->id,
+        'student_enrollment_id' => $enrollment->id,
+        'transaction_id' => Transaction::query()->create([
+            'description' => 'Downpayment',
+            'payment_method' => 'Cash',
+            'settlements' => ['tuition_fee' => 500],
+            'status' => 'Paid',
+            'transaction_date' => now(),
+            'invoicenumber' => 'INV-CANCEL-GUARD',
+            'user_id' => $this->actor->id,
+        ])->id,
+        'amount' => 500,
+        'status' => 'Paid',
+        'idempotency_key' => 'cancel-guard-payment',
+    ]);
+
+    expect(fn () => $coordinator->cancel($enrollment->refresh(), $this->actor, 'Duplicate application.', 'cancel-guard-payments'))
+        ->toThrow(EnrollmentTransitionException::class, 'still holds');
+    expect($enrollment->refresh()->terminal_outcome)->toBeNull()
+        ->and(StudentTransaction::query()->where('student_enrollment_id', $enrollment->id)->count())->toBe(1);
+
+    $result = $coordinator->cancel(
+        $enrollment->refresh(),
+        $this->actor,
+        'Duplicate application; refund handled in finance.',
+        'cancel-guard-acknowledged',
+        true,
+    );
+
+    expect($result->terminalOutcome)->toBe('cancelled')
+        ->and(StudentTransaction::query()->where('student_enrollment_id', $enrollment->id)->count())->toBe(1)
+        ->and(data_get(EnrollmentWorkflowEvent::query()->where('event_type', 'cancelled')->latest('id')->value('result'), 'outstanding_payments.amount'))
+        ->toEqual(500.0)
+        ->and(EnrollmentWorkflowEvent::query()->where('event_type', 'cancel_failed')->count())->toBe(1);
+});
+
+it('refuses to cancel a completed policy enrollment before it is reopened', function (): void {
+    Queue::fake();
+    $school = School::factory()->create();
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
+    $student = Student::factory()->create(['school_id' => $school->id, 'course_id' => $course->id, 'academic_year' => 1]);
+    $subject = Subject::factory()->create(['course_id' => $course->id, 'academic_year' => 1, 'semester' => 1]);
+    ($this->publishEnrollmentPolicy)(EnrollmentPolicyPreset::standard(), $school);
+    $coordinator = app(EnrollmentWorkflowCoordinator::class);
+    $enrollment = $coordinator->submit(($this->submissionFor)($student, $subject, 'cancel-completed-submission'));
+    $coordinator->verifyAcademic($enrollment, $this->actor, 'cancel-completed-academic');
+    $coordinator->verifyPayment($enrollment->refresh(), $this->actor, [
+        'invoicenumber' => 'INV-CANCEL-COMPLETED',
+        'payment_method' => 'Cash',
+        'settlements' => ['tuition_fee' => 500],
+    ], 'cancel-completed-payment');
+    $this->actor->givePermissionTo(Permission::findOrCreate('Cancel:StudentEnrollment', 'web'));
+
+    expect(fn () => $coordinator->cancel($enrollment->refresh(), $this->actor, 'Changed our minds.', 'cancel-completed-1'))
+        ->toThrow(EnrollmentTransitionException::class, 'Reopen this enrollment before cancelling');
+
+    expect($enrollment->refresh()->terminal_outcome)->toBe('completed')
+        ->and($student->refresh()->status)->toBe(StudentStatus::Enrolled);
+});
+
+it('cancels a policy enrollment through the configured cancellation stage', function (): void {
+    Queue::fake();
+    $school = School::factory()->create();
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
+    $student = Student::factory()->create(['school_id' => $school->id, 'course_id' => $course->id, 'academic_year' => 1]);
+    $subject = Subject::factory()->create(['course_id' => $course->id, 'academic_year' => 1, 'semester' => 1]);
+    $configuration = EnrollmentPolicyPreset::standard();
+    array_unshift($configuration['workflow']['steps'][1]['transitions'], [
+        'key' => 'withdraw',
+        'label' => 'Withdraw application',
+        'to' => 'cancelled',
+        'fallback' => false,
+        'conditions' => [
+            ['handler' => 'eligibility.duplicate_enrollment', 'configuration' => []],
+        ],
+    ]);
+    $configuration['workflow']['steps'][] = [
+        'key' => 'cancelled',
+        'label' => 'Application Cancelled',
+        'entry' => false,
+        'terminal' => true,
+        'status' => 'Cancelled',
+        'outcome' => 'cancelled',
+        'permission' => 'Cancel:StudentEnrollment',
+        'actions' => [],
+        'transitions' => [],
+    ];
+    ($this->publishEnrollmentPolicy)($configuration, $school);
+    $coordinator = app(EnrollmentWorkflowCoordinator::class);
+    $enrollment = $coordinator->submit(($this->submissionFor)($student, $subject, 'cancel-stage-submission'));
+    $this->actor->givePermissionTo(Permission::findOrCreate('Cancel:StudentEnrollment', 'web'));
+
+    $coordinator->cancel($enrollment->refresh(), $this->actor, 'Applicant withdrew.', 'cancel-stage-1');
+
+    expect($enrollment->refresh()->terminal_outcome)->toBe('cancelled')
+        ->and($enrollment->current_step_key)->toBe('cancelled')
+        ->and($enrollment->status)->toBe('Cancelled');
 });

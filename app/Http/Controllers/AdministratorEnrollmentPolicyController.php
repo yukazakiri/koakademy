@@ -12,7 +12,9 @@ use App\Enrollment\EnrollmentPolicyResolver;
 use App\Enrollment\EnrollmentPolicyRolloutService;
 use App\Enrollment\EnrollmentPolicySimulationService;
 use App\Enrollment\EnrollmentWorkflowCoordinator;
+use App\Enrollment\Exceptions\EnrollmentTransitionException;
 use App\Http\Requests\Administrators\ActivateEnrollmentPolicyEngineRequest;
+use App\Http\Requests\Administrators\CancelEnrollmentRequest;
 use App\Http\Requests\Administrators\DeactivateEnrollmentPolicyEngineRequest;
 use App\Http\Requests\Administrators\ImportEnrollmentPolicyRequest;
 use App\Http\Requests\Administrators\PublishEnrollmentPolicyRequest;
@@ -255,6 +257,30 @@ final class AdministratorEnrollmentPolicyController extends Controller
             $validated['reason'],
             $validated['idempotency_key'],
         ));
+    }
+
+    public function cancel(
+        CancelEnrollmentRequest $request,
+        StudentEnrollment $enrollment,
+        EnrollmentWorkflowCoordinator $coordinator,
+    ): JsonResponse {
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
+        $validated = $request->validated();
+
+        try {
+            $result = $coordinator->cancel(
+                $enrollment,
+                $user,
+                $validated['reason'],
+                $validated['idempotency_key'],
+                (bool) ($validated['acknowledge_outstanding_payments'] ?? false),
+            );
+        } catch (EnrollmentTransitionException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
+
+        return response()->json($result);
     }
 
     public function reviewRequirement(

@@ -64,6 +64,30 @@ final readonly class EnrollmentPolicyCompiler
         );
     }
 
+    /**
+     * Reject ambiguous identifiers in new edits without changing which historical
+     * published definitions the runtime can read.
+     *
+     * @param  array<string, mixed>  $configuration
+     */
+    public function validateAuthoringConfiguration(array $configuration): void
+    {
+        foreach (data_get($configuration, 'workflow.steps', []) as $index => $step) {
+            if (! is_string($step['key'] ?? null) || mb_trim($step['key']) === '') {
+                throw ValidationException::withMessages(["workflow.steps.{$index}.key" => 'Workflow step keys must be present and unique.']);
+            }
+            foreach (['actions', 'transitions'] as $collection) {
+                $keys = collect($step[$collection] ?? [])->pluck('key');
+                if ($keys->contains(fn (mixed $key): bool => ! is_string($key) || mb_trim($key) === '') || $keys->duplicates()->isNotEmpty()) {
+                    throw ValidationException::withMessages(["workflow.steps.{$index}.{$collection}" => 'Action and transition keys must be present and unique within each step.']);
+                }
+            }
+            if (($step['terminal'] ?? false) === true && ! in_array($step['outcome'] ?? null, ['completed', 'rejected', 'cancelled'], true)) {
+                throw ValidationException::withMessages(["workflow.steps.{$index}.outcome" => 'Terminal steps need a supported outcome.']);
+            }
+        }
+    }
+
     /** @param array<string, mixed> $configuration */
     public function checksumConfiguration(array $configuration): string
     {

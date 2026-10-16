@@ -224,6 +224,11 @@ final class RolesSeeder extends Seeder
             // the Action:Entity generator never produced it and every one of those call sites
             // 403'd for all non-super-admins. Registered here so the finance section works.
             'View:Cashier',
+            // Cancellation and reopening are separately authorized administrative operations on an
+            // enrollment (EnrollmentCancellationService, EnrollmentTransitionEngine::reopen). No
+            // policy generates them, so they are registered here for Registrar roles to hold.
+            'Cancel:StudentEnrollment',
+            'Reopen:StudentEnrollment',
             ...SystemManagementPermissions::all(),
         ];
     }

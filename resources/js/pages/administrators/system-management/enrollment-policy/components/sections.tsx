@@ -86,7 +86,6 @@ export function ScopeSection({
     version,
     inheritance,
     loading,
-    documentationUrl,
 }: {
     policy: Policy;
     version: PolicyVersion;
@@ -108,11 +107,15 @@ export function ScopeSection({
                         variations.
                     </p>
                 </div>
-                <Button asChild variant="outline" size="sm" className="bg-background h-8.5 gap-1.5 self-start text-xs sm:self-center">
-                    <a href={exportMethod.url([policy.id, version.id])}>
-                        <Download className="size-3.5" />
-                        <span>Export Backup</span>
-                    </a>
+                <Button
+                    nativeButton={false}
+                    render={<a href={exportMethod.url([policy.id, version.id])} />}
+                    variant="outline"
+                    size="sm"
+                    className="self-start sm:self-center"
+                >
+                    <Download />
+                    <span>Export Backup</span>
                 </Button>
             </div>
 
@@ -803,6 +806,7 @@ export function WorkflowSection({ effective, local, registry, options, inheritan
                 {viewMode === "canvas" ? (
                     <WorkflowCanvas
                         steps={effective.workflow.steps}
+                        entryRules={effective.rules}
                         actions={registry.actions}
                         rules={registry.rules}
                         options={options}

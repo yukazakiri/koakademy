@@ -50,11 +50,29 @@ final readonly class EnrollmentPolicySimulationService
         }
 
         $entry = collect(data_get($compiled->configuration, 'workflow.steps', []))->firstWhere('entry', true);
+        $steps = collect(data_get($compiled->configuration, 'workflow.steps', []))->keyBy('key');
+        $route = [];
+        $current = $entry;
+        while (is_array($current) && count($route) < $steps->count()) {
+            $route[] = [
+                'key' => $current['key'],
+                'label' => $current['label'],
+                'terminal' => (bool) ($current['terminal'] ?? false),
+            ];
+            if (($current['terminal'] ?? false) === true) {
+                break;
+            }
+            $selected = collect($current['transitions'] ?? [])->first(fn (array $transition): bool => ($transition['fallback'] ?? false) === true
+                || collect($transition['conditions'] ?? [])->every(fn (array $condition): bool => $this->registry->rule($condition['handler'])->evaluate($context, $condition['configuration'] ?? [])->passed));
+            $current = is_array($selected) ? $steps->get($selected['to']) : null;
+        }
         $assignmentKey = data_get($compiled->configuration, 'assignment.strategy');
         $billingKey = data_get($compiled->configuration, 'billing.strategy');
 
         return [
             'writes_performed' => false,
+            'actions_executed' => false,
+            'route_basis' => 'Current sample facts only; staff permissions, requirements, action payloads, and capacity are enforced at runtime.',
             'checksum' => $compiled->checksum,
             'source_version_ids' => $compiled->sourceVersionIds,
             'matched_policies' => $compiled->sourceLayers,
@@ -62,11 +80,7 @@ final readonly class EnrollmentPolicySimulationService
             'eligibility' => $results,
             'blockers' => $blockers,
             'entry_step' => $entry,
-            'workflow_route' => collect(data_get($compiled->configuration, 'workflow.steps', []))->map(fn (array $step): array => [
-                'key' => $step['key'],
-                'label' => $step['label'],
-                'terminal' => (bool) ($step['terminal'] ?? false),
-            ])->values()->all(),
+            'workflow_route' => $route,
             'assignment' => is_string($assignmentKey)
                 ? $this->registry->assignmentStrategy($assignmentKey)->recommend($context, data_get($compiled->configuration, 'assignment.configuration', []))
                 : null,

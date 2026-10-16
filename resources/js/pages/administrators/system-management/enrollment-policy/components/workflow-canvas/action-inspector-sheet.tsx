@@ -30,7 +30,7 @@ const actionMeta: Record<string, { label: string; icon: typeof Zap; color: strin
         label: "Confirmation Email",
         icon: Mail,
         color: "text-sky-500",
-        desc: "Dispatches automated email confirmation when this step is approved or completed.",
+        desc: "Queues email on stage entry, after preceding actions succeed and the transaction commits.",
     },
     "enrollment.calculate_tuition": {
         label: "Calculate Tuition Ledger",
@@ -98,6 +98,7 @@ export function ActionInspectorSheet({
     onUpdateAction,
     onDeleteAction,
     onReorderAction,
+    onEditEmailTemplate,
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -124,7 +125,7 @@ export function ActionInspectorSheet({
         label: actions[action.handler]?.label ?? action.handler,
         icon: Zap,
         color: "text-primary",
-        desc: "Automated enrollment action triggered upon step completion.",
+        desc: "Automated enrollment action triggered on entering this stage.",
     };
     const Icon = meta.icon;
 
@@ -144,7 +145,7 @@ export function ActionInspectorSheet({
                 {/* Header with ReUI IconTile */}
                 <SheetHeader className="border-border/40 bg-card/75 border-b p-5">
                     <div className="flex items-start gap-3">
-                        <IconTile variant="soft" size="md" className={meta.color}>
+                        <IconTile variant="soft" size="default" className={meta.color}>
                             <Icon className="size-5" />
                         </IconTile>
 
@@ -170,8 +171,8 @@ export function ActionInspectorSheet({
                                 <span className="text-foreground block text-[11px] font-semibold tracking-wider uppercase">Execution Sequence</span>
                                 <p className="text-muted-foreground mt-0.5 text-[10px]">
                                     {isFirst
-                                        ? "Runs 1st immediately when staff approves this step."
-                                        : `Runs #${actionIndex + 1} in the sequence after step approval.`}
+                                        ? "Runs first on entering this stage. Entry stage runs on submission."
+                                        : `Runs #${actionIndex + 1} on stage entry, after preceding actions succeed.`}
                                 </p>
                             </div>
 

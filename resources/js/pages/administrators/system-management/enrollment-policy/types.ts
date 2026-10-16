@@ -184,6 +184,8 @@ export type SimulationCheck = {
 };
 
 export type Simulation = {
+    actions_executed?: boolean;
+    route_basis?: string;
     error?: unknown;
     checksum?: string;
     source_version_ids?: number[];

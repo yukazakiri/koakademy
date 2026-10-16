@@ -13,6 +13,7 @@ use Exception;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
@@ -755,6 +756,63 @@ final class ViewStudentEnrollment extends ViewRecord
                             'status',
                             'signature.depthead_signature',
                         ]);
+                    }),
+
+                Action::make('cancelEnrollment')
+                    ->label('Cancel Enrollment')
+                    ->icon('heroicon-o-ban')
+                    ->color('danger')
+                    ->visible(function (StudentEnrollment $record): bool {
+                        $actor = Auth::user();
+                        if (! $actor instanceof \App\Models\User || $record->terminal_outcome !== null) {
+                            return false;
+                        }
+
+                        if (! $actor->can('Cancel:StudentEnrollment') && ! $actor->hasRole('super_admin')) {
+                            return false;
+                        }
+
+                        // A cashier-verified legacy enrollment was completed by the compatibility
+                        // workflow; its undo path owns the reversal.
+                        return $record->workflow_runtime !== StudentEnrollment::WorkflowRuntimeLegacy
+                            || ! app(EnrollmentPipelineService::class)->isCashierVerified($record->status);
+                    })
+                    ->form([
+                        Textarea::make('reason')
+                            ->label('Reason (required)')
+                            ->required()
+                            ->maxLength(2000)
+                            ->rows(3)
+                            ->columnSpanFull(),
+                        Checkbox::make('acknowledge_outstanding_payments')
+                            ->label('Recorded payments stay linked; I will refund them separately.')
+                            ->helperText('Only shown when this enrollment still holds recorded payments.')
+                            ->visible(function (StudentEnrollment $record): bool {
+                                return app(\App\Enrollment\EnrollmentCancellationService::class)
+                                    ->outstandingPayments($record)['transactions'] > 0;
+                            })
+                            ->columnSpanFull(),
+                    ])
+                    ->action(function (StudentEnrollment $record, array $data): void {
+                        $actor = Auth::user();
+                        if (! $actor instanceof \App\Models\User) {
+                            $this->halt();
+                        }
+
+                        app(\App\Enrollment\EnrollmentWorkflowCoordinator::class)->cancel(
+                            $record,
+                            $actor,
+                            (string) $data['reason'],
+                            null,
+                            (bool) ($data['acknowledge_outstanding_payments'] ?? false),
+                        );
+
+                        Notification::make()
+                            ->title('Enrollment cancelled')
+                            ->success()
+                            ->send();
+
+                        $this->refreshFormData(['status']);
                     }),
 
                 Action::make('Resend Assessment')

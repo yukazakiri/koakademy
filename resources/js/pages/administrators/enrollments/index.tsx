@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Head, Link, router, usePage } from "@inertiajs/react";
 import {
     AlertTriangle,
+    Ban,
     BookOpen,
     Building2,
     ChevronRight,
@@ -97,6 +98,10 @@ function enrollmentMatchesFilters(enrollment: EnrollmentRow, activeFilters: Filt
 
             if (filterValue === "trashed") {
                 return !!enrollment.is_trashed;
+            }
+
+            if (filterValue === "cancelled") {
+                return enrollment.terminal_outcome === "cancelled";
             }
 
             return enrollment.status === filterValue;
@@ -248,10 +253,7 @@ export default function AdministratorEnrollmentsIndex({
         return params;
     };
 
-    const navigateWithParams = (
-        params: Record<string, string | number | null>,
-        options: { replace?: boolean; only?: string[] } = {},
-    ) => {
+    const navigateWithParams = (params: Record<string, string | number | null>, options: { replace?: boolean; only?: string[] } = {}) => {
         cancelPendingSearch();
         router.get(route("administrators.enrollments.index"), params, {
             preserveState: true,
@@ -351,9 +353,9 @@ export default function AdministratorEnrollmentsIndex({
         const totalEnrolled = analytics?.current_semester_count ?? enrollmentsTotal;
         const activeCount = analytics?.active_count ?? visibleEnrollments.filter((e) => !e.is_trashed).length;
         const trashedCount = analytics?.trashed_count ?? visibleEnrollments.filter((e) => e.is_trashed).length;
-        const verifiedByCashier = analytics?.by_status?.find(
-            (s) => s.status === enrollment_pipeline.cashier_verified_status,
-        )?.count ?? visibleEnrollments.filter((e) => !e.is_trashed && e.status === enrollment_pipeline.cashier_verified_status).length;
+        const verifiedByCashier =
+            analytics?.by_status?.find((s) => s.status === enrollment_pipeline.cashier_verified_status)?.count ??
+            visibleEnrollments.filter((e) => !e.is_trashed && e.status === enrollment_pipeline.cashier_verified_status).length;
         const exceptionsCount = totalEnrolled - verifiedByCashier;
 
         return {
@@ -471,6 +473,7 @@ export default function AdministratorEnrollmentsIndex({
                 options: [
                     { value: "active", label: "Active records", icon: <Users className="text-muted-foreground h-4 w-4" /> },
                     { value: "trashed", label: "Deleted records", icon: <Users className="text-muted-foreground h-4 w-4" /> },
+                    { value: "cancelled", label: "Cancelled", icon: <Ban className="text-muted-foreground h-4 w-4" /> },
                     ...enrollment_pipeline.status_options.map((option) => ({
                         value: option.value,
                         label: option.label,

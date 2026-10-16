@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Data\Enrollment\EnrollmentContext;
+use App\Enrollment\EnrollmentPolicyCompiler;
 use App\Enrollment\EnrollmentPolicyInheritanceService;
 use App\Enrollment\EnrollmentPolicyManager;
 use App\Enrollment\EnrollmentPolicyPreset;
@@ -80,6 +81,23 @@ it('reports completion payment rules as deferred instead of enrollment blockers 
         ->and(collect($result['blockers'])->pluck('handler'))->not->toContain('billing.minimum_payment');
 });
 
+it('previews connected routes from the entry instead of displaying every stage as one linear journey', function (): void {
+    $configuration = EnrollmentPolicyPreset::standard();
+    $configuration['workflow']['steps'][0]['transitions'] = [
+        ['key' => 'public_only', 'label' => 'Public', 'to' => 'completed', 'fallback' => false,
+            'conditions' => [['handler' => 'availability.channel', 'configuration' => ['allowed' => ['public']]]]],
+        ...$configuration['workflow']['steps'][0]['transitions'],
+    ];
+    $compiled = app(EnrollmentPolicyCompiler::class)->compile([['version_id' => 0, 'configuration' => $configuration]]);
+    $simulation = app(EnrollmentPolicySimulationService::class)->simulateCompiled($compiled, new EnrollmentContext(
+        schoolId: null, studentType: null, courseId: null, schoolYear: null, semester: null, channel: 'public',
+    ));
+
+    expect(array_column($simulation['workflow_route'], 'key'))->toBe(['submitted', 'completed'])
+        ->and($simulation['actions_executed'])->toBeFalse()
+        ->and($simulation['writes_performed'])->toBeFalse();
+});
+
 it('stores sparse scoped drafts and reports inherited source provenance', function (): void {
     $manager = app(EnrollmentPolicyManager::class);
     $school = School::factory()->create();
@@ -144,6 +162,36 @@ it('rejects duplicate nullable scope combinations using the scope fingerprint', 
 
     expect(fn () => $manager->create(['name' => 'Another global policy'], $author))
         ->toThrow(ValidationException::class, 'exact scope');
+});
+
+it('rejects ambiguous workflow action or route keys before publication', function (string $collection): void {
+    $configuration = EnrollmentPolicyPreset::standard();
+    $configuration['workflow']['steps'][0][$collection][] = $configuration['workflow']['steps'][0][$collection][0];
+
+    $author = User::factory()->create();
+    expect(fn () => app(EnrollmentPolicyManager::class)->create([
+        'name' => 'Ambiguous identifiers', 'school_id' => School::factory()->create()->id, 'configuration' => $configuration,
+    ], $author))
+        ->toThrow(ValidationException::class, 'keys must be present and unique');
+})->with(['actions', 'transitions']);
+
+it('keeps historical definitions with positional action payloads readable while requiring keys on new edits', function (): void {
+    $configuration = EnrollmentPolicyPreset::standard();
+    unset($configuration['workflow']['steps'][0]['actions'][0]['key']);
+    $compiler = app(EnrollmentPolicyCompiler::class);
+
+    expect($compiler->compile([['version_id' => 1, 'configuration' => $configuration]])->checksum)->toHaveLength(64);
+    expect(fn () => $compiler->validateAuthoringConfiguration($configuration))
+        ->toThrow(ValidationException::class, 'keys must be present and unique');
+});
+
+it('rejects a terminal outcome that the runtime cannot report', function (): void {
+    $configuration = EnrollmentPolicyPreset::standard();
+    $configuration['workflow']['steps'][2]['outcome'] = 'unknown';
+
+    expect(fn () => app(EnrollmentPolicyManager::class)->create([
+        'name' => 'Unsupported outcome', 'school_id' => School::factory()->create()->id, 'configuration' => $configuration,
+    ], User::factory()->create()))->toThrow(ValidationException::class, 'supported outcome');
 });
 
 it('uses period then program then student type then school for equal-specificity overrides', function (): void {
@@ -221,4 +269,19 @@ it('creates an unpublished compatibility draft without changing activation state
         ->and(data_get($draft->configuration, 'workflow.steps.0.actions.0.handler'))->toBe('enrollment.assign_subjects')
         ->and(data_get($draft->configuration, 'billing.configuration.discount_scope'))->toBe('lecture_only')
         ->and(Feature::active(DynamicEnrollmentPolicies::class))->toBeFalse();
+});
+
+it('applies rollout to previously unseen staff and public submissions, then disables future scopes', function (): void {
+    $rollout = app(EnrollmentPolicyRolloutService::class);
+    $this->actingAs(User::factory()->create());
+    $rollout->activate();
+    $newActor = User::factory()->create();
+
+    expect(Feature::for($newActor)->active(DynamicEnrollmentPolicies::class))->toBeTrue()
+        ->and(Feature::for(null)->active(DynamicEnrollmentPolicies::class))->toBeTrue();
+
+    $rollout->deactivate();
+    expect(Feature::for($newActor)->active(DynamicEnrollmentPolicies::class))->toBeFalse()
+        ->and(Feature::for(User::factory()->create())->active(DynamicEnrollmentPolicies::class))->toBeFalse()
+        ->and(Feature::for(null)->active(DynamicEnrollmentPolicies::class))->toBeFalse();
 });

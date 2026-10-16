@@ -42,6 +42,7 @@ final readonly class EnrollmentPolicyManager
             ?? ($inherit
                 ? ['schema_version' => EnrollmentPolicyCompiler::CurrentSchemaVersion]
                 : EnrollmentPolicyPreset::configuration((string) ($attributes['preset'] ?? 'legacy')));
+        $this->compiler->validateAuthoringConfiguration($configuration);
         $this->inheritance->compileForScope($scope, $configuration);
 
         try {
@@ -72,6 +73,7 @@ final readonly class EnrollmentPolicyManager
     /** @param array<string, mixed> $configuration */
     public function saveDraft(EnrollmentPolicy $policy, array $configuration, ?string $changeNotes, User $author): EnrollmentPolicyVersion
     {
+        $this->compiler->validateAuthoringConfiguration($configuration);
         $this->inheritance->compileForPolicy($policy, $configuration);
 
         return DB::transaction(function () use ($policy, $configuration, $changeNotes, $author): EnrollmentPolicyVersion {
@@ -108,6 +110,7 @@ final readonly class EnrollmentPolicyManager
         return DB::transaction(function () use ($policy, $version, $publisher): EnrollmentPolicyVersion {
             $locked = EnrollmentPolicy::query()->lockForUpdate()->findOrFail($policy->id);
             $draft = EnrollmentPolicyVersion::query()->lockForUpdate()->findOrFail($version->id);
+            $this->compiler->validateAuthoringConfiguration($draft->configuration);
             $configuration = $this->materializeStepPermissions($policy, $draft, $draft->configuration);
             $this->inheritance->compileForPolicy($locked, $configuration);
 
@@ -130,6 +133,7 @@ final readonly class EnrollmentPolicyManager
         EnrollmentPolicyVersion $version,
         array $configuration,
     ): array {
+        $this->compiler->validateAuthoringConfiguration($configuration);
         $steps = data_get($configuration, 'workflow.steps', []);
 
         foreach ($steps as $index => $step) {

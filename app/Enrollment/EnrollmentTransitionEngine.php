@@ -93,7 +93,7 @@ final readonly class EnrollmentTransitionEngine
     }
 
     /** @param array<string, mixed> $payload */
-    public function transition(StudentEnrollment $enrollment, User $actor, ?string $transitionKey, array $payload, string $idempotencyKey): TransitionResult
+    public function transition(StudentEnrollment $enrollment, User $actor, ?string $transitionKey, array $payload, string $idempotencyKey, ?string $actionHandler = null): TransitionResult
     {
         $idempotencyKey = $this->scopedIdempotencyKey('transition', $enrollment, $idempotencyKey);
         $this->ensurePolicyRuntime($enrollment);
@@ -110,7 +110,7 @@ final readonly class EnrollmentTransitionEngine
         }
 
         try {
-            return DB::transaction(function () use ($enrollment, $actor, $transitionKey, $payload, $idempotencyKey): TransitionResult {
+            return DB::transaction(function () use ($enrollment, $actor, $transitionKey, $payload, $idempotencyKey, $actionHandler): TransitionResult {
                 $locked = StudentEnrollment::query()->lockForUpdate()->findOrFail($enrollment->id);
                 $this->ensurePolicyRuntime($locked);
                 $existing = EnrollmentWorkflowEvent::query()->where('idempotency_key', $idempotencyKey)->first();
@@ -141,7 +141,9 @@ final readonly class EnrollmentTransitionEngine
                 if (! is_array($current)) {
                     throw new EnrollmentTransitionException('The enrollment has no valid current workflow step.');
                 }
-                if (($current['terminal'] ?? false) === true) {
+                // A cancellation can land on a non-terminal step when the pinned policy has no
+                // cancellation stage, so the outcome column is the authoritative terminal guard.
+                if ($locked->terminal_outcome !== null || ($current['terminal'] ?? false) === true) {
                     throw new EnrollmentTransitionException('Terminal enrollments must be reopened before another transition.');
                 }
 
@@ -150,7 +152,17 @@ final readonly class EnrollmentTransitionEngine
                     throw new AuthorizationException('You are not allowed to transition this enrollment step.');
                 }
 
-                $selected = $this->selectTransition($current['transitions'] ?? [], $context, $transitionKey);
+                $candidates = $current['transitions'] ?? [];
+                if ($actionHandler !== null) {
+                    $candidates = array_values(array_filter($candidates, function (array $transition) use ($steps, $actionHandler): bool {
+                        $target = $steps->get($transition['to'] ?? '');
+
+                        return is_array($target) && collect($target['actions'] ?? [])->contains(
+                            fn (array $action): bool => ($action['handler'] ?? null) === $actionHandler,
+                        );
+                    }));
+                }
+                $selected = $this->selectTransition($candidates, $context, $transitionKey);
                 $target = $steps->get($selected['to']);
                 if (! is_array($target)) {
                     throw new EnrollmentTransitionException('The selected transition target is unavailable.');
@@ -159,6 +171,18 @@ final readonly class EnrollmentTransitionEngine
                 $reason = mb_trim((string) ($payload['reason'] ?? ''));
                 if (($selected['requires_reason'] ?? false) === true && $reason === '') {
                     throw new EnrollmentTransitionException('A reason is required for this enrollment transition.');
+                }
+
+                // Compatibility endpoints submit one action payload. Resolve its keys only
+                // after selecting an eligible destination under the enrollment row lock.
+                if ($actionHandler !== null) {
+                    $runtimePayload = $payload;
+                    $payload = [];
+                    foreach ($target['actions'] ?? [] as $index => $action) {
+                        if (($action['handler'] ?? null) === $actionHandler) {
+                            $payload[(string) ($action['key'] ?? $index)] = $runtimePayload;
+                        }
+                    }
                 }
 
                 $this->requirements->assertSatisfiedForStep($locked, (string) $target['key']);
@@ -303,6 +327,29 @@ final readonly class EnrollmentTransitionEngine
 
             return new TransitionResult(true, $fromStepKey, $target['key'], null, message: 'Enrollment reopened.');
         }, 3);
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    public function availableTransitions(StudentEnrollment $enrollment, User $actor): array
+    {
+        if ($enrollment->workflow_runtime !== StudentEnrollment::WorkflowRuntimePolicyV1 || $enrollment->terminal_outcome !== null) {
+            return [];
+        }
+
+        $enrollment->loadMissing('policySnapshot');
+        $current = collect(data_get($enrollment->policySnapshot?->configuration, 'workflow.steps', []))
+            ->firstWhere('key', $enrollment->current_step_key);
+        if (! is_array($current) || ($current['terminal'] ?? false) === true) {
+            return [];
+        }
+        $permission = $current['permission'] ?? null;
+        if (is_string($permission) && $permission !== '' && ! $actor->can($permission)) {
+            return [];
+        }
+
+        $context = EnrollmentContext::fromEnrollment($enrollment, actor: $actor);
+
+        return array_values(array_filter($current['transitions'] ?? [], fn (array $transition): bool => ($transition['fallback'] ?? false) === true || $this->conditionsPass($transition['conditions'] ?? [], $context)));
     }
 
     /** @return array<string, mixed> */

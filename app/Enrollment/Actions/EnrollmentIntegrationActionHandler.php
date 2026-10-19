@@ -13,9 +13,11 @@ use App\Data\Enrollment\EnrollmentContext;
 use App\Enrollment\EnrollmentAssignmentService;
 use App\Enrollment\EnrollmentPaymentService;
 use App\Enrollment\EnrollmentPolicyRegistry;
+use App\Enums\UserRole;
 use App\Jobs\GenerateAssessmentPdfJob;
 use App\Jobs\SendAssessmentNotificationJob;
 use App\Models\StudentEnrollment;
+use App\Notifications\EnrollmentDatabaseNotification;
 use App\Notifications\EnrollmentStatusUpdatedNotification;
 use App\Notifications\StudentEnrolledVerified;
 use Illuminate\Support\Facades\DB;
@@ -126,6 +128,7 @@ final readonly class EnrollmentIntegrationActionHandler implements EnrollmentAct
             'enrollment.notify' => [
                 'type' => 'object',
                 'properties' => [
+                    'channel' => ['type' => 'string', 'enum' => ['mail', 'database']],
                     'notification' => [
                         'type' => 'string',
                         'enum' => ['assessment', 'official_enrollment', 'academic_verified', 'status_update', 'custom'],
@@ -202,6 +205,9 @@ final readonly class EnrollmentIntegrationActionHandler implements EnrollmentAct
                     'key' => 'create_new_file', 'label' => 'Always create a new assessment file', 'control' => 'boolean',
                 ]],
                 'enrollment.notify' => [
+                    ['key' => 'channel', 'label' => 'Delivery channel', 'control' => 'select', 'default' => 'mail', 'options' => [
+                        ['value' => 'mail', 'label' => 'Email'], ['value' => 'database', 'label' => 'Student inbox'],
+                    ]],
                     [
                         'key' => 'notification',
                         'label' => 'Confirmation email template',
@@ -343,6 +349,33 @@ final readonly class EnrollmentIntegrationActionHandler implements EnrollmentAct
 
         $enrollment->refresh();
         $enrollment->loadMissing(['student', 'Course', 'SubjectsEnrolled.subject', 'studentTuition']);
+        $channel = (string) ($configuration['channel'] ?? 'mail');
+        if (! in_array($channel, ['mail', 'database'], true)) {
+            return ActionResult::failure('Enrollment notifications support email and student inbox only.');
+        }
+        if ($channel === 'database') {
+            if (isset($configuration['notification']) && ! in_array($notification, ['status_update', 'custom', 'academic_verified', 'assessment', 'official_enrollment'], true)) {
+                return ActionResult::failure('Unsupported enrollment notification template.');
+            }
+            $student = $enrollment->student;
+            $user = $student?->user;
+            if (! $user || ! in_array($user->role, [UserRole::Student, UserRole::GraduateStudent, UserRole::ShsStudent], true)
+                || ($user->school_id !== null && (int) $user->school_id !== (int) $enrollment->school_id)) {
+                return ActionResult::failure('Student inbox delivery requires an explicitly linked student user in this school.');
+            }
+            $snapshot = [
+                'title' => 'Enrollment status updated',
+                'message' => 'Your enrollment status is '.(string) $enrollment->status.'.',
+                'type' => 'enrollment_status', 'priority' => 'normal', 'icon' => 'heroicon-o-academic-cap',
+                'enrollment_id' => $enrollment->id, 'status' => (string) $enrollment->status,
+                'step_key' => $enrollment->current_step_key, 'outcome' => $enrollment->terminal_outcome,
+                'school_year' => $enrollment->school_year, 'semester' => $enrollment->semester,
+                'action_url' => url('/student/dashboard'), 'action_text' => 'View enrollment',
+            ];
+            DB::afterCommit(fn () => $user->notify(new EnrollmentDatabaseNotification($snapshot)));
+
+            return ActionResult::success(['channel' => 'database', 'recipient_user_id' => $user->id, 'queued_after_commit' => true]);
+        }
         $studentEmail = $enrollment->student?->email;
         if (! is_string($studentEmail) || $studentEmail === '') {
             return ActionResult::failure('The student must have an email address before an enrollment notification can be queued.');

@@ -219,7 +219,7 @@ final class AdministratorSystemManagementController extends Controller
                     'roles' => Role::query()->orderBy('name')->toBase()->get(['id', 'name'])->map(fn ($role): array => ['value' => (string) $role->id, 'label' => str($role->name)->headline()->toString()]),
                     'permissions' => Permission::query()->orderBy('name')->toBase()->pluck('name')->map(fn (string $name): array => ['value' => $name, 'label' => str($name)->headline()->toString()]),
                     'notification_channels' => collect(NotificationChannel::cases())
-                        ->where('value', NotificationChannel::Mail->value)
+                        ->whereIn('value', [NotificationChannel::Mail->value, NotificationChannel::Database->value])
                         ->map(fn (NotificationChannel $channel): array => ['value' => $channel->value, 'label' => $channel->getLabel() ?? $channel->value])
                         ->values(),
                 ],

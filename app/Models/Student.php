@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Notifications\DatabaseNotificationCollection;
@@ -1174,7 +1175,7 @@ final class Student extends Model
     /**
      * Get the SHS strand that this student belongs to.
      */
-    public function shsStrand(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    public function shsStrand(): BelongsTo
     {
         return $this->belongsTo(ShsStrand::class, 'shs_strand_id');
     }
@@ -1182,7 +1183,7 @@ final class Student extends Model
     /**
      * Get the SHS track that this student belongs to.
      */
-    public function shsTrack(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    public function shsTrack(): BelongsTo
     {
         return $this->belongsTo(ShsTrack::class, 'shs_track_id');
     }

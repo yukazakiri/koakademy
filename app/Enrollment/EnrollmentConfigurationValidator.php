@@ -124,8 +124,8 @@ final readonly class EnrollmentConfigurationValidator
         }
 
         foreach ($configuration['notifications'] ?? [] as $index => $notification) {
-            if (! is_array($notification) || ($notification['channel'] ?? null) !== 'mail') {
-                throw ValidationException::withMessages(["notifications.{$index}.channel" => 'The core enrollment notification currently supports email only.']);
+            if (! is_array($notification) || ! in_array($notification['channel'] ?? null, ['mail', 'database'], true)) {
+                throw ValidationException::withMessages(["notifications.{$index}.channel" => 'Enrollment notifications support email and student inbox only.']);
             }
             if (! in_array($notification['event'] ?? null, ['any_transition', 'completed', 'rejected', 'cancelled', ...$stepKeys], true)) {
                 throw ValidationException::withMessages(["notifications.{$index}.event" => 'Choose a workflow step or the every-transition event.']);

@@ -215,15 +215,15 @@ final readonly class EnrollmentTransitionEngine
                     if (! in_array($notification['event'] ?? null, ['any_transition', $target['key'], $target['outcome'] ?? null], true)) {
                         continue;
                     }
-                    if (($notification['channel'] ?? 'mail') !== 'mail') {
-                        throw new EnrollmentTransitionException('The core notification action currently supports email only.');
+                    if (! in_array($notification['channel'] ?? 'mail', ['mail', 'database'], true)) {
+                        throw new EnrollmentTransitionException('Enrollment notifications support email and student inbox only.');
                     }
 
                     $template = (string) ($notification['template'] ?? (($target['terminal'] ?? false) ? 'assessment' : 'status_update'));
 
                     $result = $this->registry->action('enrollment.notify')->execute(
                         $context,
-                        ['notification' => $template],
+                        ['notification' => $template, 'channel' => $notification['channel'] ?? 'mail'],
                         "{$idempotencyKey}:notification:{$index}",
                     );
                     $actionResults[] = ['key' => 'enrollment.notify', 'successful' => $result->successful, 'message' => $result->message, 'metadata' => $result->metadata];

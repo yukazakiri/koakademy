@@ -119,6 +119,8 @@ export default defineConfig({
                         { slug: "maintainers/releases", label: "Releases" },
                         { slug: "maintainers/automation", label: "Automation" },
                         { slug: "maintainers/documentation", label: "Docs Engine" },
+                        { slug: "maintainers/oss-documentation", label: "OSS Documentation" },
+                        { slug: "maintainers/oss-hardening", label: "OSS Hardening" },
                     ],
                 },
             ],

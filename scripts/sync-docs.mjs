@@ -8,17 +8,22 @@ const root = process.cwd();
 const checkOnly = process.argv.includes("--check");
 
 const documents = [
-    { source: "GETTING_STARTED.md", target: "docs/src/content/docs/self-hosting/installation.mdx", title: "Installation", description: "Install KoAkademy with the supported production topology." },
-    { source: "DEPLOYMENT.md", target: "docs/src/content/docs/self-hosting/deployment.mdx", title: "Deployment", description: "Deploy, upgrade, back up, and recover KoAkademy." },
-    { source: "CONFIGURATION.md", target: "docs/src/content/docs/self-hosting/configuration.mdx", title: "Configuration", description: "Production environment and service configuration." },
-    { source: "TROUBLESHOOTING.md", target: "docs/src/content/docs/self-hosting/troubleshooting.mdx", title: "Troubleshooting", description: "Diagnose self-hosted KoAkademy deployments." },
     { source: "CONTRIBUTING.md", target: "docs/src/content/docs/start-here/contributing.mdx", title: "Contributing", description: "Contribution workflow, validation, and documentation ownership." },
-    { source: "DEVELOPMENT.md", target: "docs/src/content/docs/start-here/development.mdx", title: "Development", description: "Set up and validate a KoAkademy development environment." },
-    { source: "ARCHITECTURE.md", target: "docs/src/content/docs/start-here/architecture.mdx", title: "Architecture", description: "Runtime services, application boundaries, and data flows." },
-    { source: "FAQ.md", target: "docs/src/content/docs/self-hosting/faq.mdx", title: "FAQ", description: "Answers about support, deployment, storage, PDFs, and APIs." },
 ];
 
 const targetBySource = new Map(documents.map((document) => [document.source, document.target]));
+// Retained link mappings for foundational docs that are now native MDX pages.
+for (const [source, target] of [
+    ["GETTING_STARTED.md", "docs/src/content/docs/self-hosting/installation.mdx"],
+    ["DEPLOYMENT.md", "docs/src/content/docs/self-hosting/deployment.mdx"],
+    ["CONFIGURATION.md", "docs/src/content/docs/self-hosting/configuration.mdx"],
+    ["TROUBLESHOOTING.md", "docs/src/content/docs/self-hosting/troubleshooting.mdx"],
+    ["FAQ.md", "docs/src/content/docs/self-hosting/faq.mdx"],
+    ["DEVELOPMENT.md", "docs/src/content/docs/start-here/development.mdx"],
+    ["ARCHITECTURE.md", "docs/src/content/docs/start-here/architecture.mdx"],
+]) {
+    targetBySource.set(source, target);
+}
 const repositoryDocuments = new Set([
     "README.md",
     "SECURITY.md",
@@ -27,7 +32,11 @@ const repositoryDocuments = new Set([
 ]);
 
 function documentationLink(fromTarget, sourceTarget, anchor = "") {
-    const target = targetBySource.get(sourceTarget);
+    let target = targetBySource.get(sourceTarget);
+
+    if (!target && /^docs\/src\/content\/docs\/.+\.mdx$/.test(sourceTarget)) {
+        target = sourceTarget;
+    }
 
     if (!target) {
         if (repositoryDocuments.has(sourceTarget)) {
@@ -54,6 +63,7 @@ function render(document, source) {
     const body = source
         .replace(/^# .+\r?\n+/, "")
         .replace(/\]\(([A-Z][A-Z_]+\.md)(#[^)]+)?\)/g, (_match, target, anchor = "") => `](${documentationLink(document.target, target, anchor)})`)
+        .replace(/\]\((docs\/src\/content\/docs\/[^)]+?\.mdx)(#[^)]+)?\)/g, (_match, target, anchor = "") => `](${documentationLink(document.target, target, anchor)})`)
         .trim();
 
     return `---\ntitle: ${document.title}\ndescription: ${document.description}\n---\n\n{/* GENERATED FILE. Source: /${document.source}. Run: npm run docs:sync */}\n\n${body}\n`;

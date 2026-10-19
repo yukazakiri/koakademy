@@ -7,14 +7,7 @@ import process from "node:process";
 const root = process.cwd();
 const rootDocuments = [
     "README.md",
-    "GETTING_STARTED.md",
-    "DEPLOYMENT.md",
-    "CONFIGURATION.md",
-    "TROUBLESHOOTING.md",
-    "DEVELOPMENT.md",
     "CONTRIBUTING.md",
-    "ARCHITECTURE.md",
-    "FAQ.md",
     "SECURITY.md",
     "CHANGELOG.md",
 ];

@@ -18,4 +18,4 @@ Maintainers will assess private reports and coordinate disclosure or a fix where
 
 ## Operator baseline
 
-Security is shared with the institution operating the software. Before handling real data, use HTTPS, restrict infrastructure access, keep secrets out of source control, run supported stable releases, patch the host and Docker runtime, and test database and object-storage recovery. See [Deployment](DEPLOYMENT.md) and [Configuration](CONFIGURATION.md) for the supported production boundary.
+Security is shared with the institution operating the software. Before handling real data, use HTTPS, restrict infrastructure access, keep secrets out of source control, run supported stable releases, patch the host and Docker runtime, and test database and object-storage recovery. See [Deployment](docs/src/content/docs/self-hosting/deployment.mdx) and [Configuration](docs/src/content/docs/self-hosting/configuration.mdx) for the supported production boundary.

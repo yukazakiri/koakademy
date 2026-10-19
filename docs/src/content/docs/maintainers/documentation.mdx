@@ -5,11 +5,10 @@ description: Canonical Markdown, generated MDX mirrors, the validation contract,
 
 # Documentation System
 
-KoAkademy enforces a **single-source documentation workflow**:
+KoAkademy uses a documentation workflow with two source types:
 
-1. **Root Markdown files are canonical** for foundational technical documents (installation, deployment, architecture, contributing, troubleshooting).
-2. The Astro Starlight documentation website and the in-app docs viewer consume **automatically generated MDX mirrors**.
-3. Specialized guides (System Internals, Maintainers, User Guides, Enrollment Blueprints, API Reference) are **native MDX files** authored directly under `docs/src/content/docs/`.
+1. `CONTRIBUTING.md` is the only remaining root-level canonical Markdown source; it syncs to `docs/src/content/docs/start-here/contributing.mdx`.
+2. The other foundational guides (installation, deployment, configuration, troubleshooting, development, architecture, FAQ) and all specialized guides (System Internals, Maintainers, User Guides, Enrollment Blueprints, API Reference, OSS) are **native MDX files** authored directly under `docs/src/content/docs/`.
 
 ## Architecture & Sync Pipeline
 
@@ -29,14 +28,9 @@ Canonical Root Docs (e.g. CONTRIBUTING.md)
 
 | Canonical Root File | Generated Site Mirror | Sidebar Placement |
 | ------------------- | --------------------- | ----------------- |
-| `GETTING_STARTED.md` | `docs/src/content/docs/self-hosting/installation.mdx` | Self-Hosting → Installation |
-| `DEPLOYMENT.md` | `docs/src/content/docs/self-hosting/deployment.mdx` | Self-Hosting → Deployment |
-| `CONFIGURATION.md` | `docs/src/content/docs/self-hosting/configuration.mdx` | Self-Hosting → Configuration |
-| `TROUBLESHOOTING.md` | `docs/src/content/docs/self-hosting/troubleshooting.mdx` | Self-Hosting → Troubleshooting |
-| `FAQ.md` | `docs/src/content/docs/self-hosting/faq.mdx` | Self-Hosting → FAQ |
-| `DEVELOPMENT.md` | `docs/src/content/docs/start-here/development.mdx` | Start Here → Development |
-| `ARCHITECTURE.md` | `docs/src/content/docs/start-here/architecture.mdx` | Start Here → Architecture |
 | `CONTRIBUTING.md` | `docs/src/content/docs/start-here/contributing.mdx` | Start Here → Contributing |
+
+The installation, deployment, configuration, troubleshooting, development, architecture, and FAQ pages are native MDX files edited directly under `docs/src/content/docs/`.
 
 :::danger[Never Edit Generated Mirrors Directly]
 Generated MDX mirror files contain a `{/* GENERATED FILE. Source: ... */}` header. Any manual edits to generated files will be overwritten by `npm run docs:sync` and will fail the CI check `npm run docs:check`. Always edit the root canonical Markdown file instead.
@@ -46,10 +40,10 @@ Generated MDX mirror files contain a `{/* GENERATED FILE. Source: ... */}` heade
 
 | If you are writing... | Edit this location | Workflow |
 | --------------------- | ------------------ | -------- |
-| Setup, installation, or server deployment | `GETTING_STARTED.md` or `DEPLOYMENT.md` | Edit root file ➔ run `npm run docs:sync` ➔ commit both |
-| Environment variables or service config | `CONFIGURATION.md` | Edit root file ➔ run `npm run docs:sync` ➔ commit both |
-| Contributor workflows, testing rules, setup | `CONTRIBUTING.md` or `DEVELOPMENT.md` | Edit root file ➔ run `npm run docs:sync` ➔ commit both |
-| High-level runtime or architecture overview | `ARCHITECTURE.md` | Edit root file ➔ run `npm run docs:sync` ➔ commit both |
+| Setup, installation, or server deployment | `docs/src/content/docs/self-hosting/*.mdx` | Edit native MDX directly |
+| Environment variables or service config | `docs/src/content/docs/self-hosting/configuration.mdx` | Edit native MDX directly |
+| Contributor workflows, testing rules, setup | `CONTRIBUTING.md` or `docs/src/content/docs/start-here/development.mdx` | Edit root file or native MDX ➔ run `npm run docs:sync` for CONTRIBUTING |
+| High-level runtime or architecture overview | `docs/src/content/docs/start-here/architecture.mdx` | Edit native MDX directly |
 | Deep system internals (auth, frontend, queues) | `docs/src/content/docs/system/*.mdx` | Edit native MDX directly |
 | Module development or maintainer processes | `docs/src/content/docs/maintainers/*.mdx` | Edit native MDX directly |
 | User and staff operational guides | `docs/src/content/docs/user-guide/*.mdx` | Edit native MDX directly |

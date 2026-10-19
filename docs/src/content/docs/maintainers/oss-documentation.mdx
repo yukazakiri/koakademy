@@ -1,4 +1,9 @@
-# OSS Documentation Notes
+---
+title: OSS Documentation
+description: Documentation surface, README checklist, and OSS documentation notes for KoAkademy.
+---
+
+# OSS Documentation
 
 This repository is distributed as a self-hosted application. The public
 documentation should help an operator decide whether KoAkademy fits their
@@ -6,13 +11,13 @@ institution, install it safely, and find the deeper operational guides without
 duplicating those guides in the README. This note also records the
 documentation surface for the configurable regulatory report provider boundary.
 Detailed provider implementation guidance lives in
-`docs/src/content/docs/development/regulatory-report-providers.mdx`.
+`../development/regulatory-report-providers/`.
 
 ## README improvement checklist
 
 - [x] Explain the product, its self-hosted purpose, and beta status.
 - [x] Provide a quick-start path and link to deployment documentation.
-- [x] Point contributors to `CONTRIBUTING.md` and the provider extension guide.
+- [x] Point contributors to `../start-here/contributing/` and the provider extension guide.
 - [x] Describe how to verify locally through the contributor and development guides.
 - [x] Link to deeper architecture, operations, API, and module documentation.
 - [x] State that only CHED E-Form B/C is built in for regulatory reporting.
@@ -51,7 +56,7 @@ root-equivalent access to the host.
 ### Can I install without running the online installer?
 
 Yes. Operators who manage their own reverse proxy and environment can follow
-the Docker Compose instructions in `GETTING_STARTED.md` and `DEPLOYMENT.md`.
+the Docker Compose instructions in `../self-hosting/installation/` and `../self-hosting/deployment/`.
 
 ### What happens if an installer release is incomplete?
 
@@ -67,7 +72,7 @@ institutional data.
 
 ### Where should a vulnerability be reported?
 
-Use GitHub Private Vulnerability Reporting as described in `SECURITY.md`; do
+Use GitHub Private Vulnerability Reporting as described in `https://github.com/yukazakiri/koakademy/blob/master/SECURITY.md`; do
 not include student data, credentials, or sensitive logs in public issues.
 
 ### Which regulatory providers are supported?
@@ -91,7 +96,7 @@ to fit one agency's template.
 
 ## Architecture recommendations
 
-Keep `ARCHITECTURE.md` as the short system map and the documentation site as
+Keep `../start-here/architecture/` as the short system map and the documentation site as
 the detailed operator and domain reference. The minimum public architecture
 story is:
 
@@ -152,4 +157,4 @@ preserving the CHED key, legacy routes, and existing installations.
 - A hosted demo or managed SaaS distribution.
 - A formal long-term support matrix and response-time promise.
 - A Code of Conduct, which remains an explicit maintainer decision documented
-  in `CONTRIBUTING.md`.
+  in `../start-here/contributing/`.

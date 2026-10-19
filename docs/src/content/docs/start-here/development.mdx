@@ -3,7 +3,6 @@ title: Development
 description: Set up and validate a KoAkademy development environment.
 ---
 
-{/* GENERATED FILE. Source: /DEVELOPMENT.md. Run: npm run docs:sync */}
 
 This guide covers native development and testing. Production operators should use [Getting Started](../self-hosting/installation/) instead.
 
@@ -55,14 +54,14 @@ php artisan test --compact --filter="shows the setup screen"
 
 ## Documentation workflow
 
-Root project/technical Markdown files are canonical. Edit those files, then run:
+`CONTRIBUTING.md` remains the only root-level canonical Markdown source and syncs to `docs/src/content/docs/start-here/contributing.mdx`. The other foundational guides (installation, deployment, configuration, troubleshooting, development, architecture, FAQ) are now native MDX pages under `docs/src/content/docs/` and are edited directly. Run:
 
 ```sh
 npm run docs:sync
 npm run docs:check
 ```
 
-The sync command generates marked MDX mirrors consumed by both Astro and the in-app documentation. Never edit generated mirrors directly. Operator guides and enrollment blueprints under `docs/src/content/docs/` remain native MDX and are edited in place.
+The sync command updates the contributing mirror. Never edit generated mirrors directly; native MDX pages are edited in place.
 
 ## Hosted documentation site
 

@@ -3,7 +3,6 @@ title: Configuration
 description: Production environment and service configuration.
 ---
 
-{/* GENERATED FILE. Source: /CONFIGURATION.md. Run: npm run docs:sync */}
 
 The one-line Swarm installation is deployment-managed. Non-secret runtime settings live in `/opt/koakademy/runtime.env` with mode 0600; credentials live only in Docker Secrets. Do not edit that file or a container `.env` by hand. Use the `koakademy` command so a change is validated, secrets are rotated, and FrankenPHP workers restart.
 

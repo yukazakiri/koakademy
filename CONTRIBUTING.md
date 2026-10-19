@@ -12,7 +12,7 @@ Thank you for contributing to KoAkademy! Contributions should be focused, well-t
 
 ## Development Setup
 
-KoAkademy runs on **PHP 8.5**, **Laravel 13**, **Inertia 3**, **React 19**, and **Node.js 22**. Follow [Development](DEVELOPMENT.md) for full installation instructions:
+KoAkademy runs on **PHP 8.5**, **Laravel 13**, **Inertia 3**, **React 19**, and **Node.js 22**. Follow the [Development guide](docs/src/content/docs/start-here/development.mdx) for full installation instructions:
 
 ```sh
 # 1. Clone the repository and install dependencies
@@ -196,13 +196,14 @@ KoAkademy maintains a **single-source documentation system**:
 
 | Location | Role | How to Edit |
 | -------- | ---- | ----------- |
-| `GETTING_STARTED.md`, `DEPLOYMENT.md`, `CONFIGURATION.md`, `TROUBLESHOOTING.md`, `DEVELOPMENT.md`, `ARCHITECTURE.md`, `CONTRIBUTING.md`, `FAQ.md` | **Canonical Sources** | Edit directly in the root directory. |
+| `CONTRIBUTING.md` | **Canonical Source** | Edit directly in the root directory. |
+| `docs/src/content/docs/self-hosting/*`, `docs/src/content/docs/start-here/{installation,deployment,configuration,troubleshooting,development,architecture,faq}.mdx` | **Native Docs Pages** | Edit directly under `docs/src/content/docs/`. |
 | `docs/src/content/docs/start-here/contributing.mdx`, etc. | **Generated Mirrors** | **Do not edit manually.** Run `npm run docs:sync`. |
 | `docs/src/content/docs/system/*`, `docs/src/content/docs/user-guide/*`, `docs/src/content/docs/enrollment-policies/*`, `docs/src/content/docs/api/*` | **Native Docs Pages** | Edit directly under `docs/src/content/docs/`. |
 
 ## Standalone Module Contributions
 
-Standalone domain extensions (such as the Forms module) live in dedicated repositories under the [KoAkademy module registry](https://github.com/yukazakiri/koakademy-modules). Check the [Module Creation Guide](ARCHITECTURE.md) and registry guidelines before publishing a new module package.
+Standalone domain extensions (such as the Forms module) live in dedicated repositories under the [KoAkademy module registry](https://github.com/yukazakiri/koakademy-modules). Check the [Module Creation Guide](docs/src/content/docs/start-here/architecture.mdx) and registry guidelines before publishing a new module package.
 
 ## Regulatory Report Providers
 

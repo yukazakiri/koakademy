@@ -21,7 +21,7 @@ Make the repository easier to discover, adopt, and maintain without turning the 
 
 Produce:
 
-1. `OSS_DOCS.md` with:
+1. `docs/src/content/docs/maintainers/oss-documentation.mdx` with:
    - README improvement checklist
    - FAQ draft
    - architecture explanation recommendations
@@ -83,7 +83,7 @@ The README checklist must cover at least:
 
 Before declaring this stage complete, verify:
 
-- [ ] `OSS_DOCS.md` exists and includes README checklist, FAQ draft, architecture notes, and licensing/citation/reproducibility notes.
+- [ ] `docs/src/content/docs/maintainers/oss-documentation.mdx` exists and includes README checklist, FAQ draft, architecture notes, and licensing/citation/reproducibility notes.
 - [ ] `README.md` has project purpose, quick start, local verification, contribution entry point, and deeper-doc links.
 - [ ] `SECURITY.md` and `CHANGELOG.md` exist or were improved in place.
 - [ ] If applicable, `LICENSE` and `CITATION.cff` exist; otherwise the missing maintainer decision is explicitly recorded.
@@ -97,6 +97,6 @@ Before declaring this stage complete, verify:
 
 ## Done Criteria
 
-- `OSS_DOCS.md` exists and records README improvements, FAQ content, architecture notes, reproducibility notes, and deferred documentation.
+- `docs/src/content/docs/maintainers/oss-documentation.mdx` exists and records README improvements, FAQ content, architecture notes, reproducibility notes, and deferred documentation.
 - `README.md`, `SECURITY.md`, and `CHANGELOG.md` exist after the pass, either newly added or updated in place.
 - If the repo has a chosen license or needs citation metadata, `LICENSE` and `CITATION.cff` exist; otherwise the unresolved maintainer decision is recorded.

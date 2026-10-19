@@ -228,9 +228,9 @@ direct-port Swarm bundles, runtime configuration, image metadata, and
 to continue when the downloaded release assets do not verify as a complete
 bundle.
 
-For a manually managed deployment, use [Getting Started](GETTING_STARTED.md). It covers the supported Docker Compose topology, explicit migrations, S3-compatible storage, and the reverse-proxy requirements.
+For a manually managed deployment, use the [Installation guide](docs/src/content/docs/self-hosting/installation.mdx). It covers the supported Docker Compose topology, explicit migrations, S3-compatible storage, and the reverse-proxy requirements.
 
-For local development and verification, follow [Development](DEVELOPMENT.md)
+For local development and verification, follow the [Development guide](docs/src/content/docs/start-here/development.mdx)
 and run the documented checks in [Contributing](CONTRIBUTING.md). The
 documentation and local-link check can be run independently with:
 
@@ -244,9 +244,9 @@ Run a current stable release in production. Caddy owns ports 80/443; the applica
 
 | Need                                               | Start here                                                                                              |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Install, configure, or upgrade a server            | [Getting Started](GETTING_STARTED.md) · [Deployment](DEPLOYMENT.md) · [Configuration](CONFIGURATION.md) |
-| Plan backups, HTTPS, storage, or recovery          | [Deployment runbook](DEPLOYMENT.md#backups) · [Self-hosting FAQ](FAQ.md)                                |
-| Understand the codebase and run it locally         | [Development](DEVELOPMENT.md) · [Architecture guide](docs/src/content/docs/start-here/architecture.mdx) |
+| Install, configure, or upgrade a server            | [Installation](docs/src/content/docs/self-hosting/installation.mdx) · [Deployment](docs/src/content/docs/self-hosting/deployment.mdx) · [Configuration](docs/src/content/docs/self-hosting/configuration.mdx) |
+| Plan backups, HTTPS, storage, or recovery          | [Deployment runbook](docs/src/content/docs/self-hosting/deployment.mdx#backups) · [Self-hosting FAQ](docs/src/content/docs/self-hosting/faq.mdx)                                |
+| Understand the codebase and run it locally         | [Development](docs/src/content/docs/start-here/development.mdx) · [Architecture guide](docs/src/content/docs/start-here/architecture.mdx) |
 | Configure enrollment policies                      | [Enrollment blueprints](docs/src/content/docs/enrollment-policies/overview.mdx)                         |
 | Use the administrator, faculty, or student portals | [Staff user guide](docs/src/content/docs/user-guide/introduction.mdx)                                   |
 | Integrate with the supported API                   | [API overview](docs/src/content/docs/api/api-overview.mdx)                                              |

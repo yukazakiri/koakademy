@@ -39,6 +39,14 @@ final readonly class ConfiguredAssignmentStrategy implements EnrollmentOperatorS
                 default => 'Assignment is managed by the registered extension.',
             },
             'fields' => match ($this->strategyKey) {
+                'assignment.curriculum_automatic' => [[
+                    'key' => 'curriculum_selection', 'label' => 'Curriculum selection', 'control' => 'select', 'default' => 'current_year',
+                    'description' => 'Eligible back subjects includes this and earlier year levels in the same semester. Excludes completed subjects and requires verified prior prerequisites. Does not cap units, reserve classes, or infer course equivalences.',
+                    'options' => [
+                        ['value' => 'current_year', 'label' => 'Current year and semester (existing behavior)'],
+                        ['value' => 'eligible_back_subjects', 'label' => 'Eligible incomplete subjects through current year'],
+                    ],
+                ]],
                 'assignment.class_first_available' => [[
                     'key' => 'prefer_least_filled', 'label' => 'Prefer the class with the most available seats', 'description' => 'Ranks finite sections by remaining active seats; unlimited sections rank first. Ties use class ID. Capacity is checked again under a row lock.', 'control' => 'boolean',
                 ]],

@@ -88,6 +88,21 @@ final readonly class EnrollmentPrerequisiteRule implements EnrollmentOperatorSch
         if (count($validIds) !== count($requiredIds)) {
             return RuleResult::fail('A prerequisite curriculum subject is missing or belongs to another school.');
         }
+        $satisfied = $this->completedSubjectIds($enrollment, $requiredIds, $acceptCredited);
+        $missing = array_values(array_diff($requiredIds, $satisfied));
+        $metadata = ['required_subject_ids' => $requiredIds, 'missing_subject_ids' => $missing, 'source' => 'server_records'];
+
+        return $missing === [] ? RuleResult::pass($metadata) : RuleResult::fail('Required prerequisite subjects have not been completed.', $metadata);
+    }
+
+    /**
+     * Reused by automatic back-subject selection so assignment and completion agree.
+     *
+     * @param  list<int>  $requiredIds
+     * @return list<int>
+     */
+    public function completedSubjectIds(\App\Models\StudentEnrollment $enrollment, array $requiredIds, bool $acceptCredited = false): array
+    {
         $attempts = SubjectEnrollment::query()->where('student_id', $enrollment->student_id)
             ->where('enrollment_id', '!=', $enrollment->id)
             ->where(fn ($query) => $query->whereIn('subject_id', $requiredIds)->orWhereIn('credited_subject_id', $requiredIds))
@@ -119,10 +134,8 @@ final readonly class EnrollmentPrerequisiteRule implements EnrollmentOperatorSch
                 $satisfied[] = (int) $attempt->subject_id;
             }
         }
-        $missing = array_values(array_diff($requiredIds, $satisfied));
-        $metadata = ['required_subject_ids' => $requiredIds, 'missing_subject_ids' => $missing, 'source' => 'server_records'];
 
-        return $missing === [] ? RuleResult::pass($metadata) : RuleResult::fail('Required prerequisite subjects have not been completed.', $metadata);
+        return array_values(array_unique($satisfied));
     }
 
     /** @return array{int, int}|null */

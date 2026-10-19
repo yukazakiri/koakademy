@@ -17,10 +17,11 @@ use App\Models\SubjectEnrollment;
 use App\Services\ClassEnrollmentService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use InvalidArgumentException;
 
 final readonly class EnrollmentAssignmentService
 {
-    public function __construct(private ClassEnrollmentService $classes, private EnrollmentFeeCalculator $fees) {}
+    public function __construct(private ClassEnrollmentService $classes, private EnrollmentFeeCalculator $fees, private EnrollmentCurriculumSelection $curriculum) {}
 
     /** @param array<string, mixed> $configuration */
     public function assignSubjects(EnrollmentContext $context, array $configuration): ActionResult
@@ -36,9 +37,19 @@ final readonly class EnrollmentAssignmentService
             return ActionResult::failure("Subject source [{$source}] is not supported.");
         }
 
-        $subjects = $source === 'runtime_payload'
-            ? $this->payloadSubjects($payload)
-            : $this->curriculumSubjects($enrollment);
+        $mode = $configuration['curriculum_selection'] ?? 'current_year';
+        if (! in_array($mode, ['current_year', 'eligible_back_subjects'], true)) {
+            return ActionResult::failure('Unsupported curriculum selection mode.');
+        }
+        try {
+            $subjects = $source === 'runtime_payload'
+                ? $this->payloadSubjects($payload)
+                : ($mode === 'eligible_back_subjects'
+                    ? $this->curriculum->eligibleBackSubjects($enrollment)->map(fn (Subject $subject): array => ['subject' => $subject])
+                    : $this->curriculumSubjects($enrollment));
+        } catch (InvalidArgumentException $exception) {
+            return ActionResult::failure($exception->getMessage());
+        }
         if ($subjects->isEmpty()) {
             if ($source === 'runtime_payload' && $context->channel === 'public') {
                 return ActionResult::success([
@@ -214,11 +225,25 @@ final readonly class EnrollmentAssignmentService
     /** @return array<string, mixed> */
     public function recommend(EnrollmentContext $context, string $strategy, array $configuration): array
     {
-        return [
+        $result = [
             'strategy' => $strategy,
             'configuration' => $configuration,
             'enrollment_id' => $context->enrollment?->id,
         ];
+        if ($strategy === 'assignment.curriculum_automatic' && ($configuration['curriculum_selection'] ?? 'current_year') === 'eligible_back_subjects') {
+            if (! $context->enrollment?->exists) {
+                return [...$result, 'selection_available' => false, 'reason' => 'Select a saved enrollment to inspect verified history.'];
+            }
+            try {
+                $subjects = $this->curriculum->eligibleBackSubjects($context->enrollment);
+            } catch (InvalidArgumentException $exception) {
+                return [...$result, 'selection_available' => false, 'reason' => $exception->getMessage()];
+            }
+
+            return [...$result, 'selection_available' => true, 'subject_ids' => $subjects->modelKeys(), 'writes_performed' => false];
+        }
+
+        return $result;
     }
 
     /** @return Collection<int, array{subject: Subject}> */

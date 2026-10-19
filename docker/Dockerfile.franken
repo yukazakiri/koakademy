@@ -38,7 +38,7 @@ RUN composer dump-autoload --optimize --classmap-authoritative --no-dev --no-scr
 # -----------------------------------------------------------------------------
 # Stage 2: Generate Wayfinder Files (requires the application's PHP version)
 # -----------------------------------------------------------------------------
-FROM dunglas/frankenphp:1.12-php8.5@sha256:81231b570830952baa3e62db06707996a886ff0a61ca64c77d032c8a110e6bc1 AS wayfinder
+FROM dunglas/frankenphp:1.13.1-php8.5@sha256:4a8eebee6b3bed92d01ffa6ec5b1bc2cb9c2ab7eeb546027a3f7e6a52937ebbb AS wayfinder
 # The application boots during wayfinder:generate and config/backup.php
 # instantiates ZipArchive, so the extension must be present in this stage.
 RUN install-php-extensions zip
@@ -68,7 +68,16 @@ RUN npm prune --omit=dev
 # -----------------------------------------------------------------------------
 # Stage 4: Final Runtime Image (FrankenPHP served through Laravel Octane)
 # -----------------------------------------------------------------------------
-FROM dunglas/frankenphp:1.12-php8.5@sha256:81231b570830952baa3e62db06707996a886ff0a61ca64c77d032c8a110e6bc1
+# The base image version is coupled to laravel/octane's
+# $requiredFrankenPhpVersion (Commands/Concerns/InstallsFrankenPhpDependencies).
+# If the bundled binary is older, octane:start offers to download a replacement,
+# confirm() defaults to yes under the non-interactive supervisor session, and the
+# resulting rename() of /usr/local/bin/frankenphp is denied because USER is
+# `laravel` (uid 1000) while that directory is root-owned. frankenphp then exits
+# 1 and autorestart turns it into a respawn loop, so the task never reports
+# healthy. After bumping laravel/octane, bump this pin in the same commit and keep
+# it at or above the version octane requires.
+FROM dunglas/frankenphp:1.13.1-php8.5@sha256:4a8eebee6b3bed92d01ffa6ec5b1bc2cb9c2ab7eeb546027a3f7e6a52937ebbb
 
 LABEL maintainer="Yuka <128908897+yukazakiri@users.noreply.github.com>"
 LABEL org.opencontainers.image.title="KoAkademy"

@@ -238,13 +238,7 @@ final readonly class EnrollmentWorkflowCoordinator
         return new TransitionResult(true, null, null, null, message: 'Enrollment reopened.');
     }
 
-    /**
-     * Cancel an enrollment for either runtime.
-     *
-     * The legacy pipeline has no terminal outcome of its own, so a cashier-verified
-     * legacy enrollment is refused here: its money and student state were applied by the
-     * compatibility workflow and have to be undone through the existing undo path first.
-     */
+    /** Cancel without deleting recorded payments or undoing cashier verification. */
     public function cancel(
         StudentEnrollment $enrollment,
         User $actor,
@@ -252,13 +246,6 @@ final readonly class EnrollmentWorkflowCoordinator
         ?string $idempotencyKey = null,
         bool $acknowledgeOutstandingPayments = false,
     ): TransitionResult {
-        if ($enrollment->workflow_runtime !== StudentEnrollment::WorkflowRuntimePolicyV1
-            && $this->legacyPipeline->isCashierVerified($enrollment->status)) {
-            throw new EnrollmentTransitionException(
-                'Undo the cashier verification for this enrollment before cancelling it so the reversal stays auditable.',
-            );
-        }
-
         return $this->cancellation->cancel(
             $enrollment,
             $actor,

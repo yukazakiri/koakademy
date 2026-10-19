@@ -295,6 +295,28 @@ final readonly class EnrollmentTransitionEngine
                 throw new EnrollmentTransitionException('Only a terminal enrollment can be reopened.');
             }
 
+            $cancellation = EnrollmentWorkflowEvent::query()->where('student_enrollment_id', $locked->id)
+                ->where('event_type', 'cancelled')->latest('id')->first();
+            if ($locked->terminal_outcome === 'cancelled' && data_get($cancellation?->result, 'from_terminal_outcome') === 'completed') {
+                if ($targetStepKey !== null) {
+                    throw new EnrollmentTransitionException('Undo this cancellation before reopening a completed verification.');
+                }
+                $locked->forceFill([
+                    'terminal_outcome' => 'completed', 'status' => data_get($cancellation->result, 'from_status', $locked->status),
+                    'current_step_key' => $cancellation->from_step_key,
+                ])->save();
+                EnrollmentWorkflowEvent::query()->create([
+                    'student_enrollment_id' => $locked->id, 'enrollment_policy_snapshot_id' => $locked->enrollment_policy_snapshot_id,
+                    'actor_id' => $actor->id, 'event_type' => 'reopened', 'from_step_key' => $cancellation->to_step_key,
+                    'to_step_key' => $locked->current_step_key, 'status' => $locked->status, 'terminal_outcome' => 'completed',
+                    'idempotency_key' => $idempotencyKey, 'reason' => $reason,
+                    'result' => ['cancellation_event_id' => $cancellation->id, 'payment_reversal' => ['skipped' => true],
+                        'seats_restored' => false],
+                ]);
+
+                return new TransitionResult(true, $cancellation->to_step_key, $locked->current_step_key, 'completed', message: 'Cancellation undone; cashier verification and payments retained. Reassign released class seats separately.');
+            }
+
             $snapshot = $locked->policySnapshot()->firstOrFail();
             $steps = collect(data_get($snapshot->configuration, 'workflow.steps', []));
             $target = $targetStepKey === null

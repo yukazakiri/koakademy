@@ -912,7 +912,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'undo-cancellation:'.$request->header('Idempotency-Key', (string) Str::uuid()),
             );
 
-            return back()->with('flash', ['success' => 'Cancellation undone. The enrollment is active again.']);
+            return back()->with('flash', ['success' => 'Cancellation undone. Prior verification is retained where applicable; reassign released class seats separately.']);
         } catch (Throwable $throwable) {
             return back()->with('flash', ['error' => $throwable->getMessage()]);
         }
@@ -2446,8 +2446,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'allowed_transitions' => [],
                 'allowed_payment_methods' => [],
                 'can_cancel' => $actor instanceof User
-                    && $enrollment->terminal_outcome === null
-                    && ! $this->enrollmentPipelineService->isCashierVerified($enrollment->status)
+                    && in_array($enrollment->terminal_outcome, [null, 'completed'], true)
                     && ($actor->can('Cancel:StudentEnrollment') || $actor->hasRole('super_admin')),
                 'outstanding_payments' => $outstandingPayments,
             ];
@@ -2461,7 +2460,7 @@ final class AdministratorEnrollmentManagementController extends Controller
             'current_step_key' => $enrollment->current_step_key,
             'terminal_outcome' => $enrollment->terminal_outcome,
             'can_cancel' => $actor instanceof User
-                && $enrollment->terminal_outcome === null
+                && in_array($enrollment->terminal_outcome, [null, 'completed'], true)
                 && ($actor->can('Cancel:StudentEnrollment') || $actor->hasRole('super_admin')),
             'outstanding_payments' => $outstandingPayments,
             'allowed_payment_methods' => array_values(data_get(

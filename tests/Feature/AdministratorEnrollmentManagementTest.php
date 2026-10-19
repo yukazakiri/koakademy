@@ -1826,7 +1826,7 @@ it('refuses an unauthorized or unreasoned cancellation request', function (): vo
     expect($enrollment->refresh()->terminal_outcome)->toBeNull();
 });
 
-it('refuses to cancel a cashier-verified legacy enrollment before it is undone', function (): void {
+it('cancels a cashier-verified legacy enrollment without undoing verification', function (): void {
     $user = User::factory()->create(['role' => UserRole::Admin]);
     $user->givePermissionTo(Spatie\Permission\Models\Permission::findOrCreate('Cancel:StudentEnrollment', 'web'));
     $enrollment = StudentEnrollment::factory()->create([
@@ -1839,11 +1839,11 @@ it('refuses to cancel a cashier-verified legacy enrollment before it is undone',
             'reason' => 'Duplicate enrollment.',
             'idempotency_key' => 'legacy-cancel-verified',
         ])
-        ->assertStatus(422)
-        ->assertJsonPath('message', 'Undo the cashier verification for this enrollment before cancelling it so the reversal stays auditable.');
+        ->assertSuccessful();
 
-    expect($enrollment->refresh()->terminal_outcome)->toBeNull()
-        ->and(App\Models\EnrollmentWorkflowEvent::query()->where('event_type', 'cancelled')->count())->toBe(0);
+    expect($enrollment->refresh()->terminal_outcome)->toBe('cancelled')
+        ->and($enrollment->status)->toBe(EnrollStat::VerifiedByCashier->value)
+        ->and(App\Models\EnrollmentWorkflowEvent::query()->where('event_type', 'cancelled')->count())->toBe(1);
 });
 
 it('exposes cancellation availability on the enrollment detail page', function (): void {
@@ -2003,3 +2003,32 @@ it('reopens a cancelled legacy enrollment through the undo cancellation endpoint
     'pending enrollment' => [EnrollStat::Pending->value],
     'department verified enrollment' => [EnrollStat::VerifiedByDeptHead->value],
 ]);
+
+it('offers cancellation on cashier-verified enrollment details to permitted staff', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $user->givePermissionTo(Spatie\Permission\Models\Permission::findOrCreate('Cancel:StudentEnrollment', 'web'));
+    $enrollment = StudentEnrollment::factory()->create(['status' => EnrollStat::VerifiedByCashier->value, 'workflow_runtime' => StudentEnrollment::WorkflowRuntimeLegacy]);
+
+    $this->actingAs($user)->get(portalUrlForAdministrators('/administrators/enrollments/'.$enrollment->id))
+        ->assertSuccessful()->assertInertia(fn (AssertableInertia $page) => $page->where('enrollment.workflow.can_cancel', true));
+});
+
+it('requires payment acknowledgement for legacy paid caches before cashier cancellation', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $user->givePermissionTo(Spatie\Permission\Models\Permission::findOrCreate('Cancel:StudentEnrollment', 'web'));
+    $enrollment = StudentEnrollment::factory()->legacyWorkflow()->create(['status' => EnrollStat::VerifiedByCashier->value]);
+    $tuition = StudentTuition::query()->create(['student_id' => $enrollment->student_id, 'enrollment_id' => $enrollment->id,
+        'semester' => $enrollment->semester, 'school_year' => $enrollment->school_year, 'academic_year' => 1,
+        'overall_tuition' => 1000, 'paid' => 500]);
+
+    $this->actingAs($user)->postJson(portalUrlForAdministrators('/administrators/enrollments/'.$enrollment->id.'/cancel'), [
+        'reason' => 'Student withdrew.', 'idempotency_key' => 'paid-cache-no-ack',
+    ])->assertUnprocessable();
+    $this->postJson(portalUrlForAdministrators('/administrators/enrollments/'.$enrollment->id.'/cancel'), [
+        'reason' => 'Student withdrew; finance review required.', 'idempotency_key' => 'paid-cache-ack', 'acknowledge_outstanding_payments' => true,
+    ])->assertSuccessful();
+
+    expect($enrollment->refresh()->terminal_outcome)->toBe('cancelled');
+    expect((float) $tuition->refresh()->paid)->toBe(500.0);
+    expect((float) $tuition->overall_tuition)->toBe(1000.0);
+});

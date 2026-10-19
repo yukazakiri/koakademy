@@ -106,3 +106,11 @@ Pipeline notifications and `enrollment.notify` actions now accept `mail` (existi
 Student email is not required for database delivery. Recipient must be `student.user_id`, have a student/graduate/SHS-student role, and have no conflicting school association. There is no email-based or legacy Account fallback. Missing/invalid recipient fails the configured action, rolling back a transition; disabled notifications remain skipped. Workflow retries use existing transition idempotency and do not dispatch twice. Direct action invocations retain the existing caller responsibility for idempotency.
 
 Only email and database are exposed in the pipeline channel picker. SMS/broadcast require separate providers and remain unsupported. Queueing occurs after transaction commit. Existing shared inbox ownership checks continue to control reading notifications.
+
+## Cancelling after cashier verification
+
+Staff with `Cancel:StudentEnrollment` can cancel a legacy cashier-verified or policy-completed enrollment directly from its detail-page action menu. A reason is mandatory. Recorded linked payments and authoritative assessment paid amounts require explicit acknowledgement; cancellation does not delete payments, revoke receipts, refund, or reduce tuition balances.
+
+The term receives `terminal_outcome=cancelled`, with prior outcome/status recorded in the audit event. Eligible reserved seats are released; shared seats remain protected. Policy-completed student/account synchronization is retained as history rather than demoting the global student. Legacy cashier status is likewise retained as reporting history. Cancellation is not an institution-wide `StudentStatus::Withdrawn` action: record withdrawal as the reason, then use separate registrar/finance processes for global status and financial resolution.
+
+Undoing cancellation of a policy-completed enrollment restores its prior completed step/outcome without reversing receipts. Released seats are not restored automatically and must be reassigned with capacity checks. Rejected terminal enrollments still require a deliberate reopen before cancellation. Existing pre-completion cancellation reversal behavior is unchanged.

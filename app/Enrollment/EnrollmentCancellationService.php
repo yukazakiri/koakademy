@@ -12,6 +12,7 @@ use App\Models\EnrollmentWorkflowEvent;
 use App\Models\StudentEnrollment;
 use App\Models\SubjectEnrollment;
 use App\Models\User;
+use App\Services\EnrollmentBillingService;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -32,6 +33,7 @@ final readonly class EnrollmentCancellationService
     public function __construct(
         private EnrollmentPaymentService $payments,
         private EnrollmentStudentSynchronizationService $studentSynchronization,
+        private EnrollmentBillingService $billing,
     ) {}
 
     public function cancel(
@@ -75,7 +77,7 @@ final readonly class EnrollmentCancellationService
                     );
                 }
 
-                if ($locked->terminal_outcome !== null) {
+                if (! in_array($locked->terminal_outcome, [null, 'completed'], true)) {
                     throw new EnrollmentTransitionException(
                         'Reopen this enrollment before cancelling it so every reversal stays auditable.',
                     );
@@ -94,7 +96,13 @@ final readonly class EnrollmentCancellationService
                 $fromStepKey = $locked->current_step_key;
                 $fromStatus = $locked->status;
 
-                $studentStateReversal = $this->studentSynchronization->reverseAppliedSynchronizations($locked);
+                $fromOutcome = $locked->terminal_outcome;
+                // Completed admissions are historical facts. Do not demote the global student/account
+                // or delete paid receipts when cancelling a term after cashier verification.
+                $completed = $fromOutcome === 'completed';
+                $studentStateReversal = $completed
+                    ? ['skipped' => true, 'reason' => 'Completed enrollment student/account history is retained.']
+                    : $this->studentSynchronization->reverseAppliedSynchronizations($locked);
                 $releasedSeats = $this->releaseReservedSeats($locked);
 
                 $updates = ['terminal_outcome' => self::OUTCOME];
@@ -121,6 +129,8 @@ final readonly class EnrollmentCancellationService
                     'reason' => $reason,
                     'result' => [
                         'from_status' => $fromStatus,
+                        'from_terminal_outcome' => $fromOutcome,
+                        'completed_enrollment_cancelled' => $completed,
                         'class_seats_released' => $releasedSeats['released'],
                         'class_seats_retained' => $releasedSeats['retained'],
                         'student_state_reversal' => $studentStateReversal,
@@ -159,7 +169,14 @@ final readonly class EnrollmentCancellationService
     /** @return array{transactions: int, amount: float} */
     public function outstandingPayments(StudentEnrollment $enrollment): array
     {
-        return $this->payments->linkedSummary($enrollment);
+        $linked = $this->payments->linkedSummary($enrollment);
+        $tuition = $enrollment->studentTuition()->first();
+        $paid = $tuition ? $this->billing->totalPaid($tuition) : 0.0;
+
+        return [
+            'transactions' => max($linked['transactions'], $paid > 0 ? 1 : 0),
+            'amount' => max($linked['amount'], $paid),
+        ];
     }
 
     /** @return array<string, mixed>|null */
@@ -202,7 +219,7 @@ final readonly class EnrollmentCancellationService
         foreach ($subjects as $subject) {
             $class = Classes::query()->find($subject->class_id);
             if (! $class instanceof Classes
-                || $class->school_year !== $enrollment->school_year
+                || ! Classes::query()->whereKey($class->id)->forAcademicPeriod((string) $enrollment->school_year, (int) $enrollment->semester)->exists()
                 || (int) $class->semester !== (int) $enrollment->semester) {
                 continue;
             }

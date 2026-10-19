@@ -2131,8 +2131,9 @@ function CancelEnrollmentDialog({
                         <Ban className="h-5 w-5" /> Cancel this enrollment
                     </DialogTitle>
                     <DialogDescription>
-                        Cancelling stops the workflow for {studentName}. The outcome is recorded in the enrollment history and the student stops
-                        counting as enrolled for this term. This can be undone with &ldquo;Undo step verification&rdquo; if it was recorded in error.
+                        Cancelling stops this enrollment for {studentName}, including an enrollment already verified by cashier. The outcome is
+                        recorded in the enrollment history and the student stops counting as enrolled for this term. Use &ldquo;Undo
+                        cancellation&rdquo; for a recorded error. Released class seats must be reassigned separately.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -2149,7 +2150,7 @@ function CancelEnrollmentDialog({
                         />
                         <p className="text-muted-foreground text-xs">
                             Reserved class seats held by this enrollment are released. Subjects, tuition, and the reporting status are kept as
-                            history.
+                            history. Completed student/account status is not demoted; finance handles any refund or balance correction separately.
                         </p>
                     </div>
 
@@ -2158,8 +2159,8 @@ function CancelEnrollmentDialog({
                             <div className="flex items-start gap-2 text-sm">
                                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
                                 <span>
-                                    {formatMoney(outstandingPayments.amount)} across {outstandingPayments.transactions} payment transaction(s) is
-                                    still linked. Cancelling does not refund it.
+                                    {formatMoney(outstandingPayments.amount)} across {outstandingPayments.transactions} recorded payment reference(s)
+                                    is still associated. Cancelling does not refund it.
                                 </span>
                             </div>
                             <div className="flex items-center gap-2">

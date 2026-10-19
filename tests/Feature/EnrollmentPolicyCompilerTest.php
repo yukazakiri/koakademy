@@ -161,3 +161,11 @@ it('treats a cleared miscellaneous override as program pricing rather than a wai
 
     expect($compiled->configuration['billing']['configuration']['miscellaneous_fee_override'])->toBeNull();
 });
+
+it('rejects unsupported discount scopes before publication', function (): void {
+    $configuration = EnrollmentPolicyPreset::standard();
+    $configuration['billing']['configuration']['discount_scope'] = 'all_fees';
+
+    expect(fn () => app(EnrollmentPolicyCompiler::class)->compile([['version_id' => 1, 'configuration' => $configuration]]))
+        ->toThrow(ValidationException::class);
+});

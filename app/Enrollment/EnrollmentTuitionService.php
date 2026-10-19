@@ -80,7 +80,9 @@ final readonly class EnrollmentTuitionService
             return ActionResult::failure('Tuition discount must be between 0 and 100 percent.');
         }
         $discountId = isset($runtime['discount_id']) ? (int) $runtime['discount_id'] : null;
-        $discountedLecture = $lectureTotal * (1 - ($discount / 100));
+        $discounted = (new EnrollmentDiscountCalculation)->calculate($lectureTotal, $laboratoryTotal, $discount, (string) ($configuration['discount_scope'] ?? 'lecture_only'));
+        $discountedLecture = $discounted['lecture'];
+        $laboratoryTotal = $discounted['laboratory'];
         $tuitionTotal = $discountedLecture + $laboratoryTotal + $modularTotal;
 
         $miscellaneous = array_key_exists('miscellaneous_fee', $runtime)
@@ -169,6 +171,7 @@ final readonly class EnrollmentTuitionService
                 miscellaneous: (float) ($configuration['miscellaneous_fee_override'] ?? $configuration['course_miscellaneous_fee'] ?? $enrollment->course?->getMiscellaneousFee() ?? $configuration['miscellaneous_fee_fallback']),
                 additionalFees: (float) $enrollment->additionalFees->sum('amount'),
                 discountPercentage: (int) ($configuration['discount_percentage'] ?? $enrollment->studentTuition?->discount ?? 0),
+                discountScope: (string) ($configuration['discount_scope'] ?? 'lecture_only'),
             ),
         ];
     }

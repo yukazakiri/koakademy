@@ -205,6 +205,7 @@ interface BillingConfiguration {
     modular_laboratory_multiplier: number;
     modular_fee: number;
     default_downpayment: number;
+    discount_scope?: "lecture_only" | "lecture_and_laboratory";
     course_lecture_rate_per_unit?: number;
     course_laboratory_rate_per_unit?: number;
 }
@@ -684,10 +685,14 @@ export default function AdministratorEnrollmentCreate({
         const totalModularFee = modularCount * billingConfiguration.modular_fee;
 
         const discountPercent = parseInt(discount) || 0;
-        const discountedLectures = totalLectures * (1 - discountPercent / 100);
-        const discountAmount = totalLectures - discountedLectures;
+        const lectureDiscount = Math.round(totalLectures * discountPercent) / 100;
+        const labDiscount =
+            billingConfiguration.discount_scope === "lecture_and_laboratory" ? Math.round(totalLaboratory * discountPercent) / 100 : 0;
+        const discountedLectures = Math.round((totalLectures - lectureDiscount) * 100) / 100;
+        const discountedLaboratory = Math.round((totalLaboratory - labDiscount) * 100) / 100;
+        const discountAmount = lectureDiscount + labDiscount;
 
-        const totalTuition = discountedLectures + totalLaboratory;
+        const totalTuition = discountedLectures + discountedLaboratory;
         const miscellaneous = Number(miscellaneousFee) || 0;
         const totalAdditionalFees = additionalFees.reduce((sum, f) => sum + Number(f.amount || 0), 0);
 
@@ -715,7 +720,15 @@ export default function AdministratorEnrollmentCreate({
             overallTotal,
             balance,
         };
-    }, [subjectsEnrolled, discount, downpayment, miscellaneousFee, additionalFees, billingConfiguration.modular_fee]);
+    }, [
+        subjectsEnrolled,
+        discount,
+        downpayment,
+        miscellaneousFee,
+        additionalFees,
+        billingConfiguration.modular_fee,
+        billingConfiguration.discount_scope,
+    ]);
 
     // Filter subjects based on search
     const filteredSubjects = useMemo(() => {

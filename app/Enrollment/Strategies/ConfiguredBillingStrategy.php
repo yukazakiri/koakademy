@@ -35,6 +35,14 @@ final readonly class ConfiguredBillingStrategy implements EnrollmentOperatorSche
             'description' => 'Use the program lecture, laboratory, miscellaneous fee, and existing discount rules.',
             'fields' => [
                 [
+                    'key' => 'discount_scope', 'label' => 'Discounted fee components', 'control' => 'select', 'default' => 'lecture_only',
+                    'description' => 'Applies the enrollment discount once per eligible component. Modular surcharge, miscellaneous and additional fees remain excluded. Existing snapshots retain their scope.',
+                    'options' => [
+                        ['value' => 'lecture_only', 'label' => 'Lecture only (existing behavior)'],
+                        ['value' => 'lecture_and_laboratory', 'label' => 'Lecture and laboratory'],
+                    ],
+                ],
+                [
                     'key' => 'lecture_fee_basis', 'label' => 'Lecture fee basis', 'control' => 'select',
                     'default' => 'combined_units',
                     'description' => 'Combined units preserves the existing formula. Saved fee overrides are not repriced.',

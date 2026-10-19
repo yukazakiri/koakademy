@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Data\Enrollment\EnrollmentContext;
 use App\Data\Enrollment\EnrollmentSubmissionData;
 use App\Enrollment\EnrollmentCancellationService;
+use App\Enrollment\EnrollmentDiscountCalculation;
 use App\Enrollment\EnrollmentFeeCalculator;
 use App\Enrollment\EnrollmentFeePolicy;
 use App\Enrollment\EnrollmentPolicyResolver;
@@ -3049,7 +3050,9 @@ final class AdministratorEnrollmentManagementController extends Controller
             $totalModularFee += $fees['modular_fee'];
         }
 
-        $discountedLecture = $totalLecture * (1 - $discount / 100);
+        $discounted = (new EnrollmentDiscountCalculation)->calculate($totalLecture, $totalLaboratory, $discount, (string) ($configuration['discount_scope'] ?? 'lecture_only'));
+        $discountedLecture = $discounted['lecture'];
+        $totalLaboratory = $discounted['laboratory'];
         $totalTuition = $discountedLecture + $totalLaboratory + $totalModularFee;
 
         $additionalFeesTotal = collect($additionalFees)

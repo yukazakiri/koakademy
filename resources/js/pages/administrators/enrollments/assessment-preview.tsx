@@ -78,6 +78,7 @@ interface AssessmentData {
         total_laboratory: number;
         total_miscelaneous_fees: number;
         discount: number;
+        discount_scope?: "lecture_only" | "lecture_and_laboratory";
         downpayment: number;
         overall_tuition: number;
         total_balance: number;
@@ -819,7 +820,10 @@ export default function AssessmentPreview({ data, enrollmentId }: PageProps) {
                                     <div className="fee-box">
                                         <p className="fee-box-title">Tuition Fee Details</p>
                                         <p>Sub-Total (Tuition): {formatMoney(data.totals.lecture)}</p>
-                                        <p>Discount: {data.tuition?.discount || 0}%</p>
+                                        <p>
+                                            Discount: {data.tuition?.discount || 0}% (
+                                            {data.tuition?.discount_scope === "lecture_and_laboratory" ? "lecture and laboratory" : "lecture only"})
+                                        </p>
                                         <p className="fee-total">Total Tuition: {formatMoney(data.tuition?.total_lectures)}</p>
                                     </div>
 

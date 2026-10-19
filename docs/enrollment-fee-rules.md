@@ -22,7 +22,7 @@ Policy enrollments use their immutable enrollment policy snapshot when editing o
 
 Administrator create/edit requests quote subject fees through the backend calculator. Assignment, tuition creation, edit totals, recalculation, assessment calculations, and administrator assessment previews use the same subject fee contract. A saved modular lab fee of `1000` must remain `1000`, not become `500`, when tuition is calculated again.
 
-Discounts apply to lecture charges only. Modular surcharge, lab, miscellaneous, and additional fees remain outside that discount.
+Discounts default to lecture charges only. Policies may opt into lecture-and-laboratory discounting; modular surcharge, miscellaneous, and additional fees remain outside the discount.
 
 An explicitly selected finance fee schedule is a repricing operation: it computes new subject amounts from that schedule instead of reusing saved amounts. Ordinary recalculation preserves saved amounts.
 
@@ -122,3 +122,11 @@ Automatic curriculum assignment now exposes `curriculum_selection`: `current_yea
 Candidates sort by curriculum year, code and ID. Assignment is additive/idempotent, not a destructive reconciliation: retries keep existing rows, and previously assigned staff overrides are not removed. No eligible candidates produces a clear assignment failure. Invalid school/program/period context fails closed. A saved-enrollment recommendation returns candidate subject IDs without writes; hypothetical contexts report selection unavailable.
 
 This does not choose sections, enforce an automatic unit budget, or guarantee no schedule conflicts. Configure class assignment and verified unit/schedule/prerequisite completion gates separately. Existing ignored `include_irregular_subjects` flags remain unchanged and do not opt in to this new mode.
+
+## Bounded discount scope
+
+Course-rate billing exposes `discount_scope`: `lecture_only` (existing default) or `lecture_and_laboratory`. The percentage applies independently to gross final lecture/lab subject charges, rounded per component. Saved subject fees remain gross assessed amounts; tuition aggregates store net discounted components. Recalculation reads the gross subject rows so laboratory discount is not applied twice. Modular surcharge, miscellaneous, and additional fees never receive this discount.
+
+The scope is pinned with the enrollment policy. Administrator totals, policy tuition persistence/simulation, subject-based assessment calculations, ordinary recalculation, and Filament provider totals consume it. Legacy enrollment pricing stays lecture-only. Finance component-reconciliation mode continues to treat entered laboratory values as final net amounts; fee-rate repricing uses the pinned scope. Aggregate lab overrides in Filament broader-scope recalculation are rebuilt from subject rows to avoid net-on-net discounting.
+
+This is not arbitrary fee-component targeting or scholarship stacking. Existing historical snapshots without a scope remain lecture-only; no bulk repricing is performed.

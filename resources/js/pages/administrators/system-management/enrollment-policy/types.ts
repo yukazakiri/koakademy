@@ -83,7 +83,7 @@ export type BillingConfiguration = JsonObject & {
     course_lecture_rate_per_unit?: number | null;
     course_laboratory_rate_per_unit?: number | null;
     course_miscellaneous_fee?: number | null;
-    discount_scope?: "lecture_only";
+    discount_scope?: "lecture_only" | "lecture_and_laboratory";
     allow_overall_override?: boolean;
     receipt_mode?: "required" | "optional" | "none";
     minimum_payment?: { type: "none" | "fixed" | "percentage"; value: number };

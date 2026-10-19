@@ -129,6 +129,7 @@ final readonly class AssessmentFormDataService
                 'total_miscelaneous_fees' => (float) $tuition->total_miscelaneous_fees,
                 'assessment_adjustment' => (float) ($tuition->assessment_adjustment ?? 0),
                 'discount' => (float) $tuition->discount,
+                'discount_scope' => $configuration['discount_scope'] ?? 'lecture_only',
                 'downpayment' => (float) $tuition->downpayment,
                 'overall_tuition' => (float) $tuition->overall_tuition,
                 'total_balance' => (float) ($calculatedBalance ?? $tuition->total_balance),

@@ -16,7 +16,7 @@ use Illuminate\Validation\ValidationException;
 
 final readonly class EnrollmentPolicyResolver
 {
-    private const int CompilerRevision = 5;
+    private const int CompilerRevision = 6;
 
     public function __construct(private EnrollmentPolicyCompiler $compiler) {}
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Enrollment\EnrollmentDiscountCalculation;
 use App\Enrollment\EnrollmentFormPricing;
 use App\Enums\GradeEnum;
 use App\Models\Student;
@@ -71,7 +72,9 @@ final class EnrollmentServiceProvider extends ServiceProvider
         $totalModularFee = $totalModularSubjects * (float) $configuration['modular_fee'];
 
         $discount = (int) ($get('discount') ?? 0);
-        $discountedLecture = $totalLecture * (1 - $discount / 100);
+        $discounted = (new EnrollmentDiscountCalculation)->calculate($totalLecture, $totalLaboratory, $discount, (string) ($configuration['discount_scope'] ?? 'lecture_only'));
+        $discountedLecture = $discounted['lecture'];
+        $totalLaboratory = $discounted['laboratory'];
         $discountedTuition = $discountedLecture + $totalLaboratory + $totalModularFee;
 
         // Calculate total additional fees
@@ -160,8 +163,15 @@ final class EnrollmentServiceProvider extends ServiceProvider
         }
         $totalModularFee = $totalModularSubjects * (float) $configuration['modular_fee'];
 
-        // Apply discount only to the lecture portion, using the original/current lecture amount
-        $discountedLectures = $originalLecture * (1 - $discount / 100);
+        // Form laboratory aggregate is net after updateTotals. Rebuild gross from final
+        // subject fees for broader scopes rather than discounting the net twice.
+        if (($configuration['discount_scope'] ?? 'lecture_only') === 'lecture_and_laboratory') {
+            $totalLaboratory = (float) collect($subjectsEnrolled ?? [])->filter(fn (array $row): bool => ! empty($row['subject_id']) && empty($row['exclude_from_tuition']))
+                ->sum(fn (array $row): float => (float) ($row['laboratory'] ?? $row['laboratory_fee'] ?? 0));
+        }
+        $discounted = (new EnrollmentDiscountCalculation)->calculate($originalLecture, $totalLaboratory, $discount, (string) ($configuration['discount_scope'] ?? 'lecture_only'));
+        $discountedLectures = $discounted['lecture'];
+        $totalLaboratory = $discounted['laboratory'];
         $discountedTuition = $discountedLectures + $totalLaboratory + $totalModularFee; // Add the current lab total
 
         // Calculate total additional fees
@@ -185,6 +195,7 @@ final class EnrollmentServiceProvider extends ServiceProvider
 
         // Update the form fields
         $set('total_lectures', number_format($discountedLectures, 2, '.', ''));
+        $set('total_laboratory', number_format($totalLaboratory, 2, '.', ''));
         $set('Total_Tuition', number_format($discountedTuition, 2, '.', ''));
         $set('miscellaneous', number_format($miscellaneousFee, 2, '.', '')); // Set misc fee
 

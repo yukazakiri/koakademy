@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enrollment\EnrollmentDiscountCalculation;
 use App\Enrollment\EnrollmentFeeCalculator;
 use App\Enrollment\EnrollmentFeePolicy;
 use App\Models\FeeScheduleVersion;
@@ -117,6 +118,7 @@ final readonly class AssessmentCalculationService
             additionalFees: $additionalFees,
             discountPercentage: $discountPercentage,
             totalFees: $approvedTotal,
+            discountScope: (string) ($configuration['discount_scope'] ?? 'lecture_only'),
         );
 
         return [
@@ -136,7 +138,7 @@ final readonly class AssessmentCalculationService
     }
 
     /**
-     * Single authority for assessment component calculations with lecture-only discount.
+     * Assessment component calculation with explicit discount scope.
      *
      * @return array{
      *     gross_lecture: float,
@@ -161,6 +163,7 @@ final readonly class AssessmentCalculationService
         float $additionalFees,
         int $discountPercentage = 0,
         ?float $totalFees = null,
+        string $discountScope = 'lecture_only',
     ): array {
         $discountPercentage = max(0, min(100, $discountPercentage));
         $grossLecture = round($grossLecture, 2);
@@ -169,9 +172,10 @@ final readonly class AssessmentCalculationService
         $miscellaneous = round($miscellaneous, 2);
         $additionalFees = round($additionalFees, 2);
 
-        // Lecture-only discount rule with standard centavo rounding
-        $discountAmount = round($grossLecture * ($discountPercentage / 100), 2);
-        $discountedLecture = round($grossLecture - $discountAmount, 2);
+        $discounted = (new EnrollmentDiscountCalculation)->calculate($grossLecture, $laboratory, $discountPercentage, $discountScope);
+        $discountAmount = $discounted['amount'];
+        $discountedLecture = $discounted['lecture'];
+        $laboratory = $discounted['laboratory'];
 
         $totalTuition = round($discountedLecture + $laboratory + $modular, 2);
         $calculatedTotal = round($totalTuition + $miscellaneous + $additionalFees, 2);

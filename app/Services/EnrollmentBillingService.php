@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enrollment\EnrollmentDiscountCalculation;
 use App\Enrollment\EnrollmentFeeCalculator;
 use App\Enrollment\EnrollmentFeePolicy;
 use App\Models\PaymentAllocation;
@@ -249,7 +250,9 @@ final class EnrollmentBillingService
         }
 
         $discount = (int) $existingTuition->discount;
-        $discountedLecture = $totalLecture * (1 - $discount / 100);
+        $discounted = (new EnrollmentDiscountCalculation)->calculate($totalLecture, $totalLaboratory, $discount, (string) ($configuration['discount_scope'] ?? 'lecture_only'));
+        $discountedLecture = $discounted['lecture'];
+        $totalLaboratory = $discounted['laboratory'];
         $totalTuition = $discountedLecture + $totalLaboratory + $totalModularFee;
         $miscellaneous = (float) $existingTuition->total_miscelaneous_fees;
         $additionalFeesTotal = (float) $enrollment->additionalFees->sum('amount');

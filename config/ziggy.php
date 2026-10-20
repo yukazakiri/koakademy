@@ -11,13 +11,10 @@ declare(strict_types=1);
  *
  * `only` is an allowlist of route NAMES, not uri patterns.
  *
- * The list is verified against the source by tests/Feature/ZiggyRouteManifestTest.php, which
- * greps resources/js for route() and routeName= calls plus the app/ routes that reach the front
- * end as Inertia props (queue hrefs, the desk switcher), and fails if any of them is missing
- * from here. Add the name in the same change that introduces the call, or the test will fail.
- *
- * Names reached through a dynamic `route(routeName)` in a data table are covered too: the test
- * reads those `routeName = "..."` defaults and props as well.
+ * Add each name in the same change that introduces a frontend route() call,
+ * including names selected dynamically (for example, global search result pages).
+ * tests/Unit/ZiggyRouteManifestTest.php guards the global search routes used by
+ * every portal so missing entries cannot silently disable the command palette.
  */
 return [
     'only' => [
@@ -189,6 +186,8 @@ return [
         'administrators.scheduling-analytics.schedules.update',
         'administrators.scheduling-analytics.students.schedule',
         'administrators.scheduling-analytics.students.search',
+        'administrators.search',
+        'administrators.search.results',
         'administrators.settings.newsletter.index',
         'administrators.settings.payment-workspace.update',
         'administrators.settings.tuition-adjustment-workspace.update',
@@ -294,6 +293,10 @@ return [
         'faculty.classes.posts.update',
         'faculty.classes.students.move.accept',
         'faculty.schedule',
+        'faculty.search.classes',
+        'faculty.search.results',
+        'faculty.search.students',
+        'faculty.students.show',
 
         // filament
         'filament.admin.resources.accounts.create',
@@ -336,6 +339,8 @@ return [
         'social.auth.redirect',
 
         // student
+        'student.search',
+        'student.search.results',
         'student.tuition.index',
         'student.tuition.soa',
         'student.tuition.soa.issuances.download',

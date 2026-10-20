@@ -1,3 +1,10 @@
+/**
+ * Assessment print preview.
+ *
+ * This page deliberately renders without the admin shell, so the command palette
+ * is not mounted here: a search overlay has no place on a document that is about
+ * to be printed.
+ */
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Head, usePage } from "@inertiajs/react";

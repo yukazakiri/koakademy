@@ -45,7 +45,7 @@ final class FacultyGlobalSearchController extends Controller
             abort(403);
         }
 
-        $faculty = Faculty::where('email', $user->email)->first();
+        $faculty = $this->globalSearch->facultyFor($user);
 
         if (! $faculty) {
             abort(403);

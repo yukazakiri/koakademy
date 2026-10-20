@@ -172,7 +172,22 @@ final class Course extends Model
             'id' => (int) $this->id,
             'code' => $this->code,
             'title' => $this->title,
-            'department' => $this->department?->code,
+        ];
+    }
+
+    /**
+     * Related records whose columns global search should match as well.
+     *
+     * Only real columns belong in `toSearchableArray()` — the engine searches
+     * those keys as columns. A program is also looked up by its department code,
+     * which lives on another table.
+     *
+     * @return array<string, list<string>>
+     */
+    public function searchableRelations(): array
+    {
+        return [
+            'department' => ['code', 'name'],
         ];
     }
 

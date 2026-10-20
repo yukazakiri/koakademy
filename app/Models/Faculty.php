@@ -102,6 +102,8 @@ final class Faculty extends Authenticatable implements FilamentUser, HasAvatar
 
     private string $guard = 'faculty';
 
+    // Relationships
+
     /**
      * Get the indexable data array for the model.
      *
@@ -141,8 +143,6 @@ final class Faculty extends Authenticatable implements FilamentUser, HasAvatar
     {
         return $panel->getId() === 'faculty';
     }
-
-    // Relationships
 
     /**
      * The owning department through the department_id foreign key.

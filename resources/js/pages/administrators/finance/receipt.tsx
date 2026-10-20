@@ -1,3 +1,10 @@
+/**
+ * Receipt preview and print surface.
+ *
+ * This page deliberately renders without the admin shell, so the command palette
+ * is not mounted here: a search overlay has no place on a document that is about
+ * to be printed.
+ */
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";

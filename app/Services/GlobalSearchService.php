@@ -22,11 +22,16 @@ use Illuminate\Support\Collection;
 /**
  * Shared behaviour for the portal global (command palette) searches.
  *
- * Every portal searches a different slice of the database, but they agree on how
+ * Every portal searches a different slice of the [REDACTED], but they agree on how
  * a query is normalised, how wide each result group may be, and how a record is
  * shaped for the palette. Keeping those rules here stops the portals drifting
  * apart — they previously disagreed on result shape, on the matching engine, and
  * on whether the academic period was applied at all.
+ *
+ * The palette previews: `search*` returns a few rows per group. The full-page
+ * results views paginate: `paginate*` returns one group as a paginator. Both
+ * paths shape rows through the same builder, so a row's `url` — the one place a
+ * destination is decided — is identical in the palette and on the results page.
  *
  * Constraints are always applied through the Scout `query()` callback. Scout
  * skips `where()` / `whereIn()` constraints as soon as a `query()` callback is
@@ -37,14 +42,14 @@ final class GlobalSearchService
     /** Queries shorter than this return nothing: one letter matches everything. */
     public const int MIN_QUERY_LENGTH = 2;
 
-    /** Rows per group when the palette shows every group at once. */
+    /** Rows per group when a portal previews every group at once. */
     public const int RESULT_LIMIT = 5;
 
-    /** Rows when the palette is narrowed to one group. */
+    /** Rows when a portal endpoint is narrowed to a single group. */
     public const int EXPANDED_RESULT_LIMIT = 20;
 
     /** @var list<string> */
-    public const array ADMINISTRATOR_GROUPS = ['students', 'classes', 'users', 'faculty', 'enrollments'];
+    public const array ADMINISTRATOR_GROUPS = ['students', 'classes', 'users', 'faculty', 'enrollments', 'courses'];
 
     /** @var list<string> */
     public const array FACULTY_GROUPS = ['classes', 'students'];
@@ -54,6 +59,16 @@ final class GlobalSearchService
 
     /** How many matching students we look up when resolving related records. */
     private const int RELATED_MATCH_LIMIT = 50;
+
+    /**
+     * The faculty record behind a portal user.
+     *
+     * Faculty accounts are linked by email; there is no `user_id` column.
+     */
+    public function facultyFor(User $user): ?Faculty
+    {
+        return Faculty::query()->where('email', $user->email)->first();
+    }
 
     /**
      * Trim and validate a raw query string.
@@ -112,23 +127,53 @@ final class GlobalSearchService
         $limit = $this->limitFor($type);
 
         if ($type === 'all' || $type === 'students') {
-            $results['students'] = $this->administratorStudents($query, $limit);
+            $results['students'] = Student::search($query)
+                ->query($this->administratorStudentScope())
+                ->take($limit)
+                ->get()
+                ->map(fn (Student $student): array => $this->administratorStudentRow($student))
+                ->values()
+                ->all();
         }
 
         if ($type === 'all' || $type === 'classes') {
-            $results['classes'] = $this->administratorClasses($query, $limit);
+            $results['classes'] = $this->classResults(
+                $query,
+                $limit,
+                $this->administratorClassScope(),
+                fn (Classes $class): array => $this->administratorClassRow($class),
+            );
         }
 
         if ($type === 'all' || $type === 'users') {
-            $results['users'] = $this->users($query, $limit);
+            $results['users'] = User::search($query)
+                ->take($limit)
+                ->get()
+                ->map(fn (User $user): array => $this->administratorUserRow($user))
+                ->values()
+                ->all();
         }
 
         if ($type === 'all' || $type === 'faculty') {
-            $results['faculty'] = $this->faculty($query, $limit);
+            $results['faculty'] = Faculty::search($query)
+                ->take($limit)
+                ->get()
+                ->map(fn (Faculty $faculty): array => $this->administratorFacultyRow($faculty))
+                ->values()
+                ->all();
         }
 
         if ($type === 'all' || $type === 'enrollments') {
             $results['enrollments'] = $this->administratorEnrollments($query, $limit);
+        }
+
+        if ($type === 'all' || $type === 'courses') {
+            $results['courses'] = Course::search($query)
+                ->take($limit)
+                ->get()
+                ->map(fn (Course $course): array => $this->administratorCourseRow($course))
+                ->values()
+                ->all();
         }
 
         return $results;
@@ -150,32 +195,23 @@ final class GlobalSearchService
 
         return match ($group) {
             'students' => Student::search($query)
-                ->query(fn (Builder $builder): Builder => $builder->with(['Course']))
+                ->query($this->administratorStudentScope())
                 ->paginate($perPage)
-                ->through(fn (Student $student): array => $this->studentSummary($student) + [
-                    'type' => $student->student_type instanceof StudentType ? $student->student_type->value : (is_string($student->student_type) ? $student->student_type : null),
-                    'status' => $student->status instanceof StudentStatus ? $student->status->value : (is_string($student->status) ? $student->status : null),
-                ]),
+                ->through(fn (Student $student): array => $this->administratorStudentRow($student)),
             'classes' => Classes::search($query)
-                ->query(fn (Builder $builder): Builder => $builder
-                    ->currentAcademicPeriod()
-                    ->with(['Subject', 'SubjectByCodeFallback', 'ShsSubject', 'faculty', 'Room'])
-                    ->withCount('class_enrollments'))
+                ->query($this->administratorClassScope())
                 ->paginate($perPage)
-                ->through(fn (Classes $class): array => $this->classSummary($class) + [
-                    'faculty' => $class->faculty?->full_name ?? 'TBA',
-                    'students_count' => (int) ($class->class_enrollments_count ?? 0),
-                    'maximum_slots' => (int) ($class->maximum_slots ?? 0),
-                    'room' => $class->Room?->name ?? 'TBA',
-                    'courses' => $class->formatted_course_codes ?? 'N/A',
-                ]),
+                ->through(fn (Classes $class): array => $this->administratorClassRow($class)),
             'users' => User::search($query)
                 ->paginate($perPage)
-                ->through(fn (User $user): array => $this->userSummary($user)),
+                ->through(fn (User $user): array => $this->administratorUserRow($user)),
             'faculty' => Faculty::search($query)
                 ->paginate($perPage)
-                ->through(fn (Faculty $faculty): array => $this->facultySummary($faculty)),
+                ->through(fn (Faculty $faculty): array => $this->administratorFacultyRow($faculty)),
             'enrollments' => $this->paginateAdministratorEnrollments($query, $perPage),
+            'courses' => Course::search($query)
+                ->paginate($perPage)
+                ->through(fn (Course $course): array => $this->administratorCourseRow($course)),
             default => $this->emptyPaginator($perPage),
         };
     }
@@ -194,14 +230,43 @@ final class GlobalSearchService
         $limit = $this->limitFor($type);
 
         if ($type === 'all' || $type === 'classes') {
-            $results['classes'] = $this->facultyClasses($faculty, $query, $limit);
+            $results['classes'] = $this->classResults(
+                $query,
+                $limit,
+                $this->facultyClassScope($faculty),
+                fn (Classes $class): array => $this->facultyClassRow($class),
+            );
         }
 
         if ($type === 'all' || $type === 'students') {
-            $results['students'] = $this->facultyStudents($faculty, $query, $limit);
+            $students = Student::search($query)
+                ->query($this->facultyStudentScope($faculty))
+                ->take($limit)
+                ->get();
+
+            $results['students'] = $this->facultyStudentRows($students, $faculty);
         }
 
         return $results;
+    }
+
+    /**
+     * @return LengthAwarePaginator<int, array<string, mixed>>
+     */
+    public function paginateFaculty(Faculty $faculty, ?string $query, string $group, int $perPage = 20): LengthAwarePaginator
+    {
+        if ($query === null) {
+            return $this->emptyPaginator($perPage);
+        }
+
+        return match ($group) {
+            'classes' => Classes::search($query)
+                ->query($this->facultyClassScope($faculty))
+                ->paginate($perPage)
+                ->through(fn (Classes $class): array => $this->facultyClassRow($class)),
+            'students' => $this->paginateFacultyStudents($faculty, $query, $perPage),
+            default => $this->emptyPaginator($perPage),
+        };
     }
 
     /**
@@ -215,25 +280,81 @@ final class GlobalSearchService
             return $results;
         }
 
+        $studentId = $this->studentIdFor($user);
+
         $limit = $this->limitFor($type);
 
+        // Subjects and courses are portal-wide; only the student's own records
+        // need a linked student row.
         if ($type === 'all' || $type === 'subjects') {
-            $results['subjects'] = $this->subjects($query, $limit);
+            $results['subjects'] = Subject::search($query)
+                ->take($limit)
+                ->get()
+                ->map(fn (Subject $subject): array => $this->studentSubjectRow($subject))
+                ->values()
+                ->all();
         }
 
-        if ($type === 'all' || $type === 'classes') {
-            $results['classes'] = $this->studentClasses($user, $query, $limit);
+        if (($type === 'all' || $type === 'classes') && $studentId !== null) {
+            $results['classes'] = $this->classResults(
+                $query,
+                $limit,
+                $this->studentClassScope((int) $studentId),
+                fn (Classes $class): array => $this->studentClassRow($class),
+            );
         }
 
         if ($type === 'all' || $type === 'courses') {
-            $results['courses'] = $this->courses($query, $limit);
+            $results['courses'] = Course::search($query)
+                ->take($limit)
+                ->get()
+                ->map(fn (Course $course): array => $this->studentCourseRow($course))
+                ->values()
+                ->all();
         }
 
-        if ($type === 'all' || $type === 'enrollments') {
-            $results['enrollments'] = $this->studentEnrollments($user, $query, $limit);
+        if (($type === 'all' || $type === 'enrollments') && $studentId !== null) {
+            $results['enrollments'] = StudentEnrollment::search($query)
+                ->query($this->studentEnrollmentScope((int) $studentId))
+                ->take($limit)
+                ->get()
+                ->map(fn (StudentEnrollment $enrollment): array => $this->studentEnrollmentRow($enrollment))
+                ->values()
+                ->all();
         }
 
         return $results;
+    }
+
+    /**
+     * @return LengthAwarePaginator<int, array<string, mixed>>
+     */
+    public function paginateStudent(User $user, ?string $query, string $group, int $perPage = 20): LengthAwarePaginator
+    {
+        $studentId = $this->studentIdFor($user);
+        $needsStudentRecord = in_array($group, ['classes', 'enrollments'], true);
+
+        if ($query === null || ($needsStudentRecord && $studentId === null)) {
+            return $this->emptyPaginator($perPage);
+        }
+
+        return match ($group) {
+            'subjects' => Subject::search($query)
+                ->paginate($perPage)
+                ->through(fn (Subject $subject): array => $this->studentSubjectRow($subject)),
+            'classes' => Classes::search($query)
+                ->query($this->studentClassScope((int) $studentId))
+                ->paginate($perPage)
+                ->through(fn (Classes $class): array => $this->studentClassRow($class)),
+            'courses' => Course::search($query)
+                ->paginate($perPage)
+                ->through(fn (Course $course): array => $this->studentCourseRow($course)),
+            'enrollments' => StudentEnrollment::search($query)
+                ->query($this->studentEnrollmentScope((int) $studentId))
+                ->paginate($perPage)
+                ->through(fn (StudentEnrollment $enrollment): array => $this->studentEnrollmentRow($enrollment)),
+            default => $this->emptyPaginator($perPage),
+        };
     }
 
     /**
@@ -271,22 +392,61 @@ final class GlobalSearchService
     }
 
     /**
-     * @return LengthAwarePaginator<int, array<string, mixed>>
+     * The students an administrator search matched, with their enrollment scope.
+     * Enrollment rows are resolved from these ids, so both paths agree on which
+     * students count as a match.
      */
-    private function paginateAdministratorEnrollments(string $query, int $perPage): LengthAwarePaginator
+    private function administratorEnrollmentQuery(string $query): ?Builder
     {
         $studentIds = Student::search($query)
             ->take(self::RELATED_MATCH_LIMIT)
             ->get()
             ->modelKeys();
 
+        if ($studentIds === []) {
+            return null;
+        }
+
         return StudentEnrollment::query()
-            ->whereIn('student_id', $studentIds === [] ? [-1] : $studentIds)
+            ->whereIn('student_id', $studentIds)
             ->currentAcademicPeriod()
             ->with(['student', 'course'])
-            ->orderByDesc('id')
+            ->orderByDesc('id');
+    }
+
+    /**
+     * @return LengthAwarePaginator<int, array<string, mixed>>
+     */
+    private function paginateAdministratorEnrollments(string $query, int $perPage): LengthAwarePaginator
+    {
+        $enrollments = $this->administratorEnrollmentQuery($query);
+
+        if ($enrollments === null) {
+            return $this->emptyPaginator($perPage);
+        }
+
+        return $enrollments
             ->paginate($perPage)
-            ->through(fn (StudentEnrollment $enrollment): array => $this->enrollmentSummary($enrollment));
+            ->through(fn (StudentEnrollment $enrollment): array => $this->administratorEnrollmentRow($enrollment));
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function administratorEnrollments(string $query, int $limit): array
+    {
+        $enrollments = $this->administratorEnrollmentQuery($query);
+
+        if ($enrollments === null) {
+            return [];
+        }
+
+        return $enrollments
+            ->limit($limit)
+            ->get()
+            ->map(fn (StudentEnrollment $enrollment): array => $this->administratorEnrollmentRow($enrollment))
+            ->values()
+            ->all();
     }
 
     /**
@@ -298,156 +458,103 @@ final class GlobalSearchService
     }
 
     /**
-     * @return list<array<string, mixed>>
+     * @return Closure(Builder): Builder
      */
-    private function administratorStudents(string $query, int $limit): array
+    private function administratorStudentScope(): Closure
     {
-        return Student::search($query)
-            ->query(fn (Builder $builder): Builder => $builder->with(['Course']))
-            ->take($limit)
-            ->get()
-            ->map(function (Student $student): array {
-                $type = $student->student_type;
-                $status = $student->status;
-
-                return $this->studentSummary($student) + [
-                    'type' => $type instanceof StudentType ? $type->value : (is_string($type) ? $type : null),
-                    'status' => $status instanceof StudentStatus ? $status->value : (is_string($status) ? $status : null),
-                ];
-            })
-            ->values()
-            ->all();
+        return fn (Builder $builder): Builder => $builder->with(['Course']);
     }
 
     /**
-     * @return list<array<string, mixed>>
+     * @return Closure(Builder): Builder
      */
-    private function administratorClasses(string $query, int $limit): array
+    private function administratorClassScope(): Closure
     {
-        return $this->classResults(
-            $query,
-            $limit,
-            fn (Builder $builder): Builder => $builder
-                ->currentAcademicPeriod()
-                ->with([
-                    'Subject',
-                    'SubjectByCodeFallback',
-                    'ShsSubject',
-                    'faculty',
-                    'Room',
-                ])
-                ->withCount('class_enrollments'),
-            fn (Classes $class): array => $this->classSummary($class) + [
-                'faculty' => $class->faculty?->full_name ?? 'TBA',
-                'students_count' => (int) ($class->class_enrollments_count ?? 0),
-                'maximum_slots' => (int) ($class->maximum_slots ?? 0),
-                'room' => $class->Room?->name ?? 'TBA',
-                'courses' => $class->formatted_course_codes ?? 'N/A',
-            ],
-        );
-    }
-
-    /**
-     * @return list<array<string, mixed>>
-     */
-    private function users(string $query, int $limit): array
-    {
-        return User::search($query)
-            ->take($limit)
-            ->get()
-            ->map(fn (User $user): array => $this->userSummary($user))
-            ->values()
-            ->all();
-    }
-
-    /**
-     * @return list<array<string, mixed>>
-     */
-    private function faculty(string $query, int $limit): array
-    {
-        return Faculty::search($query)
-            ->take($limit)
-            ->get()
-            ->map(fn (Faculty $faculty): array => $this->facultySummary($faculty))
-            ->values()
-            ->all();
-    }
-
-    /**
-     * Enrollments are matched through their student: the palette row is labelled
-     * with the student's name, and enrollment columns themselves are not
-     * meaningful search terms.
-     *
-     * @return list<array<string, mixed>>
-     */
-    private function administratorEnrollments(string $query, int $limit): array
-    {
-        $studentIds = Student::search($query)
-            ->take(self::RELATED_MATCH_LIMIT)
-            ->get()
-            ->modelKeys();
-
-        if ($studentIds === []) {
-            return [];
-        }
-
-        return StudentEnrollment::query()
-            ->whereIn('student_id', $studentIds)
+        return fn (Builder $builder): Builder => $builder
             ->currentAcademicPeriod()
-            ->with(['student', 'course'])
-            ->orderByDesc('id')
-            ->limit($limit)
-            ->get()
-            ->map(fn (StudentEnrollment $enrollment): array => $this->enrollmentSummary($enrollment))
-            ->values()
-            ->all();
+            ->with(['Subject', 'SubjectByCodeFallback', 'ShsSubject', 'faculty', 'Room'])
+            ->withCount('class_enrollments');
     }
 
     /**
-     * @return list<array<string, mixed>>
+     * @return Closure(Builder): Builder
      */
-    private function facultyClasses(Faculty $faculty, string $query, int $limit): array
+    private function facultyClassScope(Faculty $faculty): Closure
     {
-        return $this->classResults(
-            $query,
-            $limit,
-            fn (Builder $builder): Builder => $builder
-                ->where('faculty_id', $faculty->id)
-                ->currentAcademicPeriod()
-                ->with(['Subject', 'SubjectByCodeFallback', 'ShsSubject']),
-            fn (Classes $class): array => $this->classSummary($class),
-        );
+        return fn (Builder $builder): Builder => $builder
+            ->where('faculty_id', $faculty->id)
+            ->currentAcademicPeriod()
+            ->with(['Subject', 'SubjectByCodeFallback', 'ShsSubject']);
     }
 
     /**
-     * @return list<array<string, mixed>>
+     * @return Closure(Builder): Builder
      */
-    private function facultyStudents(Faculty $faculty, string $query, int $limit): array
+    private function facultyStudentScope(Faculty $faculty): Closure
     {
         $taughtClassIds = fn (Builder $builder): Builder => $builder
             ->where('faculty_id', $faculty->id)
             ->currentAcademicPeriod();
 
-        $students = Student::search($query)
-            ->query(fn (Builder $builder): Builder => $builder
-                ->whereHas('classEnrollments.class', $taughtClassIds)
-                ->with(['Course'])
-                ->withCount([
-                    'classEnrollments as class_count' => fn (Builder $enrollmentQuery): Builder => $enrollmentQuery
-                        ->whereHas('class', $taughtClassIds),
-                ])
-                ->orderBy('last_name')
-                ->orderBy('first_name'))
-            ->take($limit)
-            ->get();
+        return fn (Builder $builder): Builder => $builder
+            ->whereHas('classEnrollments.class', $taughtClassIds)
+            ->with(['Course'])
+            ->withCount([
+                'classEnrollments as class_count' => fn (Builder $enrollmentQuery): Builder => $enrollmentQuery
+                    ->whereHas('class', $taughtClassIds),
+            ])
+            ->orderBy('last_name')
+            ->orderBy('first_name');
+    }
 
+    /**
+     * A student may only discover the classes they are enrolled in.
+     *
+     * @return Closure(Builder): Builder
+     */
+    private function studentClassScope(int $studentId): Closure
+    {
+        return fn (Builder $builder): Builder => $builder
+            ->whereHas('class_enrollments', fn (Builder $enrollmentQuery): Builder => $enrollmentQuery
+                ->where('student_id', $studentId))
+            ->with(['Subject', 'SubjectByCodeFallback', 'ShsSubject']);
+    }
+
+    /**
+     * @return Closure(Builder): Builder
+     */
+    private function studentEnrollmentScope(int $studentId): Closure
+    {
+        return fn (Builder $builder): Builder => $builder
+            ->where('student_id', $studentId)
+            ->with(['student', 'course']);
+    }
+
+    /**
+     * @return LengthAwarePaginator<int, array<string, mixed>>
+     */
+    private function paginateFacultyStudents(Faculty $faculty, string $query, int $perPage): LengthAwarePaginator
+    {
+        $paginator = Student::search($query)
+            ->query($this->facultyStudentScope($faculty))
+            ->paginate($perPage);
+
+        // Section labels need one query for the whole page, not one per row.
+        $rows = $this->facultyStudentRows($paginator->getCollection(), $faculty);
+
+        return $paginator->setCollection(collect($rows));
+    }
+
+    /**
+     * @param  Collection<int, Student>  $students
+     * @return list<array<string, mixed>>
+     */
+    private function facultyStudentRows(Collection $students, Faculty $faculty): array
+    {
         $sectionLabels = $this->sectionLabelsFor($students, $faculty);
 
         return $students
-            ->map(fn (Student $student): array => $this->studentSummary($student) + [
-                'class_count' => (int) ($student->class_count ?? 0),
-                'sections' => $sectionLabels->get($student->id, []),
-            ])
+            ->map(fn (Student $student): array => $this->facultyStudentRow($student, $sectionLabels->get($student->id, [])))
             ->values()
             ->all();
     }
@@ -488,29 +595,6 @@ final class GlobalSearchService
     }
 
     /**
-     * @return list<array<string, mixed>>
-     */
-    private function studentClasses(User $user, string $query, int $limit): array
-    {
-        $studentId = $this->studentIdFor($user);
-
-        // A student may only discover classes they are enrolled in.
-        if ($studentId === null) {
-            return [];
-        }
-
-        return $this->classResults(
-            $query,
-            $limit,
-            fn (Builder $builder): Builder => $builder
-                ->whereHas('class_enrollments', fn (Builder $enrollmentQuery): Builder => $enrollmentQuery
-                    ->where('student_id', $studentId))
-                ->with(['Subject', 'SubjectByCodeFallback', 'ShsSubject']),
-            fn (Classes $class): array => $this->classSummary($class),
-        );
-    }
-
-    /**
      * Class search shared by every portal.
      *
      * Subject code/title matching comes from `Classes::searchableRelations()`, so
@@ -527,64 +611,6 @@ final class GlobalSearchService
             ->take($limit)
             ->get()
             ->map($map)
-            ->values()
-            ->all();
-    }
-
-    /**
-     * @return list<array<string, mixed>>
-     */
-    private function studentEnrollments(User $user, string $query, int $limit): array
-    {
-        $studentId = $this->studentIdFor($user);
-
-        if ($studentId === null) {
-            return [];
-        }
-
-        return StudentEnrollment::search($query)
-            ->query(fn (Builder $builder): Builder => $builder
-                ->where('student_id', $studentId)
-                ->with(['student', 'course']))
-            ->take($limit)
-            ->get()
-            ->map(fn (StudentEnrollment $enrollment): array => $this->enrollmentSummary($enrollment))
-            ->values()
-            ->all();
-    }
-
-    /**
-     * @return list<array<string, mixed>>
-     */
-    private function subjects(string $query, int $limit): array
-    {
-        return Subject::search($query)
-            ->take($limit)
-            ->get()
-            ->map(fn (Subject $subject): array => [
-                'id' => $subject->id,
-                'code' => $subject->code,
-                'title' => $subject->title,
-                'units' => $subject->units,
-            ])
-            ->values()
-            ->all();
-    }
-
-    /**
-     * @return list<array<string, mixed>>
-     */
-    private function courses(string $query, int $limit): array
-    {
-        return Course::search($query)
-            ->take($limit)
-            ->get()
-            ->map(fn (Course $course): array => [
-                'id' => $course->id,
-                'code' => $course->code,
-                'title' => $course->title,
-                'department' => $course->department,
-            ])
             ->values()
             ->all();
     }
@@ -621,6 +647,130 @@ final class GlobalSearchService
         return $class->isShs()
             ? $class->ShsSubject
             : ($class->Subject ?: $class->SubjectByCodeFallback);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function administratorStudentRow(Student $student): array
+    {
+        $type = $student->student_type;
+        $status = $student->status;
+
+        return $this->studentSummary($student) + [
+            'type' => $type instanceof StudentType ? $type->value : (is_string($type) ? $type : null),
+            'status' => $status instanceof StudentStatus ? $status->value : (is_string($status) ? $status : null),
+            'url' => route('administrators.students.show', $student),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function administratorClassRow(Classes $class): array
+    {
+        return $this->classSummary($class) + [
+            'faculty' => $class->faculty?->full_name ?? 'TBA',
+            'students_count' => (int) ($class->class_enrollments_count ?? 0),
+            'maximum_slots' => (int) ($class->maximum_slots ?? 0),
+            'room' => $class->Room?->name ?? 'TBA',
+            'courses' => $class->formatted_course_codes ?? 'N/A',
+            'url' => route('administrators.classes.show', $class),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function administratorUserRow(User $user): array
+    {
+        return $this->userSummary($user) + ['url' => route('administrators.users.edit', $user)];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function administratorFacultyRow(Faculty $faculty): array
+    {
+        return $this->facultySummary($faculty) + ['url' => route('administrators.faculties.show', $faculty)];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function administratorEnrollmentRow(StudentEnrollment $enrollment): array
+    {
+        return $this->enrollmentSummary($enrollment) + ['url' => route('administrators.enrollments.show', $enrollment)];
+    }
+
+    /**
+     * Programs are what an administrator can open from a course hit.
+     *
+     * @return array<string, mixed>
+     */
+    private function administratorCourseRow(Course $course): array
+    {
+        return $this->courseSummary($course) + ['url' => route('administrators.curriculum.programs.show', $course)];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function facultyClassRow(Classes $class): array
+    {
+        return $this->classSummary($class) + ['url' => route('faculty.classes.show', $class)];
+    }
+
+    /**
+     * @param  list<string>  $sections
+     * @return array<string, mixed>
+     */
+    private function facultyStudentRow(Student $student, array $sections): array
+    {
+        return $this->studentSummary($student) + [
+            'class_count' => (int) ($student->class_count ?? 0),
+            'sections' => $sections,
+            'url' => route('faculty.students.show', $student),
+        ];
+    }
+
+    /**
+     * Subjects have no page of their own in the student portal, so a hit opens the
+     * class list filtered to that subject code.
+     *
+     * @return array<string, mixed>
+     */
+    private function studentSubjectRow(Subject $subject): array
+    {
+        return $this->subjectSummary($subject) + [
+            'url' => route('student.classes.index', ['search' => $subject->code]),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function studentClassRow(Classes $class): array
+    {
+        return $this->classSummary($class) + ['url' => route('student.classes.show', $class)];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function studentCourseRow(Course $course): array
+    {
+        return $this->courseSummary($course) + [
+            'url' => route('student.classes.index', ['search' => $course->code]),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function studentEnrollmentRow(StudentEnrollment $enrollment): array
+    {
+        return $this->enrollmentSummary($enrollment) + ['url' => route('student.tuition.index')];
     }
 
     /**
@@ -664,6 +814,32 @@ final class GlobalSearchService
             'status' => $enrollment->status,
             'school_year' => $enrollment->school_year,
             'semester' => (string) $enrollment->semester,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function subjectSummary(Subject $subject): array
+    {
+        return [
+            'id' => $subject->id,
+            'code' => $subject->code,
+            'title' => $subject->title,
+            'units' => $subject->units,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function courseSummary(Course $course): array
+    {
+        return [
+            'id' => $course->id,
+            'code' => $course->code,
+            'title' => $course->title,
+            'department' => $course->department?->code,
         ];
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\UserRole;
 use App\Models\Classes;
 use App\Models\Course;
+use App\Models\Department;
 use App\Models\GeneralSetting;
 use App\Models\Room;
 use App\Models\School;
@@ -138,7 +139,55 @@ it('returns every result group so the palette always has a stable shape', functi
             'users',
             'faculty',
             'enrollments',
+            'courses',
         ]);
+});
+
+it('gives every row the destination the palette and the results page share', function (): void {
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+
+    $course = Course::factory()->create(['code' => 'BSN', 'title' => 'Bachelor of Science in Nursing']);
+
+    $student = Student::factory()->create([
+        'student_id' => 301001,
+        'first_name' => 'Destination',
+        'last_name' => 'Row',
+        'course_id' => $course->id,
+        'school_id' => 1,
+        'institution_id' => 1,
+    ]);
+
+    actingAs($admin);
+
+    $studentRow = getJson(portalUrlForAdministrators('/administrators/search?q=Destination+Row&type=students'))
+        ->assertOk()
+        ->json('students.0');
+
+    expect($studentRow['url'])->toContain("/administrators/students/{$student->id}");
+
+    $courseRow = getJson(portalUrlForAdministrators('/administrators/search?q=BSN&type=courses'))
+        ->assertOk()
+        ->json('courses.0');
+
+    expect($courseRow['url'])->toContain("/administrators/curriculum/programs/{$course->id}");
+});
+
+it('finds a program by its department code', function (): void {
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+
+    $department = Department::factory()->withNameAndCode('Nursing', 'NURS')->create(['school_id' => 1]);
+
+    $course = Course::factory()->create([
+        'code' => 'BSN',
+        'title' => 'Bachelor of Science in Nursing',
+        'department_id' => $department->id,
+    ]);
+
+    actingAs($admin);
+
+    getJson(portalUrlForAdministrators('/administrators/search?q='.$department->code.'&type=courses'))
+        ->assertOk()
+        ->assertJsonPath('courses.0.id', $course->id);
 });
 
 it('ignores queries shorter than the minimum length', function (): void {
@@ -189,6 +238,15 @@ it('paginates the full results page for a single group', function (): void {
             ->component('administrators/search/results')
             ->where('group', 'classes')
             ->has('results.data', 0));
+
+    // Programs are searchable too, and each row links to the program page.
+    get(portalUrlForAdministrators('/administrators/search/results?q=Computer&type=courses'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page): Assert => $page
+            ->component('administrators/search/results')
+            ->where('group', 'courses')
+            ->has('results.data', 1)
+            ->where('results.data.0.url', fn (string $url): bool => str_contains($url, '/administrators/curriculum/programs/')));
 });
 
 it('renders the results page empty state without a query', function (): void {

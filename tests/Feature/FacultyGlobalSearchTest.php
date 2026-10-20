@@ -13,9 +13,12 @@ use App\Models\Student;
 use App\Models\Subject;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache;
+use Inertia\Testing\AssertableInertia as Assert;
 
 use function Pest\Laravel\actingAs;
+use function Pest\Laravel\get;
 use function Pest\Laravel\getJson;
+use function Pest\Laravel\withoutVite;
 
 beforeEach(function (): void {
     Cache::forget('general_settings_id');
@@ -148,4 +151,43 @@ it('rejects faculty search for non faculty users', function (): void {
     actingAs($studentUser);
 
     getJson('/faculty/search/classes?q=anything')->assertForbidden();
+});
+
+it('renders the faculty results page with a destination per row', function (): void {
+    withoutVite();
+
+    [$user, $faculty] = facultyPortalUser();
+
+    $subject = Subject::factory()->create(['code' => 'IT801', 'title' => 'Paginated Subject']);
+    $course = Course::factory()->create(['code' => 'BSIT', 'title' => 'BSIT']);
+
+    $class = Classes::factory()->create([
+        'subject_id' => $subject->id,
+        'subject_code' => $subject->code,
+        'section' => 'C',
+        'classification' => 'college',
+        'school_year' => '2025 - 2026',
+        'semester' => 1,
+        'faculty_id' => $faculty->id,
+        'course_codes' => [(string) $course->id],
+    ]);
+
+    actingAs($user);
+
+    get('/faculty/search/results?q=Paginated&type=classes')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page): Assert => $page
+            ->component('faculty/search/results')
+            ->where('group', 'classes')
+            ->where('query', 'Paginated')
+            ->has('results.data', 1)
+            ->where('results.data.0.url', fn (string $url): bool => str_contains($url, "/faculty/classes/{$class->id}")));
+});
+
+it('rejects the faculty results page for non faculty users', function (): void {
+    $studentUser = User::factory()->create(['role' => UserRole::Student]);
+
+    actingAs($studentUser);
+
+    get('/faculty/search/results?q=anything')->assertForbidden();
 });

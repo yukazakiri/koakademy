@@ -15,6 +15,7 @@ export type ClassSearchResult = {
     maximum_slots?: number;
     room?: string;
     courses?: string;
+    url?: string | null;
 };
 
 export type UserSearchResult = {
@@ -23,6 +24,7 @@ export type UserSearchResult = {
     email: string;
     role: string;
     avatar: string | null;
+    url?: string | null;
 };
 
 export type FacultySearchResult = {
@@ -31,6 +33,7 @@ export type FacultySearchResult = {
     email: string;
     department: string;
     avatar: string | null;
+    url?: string | null;
 };
 
 export type EnrollmentSearchResult = {
@@ -41,6 +44,7 @@ export type EnrollmentSearchResult = {
     status: string;
     school_year: string;
     semester: string;
+    url?: string | null;
 };
 
 export type StudentSearchResult = {
@@ -54,6 +58,7 @@ export type StudentSearchResult = {
     status?: string | null;
     class_count?: number;
     sections?: string[];
+    url?: string | null;
 };
 
 export type SubjectSearchResult = {
@@ -61,6 +66,7 @@ export type SubjectSearchResult = {
     code: string;
     title: string;
     units: number;
+    url?: string | null;
 };
 
 export type CourseSearchResult = {
@@ -68,6 +74,7 @@ export type CourseSearchResult = {
     code: string;
     title: string;
     department: string;
+    url?: string | null;
 };
 
 /** Result groups the palette can render. */

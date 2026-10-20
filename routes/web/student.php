@@ -8,6 +8,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\StatementOfAccountIssuanceController;
 use App\Http\Controllers\StudentDashboardController;
 use App\Http\Controllers\StudentGlobalSearchController;
+use App\Http\Controllers\StudentGlobalSearchResultsController;
 use App\Http\Controllers\StudentTuitionUpdateRequestController;
 use App\Http\Controllers\UserSettingController;
 use Illuminate\Support\Facades\Route;
@@ -29,6 +30,9 @@ Route::middleware(['auth', 'student.only', 'ensure.feature'])->prefix('student')
     Route::get('/search', StudentGlobalSearchController::class)
         ->middleware('throttle:global-search')
         ->name('search');
+    Route::get('/search/results', StudentGlobalSearchResultsController::class)
+        ->middleware('throttle:global-search')
+        ->name('search.results');
 
     // Settings (Semester/School Year Selector)
     Route::put('/settings/semester', [UserSettingController::class, 'updateSemester'])->name('settings.semester.update');

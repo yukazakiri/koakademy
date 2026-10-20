@@ -13,9 +13,12 @@ use App\Models\StudentEnrollment;
 use App\Models\Subject;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache;
+use Inertia\Testing\AssertableInertia as Assert;
 
 use function Pest\Laravel\actingAs;
+use function Pest\Laravel\get;
 use function Pest\Laravel\getJson;
+use function Pest\Laravel\withoutVite;
 
 beforeEach(function (): void {
     Cache::forget('general_settings_id');
@@ -107,4 +110,41 @@ it('keeps enrollment results limited to the signed in student', function (): voi
 
     expect(array_column($enrollments, 'id'))->toBe([$own->id])
         ->and(array_column($enrollments, 'id'))->not->toContain($foreign->id);
+});
+
+it('renders the student results page with a destination per row', function (): void {
+    withoutVite();
+
+    $user = User::factory()->create(['role' => UserRole::Student]);
+
+    $student = Student::factory()->create([
+        'user_id' => $user->id,
+        'email' => $user->email,
+        'school_id' => 1,
+        'institution_id' => 1,
+    ]);
+
+    $subject = Subject::factory()->create(['code' => 'IT901', 'title' => 'Paginated Subject']);
+
+    $class = Classes::factory()->create([
+        'subject_id' => $subject->id,
+        'subject_code' => $subject->code,
+        'section' => 'A',
+        'classification' => 'college',
+        'school_year' => '2025 - 2026',
+        'semester' => 1,
+    ]);
+
+    ClassEnrollment::factory()->create(['class_id' => $class->id, 'student_id' => $student->id]);
+
+    actingAs($user);
+
+    get('/student/search/results?q=Paginated&type=classes')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page): Assert => $page
+            ->component('student/search/results')
+            ->where('group', 'classes')
+            ->where('query', 'Paginated')
+            ->has('results.data', 1)
+            ->where('results.data.0.url', fn (string $url): bool => str_contains($url, "/student/classes/{$class->id}")));
 });

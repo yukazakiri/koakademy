@@ -38,7 +38,6 @@ import {
     RESULT_LIMIT,
     type SearchGroup,
     type SearchScope,
-    type SearchType,
     type StudentSearchResult,
     useGlobalSearch,
 } from "@/hooks/use-global-search";
@@ -58,6 +57,13 @@ const GROUP_HEADINGS: Record<SearchGroup, string> = {
     enrollments: "Enrollments",
     subjects: "Subjects",
     courses: "Courses",
+};
+
+/** Each portal's full-page results view, where "View all" lands. */
+const RESULTS_ROUTES: Record<SearchScope, string> = {
+    administrator: "administrators.search.results",
+    faculty: "faculty.search.results",
+    student: "student.search.results",
 };
 
 type ActionItem = {
@@ -224,7 +230,6 @@ export function GlobalCommandContent({
 }) {
     const { props } = usePage<PageProps>();
     const [searchText, setSearchText] = useState("");
-    const [activeType, setActiveType] = useState<SearchType>("all");
     const [recentSearches, setRecentSearches] = useState<string[]>(readRecentSearches);
     const [studentDialogOpen, setStudentDialogOpen] = useState(false);
     const [studentDialogLoading, setStudentDialogLoading] = useState(false);
@@ -251,7 +256,6 @@ export function GlobalCommandContent({
     const { status, results, total, retry } = useGlobalSearch({
         scope: searchScope,
         query: searchText,
-        type: activeType,
         enabled: isOpen,
     });
     const allowedAdminRoutes = useMemo(
@@ -634,8 +638,7 @@ export function GlobalCommandContent({
 
     async function openStudentDetails(student: StudentSearchResult): Promise<void> {
         if (searchScope === "administrator") {
-            if (onSelect) onSelect();
-            adminVisit(`/administrators/students/${student.id}`);
+            visitResult(student.url);
             return;
         }
 
@@ -680,8 +683,6 @@ export function GlobalCommandContent({
 
     const hint = isMacPlatform() ? "⌘ K" : "Ctrl K";
     const { students, classes, users, faculty, enrollments, subjects, courses } = results;
-    const isExpanded = activeType !== "all";
-    const showsGroup = (group: SearchGroup): boolean => ! isExpanded || activeType === group;
     const showNoResults =
         status === "success" && total === 0 && filteredNavigation.length === 0 && filteredProductivity.length === 0;
     const statusMessage =
@@ -697,35 +698,37 @@ export function GlobalCommandContent({
         setRecentSearches(persistRecentSearch(searchText));
     }
 
-    function expandGroup(group: SearchGroup): void {
-        // The administrator portal has a real results page, so long result sets
-        // paginate there instead of growing inside the palette.
-        if (searchScope === "administrator") {
-            rememberSearch();
-            if (onSelect) onSelect();
-            router.visit(route("administrators.search.results", { q: searchText.trim(), type: group }));
+    function openResults(group: SearchGroup): void {
+        // The palette previews a few rows per group; long result sets paginate on
+        // the portal's results page, which every portal now has.
+        rememberSearch();
+        if (onSelect) onSelect();
+        router.visit(route(RESULTS_ROUTES[searchScope], { q: searchText.trim(), type: group }));
+    }
+
+    /**
+     * Rows carry the destination the server chose, so every portal links the same
+     * record to the same place from the palette and from its results page.
+     */
+    function visitResult(url: string | null | undefined): void {
+        if (! url) return;
+
+        rememberSearch();
+        if (onSelect) onSelect();
+
+        if (isAdminContext) {
+            adminVisit(url);
             return;
         }
 
-        setActiveType(group);
-    }
-
-    function collapseGroups(): void {
-        setActiveType("all");
+        router.visit(url);
     }
 
     return (
         <>
             <CommandInput
                 value={searchText}
-                onValueChange={(value: string) => {
-                    setSearchText(value);
-
-                    // Narrowing the palette is scoped to the group you were looking at.
-                    if (activeType !== "all" && value.trim().length === 0) {
-                        setActiveType("all");
-                    }
-                }}
+                onValueChange={setSearchText}
                 placeholder={searchPlaceholder}
             />
             <CommandList className={listClassName} aria-busy={status === "loading"}>
@@ -767,39 +770,21 @@ export function GlobalCommandContent({
                     </CommandGroup>
                 ) : null}
 
-                {isExpanded ? (
-                    <CommandGroup heading={`All ${GROUP_HEADINGS[activeType as SearchGroup]}`}>
-                        <CommandItem value="back-to-all-groups" onSelect={collapseGroups}>
-                            <span className="ml-2 flex-1">Back to all groups</span>
-                        </CommandItem>
-                    </CommandGroup>
-                ) : null}
-
                 {showNoResults ? <CommandEmpty>No matches found.</CommandEmpty> : null}
 
 
                 {/* Search Results First */}
-                {showsGroup("enrollments") && enrollments.length > 0 && (
+                {enrollments.length > 0 && (
                     <CommandGroup heading="Enrollments">
                         {enrollments.map((result) => (
                             <CommandItem
                                 key={`enrollment:${result.id}`}
                                 onMouseEnter={() => {
-                                    if (isAdminContext) {
-                                        prefetchAdministratorDestination(`/administrators/enrollments/${result.id}`);
+                                    if (isAdminContext && result.url) {
+                                        prefetchAdministratorDestination(result.url);
                                     }
                                 }}
-                                onSelect={() => {
-                                    rememberSearch();
-                                    if (onSelect) onSelect();
-                                    if (isAdminContext) {
-                                        adminVisit(`/administrators/enrollments/${result.id}`);
-                                    } else if (searchScope === "student") {
-                                        router.visit(`/student/tuition`);
-                                    } else {
-                                        router.visit("/tuition");
-                                    }
-                                }}
+                                onSelect={() => visitResult(result.url)}
                                 className="flex items-center gap-3 py-3"
                             >
                                 <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400">
@@ -814,14 +799,14 @@ export function GlobalCommandContent({
                                 {result.status && <div className="text-muted-foreground ml-auto text-xs font-medium">{result.status}</div>}
                             </CommandItem>
                         ))}
-                        {!isExpanded && enrollments.length >= RESULT_LIMIT ? (
-                            <ViewAllRow group="enrollments" onSelect={() => expandGroup("enrollments")} />
+                        {enrollments.length >= RESULT_LIMIT ? (
+                            <ViewAllRow group="enrollments" onSelect={() => openResults("enrollments")} />
                         ) : null}
                     </CommandGroup>
                 )}
 
 
-                {showsGroup("students") && students.length > 0 && (
+                {students.length > 0 && (
                     <CommandGroup heading="Students">
                         {students.map((result) => (
                             <CommandItem
@@ -844,33 +829,23 @@ export function GlobalCommandContent({
                                 {result.status && <div className="text-muted-foreground ml-auto text-xs font-medium">{result.status}</div>}
                             </CommandItem>
                         ))}
-                        {!isExpanded && students.length >= RESULT_LIMIT ? (
-                            <ViewAllRow group="students" onSelect={() => expandGroup("students")} />
+                        {students.length >= RESULT_LIMIT ? (
+                            <ViewAllRow group="students" onSelect={() => openResults("students")} />
                         ) : null}
                     </CommandGroup>
                 )}
 
-                {showsGroup("classes") && classes.length > 0 && (
+                {classes.length > 0 && (
                     <CommandGroup heading="Classes">
                         {classes.map((result) => (
                             <CommandItem
                                 key={`class:${result.id}`}
                                 onMouseEnter={() => {
-                                    if (isAdminContext) {
-                                        prefetchAdministratorDestination(`/administrators/classes/${result.id}`);
+                                    if (isAdminContext && result.url) {
+                                        prefetchAdministratorDestination(result.url);
                                     }
                                 }}
-                                onSelect={() => {
-                                    rememberSearch();
-                                    if (onSelect) onSelect();
-                                    if (searchScope === "administrator") {
-                                        adminVisit(`/administrators/classes/${result.id}`);
-                                    } else if (searchScope === "faculty") {
-                                        router.visit(route("faculty.classes.show", { class: result.id }));
-                                    } else {
-                                        router.visit(route("student.classes.show", { class: result.id }));
-                                    }
-                                }}
+                                onSelect={() => visitResult(result.url)}
                                 className="flex items-center gap-3 py-3"
                             >
                                 <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400">
@@ -896,22 +871,21 @@ export function GlobalCommandContent({
                                 ) : null}
                             </CommandItem>
                         ))}
-                        {!isExpanded && classes.length >= RESULT_LIMIT ? (
-                            <ViewAllRow group="classes" onSelect={() => expandGroup("classes")} />
+                        {classes.length >= RESULT_LIMIT ? (
+                            <ViewAllRow group="classes" onSelect={() => openResults("classes")} />
                         ) : null}
                     </CommandGroup>
                 )}
 
-                {showsGroup("faculty") && faculty.length > 0 && (
+                {faculty.length > 0 && (
                     <CommandGroup heading="Faculty">
                         {faculty.map((result) => (
                             <CommandItem
                                 key={`faculty:${result.id}`}
-                                onMouseEnter={() => prefetchAdministratorDestination(`/administrators/faculties/${result.id}`)}
-                                onSelect={() => {
-                                    if (onSelect) onSelect();
-                                    adminVisit(`/administrators/faculties/${result.id}`);
+                                onMouseEnter={() => {
+                                    if (result.url) prefetchAdministratorDestination(result.url);
                                 }}
+                                onSelect={() => visitResult(result.url)}
                                 className="flex items-center gap-3 py-3"
                             >
                                 {result.avatar ? (
@@ -929,22 +903,21 @@ export function GlobalCommandContent({
                                 </div>
                             </CommandItem>
                         ))}
-                        {!isExpanded && faculty.length >= RESULT_LIMIT ? (
-                            <ViewAllRow group="faculty" onSelect={() => expandGroup("faculty")} />
+                        {faculty.length >= RESULT_LIMIT ? (
+                            <ViewAllRow group="faculty" onSelect={() => openResults("faculty")} />
                         ) : null}
                     </CommandGroup>
                 )}
 
-                {showsGroup("users") && users.length > 0 && (
+                {users.length > 0 && (
                     <CommandGroup heading="Users">
                         {users.map((result) => (
                             <CommandItem
                                 key={`user:${result.id}`}
-                                onMouseEnter={() => prefetchAdministratorDestination(`/administrators/users/${result.id}/edit`)}
-                                onSelect={() => {
-                                    if (onSelect) onSelect();
-                                    adminVisit(`/administrators/users/${result.id}/edit`);
+                                onMouseEnter={() => {
+                                    if (result.url) prefetchAdministratorDestination(result.url);
                                 }}
+                                onSelect={() => visitResult(result.url)}
                                 className="flex items-center gap-3 py-3"
                             >
                                 {result.avatar ? (
@@ -962,22 +935,18 @@ export function GlobalCommandContent({
                                 </div>
                             </CommandItem>
                         ))}
-                        {!isExpanded && users.length >= RESULT_LIMIT ? (
-                            <ViewAllRow group="users" onSelect={() => expandGroup("users")} />
+                        {users.length >= RESULT_LIMIT ? (
+                            <ViewAllRow group="users" onSelect={() => openResults("users")} />
                         ) : null}
                     </CommandGroup>
                 )}
 
-                {showsGroup("subjects") && subjects.length > 0 && (
+                {subjects.length > 0 && (
                     <CommandGroup heading="Subjects">
                         {subjects.map((result) => (
                             <CommandItem
                                 key={`subject:${result.id}`}
-                                onSelect={() => {
-                                    rememberSearch();
-                                    if (onSelect) onSelect();
-                                    router.visit(`/student/classes?search=${encodeURIComponent(result.code)}`);
-                                }}
+                                onSelect={() => visitResult(result.url)}
                                 className="flex items-center gap-3 py-3"
                             >
                                 <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-teal-100 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400">
@@ -991,22 +960,18 @@ export function GlobalCommandContent({
                                 </div>
                             </CommandItem>
                         ))}
-                        {!isExpanded && subjects.length >= RESULT_LIMIT ? (
-                            <ViewAllRow group="subjects" onSelect={() => expandGroup("subjects")} />
+                        {subjects.length >= RESULT_LIMIT ? (
+                            <ViewAllRow group="subjects" onSelect={() => openResults("subjects")} />
                         ) : null}
                     </CommandGroup>
                 )}
 
-                {showsGroup("courses") && courses.length > 0 && (
+                {courses.length > 0 && (
                     <CommandGroup heading="Courses">
                         {courses.map((result) => (
                             <CommandItem
                                 key={`course:${result.id}`}
-                                onSelect={() => {
-                                    rememberSearch();
-                                    if (onSelect) onSelect();
-                                    router.visit(`/student/classes?search=${encodeURIComponent(result.code)}`);
-                                }}
+                                onSelect={() => visitResult(result.url)}
                                 className="flex items-center gap-3 py-3"
                             >
                                 <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400">
@@ -1020,8 +985,8 @@ export function GlobalCommandContent({
                                 </div>
                             </CommandItem>
                         ))}
-                        {!isExpanded && courses.length >= RESULT_LIMIT ? (
-                            <ViewAllRow group="courses" onSelect={() => expandGroup("courses")} />
+                        {courses.length >= RESULT_LIMIT ? (
+                            <ViewAllRow group="courses" onSelect={() => openResults("courses")} />
                         ) : null}
                     </CommandGroup>
                 )}

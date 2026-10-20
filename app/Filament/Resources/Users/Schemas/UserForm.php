@@ -131,23 +131,22 @@ final class UserForm
                 ->columns(2)
                 ->schema([
                     Select::make('role')
-                        ->label('User Role')
+                        ->label('System role')
                         ->options(fn (): array => self::getAvailableRoles())
                         ->required()
                         ->default(UserRole::User->value)
                         ->native(false)
                         ->live()
                         ->searchable()
-                        ->helperText('Primary role determining access level'),
-                    CheckboxList::make('roles')
-                        ->label('Additional Permissions')
-                        ->relationship(
-                            name: 'roles',
-                            titleAttribute: 'name',
-                        )
+                        ->helperText('Assigned through Spatie; determines portal, hierarchy and permissions'),
+                    CheckboxList::make('additional_access')
+                        ->label('Additional access')
+                        ->options(fn (): array => \Spatie\Permission\Models\Role::query()->where('guard_name', 'web')->get()->filter(fn ($role): bool => \App\Services\UserSystemRoleService::fromName($role->name) === null)->pluck('name', 'id')->all())
+                        ->afterStateHydrated(fn ($component, $record) => $component->state($record?->roles->filter(fn ($role): bool => \App\Services\UserSystemRoleService::fromName($role->name) === null)->pluck('id')->all() ?? []))
+                        ->dehydrated(false)
                         ->searchable()
                         ->columns(2)
-                        ->helperText('Spatie permission roles for fine-grained access'),
+                        ->helperText('Custom permission bundles only; not a second system role'),
                 ]),
 
             Section::make('Feature Flags')

@@ -298,3 +298,82 @@ it('upgrades existing directory viewers with detail access but no editing powers
         $this->get(portalUrlForAdministrators('/administrators/users/'.$target->id.'/edit'))->assertForbidden();
     }
 });
+
+it('allows a Spatie super administrator with a non administrative primary role to view user details', function (string $roleName): void {
+    config(['filament-shield.super_admin.name' => $roleName]);
+    $admin = User::factory()->create(['role' => UserRole::User]);
+    $admin->assignRole(Role::findOrCreate($roleName, 'web'));
+    $target = User::factory()->create(['role' => UserRole::Student]);
+
+    $response = $this->actingAs($admin)->get(portalUrlForAdministrators('/administrators/users'))->assertOk();
+    $account = collect($response->inertiaProps('users.data'))->firstWhere('id', $target->id);
+    expect($account['capabilities']['view'])->toBeTrue();
+    $this->get(portalUrlForAdministrators('/administrators/users/'.$target->id))->assertOk();
+})->with(['super_admin', 'custom_super_admin']);
+
+it('does not admit an ordinary user to administrator user details', function (): void {
+    $ordinary = User::factory()->create(['role' => UserRole::User]);
+    $target = User::factory()->create();
+    $this->actingAs($ordinary)->get(portalUrlForAdministrators('/administrators/users/'.$target->id))->assertForbidden();
+});
+
+it('uses Spatie system role for hierarchy serialization and portal behavior', function (): void {
+    $user = User::factory()->create(['role' => UserRole::User]);
+    $user->assignRole(Role::findOrCreate('super_admin', 'web'));
+    $target = User::factory()->create(['role' => UserRole::Admin]);
+    expect($user->role)->toBe(UserRole::SuperAdmin)
+        ->and($user->toArray()['role'])->toBe('super_admin')
+        ->and($user->hasHigherAuthorityThan($target))->toBeTrue()
+        ->and($user->canAccessAdminPortal())->toBeTrue();
+});
+
+it('changes one system role while preserving custom access', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Student]);
+    $custom = Role::findOrCreate('Library support bundle', 'web');
+    $user->assignRole(Role::findOrCreate('student', 'web'), $custom);
+    app(App\Services\UserSystemRoleService::class)->assign($user, UserRole::Instructor);
+    expect($user->fresh()->role)->toBe(UserRole::Instructor)
+        ->and($user->fresh()->getRoleNames()->all())->toContain('instructor', 'Library support bundle')
+        ->not->toContain('student')
+        ->and($user->fresh()->getRawOriginal('role'))->toBe('instructor');
+});
+
+it('reports conflicting roles without changing grants', function (): void {
+    $user = User::factory()->create(['role' => UserRole::User]);
+    $user->assignRole(Role::findOrCreate('super_admin', 'web'), Role::findOrCreate('student', 'web'));
+    $this->artisan('users:reconcile-system-roles')->expectsOutputToContain('multiple system roles')->assertFailed();
+    expect($user->fresh()->getRoleNames()->all())->toContain('super_admin', 'student')
+        ->and($user->fresh()->getRawOriginal('role'))->toBe('user');
+});
+
+it('reconciles unambiguous Spatie assignments and legacy only accounts explicitly', function (): void {
+    $spatie = User::factory()->create(['role' => UserRole::User]);
+    $spatie->assignRole(Role::findOrCreate('super_admin', 'web'));
+    $legacy = User::factory()->create(['role' => UserRole::Student]);
+    $this->artisan('users:reconcile-system-roles')->assertSuccessful();
+    expect($spatie->fresh()->getRawOriginal('role'))->toBe('user')
+        ->and($legacy->fresh()->getRoleNames())->toBeEmpty();
+    $this->artisan('users:reconcile-system-roles', ['--apply' => true])->assertSuccessful();
+    expect($spatie->fresh()->getRawOriginal('role'))->toBe('super_admin')
+        ->and($legacy->fresh()->hasRole('student'))->toBeTrue();
+});
+
+it('saves one Spatie system role from the administrator selector', function (): void {
+    $admin = User::factory()->create(['role' => UserRole::Developer]);
+    $target = User::factory()->create(['role' => UserRole::Student]);
+    $target->assignRole(Role::findOrCreate('student', 'web'));
+    $this->actingAs($admin)->put(portalUrlForAdministrators('/administrators/users/'.$target->id), [
+        'name' => $target->name, 'email' => $target->email, 'role' => 'instructor', 'roles' => [],
+    ])->assertRedirect();
+    expect($target->fresh()->role)->toBe(UserRole::Instructor)
+        ->and($target->fresh()->getRoleNames()->all())->toBe(['instructor']);
+});
+
+it('offers only custom bundles in additional access', function (): void {
+    $admin = User::factory()->create(['role' => UserRole::Developer]);
+    Role::findOrCreate('student', 'web');
+    Role::findOrCreate('Super Administrator', 'web');
+    Role::findOrCreate('Library support bundle', 'web');
+    $response = $this->actingAs($admin)->get(portalUrlForAdministrators('/administrators/users/create'))->assertOk();
+    expect(collect($response->inertiaProps('permissions'))->pluck('name')->all())->toContain('Library support bundle')->not->toContain('student', 'Super Administrator');
+});

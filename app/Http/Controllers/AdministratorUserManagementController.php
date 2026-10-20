@@ -12,6 +12,7 @@ use App\Models\School;
 use App\Models\User;
 use App\Services\OnlineUserPresenceService;
 use App\Services\UserSecurityActivityService;
+use App\Services\UserSystemRoleService;
 use Carbon\CarbonPeriod;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -41,9 +42,6 @@ final class AdministratorUserManagementController extends Controller
                     $q->where('name', 'like', "%{$search}%")
                         ->orWhere('email', 'like', "%{$search}%");
                 });
-            })
-            ->when($request->role, function ($query, $role): void {
-                $query->where('role', $role);
             })
             ->when($request->school_id, function ($query, $schoolId): void {
                 $query->where('school_id', $schoolId);
@@ -78,17 +76,19 @@ final class AdministratorUserManagementController extends Controller
             'delete' => $this->userHasAnyPermission(Auth::user(), 'Delete:User'),
         ];
         // Get all users for client-side pagination with TanStack Table.
-        $users = $query->get()->each(function (User $user) use ($permissions): void {
-            $user->setAttribute('last_login_at', $user->getAttribute('last_login_at'));
-            $user->setAttribute('mfa_configured', filled($user->app_authentication_secret) || $user->hasEmailAuthentication() || $user->passkeys_count > 0);
-            $user->setAttribute('capabilities', [
-                'view' => $permissions['view'],
-                'manage_access' => $permissions['update'] && Auth::user()->hasHigherAuthorityThan($user) && ! request()->session()->has('impersonator_id'),
-                'update' => $permissions['update'] && Auth::user()->hasHigherAuthorityThan($user),
-                'delete' => $permissions['delete'] && Auth::user()->hasHigherAuthorityThan($user),
-            ]);
-            $user->setAttribute('security_two_factor_enabled', (bool) ($user->getAttribute('security_two_factor_enabled') ?? true));
-        });
+        $users = $query->get()
+            ->when($request->filled('role'), fn ($users) => $users->filter(fn (User $user): bool => $user->role->value === $request->input('role')))
+            ->values()->each(function (User $user) use ($permissions): void {
+                $user->setAttribute('last_login_at', $user->getAttribute('last_login_at'));
+                $user->setAttribute('mfa_configured', filled($user->app_authentication_secret) || $user->hasEmailAuthentication() || $user->passkeys_count > 0);
+                $user->setAttribute('capabilities', [
+                    'view' => $permissions['view'],
+                    'manage_access' => $permissions['update'] && Auth::user()->hasHigherAuthorityThan($user) && ! request()->session()->has('impersonator_id'),
+                    'update' => $permissions['update'] && Auth::user()->hasHigherAuthorityThan($user),
+                    'delete' => $permissions['delete'] && Auth::user()->hasHigherAuthorityThan($user),
+                ]);
+                $user->setAttribute('security_two_factor_enabled', (bool) ($user->getAttribute('security_two_factor_enabled') ?? true));
+            });
 
         $onlineUserIds = $this->onlineUserPresence->onlineUserIds();
         $onlineUsers = count($onlineUserIds);
@@ -139,7 +139,7 @@ final class AdministratorUserManagementController extends Controller
                 'id' => $user->id, 'name' => $user->name, 'email' => $user->email,
                 'role' => $user->role->getLabel(),
                 'school' => $user->school?->name, 'department' => $user->department?->name,
-                'roles' => $user->roles->pluck('name'),
+                'roles' => $user->roles->filter(fn (Role $role): bool => UserSystemRoleService::fromName($role->name) === null)->pluck('name')->values(),
                 'email_verified_at' => $user->email_verified_at?->toIso8601String(),
                 'created_at' => $user->created_at?->toIso8601String(),
                 'last_login_at' => $user->last_login_at?->toIso8601String(),
@@ -170,7 +170,7 @@ final class AdministratorUserManagementController extends Controller
             'roles' => $this->getAvailableRoles(),
             'schools' => School::all(['id', 'name']),
             'departments' => Department::all(['id', 'name', 'school_id']),
-            'permissions' => Role::all(['id', 'name']),
+            'permissions' => Role::query()->where('guard_name', 'web')->get(['id', 'name'])->filter(fn (Role $role): bool => UserSystemRoleService::fromName($role->name) === null)->values(),
             'user' => $this->getUserProps(),
         ]);
     }
@@ -189,9 +189,7 @@ final class AdministratorUserManagementController extends Controller
 
         $user = User::create($data);
 
-        if (! empty($permissionRoles)) {
-            $user->roles()->sync($permissionRoles);
-        }
+        app(UserSystemRoleService::class)->assign($user, UserRole::from($data['role']), $permissionRoles);
 
         app(UserSecurityActivityService::class)->record($user, 'account_created', 'success', Auth::user());
 
@@ -214,7 +212,7 @@ final class AdministratorUserManagementController extends Controller
             'roles' => $this->getAvailableRoles(),
             'schools' => School::all(['id', 'name']),
             'departments' => Department::all(['id', 'name', 'school_id']),
-            'permissions' => Role::all(['id', 'name']),
+            'permissions' => Role::query()->where('guard_name', 'web')->get(['id', 'name'])->filter(fn (Role $role): bool => UserSystemRoleService::fromName($role->name) === null)->values(),
             'auth_user' => $this->getUserProps(),
         ]);
     }
@@ -238,9 +236,7 @@ final class AdministratorUserManagementController extends Controller
 
         $user->update($data);
 
-        if (isset($request->roles)) { // Only sync if roles key is present in request
-            $user->roles()->sync($permissionRoles);
-        }
+        app(UserSystemRoleService::class)->assign($user, UserRole::from($data['role']), $request->has('roles') ? $permissionRoles : null);
 
         app(UserSecurityActivityService::class)->record($user, 'account_updated', 'success', Auth::user());
 
@@ -493,21 +489,13 @@ final class AdministratorUserManagementController extends Controller
      */
     private function getRoleDistribution(int $totalUsers): array
     {
-        return DB::table('users')
-            ->select('role')
-            ->selectRaw('COUNT(*) as count')
-            ->whereNull('deleted_at')
-            ->groupBy('role')
-            ->orderByDesc('count')
-            ->get()
-            ->map(fn ($item): array => [
-                'role' => (string) $item->role,
-                'label' => UserRole::tryFrom((string) $item->role)?->getLabel() ?? str((string) $item->role)->replace('_', ' ')->title()->toString(),
-                'count' => (int) $item->count,
-                'percentage' => $this->percentageOf((int) $item->count, $totalUsers),
-            ])
-            ->values()
-            ->toArray();
+        return User::query()->with('roles')->get()->groupBy(fn (User $user): string => $user->role->value)
+            ->map(fn ($users, string $role): array => [
+                'role' => $role,
+                'label' => UserRole::from($role)->getLabel(),
+                'count' => $users->count(),
+                'percentage' => $this->percentageOf($users->count(), $totalUsers),
+            ])->sortByDesc('count')->values()->all();
     }
 
     /**
@@ -612,9 +600,7 @@ final class AdministratorUserManagementController extends Controller
             if ($role === null) {
                 $role = collect(UserRole::cases())->first(fn (UserRole $candidate): bool => $candidate->getLabel() === $assignedRole->name);
             }
-            if ($role !== null) {
-                abort_unless(in_array($role, $actor->role->getManageableRoles(), true), 403);
-            }
+            abort_if($role !== null, 403, 'Choose a system role using the System role selector, not Additional access.');
             foreach ($assignedRole->permissions as $permission) {
                 abort_unless($this->userHasAnyPermission($actor, $permission->name), 403);
             }

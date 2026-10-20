@@ -23,7 +23,7 @@ final class EnsureAdministrativePortalAccess
             return redirect('/login');
         }
 
-        if (! $user->role?->canAccessAdminPortal()) {
+        if (! $user->canAccessAdminPortal()) {
             abort(403);
         }
 

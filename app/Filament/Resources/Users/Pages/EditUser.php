@@ -27,7 +27,8 @@ final class EditUser extends EditRecord
 
     protected function afterSave(): void
     {
-        $state = $this->form->getState();
+        $state = $this->form->getRawState();
+        app(\App\Services\UserSystemRoleService::class)->assign($this->record, \App\Enums\UserRole::from($state['role']), $state['additional_access'] ?? []);
 
         if (! array_key_exists('feature_flags', $state)) {
             return;

@@ -353,11 +353,10 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
      */
     public function getRoleAttribute($value): UserRole
     {
-        if ($value === null || $value === '') {
-            return UserRole::User;
-        }
+        $assigned = app(\App\Services\UserSystemRoleService::class)->assigned($this);
 
-        return UserRole::tryFrom($value) ?? UserRole::User;
+        // Existing multiple system assignments use highest authority until explicitly reconciled.
+        return $assigned[0] ?? UserRole::tryFrom((string) $value) ?? UserRole::User;
     }
 
     /**
@@ -390,10 +389,8 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
     {
         $attributes = parent::attributesToArray();
 
-        // Convert role enum to string value for forms
-        if (isset($attributes['role']) && $attributes['role'] instanceof UserRole) {
-            $attributes['role'] = $attributes['role']->value;
-        }
+        // Always serialize the effective Spatie role rather than the legacy projection.
+        $attributes['role'] = $this->role->value;
 
         return $attributes;
     }
@@ -694,6 +691,11 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
 
     public function canAccessAdminPortal(): bool
     {
+        $superAdminRole = (string) config('filament-shield.super_admin.name', UserRole::SuperAdmin->value);
+        if ($this->hasAnyRole([$superAdminRole, UserRole::SuperAdmin->value, UserRole::Developer->value])) {
+            return true;
+        }
+
         if ($this->isAdministrative()) {
             return true;
         }

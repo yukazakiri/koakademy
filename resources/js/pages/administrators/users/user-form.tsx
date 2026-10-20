@@ -166,7 +166,7 @@ export function UserForm({
                             <Building2 aria-hidden="true" className="text-primary size-4" />
                             Organization
                         </CardTitle>
-                        <CardDescription>Set the account&apos;s primary role and academic placement.</CardDescription>
+                        <CardDescription>Set the account&apos;s system role and academic placement.</CardDescription>
                     </CardHeader>
                     <CardContent className="pt-4">
                         <FieldSet>
@@ -184,7 +184,7 @@ export function UserForm({
                                         ))}
                                     </SelectContent>
                                 </Select>
-                                <FieldDescription>The primary role should cover most of the user&apos;s responsibilities.</FieldDescription>
+                                <FieldDescription>The system role should cover most of the user&apos;s responsibilities.</FieldDescription>
                                 <FieldErrorMessage error={errors.role} />
                             </Field>
 
@@ -271,7 +271,7 @@ export function UserForm({
                             <ShieldCheck aria-hidden="true" className="text-primary size-4" />
                             Additional access
                         </CardTitle>
-                        <CardDescription>Attach direct roles only when the primary role needs an exception.</CardDescription>
+                        <CardDescription>Custom permission bundles only. System roles are managed by the System role selector above.</CardDescription>
                     </CardHeader>
                     <CardContent className="pt-4">
                         {permissions.length > 0 ? (
@@ -299,14 +299,16 @@ export function UserForm({
                                 })}
                             </div>
                         ) : (
-                            <p className="text-muted-foreground rounded-lg border border-dashed p-4 text-sm">No additional roles are available.</p>
+                            <p className="text-muted-foreground rounded-lg border border-dashed p-4 text-sm">
+                                No custom access bundles are available.
+                            </p>
                         )}
                     </CardContent>
                 </Card>
 
                 <div className="flex flex-col-reverse gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-end">
-                    <Button variant="outline" asChild>
-                        <Link href={route("administrators.users.index")}>Cancel</Link>
+                    <Button variant="outline" render={<Link href={route("administrators.users.index")} />} nativeButton={false}>
+                        Cancel
                     </Button>
                     <Button type="submit" disabled={!canSave}>
                         <Save aria-hidden="true" />
@@ -322,7 +324,7 @@ export function UserForm({
                     </CardHeader>
                     <CardContent className="space-y-4 pt-4">
                         <div className="space-y-1">
-                            <p className="text-muted-foreground text-xs">Primary role</p>
+                            <p className="text-muted-foreground text-xs">System role</p>
                             <p className="text-sm font-medium">{selectedRoleLabel}</p>
                         </div>
                         <div className="space-y-1">

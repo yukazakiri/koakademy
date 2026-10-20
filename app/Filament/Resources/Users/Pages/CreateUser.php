@@ -12,4 +12,10 @@ final class CreateUser extends CreateRecord
 {
     #[Override]
     protected static string $resource = UserResource::class;
+
+    protected function afterCreate(): void
+    {
+        $state = $this->form->getRawState();
+        app(\App\Services\UserSystemRoleService::class)->assign($this->record, \App\Enums\UserRole::from($state['role']), $state['additional_access'] ?? []);
+    }
 }

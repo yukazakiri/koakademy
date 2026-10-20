@@ -39,7 +39,7 @@ export default function UserEdit({ user, roles, schools, departments, permission
         department_id: user.department_id?.toString() || "",
         faculty_id_number: user.faculty_id_number || "",
         record_id: user.record_id || "",
-        roles: user.roles.map((role) => role.id),
+        roles: user.roles.filter((role) => permissions.some((permission) => permission.id === role.id)).map((role) => role.id),
     });
 
     const submit: FormEventHandler = (event) => {

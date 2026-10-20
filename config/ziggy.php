@@ -13,8 +13,8 @@ declare(strict_types=1);
  *
  * Add each name in the same change that introduces a frontend route() call,
  * including names selected dynamically (for example, global search result pages).
- * tests/Unit/ZiggyRouteManifestTest.php guards the global search routes used by
- * every portal so missing entries cannot silently disable the command palette.
+ * tests/Unit/ZiggyRouteManifestTest.php guards global search and administrator
+ * user management so missing entries cannot silently break frontend navigation.
  */
 return [
     'only' => [
@@ -261,14 +261,18 @@ return [
         'administrators.system-management.schools.update',
         'administrators.system-management.seo.update',
         'administrators.system-management.socialite.update',
+        'administrators.users.access.update',
         'administrators.users.create',
         'administrators.users.destroy',
         'administrators.users.edit',
         'administrators.users.impersonate',
         'administrators.users.index',
         'administrators.users.reset-password',
+        'administrators.users.sessions.destroy',
+        'administrators.users.show',
         'administrators.users.stop-impersonating',
         'administrators.users.store',
+        'administrators.users.tokens.destroy',
         'administrators.users.update',
         'administrators.users.verify-email',
 

@@ -18,8 +18,6 @@ use function Pest\Laravel\actingAs;
 use function Pest\Laravel\getJson;
 
 beforeEach(function (): void {
-    config()->set('scout.driver', 'collection');
-
     Cache::forget('general_settings_id');
 
     School::factory()->create(['id' => 1]);
@@ -95,4 +93,57 @@ it('returns current students, classes, and enrollments from the administrator gl
         ->assertOk()
         ->assertJsonPath('enrollments.0.id', $enrollment->id)
         ->assertJsonPath('enrollments.0.student_name', $student->full_name);
+});
+
+it('matches multi-word queries and falls back to all groups for unknown types', function (): void {
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+
+    $course = Course::factory()->create(['code' => 'BSED', 'title' => 'Bachelor of Secondary Education']);
+
+    $student = Student::factory()->create([
+        'student_id' => 205777,
+        'first_name' => 'Ramon',
+        'last_name' => 'Villanueva',
+        'middle_name' => 'Cruz',
+        'course_id' => $course->id,
+        'school_id' => 1,
+        'institution_id' => 1,
+    ]);
+
+    actingAs($admin);
+
+    // Both terms have to match, in any order and ignoring punctuation.
+    getJson(portalUrlForAdministrators('/administrators/search?q=Ramon+Villanueva&type=students'))
+        ->assertOk()
+        ->assertJsonPath('students.0.id', $student->id);
+
+    getJson(portalUrlForAdministrators('/administrators/search?q='.rawurlencode('Villanueva, Ramon').'&type=students'))
+        ->assertOk()
+        ->assertJsonPath('students.0.id', $student->id);
+});
+
+it('returns every result group so the palette always has a stable shape', function (): void {
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+
+    actingAs($admin);
+
+    getJson(portalUrlForAdministrators('/administrators/search?q=anything&type=nonsense'))
+        ->assertOk()
+        ->assertJsonStructure([
+            'students',
+            'classes',
+            'users',
+            'faculty',
+            'enrollments',
+        ]);
+});
+
+it('ignores queries shorter than the minimum length', function (): void {
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+
+    actingAs($admin);
+
+    getJson(portalUrlForAdministrators('/administrators/search?q=a&type=students'))
+        ->assertOk()
+        ->assertJsonPath('students', []);
 });

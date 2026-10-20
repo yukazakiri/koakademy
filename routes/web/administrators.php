@@ -171,7 +171,9 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/enrollments/reports/course-options', [AdministratorEnrollmentManagementController::class, 'reportCourseOptions'])->name('enrollments.reports.course-options');
 
         // Global Search (Administrator)
-        Route::get('/search', AdministratorGlobalSearchController::class)->name('search');
+        Route::get('/search', AdministratorGlobalSearchController::class)
+            ->middleware('throttle:global-search')
+            ->name('search');
 
         // Semester / School Year preferences (Administrator)
         Route::put('/settings/semester', [UserSettingController::class, 'updateSemester'])->name('settings.semester.update');

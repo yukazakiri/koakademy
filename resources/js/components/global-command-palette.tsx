@@ -13,11 +13,14 @@ import { getRoutesForRoleWithModules, type ModuleAdminRoute } from "@/config/adm
 import { adminVisit } from "@/lib/admin-navigation";
 import type { User } from "@/types/user";
 import { router, usePage } from "@inertiajs/react";
+import { route } from "ziggy-js";
 import {
     IconBell,
     IconCalendarEvent,
     IconCalendarStats,
     IconChecklist,
+    IconChevronRight,
+    IconClock,
     IconDownload,
     IconGridDots,
     IconHelp,
@@ -30,8 +33,32 @@ import {
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
+import {
+    MIN_QUERY_LENGTH,
+    RESULT_LIMIT,
+    type SearchGroup,
+    type SearchScope,
+    type SearchType,
+    type StudentSearchResult,
+    useGlobalSearch,
+} from "@/hooks/use-global-search";
+import { highlightSearchTerms } from "@/lib/highlight-search-terms";
+import { isAdministratorPortalRole, isFacultyPortalRole, normalizePortalRole } from "@/lib/portal-role";
 
 const OPEN_EVENT_NAME = "koakademy:commandPalette:open";
+const RECENT_SEARCHES_KEY = "koakademy:commandPalette:recentSearches";
+const MAX_RECENT_SEARCHES = 5;
+
+/** Group headings, in the order the palette renders them. */
+const GROUP_HEADINGS: Record<SearchGroup, string> = {
+    students: "Students",
+    classes: "Classes",
+    faculty: "Faculty",
+    users: "Users",
+    enrollments: "Enrollments",
+    subjects: "Subjects",
+    courses: "Courses",
+};
 
 type ActionItem = {
     id: string;
@@ -43,79 +70,14 @@ type ActionItem = {
     onSelect: () => void;
 };
 
-type ClassSearchResult = {
-    id: number;
-    record_title: string;
-    subject_code: string;
-    subject_title: string;
-    section: string;
-    school_year: string;
-    semester: string;
-    classification: string;
-    faculty?: string;
-    students_count?: number;
-    maximum_slots?: number;
-};
-
-type UserSearchResult = {
-    id: number;
-    name: string;
-    email: string;
-    role: string;
-    avatar: string | null;
-};
-
-type FacultySearchResult = {
-    id: string;
-    name: string;
-    email: string;
-    department: string;
-    avatar: string | null;
-};
-
-type EnrollmentSearchResult = {
-    id: number;
-    student_name: string;
-    course_code: string;
-    year_level: string;
-    status: string;
-    school_year: string;
-    semester: string;
-};
-
-type StudentSearchResult = {
-    id: number;
-    student_id: number | string;
-    name: string;
-    course: string | null;
-    course_title: string | null;
-    academic_year: string;
-    type: string | null;
-    status: string | null;
-};
-
-type SubjectSearchResult = {
-    id: number;
-    code: string;
-    title: string;
-    units: number;
-};
-
-type CourseSearchResult = {
-    id: number;
-    code: string;
-    title: string;
-    department: string;
-};
-
-interface PageProps {
+type PageProps = {
     auth?: {
         user?: User | null;
     };
     moduleAdminRoutes?: ModuleAdminRoute[];
     /** Role-scoped dashboard desks, already filtered by DashboardRegistry::navigationFor(). */
     deskRoutes?: ModuleAdminRoute[];
-}
+};
 
 type StudentPublicInfo = {
     id: number;
@@ -149,6 +111,38 @@ function setLocalStorageSafe(key: string, value: string): void {
     } catch {
         // ignore
     }
+}
+
+function readRecentSearches(): string[] {
+    try {
+        const parsed: unknown = JSON.parse(window.localStorage.getItem(RECENT_SEARCHES_KEY) ?? "[]");
+
+        return Array.isArray(parsed)
+            ? parsed.filter((value): value is string => typeof value === "string").slice(0, MAX_RECENT_SEARCHES)
+            : [];
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * Remember a query the user acted on, newest first and without duplicates.
+ */
+function persistRecentSearch(query: string): string[] {
+    const trimmed = query.trim();
+
+    if (trimmed.length < MIN_QUERY_LENGTH) {
+        return readRecentSearches();
+    }
+
+    const next = [trimmed, ...readRecentSearches().filter((value) => value.toLowerCase() !== trimmed.toLowerCase())].slice(
+        0,
+        MAX_RECENT_SEARCHES,
+    );
+
+    setLocalStorageSafe(RECENT_SEARCHES_KEY, JSON.stringify(next));
+
+    return next;
 }
 
 function prefetchAdministratorDestination(href: string): void {
@@ -206,6 +200,15 @@ function filterActions(actions: ActionItem[], query: string): ActionItem[] {
     });
 }
 
+function ViewAllRow({ group, onSelect }: { group: SearchGroup; onSelect: () => void }) {
+    return (
+        <CommandItem value={`view-all-${group}`} onSelect={onSelect} className="text-muted-foreground">
+            <IconChevronRight className="size-3.5" />
+            <span className="ml-2 flex-1 text-xs font-medium">View all {GROUP_HEADINGS[group].toLowerCase()}</span>
+        </CommandItem>
+    );
+}
+
 export function GlobalCommandContent({
     user,
     isOpen,
@@ -221,14 +224,8 @@ export function GlobalCommandContent({
 }) {
     const { props } = usePage<PageProps>();
     const [searchText, setSearchText] = useState("");
-    const [isSearching, setIsSearching] = useState(false);
-    const [classResults, setClassResults] = useState<ClassSearchResult[]>([]);
-    const [studentResults, setStudentResults] = useState<StudentSearchResult[]>([]);
-    const [userResults, setUserResults] = useState<UserSearchResult[]>([]);
-    const [facultyResults, setFacultyResults] = useState<FacultySearchResult[]>([]);
-    const [enrollmentResults, setEnrollmentResults] = useState<EnrollmentSearchResult[]>([]);
-    const [subjectResults, setSubjectResults] = useState<SubjectSearchResult[]>([]);
-    const [courseResults, setCourseResults] = useState<CourseSearchResult[]>([]);
+    const [activeType, setActiveType] = useState<SearchType>("all");
+    const [recentSearches, setRecentSearches] = useState<string[]>(readRecentSearches);
     const [studentDialogOpen, setStudentDialogOpen] = useState(false);
     const [studentDialogLoading, setStudentDialogLoading] = useState(false);
     const [studentDialogStudent, setStudentDialogStudent] = useState<StudentPublicInfo | null>(null);
@@ -240,8 +237,23 @@ export function GlobalCommandContent({
     const sharedAuthUser = props.auth?.user;
     const resolvedUserRole = sharedAuthUser?.role ?? user.role ?? "";
     const resolvedUserPermissions = sharedAuthUser?.permissions ?? user.permissions ?? [];
-    const isInstructor = /faculty|instructor/i.test(resolvedUserRole);
-    const isStudentContext = !isAdminContext && !isInstructor;
+
+    // Portal role decides which search API is used. `portal-role.ts` is the shared
+    // source of truth for role groupings, so every faculty role (professor,
+    // associate/assistant professor, instructor, part-time) is covered.
+    const portalRole = normalizePortalRole(resolvedUserRole);
+    const isInstructor = isFacultyPortalRole(portalRole);
+    const searchScope: SearchScope = isAdministratorPortalRole(portalRole)
+        ? "administrator"
+        : isInstructor
+          ? "faculty"
+          : "student";
+    const { status, results, total, retry } = useGlobalSearch({
+        scope: searchScope,
+        query: searchText,
+        type: activeType,
+        enabled: isOpen,
+    });
     const allowedAdminRoutes = useMemo(
         () => getRoutesForRoleWithModules(resolvedUserRole, resolvedUserPermissions, moduleAdminRoutes, deskRoutes),
         [deskRoutes, moduleAdminRoutes, resolvedUserPermissions, resolvedUserRole],
@@ -601,125 +613,6 @@ export function GlobalCommandContent({
     const filteredNavigation = useMemo(() => filterActions(actions.navigation, searchText), [actions.navigation, searchText]);
     const filteredProductivity = useMemo(() => filterActions(actions.productivity, searchText), [actions.productivity, searchText]);
 
-    useEffect(() => {
-        if (!isOpen) {
-            setIsSearching(false);
-            return;
-        }
-
-        const query = searchText.trim();
-
-        if (query.length < 2) {
-            setIsSearching(false);
-            setClassResults([]);
-            setStudentResults([]);
-            setUserResults([]);
-            setFacultyResults([]);
-            setEnrollmentResults([]);
-            setSubjectResults([]);
-            setCourseResults([]);
-            return;
-        }
-
-        const abortController = new AbortController();
-        const handle = window.setTimeout(async () => {
-            setIsSearching(true);
-
-            try {
-                if (isAdminContext) {
-                    // Use fetch for JSON API search (not Inertia since this returns plain JSON)
-                    const response = await fetch(`/administrators/search?q=${encodeURIComponent(query)}`, {
-                        method: "GET",
-                        headers: {
-                            Accept: "application/json",
-                            "X-Requested-With": "XMLHttpRequest",
-                        },
-                        signal: abortController.signal,
-                    });
-
-                    if (!response.ok) throw new Error("Search failed");
-
-                    const data = (await response.json()) as {
-                        students?: StudentSearchResult[];
-                        classes?: ClassSearchResult[];
-                        users?: UserSearchResult[];
-                        faculty?: FacultySearchResult[];
-                        enrollments?: EnrollmentSearchResult[];
-                    };
-
-                    setStudentResults(Array.isArray(data.students) ? data.students : []);
-                    setClassResults(Array.isArray(data.classes) ? data.classes : []);
-                    setUserResults(Array.isArray(data.users) ? data.users : []);
-                    setFacultyResults(Array.isArray(data.faculty) ? data.faculty : []);
-                    setEnrollmentResults(Array.isArray(data.enrollments) ? data.enrollments : []);
-                } else if (isInstructor) {
-                    // Concurrent search for instructors
-                    const [classesRes, studentsRes] = await Promise.all([
-                        fetch(`/search/classes?q=${encodeURIComponent(query)}`, {
-                            signal: abortController.signal,
-                        }),
-                        fetch(`/search/students?q=${encodeURIComponent(query)}`, {
-                            signal: abortController.signal,
-                        }),
-                    ]);
-
-                    if (classesRes.ok) {
-                        const data = (await classesRes.json()) as { classes?: ClassSearchResult[] };
-                        setClassResults(Array.isArray(data.classes) ? data.classes : []);
-                    }
-
-                    if (studentsRes.ok) {
-                        const data = (await studentsRes.json()) as { students?: StudentSearchResult[] };
-                        setStudentResults(Array.isArray(data.students) ? data.students : []);
-                    }
-
-                    setUserResults([]);
-                    setFacultyResults([]);
-                    setEnrollmentResults([]);
-                    setSubjectResults([]);
-                    setCourseResults([]);
-                } else {
-                    // Search for students
-                    const response = await fetch(`/student/search?q=${encodeURIComponent(query)}`, {
-                        method: "GET",
-                        headers: {
-                            Accept: "application/json",
-                            "X-Requested-With": "XMLHttpRequest",
-                        },
-                        signal: abortController.signal,
-                    });
-
-                    if (response.ok) {
-                        const data = (await response.json()) as {
-                            subjects?: SubjectSearchResult[];
-                            classes?: ClassSearchResult[];
-                            courses?: CourseSearchResult[];
-                            enrollments?: EnrollmentSearchResult[];
-                        };
-                        setSubjectResults(Array.isArray(data.subjects) ? data.subjects : []);
-                        setClassResults(Array.isArray(data.classes) ? data.classes : []);
-                        setCourseResults(Array.isArray(data.courses) ? data.courses : []);
-                        setEnrollmentResults(Array.isArray(data.enrollments) ? data.enrollments : []);
-                    }
-                    setStudentResults([]);
-                    setUserResults([]);
-                    setFacultyResults([]);
-                }
-            } catch (error: unknown) {
-                if (error instanceof DOMException && error.name === "AbortError") {
-                    return;
-                }
-                // Silent error for search
-            } finally {
-                setIsSearching(false);
-            }
-        }, 250);
-
-        return () => {
-            abortController.abort();
-            window.clearTimeout(handle);
-        };
-    }, [isInstructor, isOpen, searchText, isAdminContext]);
 
     function run(action: ActionItem): void {
         if (action.closeOnSelect !== false && onSelect) {
@@ -740,17 +633,15 @@ export function GlobalCommandContent({
     }
 
     async function openStudentDetails(student: StudentSearchResult): Promise<void> {
-        if (isAdminContext) {
+        if (searchScope === "administrator") {
             if (onSelect) onSelect();
             adminVisit(`/administrators/students/${student.id}`);
             return;
         }
 
-        // We don't close the parent if opening a student dialog in non-admin context?
-        // Actually, we should probably keep the parent open or handle it.
-        // If it's a dialog on top of a dialog/drawer, it works.
-        // If it navigates, we should close.
-        // For now, let's keep it consistent.
+        if (searchScope !== "faculty") {
+            return;
+        }
 
         setStudentDialogOpen(true);
         setStudentDialogLoading(true);
@@ -762,8 +653,12 @@ export function GlobalCommandContent({
         studentDialogAbortController.current = abortController;
 
         try {
-            const response = await fetch(`/students/${student.id}`, {
+            const response = await fetch(route("faculty.students.show", { student: student.id }), {
                 method: "GET",
+                headers: {
+                    Accept: "application/json",
+                    "X-Requested-With": "XMLHttpRequest",
+                },
                 signal: abortController.signal,
             });
 
@@ -784,29 +679,100 @@ export function GlobalCommandContent({
     }
 
     const hint = isMacPlatform() ? "⌘ K" : "Ctrl K";
-    const hasSearchResults =
-        studentResults.length > 0 ||
-        classResults.length > 0 ||
-        userResults.length > 0 ||
-        facultyResults.length > 0 ||
-        enrollmentResults.length > 0 ||
-        subjectResults.length > 0 ||
-        courseResults.length > 0;
+    const { students, classes, users, faculty, enrollments, subjects, courses } = results;
+    const isExpanded = activeType !== "all";
+    const showsGroup = (group: SearchGroup): boolean => ! isExpanded || activeType === group;
+    const showNoResults =
+        status === "success" && total === 0 && filteredNavigation.length === 0 && filteredProductivity.length === 0;
+    const statusMessage =
+        status === "loading"
+            ? "Searching"
+            : status === "error"
+              ? "Search failed"
+              : status === "success"
+                ? `${total} results`
+                : "";
+
+    function rememberSearch(): void {
+        setRecentSearches(persistRecentSearch(searchText));
+    }
+
+    function expandGroup(group: SearchGroup): void {
+        setActiveType(group);
+    }
+
+    function collapseGroups(): void {
+        setActiveType("all");
+    }
 
     return (
         <>
-            <CommandInput value={searchText} onValueChange={setSearchText} placeholder={searchPlaceholder} />
-            <CommandList className={listClassName}>
-                {!hasSearchResults && filteredNavigation.length === 0 && filteredProductivity.length === 0 && !isSearching ? (
-                    <CommandEmpty>No matches found.</CommandEmpty>
+            <CommandInput
+                value={searchText}
+                onValueChange={(value: string) => {
+                    setSearchText(value);
+
+                    // Narrowing the palette is scoped to the group you were looking at.
+                    if (activeType !== "all" && value.trim().length === 0) {
+                        setActiveType("all");
+                    }
+                }}
+                placeholder={searchPlaceholder}
+            />
+            <CommandList className={listClassName} aria-busy={status === "loading"}>
+                <div className="sr-only" role="status" aria-live="polite">
+                    {statusMessage}
+                </div>
+
+                {status === "too-short" ? (
+                    <div className="text-muted-foreground px-2 py-6 text-center text-sm">
+                        Keep typing — search starts at {MIN_QUERY_LENGTH} characters.
+                    </div>
                 ) : null}
 
-                {isSearching ? <div className="text-muted-foreground py-6 text-center text-sm">Searching...</div> : null}
+                {status === "error" ? (
+                    <div className="px-2 py-6 text-center text-sm">
+                        <div className="text-destructive font-medium">Search is unavailable right now.</div>
+                        <button type="button" onClick={retry} className="text-muted-foreground mt-1 text-xs underline">
+                            Try again
+                        </button>
+                    </div>
+                ) : null}
+
+                {status === "loading" ? (
+                    <div className="text-muted-foreground py-6 text-center text-sm">Searching…</div>
+                ) : null}
+
+                {status === "idle" && recentSearches.length > 0 ? (
+                    <CommandGroup heading="Recent searches">
+                        {recentSearches.map((recent) => (
+                            <CommandItem
+                                key={`recent:${recent}`}
+                                value={`recent ${recent}`}
+                                onSelect={() => setSearchText(recent)}
+                            >
+                                <IconClock className="size-4 opacity-60" />
+                                <span className="ml-2 flex-1 truncate">{recent}</span>
+                            </CommandItem>
+                        ))}
+                    </CommandGroup>
+                ) : null}
+
+                {isExpanded ? (
+                    <CommandGroup heading={`All ${GROUP_HEADINGS[activeType as SearchGroup]}`}>
+                        <CommandItem value="back-to-all-groups" onSelect={collapseGroups}>
+                            <span className="ml-2 flex-1">Back to all groups</span>
+                        </CommandItem>
+                    </CommandGroup>
+                ) : null}
+
+                {showNoResults ? <CommandEmpty>No matches found.</CommandEmpty> : null}
+
 
                 {/* Search Results First */}
-                {enrollmentResults.length > 0 && (
+                {showsGroup("enrollments") && enrollments.length > 0 && (
                     <CommandGroup heading="Enrollments">
-                        {enrollmentResults.map((result) => (
+                        {enrollments.map((result) => (
                             <CommandItem
                                 key={`enrollment:${result.id}`}
                                 onMouseEnter={() => {
@@ -815,10 +781,11 @@ export function GlobalCommandContent({
                                     }
                                 }}
                                 onSelect={() => {
+                                    rememberSearch();
                                     if (onSelect) onSelect();
                                     if (isAdminContext) {
                                         adminVisit(`/administrators/enrollments/${result.id}`);
-                                    } else if (isStudentContext) {
+                                    } else if (searchScope === "student") {
                                         router.visit(`/student/tuition`);
                                     } else {
                                         router.visit("/tuition");
@@ -830,30 +797,37 @@ export function GlobalCommandContent({
                                     <IconSchool className="size-4" />
                                 </div>
                                 <div className="flex flex-col gap-0.5">
-                                    <div className="font-medium">{result.student_name}</div>
+                                    <div className="font-medium">{highlightSearchTerms(result.student_name, searchText)}</div>
                                     <div className="text-muted-foreground text-xs">
                                         {result.course_code} · {result.year_level} · {result.semester}
                                     </div>
                                 </div>
-                                <div className="text-muted-foreground ml-auto text-xs font-medium">{result.status}</div>
+                                {result.status && <div className="text-muted-foreground ml-auto text-xs font-medium">{result.status}</div>}
                             </CommandItem>
                         ))}
+                        {!isExpanded && enrollments.length >= RESULT_LIMIT ? (
+                            <ViewAllRow group="enrollments" onSelect={() => expandGroup("enrollments")} />
+                        ) : null}
                     </CommandGroup>
                 )}
 
-                {studentResults.length > 0 && (
+
+                {showsGroup("students") && students.length > 0 && (
                     <CommandGroup heading="Students">
-                        {studentResults.map((result) => (
+                        {students.map((result) => (
                             <CommandItem
                                 key={`student:${result.id}`}
-                                onSelect={() => void openStudentDetails(result)}
+                                onSelect={() => {
+                                    rememberSearch();
+                                    void openStudentDetails(result);
+                                }}
                                 className="flex items-center gap-3 py-3"
                             >
                                 <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400">
                                     <IconUser className="size-4" />
                                 </div>
                                 <div className="flex flex-col gap-0.5">
-                                    <div className="font-medium">{result.name}</div>
+                                    <div className="font-medium">{highlightSearchTerms(result.name, searchText)}</div>
                                     <div className="text-muted-foreground text-xs">
                                         ID: {result.student_id} {result.course ? `· ${result.course}` : ""}
                                     </div>
@@ -861,12 +835,15 @@ export function GlobalCommandContent({
                                 {result.status && <div className="text-muted-foreground ml-auto text-xs font-medium">{result.status}</div>}
                             </CommandItem>
                         ))}
+                        {!isExpanded && students.length >= RESULT_LIMIT ? (
+                            <ViewAllRow group="students" onSelect={() => expandGroup("students")} />
+                        ) : null}
                     </CommandGroup>
                 )}
 
-                {classResults.length > 0 && (
+                {showsGroup("classes") && classes.length > 0 && (
                     <CommandGroup heading="Classes">
-                        {classResults.map((result) => (
+                        {classes.map((result) => (
                             <CommandItem
                                 key={`class:${result.id}`}
                                 onMouseEnter={() => {
@@ -875,13 +852,14 @@ export function GlobalCommandContent({
                                     }
                                 }}
                                 onSelect={() => {
+                                    rememberSearch();
                                     if (onSelect) onSelect();
-                                    if (isAdminContext) {
+                                    if (searchScope === "administrator") {
                                         adminVisit(`/administrators/classes/${result.id}`);
-                                    } else if (isInstructor) {
-                                        router.visit(`/classes/${result.id}`);
+                                    } else if (searchScope === "faculty") {
+                                        router.visit(route("faculty.classes.show", { class: result.id }));
                                     } else {
-                                        router.visit(`/student/classes/${result.id}`);
+                                        router.visit(route("student.classes.show", { class: result.id }));
                                     }
                                 }}
                                 className="flex items-center gap-3 py-3"
@@ -891,7 +869,7 @@ export function GlobalCommandContent({
                                 </div>
                                 <div className="min-w-0 flex-1">
                                     <div className="flex items-center gap-2">
-                                        <span className="truncate font-medium">{result.record_title}</span>
+                                        <span className="truncate font-medium">{highlightSearchTerms(result.record_title, searchText)}</span>
                                         {result.section && (
                                             <span className="inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium opacity-80">
                                                 {result.section}
@@ -909,12 +887,15 @@ export function GlobalCommandContent({
                                 ) : null}
                             </CommandItem>
                         ))}
+                        {!isExpanded && classes.length >= RESULT_LIMIT ? (
+                            <ViewAllRow group="classes" onSelect={() => expandGroup("classes")} />
+                        ) : null}
                     </CommandGroup>
                 )}
 
-                {facultyResults.length > 0 && (
+                {showsGroup("faculty") && faculty.length > 0 && (
                     <CommandGroup heading="Faculty">
-                        {facultyResults.map((result) => (
+                        {faculty.map((result) => (
                             <CommandItem
                                 key={`faculty:${result.id}`}
                                 onMouseEnter={() => prefetchAdministratorDestination(`/administrators/faculties/${result.id}`)}
@@ -932,19 +913,22 @@ export function GlobalCommandContent({
                                     </div>
                                 )}
                                 <div className="flex flex-col gap-0.5">
-                                    <div className="font-medium">{result.name}</div>
+                                    <div className="font-medium">{highlightSearchTerms(result.name, searchText)}</div>
                                     <div className="text-muted-foreground text-xs">
                                         {result.department} · {result.email}
                                     </div>
                                 </div>
                             </CommandItem>
                         ))}
+                        {!isExpanded && faculty.length >= RESULT_LIMIT ? (
+                            <ViewAllRow group="faculty" onSelect={() => expandGroup("faculty")} />
+                        ) : null}
                     </CommandGroup>
                 )}
 
-                {userResults.length > 0 && (
+                {showsGroup("users") && users.length > 0 && (
                     <CommandGroup heading="Users">
-                        {userResults.map((result) => (
+                        {users.map((result) => (
                             <CommandItem
                                 key={`user:${result.id}`}
                                 onMouseEnter={() => prefetchAdministratorDestination(`/administrators/users/${result.id}/edit`)}
@@ -962,22 +946,26 @@ export function GlobalCommandContent({
                                     </div>
                                 )}
                                 <div className="flex flex-col gap-0.5">
-                                    <div className="font-medium">{result.name}</div>
+                                    <div className="font-medium">{highlightSearchTerms(result.name, searchText)}</div>
                                     <div className="text-muted-foreground text-xs">
                                         {result.role} · {result.email}
                                     </div>
                                 </div>
                             </CommandItem>
                         ))}
+                        {!isExpanded && users.length >= RESULT_LIMIT ? (
+                            <ViewAllRow group="users" onSelect={() => expandGroup("users")} />
+                        ) : null}
                     </CommandGroup>
                 )}
 
-                {subjectResults.length > 0 && (
+                {showsGroup("subjects") && subjects.length > 0 && (
                     <CommandGroup heading="Subjects">
-                        {subjectResults.map((result) => (
+                        {subjects.map((result) => (
                             <CommandItem
                                 key={`subject:${result.id}`}
                                 onSelect={() => {
+                                    rememberSearch();
                                     if (onSelect) onSelect();
                                     router.visit(`/student/classes?search=${encodeURIComponent(result.code)}`);
                                 }}
@@ -987,22 +975,26 @@ export function GlobalCommandContent({
                                     <IconChecklist className="size-4" />
                                 </div>
                                 <div className="flex flex-col gap-0.5">
-                                    <div className="font-medium">{result.title}</div>
+                                    <div className="font-medium">{highlightSearchTerms(result.title, searchText)}</div>
                                     <div className="text-muted-foreground text-xs">
                                         {result.code} · {result.units} Units
                                     </div>
                                 </div>
                             </CommandItem>
                         ))}
+                        {!isExpanded && subjects.length >= RESULT_LIMIT ? (
+                            <ViewAllRow group="subjects" onSelect={() => expandGroup("subjects")} />
+                        ) : null}
                     </CommandGroup>
                 )}
 
-                {courseResults.length > 0 && (
+                {showsGroup("courses") && courses.length > 0 && (
                     <CommandGroup heading="Courses">
-                        {courseResults.map((result) => (
+                        {courses.map((result) => (
                             <CommandItem
                                 key={`course:${result.id}`}
                                 onSelect={() => {
+                                    rememberSearch();
                                     if (onSelect) onSelect();
                                     router.visit(`/student/classes?search=${encodeURIComponent(result.code)}`);
                                 }}
@@ -1012,18 +1004,21 @@ export function GlobalCommandContent({
                                     <IconSchool className="size-4" />
                                 </div>
                                 <div className="flex flex-col gap-0.5">
-                                    <div className="font-medium">{result.title}</div>
+                                    <div className="font-medium">{highlightSearchTerms(result.title, searchText)}</div>
                                     <div className="text-muted-foreground text-xs">
                                         {result.code} · {result.department}
                                     </div>
                                 </div>
                             </CommandItem>
                         ))}
+                        {!isExpanded && courses.length >= RESULT_LIMIT ? (
+                            <ViewAllRow group="courses" onSelect={() => expandGroup("courses")} />
+                        ) : null}
                     </CommandGroup>
                 )}
 
                 {/* Static Commands */}
-                {hasSearchResults && (filteredNavigation.length > 0 || filteredProductivity.length > 0) && <CommandSeparator className="my-2" />}
+                {total > 0 && (filteredNavigation.length > 0 || filteredProductivity.length > 0) && <CommandSeparator className="my-2" />}
 
                 {filteredProductivity.length > 0 && (
                     <CommandGroup heading="Productivity">

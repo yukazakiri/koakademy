@@ -17,6 +17,7 @@ use App\Modules\ModuleStateRepository;
 use App\Modules\RegistryClient;
 use App\Modules\VersionConstraint;
 use App\Observers\StudentTransactionObserver;
+use App\Scout\TermDatabaseEngine;
 use App\Services\ChangelogService;
 use App\Services\GeneralSettingsService;
 use App\Services\LaravelAssessmentFormPdfRenderer;
@@ -42,6 +43,7 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\View\FileViewFinder;
 use Laravel\Passkeys\Passkeys;
 use Laravel\Pennant\Feature;
+use Laravel\Scout\EngineManager;
 use Livewire\Livewire;
 use Nwidart\Modules\Contracts\RepositoryInterface;
 use PhpOffice\PhpSpreadsheet\Cell\Cell;
@@ -106,6 +108,15 @@ final class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->resetPhpSpreadsheetValueBinderBetweenUnitsOfWork();
+
+        // Global (command palette) search: every term of a multi-word query must
+        // match, instead of the whole query being treated as one literal phrase.
+        resolve(EngineManager::class)->extend('database', static fn (): TermDatabaseEngine => new TermDatabaseEngine);
+
+        RateLimiter::for('global-search', function (Request $request): Limit {
+            return Limit::perMinute(90)
+                ->by($request->user()?->getAuthIdentifier() ?? $request->ip());
+        });
 
         RateLimiter::for('api', function (Request $request): Limit {
             return Limit::perMinute((int) config('api.rate_limit', 60))

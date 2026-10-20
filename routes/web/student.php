@@ -26,7 +26,9 @@ Route::middleware(['auth', 'student.only', 'ensure.feature'])->prefix('student')
     Route::get('/dashboard', StudentDashboardController::class)->name('dashboard');
 
     // Global Search
-    Route::get('/search', StudentGlobalSearchController::class)->name('search');
+    Route::get('/search', StudentGlobalSearchController::class)
+        ->middleware('throttle:global-search')
+        ->name('search');
 
     // Settings (Semester/School Year Selector)
     Route::put('/settings/semester', [UserSettingController::class, 'updateSemester'])->name('settings.semester.update');

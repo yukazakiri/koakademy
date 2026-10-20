@@ -1,0 +1,101 @@
+<?php
+
+declare(strict_types=1);
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Publish the recipient lookup required by backstage/laravel-mails. Its
+     * MessageSending listener synchronizes recipients before calling the transport.
+     */
+    public function up(): void
+    {
+        $recipients = config('mails.database.tables.recipients', 'mail_recipients');
+
+        // Some installations have already published the package migration.
+        if (Schema::hasTable($recipients)) {
+            return;
+        }
+
+        $isPostgres = Schema::getConnection()->getDriverName() === 'pgsql';
+
+        Schema::create($recipients, function (Blueprint $table) use ($isPostgres): void {
+            $table->id();
+            $table->foreignIdFor(config('mails.models.mail'))
+                ->constrained(config('mails.database.tables.mails', 'mails'))
+                ->cascadeOnDelete();
+            $table->string('email');
+            $table->string('name')->nullable();
+            $table->string('domain')->nullable();
+
+            foreach (['email', 'name', 'domain'] as $column) {
+                // PostgreSQL prefix searches need pattern operator indexes.
+                if ($isPostgres) {
+                    $table->rawIndex("{$column} varchar_pattern_ops", "{$table->getTable()}_{$column}_index");
+                } else {
+                    $table->index($column);
+                }
+            }
+        });
+
+        $this->backfill($recipients, (new (config('mails.models.mail')))->getForeignKey());
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists(config('mails.database.tables.recipients', 'mail_recipients'));
+    }
+
+    private function backfill(string $recipients, string $foreignKey): void
+    {
+        DB::table(config('mails.database.tables.mails', 'mails'))
+            ->select(['id', 'to', 'cc', 'bcc'])
+            ->chunkById(1000, function ($mails) use ($recipients, $foreignKey): void {
+                $rows = [];
+
+                foreach ($mails as $mail) {
+                    array_push($rows, ...$this->rowsFor($mail, $foreignKey));
+                }
+
+                foreach (array_chunk($rows, 1000) as $chunk) {
+                    DB::table($recipients)->insert($chunk);
+                }
+            });
+    }
+
+    /**
+     * Match the package's Mail::recipientRows() without firing mail model events.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function rowsFor(object $mail, string $foreignKey): array
+    {
+        $rows = [];
+
+        foreach (['to', 'cc', 'bcc'] as $field) {
+            foreach ((array) json_decode($mail->{$field} ?? '[]', true) as $email => $name) {
+                $email = mb_strtolower(mb_trim((string) $email));
+
+                if ($email === '' || isset($rows[$email])) {
+                    continue;
+                }
+
+                $domain = str_contains($email, '@') ? mb_substr($email, mb_strrpos($email, '@') + 1) : null;
+
+                $rows[$email] = [
+                    $foreignKey => $mail->id,
+                    'email' => mb_substr($email, 0, 255),
+                    'name' => filled($name) ? mb_substr(mb_strtolower(mb_trim((string) $name)), 0, 255) : null,
+                    'domain' => $domain !== null ? mb_substr($domain, 0, 255) : null,
+                ];
+            }
+        }
+
+        return array_values($rows);
+    }
+};

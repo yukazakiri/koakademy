@@ -27,6 +27,8 @@ final class GeneralSettingController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection|JsonResponse
     {
+        $this->authorize('viewSchool', GeneralSetting::class);
+
         $query = GeneralSetting::query();
 
         // Include trashed records if requested
@@ -54,6 +56,8 @@ final class GeneralSettingController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        $this->authorize('updateSchool', GeneralSetting::class);
+
         $validator = Validator::make($request->all(), [
             'site_name' => 'nullable|string|max:255',
             'site_description' => 'nullable|string',
@@ -107,11 +111,14 @@ final class GeneralSettingController extends Controller
         }
 
         try {
-            $setting = GeneralSetting::create($validator->validated());
+            // The school keeps a single configuration: a second row would fight
+            // the first one over which settings the application serves.
+            $setting = GeneralSetting::firstOrCreateGlobal();
+            $setting->update($validator->validated());
 
             return response()->json([
                 'message' => 'General settings created successfully',
-                'data' => new GeneralSettingResource($setting),
+                'data' => new GeneralSettingResource($setting->fresh()),
             ], 201);
 
         } catch (Exception $e) {
@@ -127,6 +134,8 @@ final class GeneralSettingController extends Controller
      */
     public function show(Request $request, int $id): JsonResponse
     {
+        $this->authorize('viewSchool', GeneralSetting::class);
+
         $query = GeneralSetting::query();
 
         // Include trashed if requested
@@ -157,6 +166,8 @@ final class GeneralSettingController extends Controller
      */
     public function update(Request $request, int $id): JsonResponse
     {
+        $this->authorize('updateSchool', GeneralSetting::class);
+
         $setting = GeneralSetting::findOrFail($id);
 
         $validator = Validator::make($request->all(), [
@@ -229,66 +240,76 @@ final class GeneralSettingController extends Controller
 
     /**
      * Remove the specified general setting (soft delete)
+     *
+     * The row is only flagged as deleted, never dropped: the school keeps a
+     * recoverable copy of its configuration and the restore endpoint can put
+     * it back.
      */
-    public function destroy(int $id): JsonResponse
+    public function destroy(Request $request, int $id): JsonResponse
     {
-        try {
-            $setting = GeneralSetting::findOrFail($id);
-            $setting->delete();
+        $this->authorize('updateSchool', GeneralSetting::class);
 
-            return response()->json([
-                'message' => 'General settings deleted successfully',
-            ], 200);
+        $setting = GeneralSetting::find($id);
 
-        } catch (Exception $e) {
+        if (! $setting instanceof GeneralSetting) {
             return response()->json([
-                'message' => 'Failed to delete general settings',
-                'error' => $e->getMessage(),
-            ], 500);
+                'message' => 'General settings not found',
+                'data' => null,
+            ], 404);
         }
+
+        $setting->delete();
+
+        return response()->json([
+            'message' => 'General settings deleted successfully',
+        ], 200);
     }
 
     /**
      * Restore a soft-deleted general setting
      */
-    public function restore(int $id): JsonResponse
+    public function restore(Request $request, int $id): JsonResponse
     {
-        try {
-            $setting = GeneralSetting::onlyTrashed()->findOrFail($id);
-            $setting->restore();
+        $this->authorize('updateSchool', GeneralSetting::class);
 
-            return response()->json([
-                'message' => 'General settings restored successfully',
-                'data' => new GeneralSettingResource($setting->fresh()),
-            ], 200);
+        $setting = GeneralSetting::onlyTrashed()->find($id);
 
-        } catch (Exception $e) {
+        if (! $setting instanceof GeneralSetting) {
             return response()->json([
-                'message' => 'Failed to restore general settings',
-                'error' => $e->getMessage(),
-            ], 500);
+                'message' => 'General settings not found',
+                'data' => null,
+            ], 404);
         }
+
+        $setting->restore();
+
+        return response()->json([
+            'message' => 'General settings restored successfully',
+            'data' => new GeneralSettingResource($setting->fresh()),
+        ], 200);
     }
 
     /**
      * Force delete a general setting permanently
      */
-    public function forceDestroy(int $id): JsonResponse
+    public function forceDestroy(Request $request, int $id): JsonResponse
     {
-        try {
-            $setting = GeneralSetting::withTrashed()->findOrFail($id);
-            $setting->forceDelete();
+        $this->authorize('updateSchool', GeneralSetting::class);
 
-            return response()->json([
-                'message' => 'General settings permanently deleted',
-            ], 200);
+        $setting = GeneralSetting::withTrashed()->find($id);
 
-        } catch (Exception $e) {
+        if (! $setting instanceof GeneralSetting) {
             return response()->json([
-                'message' => 'Failed to permanently delete general settings',
-                'error' => $e->getMessage(),
-            ], 500);
+                'message' => 'General settings not found',
+                'data' => null,
+            ], 404);
         }
+
+        $setting->forceDelete();
+
+        return response()->json([
+            'message' => 'General settings permanently deleted',
+        ], 200);
     }
 
     /**
@@ -296,6 +317,8 @@ final class GeneralSettingController extends Controller
      */
     public function current(Request $request): JsonResponse
     {
+        $this->authorize('viewSchool', GeneralSetting::class);
+
         $query = GeneralSetting::query();
 
         // Include trashed if requested
@@ -323,6 +346,8 @@ final class GeneralSettingController extends Controller
      */
     public function getSetting(string $key, Request $request): JsonResponse
     {
+        $this->authorize('viewSchool', GeneralSetting::class);
+
         $query = GeneralSetting::query();
 
         if ($request->boolean('with_trashed', false)) {
@@ -417,6 +442,8 @@ final class GeneralSettingController extends Controller
      */
     public function serviceSettings(): JsonResponse
     {
+        $this->authorize('viewSchool', GeneralSetting::class);
+
         return response()->json([
             'message' => 'Service settings retrieved successfully',
             'data' => [
@@ -506,6 +533,8 @@ final class GeneralSettingController extends Controller
      */
     public function globalSettings(): JsonResponse
     {
+        $this->authorize('viewSchool', GeneralSetting::class);
+
         return response()->json([
             'message' => 'Global settings retrieved successfully',
             'data' => [

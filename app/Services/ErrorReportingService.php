@@ -132,13 +132,9 @@ final class ErrorReportingService
 
         $this->sentrySettings->save(is_array($providers['sentry'] ?? null) ? $providers['sentry'] : []);
 
-        $settings = GeneralSetting::query()->first();
-
-        if (! $settings instanceof GeneralSetting) {
-            $settings = GeneralSetting::query()->create([
-                'site_name' => (string) config('app.name', 'KoAkademy'),
-            ]);
-        }
+        $settings = GeneralSetting::firstOrCreateGlobal([
+            'site_name' => (string) config('app.name', 'KoAkademy'),
+        ]);
 
         $moreConfigs = is_array($settings->more_configs) ? $settings->more_configs : [];
         $errorReporting = is_array($moreConfigs[self::CONFIG_KEY] ?? null) ? $moreConfigs[self::CONFIG_KEY] : [];

@@ -383,11 +383,7 @@ final class AiSettingsService
      */
     public function save(array $settings): void
     {
-        $generalSetting = GeneralSetting::query()->first();
-
-        if (! $generalSetting instanceof GeneralSetting) {
-            $generalSetting = GeneralSetting::query()->create([]);
-        }
+        $generalSetting = GeneralSetting::firstOrCreateGlobal();
 
         $generalSetting->update(['ai_settings' => $settings]);
         $this->clearCache();

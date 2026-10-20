@@ -103,13 +103,7 @@ final class SystemEmailTemplateStore
      */
     private function settings(): GeneralSetting
     {
-        $settings = GeneralSetting::query()->first();
-
-        if ($settings instanceof GeneralSetting) {
-            return $settings;
-        }
-
-        return GeneralSetting::query()->create([
+        return GeneralSetting::firstOrCreateGlobal([
             'site_name' => app(SiteSettings::class)->getAppName(),
         ]);
     }

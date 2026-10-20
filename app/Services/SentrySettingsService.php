@@ -125,13 +125,9 @@ final class SentrySettingsService
      */
     public function save(array $attributes): array
     {
-        $settings = GeneralSetting::query()->first();
-
-        if (! $settings instanceof GeneralSetting) {
-            $settings = GeneralSetting::query()->create([
-                'site_name' => (string) config('app.name', 'KoAkademy'),
-            ]);
-        }
+        $settings = GeneralSetting::firstOrCreateGlobal([
+            'site_name' => (string) config('app.name', 'KoAkademy'),
+        ]);
 
         $sanitized = $this->sanitize($attributes);
         $moreConfigs = is_array($settings->more_configs) ? $settings->more_configs : [];

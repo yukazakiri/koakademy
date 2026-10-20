@@ -963,13 +963,9 @@ final class AdministratorSystemManagementController extends Controller
     {
         $this->authorize('updateSeo', GeneralSetting::class);
 
-        $settings = GeneralSetting::query()->first();
-
-        if (! $settings instanceof GeneralSetting) {
-            $settings = GeneralSetting::query()->create([
-                'site_name' => $this->siteSettings->getAppName(),
-            ]);
-        }
+        $settings = GeneralSetting::firstOrCreateGlobal([
+            'site_name' => $this->siteSettings->getAppName(),
+        ]);
 
         $validated = $request->validate([
             'site_name' => 'required|string|max:255',
@@ -1024,13 +1020,9 @@ final class AdministratorSystemManagementController extends Controller
     {
         $this->authorize('updateAnalytics', GeneralSetting::class);
 
-        $settings = GeneralSetting::query()->first();
-
-        if (! $settings instanceof GeneralSetting) {
-            $settings = GeneralSetting::query()->create([
-                'site_name' => $this->siteSettings->getAppName(),
-            ]);
-        }
+        $settings = GeneralSetting::firstOrCreateGlobal([
+            'site_name' => $this->siteSettings->getAppName(),
+        ]);
 
         $rules = $this->analyticsProviderRules();
 
@@ -1101,13 +1093,9 @@ final class AdministratorSystemManagementController extends Controller
     {
         $this->authorize('updateSocialite', GeneralSetting::class);
 
-        $settings = GeneralSetting::query()->first();
-
-        if (! $settings instanceof GeneralSetting) {
-            $settings = GeneralSetting::query()->create([
-                'site_name' => $this->siteSettings->getAppName(),
-            ]);
-        }
+        $settings = GeneralSetting::firstOrCreateGlobal([
+            'site_name' => $this->siteSettings->getAppName(),
+        ]);
 
         $socialiteProviders = app(SocialiteProviderService::class);
         $validated = $request->validate([
@@ -1245,7 +1233,7 @@ final class AdministratorSystemManagementController extends Controller
         $generalSettingsService = app(GeneralSettingsService::class);
         $settings = $generalSettingsService->getGlobalSettingsModel();
         if (! $settings instanceof GeneralSetting) {
-            $settings = GeneralSetting::query()->create(['site_name' => $this->siteSettings->getAppName()]);
+            $settings = GeneralSetting::firstOrCreateGlobal(['site_name' => $this->siteSettings->getAppName()]);
             $generalSettingsService->replaceGlobalSettings($settings);
         }
 
@@ -1481,7 +1469,7 @@ final class AdministratorSystemManagementController extends Controller
         $settings = $generalSettingsService->getGlobalSettingsModel();
 
         if (! $settings) {
-            $settings = GeneralSetting::query()->create([
+            $settings = GeneralSetting::firstOrCreateGlobal([
                 'site_name' => $this->siteSettings->getAppName(),
             ]);
             GeneralSetting::clearCache();

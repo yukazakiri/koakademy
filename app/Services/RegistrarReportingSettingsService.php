@@ -29,7 +29,7 @@ final class RegistrarReportingSettingsService
 
     public function updateMaximumYearLevel(int $maximumYearLevel): void
     {
-        $settings = GeneralSetting::query()->firstOrCreate([], ['site_name' => config('app.name')]);
+        $settings = GeneralSetting::firstOrCreateGlobal();
         $moreConfigs = is_array($settings->more_configs) ? $settings->more_configs : [];
         $moreConfigs[self::CONFIG_KEY] = [
             'maximum_year_level' => $this->normalizeMaximumYearLevel($maximumYearLevel),

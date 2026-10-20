@@ -32,7 +32,7 @@ final readonly class TuitionPaymentScheduleSettingsService
     /** @param array{profiles: array<string, array<string, mixed>>} $configuration */
     public function update(array $configuration): void
     {
-        $settings = GeneralSetting::query()->firstOrCreate([], ['site_name' => config('app.name')]);
+        $settings = GeneralSetting::firstOrCreateGlobal();
         $moreConfigs = is_array($settings->more_configs) ? $settings->more_configs : [];
         $moreConfigs[self::CONFIG_KEY] = $configuration;
         $settings->update(['more_configs' => $moreConfigs]);

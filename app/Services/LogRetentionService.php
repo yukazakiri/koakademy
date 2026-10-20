@@ -50,7 +50,7 @@ final class LogRetentionService
     {
         DB::transaction(function () use ($policies): void {
             $settings = GeneralSetting::query()->lockForUpdate()->first()
-                ?? GeneralSetting::query()->create(['site_name' => (string) config('app.name')]);
+                ?? GeneralSetting::firstOrCreateGlobal(['site_name' => (string) config('app.name')]);
             $configs = $settings->more_configs ?? [];
             $configs[self::CONFIG_KEY] = $policies;
             $settings->update(['more_configs' => $configs]);

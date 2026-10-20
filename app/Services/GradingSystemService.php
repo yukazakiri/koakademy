@@ -165,13 +165,7 @@ final class GradingSystemService
             return $this->publishForSchool($school, $input, $author);
         }
 
-        $settings = GeneralSetting::query()->first();
-
-        if (! $settings) {
-            $settings = GeneralSetting::query()->create([
-                'site_name' => config('app.name', 'KoAkademy'),
-            ]);
-        }
+        $settings = GeneralSetting::firstOrCreateGlobal();
 
         $moreConfigs = is_array($settings->more_configs ?? null) ? $settings->more_configs : [];
         $normalized = $this->normalize($input);

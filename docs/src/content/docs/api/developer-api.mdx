@@ -15,11 +15,17 @@ These routes are served from the installation's application origin and require L
 | `POST` | `/api/settings` | Create settings; returns `201` after validation |
 | `GET` | `/api/settings/{id}` | Retrieve one numeric settings ID |
 | `PUT`, `PATCH` | `/api/settings/{id}` | Update one numeric settings ID |
-| `DELETE` | `/api/settings/{id}` | Soft-delete one numeric settings ID |
+| `DELETE` | `/api/settings/{id}` | Soft-delete one numeric settings ID; the row is kept and can be restored |
+| `POST` | `/api/settings/{id}/restore` | Restore a soft-deleted settings ID |
+| `DELETE` | `/api/settings/{id}/force` | Permanently remove one numeric settings ID |
 | `GET` | `/api/settings/current` | Current settings for the authenticated context |
 | `GET` | `/api/settings/service` | Current semester/year and service-derived settings |
 
 The application also contains operator-oriented settings routes. They are not documented here until their authorization, examples, and compatibility contract are covered as a public integration surface.
+
+## Authorization
+
+Reading the school configuration requires the `View:SystemManagementSchool` permission; creating, updating, deleting, restoring and permanently removing it requires `Update:SystemManagementSchool`. Super administrators and developers hold both. A token without them receives HTTP `403`, and the per-user preference routes under `/api/settings/user` stay available to every authenticated account.
 
 ## Read settings
 
@@ -77,3 +83,13 @@ When disabled it returns HTTP `404` with `data: null`. Only administrator-select
 ## Authorization warning
 
 Settings can contain operational or institution-specific values. Treat token possession as sensitive and apply least privilege. Route authentication does not eliminate the need for operator review of who can issue and use integration tokens.
+
+## Delete and restore settings
+
+```http
+DELETE /api/settings/1
+Accept: application/json
+Authorization: Bearer YOUR_TOKEN
+```
+
+The delete is a soft delete: the row keeps its values, is hidden from the default listing and can be put back with `POST /api/settings/{id}/restore`. Listing with `GET /api/settings?with_trashed=1` includes deleted rows, and `DELETE /api/settings/{id}/force` removes one permanently. An unknown or not-deleted ID returns HTTP `404`.

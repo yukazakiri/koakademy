@@ -10,6 +10,7 @@ use App\Models\User;
 use Laravel\Sanctum\Sanctum;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
+use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 #[CoversClass(GeneralSettingController::class)]
@@ -26,6 +27,7 @@ final class GeneralSettingApiTest extends TestCase
         }
 
         $this->user = User::factory()->create();
+        $this->grantSchoolSettingsPermissions($this->user);
         Sanctum::actingAs($this->user);
     }
 
@@ -203,7 +205,8 @@ final class GeneralSettingApiTest extends TestCase
                 'message' => 'General settings deleted successfully',
             ]);
 
-        $this->assertDatabaseMissing('general_settings', [
+        // The configuration is only flagged as deleted so it stays recoverable.
+        $this->assertSoftDeleted('general_settings', [
             'id' => $settings->id,
         ]);
     }
@@ -335,5 +338,24 @@ final class GeneralSettingApiTest extends TestCase
         $response = $this->getJson('/api/settings');
 
         $response->assertUnauthorized();
+    }
+
+    /**
+     * The settings API is guarded by the same system-management permissions the
+     * admin panel uses, so the acting account has to hold them.
+     */
+    private function grantSchoolSettingsPermissions(User $user): void
+    {
+        foreach (['View:SystemManagementSchool', 'Update:SystemManagementSchool'] as $permission) {
+            Permission::firstOrCreate([
+                'name' => $permission,
+                'guard_name' => 'web',
+            ]);
+        }
+
+        $user->givePermissionTo([
+            'View:SystemManagementSchool',
+            'Update:SystemManagementSchool',
+        ]);
     }
 }

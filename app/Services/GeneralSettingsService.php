@@ -441,9 +441,7 @@ final class GeneralSettingsService
         $settings = $this->getGlobalSettingsModel();
 
         if (! $settings instanceof GeneralSetting) {
-            $settings = GeneralSetting::query()->create([
-                'site_name' => config('app.name'),
-            ]);
+            $settings = GeneralSetting::firstOrCreateGlobal();
 
             $this->generalSetting = $settings;
         }
@@ -691,9 +689,7 @@ final class GeneralSettingsService
         $settings = $this->getGlobalSettingsModel();
 
         if (! $settings instanceof GeneralSetting) {
-            $settings = GeneralSetting::query()->create([
-                'site_name' => config('app.name'),
-            ]);
+            $settings = GeneralSetting::firstOrCreateGlobal();
 
             $this->generalSetting = $settings;
         }
@@ -751,9 +747,7 @@ final class GeneralSettingsService
         $settings = $this->getGlobalSettingsModel();
 
         if (! $settings instanceof GeneralSetting) {
-            $settings = GeneralSetting::query()->create([
-                'site_name' => config('app.name'),
-            ]);
+            $settings = GeneralSetting::firstOrCreateGlobal();
 
             $this->generalSetting = $settings;
         }

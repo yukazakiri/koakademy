@@ -4,11 +4,24 @@ declare(strict_types=1);
 
 use App\Models\GeneralSetting;
 use App\Models\User;
+use Spatie\Permission\Models\Permission;
 
 use function Pest\Laravel\actingAs;
 
 it('does not persist mail transport credentials through the generic settings API', function (): void {
     $user = User::factory()->create();
+
+    foreach (['View:SystemManagementSchool', 'Update:SystemManagementSchool'] as $permission) {
+        Permission::firstOrCreate([
+            'name' => $permission,
+            'guard_name' => 'web',
+        ]);
+    }
+
+    $user->givePermissionTo([
+        'View:SystemManagementSchool',
+        'Update:SystemManagementSchool',
+    ]);
 
     actingAs($user, 'sanctum')
         ->postJson('/api/settings', [

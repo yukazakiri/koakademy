@@ -129,7 +129,7 @@ final class ApplicationIntegrationSettingsService
      */
     public function update(array $attributes): void
     {
-        $settings = GeneralSetting::query()->firstOrCreate([], ['site_name' => config('app.name')]);
+        $settings = GeneralSetting::firstOrCreateGlobal(['site_name' => config('app.name')]);
         $moreConfigs = is_array($settings->more_configs) ? $settings->more_configs : [];
 
         $sanitized = [

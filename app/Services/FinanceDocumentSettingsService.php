@@ -30,7 +30,7 @@ final readonly class FinanceDocumentSettingsService
      */
     public function update(array $configuration): void
     {
-        $settings = GeneralSetting::query()->firstOrCreate([], ['site_name' => config('app.name')]);
+        $settings = GeneralSetting::firstOrCreateGlobal(['site_name' => config('app.name')]);
         $moreConfigs = $settings->more_configs ?? [];
         $moreConfigs['finance_documents'] = $configuration;
         $settings->update(['more_configs' => $moreConfigs]);

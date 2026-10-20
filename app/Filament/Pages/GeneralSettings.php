@@ -450,6 +450,7 @@ final class GeneralSettings extends Page
 
     public function update(): void
     {
+        /** @var array<string, mixed> $data */
         $data = $this->form->getState();
         $pipelineService = app(EnrollmentPipelineService::class);
 
@@ -462,7 +463,7 @@ final class GeneralSettings extends Page
         // dd($data);
         // $data = EmailDataHelper::setEmailConfigToDatabase($data);
 
-        GeneralSetting::updateOrCreate([], $data);
+        GeneralSetting::firstOrCreateGlobal()->update($data);
         Cache::forget('general_settings');
 
         $this->successNotification(

@@ -11,6 +11,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Cache;
 use Override;
 
@@ -22,6 +23,7 @@ use Override;
  * @method static Builder<static>|GeneralSetting query()
  *
  * @property array<string, mixed>|null $more_configs
+ * @property \Illuminate\Support\Carbon|null $deleted_at
  *
  * @use HasFactory<GeneralSettingFactory>
  *
@@ -30,6 +32,7 @@ use Override;
 final class GeneralSetting extends Model
 {
     use HasFactory;
+    use SoftDeletes;
 
     #[Override]
     protected $table = 'general_settings';
@@ -100,6 +103,34 @@ final class GeneralSetting extends Model
         \App\Services\GeneralSettingsService::flushGlobalSetting();
     }
 
+    /**
+     * Resolve the settings row the application treats as the live configuration.
+     *
+     * A configuration that was deleted through the API is restored instead of
+     * creating a second row, so a school always keeps exactly one active
+     * configuration and the restore endpoint cannot resurrect a duplicate.
+     *
+     * @param  array<string, mixed>  $values  Attributes used when a row has to be created.
+     */
+    public static function firstOrCreateGlobal(array $values = []): self
+    {
+        $settings = self::query()->first();
+
+        if ($settings instanceof self) {
+            return $settings;
+        }
+
+        $trashed = self::onlyTrashed()->first();
+
+        if ($trashed instanceof self) {
+            $trashed->restore();
+
+            return $trashed;
+        }
+
+        return self::query()->create($values === [] ? ['site_name' => config('app.name') ?: 'KoAkademy'] : $values);
+    }
+
     public function getSchoolYear(): string
     {
         return $this->getSchoolYearStarting().
@@ -138,6 +169,22 @@ final class GeneralSetting extends Model
         parent::boot();
 
         self::saved(function ($settings): void {
+            self::clearCache();
+        });
+
+        // Deleting, restoring or force deleting a record changes which row the
+        // application treats as the live configuration, so the cached copy has
+        // to be dropped as well — otherwise the portal keeps serving settings
+        // that no longer exist.
+        self::deleted(function (): void {
+            self::clearCache();
+        });
+
+        self::restored(function (): void {
+            self::clearCache();
+        });
+
+        self::forceDeleted(function (): void {
             self::clearCache();
         });
     }

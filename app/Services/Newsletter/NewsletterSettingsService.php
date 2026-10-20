@@ -81,7 +81,7 @@ final class NewsletterSettingsService
     /** @param array<string, mixed> $settings */
     public function save(array $settings): void
     {
-        $model = GeneralSetting::query()->firstOrCreate([], ['site_name' => (string) config('app.name', 'KoAkademy')]);
+        $model = GeneralSetting::firstOrCreateGlobal(['site_name' => (string) config('app.name', 'KoAkademy')]);
         $previousProvider = data_get($model->newsletter_settings, 'provider');
         $model->update(['newsletter_settings' => $this->normalize($settings)]);
 

@@ -6,6 +6,7 @@ namespace App\Filament\Widgets;
 
 use App\Enums\StudentStatus;
 use App\Models\Student;
+use App\Services\DashboardStatisticsService;
 use Filament\Widgets\ChartWidget;
 use Override;
 
@@ -39,17 +40,28 @@ final class DropoutByYearLevelChart extends ChartWidget
         $withdrawnData = [];
         $labels = [];
 
+        $statistics = app(DashboardStatisticsService::class);
+
+        // One grouped query per status replaces one COUNT per year level.
+        $dropoutCounts = $statistics->countsByColumn(
+            model: Student::class,
+            column: 'academic_year',
+            filters: [
+                ['status', '=', StudentStatus::Dropped->value],
+            ],
+        );
+
+        $withdrawnCounts = $statistics->countsByColumn(
+            model: Student::class,
+            column: 'academic_year',
+            filters: [
+                ['status', '=', StudentStatus::Withdrawn->value],
+            ],
+        );
+
         foreach ($yearLevels as $year) {
-            $dropouts = Student::where('status', StudentStatus::Dropped->value)
-                ->where('academic_year', $year)
-                ->count();
-
-            $withdrawn = Student::where('status', StudentStatus::Withdrawn->value)
-                ->where('academic_year', $year)
-                ->count();
-
-            $dropoutData[] = $dropouts;
-            $withdrawnData[] = $withdrawn;
+            $dropoutData[] = $dropoutCounts[(string) $year] ?? 0;
+            $withdrawnData[] = $withdrawnCounts[(string) $year] ?? 0;
             $labels[] = $this->getYearLabel($year);
         }
 

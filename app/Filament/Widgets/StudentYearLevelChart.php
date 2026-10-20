@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Widgets;
 
 use App\Models\Student;
+use App\Services\DashboardStatisticsService;
 use Filament\Widgets\ChartWidget;
 use Override;
 
@@ -36,9 +37,15 @@ final class StudentYearLevelChart extends ChartWidget
 
     protected function getData(): array
     {
+        // One grouped query replaces one COUNT per year level.
+        $counts = app(DashboardStatisticsService::class)->countsByColumn(
+            Student::class,
+            'academic_year',
+        );
+
         $yearData = [];
         for ($year = 1; $year <= 5; $year++) {
-            $yearData[$year] = Student::where('academic_year', $year)->count();
+            $yearData[$year] = $counts[(string) $year] ?? 0;
         }
 
         $yearLabels = [

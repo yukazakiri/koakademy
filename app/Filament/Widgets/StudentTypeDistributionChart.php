@@ -6,6 +6,7 @@ namespace App\Filament\Widgets;
 
 use App\Enums\StudentType;
 use App\Models\Student;
+use App\Services\DashboardStatisticsService;
 use Filament\Widgets\ChartWidget;
 use Override;
 
@@ -34,17 +35,30 @@ final class StudentTypeDistributionChart extends ChartWidget
 
     protected function getData(): array
     {
-        // Get student type distribution data
-        $collegeCount = Student::where('student_type', StudentType::College->value)->count();
-        $shsCount = Student::where('student_type', StudentType::SeniorHighSchool->value)->count();
-        $tesdaCount = Student::where('student_type', StudentType::TESDA->value)->count();
-        $dhrtCount = Student::where('student_type', StudentType::DHRT->value)->count();
+        // One grouped query replaces one COUNT per student type.
+        $counts = app(DashboardStatisticsService::class)->countsByColumn(
+            Student::class,
+            'student_type',
+        );
+
+        $types = [
+            StudentType::College,
+            StudentType::SeniorHighSchool,
+            StudentType::TESDA,
+            StudentType::DHRT,
+        ];
+
+        $data = [];
+
+        foreach ($types as $type) {
+            $data[] = $counts[$type->value] ?? 0;
+        }
 
         return [
             'datasets' => [
                 [
                     'label' => 'Students by Type',
-                    'data' => [$collegeCount, $shsCount, $tesdaCount, $dhrtCount],
+                    'data' => $data,
                     'backgroundColor' => [
                         'rgba(59, 130, 246, 0.8)',   // Blue for College
                         'rgba(34, 197, 94, 0.8)',    // Green for SHS

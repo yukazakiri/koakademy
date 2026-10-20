@@ -7,6 +7,7 @@ namespace App\Filament\Widgets;
 use App\Enums\AttritionCategory;
 use App\Enums\StudentStatus;
 use App\Models\Student;
+use App\Services\DashboardStatisticsService;
 use Filament\Widgets\ChartWidget;
 use Override;
 
@@ -36,17 +37,26 @@ final class AttritionByReasonChart extends ChartWidget
     protected function getData(): array
     {
         $categories = AttritionCategory::cases();
+
+        // One grouped query replaces one COUNT per attrition category.
+        $counts = app(DashboardStatisticsService::class)->countsByColumn(
+            model: Student::class,
+            column: 'attrition_category',
+            filters: [
+                ['status', 'in', [
+                    StudentStatus::Withdrawn->value,
+                    StudentStatus::Dropped->value,
+                ]],
+            ],
+            only: array_map(static fn (AttritionCategory $category): string => $category->value, $categories),
+        );
+
         $data = [];
         $labels = [];
         $colors = [];
 
         foreach ($categories as $category) {
-            $count = Student::whereIn('status', [
-                StudentStatus::Withdrawn->value,
-                StudentStatus::Dropped->value,
-            ])
-                ->where('attrition_category', $category->value)
-                ->count();
+            $count = $counts[$category->value] ?? 0;
 
             if ($count > 0) {
                 $data[] = $count;

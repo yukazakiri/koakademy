@@ -6,7 +6,11 @@ namespace App\Filament\Widgets;
 
 use App\Enums\StudentType;
 use App\Models\StudentEnrollment;
+use App\Services\DashboardStatisticsService;
 use Filament\Widgets\ChartWidget;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Database\Query\JoinClause;
 use Illuminate\Support\Carbon;
 use Override;
 
@@ -47,52 +51,56 @@ final class StudentEnrollmentByTypeChart extends ChartWidget
     {
         $months = $this->getMonthsBasedOnFilter();
 
-        $collegeData = [];
-        $shsData = [];
-        $tesdaData = [];
-        $dhrtData = [];
         $labels = [];
+        $periods = [];
 
         foreach ($months as $month) {
             $labels[] = $month['label'];
-
-            $collegeCount = StudentEnrollment::withTrashed()
-                ->join('students', function ($join): void {
-                    $join->whereRaw('CAST(student_enrollment.student_id AS BIGINT) = students.id');
-                })
-                ->where('students.student_type', StudentType::College->value)
-                ->whereBetween('student_enrollment.created_at', [$month['start'], $month['end']])
-                ->count();
-
-            $shsCount = StudentEnrollment::withTrashed()
-                ->join('students', function ($join): void {
-                    $join->whereRaw('CAST(student_enrollment.student_id AS BIGINT) = students.id');
-                })
-                ->where('students.student_type', StudentType::SeniorHighSchool->value)
-                ->whereBetween('student_enrollment.created_at', [$month['start'], $month['end']])
-                ->count();
-
-            $tesdaCount = StudentEnrollment::withTrashed()
-                ->join('students', function ($join): void {
-                    $join->whereRaw('CAST(student_enrollment.student_id AS BIGINT) = students.id');
-                })
-                ->where('students.student_type', StudentType::TESDA->value)
-                ->whereBetween('student_enrollment.created_at', [$month['start'], $month['end']])
-                ->count();
-
-            $dhrtCount = StudentEnrollment::withTrashed()
-                ->join('students', function ($join): void {
-                    $join->whereRaw('CAST(student_enrollment.student_id AS BIGINT) = students.id');
-                })
-                ->where('students.student_type', StudentType::DHRT->value)
-                ->whereBetween('student_enrollment.created_at', [$month['start'], $month['end']])
-                ->count();
-
-            $collegeData[] = $collegeCount;
-            $shsData[] = $shsCount;
-            $tesdaData[] = $tesdaCount;
-            $dhrtData[] = $dhrtCount;
+            $periods[] = [
+                'start' => $month['start'],
+                'end' => $month['end'],
+            ];
         }
+
+        // One grouped statement resolves every month and every student type
+        // instead of one COUNT per month and type.
+        $counts = app(DashboardStatisticsService::class)->countsByPeriods(
+            model: StudentEnrollment::class,
+            periods: $periods,
+            table: 'student_enrollment',
+            timestampColumn: 'created_at',
+            column: 'students.student_type',
+            scope: function (Builder $query): void {
+                $query->withoutGlobalScope(SoftDeletingScope::class)
+                    ->join('students', function (JoinClause $join): void {
+                        $join->whereRaw('CAST(student_enrollment.student_id AS BIGINT) = students.id');
+                    });
+            },
+        );
+
+        $types = [
+            StudentType::College,
+            StudentType::SeniorHighSchool,
+            StudentType::TESDA,
+            StudentType::DHRT,
+        ];
+
+        $series = [];
+
+        foreach ($types as $type) {
+            $series[$type->value] = [];
+        }
+
+        foreach (array_values($months) as $index => $month) {
+            foreach ($types as $type) {
+                $series[$type->value][] = $counts[$index][$type->value] ?? 0;
+            }
+        }
+
+        $collegeData = $series[StudentType::College->value];
+        $shsData = $series[StudentType::SeniorHighSchool->value];
+        $tesdaData = $series[StudentType::TESDA->value];
+        $dhrtData = $series[StudentType::DHRT->value];
 
         return [
             'datasets' => [
@@ -177,6 +185,11 @@ final class StudentEnrollmentByTypeChart extends ChartWidget
         ];
     }
 
+    /**
+     * The months covered by the chart, oldest first.
+     *
+     * @return array<int, array{label: string, start: Carbon, end: Carbon}>
+     */
     private function getMonthsBasedOnFilter(): array
     {
         $months = [];

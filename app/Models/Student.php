@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Contracts\RecordsActivity;
 use App\Enums\AttritionCategory;
 use App\Enums\EmploymentStatus;
 use App\Enums\ScholarshipType;
@@ -126,7 +127,7 @@ use Spatie\Activitylog\Support\LogOptions;
  *
  * @mixin \Eloquent
  */
-final class Student extends Model
+final class Student extends Model implements RecordsActivity
 {
     use BelongsToSchool;
     use HasAcademicPeriodScope;

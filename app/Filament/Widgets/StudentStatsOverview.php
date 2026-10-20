@@ -6,6 +6,7 @@ namespace App\Filament\Widgets;
 
 use App\Enums\StudentStatus;
 use App\Models\Student;
+use App\Services\DashboardStatisticsService;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Override;
@@ -26,10 +27,20 @@ final class StudentStatsOverview extends BaseWidget
 
     protected function getStats(): array
     {
-        $totalStudents = Student::count();
-        $activeStudents = Student::where('status', StudentStatus::Enrolled->value)->count();
-        $graduateStudents = Student::where('academic_year', 5)->count();
-        $recentStudents = Student::where('created_at', '>=', now()->subDays(30))->count();
+        // One statement resolves every counter instead of one COUNT per value.
+        $counts = app(DashboardStatisticsService::class)->countsByConditions(
+            model: Student::class,
+            conditions: [
+                'enrolled' => ['status', '=', StudentStatus::Enrolled->value],
+                'graduates' => ['academic_year', '=', 5],
+                'recent' => ['created_at', '>=', now()->subDays(30)],
+            ],
+        );
+
+        $totalStudents = $counts['total'];
+        $activeStudents = $counts['enrolled'];
+        $graduateStudents = $counts['graduates'];
+        $recentStudents = $counts['recent'];
 
         return [
             Stat::make('Total Students', number_format($totalStudents))

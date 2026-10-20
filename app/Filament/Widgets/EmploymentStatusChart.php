@@ -7,6 +7,7 @@ namespace App\Filament\Widgets;
 use App\Enums\EmploymentStatus;
 use App\Enums\StudentStatus;
 use App\Models\Student;
+use App\Services\DashboardStatisticsService;
 use Filament\Widgets\ChartWidget;
 use Override;
 
@@ -43,14 +44,22 @@ final class EmploymentStatusChart extends ChartWidget
             EmploymentStatus::FurtherStudy,
         ];
 
+        // One grouped query replaces one COUNT per employment status.
+        $counts = app(DashboardStatisticsService::class)->countsByColumn(
+            model: Student::class,
+            column: 'employment_status',
+            filters: [
+                ['status', '=', StudentStatus::Graduated->value],
+            ],
+            only: array_map(static fn (EmploymentStatus $status): string => $status->value, $statuses),
+        );
+
         $data = [];
         $labels = [];
         $colors = [];
 
         foreach ($statuses as $status) {
-            $count = Student::where('status', StudentStatus::Graduated->value)
-                ->where('employment_status', $status->value)
-                ->count();
+            $count = $counts[$status->value] ?? 0;
 
             if ($count > 0) {
                 $data[] = $count;

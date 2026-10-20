@@ -6,6 +6,7 @@ namespace App\Filament\Widgets;
 
 use App\Enums\StudentStatus;
 use App\Models\Student;
+use App\Services\DashboardStatisticsService;
 use Filament\Widgets\ChartWidget;
 use Override;
 
@@ -37,24 +38,31 @@ final class StudentStatusChart extends ChartWidget
 
     protected function getData(): array
     {
-        // Get status distribution data using new StudentStatus enum
-        $enrolledStudents = Student::where('status', StudentStatus::Enrolled->value)->count();
-        $applicantStudents = Student::where('status', StudentStatus::Applicant->value)->count();
-        $graduatedStudents = Student::where('status', StudentStatus::Graduated->value)->count();
-        $withdrawnStudents = Student::where('status', StudentStatus::Withdrawn->value)->count();
-        $droppedStudents = Student::where('status', StudentStatus::Dropped->value)->count();
+        // One grouped query replaces one COUNT per status.
+        $counts = app(DashboardStatisticsService::class)->countsByColumn(
+            Student::class,
+            'status',
+        );
+
+        $statuses = [
+            StudentStatus::Enrolled,
+            StudentStatus::Applicant,
+            StudentStatus::Graduated,
+            StudentStatus::Withdrawn,
+            StudentStatus::Dropped,
+        ];
+
+        $data = [];
+
+        foreach ($statuses as $status) {
+            $data[] = $counts[$status->value] ?? 0;
+        }
 
         return [
             'datasets' => [
                 [
                     'label' => 'Students by Status',
-                    'data' => [
-                        $enrolledStudents,
-                        $applicantStudents,
-                        $graduatedStudents,
-                        $withdrawnStudents,
-                        $droppedStudents,
-                    ],
+                    'data' => $data,
                     'backgroundColor' => [
                         'rgba(34, 197, 94, 0.8)',    // Green for enrolled
                         'rgba(251, 191, 36, 0.8)',   // Yellow for applicant

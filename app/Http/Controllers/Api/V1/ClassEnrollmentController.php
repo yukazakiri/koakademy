@@ -10,8 +10,11 @@ use App\Http\Requests\VerifyClassGradesRequest;
 use App\Http\Resources\ClassEnrollmentResource;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
+use App\Services\BulkActivityLogger;
+use App\Services\GradeComputationService;
 use App\Services\GradeEvaluationService;
 use App\Services\GradingSystemService;
+use App\Support\BulkChunk;
 use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -333,7 +336,7 @@ final class ClassEnrollmentController extends Controller
     /**
      * Finalize grades for a class enrollment.
      */
-    public function finalizeGrades(int $id): JsonResponse
+    public function finalizeGrades(int $id, GradeComputationService $gradeComputation): JsonResponse
     {
         try {
             $enrollment = ClassEnrollment::findOrFail($id);
@@ -348,8 +351,11 @@ final class ClassEnrollmentController extends Controller
 
             // Calculate total average if not already calculated
             if ($enrollment->total_average === null) {
-                $totalAverage = ($enrollment->prelim_grade * 0.3) + ($enrollment->midterm_grade * 0.3) + ($enrollment->finals_grade * 0.4);
-                $enrollment->total_average = round($totalAverage, 2);
+                $enrollment->total_average = $gradeComputation->totalAverage(
+                    (float) $enrollment->prelim_grade,
+                    (float) $enrollment->midterm_grade,
+                    (float) $enrollment->finals_grade,
+                );
             }
 
             $enrollment->is_grades_finalized = true;
@@ -490,9 +496,17 @@ final class ClassEnrollmentController extends Controller
 
     /**
      * Bulk update grades for multiple enrollments.
+     *
+     * Every enrollment is read with a single query, written back with an
+     * upsert inside a transaction and processed in chunks, so the number of
+     * statements stays constant instead of growing with the class size.
      */
-    public function bulkUpdateGrades(Request $request, int $classId): JsonResponse
-    {
+    public function bulkUpdateGrades(
+        Request $request,
+        int $classId,
+        GradeComputationService $gradeComputation,
+        BulkActivityLogger $activityLogger,
+    ): JsonResponse {
         $request->validate([
             'grades' => 'required|array',
             'grades.*.enrollment_id' => 'required|exists:class_enrollments,id',
@@ -502,36 +516,116 @@ final class ClassEnrollmentController extends Controller
         ]);
 
         try {
-            $updated = [];
-            $errors = [];
+            $gradeRows = $request->input('grades', []);
 
-            foreach ($request->input('grades') as $gradeData) {
-                try {
-                    $enrollment = ClassEnrollment::where('id', $gradeData['enrollment_id'])
+            $enrollmentIds = array_map(
+                static fn (array $gradeData): int => (int) $gradeData['enrollment_id'],
+                $gradeRows
+            );
+
+            // Read every target enrollment with one query per chunk instead
+            // of one lookup (plus one relation load) per student.
+            $enrollments = collect();
+
+            foreach (BulkChunk::of($enrollmentIds) as $chunk) {
+                $enrollments = $enrollments->merge(
+                    ClassEnrollment::query()
                         ->where('class_id', $classId)
-                        ->firstOrFail();
+                        ->whereIn('id', $chunk)
+                        ->get()
+                );
+            }
 
-                    // Calculate total average if all grades are provided
-                    if (isset($gradeData['prelim_grade']) && isset($gradeData['midterm_grade']) && isset($gradeData['finals_grade'])) {
-                        $totalAverage = ($gradeData['prelim_grade'] * 0.3) + ($gradeData['midterm_grade'] * 0.3) + ($gradeData['finals_grade'] * 0.4);
-                        $gradeData['total_average'] = round($totalAverage, 2);
+            $enrollments = $enrollments->keyBy('id');
+
+            $errors = [];
+            $rows = [];
+            $changes = [];
+
+            foreach ($gradeRows as $gradeData) {
+                $enrollmentId = (int) $gradeData['enrollment_id'];
+                $enrollment = $enrollments->get($enrollmentId);
+
+                if (! $enrollment instanceof ClassEnrollment) {
+                    $errors[] = [
+                        'enrollment_id' => $enrollmentId,
+                        'error' => 'Class enrollment not found for the given class.',
+                    ];
+
+                    continue;
+                }
+
+                $payload = [
+                    'prelim_grade' => array_key_exists('prelim_grade', $gradeData)
+                        ? $gradeData['prelim_grade']
+                        : $enrollment->prelim_grade,
+                    'midterm_grade' => array_key_exists('midterm_grade', $gradeData)
+                        ? $gradeData['midterm_grade']
+                        : $enrollment->midterm_grade,
+                    'finals_grade' => array_key_exists('finals_grade', $gradeData)
+                        ? $gradeData['finals_grade']
+                        : $enrollment->finals_grade,
+                ];
+
+                // Calculate total average if all grades are provided
+                if (isset($payload['prelim_grade'], $payload['midterm_grade'], $payload['finals_grade'])) {
+                    $payload['total_average'] = $gradeComputation->totalAverage(
+                        (float) $payload['prelim_grade'],
+                        (float) $payload['midterm_grade'],
+                        (float) $payload['finals_grade'],
+                    );
+                } else {
+                    $payload['total_average'] = $enrollment->total_average;
+                }
+
+                $rows[] = ['id' => $enrollmentId, ...$this->upsertRow($enrollment), ...$payload];
+                $changes[$enrollmentId] = [
+                    'model' => $enrollment,
+                    'old' => $enrollment->getRawOriginal(),
+                    'new' => [...$enrollment->getRawOriginal(), ...$payload],
+                ];
+            }
+
+            if ($rows !== []) {
+                DB::transaction(function () use ($rows, $changes, $activityLogger): void {
+                    foreach (array_chunk($rows, BulkChunk::size()) as $chunk) {
+                        ClassEnrollment::upsert(
+                            $chunk,
+                            ['id'],
+                            ['prelim_grade', 'midterm_grade', 'finals_grade', 'total_average', 'updated_at'],
+                        );
                     }
 
-                    $enrollment->update(collect($gradeData)->only([
-                        'prelim_grade',
-                        'midterm_grade',
-                        'finals_grade',
-                        'total_average',
-                    ])->toArray());
+                    // A bulk write never fires Eloquent events, so the audit
+                    // trail is written back explicitly.
+                    foreach ($changes as $change) {
+                        $activityLogger->updated($change['model'], $change['old'], $change['new']);
+                    }
+                });
+            }
 
-                    $enrollment->load(['student']);
-                    $updated[] = new ClassEnrollmentResource($enrollment);
+            $updated = [];
 
-                } catch (Exception $e) {
-                    $errors[] = [
-                        'enrollment_id' => $gradeData['enrollment_id'],
-                        'error' => $e->getMessage(),
-                    ];
+            if ($enrollments->isNotEmpty()) {
+                $refreshed = collect();
+
+                foreach (BulkChunk::of($enrollments->keys()->all()) as $chunk) {
+                    $refreshed = $refreshed->merge(
+                        ClassEnrollment::query()
+                            ->with('student')
+                            ->whereIn('id', $chunk)
+                            ->get()
+                    );
+                }
+
+                $refreshed = $refreshed->keyBy('id');
+
+                foreach ($enrollments->keys() as $enrollmentId) {
+                    $enrollment = $refreshed->get($enrollmentId);
+
+                    if ($enrollment instanceof ClassEnrollment) {
+                        $updated[] = new ClassEnrollmentResource($enrollment);
+                    }
                 }
             }
 
@@ -551,5 +645,24 @@ final class ClassEnrollmentController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * The stored columns of an enrollment, ready to be written back with an
+     * upsert.
+     *
+     * The upsert statement carries every column of the row, so the columns
+     * that are not part of the grade payload keep their current value and the
+     * not-null columns keep the database satisfied.
+     *
+     * @return array<string, mixed>
+     */
+    private function upsertRow(ClassEnrollment $enrollment): array
+    {
+        $attributes = $enrollment->getRawOriginal();
+
+        unset($attributes['id'], $attributes['created_at'], $attributes['updated_at']);
+
+        return $attributes;
     }
 }

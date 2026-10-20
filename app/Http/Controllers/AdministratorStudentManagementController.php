@@ -20,6 +20,7 @@ use App\Jobs\GenerateStudentSoaPdfJob;
 use App\Mail\StudentBulkMessage;
 use App\Models\Account;
 use App\Models\ClassAttendanceRecord;
+use App\Models\ClassEnrollment;
 use App\Models\Course;
 use App\Models\Department;
 use App\Models\GeneralSetting;
@@ -29,11 +30,13 @@ use App\Models\Student;
 use App\Models\StudentClearance;
 use App\Models\StudentEnrollment;
 use App\Models\StudentStatusRecord;
+use App\Models\StudentTransaction;
 use App\Models\StudentTuition;
 use App\Models\Subject;
 use App\Models\SubjectEnrollment;
 use App\Models\User;
 use App\Notifications\StatementOfAccountAdjustedNotification;
+use App\Services\BulkActivityLogger;
 use App\Services\CurriculumCapabilityResolver;
 use App\Services\GeneralSettingsService;
 use App\Services\GradeEvaluationService;
@@ -42,6 +45,7 @@ use App\Services\IdentifierGenerator;
 use App\Services\StudentIdUpdateService;
 use App\Services\StudentSchoolOptionService;
 use App\Settings\SiteSettings;
+use App\Support\BulkChunk;
 use Closure;
 use Exception;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -2305,7 +2309,7 @@ final class AdministratorStudentManagementController extends Controller
         return back()->with('success', 'Student status updated successfully.');
     }
 
-    public function bulkUpdateStatus(BulkUpdateStudentStatusRequest $request): RedirectResponse
+    public function bulkUpdateStatus(BulkUpdateStudentStatusRequest $request, BulkActivityLogger $activityLogger): RedirectResponse
     {
         $validated = $request->validated();
         $studentIds = $validated['student_ids'];
@@ -2315,22 +2319,56 @@ final class AdministratorStudentManagementController extends Controller
         $currentSchoolYear = $generalSettingsService->getCurrentSchoolYearString();
         $currentSemester = $generalSettingsService->getCurrentSemester();
 
-        $students = Student::query()->whereIn('id', $studentIds)->get();
         $updatedCount = 0;
 
-        foreach ($students as $student) {
-            StudentStatusRecord::updateOrCreate(
-                [
-                    'student_id' => $student->id,
-                    'academic_year' => $currentSchoolYear,
-                    'semester' => $currentSemester,
-                ],
-                [
-                    'status' => $status,
-                ]
-            );
-            $student->update(['status' => $status]);
-            $updatedCount++;
+        foreach (BulkChunk::of($studentIds) as $chunk) {
+            // Read the students once per chunk instead of querying for every
+            // single student.
+            $students = Student::query()->whereIn('id', $chunk)->get();
+
+            if ($students->isEmpty()) {
+                continue;
+            }
+
+            $chunkStudentIds = $students->pluck('id')->all();
+
+            DB::transaction(function () use ($students, $chunkStudentIds, $status, $currentSchoolYear, $currentSemester, $activityLogger): void {
+                $now = now();
+
+                $rows = [];
+
+                foreach ($students as $student) {
+                    $rows[] = [
+                        'student_id' => $student->id,
+                        'academic_year' => $currentSchoolYear,
+                        'semester' => $currentSemester,
+                        'status' => $status,
+                        'school_id' => $student->school_id,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ];
+                }
+
+                StudentStatusRecord::upsert(
+                    $rows,
+                    ['student_id', 'academic_year', 'semester'],
+                    ['status', 'updated_at'],
+                );
+
+                Student::query()->whereIn('id', $chunkStudentIds)->update(['status' => $status]);
+
+                // A bulk write never fires Eloquent events, so the audit trail
+                // is written back explicitly. The per-student revision
+                // snapshots are skipped on purpose: writing one per student
+                // needs a fresh read of the row and is exactly the cost this
+                // bulk endpoint exists to avoid.
+                foreach ($students as $student) {
+                    $old = $student->getRawOriginal();
+                    $activityLogger->updated($student, $old, [...$old, 'status' => $status]);
+                }
+            });
+
+            $updatedCount += $students->count();
         }
 
         return back()->with('success', "Updated status for {$updatedCount} student(s).");
@@ -2351,28 +2389,63 @@ final class AdministratorStudentManagementController extends Controller
         $clearedBy = $user ? $user->name : 'System';
         $updatedCount = 0;
 
-        foreach (Student::query()->whereIn('id', $studentIds)->get() as $student) {
-            $clearance = StudentClearance::firstOrCreate(
-                [
-                    'student_id' => $student->id,
-                    'academic_year' => $academicYear,
-                    'semester' => $semester,
-                ],
-                ['is_cleared' => false]
-            );
+        foreach (BulkChunk::of($studentIds) as $chunk) {
+            $students = Student::query()->whereIn('id', $chunk)->get();
 
-            $updateData = [
-                'is_cleared' => $isCleared,
-                'remarks' => $remarks,
-            ];
-
-            if ($isCleared) {
-                $updateData['cleared_by'] = $clearedBy;
-                $updateData['cleared_at'] = now();
+            if ($students->isEmpty()) {
+                continue;
             }
 
-            $clearance->update($updateData);
-            $updatedCount++;
+            $chunkStudentIds = $students->pluck('id')->all();
+
+            // Read the existing clearance records once per chunk so the write
+            // below can be a single upsert instead of a lookup per student.
+            $existingClearances = StudentClearance::query()
+                ->whereIn('student_id', $chunkStudentIds)
+                ->where('academic_year', $academicYear)
+                ->where('semester', $semester)
+                ->get()
+                ->keyBy('student_id');
+
+            DB::transaction(function () use ($students, $existingClearances, $isCleared, $remarks, $clearedBy, $academicYear, $semester): void {
+                $now = now();
+
+                $updateData = [
+                    'is_cleared' => $isCleared,
+                    'remarks' => $remarks,
+                ];
+
+                if ($isCleared) {
+                    $updateData['cleared_by'] = $clearedBy;
+                    $updateData['cleared_at'] = $now;
+                }
+
+                $rows = [];
+
+                foreach ($students as $student) {
+                    $clearance = $existingClearances->get($student->id);
+
+                    $rows[] = [
+                        'student_id' => $student->id,
+                        'academic_year' => $academicYear,
+                        'semester' => $semester,
+                        'is_cleared' => $updateData['is_cleared'],
+                        'remarks' => $updateData['remarks'],
+                        'cleared_by' => $updateData['cleared_by'] ?? $clearance?->cleared_by,
+                        'cleared_at' => $updateData['cleared_at'] ?? $clearance?->cleared_at,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ];
+                }
+
+                StudentClearance::upsert(
+                    $rows,
+                    ['student_id', 'academic_year', 'semester'],
+                    ['is_cleared', 'remarks', 'cleared_by', 'cleared_at', 'updated_at'],
+                );
+            });
+
+            $updatedCount += $students->count();
         }
 
         return back()->with('success', "Updated clearance for {$updatedCount} student(s).");
@@ -2393,23 +2466,27 @@ final class AdministratorStudentManagementController extends Controller
         $sentCount = 0;
         $skippedCount = 0;
 
-        foreach (Student::query()->whereIn('id', $studentIds)->get() as $student) {
-            if (! $student->email) {
-                $skippedCount++;
+        // The students are read in chunks so a large selection never turns
+        // into one unbounded `where in (...)` statement.
+        foreach (BulkChunk::of($studentIds) as $chunk) {
+            foreach (Student::query()->whereIn('id', $chunk)->get() as $student) {
+                if (! $student->email) {
+                    $skippedCount++;
 
-                continue;
+                    continue;
+                }
+
+                Mail::to($student->email)->send(new StudentBulkMessage(
+                    studentName: $student->full_name,
+                    subjectLine: $subjectLine,
+                    body: $body,
+                    senderName: $senderName,
+                    senderRole: $senderRole,
+                    schoolName: $schoolName,
+                ));
+
+                $sentCount++;
             }
-
-            Mail::to($student->email)->send(new StudentBulkMessage(
-                studentName: $student->full_name,
-                subjectLine: $subjectLine,
-                body: $body,
-                senderName: $senderName,
-                senderRole: $senderRole,
-                schoolName: $schoolName,
-            ));
-
-            $sentCount++;
         }
 
         $message = "Sent {$sentCount} email(s).";
@@ -2420,16 +2497,33 @@ final class AdministratorStudentManagementController extends Controller
         return back()->with('success', $message);
     }
 
-    public function bulkDestroy(BulkDeleteStudentRequest $request): RedirectResponse
+    public function bulkDestroy(BulkDeleteStudentRequest $request, BulkActivityLogger $activityLogger): RedirectResponse
     {
         $validated = $request->validated();
         $studentIds = $validated['student_ids'];
 
         $deletedCount = 0;
 
-        foreach (Student::query()->whereIn('id', $studentIds)->get() as $student) {
-            $student->delete();
-            $deletedCount++;
+        foreach (BulkChunk::of($studentIds) as $chunk) {
+            $students = Student::query()->whereIn('id', $chunk)->get();
+
+            if ($students->isEmpty()) {
+                continue;
+            }
+
+            DB::transaction(function () use ($students, $activityLogger): void {
+                Student::query()
+                    ->whereIn('id', $students->pluck('id')->all())
+                    ->delete();
+
+                // A bulk delete never fires Eloquent events, so the audit trail
+                // is written back explicitly.
+                foreach ($students as $student) {
+                    $activityLogger->deleted($student, $student->getRawOriginal());
+                }
+            });
+
+            $deletedCount += $students->count();
         }
 
         return back()->with('success', "Deleted {$deletedCount} student(s).");
@@ -2451,33 +2545,46 @@ final class AdministratorStudentManagementController extends Controller
         $deletedCount = 0;
         $failures = [];
 
-        foreach (Student::withTrashed()->whereIn('id', $studentIds)->get() as $student) {
+        foreach (BulkChunk::of($studentIds) as $chunk) {
+            $students = Student::withTrashed()->whereIn('id', $chunk)->get();
+
+            if ($students->isEmpty()) {
+                continue;
+            }
+
             try {
-                DB::transaction(function () use ($student): void {
-                    $studentId = $student->id;
+                DB::transaction(function () use ($students): void {
+                    $chunkStudentIds = $students->pluck('id')->all();
 
-                    $student->subjectEnrolled()->forceDelete();
-                    $student->clearances()->forceDelete();
-                    $student->classEnrollments()->forceDelete();
-                    $student->StudentTuition()->forceDelete();
-                    $student->StudentTransactions()->forceDelete();
+                    // The related rows are removed with one statement per
+                    // table instead of one per student.
+                    SubjectEnrollment::query()->whereIn('student_id', $chunkStudentIds)->forceDelete();
+                    StudentClearance::query()->whereIn('student_id', $chunkStudentIds)->forceDelete();
+                    ClassEnrollment::query()->whereIn('student_id', $chunkStudentIds)->forceDelete();
+                    StudentTuition::query()->whereIn('student_id', $chunkStudentIds)->forceDelete();
+                    StudentTransaction::query()->whereIn('student_id', $chunkStudentIds)->forceDelete();
 
-                    StudentEnrollment::where('student_id', $studentId)->forceDelete();
-                    StudentStatusRecord::where('student_id', $studentId)->forceDelete();
+                    StudentEnrollment::whereIn('student_id', $chunkStudentIds)->forceDelete();
+                    StudentStatusRecord::whereIn('student_id', $chunkStudentIds)->forceDelete();
 
                     if (Schema::hasTable('class_attendance_records')) {
-                        ClassAttendanceRecord::where('student_id', $studentId)->delete();
+                        ClassAttendanceRecord::whereIn('student_id', $chunkStudentIds)->delete();
                     }
 
-                    if ($student->lrn && Schema::hasTable('shs_students')) {
-                        ShsStudent::where('student_lrn', $student->lrn)->forceDelete();
+                    $learnersNumbers = $students->pluck('lrn')->filter()->unique()->values();
+
+                    if ($learnersNumbers->isNotEmpty() && Schema::hasTable('shs_students')) {
+                        ShsStudent::whereIn('student_lrn', $learnersNumbers)->forceDelete();
                     }
 
-                    $student->forceDelete();
+                    Student::withTrashed()->whereIn('id', $chunkStudentIds)->forceDelete();
                 });
-                $deletedCount++;
+
+                $deletedCount += $students->count();
             } catch (Exception $e) {
-                $failures[] = $student->full_name.' ('.$e->getMessage().')';
+                foreach ($students as $student) {
+                    $failures[] = $student->full_name.' ('.$e->getMessage().')';
+                }
             }
         }
 

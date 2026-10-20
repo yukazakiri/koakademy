@@ -36,16 +36,21 @@ final class StudentClearanceStatusChart extends ChartWidget
 
     protected function getData(): array
     {
-        // Get clearance status data
-        $clearedStudents = Student::query()->whereHas('clearances', function ($query): void {
-            $query->where('is_cleared', true);
-        })->count();
+        // One statement resolves all three counters instead of one COUNT per
+        // clearance state.
+        $row = Student::query()
+            ->leftJoin('student_clearances', 'student_clearances.student_id', '=', 'students.id')
+            ->whereNull('students.deleted_at')
+            ->selectRaw('count(distinct case when student_clearances.is_cleared = 1 then students.id end) as cleared')
+            ->selectRaw('count(distinct case when student_clearances.is_cleared = 0 then students.id end) as not_cleared')
+            ->selectRaw('count(distinct case when student_clearances.id is null then students.id end) as no_clearance')
+            ->first();
 
-        $notClearedStudents = Student::query()->whereHas('clearances', function ($query): void {
-            $query->where('is_cleared', false);
-        })->count();
+        $attributes = $row?->getAttributes() ?? [];
 
-        $noClearanceStudents = Student::query()->whereDoesntHave('clearances')->count();
+        $clearedStudents = is_numeric($attributes['cleared'] ?? null) ? (int) $attributes['cleared'] : 0;
+        $notClearedStudents = is_numeric($attributes['not_cleared'] ?? null) ? (int) $attributes['not_cleared'] : 0;
+        $noClearanceStudents = is_numeric($attributes['no_clearance'] ?? null) ? (int) $attributes['no_clearance'] : 0;
 
         return [
             'datasets' => [

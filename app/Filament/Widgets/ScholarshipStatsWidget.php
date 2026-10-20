@@ -6,6 +6,7 @@ namespace App\Filament\Widgets;
 
 use App\Enums\ScholarshipType;
 use App\Models\Student;
+use App\Services\DashboardStatisticsService;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Override;
@@ -23,32 +24,35 @@ final class ScholarshipStatsWidget extends BaseWidget
 
     protected function getStats(): array
     {
-        $totalStudents = Student::count();
+        // One grouped query resolves every scholarship counter.
+        $counts = app(DashboardStatisticsService::class)->countsByColumn(
+            Student::class,
+            'scholarship_type',
+        );
+
+        $totalStudents = array_sum($counts);
+
+        // TDP scholars
+        $tdpScholars = $counts[ScholarshipType::TDP->value] ?? 0;
+
+        // TES scholars
+        $tesScholars = $counts[ScholarshipType::TES->value] ?? 0;
 
         // CHED scholarships (TDP + TES)
-        $chedScholars = Student::whereIn('scholarship_type', [
-            ScholarshipType::TDP->value,
-            ScholarshipType::TES->value,
-        ])->count();
+        $chedScholars = $tdpScholars + $tesScholars;
 
         $chedPercentage = $totalStudents > 0
             ? round(($chedScholars / $totalStudents) * 100, 1)
             : 0;
 
-        // TDP scholars
-        $tdpScholars = Student::where('scholarship_type', ScholarshipType::TDP->value)->count();
-
-        // TES scholars
-        $tesScholars = Student::where('scholarship_type', ScholarshipType::TES->value)->count();
-
         // Other scholarships
-        $institutionalScholars = Student::where('scholarship_type', ScholarshipType::Institutional->value)->count();
-        $privateScholars = Student::where('scholarship_type', ScholarshipType::Private->value)->count();
-        $otherScholars = Student::where('scholarship_type', ScholarshipType::Other->value)->count();
+        $institutionalScholars = $counts[ScholarshipType::Institutional->value] ?? 0;
+        $privateScholars = $counts[ScholarshipType::Private->value] ?? 0;
+        $otherScholars = $counts[ScholarshipType::Other->value] ?? 0;
 
-        $totalScholars = $chedScholars + $institutionalScholars + $privateScholars + $otherScholars;
+        $scholarshipHolders = $chedScholars + $institutionalScholars + $privateScholars + $otherScholars;
         $scholarshipCoverage = $totalStudents > 0
-            ? round(($totalScholars / $totalStudents) * 100, 1)
+            ? round(($scholarshipHolders / $totalStudents) * 100, 1)
             : 0;
 
         return [
@@ -58,7 +62,7 @@ final class ScholarshipStatsWidget extends BaseWidget
                 ->color('success'),
 
             Stat::make('Total Scholarship Coverage', "{$scholarshipCoverage}%")
-                ->description("{$totalScholars} of {$totalStudents} students")
+                ->description("{$scholarshipHolders} of {$totalStudents} students")
                 ->descriptionIcon('heroicon-m-currency-dollar')
                 ->color('info'),
 

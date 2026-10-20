@@ -11,7 +11,9 @@ use App\Models\StudentClearance;
 use App\Models\StudentStatusRecord;
 use App\Models\User;
 use App\Services\GeneralSettingsService;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Permission;
 
 use function Pest\Laravel\actingAs;
@@ -153,4 +155,86 @@ it('bulk sends a formal email to students with addresses', function (): void {
         ->assertRedirect();
 
     Mail::assertSent(StudentBulkMessage::class, 1);
+});
+
+it('writes the bulk status update with a single statement per table', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $students = Student::factory()->count(20)->create([
+        'status' => StudentStatus::Applicant,
+    ]);
+
+    $statements = [];
+
+    DB::listen(function ($query) use (&$statements): void {
+        $statements[] = $query->sql;
+    });
+
+    actingAs($user)
+        ->patch(route('administrators.students.bulk-update-status'), [
+            'student_ids' => $students->pluck('id')->all(),
+            'status' => StudentStatus::Enrolled->value,
+        ])
+        ->assertRedirect();
+
+    $statusRecordUpserts = array_filter(
+        $statements,
+        static fn (string $sql): bool => str_contains($sql, 'on conflict')
+    );
+
+    $perStudentStatusUpdates = array_filter(
+        $statements,
+        static fn (string $sql): bool => str_starts_with(mb_strtolower(mb_trim($sql)), 'update "students"')
+            && ! str_contains($sql, 'where "id" in')
+    );
+
+    expect($statusRecordUpserts)->toHaveCount(1)
+        ->and($perStudentStatusUpdates)->toHaveCount(0);
+});
+
+it('keeps the audit trail of a bulk status update', function (): void {
+    Activity::query()->delete();
+
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $student = Student::factory()->create(['status' => StudentStatus::Applicant]);
+
+    actingAs($user)
+        ->patch(route('administrators.students.bulk-update-status'), [
+            'student_ids' => [$student->id],
+            'status' => StudentStatus::Enrolled->value,
+        ])
+        ->assertRedirect();
+
+    $activity = Activity::query()
+        ->where('log_name', 'student')
+        ->where('event', 'updated')
+        ->latest('id')
+        ->first();
+
+    expect($activity)->not->toBeNull()
+        ->and($activity->subject_type)->toBe(Student::class)
+        ->and($activity->subject_id)->toBe($student->id)
+        ->and($activity->attribute_changes->get('attributes'))->toHaveKey('status');
+});
+
+it('keeps the audit trail of a bulk soft delete', function (): void {
+    Activity::query()->delete();
+
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $student = Student::factory()->create();
+
+    actingAs($user)
+        ->delete(route('administrators.students.bulk-destroy'), [
+            'student_ids' => [$student->id],
+        ])
+        ->assertRedirect();
+
+    $activity = Activity::query()
+        ->where('log_name', 'student')
+        ->where('event', 'deleted')
+        ->latest('id')
+        ->first();
+
+    expect($activity)->not->toBeNull()
+        ->and($activity->subject_type)->toBe(Student::class)
+        ->and($activity->subject_id)->toBe($student->id);
 });

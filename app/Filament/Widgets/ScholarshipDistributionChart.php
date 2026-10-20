@@ -6,6 +6,7 @@ namespace App\Filament\Widgets;
 
 use App\Enums\ScholarshipType;
 use App\Models\Student;
+use App\Services\DashboardStatisticsService;
 use Filament\Widgets\ChartWidget;
 use Override;
 
@@ -35,12 +36,19 @@ final class ScholarshipDistributionChart extends ChartWidget
     protected function getData(): array
     {
         $types = ScholarshipType::cases();
+
+        // One grouped query replaces one COUNT per scholarship type.
+        $counts = app(DashboardStatisticsService::class)->countsByColumn(
+            Student::class,
+            'scholarship_type',
+        );
+
         $data = [];
         $labels = [];
         $colors = [];
 
         foreach ($types as $type) {
-            $count = Student::where('scholarship_type', $type->value)->count();
+            $count = $counts[$type->value] ?? 0;
 
             if ($count > 0) {
                 $data[] = $count;

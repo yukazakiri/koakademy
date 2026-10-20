@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Widgets;
 
 use App\Models\Student;
+use App\Services\DashboardStatisticsService;
 use Filament\Widgets\ChartWidget;
 use Override;
 
@@ -36,10 +37,15 @@ final class StudentGenderDistributionChart extends ChartWidget
 
     protected function getData(): array
     {
-        // Get gender distribution data
-        $maleCount = Student::where('gender', 'male')->count();
-        $femaleCount = Student::where('gender', 'female')->count();
-        $otherCount = Student::whereNotIn('gender', ['male', 'female'])->count();
+        // One grouped query replaces one COUNT per gender.
+        $counts = app(DashboardStatisticsService::class)->countsByColumn(
+            Student::class,
+            'gender',
+        );
+
+        $maleCount = $counts['male'] ?? 0;
+        $femaleCount = $counts['female'] ?? 0;
+        $otherCount = array_sum($counts) - $maleCount - $femaleCount;
 
         return [
             'datasets' => [

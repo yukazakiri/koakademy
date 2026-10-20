@@ -6,6 +6,7 @@ namespace App\Filament\Widgets;
 
 use App\Enums\StudentType;
 use App\Models\Student;
+use App\Services\DashboardStatisticsService;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Override;
@@ -24,31 +25,26 @@ final class StudentAnalyticsStatsOverview extends BaseWidget
     #[Override]
     protected ?string $pollingInterval = '30s';
 
+    /**
+     * Memoised per-request daily counts, so the trend charts below share a
+     * single grouped query instead of running one per day and per type.
+     *
+     * @var array<string, array<string, int>>|null
+     */
+    private ?array $dailyCounts = null;
+
     protected function getStats(): array
     {
-        // Total counts by type
-        $totalStudents = Student::count();
-        $collegeStudents = Student::where('student_type', StudentType::College->value)->count();
-        $shsStudents = Student::where('student_type', StudentType::SeniorHighSchool->value)->count();
-        $tesdaStudents = Student::where('student_type', StudentType::TESDA->value)->count();
-        $dhrtStudents = Student::where('student_type', StudentType::DHRT->value)->count();
+        $statistics = app(DashboardStatisticsService::class);
 
-        // Recent additions (last 30 days)
-        Student::where('student_type', StudentType::College->value)
-            ->where('created_at', '>=', now()->subDays(30))
-            ->count();
+        // One grouped statement resolves the total and every type count.
+        $typeCounts = $statistics->countsByColumn(Student::class, 'student_type');
 
-        Student::where('student_type', StudentType::SeniorHighSchool->value)
-            ->where('created_at', '>=', now()->subDays(30))
-            ->count();
-
-        Student::where('student_type', StudentType::TESDA->value)
-            ->where('created_at', '>=', now()->subDays(30))
-            ->count();
-
-        Student::where('student_type', StudentType::DHRT->value)
-            ->where('created_at', '>=', now()->subDays(30))
-            ->count();
+        $totalStudents = array_sum($typeCounts);
+        $collegeStudents = $typeCounts[StudentType::College->value] ?? 0;
+        $shsStudents = $typeCounts[StudentType::SeniorHighSchool->value] ?? 0;
+        $tesdaStudents = $typeCounts[StudentType::TESDA->value] ?? 0;
+        $dhrtStudents = $typeCounts[StudentType::DHRT->value] ?? 0;
 
         // Calculate percentages
         $collegePercentage = $totalStudents > 0 ? round(($collegeStudents / $totalStudents) * 100, 1) : 0;
@@ -109,13 +105,12 @@ final class StudentAnalyticsStatsOverview extends BaseWidget
      */
     private function getRecentTrend(StudentType $type): array
     {
+        $counts = $this->dailyCounts();
+
         $data = [];
-        for ($i = 6; $i >= 0; $i--) {
-            $date = now()->subDays($i);
-            $count = Student::where('student_type', $type->value)
-                ->whereDate('created_at', $date)
-                ->count();
-            $data[] = $count;
+
+        foreach ($this->trendDayLabels() as $label) {
+            $data[] = $counts[$label][$type->value] ?? 0;
         }
 
         return $data;
@@ -126,13 +121,44 @@ final class StudentAnalyticsStatsOverview extends BaseWidget
      */
     private function getAllStudentsTrend(): array
     {
+        $counts = $this->dailyCounts();
+
         $data = [];
-        for ($i = 6; $i >= 0; $i--) {
-            $date = now()->subDays($i);
-            $count = Student::whereDate('created_at', $date)->count();
-            $data[] = $count;
+
+        foreach ($this->trendDayLabels() as $label) {
+            $data[] = array_sum($counts[$label] ?? []);
         }
 
         return $data;
+    }
+
+    /**
+     * The daily counts of the last seven days, grouped by student type.
+     *
+     * @return array<string, array<string, int>>
+     */
+    private function dailyCounts(): array
+    {
+        return $this->dailyCounts ??= app(DashboardStatisticsService::class)->dailyCounts(
+            model: Student::class,
+            labels: $this->trendDayLabels(),
+            column: 'student_type',
+        );
+    }
+
+    /**
+     * The `Y-m-d` labels of the last seven days, oldest first.
+     *
+     * @return array<int, string>
+     */
+    private function trendDayLabels(): array
+    {
+        $labels = [];
+
+        for ($i = 6; $i >= 0; $i--) {
+            $labels[] = now()->subDays($i)->format('Y-m-d');
+        }
+
+        return $labels;
     }
 }

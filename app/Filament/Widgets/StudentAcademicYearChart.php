@@ -6,6 +6,7 @@ namespace App\Filament\Widgets;
 
 use App\Enums\StudentType;
 use App\Models\Student;
+use App\Services\DashboardStatisticsService;
 use Filament\Widgets\ChartWidget;
 use Override;
 
@@ -42,15 +43,20 @@ final class StudentAcademicYearChart extends ChartWidget
             5 => 'Graduate',
         ];
 
+        // One grouped query replaces one COUNT per year level.
+        $counts = app(DashboardStatisticsService::class)->countsByColumn(
+            model: Student::class,
+            column: 'academic_year',
+            filters: [
+                ['student_type', '=', StudentType::College->value],
+            ],
+        );
+
         $data = [];
         $labels = [];
 
         foreach ($yearLevels as $year => $label) {
-            $count = Student::where('student_type', StudentType::College->value)
-                ->where('academic_year', $year)
-                ->count();
-
-            $data[] = $count;
+            $data[] = $counts[(string) $year] ?? 0;
             $labels[] = $label;
         }
 

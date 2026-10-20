@@ -7,6 +7,7 @@ namespace App\Filament\Widgets;
 use App\Enums\EmploymentStatus;
 use App\Enums\StudentStatus;
 use App\Models\Student;
+use App\Services\DashboardStatisticsService;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Override;
@@ -24,16 +25,28 @@ final class EmployabilityStatsWidget extends BaseWidget
 
     protected function getStats(): array
     {
+        // One statement resolves every graduate counter.
+        $counts = app(DashboardStatisticsService::class)->countsByConditions(
+            model: Student::class,
+            conditions: [
+                'employed' => ['employment_status', 'in', [
+                    EmploymentStatus::Employed->value,
+                    EmploymentStatus::SelfEmployed->value,
+                ]],
+                'institutional' => ['employed_by_institution', '=', true],
+                'unemployed' => ['employment_status', '=', EmploymentStatus::Unemployed->value],
+                'further_study' => ['employment_status', '=', EmploymentStatus::FurtherStudy->value],
+            ],
+            filters: [
+                ['status', '=', StudentStatus::Graduated->value],
+            ],
+        );
+
         // Total graduates
-        $totalGraduates = Student::where('status', StudentStatus::Graduated->value)->count();
+        $totalGraduates = $counts['total'];
 
         // Employment metrics
-        $employedGraduates = Student::where('status', StudentStatus::Graduated->value)
-            ->whereIn('employment_status', [
-                EmploymentStatus::Employed->value,
-                EmploymentStatus::SelfEmployed->value,
-            ])
-            ->count();
+        $employedGraduates = $counts['employed'];
 
         // Calculate employability rate
         $employabilityRate = $totalGraduates > 0
@@ -41,23 +54,17 @@ final class EmployabilityStatsWidget extends BaseWidget
             : 0;
 
         // Institutional absorption (graduates employed by the institution)
-        $institutionalAbsorption = Student::where('status', StudentStatus::Graduated->value)
-            ->where('employed_by_institution', true)
-            ->count();
+        $institutionalAbsorption = $counts['institutional'];
 
         $absorptionRate = $totalGraduates > 0
             ? round(($institutionalAbsorption / $totalGraduates) * 100, 1)
             : 0;
 
         // Unemployed graduates
-        $unemployedGraduates = Student::where('status', StudentStatus::Graduated->value)
-            ->where('employment_status', EmploymentStatus::Unemployed->value)
-            ->count();
+        $unemployedGraduates = $counts['unemployed'];
 
         // Further study
-        $furtherStudy = Student::where('status', StudentStatus::Graduated->value)
-            ->where('employment_status', EmploymentStatus::FurtherStudy->value)
-            ->count();
+        $furtherStudy = $counts['further_study'];
 
         return [
             Stat::make('Employability Rate', "{$employabilityRate}%")

@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Contracts\RecordsActivity;
 use App\Models\Concerns\BelongsToSchool;
 use App\Models\Concerns\HasAcademicPeriodScope;
 use Illuminate\Database\Eloquent\Builder;
@@ -37,7 +38,7 @@ use Spatie\Activitylog\Support\LogOptions;
  *
  * @mixin \Eloquent
  */
-final class ClassEnrollment extends Model
+final class ClassEnrollment extends Model implements RecordsActivity
 {
     use BelongsToSchool;
     use HasAcademicPeriodScope;

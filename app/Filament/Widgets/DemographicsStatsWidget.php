@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Widgets;
 
 use App\Models\Student;
+use App\Services\DashboardStatisticsService;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Override;
@@ -22,9 +23,17 @@ final class DemographicsStatsWidget extends BaseWidget
 
     protected function getStats(): array
     {
-        // Indigenous participation
-        $totalIndigenous = Student::where('is_indigenous_person', true)->count();
-        $totalStudents = Student::count();
+        // One statement resolves the indigenous and total counters.
+        $counts = app(DashboardStatisticsService::class)->countsByConditions(
+            model: Student::class,
+            conditions: [
+                'indigenous' => ['is_indigenous_person', '=', true],
+            ],
+        );
+
+        $totalIndigenous = $counts['indigenous'];
+        $totalStudents = $counts['total'];
+
         $indigenousPercentage = $totalStudents > 0
             ? round(($totalIndigenous / $totalStudents) * 100, 1)
             : 0;
@@ -34,17 +43,16 @@ final class DemographicsStatsWidget extends BaseWidget
             ->distinct('ethnicity')
             ->count('ethnicity');
 
-        // Geographic diversity (count of unique regions)
-        $uniqueRegions = Student::whereNotNull('region_of_origin')
-            ->distinct('region_of_origin')
-            ->count('region_of_origin');
-
-        // Most common region
-        $topRegion = Student::whereNotNull('region_of_origin')
+        // Geographic diversity and the most common region, resolved with a
+        // single grouped query.
+        $regions = Student::whereNotNull('region_of_origin')
             ->selectRaw('region_of_origin, COUNT(*) as count')
             ->groupBy('region_of_origin')
             ->orderByDesc('count')
-            ->first();
+            ->get();
+
+        $uniqueRegions = $regions->count();
+        $topRegion = $regions->first();
 
         return [
             Stat::make('Indigenous Students', number_format($totalIndigenous))

@@ -10,6 +10,7 @@ use App\Jobs\GenerateStudentListPdfJob;
 use App\Jobs\MoveStudentToSectionJob;
 use App\Models\Classes;
 use App\Models\Student;
+use App\Services\GradeComputationService;
 use Exception;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -113,7 +114,11 @@ final class ClassEnrollmentsRelationManager extends RelationManager
                         $finals = $get('finals_grade');
 
                         if ($prelim !== null && $midterm !== null && $finals !== null) {
-                            $average = ($prelim + $midterm + $finals) / 3;
+                            $average = app(GradeComputationService::class)->totalAverage(
+                                (float) $prelim,
+                                (float) $midterm,
+                                (float) $finals,
+                            );
 
                             return number_format($average, 2);
                         }

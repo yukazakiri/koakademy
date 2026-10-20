@@ -39,7 +39,7 @@ export default function UserCreate({ roles, schools, departments, permissions, u
             <Head title="Create User" />
 
             <main className="mx-auto flex w-full max-w-7xl flex-col gap-5">
-                <header className="space-y-3">
+                <header className="bg-card flex flex-col gap-3 rounded-2xl border p-5 shadow-xs">
                     <Link
                         href={route("administrators.users.index")}
                         className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/45 inline-flex min-h-11 items-center gap-2 rounded-md text-sm transition-colors focus-visible:ring-2 focus-visible:outline-none"
@@ -49,8 +49,10 @@ export default function UserCreate({ roles, schools, departments, permissions, u
                     </Link>
                     <div className="space-y-1">
                         <p className="text-muted-foreground text-xs font-semibold tracking-[0.16em] uppercase">User management / New account</p>
-                        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Create user</h1>
-                        <p className="text-muted-foreground max-w-2xl text-sm">Set up identity, organization, and access in one focused form.</p>
+                        <h1 className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">Create account</h1>
+                        <p className="text-muted-foreground max-w-2xl text-sm text-pretty">
+                            Set up identity, placement, and access in one focused form. The summary on the right reflects what will be saved.
+                        </p>
                     </div>
                 </header>
 

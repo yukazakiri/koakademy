@@ -1,6 +1,7 @@
 import AdminLayout from "@/components/administrators/admin-layout";
+import { Badge } from "@/components/reui/badge";
 import type { User } from "@/types/user";
-import { Head, Link, useForm } from "@inertiajs/react";
+import { Head, Link, router, useForm } from "@inertiajs/react";
 import { ArrowLeft } from "lucide-react";
 import type { FormEventHandler } from "react";
 import { UserForm, type UserFormData } from "./user-form";
@@ -47,26 +48,33 @@ export default function UserEdit({ user, roles, schools, departments, permission
         put(route("administrators.users.update", user.id));
     };
 
+    const cancel: FormEventHandler = (event) => {
+        event.preventDefault();
+        router.get(route("administrators.users.show", user.id));
+    };
+
     return (
         <AdminLayout user={auth_user} title="Edit User">
             <Head title={`Edit User • ${user.name}`} />
 
             <main className="mx-auto flex w-full max-w-7xl flex-col gap-5">
-                <header className="space-y-3">
+                <header className="bg-card flex flex-col gap-3 rounded-2xl border p-5 shadow-xs">
                     <Link
-                        href={route("administrators.users.index")}
-                        className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/45 inline-flex min-h-11 items-center gap-2 rounded-md text-sm transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                        href={route("administrators.users.show", user.id)}
+                        className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/45 inline-flex w-fit items-center gap-2 rounded-md text-sm transition-colors focus-visible:ring-2 focus-visible:outline-none"
                     >
                         <ArrowLeft aria-hidden="true" className="size-4" />
-                        Users
+                        Account details
                     </Link>
-                    <div className="space-y-1">
-                        <p className="text-muted-foreground text-xs font-semibold tracking-[0.16em] uppercase">User management / Account</p>
-                        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Edit {user.name}</h1>
-                        <p className="text-muted-foreground max-w-2xl text-sm">
-                            Update the account without losing sight of its access or organization.
-                        </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <h1 className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">Edit {user.name}</h1>
+                        <Badge variant="outline" size="sm" radius="full">
+                            {roles[user.role] ?? user.role}
+                        </Badge>
                     </div>
+                    <p className="text-muted-foreground max-w-2xl text-sm text-pretty">
+                        Change identity, placement, and access. The summary on the right reflects what will be saved.
+                    </p>
                 </header>
 
                 <UserForm
@@ -81,6 +89,7 @@ export default function UserEdit({ user, roles, schools, departments, permission
                     processing={processing}
                     isDirty={isDirty}
                     onSubmit={submit}
+                    onCancel={cancel}
                 />
             </main>
         </AdminLayout>

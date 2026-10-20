@@ -39,6 +39,7 @@ createInertiaApp({
         component: "directory",
         props: {
             users: { data: users, total: users.length },
+            filters: {},
             analytics: {
                 total_users: 2,
                 new_users_today: 0,

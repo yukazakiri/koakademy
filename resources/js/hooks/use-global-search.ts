@@ -18,6 +18,8 @@ export type ClassSearchResult = {
     url?: string | null;
 };
 
+export type ScheduleSearchResult = ClassSearchResult & { day_of_week: string; time_range: string; room: string };
+
 export type UserSearchResult = {
     id: number;
     name: string;
@@ -70,6 +72,7 @@ export type SubjectSearchResult = {
 };
 
 export type CourseSearchResult = {
+    edit_url?: string | null;
     id: number;
     code: string;
     title: string;
@@ -78,7 +81,7 @@ export type CourseSearchResult = {
 };
 
 /** Result groups the palette can render. */
-export type SearchGroup = "students" | "classes" | "users" | "faculty" | "enrollments" | "subjects" | "courses";
+export type SearchGroup = "students" | "classes" | "users" | "faculty" | "enrollments" | "subjects" | "courses" | "schedule";
 
 /** Narrowing the palette to one group asks the API for more rows of that group. */
 export type SearchType = SearchGroup | "all";
@@ -91,6 +94,7 @@ export type SearchResults = {
     enrollments: EnrollmentSearchResult[];
     subjects: SubjectSearchResult[];
     courses: CourseSearchResult[];
+    schedule: ScheduleSearchResult[];
 };
 
 /**
@@ -120,6 +124,7 @@ const EMPTY_RESULTS: SearchResults = {
     enrollments: [],
     subjects: [],
     courses: [],
+    schedule: [],
 };
 
 function groupOrEmpty<T>(value: unknown): T[] {
@@ -135,6 +140,7 @@ function normalizeResults(payload: Record<string, unknown>): SearchResults {
         enrollments: groupOrEmpty<EnrollmentSearchResult>(payload.enrollments),
         subjects: groupOrEmpty<SubjectSearchResult>(payload.subjects),
         courses: groupOrEmpty<CourseSearchResult>(payload.courses),
+        schedule: groupOrEmpty<ScheduleSearchResult>(payload.schedule),
     };
 }
 
@@ -258,7 +264,7 @@ export function useGlobalSearch({ scope, query, type = "all", enabled = true }: 
         results.faculty.length +
         results.enrollments.length +
         results.subjects.length +
-        results.courses.length;
+        results.courses.length + results.schedule.length;
 
     return { status, results, total, retry };
 }

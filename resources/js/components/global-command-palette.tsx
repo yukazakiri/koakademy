@@ -57,6 +57,7 @@ const GROUP_HEADINGS: Record<SearchGroup, string> = {
     enrollments: "Enrollments",
     subjects: "Subjects",
     courses: "Courses",
+    schedule: "Schedule",
 };
 
 /** Each portal's full-page results view, where "View all" lands. */
@@ -682,7 +683,7 @@ export function GlobalCommandContent({
     }
 
     const hint = isMacPlatform() ? "⌘ K" : "Ctrl K";
-    const { students, classes, users, faculty, enrollments, subjects, courses } = results;
+    const { students, classes, users, faculty, enrollments, subjects, courses, schedule } = results;
     const showNoResults =
         status === "success" && total === 0 && filteredNavigation.length === 0 && filteredProductivity.length === 0;
     const statusMessage =
@@ -985,9 +986,30 @@ export function GlobalCommandContent({
                                 </div>
                             </CommandItem>
                         ))}
+                        {courses.filter((result) => result.edit_url).map((result) => (
+                            <CommandItem key={`edit-course:${result.id}`} value={`edit-course:${result.id}`} onSelect={() => visitResult(result.edit_url)}>
+                                <IconSettings className="size-4" />
+                                <span>Edit {result.code} curriculum</span>
+                            </CommandItem>
+                        ))}
                         {courses.length >= RESULT_LIMIT ? (
                             <ViewAllRow group="courses" onSelect={() => openResults("courses")} />
                         ) : null}
+                    </CommandGroup>
+                )}
+
+                {schedule.length > 0 && (
+                    <CommandGroup heading="Schedule">
+                        {schedule.map((result) => (
+                            <CommandItem key={`schedule:${result.id}`} value={`schedule:${result.id}`} onSelect={() => visitResult(result.url)}>
+                                <IconCalendarEvent className="size-4" />
+                                <div className="min-w-0 flex-1">
+                                    <div className="truncate font-medium">{result.record_title}</div>
+                                    <div className="text-muted-foreground text-xs">{result.day_of_week} · {result.time_range} · {result.room}</div>
+                                </div>
+                            </CommandItem>
+                        ))}
+                        <ViewAllRow group="schedule" onSelect={() => openResults("schedule")} />
                     </CommandGroup>
                 )}
 

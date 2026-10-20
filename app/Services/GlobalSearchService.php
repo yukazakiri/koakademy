@@ -10,6 +10,7 @@ use App\Models\ClassEnrollment;
 use App\Models\Classes;
 use App\Models\Course;
 use App\Models\Faculty;
+use App\Models\Schedule;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\Subject;
@@ -49,7 +50,7 @@ final class GlobalSearchService
     public const int EXPANDED_RESULT_LIMIT = 20;
 
     /** @var list<string> */
-    public const array ADMINISTRATOR_GROUPS = ['students', 'classes', 'users', 'faculty', 'enrollments', 'courses'];
+    public const array ADMINISTRATOR_GROUPS = ['students', 'classes', 'users', 'faculty', 'enrollments', 'courses', 'schedule'];
 
     /** @var list<string> */
     public const array FACULTY_GROUPS = ['classes', 'students'];
@@ -176,6 +177,13 @@ final class GlobalSearchService
                 ->all();
         }
 
+        if ($type === 'all' || $type === 'schedule') {
+            $results['schedule'] = $this->administratorScheduleQuery($query)
+                ->limit($limit)->get()
+                ->map(fn (Schedule $schedule): array => $this->administratorScheduleRow($schedule))
+                ->values()->all();
+        }
+
         return $results;
     }
 
@@ -212,6 +220,8 @@ final class GlobalSearchService
             'courses' => Course::search($query)
                 ->paginate($perPage)
                 ->through(fn (Course $course): array => $this->administratorCourseRow($course)),
+            'schedule' => $this->administratorScheduleQuery($query)->paginate($perPage)
+                ->through(fn (Schedule $schedule): array => $this->administratorScheduleRow($schedule)),
             default => $this->emptyPaginator($perPage),
         };
     }
@@ -389,6 +399,52 @@ final class GlobalSearchService
             'semester' => (string) ($class->semester ?? 'N/A'),
             'classification' => $class->classification ?? 'college',
         ];
+    }
+
+    /**
+     * Each term must match this meeting's day, room, or class identity.
+     * Keep day and room on the same schedule row so Monday in Lab1 cannot
+     * accidentally match a class meeting Monday elsewhere and Tuesday in Lab1.
+     */
+    private function administratorScheduleQuery(string $query): Builder
+    {
+        $builder = Schedule::query()
+            ->whereHas('class', fn (Builder $class): Builder => $class->currentAcademicPeriod())
+            ->with(['room', 'class.Subject', 'class.SubjectByCodeFallback', 'class.ShsSubject', 'class.subjects'])
+            ->orderBy('day_of_week')->orderBy('start_time')->orderBy('id');
+
+        $terms = preg_split('/[^\p{L}\p{N}]+/u', $query, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        foreach ($terms as $term) {
+            $pattern = '%'.$term.'%';
+            $builder->where(function (Builder $match) use ($pattern): void {
+                $match->whereLike('day_of_week', $pattern)
+                    ->orWhereHas('room', fn (Builder $room): Builder => $room->whereLike('name', $pattern))
+                    ->orWhereHas('class', function (Builder $class) use ($pattern): void {
+                        $class->where(function (Builder $identity) use ($pattern): void {
+                            $identity->whereLike('subject_code', $pattern)->orWhereLike('section', $pattern)
+                                ->orWhereHas('Subject', fn (Builder $subject): Builder => $subject->whereLike('title', $pattern))
+                                ->orWhereHas('SubjectByCodeFallback', fn (Builder $subject): Builder => $subject->whereLike('title', $pattern))
+                                ->orWhereHas('ShsSubject', fn (Builder $subject): Builder => $subject->whereLike('title', $pattern));
+                        });
+                    });
+            });
+        }
+
+        // Punctuation-only queries must not become an unfiltered timetable.
+        return $terms === [] ? $builder->whereRaw('1 = 0') : $builder;
+    }
+
+    /** @return array<string, mixed> */
+    private function administratorScheduleRow(Schedule $schedule): array
+    {
+        return array_replace($this->classSummary($schedule->class), [
+            'id' => $schedule->id,
+            'class_id' => $schedule->class_id,
+            'day_of_week' => $schedule->day_of_week,
+            'time_range' => $schedule->time_range,
+            'room' => $schedule->room?->name ?? 'TBA',
+            'url' => route('administrators.classes.show', $schedule->class),
+        ]);
     }
 
     /**
@@ -710,7 +766,10 @@ final class GlobalSearchService
      */
     private function administratorCourseRow(Course $course): array
     {
-        return $this->courseSummary($course) + ['url' => route('administrators.curriculum.programs.show', $course)];
+        return $this->courseSummary($course) + [
+            'url' => route('administrators.curriculum.programs.show', $course),
+            'edit_url' => route('administrators.curriculum.programs.show', ['course' => $course->getRouteKey(), 'tab' => 'settings']),
+        ];
     }
 
     /**

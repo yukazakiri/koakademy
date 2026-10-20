@@ -99,7 +99,7 @@ final class AdministratorCurriculumManagementController extends Controller
         ]);
     }
 
-    public function showProgram(Course $course): Response
+    public function showProgram(Request $request, Course $course): Response
     {
         $course->load([
             'subjects' => fn ($query) => $query
@@ -125,6 +125,7 @@ final class AdministratorCurriculumManagementController extends Controller
         return Inertia::render('administrators/curriculum/programs/show', [
             ...$this->userProps(),
             'program' => $this->programFormPayload($course),
+            'initialTab' => $request->query('tab') === 'settings' ? 'settings' : 'subjects',
             'stats' => [
                 'subjects' => $subjects->count(),
                 'credited_subjects' => $subjects->where('is_credited', true)->count(),

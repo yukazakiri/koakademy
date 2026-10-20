@@ -36,7 +36,7 @@ import {
     useReactTable,
 } from "@tanstack/react-table";
 import { ArrowUpDown, BookOpen, ChevronLeft, Edit, FilePenLine, GraduationCap, Plus, Search, Settings, Trash2 } from "lucide-react";
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { route } from "ziggy-js";
 
 type DepartmentOption = { id: number; name: string; code: string };
@@ -117,6 +117,7 @@ type SubjectFormData = {
 };
 
 interface Props {
+    initialTab: "subjects" | "settings";
     user: User;
     program: ProgramPayload;
     stats: { subjects: number; credited_subjects: number; academic_years: number; subjects_with_requisites: number; total_units: number };
@@ -278,6 +279,7 @@ function SubjectFields({
 }
 
 export default function CurriculumProgramShow({
+    initialTab,
     user,
     program,
     stats,
@@ -289,6 +291,8 @@ export default function CurriculumProgramShow({
     ched_options,
     authority_codes,
 }: Props) {
+    const [activeTab, setActiveTab] = useState(initialTab);
+    useEffect(() => setActiveTab(initialTab), [initialTab]);
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [editSubject, setEditSubject] = useState<SubjectPayload | null>(null);
     const [deleteSubject, setDeleteSubject] = useState<SubjectPayload | null>(null);
@@ -560,7 +564,7 @@ export default function CurriculumProgramShow({
                 </div>
 
                 {/* Tabs */}
-                <Tabs defaultValue="subjects">
+                <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value === "settings" ? "settings" : "subjects")}>
                     <TabsList variant="underline">
                         <TabsTab value="subjects">
                             <BookOpen className="mr-1.5 size-4" />

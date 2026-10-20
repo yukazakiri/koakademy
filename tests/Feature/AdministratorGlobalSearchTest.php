@@ -264,3 +264,57 @@ it('renders the results page empty state without a query', function (): void {
             ->where('group', 'students')
             ->has('results.data', 0));
 });
+
+it('finds Monday meetings and narrows by the meeting room without mixing different days', function (): void {
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $class = Classes::factory()->create([
+        'school_year' => '2025-2026', 'semester' => 1, 'classification' => 'college',
+    ]);
+    $lab = Room::factory()->create(['name' => 'Science Lab']);
+    $hall = Room::factory()->create(['name' => 'West Hall']);
+    $monday = App\Models\Schedule::factory()->create([
+        'class_id' => $class->id, 'room_id' => $lab->id, 'day_of_week' => 'Monday',
+        'start_time' => '08:00:00', 'end_time' => '09:00:00',
+    ]);
+    App\Models\Schedule::factory()->create([
+        'class_id' => $class->id, 'room_id' => $hall->id, 'day_of_week' => 'Tuesday',
+    ]);
+    $oldClass = Classes::factory()->create(['school_year' => '2024 - 2025', 'semester' => 1]);
+    App\Models\Schedule::factory()->create([
+        'class_id' => $oldClass->id, 'room_id' => $lab->id, 'day_of_week' => 'Monday',
+    ]);
+    actingAs($admin);
+
+    getJson(portalUrlForAdministrators('/administrators/search?q=monday&type=schedule'))
+        ->assertOk()->assertJsonCount(1, 'schedule')
+        ->assertJsonPath('schedule.0.id', $monday->id)
+        ->assertJsonPath('schedule.0.room', 'Science Lab')
+        ->assertJsonPath('schedule.0.time_range', '08:00 AM - 09:00 AM');
+    getJson(portalUrlForAdministrators('/administrators/search?q=monday+science+lab&type=schedule'))
+        ->assertOk()->assertJsonCount(1, 'schedule');
+    getJson(portalUrlForAdministrators('/administrators/search?q=monday+west+hall&type=schedule'))
+        ->assertOk()->assertJsonCount(0, 'schedule');
+    getJson(portalUrlForAdministrators('/administrators/search?q=!!&type=schedule'))
+        ->assertOk()->assertJsonCount(0, 'schedule');
+
+    withoutVite();
+    get(portalUrlForAdministrators('/administrators/search/results?q=monday+science&type=schedule'))
+        ->assertOk()->assertInertia(fn (Assert $page): Assert => $page
+        ->where('group', 'schedule')->where('results.total', 1)
+        ->where('results.data.0.id', $monday->id));
+});
+
+it('provides a direct curriculum edit link alongside the existing view link', function (): void {
+    actingAs(User::factory()->create(['role' => UserRole::Admin]));
+    $course = Course::factory()->create(['code' => 'EDITTEST']);
+    $row = getJson(portalUrlForAdministrators('/administrators/search?q=EDITTEST&type=courses'))
+        ->assertOk()->json('courses.0');
+    expect($row['url'])->toContain("/curriculum/programs/{$course->id}")
+        ->and($row['edit_url'])->toContain("/curriculum/programs/{$course->id}?tab=settings");
+
+    withoutVite();
+    get(portalUrlForAdministrators("/administrators/curriculum/programs/{$course->id}?tab=settings"))
+        ->assertOk()->assertInertia(fn (Assert $page): Assert => $page
+        ->component('administrators/curriculum/programs/show')->where('initialTab', 'settings'));
+
+});

@@ -50,6 +50,7 @@ const GROUP_LABELS: Record<SearchGroup, string> = {
     enrollments: "enrollments",
     subjects: "subjects",
     courses: "courses",
+    schedule: "schedule entries",
 };
 
 function text(row: ResultRow, key: string): string {
@@ -63,8 +64,8 @@ function text(row: ResultRow, key: string): string {
  * describe every record type.
  */
 function rowTitle(group: SearchGroup, row: ResultRow): string {
-    const key = group === "classes" ? "record_title" : group === "enrollments" ? "student_name" : "name";
-    const candidates = group === "classes" || group === "enrollments" ? [key] : [key, "title"];
+    const key = (group === "classes" || group === "schedule") ? "record_title" : group === "enrollments" ? "student_name" : "name";
+    const candidates = group === "classes" || group === "schedule" || group === "enrollments" ? [key] : [key, "title"];
 
     for (const candidate of candidates) {
         const value = text(row, candidate);
@@ -79,6 +80,8 @@ function rowTitle(group: SearchGroup, row: ResultRow): string {
 
 function rowSubtitle(group: SearchGroup, row: ResultRow): string {
     switch (group) {
+        case "schedule":
+            return [text(row, "day_of_week"), text(row, "time_range"), text(row, "room")].filter(Boolean).join(" · ");
         case "students":
             return [text(row, "student_id"), text(row, "course"), text(row, "academic_year")].filter(Boolean).join(" · ");
         case "classes":
@@ -194,6 +197,9 @@ export default function SearchResultsView({ query, rawQuery, group, groups, resu
                                         ) : null}
                                         <IconChevronRight className="text-muted-foreground size-4 shrink-0" />
                                     </Link>
+                                    {typeof row.edit_url === "string" ? (
+                                        <Link href={row.edit_url} className="inline-block px-4 pb-3 text-sm underline">Edit curriculum</Link>
+                                    ) : null}
                                 </li>
                             );
                         })}

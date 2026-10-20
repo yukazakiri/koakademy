@@ -26,10 +26,11 @@ interface PageProps {
     schools: { id: number; name: string }[];
     departments: { id: number; name: string; school_id: number }[];
     permissions: { id: number; name: string }[];
+    can_edit_access: boolean;
     auth_user: User;
 }
 
-export default function UserEdit({ user, roles, schools, departments, permissions, auth_user }: PageProps) {
+export default function UserEdit({ user, roles, schools, departments, permissions, can_edit_access, auth_user }: PageProps) {
     const { data, setData, put, processing, errors, isDirty } = useForm<UserFormData>({
         name: user.name || "",
         email: user.email || "",
@@ -85,6 +86,7 @@ export default function UserEdit({ user, roles, schools, departments, permission
                     schools={schools}
                     departments={departments}
                     permissions={permissions}
+                    canEditAccess={can_edit_access}
                     mode="edit"
                     processing={processing}
                     isDirty={isDirty}

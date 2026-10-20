@@ -83,6 +83,7 @@ final class AdministratorUserManagementController extends Controller
                 $user->setAttribute('mfa_configured', filled($user->app_authentication_secret) || $user->hasEmailAuthentication() || $user->passkeys_count > 0);
                 $user->setAttribute('capabilities', [
                     'view' => $permissions['view'],
+                    'edit' => $permissions['update'] && (Auth::user()->is($user) || Auth::user()->hasHigherAuthorityThan($user)),
                     'manage_access' => $permissions['update'] && Auth::user()->hasHigherAuthorityThan($user) && ! request()->session()->has('impersonator_id'),
                     'update' => $permissions['update'] && Auth::user()->hasHigherAuthorityThan($user),
                     'delete' => $permissions['delete'] && Auth::user()->hasHigherAuthorityThan($user),
@@ -203,13 +204,15 @@ final class AdministratorUserManagementController extends Controller
     public function edit(User $user): Response
     {
         $this->authorizeUserManagementAccess('Update:User');
-        abort_unless(Auth::user()->hasHigherAuthorityThan($user), 403);
+        $isSelf = Auth::user()->is($user);
+        abort_unless($isSelf || Auth::user()->hasHigherAuthorityThan($user), 403);
 
         $user->load(['roles']);
 
         return Inertia::render('administrators/users/edit', [
             'user' => $user,
-            'roles' => $this->getAvailableRoles(),
+            'roles' => $isSelf ? [$user->role->value => $user->role->getLabel()] : $this->getAvailableRoles(),
+            'can_edit_access' => ! $isSelf,
             'schools' => School::all(['id', 'name']),
             'departments' => Department::all(['id', 'name', 'school_id']),
             'permissions' => Role::query()->where('guard_name', 'web')->get(['id', 'name'])->filter(fn (Role $role): bool => UserSystemRoleService::fromName($role->name) === null)->values(),
@@ -220,10 +223,16 @@ final class AdministratorUserManagementController extends Controller
     public function update(UpdateUserRequest $request, User $user): RedirectResponse
     {
         $this->authorizeUserManagementAccess('Update:User');
-        abort_unless(Auth::user()->hasHigherAuthorityThan($user), 403);
+        $isSelf = Auth::user()->is($user);
+        abort_unless($isSelf || Auth::user()->hasHigherAuthorityThan($user), 403);
 
         $data = $request->validated();
-        $this->authorizeRoleAssignments($data);
+
+        if ($isSelf) {
+            $this->authorizeSelfEditAccess($user, $data);
+        } else {
+            $this->authorizeRoleAssignments($data);
+        }
 
         if (empty($data['password'])) {
             unset($data['password']);
@@ -234,9 +243,16 @@ final class AdministratorUserManagementController extends Controller
         $permissionRoles = $data['roles'] ?? [];
         unset($data['roles']);
 
+        if ($isSelf) {
+            // Preserve all existing grants, including legacy multiple system roles.
+            unset($data['role']);
+        }
+
         $user->update($data);
 
-        app(UserSystemRoleService::class)->assign($user, UserRole::from($data['role']), $request->has('roles') ? $permissionRoles : null);
+        if (! $isSelf) {
+            app(UserSystemRoleService::class)->assign($user, UserRole::from($data['role']), $request->has('roles') ? $permissionRoles : null);
+        }
 
         app(UserSecurityActivityService::class)->record($user, 'account_updated', 'success', Auth::user());
 
@@ -588,6 +604,24 @@ final class AdministratorUserManagementController extends Controller
         }
 
         return round((($current - $previous) / $previous) * 100, 1);
+    }
+
+    /** @param array<string, mixed> $data */
+    private function authorizeSelfEditAccess(User $user, array $data): void
+    {
+        abort_unless($data['role'] === $user->role->value, 403, 'Your system role cannot be changed through self-edit.');
+
+        if (! array_key_exists('roles', $data)) {
+            return;
+        }
+
+        $currentRoleIds = $user->roles()->where('guard_name', 'web')->get()
+            ->filter(fn (Role $role): bool => UserSystemRoleService::fromName($role->name) === null)
+            ->pluck('id')->map(fn ($id): int => (int) $id)->sort()->values()->all();
+        $requestedRoleIds = collect($data['roles'] ?? [])
+            ->map(fn ($id): int => (int) $id)->unique()->sort()->values()->all();
+
+        abort_unless($requestedRoleIds === $currentRoleIds, 403, 'Your access assignments cannot be changed through self-edit.');
     }
 
     /** @param array<string, mixed> $data */

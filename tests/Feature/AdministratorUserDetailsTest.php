@@ -377,3 +377,92 @@ it('offers only custom bundles in additional access', function (): void {
     $response = $this->actingAs($admin)->get(portalUrlForAdministrators('/administrators/users/create'))->assertOk();
     expect(collect($response->inertiaProps('permissions'))->pluck('name')->all())->toContain('Library support bundle')->not->toContain('student', 'Super Administrator');
 });
+
+it('lets authorized administrators edit their own details without exposing self management actions', function (UserRole $role): void {
+    $actor = User::factory()->create(['role' => $role]);
+    Permission::findOrCreate('Update:User', 'web');
+    Permission::findOrCreate('ViewAny:User', 'web');
+    $actor->givePermissionTo(['Update:User', 'ViewAny:User']);
+
+    $response = $this->actingAs($actor)->get(portalUrlForAdministrators('/administrators/users/'.$actor->id.'/edit'))->assertOk();
+    expect($response->inertiaProps('can_edit_access'))->toBeFalse()
+        ->and($response->inertiaProps('roles'))->toBe([$role->value => $role->getLabel()]);
+
+    $directory = $this->get(portalUrlForAdministrators('/administrators/users'))->assertOk();
+    $row = collect($directory->inertiaProps('users.data'))->firstWhere('id', $actor->id);
+    expect($row['capabilities']['edit'])->toBeTrue()
+        ->and($row['capabilities']['update'])->toBeFalse()
+        ->and($row['capabilities']['delete'])->toBeFalse()
+        ->and($row['capabilities']['manage_access'])->toBeFalse();
+})->with([UserRole::SuperAdmin, UserRole::Developer, UserRole::Admin]);
+
+it('preserves every existing role assignment when a multi role administrator updates their own details', function (): void {
+    $actor = User::factory()->create(['role' => UserRole::Admin]);
+    $custom = Role::findOrCreate('Account audit access', 'web');
+    $actor->assignRole(
+        Role::findOrCreate('developer', 'web'),
+        Role::findOrCreate('super_admin', 'web'),
+        Role::findOrCreate('admin', 'web'),
+        $custom,
+    );
+    $before = $actor->roles()->orderBy('id')->pluck('id')->all();
+
+    $this->actingAs($actor)->put(portalUrlForAdministrators('/administrators/users/'.$actor->id), [
+        'name' => 'Updated own name', 'email' => $actor->email, 'role' => 'developer', 'roles' => [$custom->id],
+    ])->assertRedirect();
+
+    expect($actor->fresh()->name)->toBe('Updated own name')
+        ->and($actor->fresh()->getRawOriginal('role'))->toBe('admin')
+        ->and($actor->fresh()->roles()->orderBy('id')->pluck('id')->all())->toBe($before)
+        ->and(Activity::query()->inLog('user-security')->forSubject($actor)->forEvent('account_updated')->sole()->causer_id)->toBe($actor->id);
+});
+
+it('rejects changing the system role while editing oneself', function (UserRole $current, UserRole $requested): void {
+    $actor = User::factory()->create(['role' => $current]);
+    Permission::findOrCreate('Update:User', 'web');
+    $actor->givePermissionTo('Update:User');
+
+    $this->actingAs($actor)->put(portalUrlForAdministrators('/administrators/users/'.$actor->id), [
+        'name' => 'Must not change', 'email' => $actor->email, 'role' => $requested->value,
+    ])->assertForbidden();
+
+    expect($actor->fresh()->name)->toBe($actor->name)
+        ->and($actor->fresh()->role)->toBe($current);
+})->with([[UserRole::Admin, UserRole::Developer], [UserRole::SuperAdmin, UserRole::Admin]]);
+
+it('rejects adding or removing custom access while editing oneself', function (bool $remove): void {
+    $actor = User::factory()->create(['role' => UserRole::SuperAdmin]);
+    $existing = Role::findOrCreate('Existing account access', 'web');
+    $new = Role::findOrCreate('New account access', 'web');
+    $actor->assignRole($existing);
+    $before = $actor->roles()->orderBy('id')->pluck('id')->all();
+
+    $this->actingAs($actor)->put(portalUrlForAdministrators('/administrators/users/'.$actor->id), [
+        'name' => $actor->name, 'email' => $actor->email, 'role' => 'super_admin',
+        'roles' => $remove ? [] : [$existing->id, $new->id],
+    ])->assertForbidden();
+
+    expect($actor->fresh()->roles()->orderBy('id')->pluck('id')->all())->toBe($before);
+})->with([true, false]);
+
+it('requires update permission even when editing oneself', function (): void {
+    $actor = userManagementAdmin(['ViewAny:User']);
+    $this->actingAs($actor)->get(portalUrlForAdministrators('/administrators/users/'.$actor->id.'/edit'))->assertForbidden();
+    $this->put(portalUrlForAdministrators('/administrators/users/'.$actor->id), [
+        'name' => $actor->name, 'email' => $actor->email, 'role' => 'admin',
+    ])->assertForbidden();
+});
+
+it('keeps equal rank edits and dangerous self management actions forbidden', function (): void {
+    $actor = User::factory()->create(['role' => UserRole::Developer]);
+    $peer = User::factory()->create(['role' => UserRole::Developer]);
+    $this->actingAs($actor)->get(portalUrlForAdministrators('/administrators/users/'.$peer->id.'/edit'))->assertForbidden();
+    $this->put(portalUrlForAdministrators('/administrators/users/'.$peer->id), [
+        'name' => $peer->name, 'email' => $peer->email, 'role' => 'developer',
+    ])->assertForbidden();
+    $this->delete(portalUrlForAdministrators('/administrators/users/'.$actor->id))->assertForbidden();
+    $this->post(portalUrlForAdministrators('/administrators/users/'.$actor->id.'/impersonate'))->assertForbidden();
+    $this->put(portalUrlForAdministrators('/administrators/users/'.$actor->id.'/access'), [
+        'suspended' => true, 'reason' => 'Must remain forbidden',
+    ])->assertForbidden();
+});

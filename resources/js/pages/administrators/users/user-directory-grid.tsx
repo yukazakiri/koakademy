@@ -41,7 +41,7 @@ export interface DirectoryUser {
     last_active_at?: string | null;
     last_login_at?: string | null;
     created_at: string | null;
-    capabilities: { view: boolean; update: boolean; delete: boolean; manage_access: boolean };
+    capabilities: { view: boolean; edit: boolean; update: boolean; delete: boolean; manage_access: boolean };
 }
 
 interface DirectoryOptions {
@@ -264,7 +264,7 @@ export function UserDirectoryGrid({ users, options, onlineUserIds, onAction }: D
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end" className="w-56">
                                     <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">Manage {user.name}</DropdownMenuLabel>
-                                    {user.capabilities.update ? (
+                                    {user.capabilities.edit ? (
                                         <DropdownMenuItem asChild>
                                             <Link href={edit.url(user.id)} className="flex items-center">
                                                 <FileEdit aria-hidden="true" className="text-muted-foreground mr-2 size-4" />

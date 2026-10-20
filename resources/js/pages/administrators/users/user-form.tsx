@@ -31,6 +31,7 @@ interface UserFormProps {
     schools: { id: number; name: string }[];
     departments: { id: number; name: string; school_id: number }[];
     permissions: { id: number; name: string }[];
+    canEditAccess?: boolean;
     mode: "create" | "edit";
     processing: boolean;
     isDirty?: boolean;
@@ -60,6 +61,7 @@ export function UserForm({
     schools,
     departments,
     permissions,
+    canEditAccess = true,
     mode,
     processing,
     isDirty = true,
@@ -254,7 +256,7 @@ export function UserForm({
                     <div className="flex flex-col gap-5 p-5">
                         <Field>
                             <FieldLabel htmlFor="role">System role</FieldLabel>
-                            <Select value={data.role} onValueChange={(value) => setData("role", value)}>
+                            <Select value={data.role} onValueChange={(value) => setData("role", value)} disabled={!canEditAccess}>
                                 <SelectTrigger id="role" aria-invalid={Boolean(errors.role)}>
                                     <SelectValue placeholder="Choose a system role" />
                                 </SelectTrigger>
@@ -266,7 +268,11 @@ export function UserForm({
                                     ))}
                                 </SelectContent>
                             </Select>
-                            <FieldDescription>Determines portal access, hierarchy, and the permissions this role grants.</FieldDescription>
+                            <FieldDescription>
+                                {canEditAccess
+                                    ? "Determines portal access, hierarchy, and the permissions this role grants."
+                                    : "Your system role stays unchanged when editing your own account."}
+                            </FieldDescription>
                             <FieldErrorMessage error={errors.role} />
                         </Field>
 
@@ -288,6 +294,7 @@ export function UserForm({
                                                 <Checkbox
                                                     id={`permission-${permission.id}`}
                                                     checked={checked}
+                                                    disabled={!canEditAccess}
                                                     onCheckedChange={() => toggleRole(permission.id)}
                                                     className="mt-0.5"
                                                 />
@@ -348,7 +355,9 @@ export function UserForm({
                     <p className="text-muted-foreground text-xs text-pretty">
                         {mode === "create"
                             ? "The account is created with the selected system role and access bundles."
-                            : "Saving replaces the system role and keeps the access bundles you keep selected."}
+                            : canEditAccess
+                              ? "Saving replaces the system role and keeps the access bundles you keep selected."
+                              : "Saving updates your details without changing your roles or access bundles."}
                     </p>
 
                     <div className="flex flex-col gap-2 border-t pt-4">

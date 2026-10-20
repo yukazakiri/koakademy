@@ -16,6 +16,7 @@ use App\Http\Controllers\AdministratorFacultyImportController;
 use App\Http\Controllers\AdministratorFacultyManagementController;
 use App\Http\Controllers\AdministratorFinanceController;
 use App\Http\Controllers\AdministratorGlobalSearchController;
+use App\Http\Controllers\AdministratorGlobalSearchResultsController;
 use App\Http\Controllers\AdministratorIndustryCodeController;
 use App\Http\Controllers\AdministratorModuleMarketplaceController;
 use App\Http\Controllers\AdministratorRegistrarDocumentController;
@@ -174,6 +175,10 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/search', AdministratorGlobalSearchController::class)
             ->middleware('throttle:global-search')
             ->name('search');
+
+        Route::get('/search/results', AdministratorGlobalSearchResultsController::class)
+            ->middleware('throttle:global-search')
+            ->name('search.results');
 
         // Semester / School Year preferences (Administrator)
         Route::put('/settings/semester', [UserSettingController::class, 'updateSemester'])->name('settings.semester.update');

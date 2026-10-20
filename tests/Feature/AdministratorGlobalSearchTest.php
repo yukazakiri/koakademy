@@ -13,9 +13,12 @@ use App\Models\StudentEnrollment;
 use App\Models\Subject;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache;
+use Inertia\Testing\AssertableInertia as Assert;
 
 use function Pest\Laravel\actingAs;
+use function Pest\Laravel\get;
 use function Pest\Laravel\getJson;
+use function Pest\Laravel\withoutVite;
 
 beforeEach(function (): void {
     Cache::forget('general_settings_id');
@@ -146,4 +149,60 @@ it('ignores queries shorter than the minimum length', function (): void {
     getJson(portalUrlForAdministrators('/administrators/search?q=a&type=students'))
         ->assertOk()
         ->assertJsonPath('students', []);
+});
+
+it('paginates the full results page for a single group', function (): void {
+    withoutVite();
+
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+
+    $course = Course::factory()->create(['code' => 'BSCS', 'title' => 'Computer Science']);
+
+    foreach (range(1, 7) as $index) {
+        Student::factory()->create([
+            'student_id' => 300000 + $index,
+            'first_name' => 'Searchable',
+            'last_name' => 'Candidate',
+            'course_id' => $course->id,
+            'school_id' => 1,
+            'institution_id' => 1,
+        ]);
+    }
+
+    actingAs($admin);
+
+    $firstPage = get(portalUrlForAdministrators('/administrators/search/results?q=Searchable&type=students'));
+    $firstPage->assertOk()->assertInertia(fn (Assert $page): Assert => $page
+        ->component('administrators/search/results')
+        ->where('group', 'students')
+        ->where('query', 'Searchable')
+        ->has('results.data', 7)
+        ->where('results.current_page', 1)
+        ->where('results.total', 7));
+
+    // A page size of 20 means these seven fit; the page must still be paginator-shaped.
+    expect($firstPage->viewData('page')['props']['results']['last_page'])->toBe(1);
+
+    get(portalUrlForAdministrators('/administrators/search/results?q=Searchable&type=classes'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page): Assert => $page
+            ->component('administrators/search/results')
+            ->where('group', 'classes')
+            ->has('results.data', 0));
+});
+
+it('renders the results page empty state without a query', function (): void {
+    withoutVite();
+
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+
+    actingAs($admin);
+
+    get(portalUrlForAdministrators('/administrators/search/results'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page): Assert => $page
+            ->component('administrators/search/results')
+            ->where('query', null)
+            ->where('group', 'students')
+            ->has('results.data', 0));
 });

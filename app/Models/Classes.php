@@ -167,14 +167,20 @@ final class Classes extends Model
     }
 
     /**
-     * Modify the database search query for Scout database driver.
-     * This ensures only actual database columns are used in the WHERE clause.
+     * Related records whose columns global search should match as well.
+     *
+     * A class is normally looked up by its subject ("capstone"), not by its
+     * section code, so the engines search the subject code and title too.
+     *
+     * @return array<string, list<string>>
      */
-    public function scoutDatabaseQuery($query): Builder
+    public function searchableRelations(): array
     {
-        return $query->select('classes.*')
-            ->leftJoin('subjects', 'classes.subject_id', '=', 'subjects.id')
-            ->leftJoin('faculties', 'classes.faculty_id', '=', 'faculties.id');
+        return [
+            'Subject' => ['code', 'title'],
+            'SubjectByCodeFallback' => ['code', 'title'],
+            'ShsSubject' => ['code', 'title'],
+        ];
     }
 
     /**

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Scout;
 
+use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
+use Illuminate\Database\Eloquent\Model;
 use Laravel\Scout\Builder;
 use Laravel\Scout\Engines\DatabaseEngine;
 
@@ -15,7 +17,11 @@ use Laravel\Scout\Engines\DatabaseEngine;
  * People search by typing several words, so each whitespace-separated term is
  * matched independently and every term has to match somewhere in the record.
  *
- * Registered for the `[REDACTED]` driver in AppServiceProvider.
+ * A model may also declare related records that are worth searching — a class is
+ * normally found by its subject title, which lives on another table. Those columns
+ * are matched through `searchableRelations()`.
+ *
+ * Registered for the `database` driver in AppServiceProvider.
  */
 final class TermDatabaseEngine extends DatabaseEngine
 {
@@ -26,22 +32,50 @@ final class TermDatabaseEngine extends DatabaseEngine
     {
         $terms = $this->searchTerms($builder->query);
 
-        if (count($terms) < 2) {
+        if ($terms === []) {
             return parent::addTextSearchConstraints($query, $builder, $columns, $prefixColumns, $fullTextColumns);
         }
 
+        $model = $builder->model;
         $originalQuery = $builder->query;
 
         try {
-            return $query->where(function ($termGroup) use ($builder, $columns, $prefixColumns, $fullTextColumns, $terms): void {
+            return $query->where(function ($termGroup) use ($builder, $model, $columns, $prefixColumns, $fullTextColumns, $terms): void {
                 foreach ($terms as $term) {
                     $builder->query = $term;
 
-                    parent::addTextSearchConstraints($termGroup, $builder, $columns, $prefixColumns, $fullTextColumns);
+                    // Each term is one group: this record's own columns OR a
+                    // related record the model declared as searchable.
+                    $termGroup->where(function ($singleTerm) use ($builder, $model, $columns, $prefixColumns, $fullTextColumns, $term): void {
+                        parent::addTextSearchConstraints($singleTerm, $builder, $columns, $prefixColumns, $fullTextColumns);
+
+                        $this->addRelationConstraints($singleTerm, $model, $term);
+                    });
                 }
             });
         } finally {
             $builder->query = $originalQuery;
+        }
+    }
+
+    /**
+     * Match the term against the related columns a model opted into.
+     */
+    private function addRelationConstraints(EloquentBuilder $query, Model $model, string $term): void
+    {
+        if (! method_exists($model, 'searchableRelations')) {
+            return;
+        }
+
+        /** @var array<string, list<string>> $relations */
+        $relations = $model->searchableRelations();
+
+        foreach ($relations as $relation => $columns) {
+            $query->orWhereHas($relation, function (EloquentBuilder $related) use ($columns, $term): void {
+                foreach ($columns as $column) {
+                    $related->orWhere($column, 'like', '%'.$term.'%');
+                }
+            });
         }
     }
 

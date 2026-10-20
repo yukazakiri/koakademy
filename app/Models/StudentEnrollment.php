@@ -126,15 +126,6 @@ final class StudentEnrollment extends Model
         ];
     }
 
-    /**
-     * Modify the database search query for Scout database driver.
-     * This ensures only actual database columns are used in the WHERE clause.
-     */
-    public function scoutDatabaseQuery($query): Builder
-    {
-        return $query;
-    }
-
     // public function signature()
     // {
     //     return $this->morphOne(EnrollmentSignature::class, 'enrollment');

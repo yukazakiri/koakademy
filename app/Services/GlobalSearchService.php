@@ -16,6 +16,7 @@ use App\Models\Subject;
 use App\Models\User;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 
 /**
@@ -134,6 +135,52 @@ final class GlobalSearchService
     }
 
     /**
+     * Paginated results for the full-page search view.
+     *
+     * One group at a time, so the page can paginate honestly instead of guessing
+     * how much of a mixed result set the user has already seen.
+     *
+     * @return LengthAwarePaginator<int, array<string, mixed>>
+     */
+    public function paginateAdministrator(?string $query, string $group, int $perPage = 20): LengthAwarePaginator
+    {
+        if ($query === null) {
+            return $this->emptyPaginator($perPage);
+        }
+
+        return match ($group) {
+            'students' => Student::search($query)
+                ->query(fn (Builder $builder): Builder => $builder->with(['Course']))
+                ->paginate($perPage)
+                ->through(fn (Student $student): array => $this->studentSummary($student) + [
+                    'type' => $student->student_type instanceof StudentType ? $student->student_type->value : (is_string($student->student_type) ? $student->student_type : null),
+                    'status' => $student->status instanceof StudentStatus ? $student->status->value : (is_string($student->status) ? $student->status : null),
+                ]),
+            'classes' => Classes::search($query)
+                ->query(fn (Builder $builder): Builder => $builder
+                    ->currentAcademicPeriod()
+                    ->with(['Subject', 'SubjectByCodeFallback', 'ShsSubject', 'faculty', 'Room'])
+                    ->withCount('class_enrollments'))
+                ->paginate($perPage)
+                ->through(fn (Classes $class): array => $this->classSummary($class) + [
+                    'faculty' => $class->faculty?->full_name ?? 'TBA',
+                    'students_count' => (int) ($class->class_enrollments_count ?? 0),
+                    'maximum_slots' => (int) ($class->maximum_slots ?? 0),
+                    'room' => $class->Room?->name ?? 'TBA',
+                    'courses' => $class->formatted_course_codes ?? 'N/A',
+                ]),
+            'users' => User::search($query)
+                ->paginate($perPage)
+                ->through(fn (User $user): array => $this->userSummary($user)),
+            'faculty' => Faculty::search($query)
+                ->paginate($perPage)
+                ->through(fn (Faculty $faculty): array => $this->facultySummary($faculty)),
+            'enrollments' => $this->paginateAdministratorEnrollments($query, $perPage),
+            default => $this->emptyPaginator($perPage),
+        };
+    }
+
+    /**
      * @return array<string, list<array<string, mixed>>>
      */
     public function searchFaculty(Faculty $faculty, ?string $query, string $type): array
@@ -221,6 +268,33 @@ final class GlobalSearchService
             'semester' => (string) ($class->semester ?? 'N/A'),
             'classification' => $class->classification ?? 'college',
         ];
+    }
+
+    /**
+     * @return LengthAwarePaginator<int, array<string, mixed>>
+     */
+    private function paginateAdministratorEnrollments(string $query, int $perPage): LengthAwarePaginator
+    {
+        $studentIds = Student::search($query)
+            ->take(self::RELATED_MATCH_LIMIT)
+            ->get()
+            ->modelKeys();
+
+        return StudentEnrollment::query()
+            ->whereIn('student_id', $studentIds === [] ? [-1] : $studentIds)
+            ->currentAcademicPeriod()
+            ->with(['student', 'course'])
+            ->orderByDesc('id')
+            ->paginate($perPage)
+            ->through(fn (StudentEnrollment $enrollment): array => $this->enrollmentSummary($enrollment));
+    }
+
+    /**
+     * @return LengthAwarePaginator<int, array<string, mixed>>
+     */
+    private function emptyPaginator(int $perPage): LengthAwarePaginator
+    {
+        return new LengthAwarePaginator([], 0, $perPage, 1);
     }
 
     /**
@@ -439,9 +513,8 @@ final class GlobalSearchService
     /**
      * Class search shared by every portal.
      *
-     * Scout can only match real columns, so classes are first matched on their own
-     * columns and then topped up with classes whose subject code or title matches —
-     * people search "capstone", not "IT401".
+     * Subject code/title matching comes from `Classes::searchableRelations()`, so
+     * these results paginate like any other group.
      *
      * @param  Closure(Builder): Builder  $scope
      * @param  Closure(Classes): array<string, mixed>  $map
@@ -449,49 +522,13 @@ final class GlobalSearchService
      */
     private function classResults(string $query, int $limit, Closure $scope, Closure $map): array
     {
-        $matches = Classes::search($query)
+        return Classes::search($query)
             ->query($scope)
             ->take($limit)
-            ->get();
-
-        if ($matches->count() < $limit) {
-            $matches = $matches->concat(
-                $this->classesMatchingSubject($query, $limit - $matches->count(), $scope, $matches->modelKeys()),
-            );
-        }
-
-        return $matches->take($limit)->map($map)->values()->all();
-    }
-
-    /**
-     * Classes whose subject code or title contains the query phrase.
-     *
-     * @param  Closure(Builder): Builder  $scope
-     * @param  list<int|string>  $excludeIds
-     * @return Collection<int, Classes>
-     */
-    private function classesMatchingSubject(string $query, int $limit, Closure $scope, array $excludeIds): Collection
-    {
-        if ($limit < 1) {
-            return collect();
-        }
-
-        $like = '%'.$query.'%';
-
-        $matchesSubject = fn (Builder $subjectQuery): Builder => $subjectQuery
-            ->where('code', 'like', $like)
-            ->orWhere('title', 'like', $like);
-
-        return Classes::query()
-            ->where(fn (Builder $builder): Builder => $builder
-                ->whereHas('Subject', $matchesSubject)
-                ->orWhereHas('SubjectByCodeFallback', $matchesSubject)
-                ->orWhereHas('ShsSubject', $matchesSubject))
-            ->when($excludeIds !== [], fn (Builder $builder): Builder => $builder->whereNotIn('id', $excludeIds))
-            ->tap($scope)
-            ->orderBy('id')
-            ->limit($limit)
-            ->get();
+            ->get()
+            ->map($map)
+            ->values()
+            ->all();
     }
 
     /**

@@ -698,6 +698,15 @@ export function GlobalCommandContent({
     }
 
     function expandGroup(group: SearchGroup): void {
+        // The administrator portal has a real results page, so long result sets
+        // paginate there instead of growing inside the palette.
+        if (searchScope === "administrator") {
+            rememberSearch();
+            if (onSelect) onSelect();
+            router.visit(route("administrators.search.results", { q: searchText.trim(), type: group }));
+            return;
+        }
+
         setActiveType(group);
     }
 

@@ -25,6 +25,7 @@ use Spatie\Activitylog\Support\LogOptions;
  *
  * @property-read Classes|null $class
  * @property-read Student|null $student
+ * @property-read User|null $verifier
  *
  * @method static Builder<static>|ClassEnrollment newModelQuery()
  * @method static Builder<static>|ClassEnrollment newQuery()
@@ -151,6 +152,16 @@ final class ClassEnrollment extends Model
     public function student()
     {
         return $this->belongsTo(Student::class, 'student_id', 'id');
+    }
+
+    /**
+     * The staff member who verified this enrollment's grades.
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function verifier(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'verified_by');
     }
 
     /** @return BelongsTo<GradingPolicyVersion, $this> */

@@ -18490,19 +18490,7 @@ parameters:
 			path: app/Http/Controllers/Api/V1/ClassEnrollmentController.php
 
 		-
-			message: '#^Property App\\Models\\ClassEnrollment\:\:\$verification_notes \(string\|null\) does not accept mixed\.$#'
-			identifier: assign.propertyType
-			count: 1
-			path: app/Http/Controllers/Api/V1/ClassEnrollmentController.php
-
-		-
 			message: '#^Property App\\Models\\ClassEnrollment\:\:\$verified_at \(string\|null\) does not accept Illuminate\\Support\\Carbon\.$#'
-			identifier: assign.propertyType
-			count: 1
-			path: app/Http/Controllers/Api/V1/ClassEnrollmentController.php
-
-		-
-			message: '#^Property App\\Models\\ClassEnrollment\:\:\$verified_by \(int\|null\) does not accept int\|string\|null\.$#'
 			identifier: assign.propertyType
 			count: 1
 			path: app/Http/Controllers/Api/V1/ClassEnrollmentController.php
@@ -18517,12 +18505,6 @@ parameters:
 			message: '#^Relation ''student'' is not found in App\\Models\\ClassEnrollment model\.$#'
 			identifier: larastan.relationExistence
 			count: 4
-			path: app/Http/Controllers/Api/V1/ClassEnrollmentController.php
-
-		-
-			message: '#^Relation ''verifier'' is not found in App\\Models\\ClassEnrollment model\.$#'
-			identifier: larastan.relationExistence
-			count: 1
 			path: app/Http/Controllers/Api/V1/ClassEnrollmentController.php
 
 		-
@@ -24337,12 +24319,6 @@ parameters:
 			message: '#^Access to an undefined property App\\Http\\Resources\\ClassEnrollmentResource\:\:\$verified_by\.$#'
 			identifier: property.notFound
 			count: 2
-			path: app/Http/Resources/ClassEnrollmentResource.php
-
-		-
-			message: '#^Access to an undefined property App\\Http\\Resources\\ClassEnrollmentResource\:\:\$verifier\.$#'
-			identifier: property.notFound
-			count: 3
 			path: app/Http/Resources/ClassEnrollmentResource.php
 
 		-

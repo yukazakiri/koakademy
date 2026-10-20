@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ClassEnrollmentFormRequest;
+use App\Http\Requests\VerifyClassGradesRequest;
 use App\Http\Resources\ClassEnrollmentResource;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
@@ -16,6 +17,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -370,7 +372,7 @@ final class ClassEnrollmentController extends Controller
     /**
      * Verify grades for a class enrollment.
      */
-    public function verifyGrades(Request $request, int $id): JsonResponse
+    public function verifyGrades(VerifyClassGradesRequest $request, int $id): JsonResponse
     {
         try {
             $enrollment = ClassEnrollment::findOrFail($id);
@@ -383,17 +385,24 @@ final class ClassEnrollmentController extends Controller
                 ], 422);
             }
 
-            $enrollment->is_grades_verified = true;
-            $enrollment->verified_by = Auth::id();
-            $enrollment->verified_at = now();
-            $enrollment->verification_notes = $request->input('verification_notes');
+            $verifierId = Auth::id();
+            $verificationNotes = $request->verificationNotes();
 
-            $enrollment->save();
-            $enrollment->load(['class', 'student', 'verifier']);
+            // Keep the write atomic: any failure below rolls the row back instead of
+            // leaving a partially verified enrollment behind a 500 response.
+            DB::transaction(function () use ($enrollment, $verifierId, $verificationNotes): void {
+                $enrollment->is_grades_verified = true;
+                $enrollment->verified_by = $verifierId === null ? null : (int) $verifierId;
+                $enrollment->verified_at = now();
+                $enrollment->verification_notes = $verificationNotes;
+
+                $enrollment->save();
+                $enrollment->load(['class', 'student', 'verifier']);
+            });
 
             return response()->json([
                 'message' => 'Grades verified successfully',
-                'data' => new ClassEnrollmentResource($enrollment->fresh()),
+                'data' => new ClassEnrollmentResource($enrollment->fresh(['class', 'student', 'verifier'])),
             ], 200);
 
         } catch (Exception $e) {

@@ -58,6 +58,63 @@ enum UserRole: string implements HasColor, HasLabel
 
     case ShsStudent = 'shs_student';
 
+    /**
+     * The ranks a faculty account may hold.
+     *
+     * @return list<self>
+     */
+    public static function facultyRanks(): array
+    {
+        return [
+            self::Professor,
+            self::AssociateProfessor,
+            self::AssistantProfessor,
+            self::Instructor,
+            self::PartTimeFaculty,
+        ];
+    }
+
+    /**
+     * Resolve the role that an institutional faculty position entitles its holder to.
+     *
+     * A faculty account is created from a row in the institutional roster, so the role
+     * comes from that row's position and never from the registration request. Positions
+     * are free text in the roster, so the match is fuzzy but always lands on a faculty
+     * rank: anything unrecognised falls back to the least privileged teaching rank.
+     */
+    public static function fromFacultyPosition(?string $position): self
+    {
+        $raw = mb_trim((string) $position);
+
+        $exact = self::tryFrom($raw);
+        if ($exact instanceof self && $exact->isFaculty()) {
+            return $exact;
+        }
+
+        $normalized = self::normalizePosition($raw);
+
+        if ($normalized === '') {
+            return self::Instructor;
+        }
+
+        return match (true) {
+            // Part-time and visiting appointments carry the least authority, so they are
+            // matched before the professor ranks.
+            str_contains($normalized, 'part time'),
+            str_contains($normalized, 'parttime'),
+            str_contains($normalized, 'adjunct'),
+            str_contains($normalized, 'visiting'),
+            str_contains($normalized, 'temporary'),
+            str_contains($normalized, 'contractual') => self::PartTimeFaculty,
+
+            str_contains($normalized, 'associate professor') => self::AssociateProfessor,
+            str_contains($normalized, 'assistant professor') => self::AssistantProfessor,
+            str_contains($normalized, 'professor') => self::Professor,
+
+            default => self::Instructor,
+        };
+    }
+
     public function getLabel(): ?string
     {
         return match ($this) {
@@ -399,5 +456,15 @@ enum UserRole: string implements HasColor, HasLabel
             self::ShsStudent => 70,
             self::User => 10,
         };
+    }
+
+    /**
+     * Fold a free-text position into a comparable phrase.
+     */
+    private static function normalizePosition(string $position): string
+    {
+        $spaced = preg_replace('/[^\p{L}\p{N}]+/u', ' ', mb_strtolower($position)) ?? '';
+
+        return mb_trim($spaced);
     }
 }

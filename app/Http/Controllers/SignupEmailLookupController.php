@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Enums\StudentType;
-use App\Models\Faculty;
 use App\Models\User;
+use App\Services\FacultySignupService;
 use App\Services\StudentOrganizationAssignmentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -18,6 +18,7 @@ final class SignupEmailLookupController extends Controller
 {
     public function __construct(
         private readonly StudentOrganizationAssignmentService $studentOrganizations,
+        private readonly FacultySignupService $facultySignups,
     ) {}
 
     /**
@@ -55,15 +56,24 @@ final class SignupEmailLookupController extends Controller
             }
 
             // Check if email exists in Faculty table
-            $faculty = Faculty::whereRaw('LOWER(email) = ?', [$email])->first();
+            $faculty = $this->facultySignups->findByEmail($email);
 
             if ($faculty) {
+                if (! $faculty->isRegisterable()) {
+                    return response()->json([
+                        'found' => false,
+                        'message' => 'This faculty record is not currently active. Please contact the registrar.',
+                    ]);
+                }
+
                 return response()->json([
                     'found' => true,
                     'type' => 'faculty',
                     'name' => $faculty->full_name,
                     'faculty_id_number' => $faculty->faculty_id_number,
                     'department' => $faculty->department,
+                    'position' => $faculty->position,
+                    'role' => $this->facultySignups->roleFor($faculty)->value,
                     'record_id' => $faculty->id,
                 ]);
             }

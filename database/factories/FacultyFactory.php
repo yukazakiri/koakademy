@@ -20,7 +20,6 @@ final class FacultyFactory extends Factory
     {
         $departments = ['CCS', 'CBA', 'CTE', 'CHTM'];
         $genders = ['male', 'female'];
-        $statuses = ['active', 'inactive', 'on_leave'];
 
         return [
             'id' => $this->faker->uuid(),
@@ -39,9 +38,29 @@ final class FacultyFactory extends Factory
             'education' => $this->faker->optional()->text(200),
             'courses_taught' => $this->faker->optional()->text(150),
             'photo_url' => $this->faker->optional()->imageUrl(400, 400, 'people'),
-            'status' => $this->faker->randomElement($statuses),
+            'status' => 'active',
             'gender' => $this->faker->randomElement($genders),
             'age' => $this->faker->numberBetween(25, 65),
         ];
+    }
+
+    /**
+     * A record the school has stood down.
+     */
+    public function inactive(): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'status' => 'inactive',
+        ]);
+    }
+
+    /**
+     * A record for a faculty member who is temporarily away.
+     */
+    public function onLeave(): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'status' => 'on_leave',
+        ]);
     }
 }

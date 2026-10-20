@@ -14,7 +14,6 @@ import {
     Mail,
     ShieldAlert,
     User,
-    UserCheck,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -35,6 +34,8 @@ interface EmailLookupResult {
     name?: string;
     faculty_id_number?: string;
     department?: string;
+    position?: string;
+    role?: string;
     student_type?: string;
     is_shs?: boolean;
     student_id?: number;
@@ -58,7 +59,6 @@ interface PersistedState {
     faculty_id_number: string;
     student_id: string;
     lrn: string;
-    role: string;
     user_type: "" | "faculty" | "student";
     student_type: "" | "college" | "shs";
     record_id: string | number;
@@ -121,7 +121,6 @@ export function SignupStepper({
         faculty_id_number: saved.current?.faculty_id_number ?? "",
         student_id: saved.current?.student_id ?? "",
         lrn: saved.current?.lrn ?? "",
-        role: saved.current?.role ?? "",
         otp: "",
         user_type: saved.current?.user_type ?? ("" as "faculty" | "student" | ""),
         student_type: saved.current?.student_type ?? ("" as "college" | "shs" | ""),
@@ -142,7 +141,6 @@ export function SignupStepper({
             faculty_id_number: data.faculty_id_number,
             student_id: data.student_id,
             lrn: data.lrn,
-            role: data.role,
             user_type: data.user_type,
             student_type: data.student_type,
             record_id: data.record_id,
@@ -209,21 +207,12 @@ export function SignupStepper({
         return [
             { id: "email", label: "Email" },
             { id: "details", label: "Personal" },
-            { id: "role", label: "Position" },
             { id: "verification", label: "Faculty ID" },
             { id: "otp", label: "Confirm" },
         ];
     };
 
     const steps = getSteps();
-
-    const facultyRoles = [
-        { value: "professor", label: "Professor", description: "Full Professor rank" },
-        { value: "associate_professor", label: "Associate Professor", description: "Associate Professor rank" },
-        { value: "assistant_professor", label: "Assistant Professor", description: "Assistant Professor rank" },
-        { value: "instructor", label: "Instructor", description: "Teaching Instructor" },
-        { value: "part_time_faculty", label: "Part-time Faculty", description: "Part-time teaching appointment" },
-    ];
 
     const sendOtp = async () => {
         try {
@@ -234,7 +223,6 @@ export function SignupStepper({
                 record_id: data.record_id,
                 student_id: data.student_id,
                 lrn: data.lrn,
-                role: data.role,
                 faculty_id_number: data.faculty_id_number,
             });
             toast.success("Verification code sent to your email.");
@@ -323,8 +311,6 @@ export function SignupStepper({
 
     const canProceedFromDetails =
         data.name.trim().length > 0 && data.password.length >= 8 && passwordsMatch;
-
-    const canProceedFromRole = data.role.length > 0;
 
     return (
         <div className={cn("space-y-6", className)} {...props}>
@@ -595,45 +581,6 @@ export function SignupStepper({
                         </div>
                     )}
 
-                    {/* Step 2: Role Selection (Faculty) */}
-                    {currentStep === 2 && userType === "faculty" && (
-                        <div className="space-y-3">
-                            <FieldLabel className="text-xs font-semibold text-foreground">
-                                Select Academic Rank or Title
-                            </FieldLabel>
-                            <div className="grid gap-2">
-                                {facultyRoles.map((r) => {
-                                    const selected = data.role === r.value;
-                                    return (
-                                        <button
-                                            key={r.value}
-                                            type="button"
-                                            onClick={() => setData("role", r.value)}
-                                            className={cn(
-                                                "group flex w-full items-center gap-3.5 rounded-xl border p-3.5 text-left transition-all duration-200",
-                                                selected
-                                                    ? "border-primary bg-primary/10 shadow-xs ring-1 ring-primary/30"
-                                                    : "border-border/80 bg-background/60 hover:border-primary/40 hover:bg-muted/30"
-                                            )}
-                                        >
-                                            <IconTile
-                                                variant={selected ? "solid" : "soft"}
-                                                size="sm"
-                                                className="rounded-lg shrink-0"
-                                            >
-                                                {selected ? <Check className="size-4" /> : <UserCheck className="size-4" />}
-                                            </IconTile>
-                                            <div className="min-w-0 flex-1">
-                                                <div className="text-xs font-semibold text-foreground">{r.label}</div>
-                                                <div className="text-[11px] text-muted-foreground">{r.description}</div>
-                                            </div>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
-
                     {/* Step 2: Student ID Verification (Student) */}
                     {currentStep === 2 && userType === "student" && (
                         <div className="space-y-4">
@@ -681,9 +628,18 @@ export function SignupStepper({
                         </div>
                     )}
 
-                    {/* Step 3: Faculty ID (Optional) */}
-                    {currentStep === 3 && userType === "faculty" && (
+                    {/* Step 2: Faculty ID (Optional) */}
+                    {currentStep === 2 && userType === "faculty" && (
                         <div className="space-y-4">
+                            {emailLookupResult?.found && (
+                                <div className="rounded-xl border border-primary/20 bg-primary/5 p-3.5 text-xs text-muted-foreground">
+                                    <p className="font-semibold text-foreground">Academic rank taken from your institutional record</p>
+                                    <p className="mt-1">
+                                        {emailLookupResult.position || emailLookupResult.role || "Instructor"}
+                                        {emailLookupResult.department ? ` · ${emailLookupResult.department}` : ""}
+                                    </p>
+                                </div>
+                            )}
                             <Field>
                                 <FieldLabel htmlFor="faculty_id_number" className="text-xs font-semibold text-foreground">
                                     Faculty ID Number (Optional)
@@ -770,10 +726,7 @@ export function SignupStepper({
                                 <Button
                                     type="button"
                                     onClick={handleNext}
-                                    disabled={
-                                        (currentStep === 1 && !canProceedFromDetails) ||
-                                        (currentStep === 2 && userType === "faculty" && !canProceedFromRole)
-                                    }
+                                    disabled={currentStep === 1 && !canProceedFromDetails}
                                     className="h-11 flex-1 rounded-xl font-semibold shadow-md"
                                 >
                                     <span>Continue</span>

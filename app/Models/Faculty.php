@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\UserRole;
 use App\Models\Concerns\BelongsToSchool;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Models\Contracts\HasAvatar;
@@ -54,6 +55,15 @@ final class Faculty extends Authenticatable implements FilamentUser, HasAvatar
     use HasUuids;
     use Notifiable;
     use Searchable;
+
+    /**
+     * The roster states that still entitle the holder to a portal account.
+     *
+     * `inactive` means the school stood the record down, so it must not back a
+     * self-registration. `on_leave` is a temporary absence: the person is still on the
+     * roster as faculty, so the record still speaks for them.
+     */
+    public const array REGISTERABLE_STATUSES = ['active', 'on_leave'];
 
     #[Override]
     public $incrementing = false;
@@ -192,6 +202,31 @@ final class Faculty extends Authenticatable implements FilamentUser, HasAvatar
     public function portalUser(): HasOne
     {
         return $this->hasOne(User::class, 'email', 'email');
+    }
+
+    /**
+     * The platform role this record entitles its holder to.
+     *
+     * Signup derives the role from the record rather than from the registration
+     * request, so a registrant can never claim a rank the school did not grant.
+     */
+    public function positionToUserRole(): UserRole
+    {
+        return UserRole::fromFacultyPosition($this->position);
+    }
+
+    /**
+     * Whether this record may back a faculty self-registration.
+     *
+     * A record the school stood down does not entitle its holder to a new account.
+     */
+    public function isRegisterable(): bool
+    {
+        return in_array(
+            mb_strtolower(mb_trim((string) $this->status)),
+            self::REGISTERABLE_STATUSES,
+            true,
+        );
     }
 
     public function classEnrollments()

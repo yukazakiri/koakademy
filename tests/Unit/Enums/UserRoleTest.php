@@ -260,3 +260,41 @@ describe('manageable roles', function (): void {
         expect($manageableRoles)->toBeEmpty();
     });
 });
+
+describe('faculty position', function (): void {
+    it('resolves the rank an institutional position carries', function (?string $position, UserRole $expected): void {
+        expect(UserRole::fromFacultyPosition($position))->toBe($expected);
+    })->with([
+        ['Professor', UserRole::Professor],
+        ['professor', UserRole::Professor],
+        ['Associate Professor', UserRole::AssociateProfessor],
+        ['Assistant Professor', UserRole::AssistantProfessor],
+        ['Instructor', UserRole::Instructor],
+        ['Lecturer', UserRole::Instructor],
+        ['Part-time Faculty', UserRole::PartTimeFaculty],
+        ['part_time_faculty', UserRole::PartTimeFaculty],
+        ['Visiting Professor', UserRole::PartTimeFaculty],
+        ['Adjunct Faculty', UserRole::PartTimeFaculty],
+        ['Part-time Assistant Professor', UserRole::PartTimeFaculty],
+        ['Professor III', UserRole::Professor],
+        [null, UserRole::Instructor],
+        ['', UserRole::Instructor],
+        ['   ', UserRole::Instructor],
+    ]);
+
+    it('never resolves to a role outside the faculty ranks', function (): void {
+        expect(UserRole::fromFacultyPosition('Dean'))->toBe(UserRole::Instructor)
+            ->and(UserRole::fromFacultyPosition('Super Admin'))->toBe(UserRole::Instructor)
+            ->and(UserRole::fromFacultyPosition('admin'))->toBe(UserRole::Instructor);
+    });
+
+    it('lists the faculty ranks a faculty account may hold', function (): void {
+        expect(UserRole::facultyRanks())->toBe([
+            UserRole::Professor,
+            UserRole::AssociateProfessor,
+            UserRole::AssistantProfessor,
+            UserRole::Instructor,
+            UserRole::PartTimeFaculty,
+        ]);
+    });
+});

@@ -6,8 +6,8 @@ namespace App\Http\Controllers;
 
 use App\Enums\StudentType;
 use App\Mail\SignupOtpMail;
-use App\Models\Faculty;
 use App\Models\User;
+use App\Services\FacultySignupService;
 use App\Services\StudentOrganizationAssignmentService;
 use Exception;
 use Illuminate\Http\JsonResponse;
@@ -16,11 +16,13 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 final class SignupOtpController extends Controller
 {
     public function __construct(
         private readonly StudentOrganizationAssignmentService $studentOrganizations,
+        private readonly FacultySignupService $facultySignups,
     ) {}
 
     public function store(Request $request): JsonResponse
@@ -118,7 +120,6 @@ final class SignupOtpController extends Controller
     private function validateFaculty(Request $request): ?JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'role' => 'required|string',
             'faculty_id_number' => 'nullable|string',
         ]);
 
@@ -126,15 +127,13 @@ final class SignupOtpController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        if ($request->filled('faculty_id_number')) {
-            $email = $request->string('email')->trim()->lower()->toString();
-            $faculty = Faculty::where('faculty_id_number', $request->faculty_id_number)
-                ->whereRaw('LOWER(email) = ?', [$email])
-                ->first();
-
-            if (! $faculty) {
-                return response()->json(['errors' => ['faculty_id_number' => 'The faculty ID number does not match our records for this email address.']], 422);
-            }
+        try {
+            $this->facultySignups->resolveForSignup(
+                email: $request->string('email')->trim()->lower()->toString(),
+                facultyIdNumber: $request->string('faculty_id_number')->trim()->toString() ?: null,
+            );
+        } catch (ValidationException $exception) {
+            return response()->json(['errors' => $exception->errors()], 422);
         }
 
         return null;

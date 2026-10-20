@@ -8,8 +8,8 @@ use App\Enums\StudentType;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Mail\SignupOtpMail;
-use App\Models\Faculty;
 use App\Models\User;
+use App\Services\FacultySignupService;
 use App\Services\StudentOrganizationAssignmentService;
 use Exception;
 use Illuminate\Http\JsonResponse;
@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
 use Throwable;
 
@@ -29,6 +30,7 @@ final class SignupController extends Controller
 {
     public function __construct(
         private readonly StudentOrganizationAssignmentService $studentOrganizations,
+        private readonly FacultySignupService $facultySignups,
     ) {}
 
     /**
@@ -64,15 +66,24 @@ final class SignupController extends Controller
                 ]);
             }
 
-            $faculty = Faculty::whereRaw('LOWER(email) = ?', [$email])->first();
+            $faculty = $this->facultySignups->findByEmail($email);
 
             if ($faculty) {
+                if (! $faculty->isRegisterable()) {
+                    return response()->json([
+                        'found' => false,
+                        'message' => 'This faculty record is not currently active. Please contact the registrar.',
+                    ]);
+                }
+
                 return response()->json([
                     'found' => true,
                     'type' => 'faculty',
                     'name' => $faculty->full_name,
                     'faculty_id_number' => $faculty->faculty_id_number,
                     'department' => $faculty->department,
+                    'position' => $faculty->position,
+                    'role' => $this->facultySignups->roleFor($faculty)->value,
                     'record_id' => $faculty->id,
                 ]);
             }
@@ -309,7 +320,6 @@ final class SignupController extends Controller
             'email' => 'required|string|email|max:255',
             'password' => ['required', 'confirmed', Password::defaults()],
             'faculty_id_number' => 'nullable|string|max:255',
-            'role' => 'required|string|in:professor,associate_professor,assistant_professor,instructor,part_time_faculty',
             'otp' => 'required|string',
         ]);
 
@@ -339,48 +349,46 @@ final class SignupController extends Controller
             ], 422);
         }
 
-        $roleString = $request->role;
-        $role = UserRole::tryFrom($roleString);
+        try {
+            $user = DB::transaction(function () use ($request, $email): User {
+                // The record is resolved inside the transaction so the roster row stays
+                // locked while the account is written against it.
+                $faculty = $this->facultySignups->resolveForSignup(
+                    email: $email,
+                    facultyIdNumber: $request->string('faculty_id_number')->trim()->toString() ?: null,
+                    lockForUpdate: true,
+                );
 
-        if (! $role) {
-            $role = UserRole::Instructor;
-        }
+                // The role is read from the institutional record, never from the request.
+                $role = $this->facultySignups->roleFor($faculty);
 
-        $spatieRoleName = $role->value;
-        $spatieRole = Role::firstOrCreate(
-            ['name' => $spatieRoleName, 'guard_name' => 'web'],
-            ['name' => $spatieRoleName, 'guard_name' => 'web']
-        );
+                $spatieRole = Role::firstOrCreate(
+                    ['name' => $role->value, 'guard_name' => 'web'],
+                    ['name' => $role->value, 'guard_name' => 'web']
+                );
 
-        $userData = [
-            'name' => $request->name,
-            'email' => $email,
-            'password' => Hash::make($request->password),
-            'role' => $role,
-            'email_verified_at' => now(),
-        ];
+                $user = User::create([
+                    'name' => $request->name,
+                    'email' => $email,
+                    'password' => Hash::make($request->password),
+                    'role' => $role,
+                    'email_verified_at' => now(),
+                ]);
 
-        if ($request->filled('faculty_id_number')) {
-            $faculty = Faculty::where('faculty_id_number', $request->faculty_id_number)
-                ->whereRaw('LOWER(email) = ?', [$email])
-                ->first();
+                $user->assignRole($spatieRole);
 
-            if (! $faculty) {
-                return response()->json([
-                    'message' => 'The faculty ID number does not match our records.',
-                    'errors' => ['faculty_id_number' => ['The faculty ID number does not match our records for this email address.']],
-                ], 422);
-            }
+                $this->facultySignups->assign($user, $faculty);
 
-            $userData['faculty_id_number'] = $request->faculty_id_number;
-            $userData['record_id'] = $faculty->id;
+                return $user;
+            });
+        } catch (ValidationException $exception) {
+            return response()->json([
+                'message' => 'Validation failed.',
+                'errors' => $exception->errors(),
+            ], 422);
         }
 
         Cache::forget($otpKey);
-
-        $user = User::create($userData);
-
-        $user->assignRole($spatieRole);
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
@@ -441,7 +449,6 @@ final class SignupController extends Controller
     private function validateFacultyForOtp(Request $request): ?JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'role' => 'required|string',
             'faculty_id_number' => 'nullable|string',
         ]);
 
@@ -449,15 +456,13 @@ final class SignupController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        if ($request->filled('faculty_id_number')) {
-            $email = $request->string('email')->trim()->lower()->toString();
-            $faculty = Faculty::where('faculty_id_number', $request->faculty_id_number)
-                ->whereRaw('LOWER(email) = ?', [$email])
-                ->first();
-
-            if (! $faculty) {
-                return response()->json(['errors' => ['faculty_id_number' => ['The faculty ID number does not match our records for this email address.']]], 422);
-            }
+        try {
+            $this->facultySignups->resolveForSignup(
+                email: $request->string('email')->trim()->lower()->toString(),
+                facultyIdNumber: $request->string('faculty_id_number')->trim()->toString() ?: null,
+            );
+        } catch (ValidationException $exception) {
+            return response()->json(['errors' => $exception->errors()], 422);
         }
 
         return null;

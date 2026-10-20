@@ -9,6 +9,7 @@ use App\Enums\UserRole;
 use App\Models\ConnectedAccount;
 use App\Models\Faculty;
 use App\Models\User;
+use App\Services\FacultySignupService;
 use App\Services\SocialiteProviderService;
 use App\Services\StudentOrganizationAssignmentService;
 use Illuminate\Http\RedirectResponse;
@@ -20,6 +21,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Spatie\Permission\Models\Role;
@@ -28,6 +30,7 @@ final class AuthController extends Controller
 {
     public function __construct(
         private readonly StudentOrganizationAssignmentService $studentOrganizations,
+        private readonly FacultySignupService $facultySignups,
     ) {}
 
     public function showLoginForm(): Response
@@ -263,7 +266,6 @@ final class AuthController extends Controller
             'email' => 'required|string|email|max:255',
             'password' => ['required', 'confirmed', Password::defaults()],
             'faculty_id_number' => 'nullable|string|max:255',
-            'role' => 'required|string|in:professor,associate_professor,assistant_professor,instructor,part_time_faculty',
             'otp' => 'required|string',
         ]);
 
@@ -291,55 +293,49 @@ final class AuthController extends Controller
                 ->withInput($request->except(['password', 'password_confirmation']));
         }
 
-        // Get the role from the request and convert to UserRole enum
-        $roleString = $request->role;
-        $role = UserRole::tryFrom($roleString);
+        try {
+            $user = DB::transaction(function () use ($request, $email): User {
+                // The record is resolved inside the transaction so the roster row stays
+                // locked while the account is written against it.
+                $faculty = $this->facultySignups->resolveForSignup(
+                    email: $email,
+                    facultyIdNumber: $request->string('faculty_id_number')->trim()->toString() ?: null,
+                    lockForUpdate: true,
+                );
 
-        // If invalid role, default to Instructor (safety check)
-        if (! $role) {
-            $role = UserRole::Instructor;
-        }
+                // The role is read from the institutional record, never from the request.
+                $role = $this->facultySignups->roleFor($faculty);
 
-        // Create or get the spatie role
-        $spatieRoleName = $role->value;
-        $spatieRole = Role::firstOrCreate(
-            ['name' => $spatieRoleName, 'guard_name' => 'web'],
-            ['name' => $spatieRoleName, 'guard_name' => 'web']
-        );
+                // Create or get the spatie role
+                $spatieRole = Role::firstOrCreate(
+                    ['name' => $role->value, 'guard_name' => 'web'],
+                    ['name' => $role->value, 'guard_name' => 'web']
+                );
 
-        $userData = [
-            'name' => $request->name,
-            'email' => $email,
-            'password' => Hash::make($request->password),
-            'role' => $role,
-            'email_verified_at' => now(),
-            'avatar_url' => $this->pendingSocialiteAvatar($email),
-        ];
+                $user = User::create([
+                    'name' => $request->name,
+                    'email' => $email,
+                    'password' => Hash::make($request->password),
+                    'role' => $role,
+                    'email_verified_at' => now(),
+                    'avatar_url' => $this->pendingSocialiteAvatar($email),
+                ]);
 
-        // If faculty_id_number is provided, verify it matches the email
-        if ($request->filled('faculty_id_number')) {
-            $faculty = Faculty::where('faculty_id_number', $request->faculty_id_number)
-                ->whereRaw('LOWER(email) = ?', [$email])
-                ->first();
+                // Assign spatie role
+                $user->assignRole($spatieRole);
 
-            if (! $faculty) {
-                return back()
-                    ->withErrors(['faculty_id_number' => 'The faculty ID number does not match our records for this email address.'])
-                    ->withInput($request->only(['name', 'email', 'faculty_id_number', 'role']));
-            }
+                $this->facultySignups->assign($user, $faculty);
 
-            // Store faculty metadata for easy search
-            $userData['faculty_id_number'] = $request->faculty_id_number;
-            $userData['record_id'] = $faculty->id;
+                return $user;
+            });
+        } catch (ValidationException $exception) {
+            return back()
+                ->withErrors($exception->errors())
+                ->withInput($request->except(['password', 'password_confirmation']));
         }
 
         // Clear OTP after successful verification
         Cache::forget($otpKey);
-
-        $user = User::create($userData);
-
-        // Assign spatie role
-        $user->assignRole($spatieRole);
 
         $this->linkPendingSocialiteSignup($request, $user);
 

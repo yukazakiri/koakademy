@@ -19,7 +19,9 @@ final class CodeAuthoritiesTable
     public static function configure(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn (Builder $query): Builder => $query->withCount(['codes', 'codes as active_codes_count' => fn (Builder $inner): Builder => $inner->where('is_active', true)]))
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query
+                ->with(['school'])
+                ->withCount(['codes', 'codes as active_codes_count' => fn (Builder $inner): Builder => $inner->where('is_active', true)]))
             ->defaultSort('name')
             ->striped()
             ->columns([

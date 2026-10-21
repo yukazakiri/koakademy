@@ -27,7 +27,9 @@ use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Guava\FilamentIconSelectColumn\Tables\Columns\IconSelectColumn;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Auth;
 use Mansoor\FilamentVersionable\Table\RevisionsAction;
 
@@ -73,11 +75,7 @@ final class StudentsTable
                         'no_record' => 'gray',
                     ])
                     ->getStateUsing(function (Student $student): string {
-                        $previous = $student->getPreviousAcademicPeriod();
-                        $clearance = $student->clearances()
-                            ->where('academic_year', $previous['academic_year'])
-                            ->where('semester', $previous['semester'])
-                            ->first();
+                        $clearance = $student->getPreviousSemesterClearance();
 
                         if (! $clearance) {
                             return 'no_record';
@@ -86,11 +84,8 @@ final class StudentsTable
                         return $clearance->is_cleared ? 'cleared' : 'not_cleared';
                     })
                     ->updateStateUsing(function (Student $student, string $state): void {
+                        $clearance = $student->getPreviousSemesterClearance();
                         $previous = $student->getPreviousAcademicPeriod();
-                        $clearance = $student->clearances()
-                            ->where('academic_year', $previous['academic_year'])
-                            ->where('semester', $previous['semester'])
-                            ->first();
 
                         if ($state === 'no_record') {
                             if ($clearance) {
@@ -194,6 +189,16 @@ final class StudentsTable
                     ->toggleable(isToggledHiddenByDefault: true)
                     ->sortable(),
             ])
+            ->modifyQueryUsing(function (Builder $query): Builder {
+                $previous = (new Student)->getPreviousAcademicPeriod();
+
+                return $query->with([
+                    'course',
+                    'clearances' => fn (Relation $clearances) => $clearances
+                        ->where('academic_year', $previous['academic_year'])
+                        ->where('semester', $previous['semester']),
+                ]);
+            })
             ->filters([
                 TrashedFilter::make(),
                 SelectFilter::make('course_id')
@@ -312,29 +317,30 @@ final class StudentsTable
                             $previous = $tempStudent->getPreviousAcademicPeriod();
                             $clearedCount = 0;
 
-                            foreach ($records as $student) {
-                                $clearance = $student->clearances()
-                                    ->where('academic_year', $previous['academic_year'])
-                                    ->where('semester', $previous['semester'])
-                                    ->first();
+                            foreach ($records->chunk(200) as $chunk) {
+                                $clearances = self::previousPeriodClearances($chunk, $previous);
 
-                                if (! $clearance) {
-                                    $clearance = StudentClearance::query()->create([
-                                        'student_id' => $student->id,
-                                        'academic_year' => $previous['academic_year'],
-                                        'semester' => $previous['semester'],
-                                        'is_cleared' => false,
-                                    ]);
-                                }
+                                foreach ($chunk as $student) {
+                                    $clearance = $clearances->get((string) $student->id);
 
-                                if (! $clearance->is_cleared) {
-                                    $clearance->update([
-                                        'is_cleared' => true,
-                                        'cleared_by' => Auth::user()->name ?? 'Admin',
-                                        'cleared_at' => now(),
-                                        'remarks' => $data['remarks'] ?? $clearance->remarks,
-                                    ]);
-                                    $clearedCount++;
+                                    if (! $clearance) {
+                                        $clearance = StudentClearance::query()->create([
+                                            'student_id' => $student->id,
+                                            'academic_year' => $previous['academic_year'],
+                                            'semester' => $previous['semester'],
+                                            'is_cleared' => false,
+                                        ]);
+                                    }
+
+                                    if (! $clearance->is_cleared) {
+                                        $clearance->update([
+                                            'is_cleared' => true,
+                                            'cleared_by' => Auth::user()->name ?? 'Admin',
+                                            'cleared_at' => now(),
+                                            'remarks' => $data['remarks'] ?? $clearance->remarks,
+                                        ]);
+                                        $clearedCount++;
+                                    }
                                 }
                             }
 
@@ -365,29 +371,30 @@ final class StudentsTable
                             $previous = $tempStudent->getPreviousAcademicPeriod();
                             $count = 0;
 
-                            foreach ($records as $student) {
-                                $clearance = $student->clearances()
-                                    ->where('academic_year', $previous['academic_year'])
-                                    ->where('semester', $previous['semester'])
-                                    ->first();
+                            foreach ($records->chunk(200) as $chunk) {
+                                $clearances = self::previousPeriodClearances($chunk, $previous);
 
-                                if (! $clearance) {
-                                    StudentClearance::query()->create([
-                                        'student_id' => $student->id,
-                                        'academic_year' => $previous['academic_year'],
-                                        'semester' => $previous['semester'],
-                                        'is_cleared' => false,
-                                        'remarks' => $data['remarks'] ?? null,
-                                    ]);
-                                    $count++;
-                                } elseif ($clearance->is_cleared) {
-                                    $clearance->update([
-                                        'is_cleared' => false,
-                                        'cleared_by' => null,
-                                        'cleared_at' => null,
-                                        'remarks' => $data['remarks'] ?? $clearance->remarks,
-                                    ]);
-                                    $count++;
+                                foreach ($chunk as $student) {
+                                    $clearance = $clearances->get((string) $student->id);
+
+                                    if (! $clearance) {
+                                        StudentClearance::query()->create([
+                                            'student_id' => $student->id,
+                                            'academic_year' => $previous['academic_year'],
+                                            'semester' => $previous['semester'],
+                                            'is_cleared' => false,
+                                            'remarks' => $data['remarks'] ?? null,
+                                        ]);
+                                        $count++;
+                                    } elseif ($clearance->is_cleared) {
+                                        $clearance->update([
+                                            'is_cleared' => false,
+                                            'cleared_by' => null,
+                                            'cleared_at' => null,
+                                            'remarks' => $data['remarks'] ?? $clearance->remarks,
+                                        ]);
+                                        $count++;
+                                    }
                                 }
                             }
 
@@ -403,5 +410,26 @@ final class StudentsTable
                     RestoreBulkAction::make(),
                 ]),
             ]);
+    }
+
+    /**
+     * Load the clearance records of the given students for one academic period in a
+     * single query, keyed by student id.
+     *
+     * Bulk actions run over every selected record, so resolving the clearance one
+     * student at a time turns a 500 student selection into 500 selects.
+     *
+     * @param  Collection<int, Student>  $students
+     * @param  array{academic_year: string, semester: int}  $previous
+     * @return Collection<string, StudentClearance>
+     */
+    private static function previousPeriodClearances(Collection $students, array $previous): Collection
+    {
+        return StudentClearance::query()
+            ->where('academic_year', $previous['academic_year'])
+            ->where('semester', $previous['semester'])
+            ->whereIn('student_id', $students->modelKeys())
+            ->get()
+            ->keyBy(fn (StudentClearance $clearance): string => (string) $clearance->student_id);
     }
 }

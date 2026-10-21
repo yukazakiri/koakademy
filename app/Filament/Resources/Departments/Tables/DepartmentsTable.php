@@ -122,6 +122,9 @@ final class DepartmentsTable
                     ->since()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
+            ->modifyQueryUsing(function (Builder $query): Builder {
+                return $query->withCount(['faculty', 'courses']);
+            })
             ->filters([
                 SelectFilter::make('school_id')
                     ->label('School')

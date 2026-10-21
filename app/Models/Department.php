@@ -159,25 +159,58 @@ final class Department extends Model
 
     /**
      * Get users count
+     *
+     * An aggregated `users_count` attribute (from `withCount()`) is preferred over
+     * the live count so listings do not run a query per row.
      */
     public function getUsersCount(): int
     {
+        if (array_key_exists('users_count', $this->attributes)) {
+            return (int) $this->attributes['users_count'];
+        }
+
+        if ($this->relationLoaded('users')) {
+            return $this->users->count();
+        }
+
         return $this->users()->count();
     }
 
     /**
      * Get faculty count
+     *
+     * An aggregated `faculty_count` attribute (from `withCount()`) is preferred over
+     * the live count so listings do not run a query per row.
      */
     public function getFacultyCount(): int
     {
+        if (array_key_exists('faculty_count', $this->attributes)) {
+            return (int) $this->attributes['faculty_count'];
+        }
+
+        if ($this->relationLoaded('faculty')) {
+            return $this->faculty->count();
+        }
+
         return $this->faculty()->count();
     }
 
     /**
      * Get courses count
+     *
+     * An aggregated `courses_count` attribute (from `withCount()`) is preferred over
+     * the live count so listings do not run a query per row.
      */
     public function getCoursesCount(): int
     {
+        if (array_key_exists('courses_count', $this->attributes)) {
+            return (int) $this->attributes['courses_count'];
+        }
+
+        if ($this->relationLoaded('courses')) {
+            return $this->courses->count();
+        }
+
         return $this->courses()->count();
     }
 

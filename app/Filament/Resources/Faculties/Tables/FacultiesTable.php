@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Faculties\Tables;
 
-use App\Models\Classes;
 use App\Models\Faculty;
 use App\Services\ClassAssignmentService;
 use App\Services\GeneralSettingsService;
@@ -76,26 +75,22 @@ final class FacultiesTable
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
-                TextColumn::make('roles.name')
+                TextColumn::make('portalUser.roles.name')
                     ->label('Roles')
                     ->badge()
                     ->searchable(),
                 TextColumn::make('current_classes_count')
                     ->label('Current Classes')
-                    ->getStateUsing(function ($record) {
-                        $generalSettingsService = app(GeneralSettingsService::class);
-                        $schoolYearWithSpaces = $generalSettingsService->getCurrentSchoolYearString();
-                        $schoolYearNoSpaces = str_replace(' ', '', $schoolYearWithSpaces);
-                        $semester = $generalSettingsService->getCurrentSemester();
-
-                        return Classes::query()->whereRaw('faculty_id::text = ?', [$record->id])
-                            ->whereIn('school_year', [$schoolYearWithSpaces, $schoolYearNoSpaces])
-                            ->where('semester', $semester)
-                            ->count();
-                    })
                     ->badge()
                     ->color('success'),
             ])
+            ->modifyQueryUsing(function (Builder $query): Builder {
+                return $query
+                    ->with(['portalUser.roles'])
+                    ->withCount([
+                        'classes as current_classes_count' => fn (Builder $classes): Builder => $classes->currentAcademicPeriod(),
+                    ]);
+            })
             ->filters([
                 SelectFilter::make('status')
                     ->options([

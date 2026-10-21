@@ -98,7 +98,8 @@ final class EventsTable
                 TextColumn::make('attendees_count')
                     ->label('Attendees')
                     ->state(function (Model $record): string {
-                        $count = $record->total_attendees;
+                        $count = (int) $record->getAttribute('attending_rsvps_count')
+                            + (int) $record->getAttribute('attending_rsvps_guests');
                         $max = $record->max_attendees;
 
                         if ($max) {
@@ -120,6 +121,11 @@ final class EventsTable
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
+            ->modifyQueryUsing(function (Builder $query): Builder {
+                return $query
+                    ->withCount(['attendingRsvps as attending_rsvps_count'])
+                    ->withSum(['attendingRsvps as attending_rsvps_guests'], 'guest_count');
+            })
             ->filters([
                 SelectFilter::make('type')
                     ->options([

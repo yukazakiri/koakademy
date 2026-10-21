@@ -514,10 +514,21 @@ final class Student extends Model implements RecordsActivity
 
     /**
      * Get the clearance record for the previous academic period.
+     *
+     * The relation is resolved from an already loaded `clearances` collection when
+     * one is present, so listings that eager load the relation do not run a query
+     * per row.
      */
     public function getPreviousSemesterClearance(?string $currentYear = null, ?int $currentSemester = null): ?StudentClearance
     {
         $previous = $this->getPreviousAcademicPeriod($currentYear, $currentSemester);
+
+        if ($this->relationLoaded('clearances')) {
+            return $this->clearances->firstWhere(
+                fn (StudentClearance $clearance): bool => (string) $clearance->academic_year === (string) $previous['academic_year']
+                    && (int) $clearance->semester === (int) $previous['semester'],
+            );
+        }
 
         return $this->clearances()
             ->where('academic_year', $previous['academic_year'])

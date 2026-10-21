@@ -66,9 +66,11 @@ final class StudentEnrollmentsTable
             ])
             ->defaultSort('created_at', 'desc')
             ->deferLoading()
-            ->modifyQueryUsing(fn (Builder $query) => $query->withoutGlobalScopes([
-                SoftDeletingScope::class,
-            ]))
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query
+                ->withoutGlobalScopes([
+                    SoftDeletingScope::class,
+                ])
+                ->with(['student.course']))
             ->searchPlaceholder('Search by student name or ID')
             ->filters([
                 TrashedFilter::make()->default('with'),

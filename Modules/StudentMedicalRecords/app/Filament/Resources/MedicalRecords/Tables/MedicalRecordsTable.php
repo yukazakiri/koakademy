@@ -14,6 +14,7 @@ use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 final class MedicalRecordsTable
 {
@@ -151,6 +152,7 @@ final class MedicalRecordsTable
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with(['student']))
             ->filters([
                 SelectFilter::make('record_type')
                     ->label('📝 Record Type')

@@ -25,6 +25,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
@@ -95,6 +96,9 @@ final class UsersTable
                     ->toggleable(isToggledHiddenByDefault: true)
                     ->placeholder('—'),
             ])
+            ->modifyQueryUsing(function (Builder $query): Builder {
+                return $query->with(['school', 'department', 'roles']);
+            })
             ->filters([
                 SelectFilter::make('role')
                     ->label('Role')

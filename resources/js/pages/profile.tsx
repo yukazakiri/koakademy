@@ -33,6 +33,7 @@ import {
     StudentEducationForm,
     StudentReportingForm,
 } from "@/components/profile";
+import { BetaAccessPanel, type BetaAccess } from "@/components/profile/beta-access-panel";
 
 type ConnectedAccount = {
     id: number;
@@ -221,6 +222,7 @@ export default function ProfilePage() {
         id_card,
         feature_flags,
         featureFlags,
+        beta_access,
         student_profile_completion,
         income_modes = [],
         default_income_mode = "annual",
@@ -385,6 +387,7 @@ export default function ProfilePage() {
         featureFlags?: {
             studentInformationUpdates?: boolean;
         };
+        beta_access: BetaAccess;
         student_profile_completion?: StudentProfileCompletion;
         calendar_feed?: {
             feed_url: string;
@@ -1123,13 +1126,13 @@ export default function ProfilePage() {
                                             <span className="truncate sm:hidden">Theme</span>
                                             <span className="hidden truncate sm:inline">Personalization</span>
                                         </TabsTrigger>
-                                        {experimentalAvailable.length > 0 && (
+                                        {beta_access && (
                                             <TabsTrigger
                                                 value="experimental"
                                                 className="shrink-0 whitespace-nowrap min-w-0 justify-center rounded-xl px-3 py-2 text-xs sm:text-sm lg:w-full lg:justify-start lg:px-3.5 data-[state=active]:bg-background data-[state=active]:shadow-xs"
                                             >
                                                 <Sparkles className="mr-1.5 h-4 w-4 shrink-0 lg:mr-2 text-primary" />
-                                                <span className="truncate">Experimental Labs</span>
+                                                <span className="truncate">Beta Access</span>
                                             </TabsTrigger>
                                         )}
                                     </TabsList>
@@ -1458,13 +1461,18 @@ export default function ProfilePage() {
                                 />
                             </TabsContent>
 
-                            {experimentalAvailable.length > 0 && (
+                            {beta_access && (
                                 <TabsContent value="experimental" className="mt-0 outline-none">
-                                    <ExperimentalTab
-                                        experimentalAvailable={experimentalAvailable}
-                                        experimentalFeatures={feature_flags?.experimental || []}
-                                        paths={paths}
-                                    />
+                                    <div className="flex flex-col gap-6">
+                                        <BetaAccessPanel beta={beta_access} />
+                                        {experimentalAvailable.length > 0 && (
+                                            <ExperimentalTab
+                                                experimentalAvailable={experimentalAvailable}
+                                                experimentalFeatures={feature_flags?.experimental || []}
+                                                paths={paths}
+                                            />
+                                        )}
+                                    </div>
                                 </TabsContent>
                             )}
 

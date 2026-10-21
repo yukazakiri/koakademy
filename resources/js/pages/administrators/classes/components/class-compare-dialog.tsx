@@ -132,7 +132,10 @@ export function ClassCompareDialog({ open, onOpenChange, classes }: ClassCompare
         setSearchB("");
 
         try {
-            const url = `/administrators/classes/compare?class_a=${encodeURIComponent(aId)}&class_b=${encodeURIComponent(bId)}`;
+            const url = `${route("administrators.classes.compare", {
+                class_a: aId,
+                class_b: bId,
+            })}`;
             const response = await fetch(url, {
                 headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
             });

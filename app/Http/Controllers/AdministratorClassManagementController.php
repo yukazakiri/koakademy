@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enums\UserRole;
 use App\Exports\StudentListExport;
 use App\Http\Requests\Administrators\CopyClassRequest;
 use App\Http\Requests\Administrators\StoreClassRequest;
 use App\Http\Requests\Administrators\UpdateClassRequest;
 use App\Jobs\MoveStudentToSectionJob;
+use App\Models\ClassEnrollment;
 use App\Models\Classes;
 use App\Models\Course;
 use App\Models\Faculty;
@@ -22,11 +24,15 @@ use App\Models\User;
 use App\Services\ClassCurriculumPlacementService;
 use App\Services\ClassScheduleChangeNotificationService;
 use App\Services\GeneralSettingsService;
+use App\Support\Database\JsonArrayQuery;
 use Exception;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Expression;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -35,10 +41,36 @@ use Maatwebsite\Excel\Facades\Excel;
 
 final class AdministratorClassManagementController extends Controller
 {
+    /**
+     * Sort keys the class list accepts.
+     *
+     * Every one of them maps to something the database can order by, so the
+     * list never sorts in PHP behind the user's back. The toolbar control and
+     * the column headers offer the same set.
+     *
+     * @var list<string>
+     */
+    private const array CLASS_SORTABLE_COLUMNS = [
+        'created_at',
+        'record_title',
+        'subject_code',
+        'students_count',
+        'faculty',
+        'semester',
+        'period',
+        'section',
+    ];
+
+    /**
+     * Page sizes the class list accepts.
+     *
+     * @var list<int>
+     */
+    private const array CLASS_PAGE_SIZES = [10, 20, 30, 40, 50];
+
     public function index(
         Request $request,
         GeneralSettingsService $generalSettingsService,
-        ClassCurriculumPlacementService $curriculumPlacement,
     ): Response {
         $filters = [
             'search' => $this->nullableString($request->input('search')),
@@ -54,24 +86,17 @@ final class AdministratorClassManagementController extends Controller
             'semester' => $this->nullableString($request->input('semester')),
             'available_slots' => $request->boolean('available_slots') ? true : null,
             'fully_enrolled' => $request->filled('fully_enrolled') ? $request->boolean('fully_enrolled') : null,
+            'trashed' => in_array($request->input('trashed'), ['only', 'with'], true) ? (string) $request->input('trashed') : null,
         ];
 
         $sort = $this->nullableString($request->input('sort')) ?? 'created_at';
-        if (! in_array($sort, ['created_at', 'record_title', 'subject_code', 'students_count'], true)) {
+        if (! in_array($sort, self::CLASS_SORTABLE_COLUMNS, true)) {
             $sort = 'created_at';
         }
 
         $direction = $request->input('direction') === 'asc' ? 'asc' : 'desc';
-        $perPage = $request->input('per_page', 20);
-
-        if ($perPage === 'all') {
-            $perPage = 100000;
-        } else {
-            $perPage = (int) $perPage;
-            if (! in_array($perPage, [10, 20, 30, 40, 50], true)) {
-                $perPage = 20;
-            }
-        }
+        $perPage = $this->resolveClassPerPage($request->input('per_page'));
+        $page = max(1, (int) $request->input('page', 1));
 
         /** @var list<int> $enrollmentCourseIds */
         $enrollmentCourseIds = $generalSettingsService->getGlobalSettingsModel()?->enrollment_courses ?? [];
@@ -98,218 +123,76 @@ final class AdministratorClassManagementController extends Controller
         $classesResolver = function () use (
             $filters,
             $courseCodeById,
-            $curriculumPlacement,
             $sort,
             $direction,
-        ) {
-            $classesQuery = Classes::query()
-                ->currentAcademicPeriod()
-                ->with([
-                    'Subject:id,code,title',
-                    'SubjectByCodeFallback:id,code,title',
-                    'ShsSubject:id,code,title',
-                    'subjects:id,code,title',
-                    'faculty:id,first_name,last_name,middle_name',
-                    'shsTrack:id,track_name',
-                    'shsStrand:id,strand_name',
-                ])
-                ->withCount('class_enrollments')
-                ->orderByDesc('id');
+            $perPage,
+            $page,
+        ): array {
+            $classesQuery = $this->buildClassListQuery($filters);
 
-            if ($filters['classification'] && in_array($filters['classification'], ['college', 'shs'], true)) {
-                if ($filters['classification'] === 'college') {
-                    $classesQuery->where(fn ($q) => $q->whereNull('classes.classification')->orWhere('classes.classification', 'college'));
-                } else {
-                    $classesQuery->where('classes.classification', $filters['classification']);
-                }
-            }
+            $this->applyClassSort($classesQuery, $sort, $direction);
 
-            if ($filters['room_id']) {
-                $classesQuery->where('classes.room_id', $filters['room_id']);
-            }
+            $paginator = $classesQuery->paginate($perPage, ['*'], 'page', $page);
+            $totals = $this->classListTotals($classesQuery);
 
-            if ($filters['faculty_id']) {
-                $classesQuery->where('classes.faculty_id', $filters['faculty_id']);
-            }
+            $filamentClassIndexUrl = route('filament.admin.resources.classes.index');
 
-            if ($filters['semester']) {
-                $classesQuery->where('classes.semester', $filters['semester']);
-            }
+            return [
+                'data' => $paginator->getCollection()
+                    ->map(function (Classes $class) use ($courseCodeById, $filamentClassIndexUrl): array {
+                        $subject = $class->subjects->first();
 
-            if ($filters['grade_level']) {
-                $classesQuery->where('classes.grade_level', $filters['grade_level']);
-            }
-
-            if ($filters['shs_track_id']) {
-                $classesQuery->where('classes.shs_track_id', $filters['shs_track_id']);
-            }
-
-            if ($filters['shs_strand_id']) {
-                $classesQuery->where('classes.shs_strand_id', $filters['shs_strand_id']);
-            }
-
-            $classesCollection = $classesQuery->get()
-                ->filter(function (Classes $class) use ($filters, $courseCodeById, $curriculumPlacement): bool {
-                    $subject = $class->subjects->first();
-
-                    if (! $subject) {
-                        $subject = $class->isShs()
-                            ? $class->ShsSubject
-                            : ($class->Subject ?: $class->SubjectByCodeFallback);
-                    }
-
-                    if ($filters['classification'] && ($class->classification ?? 'college') !== $filters['classification']) {
-                        return false;
-                    }
-
-                    if ($filters['course_id'] && ! in_array($filters['course_id'], array_map(intval(...), is_array($class->course_codes) ? $class->course_codes : []), true)) {
-                        return false;
-                    }
-
-                    if ($filters['shs_track_id'] && (int) $class->shs_track_id !== $filters['shs_track_id']) {
-                        return false;
-                    }
-
-                    if ($filters['shs_strand_id'] && (int) $class->shs_strand_id !== $filters['shs_strand_id']) {
-                        return false;
-                    }
-
-                    if ($filters['room_id'] && (int) $class->room_id !== $filters['room_id']) {
-                        return false;
-                    }
-
-                    if ($filters['faculty_id'] && (string) $class->faculty_id !== $filters['faculty_id']) {
-                        return false;
-                    }
-
-                    if ($filters['academic_year']) {
-                        $years = $filters['course_id']
-                            ? $curriculumPlacement->yearsForCourse($class, $filters['course_id'])
-                            : $curriculumPlacement->yearsForClass($class);
-
-                        if ($years === []) {
-                            $years = [(int) $class->academic_year];
+                        if (! $subject) {
+                            $subject = $class->isShs()
+                                ? $class->ShsSubject
+                                : ($class->Subject ?: $class->SubjectByCodeFallback);
                         }
 
-                        if (! in_array($filters['academic_year'], $years, true)) {
-                            return false;
-                        }
-                    }
-
-                    if ($filters['grade_level'] && $class->grade_level !== $filters['grade_level']) {
-                        return false;
-                    }
-
-                    if ($filters['semester'] && (string) $class->semester !== $filters['semester']) {
-                        return false;
-                    }
-
-                    if ($filters['subject_code'] && ! str_contains(mb_strtolower((string) ($subject?->code ?? $class->subject_code)), mb_strtolower($filters['subject_code']))) {
-                        return false;
-                    }
-
-                    $studentsCount = (int) ($class->class_enrollments_count ?? 0);
-                    $maximumSlots = (int) ($class->maximum_slots ?? 0);
-
-                    if ($filters['available_slots'] && ($maximumSlots <= 0 || $studentsCount >= $maximumSlots)) {
-                        return false;
-                    }
-
-                    if ($filters['fully_enrolled'] !== null) {
-                        $isFullyEnrolled = $maximumSlots > 0 && $studentsCount >= $maximumSlots;
-
-                        if ($filters['fully_enrolled'] !== $isFullyEnrolled) {
-                            return false;
-                        }
-                    }
-
-                    if ($filters['search']) {
                         $courseAbbreviations = array_values(array_unique(array_filter(array_map(
                             fn ($id) => $courseCodeById[(int) $id] ?? null,
                             is_array($class->course_codes) ? $class->course_codes : []
                         ))));
 
-                        $searchTerm = mb_strtolower($filters['search']);
-                        $searchableValues = [
-                            $class->record_title,
-                            $subject?->code,
-                            $subject?->title,
-                            $class->section,
-                            $class->school_year,
-                            (string) $class->semester,
-                            $class->classification,
-                            $class->faculty?->full_name,
-                            $class->shsTrack?->track_name,
-                            $class->shsStrand?->strand_name,
-                            implode(' ', $courseAbbreviations),
+                        $shsTrack = $class->shsTrack?->track_name;
+                        $shsStrand = $class->shsStrand?->strand_name;
+
+                        return [
+                            'id' => $class->id,
+                            'record_title' => $class->record_title,
+                            'subject_code' => $subject?->code ?? $class->subject_code ?? 'N/A',
+                            'subject_title' => $subject?->title ?? 'N/A',
+                            'section' => $class->section ?? 'N/A',
+                            'school_year' => $class->school_year ?? 'N/A',
+                            'semester' => $class->semester ?? 'N/A',
+                            'classification' => $class->classification ?? 'college',
+                            'academic_year' => $class->academic_year,
+                            'grade_level' => $class->grade_level,
+                            'course_abbreviations' => $courseAbbreviations === [] ? null : $courseAbbreviations,
+                            'shs_track' => $shsTrack,
+                            'shs_strand' => $shsStrand,
+                            'faculty' => $class->faculty?->full_name ?? 'TBA',
+                            'students_count' => (int) ($class->class_enrollments_count ?? 0),
+                            'maximum_slots' => (int) ($class->maximum_slots ?? 0),
+                            'deleted_at' => $class->deleted_at?->toIso8601String(),
+                            'filament' => [
+                                'view_url' => "{$filamentClassIndexUrl}/{$class->id}",
+                                'edit_url' => "{$filamentClassIndexUrl}/{$class->id}/edit",
+                            ],
                         ];
-
-                        $matchesSearch = collect($searchableValues)
-                            ->filter(fn ($value): bool => filled($value))
-                            ->contains(fn ($value): bool => str_contains(mb_strtolower((string) $value), $searchTerm));
-
-                        if (! $matchesSearch) {
-                            return false;
-                        }
-                    }
-
-                    return true;
-                });
-
-            $sortCallbacks = [
-                'created_at' => fn (Classes $class): int => $class->created_at?->getTimestamp() ?? 0,
-                'record_title' => fn (Classes $class): string => $class->record_title,
-                'subject_code' => fn (Classes $class): string => (string) ($class->subjects->first()?->code ?? $class->subject_code),
-                'students_count' => fn (Classes $class): int => (int) ($class->class_enrollments_count ?? 0),
+                    })
+                    ->values()
+                    ->all(),
+                'meta' => [
+                    'current_page' => $paginator->currentPage(),
+                    'last_page' => $paginator->lastPage(),
+                    'per_page' => $paginator->perPage(),
+                    'total' => $paginator->total(),
+                    'from' => $paginator->firstItem() ?? 0,
+                    'to' => $paginator->lastItem() ?? 0,
+                    'total_students' => $totals['total_students'],
+                    'total_capacity' => $totals['total_capacity'],
+                ],
             ];
-
-            $sortCallback = $sortCallbacks[$sort] ?? $sortCallbacks['created_at'];
-            $classesCollection = $direction === 'asc'
-                ? $classesCollection->sortBy($sortCallback)
-                : $classesCollection->sortByDesc($sortCallback);
-
-            $filamentClassIndexUrl = route('filament.admin.resources.classes.index');
-
-            return $classesCollection->map(function (Classes $class) use ($courseCodeById, $filamentClassIndexUrl): array {
-                $subject = $class->subjects->first();
-
-                if (! $subject) {
-                    $subject = $class->isShs()
-                        ? $class->ShsSubject
-                        : ($class->Subject ?: $class->SubjectByCodeFallback);
-                }
-
-                $courseAbbreviations = array_values(array_unique(array_filter(array_map(
-                    fn ($id) => $courseCodeById[(int) $id] ?? null,
-                    is_array($class->course_codes) ? $class->course_codes : []
-                ))));
-
-                $shsTrack = $class->shsTrack?->track_name;
-                $shsStrand = $class->shsStrand?->strand_name;
-
-                return [
-                    'id' => $class->id,
-                    'record_title' => $class->record_title,
-                    'subject_code' => $subject?->code ?? $class->subject_code ?? 'N/A',
-                    'subject_title' => $subject?->title ?? 'N/A',
-                    'section' => $class->section ?? 'N/A',
-                    'school_year' => $class->school_year ?? 'N/A',
-                    'semester' => $class->semester ?? 'N/A',
-                    'classification' => $class->classification ?? 'college',
-                    'academic_year' => $class->academic_year,
-                    'grade_level' => $class->grade_level,
-                    'course_abbreviations' => $courseAbbreviations === [] ? null : $courseAbbreviations,
-                    'shs_track' => $shsTrack,
-                    'shs_strand' => $shsStrand,
-                    'faculty' => $class->faculty?->full_name ?? 'TBA',
-                    'students_count' => (int) ($class->class_enrollments_count ?? 0),
-                    'maximum_slots' => (int) ($class->maximum_slots ?? 0),
-                    'filament' => [
-                        'view_url' => "{$filamentClassIndexUrl}/{$class->id}",
-                        'edit_url' => "{$filamentClassIndexUrl}/{$class->id}/edit",
-                    ],
-                ];
-            })->values()->all();
         };
 
         $selectedId = $this->nullableInt($request->input('selected'));
@@ -329,6 +212,13 @@ final class AdministratorClassManagementController extends Controller
                 'direction' => $direction,
                 'per_page' => $perPage,
             ]),
+            'capabilities' => [
+                'create' => $this->canManageClasses('Create:Classes'),
+                'update' => $this->canManageClasses('Update:Classes'),
+                'delete' => $this->canManageClasses('Delete:Classes'),
+                'restore' => $this->canManageClasses('Restore:Classes'),
+                'force_delete' => $this->canManageClasses('ForceDelete:Classes'),
+            ],
             'options' => fn (): array => [
                 'classifications' => [
                     ['value' => 'all', 'label' => 'All'],
@@ -435,6 +325,8 @@ final class AdministratorClassManagementController extends Controller
 
     public function store(StoreClassRequest $request, ClassCurriculumPlacementService $curriculumPlacement): \Illuminate\Http\RedirectResponse
     {
+        $this->authorizeClassAction('Create:Classes');
+
         $validated = $request->validated();
 
         $classification = $validated['classification'];
@@ -506,6 +398,8 @@ final class AdministratorClassManagementController extends Controller
         Classes $class,
         ClassCurriculumPlacementService $curriculumPlacement,
     ): \Illuminate\Http\RedirectResponse {
+        $this->authorizeClassAction('Update:Classes');
+
         $validated = $request->validated();
         $scheduleChangeNotifications = app(ClassScheduleChangeNotificationService::class);
         $oldScheduleSnapshot = null;
@@ -595,18 +489,70 @@ final class AdministratorClassManagementController extends Controller
         ]);
     }
 
+    /**
+     * Archive a class.
+     *
+     * The class is soft deleted, which also archives its schedule blocks and
+     * its enrolments, so nothing is lost and the whole thing can be brought
+     * back with restore().
+     */
     public function destroy(Classes $class): \Illuminate\Http\RedirectResponse
     {
+        $this->authorizeClassAction('Delete:Classes');
+
         $class->delete();
 
         return redirect()->route('administrators.classes.index')->with('flash', [
             'type' => 'success',
-            'message' => 'Class deleted.',
+            'message' => 'Class archived. It can be restored from the deleted classes view.',
+        ]);
+    }
+
+    /**
+     * Bring an archived class back, together with its schedule and enrolments.
+     */
+    public function restore(int $class): \Illuminate\Http\RedirectResponse
+    {
+        $this->authorizeClassAction('Restore:Classes');
+
+        $classModel = Classes::withTrashed()->findOrFail($class);
+
+        if (! $classModel->trashed()) {
+            return back()->with('flash', [
+                'type' => 'warning',
+                'message' => 'That class is not archived.',
+            ]);
+        }
+
+        $classModel->restore();
+
+        return redirect()->route('administrators.classes.index')->with('flash', [
+            'type' => 'success',
+            'message' => 'Class restored.',
+        ]);
+    }
+
+    /**
+     * Permanently remove a class and everything that depends on it.
+     */
+    public function forceDestroy(int $class): \Illuminate\Http\RedirectResponse
+    {
+        $this->authorizeClassAction('ForceDelete:Classes');
+
+        $classModel = Classes::withTrashed()->findOrFail($class);
+
+        $classModel->forceDelete();
+
+        return redirect()->route('administrators.classes.index')->with('flash', [
+            'type' => 'success',
+            'message' => 'Class permanently deleted.',
         ]);
     }
 
     public function copy(CopyClassRequest $request, Classes $class): \Illuminate\Http\RedirectResponse
     {
+        $this->authorizeClassAction('Create:Classes');
+
         $section = $request->validated()['section'];
 
         $newClass = $class->replicate(['section']);
@@ -957,6 +903,8 @@ final class AdministratorClassManagementController extends Controller
 
     public function moveStudent(Request $request, Classes $class): \Illuminate\Http\RedirectResponse
     {
+        $this->authorizeClassAction('Update:Classes');
+
         $validated = $request->validate([
             'student_id' => ['required', 'integer', 'exists:students,id'],
             'target_class_id' => ['required', 'integer', 'exists:classes,id'],
@@ -1169,6 +1117,359 @@ final class AdministratorClassManagementController extends Controller
     }
 
     /**
+     * The class list query: every filter is applied by the database so the
+     * page only ever ships the rows it displays.
+     *
+     * @param  array<string, mixed>  $filters
+     */
+    private function buildClassListQuery(array $filters): Builder
+    {
+        $query = Classes::query()
+            ->currentAcademicPeriod()
+            ->with([
+                'Subject:id,code,title',
+                'SubjectByCodeFallback:id,code,title',
+                'ShsSubject:id,code,title',
+                'subjects:id,code,title',
+                'faculty:id,first_name,last_name,middle_name',
+                'shsTrack:id,track_name',
+                'shsStrand:id,strand_name',
+            ])
+            ->withCount('class_enrollments');
+
+        if ($filters['trashed'] === 'only') {
+            $query->onlyTrashed();
+        } elseif ($filters['trashed'] === 'with') {
+            $query->withTrashed();
+        }
+
+        $this->applyClassFilters($query, $filters);
+
+        return $query;
+    }
+
+    /**
+     * Apply every list filter in SQL.
+     *
+     * @param  array<string, mixed>  $filters
+     */
+    private function applyClassFilters(Builder $query, array $filters): void
+    {
+        if ($filters['classification'] === 'college') {
+            $query->where(fn (Builder $classificationQuery) => $classificationQuery
+                ->whereNull('classes.classification')
+                ->orWhere('classes.classification', 'college'));
+        } elseif ($filters['classification'] === 'shs') {
+            $query->where('classes.classification', 'shs');
+        }
+
+        if ($filters['room_id'] !== null) {
+            $query->where('classes.room_id', $filters['room_id']);
+        }
+
+        if ($filters['faculty_id'] !== null) {
+            $query->where('classes.faculty_id', $filters['faculty_id']);
+        }
+
+        if ($filters['semester'] !== null) {
+            $query->where('classes.semester', $filters['semester']);
+        }
+
+        if ($filters['grade_level'] !== null) {
+            $query->where('classes.grade_level', $filters['grade_level']);
+        }
+
+        if ($filters['shs_track_id'] !== null) {
+            $query->where('classes.shs_track_id', $filters['shs_track_id']);
+        }
+
+        if ($filters['shs_strand_id'] !== null) {
+            $query->where('classes.shs_strand_id', $filters['shs_strand_id']);
+        }
+
+        if ($filters['course_id'] !== null) {
+            $courseId = $filters['course_id'];
+
+            $query->where(function (Builder $courseQuery) use ($courseId): void {
+                JsonArrayQuery::whereContainsInt($courseQuery, 'classes.course_codes', $courseId);
+
+                JsonArrayQuery::whereElementMatches(
+                    $courseQuery,
+                    'classes.subject_ids',
+                    'subject.course_id = ?',
+                    [$courseId],
+                    'or',
+                    'JOIN subject ON subject.id = {element}',
+                );
+            });
+        }
+
+        if ($filters['academic_year'] !== null) {
+            $academicYear = $filters['academic_year'];
+
+            $query->where(function (Builder $yearQuery) use ($academicYear): void {
+                $yearQuery->where('classes.academic_year', $academicYear);
+
+                JsonArrayQuery::whereElementMatches(
+                    $yearQuery,
+                    'classes.subject_ids',
+                    'subject.academic_year = ?',
+                    [$academicYear],
+                    'or',
+                    'JOIN subject ON subject.id = {element}',
+                );
+            });
+        }
+
+        if ($filters['subject_code'] !== null) {
+            $this->applySubjectCodeFilter($query, $filters['subject_code']);
+        }
+
+        $this->applyEnrollmentFilters($query, $filters);
+
+        if ($filters['search'] !== null) {
+            $this->applyClassSearch($query, $filters['search']);
+        }
+    }
+
+    private function applySubjectCodeFilter(Builder $query, string $subjectCode): void
+    {
+        $like = '%'.$subjectCode.'%';
+        $operator = $this->caseInsensitiveLikeOperator($query);
+
+        $query->where(function (Builder $codeQuery) use ($like, $operator): void {
+            $codeQuery->where('classes.subject_code', $operator, $like);
+
+            JsonArrayQuery::whereElementMatches(
+                $codeQuery,
+                'classes.subject_ids',
+                sprintf('subject.code %1$s ? OR subject.title %1$s ?', $operator),
+                [$like, $like],
+                'or',
+                'JOIN subject ON subject.id = {element}',
+            );
+        });
+    }
+
+    /**
+     * Filter on how full a class is.
+     *
+     * @param  array<string, mixed>  $filters
+     */
+    private function applyEnrollmentFilters(Builder $query, array $filters): void
+    {
+        $count = $this->enrollmentCountSubquery();
+
+        if ($filters['available_slots'] === true) {
+            $query->whereRaw(
+                sprintf('classes.maximum_slots > 0 and classes.maximum_slots > %s', $count['sql']),
+                $count['bindings'],
+            );
+        }
+
+        if ($filters['fully_enrolled'] === true) {
+            $query->whereRaw(
+                sprintf('classes.maximum_slots > 0 and classes.maximum_slots <= %s', $count['sql']),
+                $count['bindings'],
+            );
+        } elseif ($filters['fully_enrolled'] === false) {
+            $query->whereRaw(
+                sprintf('(classes.maximum_slots <= 0 or classes.maximum_slots > %s)', $count['sql']),
+                $count['bindings'],
+            );
+        }
+    }
+
+    /**
+     * Match a search term against the identifying fields of a class.
+     *
+     * The course and subject codes live in JSON arrays, so they are matched
+     * through a correlated subquery rather than a plain column comparison.
+     */
+    private function applyClassSearch(Builder $query, string $search): void
+    {
+        $term = mb_trim($search);
+
+        if ($term === '') {
+            return;
+        }
+
+        $like = '%'.$term.'%';
+        $operator = $this->caseInsensitiveLikeOperator($query);
+
+        $query->where(function (Builder $searchQuery) use ($query, $like, $operator): void {
+            $searchQuery
+                ->where('classes.subject_code', $operator, $like)
+                ->orWhere('classes.section', $operator, $like)
+                ->orWhere('classes.school_year', $operator, $like)
+                ->orWhere('classes.classification', $operator, $like)
+                ->orWhere($this->textCast($query, 'classes.semester'), $operator, $like)
+                // The record title a user sees is "<subject codes> - <section>",
+                // so that exact shape has to match as well.
+                ->orWhereRaw(
+                    sprintf("(classes.subject_code || ' - ' || classes.section) %s ?", $operator),
+                    [$like],
+                )
+                ->orWhereHas('faculty', fn (Builder $facultyQuery) => $facultyQuery->where('full_name', $operator, $like))
+                ->orWhereHas('shsTrack', fn (Builder $trackQuery) => $trackQuery->where('track_name', $operator, $like))
+                ->orWhereHas('shsStrand', fn (Builder $strandQuery) => $strandQuery->where('strand_name', $operator, $like));
+
+            JsonArrayQuery::whereElementMatches(
+                $searchQuery,
+                'classes.subject_ids',
+                sprintf('subject.code %1$s ? OR subject.title %1$s ?', $operator),
+                [$like, $like],
+                'or',
+                'JOIN subject ON subject.id = {element}',
+            );
+
+            JsonArrayQuery::whereElementMatches(
+                $searchQuery,
+                'classes.course_codes',
+                sprintf('courses.code %s ?', $operator),
+                [$like],
+                'or',
+                'JOIN courses ON courses.id = {element}',
+            );
+        });
+    }
+
+    /**
+     * Order the list by a database column.
+     */
+    private function applyClassSort(Builder $query, string $sort, string $direction): void
+    {
+        $direction = $direction === 'asc' ? 'asc' : 'desc';
+
+        match ($sort) {
+            'record_title' => $query
+                ->orderBy('classes.subject_code', $direction)
+                ->orderBy('classes.section', $direction),
+            'subject_code' => $query->orderBy('classes.subject_code', $direction),
+            'students_count' => $query->orderBy('class_enrollments_count', $direction),
+            'faculty' => $query
+                ->withAggregate('Faculty', 'full_name')
+                ->orderBy('faculty_full_name', $direction),
+            'semester' => $query->orderBy('classes.semester', $direction),
+            'period' => $query
+                ->orderBy('classes.school_year', $direction)
+                ->orderBy('classes.semester', $direction),
+            'section' => $query->orderBy('classes.section', $direction),
+            default => $query->orderBy('classes.created_at', $direction),
+        };
+
+        // A stable tiebreaker keeps the page order from shuffling between two
+        // requests that return the same set of rows.
+        $query->orderBy('classes.id', $direction);
+    }
+
+    /**
+     * Totals for the whole filtered set, not just the page on screen.
+     *
+     * @return array{total_students: int, total_capacity: int}
+     */
+    private function classListTotals(Builder $query): array
+    {
+        $count = $this->enrollmentCountSubquery();
+
+        $inner = (clone $query)->toBase()->reorder();
+        $inner->select(DB::raw('classes.maximum_slots as maximum_slots'));
+        $inner->selectRaw($count['sql'].' as enrollment_count', $count['bindings']);
+
+        $totals = DB::query()
+            ->fromSub($inner, 'filtered_classes')
+            ->selectRaw('coalesce(sum(enrollment_count), 0) as total_students')
+            ->selectRaw('coalesce(sum(maximum_slots), 0) as total_capacity')
+            ->first();
+
+        return [
+            'total_students' => (int) ($totals->total_students ?? 0),
+            'total_capacity' => (int) ($totals->total_capacity ?? 0),
+        ];
+    }
+
+    /**
+     * A correlated subquery that counts a class' live enrolments.
+     *
+     * The count is built from the relation so the tenant scope and the
+     * soft-delete rule are exactly the ones the withCount() alias on the row
+     * payload uses. The bindings come back separately because the fragment is
+     * interpolated into whereRaw() calls.
+     *
+     * @return array{sql: string, bindings: array<int, mixed>}
+     */
+    private function enrollmentCountSubquery(): array
+    {
+        // toBase() applies the relation's global scopes exactly once. Calling
+        // applyScopes() and then toSql() would apply them twice.
+        $scoped = (new ClassEnrollment())
+            ->selectRaw('count(*)')
+            ->whereColumn('class_enrollments.class_id', 'classes.id')
+            ->toBase();
+
+        return [
+            'sql' => '('.$scoped->toSql().')',
+            'bindings' => $scoped->getBindings(),
+        ];
+    }
+
+    /**
+     * The LIKE operator that ignores case on the current driver.
+     */
+    private function caseInsensitiveLikeOperator(Builder $query): string
+    {
+        return $query->getConnection()->getDriverName() === 'pgsql' ? 'ilike' : 'like';
+    }
+
+    /**
+     * Render a column as text so it can be compared against a string.
+     */
+    private function textCast(Builder $query, string $column): Expression
+    {
+        return DB::raw(
+            $query->getConnection()->getDriverName() === 'pgsql'
+                ? sprintf('%s::text', $column)
+                : sprintf('CAST(%s AS TEXT)', $column)
+        );
+    }
+
+    /**
+     * Authorise a class management action.
+     *
+     * Every mutating action on a class needs the matching Shield permission —
+     * the permissions that gate the Filament resource — so a user who can
+     * reach the administrator portal but may not manage classes cannot delete
+     * one.
+     *
+     * The administrator role holds every permission, but relying on the role
+     * seeder to have granted them would lock the portal out of class
+     * management on an install whose roles were seeded before the classes
+     * policy existed. The role is therefore allowed explicitly.
+     */
+    private function authorizeClassAction(string $permission): void
+    {
+        abort_unless($this->canManageClasses($permission), 403);
+    }
+
+    /**
+     * Whether the signed in user may perform a class management action.
+     */
+    private function canManageClasses(string $permission): bool
+    {
+        return $this->userHasAnyPermission(Auth::user(), $permission, [UserRole::Admin]);
+    }
+
+    /**
+     * The page size the list should use.
+     */
+    private function resolveClassPerPage(mixed $perPage): int
+    {
+        $perPage = (int) $perPage;
+
+        return in_array($perPage, self::CLASS_PAGE_SIZES, true) ? $perPage : 20;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function buildClassFormData(Classes $class): array
@@ -1310,7 +1611,7 @@ final class AdministratorClassManagementController extends Controller
 
     private function buildSelectedClassProps(int $classId, array $courseCodeById, array $courseLabelById): ?array
     {
-        $class = Classes::query()
+        $class = Classes::withTrashed()
             ->withCount('class_enrollments')
             ->with([
                 'faculty:id,first_name,last_name,middle_name,email',

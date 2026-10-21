@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Laravel\Scout\Searchable;
 use Override;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
@@ -23,6 +24,7 @@ use Spatie\Activitylog\Support\LogOptions;
 /**
  * Class Class
  *
+ * @property \Illuminate\Support\Carbon|null $deleted_at
  * @property-read Collection<int, ClassEnrollment> $ClassStudents
  * @property-read int|null $class_students_count
  * @property-read Faculty|null $Faculty
@@ -76,6 +78,7 @@ final class Classes extends Model
     use HasFactory;
     use LogsActivity;
     use Searchable;
+    use SoftDeletes;
 
     #[Override]
     protected $table = 'classes';
@@ -410,6 +413,22 @@ final class Classes extends Model
         self::deleting(function ($model): void {
             $model->Schedule()->delete();
             $model->ClassStudents()->delete();
+        });
+
+        // Archiving a class archives the records that depend on it. Restoring the
+        // class has to bring them back too, otherwise a restored class would come
+        // back empty — no schedule blocks and no enrolments.
+        self::restored(function ($model): void {
+            $model->Schedule()->restore();
+            $model->ClassStudents()->restore();
+        });
+
+        // A permanent delete has to remove the archived dependents as well. The
+        // `deleting` hook only soft-deletes them, so they would survive as
+        // orphans pointing at a class that no longer exists.
+        self::forceDeleted(function ($model): void {
+            $model->Schedule()->withTrashed()->forceDelete();
+            $model->ClassStudents()->withTrashed()->forceDelete();
         });
     }
 

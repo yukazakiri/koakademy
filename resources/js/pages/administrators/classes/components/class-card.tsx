@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Link } from "@inertiajs/react";
-import { BookOpen, CalendarIcon, Copy as CopyIcon, MoreHorizontal, Pencil, Settings2, Trash2, Users } from "lucide-react";
+import { BookOpen, CalendarIcon, Archive, Copy as CopyIcon, MoreHorizontal, Pencil, RotateCcw, Settings2, Trash2, Users } from "lucide-react";
 import { route } from "ziggy-js";
 import type { ClassRow } from "../columns";
 
@@ -13,13 +13,18 @@ export function ClassCard({
     onCopy,
     onEdit,
     onDelete,
+    onRestore,
+    onForceDelete,
 }: {
     classRow: ClassRow;
     onManage: (id: number) => void;
     onCopy: (id: number) => void;
     onEdit: (id: number) => void;
     onDelete: (row: ClassRow) => void;
+    onRestore?: (row: ClassRow) => void;
+    onForceDelete?: (row: ClassRow) => void;
 }) {
+    const isArchived = Boolean(classRow.deleted_at);
     const atCapacity = classRow.maximum_slots > 0 && classRow.students_count >= classRow.maximum_slots;
     const percentage = classRow.maximum_slots > 0 ? Math.round((classRow.students_count / classRow.maximum_slots) * 100) : 0;
     const barColor = atCapacity ? "bg-destructive" : percentage >= 75 ? "bg-amber-500" : "bg-primary";
@@ -49,24 +54,40 @@ export function ClassCard({
                             </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-48">
-                            <DropdownMenuItem onClick={() => onEdit(classRow.id)}>
-                                <Pencil className="mr-2 h-4 w-4" /> Edit class
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => onManage(classRow.id)}>
-                                <Settings2 className="mr-2 h-4 w-4" /> Manage details
-                            </DropdownMenuItem>
-                            <DropdownMenuItem asChild>
-                                <Link href={route("administrators.classes.show", { class: classRow.id })}>
-                                    <BookOpen className="mr-2 h-4 w-4" /> Open class page
-                                </Link>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => onCopy(classRow.id)}>
-                                <CopyIcon className="mr-2 h-4 w-4" /> Duplicate class
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => onDelete(classRow)} className="text-destructive focus:text-destructive">
-                                <Trash2 className="mr-2 h-4 w-4" /> Delete class
-                            </DropdownMenuItem>
+                            {isArchived ? (
+                                <>
+                                    <DropdownMenuItem onClick={() => onRestore?.(classRow)}>
+                                        <RotateCcw className="mr-2 h-4 w-4" /> Restore class
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                        onClick={() => onForceDelete?.(classRow)}
+                                        className="text-destructive focus:text-destructive"
+                                    >
+                                        <Trash2 className="mr-2 h-4 w-4" /> Delete permanently
+                                    </DropdownMenuItem>
+                                </>
+                            ) : (
+                                <>
+                                    <DropdownMenuItem onClick={() => onEdit(classRow.id)}>
+                                        <Pencil className="mr-2 h-4 w-4" /> Edit class
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => onManage(classRow.id)}>
+                                        <Settings2 className="mr-2 h-4 w-4" /> Manage details
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem asChild>
+                                        <Link href={route("administrators.classes.show", { class: classRow.id })}>
+                                            <BookOpen className="mr-2 h-4 w-4" /> Open class page
+                                        </Link>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => onCopy(classRow.id)}>
+                                        <CopyIcon className="mr-2 h-4 w-4" /> Duplicate class
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem onClick={() => onDelete(classRow)} className="text-destructive focus:text-destructive">
+                                        <Archive className="mr-2 h-4 w-4" /> Archive class
+                                    </DropdownMenuItem>
+                                </>
+                            )}
                         </DropdownMenuContent>
                     </DropdownMenu>
                 </div>
@@ -84,6 +105,11 @@ export function ClassCard({
                     <Badge variant="outline" className="text-[10px]">
                         Sec {classRow.section}
                     </Badge>
+                    {isArchived ? (
+                        <Badge variant="outline" className="text-[10px]">
+                            Archived
+                        </Badge>
+                    ) : null}
                     {classRow.classification === "shs" && classRow.shs_track ? (
                         <Badge variant="outline" className="text-[10px]">
                             {classRow.shs_strand ? `${classRow.shs_track} – ${classRow.shs_strand}` : classRow.shs_track}
@@ -124,16 +150,30 @@ export function ClassCard({
                 </div>
 
                 <div className="flex items-center gap-2 border-t pt-3">
-                    <Button type="button" size="sm" variant="default" className="flex-1" onClick={() => onEdit(classRow.id)}>
-                        <Pencil className="mr-1 h-3 w-3" />
-                        Edit
-                    </Button>
-                    <Button type="button" size="sm" variant="outline" onClick={() => onManage(classRow.id)} title="Manage">
-                        <Settings2 className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button type="button" size="sm" variant="outline" onClick={() => onCopy(classRow.id)} title="Duplicate">
-                        <CopyIcon className="h-3.5 w-3.5" />
-                    </Button>
+                    {isArchived ? (
+                        <>
+                            <Button type="button" size="sm" variant="default" className="flex-1" onClick={() => onRestore?.(classRow)}>
+                                <RotateCcw className="mr-1 h-3.5 w-3.5" />
+                                Restore
+                            </Button>
+                            <Button type="button" size="sm" variant="outline" onClick={() => onForceDelete?.(classRow)} title="Delete permanently">
+                                <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                        </>
+                    ) : (
+                        <>
+                            <Button type="button" size="sm" variant="default" className="flex-1" onClick={() => onEdit(classRow.id)}>
+                                <Pencil className="mr-1 h-3 w-3" />
+                                Edit
+                            </Button>
+                            <Button type="button" size="sm" variant="outline" onClick={() => onManage(classRow.id)} title="Manage">
+                                <Settings2 className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button type="button" size="sm" variant="outline" onClick={() => onCopy(classRow.id)} title="Duplicate">
+                                <CopyIcon className="h-3.5 w-3.5" />
+                            </Button>
+                        </>
+                    )}
                 </div>
             </CardContent>
         </Card>

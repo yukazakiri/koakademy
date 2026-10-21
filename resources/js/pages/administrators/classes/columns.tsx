@@ -1,6 +1,5 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -11,7 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Link } from "@inertiajs/react";
 import { ColumnDef } from "@tanstack/react-table";
-import { Copy, Eye, MoreHorizontal, Pencil, Settings, Trash2 } from "lucide-react";
+import { Archive, Copy, Eye, MoreHorizontal, Pencil, RotateCcw, Settings, Trash2 } from "lucide-react";
 import { route } from "ziggy-js";
 
 import { DataTableColumnHeader } from "./data-table-column-header";
@@ -33,10 +32,19 @@ export type ClassRow = {
     faculty: string;
     students_count: number;
     maximum_slots: number;
+    deleted_at: string | null;
     filament: {
         view_url: string;
         edit_url: string;
     };
+};
+
+export type ClassCapabilities = {
+    create: boolean;
+    update: boolean;
+    delete: boolean;
+    restore: boolean;
+    force_delete: boolean;
 };
 
 interface GetColumnsProps {
@@ -44,30 +52,24 @@ interface GetColumnsProps {
     onCopy: (id: number) => void;
     onEdit: (id: number) => void;
     onDelete: (row: ClassRow) => void;
+    onRestore: (row: ClassRow) => void;
+    onForceDelete: (row: ClassRow) => void;
+    capabilities: ClassCapabilities;
 }
 
-export const getColumns = ({ onManage, onCopy, onEdit, onDelete }: GetColumnsProps): ColumnDef<ClassRow>[] => [
-    {
-        id: "select",
-        header: ({ table }) => (
-            <Checkbox
-                checked={table.getIsAllPageRowsSelected() || (table.getIsSomePageRowsSelected() && "indeterminate")}
-                onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-                aria-label="Select all"
-                className="translate-y-[2px]"
-            />
-        ),
-        cell: ({ row }) => (
-            <Checkbox
-                checked={row.getIsSelected()}
-                onCheckedChange={(value) => row.toggleSelected(!!value)}
-                aria-label="Select row"
-                className="translate-y-[2px]"
-            />
-        ),
-        enableSorting: false,
-        enableHiding: false,
-    },
+/**
+ * The column ids double as the sort keys the server understands, so clicking a
+ * header and picking an entry from the sort control ask for the same thing.
+ */
+export const getColumns = ({
+    onManage,
+    onCopy,
+    onEdit,
+    onDelete,
+    onRestore,
+    onForceDelete,
+    capabilities,
+}: GetColumnsProps): ColumnDef<ClassRow>[] => [
     {
         accessorKey: "record_title",
         header: ({ column }) => <DataTableColumnHeader column={column} title="Class" />,
@@ -100,6 +102,11 @@ export const getColumns = ({ onManage, onCopy, onEdit, onDelete }: GetColumnsPro
                         <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
                             Sec {data.section}
                         </Badge>
+                        {data.deleted_at ? (
+                            <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                                Archived
+                            </Badge>
+                        ) : null}
                         {data.classification === "shs" && data.shs_track ? (
                             <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
                                 {data.shs_strand ? `${data.shs_track} – ${data.shs_strand}` : data.shs_track}
@@ -136,9 +143,9 @@ export const getColumns = ({ onManage, onCopy, onEdit, onDelete }: GetColumnsPro
         ),
     },
     {
-        id: "enrollment",
+        id: "students_count",
         header: ({ column }) => <DataTableColumnHeader column={column} title="Enrollment" />,
-        accessorFn: (row) => row.students_count / (row.maximum_slots || 1),
+        accessorFn: (row) => row.students_count,
         cell: ({ row }) => {
             const data = row.original;
             const atCapacity = data.maximum_slots > 0 && data.students_count >= data.maximum_slots;
@@ -169,15 +176,20 @@ export const getColumns = ({ onManage, onCopy, onEdit, onDelete }: GetColumnsPro
     },
     {
         id: "actions",
+        enableSorting: false,
         cell: ({ row }) => {
             const data = row.original;
+            const isArchived = Boolean(data.deleted_at);
 
             return (
                 <div className="flex items-center justify-end gap-1">
-                    <Button type="button" variant="outline" size="sm" className="h-8 px-2" onClick={() => onEdit(data.id)} title="Quick edit">
-                        <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                        Edit
-                    </Button>
+                    {!isArchived && capabilities.update ? (
+                        <Button type="button" variant="outline" size="sm" className="h-8 px-2" onClick={() => onEdit(data.id)} title="Quick edit">
+                            <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                            Edit
+                        </Button>
+                    ) : null}
+
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <Button variant="ghost" className="h-8 w-8 p-0">
@@ -195,19 +207,47 @@ export const getColumns = ({ onManage, onCopy, onEdit, onDelete }: GetColumnsPro
                                     <Eye className="mr-2 h-4 w-4" /> Open class page
                                 </Link>
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => onEdit(data.id)}>
-                                <Pencil className="mr-2 h-4 w-4" /> Edit class
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => onManage(data.id)}>
-                                <Settings className="mr-2 h-4 w-4" /> Manage details
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => onCopy(data.id)}>
-                                <Copy className="mr-2 h-4 w-4" /> Duplicate class
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => onDelete(data)} className="text-destructive focus:text-destructive">
-                                <Trash2 className="mr-2 h-4 w-4" /> Delete class
-                            </DropdownMenuItem>
+
+                            {isArchived ? (
+                                <>
+                                    {capabilities.restore ? (
+                                        <DropdownMenuItem onClick={() => onRestore(data)}>
+                                            <RotateCcw className="mr-2 h-4 w-4" /> Restore class
+                                        </DropdownMenuItem>
+                                    ) : null}
+                                    {capabilities.force_delete ? (
+                                        <DropdownMenuItem onClick={() => onForceDelete(data)} className="text-destructive focus:text-destructive">
+                                            <Trash2 className="mr-2 h-4 w-4" /> Delete permanently
+                                        </DropdownMenuItem>
+                                    ) : null}
+                                </>
+                            ) : (
+                                <>
+                                    {capabilities.update ? (
+                                        <DropdownMenuItem onClick={() => onEdit(data.id)}>
+                                            <Pencil className="mr-2 h-4 w-4" /> Edit class
+                                        </DropdownMenuItem>
+                                    ) : null}
+                                    {capabilities.update ? (
+                                        <DropdownMenuItem onClick={() => onManage(data.id)}>
+                                            <Settings className="mr-2 h-4 w-4" /> Manage details
+                                        </DropdownMenuItem>
+                                    ) : null}
+                                    {capabilities.create ? (
+                                        <DropdownMenuItem onClick={() => onCopy(data.id)}>
+                                            <Copy className="mr-2 h-4 w-4" /> Duplicate class
+                                        </DropdownMenuItem>
+                                    ) : null}
+                                    {capabilities.delete ? (
+                                        <>
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem onClick={() => onDelete(data)} className="text-destructive focus:text-destructive">
+                                                <Archive className="mr-2 h-4 w-4" /> Archive class
+                                            </DropdownMenuItem>
+                                        </>
+                                    ) : null}
+                                </>
+                            )}
                         </DropdownMenuContent>
                     </DropdownMenu>
                 </div>

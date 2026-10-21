@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Trash2 } from "lucide-react";
+import { Archive } from "lucide-react";
 import type { ClassRow } from "../columns";
 
 interface DeleteClassDialogProps {
@@ -15,10 +15,11 @@ export function DeleteClassDialog({ pendingDelete, onConfirm, onCancel, processi
         <Dialog open={pendingDelete !== null} onOpenChange={(open) => !open && onCancel()}>
             <DialogContent>
                 <DialogHeader>
-                    <DialogTitle>Delete this class?</DialogTitle>
+                    <DialogTitle>Archive this class?</DialogTitle>
                     <DialogDescription>
-                        This will permanently remove <span className="text-foreground font-medium">{pendingDelete?.record_title}</span> along with
-                        its schedules and settings. Enrolled students will lose access. This action cannot be undone.
+                        <span className="text-foreground font-medium">{pendingDelete?.record_title}</span> will be removed from the live list,
+                        together with its schedule blocks and enrolments. Nothing is lost: the class can be restored from the archived view,
+                        and it brings its schedule and enrolments back with it.
                     </DialogDescription>
                 </DialogHeader>
                 <DialogFooter>
@@ -26,8 +27,8 @@ export function DeleteClassDialog({ pendingDelete, onConfirm, onCancel, processi
                         Cancel
                     </Button>
                     <Button variant="destructive" onClick={onConfirm} disabled={processing}>
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete class
+                        <Archive className="mr-2 h-4 w-4" />
+                        Archive class
                     </Button>
                 </DialogFooter>
             </DialogContent>

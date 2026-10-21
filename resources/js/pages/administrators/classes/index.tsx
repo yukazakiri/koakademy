@@ -19,6 +19,7 @@ import { VisualRadioButton } from "@/components/ui/visual-radio-button";
 import type { User } from "@/types/user";
 import { Head, Link, router, useForm, useRemember } from "@inertiajs/react";
 import {
+    Archive,
     BookOpen,
     CalendarIcon,
     Filter,
@@ -39,13 +40,15 @@ import {
     Users,
 } from "lucide-react";
 import * as React from "react";
+import { toast } from "sonner";
 import { route } from "ziggy-js";
-import { ClassRow, getColumns } from "./columns";
+import { ClassRow, getColumns, type ClassCapabilities } from "./columns";
 import { ClassCard } from "./components/class-card";
 import { ClassCompareDialog } from "./components/class-compare-dialog";
 import { ClassStats } from "./components/class-stats";
 import { DeleteClassDialog } from "./components/delete-class-dialog";
-import { DataTable } from "./data-table";
+import { DataTable, type PaginationMeta } from "./data-table";
+import { DataTablePagination } from "./data-table-pagination";
 
 type SelectOption = { value: string; label: string };
 
@@ -140,6 +143,22 @@ type SelectedClass = {
 
 type ClassDialogTab = "details" | "schedule" | "settings";
 
+export type ClassListPayload = {
+    data: ClassRow[];
+    meta: PaginationMeta & {
+        total_students: number;
+        total_capacity: number;
+    };
+};
+
+const DEFAULT_CAPABILITIES: ClassCapabilities = {
+    create: false,
+    update: false,
+    delete: false,
+    restore: false,
+    force_delete: false,
+};
+
 export type ClassOptions = {
     classifications: SelectOption[];
     sections: SelectOption[];
@@ -165,7 +184,8 @@ interface ClassesIndexProps {
             create_url: string;
         };
     };
-    classes?: ClassRow[];
+    classes?: ClassListPayload;
+    capabilities?: ClassCapabilities;
     selected_class?: SelectedClass | null;
     filters?: {
         search?: string | null;
@@ -181,6 +201,7 @@ interface ClassesIndexProps {
         semester?: string | null;
         available_slots?: boolean | null;
         fully_enrolled?: boolean | null;
+        trashed?: string | null;
         per_page?: number | string | null;
         sort?: string | null;
         direction?: string | null;
@@ -487,7 +508,8 @@ const DEFAULT_DEFAULTS: ClassDefaults = {
 
 export default function AdministratorClassesIndex({
     user,
-    classes = [],
+    classes,
+    capabilities: rawCapabilities,
     selected_class,
     filters = {},
     options: rawOptions,
@@ -516,7 +538,22 @@ export default function AdministratorClassesIndex({
         [rawDefaults],
     );
 
-    const classList = React.useMemo(() => (Array.isArray(classes) ? classes : []), [classes]);
+    const classList = React.useMemo<ClassRow[]>(() => classes?.data ?? [], [classes]);
+    const classMeta = React.useMemo<PaginationMeta & { total_students: number; total_capacity: number }>(
+        () =>
+            classes?.meta ?? {
+                current_page: 1,
+                last_page: 1,
+                per_page: 20,
+                total: 0,
+                from: 0,
+                to: 0,
+                total_students: 0,
+                total_capacity: 0,
+            },
+        [classes],
+    );
+    const capabilities = React.useMemo<ClassCapabilities>(() => rawCapabilities ?? DEFAULT_CAPABILITIES, [rawCapabilities]);
     const [search, setSearch] = React.useState(filters?.search || "");
     const searchInputRef = React.useRef<HTMLInputElement>(null);
     const searchInputFocusedRef = React.useRef(false);
@@ -606,31 +643,10 @@ export default function AdministratorClassesIndex({
 
     const [subjectCodeTouched, setSubjectCodeTouched] = React.useState(false);
 
-    const filteredClasses = React.useMemo(() => {
-        const searchTerm = search.trim().toLowerCase();
-        if (!searchTerm) {
-            return classList;
-        }
-
-        return classList.filter((classRow) =>
-            [
-                classRow.record_title,
-                classRow.subject_code,
-                classRow.subject_title,
-                classRow.section,
-                classRow.school_year,
-                String(classRow.semester ?? ""),
-                classRow.classification,
-                classRow.faculty,
-                classRow.shs_track,
-                classRow.shs_strand,
-            ]
-                .filter((value): value is string => value !== null && value !== undefined)
-                .some((value) => value.toLowerCase().includes(searchTerm)),
-        );
-    }, [classList, search]);
-
-    const visibleClasses = filteredClasses;
+    // The server applies the search and every filter, so the rows on screen are
+    // already the result set. Filtering them again here would drop rows the
+    // server matched — searching a program code used to hide every class.
+    const visibleClasses = classList;
 
     const parseSortOption = (value: string): { sort: string; direction: "asc" | "desc" } => {
         const [sort = "created_at", direction = "desc"] = value.split(":");
@@ -645,6 +661,7 @@ export default function AdministratorClassesIndex({
         searchTerm: string,
         filterValues: FilterType[] = activeFilters,
         selectedSortOption: string = sortOption,
+        extra: Record<string, string | number> = {},
     ): Record<string, string | number> => {
         const sort = parseSortOption(selectedSortOption);
         const appliedFilters: Record<string, string | number> = {
@@ -656,6 +673,21 @@ export default function AdministratorClassesIndex({
             appliedFilters.search = searchTerm.trim();
         }
 
+        // Carry over the filters the server understands but the toolbar does not
+        // expose, so a filter that arrived in the URL is never silently dropped
+        // by the next navigation.
+        Object.entries(filters ?? {}).forEach(([key, value]) => {
+            if (key === "search" || key === "sort" || key === "direction") {
+                return;
+            }
+
+            if (value === null || value === undefined || value === "") {
+                return;
+            }
+
+            appliedFilters[key] = value as string | number;
+        });
+
         filterValues.forEach((filter) => {
             const value = filter.values[0];
 
@@ -664,7 +696,7 @@ export default function AdministratorClassesIndex({
             }
         });
 
-        return appliedFilters;
+        return { ...appliedFilters, ...extra };
     };
 
     const navigateWithParams = (
@@ -691,7 +723,7 @@ export default function AdministratorClassesIndex({
             setIsUpdating(true);
             router.get(
                 route("administrators.classes.index"),
-                buildFilterParams(nextSearch, activeFilters, sortOption),
+                buildFilterParams(nextSearch, activeFilters, sortOption, { page: 1 }),
                 {
                     only: ["classes", "filters"],
                     preserveScroll: true,
@@ -705,7 +737,7 @@ export default function AdministratorClassesIndex({
 
     const handleFiltersChange = (newFilters: FilterType[]) => {
         setActiveFilters(newFilters);
-        navigateWithParams(buildFilterParams(search, newFilters, sortOption));
+        navigateWithParams(buildFilterParams(search, newFilters, sortOption, { page: 1 }));
     };
 
     const clearFilters = () => {
@@ -714,12 +746,40 @@ export default function AdministratorClassesIndex({
         setActiveFilters([]);
         setSortOption("created_at:desc");
         cancelPendingSearch();
-        navigateWithParams(buildFilterParams("", [], "created_at:desc"));
+        navigateWithParams(buildFilterParams("", [], "created_at:desc", { page: 1 }));
     };
 
     const handleSortChange = (value: string) => {
         setSortOption(value);
-        navigateWithParams(buildFilterParams(search, activeFilters, value));
+        navigateWithParams(buildFilterParams(search, activeFilters, value, { page: 1 }));
+    };
+
+    /**
+     * A column header was clicked. The column ids are the sort keys the server
+     * understands, so the table and the sort control ask for the same thing.
+     */
+    const handleColumnSortChange = (sort: string, direction: "asc" | "desc") => {
+        const nextSortOption = sort ? `${sort}:${direction}` : "created_at:desc";
+        setSortOption(nextSortOption);
+        navigateWithParams(buildFilterParams(search, activeFilters, nextSortOption, { page: 1 }));
+    };
+
+    const handlePageChange = (page: number, perPage: number) => {
+        // A page change is a navigation the user may want to go back to, so it
+        // is pushed onto the history instead of replacing the current entry.
+        navigateWithParams(buildFilterParams(search, activeFilters, sortOption, { page, per_page: perPage }), { replace: false });
+    };
+
+    const handleTrashedChange = (trashed: string | null) => {
+        const params = buildFilterParams(search, activeFilters, sortOption, { page: 1 });
+
+        if (trashed) {
+            params.trashed = trashed;
+        } else {
+            delete params.trashed;
+        }
+
+        navigateWithParams(params);
     };
 
     const filterFields: FilterFieldConfig[] = React.useMemo(
@@ -872,19 +932,43 @@ export default function AdministratorClassesIndex({
         });
     };
 
+    const performRestore = (row: ClassRow) => {
+        router.post(
+            route("administrators.classes.restore", { class: row.id }),
+            {},
+            {
+                preserveScroll: true,
+                onSuccess: () => toast.success(`${row.record_title} restored.`),
+            },
+        );
+    };
+
+    const performForceDelete = (row: ClassRow) => {
+        router.delete(
+            route("administrators.classes.force-destroy", { class: row.id }),
+            {
+                preserveScroll: true,
+                onSuccess: () => toast.success(`${row.record_title} permanently deleted.`),
+            },
+        );
+    };
+
     const columns = React.useMemo(
         () =>
             getColumns({
                 onManage: openManage,
                 onEdit: openEdit,
                 onDelete: confirmDelete,
+                onRestore: performRestore,
+                onForceDelete: performForceDelete,
                 onCopy: (id) => {
                     setCopySourceId(id);
                     setCopySection("A");
                     setIsCopyOpen(true);
                 },
+                capabilities,
             }),
-        [openManage, openEdit, setIsCopyOpen],
+        [capabilities, openManage, openEdit],
     );
 
     const editForm = useForm({
@@ -1317,8 +1401,11 @@ export default function AdministratorClassesIndex({
             <Head title="Administrators • Classes" />
 
             {(() => {
-                const filteredStatsTotalStudents = visibleClasses.reduce((acc, curr) => acc + curr.students_count, 0);
-                const filteredStatsTotalClasses = visibleClasses.length;
+                // The totals cover the whole filtered set, not just the page on
+                // screen, so they stay stable while paging through the list.
+                const filteredStatsTotalStudents = classMeta.total_students;
+                const filteredStatsTotalClasses = classMeta.total;
+                const isArchivedView = filters?.trashed === "only";
 
                 const toolbarContent = (
                     <>
@@ -1353,6 +1440,8 @@ export default function AdministratorClassesIndex({
                                     <SelectItem value="record_title:desc">Class Z-A</SelectItem>
                                     <SelectItem value="students_count:desc">Most enrolled</SelectItem>
                                     <SelectItem value="students_count:asc">Least enrolled</SelectItem>
+                                    <SelectItem value="period:asc">Earliest term</SelectItem>
+                                    <SelectItem value="period:desc">Latest term</SelectItem>
                                 </SelectContent>
                             </Select>
 
@@ -1419,21 +1508,42 @@ export default function AdministratorClassesIndex({
                                 <p className="text-muted-foreground text-sm">Manage classes, track enrollment, and organize schedules.</p>
                             </div>
                             <div className="flex items-center gap-2">
+                                <Button
+                                    variant={isArchivedView ? "secondary" : "outline"}
+                                    size="sm"
+                                    onClick={() => handleTrashedChange(isArchivedView ? null : "only")}
+                                >
+                                    <Archive className="mr-1.5 h-4 w-4" />
+                                    <span className="hidden sm:inline">{isArchivedView ? "Back to classes" : "Archived"}</span>
+                                    <span className="sm:hidden">Arch</span>
+                                </Button>
                                 <Button variant="outline" size="sm" onClick={() => setIsCompareOpen(true)}>
                                     <GitCompare className="mr-1.5 h-4 w-4" />
                                     <span className="hidden sm:inline">Compare</span>
                                     <span className="sm:hidden">Cmp</span>
                                 </Button>
-                                <Link
-                                    href={route("administrators.classes.create")}
-                                    className={buttonVariants({ size: "sm" })}
-                                >
-                                    <Plus className="mr-1.5 h-4 w-4" />
-                                    <span className="hidden sm:inline">New class</span>
-                                    <span className="sm:hidden">New</span>
-                                </Link>
+                                {capabilities.create ? (
+                                    <Link
+                                        href={route("administrators.classes.create")}
+                                        className={buttonVariants({ size: "sm" })}
+                                    >
+                                        <Plus className="mr-1.5 h-4 w-4" />
+                                        <span className="hidden sm:inline">New class</span>
+                                        <span className="sm:hidden">New</span>
+                                    </Link>
+                                ) : null}
                             </div>
                         </div>
+
+                        {isArchivedView ? (
+                            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm">
+                                <p className="text-muted-foreground">
+                                    <span className="text-foreground font-medium">Archived classes.</span> These classes and their schedules and
+                                    enrolments were removed from the live list. Restoring one brings all of it back.
+                                </p>
+                            </div>
+                        ) : null}
+
                         <ClassStats totalClasses={filteredStatsTotalClasses} totalStudents={filteredStatsTotalStudents} />
 
                         {viewMode === "grid" ? (
@@ -1457,6 +1567,8 @@ export default function AdministratorClassesIndex({
                                                 onManage={openManage}
                                                 onEdit={openEdit}
                                                 onDelete={confirmDelete}
+                                                onRestore={performRestore}
+                                                onForceDelete={performForceDelete}
                                                 onCopy={(id) => {
                                                     setCopySourceId(id);
                                                     setCopySection("A");
@@ -1481,15 +1593,33 @@ export default function AdministratorClassesIndex({
                                 )}
                             </div>
                         ) : (
-                            <DataTable columns={columns} data={visibleClasses} toolbar={toolbarContent} isLoading={isUpdating} />
+                            <DataTable
+                                columns={columns}
+                                data={visibleClasses}
+                                pagination={classMeta}
+                                sort={filters?.sort ?? "created_at"}
+                                direction={filters?.direction === "asc" ? "asc" : "desc"}
+                                onSortChange={handleColumnSortChange}
+                                onPageChange={handlePageChange}
+                                toolbar={toolbarContent}
+                                isLoading={isUpdating}
+                                onRowClick={(row) => {
+                                    router.visit(route("administrators.classes.show", { class: row.id }));
+                                }}
+                            />
                         )}
 
-                        {viewMode === "grid" && visibleClasses.length > 0 && (
-                            <div className="flex items-center justify-between gap-3 border-t pt-4">
-                                <div className="text-muted-foreground text-sm">
-                                    Showing {visibleClasses.length} {visibleClasses.length === 1 ? "class" : "classes"}
-                                </div>
-                            </div>
+                        {viewMode === "grid" && (
+                            <DataTablePagination
+                                page={classMeta.current_page}
+                                lastPage={classMeta.last_page}
+                                perPage={classMeta.per_page}
+                                total={classMeta.total}
+                                from={classMeta.from}
+                                to={classMeta.to}
+                                isLoading={isUpdating}
+                                onPageChange={handlePageChange}
+                            />
                         )}
                     </div>
                 );

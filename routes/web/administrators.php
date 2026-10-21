@@ -307,12 +307,14 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/classes/options/shs-subjects', [AdministratorClassManagementController::class, 'shsSubjectOptions'])->name('classes.options.shs-subjects');
 
         // Parameterized routes
-        Route::get('/classes/{class}/edit', [AdministratorClassManagementController::class, 'edit'])->name('classes.edit');
+        Route::get('/classes/{class}/edit', [AdministratorClassManagementController::class, 'edit'])->name('classes.edit')->withTrashed();
         Route::patch('/classes/{class}', [AdministratorClassManagementController::class, 'update'])->name('classes.update');
         Route::delete('/classes/{class}', [AdministratorClassManagementController::class, 'destroy'])->name('classes.destroy');
         Route::post('/classes/{class}/copy', [AdministratorClassManagementController::class, 'copy'])->name('classes.copy');
+        Route::post('/classes/{class}/restore', [AdministratorClassManagementController::class, 'restore'])->name('classes.restore');
+        Route::delete('/classes/{class}/force', [AdministratorClassManagementController::class, 'forceDestroy'])->name('classes.force-destroy');
 
-        Route::get('/classes/{class}', [AdministratorClassManagementController::class, 'show'])->name('classes.show');
+        Route::get('/classes/{class}', [AdministratorClassManagementController::class, 'show'])->name('classes.show')->withTrashed();
         Route::get('/classes/{class}/export-student-list', [AdministratorClassManagementController::class, 'exportStudentList'])->name('classes.export-student-list');
         Route::post('/classes/{class}/move-student', [AdministratorClassManagementController::class, 'moveStudent'])->name('classes.move-student');
 

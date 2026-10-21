@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Administrators;
 
+use App\Enums\UserRole;
+use App\Models\User;
 use App\Rules\NonOverlappingScheduleBlocksRule;
 use App\Rules\ScheduleOverlapRule;
+use App\Support\AdministratorPermissionChecker;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -13,7 +16,11 @@ final class StoreClassRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        return AdministratorPermissionChecker::userHasAnyPermission(
+            $this->user() instanceof User ? $this->user() : null,
+            'Create:Classes',
+            [UserRole::Admin],
+        );
     }
 
     /**

@@ -145,6 +145,8 @@ final class EnsureFeatureEnabled
             'No matching target' => 'This feature is not part of your current release.',
             'Not enabled by default' => 'This feature is not enabled by default.',
             'Beta opt-out' => 'You have opted out of this feature.',
+            'Beta Access enrollment required' => 'This feature is currently available to Beta Access participants only.',
+            'Not selected for private beta' => 'This feature is currently limited to selected beta testers.',
             default => $contextual ? 'This feature is not available to you right now.' : 'This feature is currently not available for your account.',
         };
     }

@@ -369,6 +369,8 @@ Route::middleware(['auth'])->group(function () {
 
     // Profile Redirection
     Route::get('/profile', [App\Http\Controllers\ProfileController::class, 'redirect'])->name('profile.redirect');
+    Route::put('/profile/beta-access', [App\Http\Controllers\ProfileController::class, 'updateBetaAccess'])->name('profile.beta-access.update');
+    Route::put('/profile/beta-access/features', [App\Http\Controllers\ProfileController::class, 'updateBetaFeaturePreference'])->name('profile.beta-access.features.update');
 
     // Specific Sync & Calendar Feed Routes
     Route::post('/integrations/google/sync', [App\Http\Controllers\GoogleCalendarController::class, 'sync'])->name('integrations.google.sync');

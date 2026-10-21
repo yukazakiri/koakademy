@@ -10,6 +10,7 @@ use App\Features\Toggles\FacultyDeveloperMode;
 use App\Features\Toggles\StudentDeveloperMode;
 use App\Features\Toggles\StudentInformationUpdates;
 use App\Http\Requests\ToggleExperimentalFeaturesRequest;
+use App\Http\Requests\UpdateBetaAccessRequest;
 use App\Http\Requests\UpdatePaymentWorkspacePreferencesRequest;
 use App\Http\Requests\UpdateStudentProfileRequest;
 use App\Http\Requests\UpdateTuitionAdjustmentWorkspacePreferencesRequest;
@@ -18,6 +19,7 @@ use App\Models\Faculty;
 use App\Models\GeneralSetting;
 use App\Models\Student;
 use App\Models\User;
+use App\Services\BetaAccessService;
 use App\Services\DigitalIdCardService;
 use App\Services\FeatureToggleRegistry;
 use App\Services\StudentProfileCompletionService;
@@ -29,6 +31,7 @@ use Endroid\QrCode\ErrorCorrectionLevel;
 use Endroid\QrCode\RoundBlockSizeMode;
 use Endroid\QrCode\Writer\PngWriter;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
@@ -126,7 +129,7 @@ final class ProfileController extends Controller
                 }
                 $catalog = FeatureToggleRegistry::definition($key);
 
-                return $catalog['opt_in'] && $definition->allow_opt_in && in_array($user->role?->value, $catalog['roles'], true);
+                return $definition->release_audience === null && $catalog['opt_in'] && $definition->allow_opt_in && in_array($user->role?->value, $catalog['roles'], true);
             })
             ->values()
             ->all();
@@ -167,6 +170,7 @@ final class ProfileController extends Controller
         $calendarFeedAllowed = $integrationSettings->isCalendarFeedAllowedFor($user);
 
         return Inertia::render('profile', [
+            'beta_access' => app(BetaAccessService::class)->profile($user),
             'connected_accounts' => $connectedAccounts,
             'calendar_feed' => $calendarFeedAllowed ? [
                 'enabled' => true,
@@ -429,6 +433,21 @@ final class ProfileController extends Controller
         ]);
     }
 
+    public function updateBetaAccess(UpdateBetaAccessRequest $request, BetaAccessService $beta): RedirectResponse
+    {
+        $beta->updateEnrollment($request->user(), $request->boolean('enabled'));
+
+        return back()->with('flash', ['success' => $request->boolean('enabled') ? 'You joined Beta Access.' : 'You left Beta Access. Stable features remain available.']);
+    }
+
+    public function updateBetaFeaturePreference(Request $request, BetaAccessService $beta): RedirectResponse
+    {
+        $data = $request->validate(['feature_key' => ['required', 'string', 'max:100'], 'enabled' => ['required', 'boolean']]);
+        $beta->updatePreference($request->user(), $data['feature_key'], $request->boolean('enabled'));
+
+        return back()->with('flash', ['success' => 'Beta feature preference saved.']);
+    }
+
     public function toggleExperimentalFeatures(ToggleExperimentalFeaturesRequest $request)
     {
         $user = Auth::user();
@@ -443,7 +462,7 @@ final class ProfileController extends Controller
                 && FeatureToggleRegistry::classForKey($key) !== null
                 && in_array($user->role?->value, $catalog['roles'], true)
                 && ! str_ends_with($key, '-developer-mode');
-            if (! $eligible || ($definition?->mode === 'enforced' && (! $catalog['opt_in'] || ! $definition->allow_opt_in))) {
+            if (! $eligible || ($definition?->mode === 'enforced' && ($definition->release_audience !== null || ! $catalog['opt_in'] || ! $definition->allow_opt_in))) {
                 throw \Illuminate\Validation\ValidationException::withMessages(['features' => 'One or more features are not available for self-service opt-in.']);
             }
         }
@@ -457,7 +476,7 @@ final class ProfileController extends Controller
             }
             $definition = app(\App\Services\FeatureAccessService::class)->definition($key);
             if ($definition?->mode === 'enforced') {
-                if ($catalog['opt_in'] && $definition->allow_opt_in) {
+                if ($definition->release_audience === null && $catalog['opt_in'] && $definition->allow_opt_in) {
                     app(\App\Services\FeatureManagementService::class)->assign($key, 'user', (string) $user->id,
                         in_array($featureKey, $requestedFeatures, true) ? 'allow' : 'deny', $user, 'self_service');
                 }

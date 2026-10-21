@@ -44,6 +44,7 @@ use Spatie\Permission\Traits\HasRoles;
  * @property int|null $school_id
  * @property int|null $department_id
  * @property Carbon|null $email_verified_at
+ * @property Carbon|null $beta_access_joined_at
  * @property string $password
  * @property string|null $remember_token
  * @property Carbon|null $deleted_at
@@ -768,6 +769,7 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
     {
         return [
             'email_verified_at' => 'datetime',
+            'beta_access_joined_at' => 'datetime',
             'last_login_at' => 'datetime',
             'suspended_at' => 'datetime',
             'session_version' => 'integer',

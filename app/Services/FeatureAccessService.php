@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\FeatureReleaseAudience;
 use App\Features\FeatureDecision;
 use App\Features\FeatureDenial;
 use App\Features\StableRollout;
@@ -109,10 +110,30 @@ final class FeatureAccessService
         if ($matches->contains(fn ($row): bool => $row->source === 'administrator' && $row->effect === 'deny')) {
             return new FeatureDecision(false, 'Explicit administrator exclusion', FeatureDenial::Excluded);
         }
-        if ($matches->contains(fn ($row): bool => $row->source === 'administrator' && $row->effect === 'allow')) {
+
+        $audience = isset($definition->release_audience) ? FeatureReleaseAudience::tryFrom($definition->release_audience) : null;
+        if (isset($definition->release_audience) && $audience === null) {
+            return new FeatureDecision(false, 'Invalid release audience', FeatureDenial::NotReleased);
+        }
+        $betaAudience = in_array($audience, [FeatureReleaseAudience::Beta, FeatureReleaseAudience::Selected], true);
+        if ($betaAudience) {
+            if (! $catalog['opt_in'] || $user->beta_access_joined_at === null) {
+                return new FeatureDecision(false, 'Beta Access enrollment required', FeatureDenial::NotReleased);
+            }
+            $selected = $matches->contains(fn ($row): bool => $row->source === 'administrator' && $row->effect === 'allow');
+            if ($audience === FeatureReleaseAudience::Selected && ! $selected) {
+                return new FeatureDecision(false, 'Not selected for private beta', FeatureDenial::NotReleased);
+            }
+            if ($matches->contains(fn ($row): bool => $row->source === 'self_service' && $row->effect === 'deny')) {
+                return new FeatureDecision(false, 'Beta opt-out', FeatureDenial::NotReleased);
+            }
+        }
+        if (($audience === null || $definition->strategy !== 'percentage')
+            && $matches->contains(fn ($row): bool => $row->source === 'administrator' && $row->effect === 'allow')) {
             return new FeatureDecision(true, 'Explicit administrator assignment');
         }
-        if ($catalog['opt_in'] && $definition->allow_opt_in) {
+        // Existing policies retain per-feature opt-in until explicitly moved to an audience.
+        if ($audience === null && $catalog['opt_in'] && $definition->allow_opt_in) {
             $preference = $matches->first(fn ($row): bool => $row->source === 'self_service');
             if ($preference) {
                 $optedIn = $preference->effect === 'allow';
@@ -126,11 +147,13 @@ final class FeatureAccessService
         }
 
         return match ($definition->strategy) {
-            'defaults' => new FeatureDecision(
-                $catalog['default_enabled'],
-                $catalog['default_enabled'] ? 'Built-in role default' : 'Not enabled by default',
-                $catalog['default_enabled'] ? FeatureDenial::None : FeatureDenial::NotReleased,
-            ),
+            'defaults' => $audience !== null && $catalog['tier'] !== 'restricted'
+                ? new FeatureDecision(true, $betaAudience ? 'Included in Beta Access' : 'Stable release')
+                : new FeatureDecision(
+                    $catalog['default_enabled'],
+                    $catalog['default_enabled'] ? 'Built-in role default' : 'Not enabled by default',
+                    $catalog['default_enabled'] ? FeatureDenial::None : FeatureDenial::NotReleased,
+                ),
             'targeted' => new FeatureDecision(false, 'No matching target', FeatureDenial::NotReleased),
             'percentage' => $this->rollout($definition, $user, $key, $schoolId),
             default => new FeatureDecision(false, 'Invalid release strategy', FeatureDenial::NotReleased),

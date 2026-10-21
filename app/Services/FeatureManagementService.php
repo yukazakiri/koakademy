@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\FeatureReleaseAudience;
 use App\Enums\UserRole;
 use App\Models\User;
 use Illuminate\Support\Carbon;
@@ -49,6 +50,7 @@ final class FeatureManagementService
         return [
             'enabled' => (bool) $row->enabled,
             'mode' => $row->mode,
+            'release_audience' => $row->release_audience ?? null,
             'strategy' => $row->strategy,
             'percentage' => (int) $row->percentage,
             'allow_opt_in' => (bool) $row->allow_opt_in,
@@ -159,8 +161,10 @@ final class FeatureManagementService
         abort_unless(in_array($source, ['administrator', 'self_service'], true) && in_array($effect, ['allow', 'deny'], true), 422);
         if ($source === 'self_service') {
             $catalog = FeatureToggleRegistry::definition($key);
+            $definition = $this->access->definition($key);
+            $betaAudience = in_array($definition?->release_audience, [FeatureReleaseAudience::Beta->value, FeatureReleaseAudience::Selected->value], true);
             abort_unless($type === 'user' && $subject === (string) $actor->id && $catalog['opt_in']
-                && $this->access->definition($key)?->allow_opt_in, 403);
+                && ($betaAudience ? $actor->beta_access_joined_at !== null : ($definition?->release_audience === null && $definition?->allow_opt_in)), 403);
         } else {
             abort_unless(self::canManage($actor), 403);
         }
@@ -236,6 +240,19 @@ final class FeatureManagementService
     private function normalizePolicy(string $key, array $data): array
     {
         $catalog = FeatureToggleRegistry::definition($key);
+        if (! array_key_exists('release_audience', $data)) {
+            $data['release_audience'] = $this->access->definition($key)?->release_audience;
+        }
+        $audience = $data['release_audience'];
+        if ($audience !== null && FeatureReleaseAudience::tryFrom($audience) === null) {
+            throw ValidationException::withMessages(['release_audience' => 'Select a valid release audience.']);
+        }
+        if (in_array($audience, [FeatureReleaseAudience::Beta->value, FeatureReleaseAudience::Selected->value], true) && ! $catalog['opt_in']) {
+            throw ValidationException::withMessages(['release_audience' => 'Only catalog-approved beta features can be released through Beta Access.']);
+        }
+        if ($audience === FeatureReleaseAudience::Stable->value && $catalog['tier'] === 'restricted' && $data['strategy'] !== 'targeted') {
+            throw ValidationException::withMessages(['strategy' => 'Restricted features require explicit administrator assignments.']);
+        }
         if ($data['allow_opt_in'] && ! $catalog['opt_in']) {
             throw ValidationException::withMessages(['allow_opt_in' => 'Only catalog-approved beta features support self-service opt-in.']);
         }

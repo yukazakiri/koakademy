@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Administrators;
 
+use App\Enums\FeatureReleaseAudience;
 use App\Services\FeatureManagementService;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -20,6 +21,7 @@ final class UpdateFeaturePolicyRequest extends FormRequest
         return [
             'enabled' => ['required', 'boolean'],
             'mode' => ['required', Rule::in(['legacy', 'enforced'])],
+            'release_audience' => ['nullable', Rule::enum(FeatureReleaseAudience::class)],
             'strategy' => ['required', Rule::in(['defaults', 'targeted', 'percentage'])],
             'percentage' => ['required', 'integer', 'between:0,100'],
             'allow_opt_in' => ['required', 'boolean'],

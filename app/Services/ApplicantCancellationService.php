@@ -162,21 +162,6 @@ final class ApplicantCancellationService
     }
 
     /**
-     * The cancellation history for an applicant, newest first.
-     *
-     * @return list<ApplicantCancellation>
-     */
-    public function historyFor(Student $student): array
-    {
-        return ApplicantCancellation::query()
-            ->where('student_id', $student->id)
-            ->orderByDesc('cancelled_at')
-            ->orderByDesc('id')
-            ->get()
-            ->all();
-    }
-
-    /**
      * Compose the subject and body that are sent to the applicant.
      *
      * The salutation is returned separately because the email template renders

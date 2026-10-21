@@ -84,6 +84,9 @@ export function ApplicantCancellationDialog({ open, onOpenChange, applicant, rea
 
     const noteRequired = selectedReason?.requires_note ?? false;
     const noteMissing = noteRequired && note.trim() === "";
+    // A closure the applicant asked for is not a rejection, so the wording and
+    // the confirm button say so.
+    const applicantInitiated = selectedReason?.applicant_initiated ?? false;
     const canSubmit = reason !== "" && !noteMissing && !isCancelling;
 
     const handleConfirm = () => {
@@ -98,14 +101,21 @@ export function ApplicantCancellationDialog({ open, onOpenChange, applicant, rea
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <AlertTriangle className="size-5 text-amber-600 dark:text-amber-400" aria-hidden="true" />
-                        Close this application
+                        {applicantInitiated ? "Confirm this closure" : "Close this application"}
                     </DialogTitle>
                     <DialogDescription>
                         {applicant ? (
-                            <>
-                                This closes the application of <strong>{applicant.name}</strong> and takes it out of the admissions queue. The
-                                applicant is notified with the message below.
-                            </>
+                            applicantInitiated ? (
+                                <>
+                                    <strong>{applicant.name}</strong> asked to withdraw. Closing the application records that decision and confirms it
+                                    to them.
+                                </>
+                            ) : (
+                                <>
+                                    This closes the application of <strong>{applicant.name}</strong> and takes it out of the admissions queue. The
+                                    applicant is notified with the message below.
+                                </>
+                            )
                         ) : (
                             "This closes the application and notifies the applicant."
                         )}
@@ -212,7 +222,7 @@ export function ApplicantCancellationDialog({ open, onOpenChange, applicant, rea
                         Keep application open
                     </Button>
                     <Button variant="destructive" onClick={handleConfirm} disabled={!canSubmit} className="bg-red-600 text-white hover:bg-red-700">
-                        {isCancelling ? "Closing…" : "Close application"}
+                        {isCancelling ? "Closing…" : applicantInitiated ? "Confirm closure" : "Close application"}
                     </Button>
                 </DialogFooter>
             </DialogContent>

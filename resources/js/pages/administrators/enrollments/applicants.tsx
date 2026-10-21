@@ -435,28 +435,36 @@ export default function AdministratorEnrollmentApplicants({
         if (!cancelApplicant) return;
 
         setIsCancelling(true);
-        router.post(
-            route("administrators.enrollments.applicants.cancel", { student: cancelApplicant.id }),
-            {
-                reason: payload.reason,
-                note: payload.note || null,
-                send_email: payload.sendEmail ? 1 : 0,
-            },
-            {
-                preserveScroll: true,
-                onSuccess: () => {
-                    toast.success(`Application closed for ${cancelApplicant.name}.`);
-                    setCancelApplicant(null);
+
+        try {
+            router.post(
+                route("administrators.enrollments.applicants.cancel", { student: cancelApplicant.id }),
+                {
+                    reason: payload.reason,
+                    note: payload.note || null,
+                    send_email: payload.sendEmail ? 1 : 0,
                 },
-                onError: (errors) => {
-                    const message = Object.values(errors as Record<string, string>)[0];
-                    toast.error(message ?? "The application could not be closed.");
+                {
+                    preserveScroll: true,
+                    onSuccess: () => {
+                        toast.success(`Application closed for ${cancelApplicant.name}.`);
+                        setCancelApplicant(null);
+                    },
+                    onError: (errors) => {
+                        const message = Object.values(errors as Record<string, string>)[0];
+                        toast.error(message ?? "The application could not be closed.");
+                    },
+                    onFinish: () => {
+                        setIsCancelling(false);
+                    },
                 },
-                onFinish: () => {
-                    setIsCancelling(false);
-                },
-            },
-        );
+            );
+        } catch {
+            // A failure before the request is sent never reaches onFinish, so the
+            // button is released here instead of staying stuck on "Closing…".
+            setIsCancelling(false);
+            toast.error("The application could not be closed. Please try again.");
+        }
     };
 
     const handleRevertCancellation = (applicant: ApplicantRow) => {

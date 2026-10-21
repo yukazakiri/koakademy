@@ -8,7 +8,6 @@ use App\Enums\ApplicantCancellationReason;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Carbon;
 use Override;
 
 /**
@@ -76,14 +75,6 @@ final class ApplicantCancellation extends Model
     public function scopeActive(Builder $query): Builder
     {
         return $query->whereNull('reverted_at');
-    }
-
-    /**
-     * The moment the decision was made, tolerating a missing timestamp.
-     */
-    public function cancelledAtOrNull(): ?Carbon
-    {
-        return $this->cancelled_at;
     }
 
     protected function casts(): array

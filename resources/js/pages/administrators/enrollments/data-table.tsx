@@ -49,6 +49,9 @@ interface DataTableProps<TData, TValue> {
     onRowClick?: (row: TData) => void;
     selectionActions?: (selectedRows: TData[]) => React.ReactNode;
     tableVariant?: "default" | "spreadsheet";
+    emptyState?: React.ReactNode;
+    emptyTitle?: string;
+    emptyDescription?: string;
 }
 
 export function DataTable<TData, TValue>({
@@ -62,6 +65,9 @@ export function DataTable<TData, TValue>({
     onRowClick,
     selectionActions,
     tableVariant = "default",
+    emptyState,
+    emptyTitle = "No enrollment records found",
+    emptyDescription = "Try adjusting your search or filters.",
 }: DataTableProps<TData, TValue>) {
     const isServerSide = !!routeName && !!pagination;
     const isSpreadsheet = tableVariant === "spreadsheet";
@@ -371,10 +377,12 @@ export function DataTable<TData, TValue>({
                         ) : (
                             <TableRow>
                                 <TableCell colSpan={columns.length} className="h-28 px-3 text-center">
-                                    <div className="text-muted-foreground flex flex-col items-center gap-1 text-sm">
-                                        <span className="text-foreground font-medium">No enrollment records found</span>
-                                        <span>Try adjusting your search or filters.</span>
-                                    </div>
+                                    {emptyState ?? (
+                                        <div className="text-muted-foreground flex flex-col items-center gap-1 text-sm">
+                                            <span className="text-foreground font-medium">{emptyTitle}</span>
+                                            <span>{emptyDescription}</span>
+                                        </div>
+                                    )}
                                 </TableCell>
                             </TableRow>
                         )}

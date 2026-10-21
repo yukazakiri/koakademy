@@ -17,6 +17,7 @@ enum StudentStatus: string implements HasColor, HasLabel
     case Dropped = 'dropped';
     case Graduated = 'graduated';
     case Transferred = 'transferred';
+    case Rejected = 'rejected';
 
     public function getLabel(): ?string
     {
@@ -28,6 +29,7 @@ enum StudentStatus: string implements HasColor, HasLabel
             self::Dropped => 'Dropped Out',
             self::Graduated => 'Graduated',
             self::Transferred => 'Transferred',
+            self::Rejected => 'Application Rejected',
         };
     }
 
@@ -41,6 +43,7 @@ enum StudentStatus: string implements HasColor, HasLabel
             self::Dropped => Color::Red,
             self::Graduated => Color::Blue,
             self::Transferred => Color::Purple,
+            self::Rejected => Color::Red,
         };
     }
 
@@ -57,6 +60,7 @@ enum StudentStatus: string implements HasColor, HasLabel
             self::Dropped => 'Dropped out of the program',
             self::Graduated => 'Successfully completed the program',
             self::Transferred => 'Transferred to another institution',
+            self::Rejected => 'Application closed without an offer of admission',
         };
     }
 

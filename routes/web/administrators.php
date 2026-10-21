@@ -126,6 +126,19 @@ Route::middleware(['auth', 'administrators.only'])
 
         Route::patch('/enrollments/{student}', [AdministratorEnrollmentManagementController::class, 'update'])->whereNumber('student')->name('enrollments.scholarship.update');
         Route::post('/enrollments/applicants/{student}/notify-approval', [AdministratorEnrollmentManagementController::class, 'notifyApplicantApproval'])->whereNumber('student')->name('enrollments.applicants.notify-approval');
+        Route::get('/enrollments/applicants/{student}', [AdministratorEnrollmentManagementController::class, 'applicant'])->whereNumber('student')->name('enrollments.applicants.show');
+        Route::get('/enrollments/applicants/{student}/documents/{requirement}', [AdministratorEnrollmentManagementController::class, 'applicantDocument'])
+            ->whereNumber(['student', 'requirement'])
+            ->name('enrollments.applicants.document');
+        Route::get('/enrollments/applicants/{student}/cancel/preview', [AdministratorEnrollmentManagementController::class, 'previewApplicantCancellation'])
+            ->whereNumber('student')
+            ->name('enrollments.applicants.cancel.preview');
+        Route::post('/enrollments/applicants/{student}/cancel', [AdministratorEnrollmentManagementController::class, 'cancelApplicant'])
+            ->whereNumber('student')
+            ->name('enrollments.applicants.cancel');
+        Route::post('/enrollments/applicants/{student}/cancel/revert', [AdministratorEnrollmentManagementController::class, 'revertApplicantCancellation'])
+            ->whereNumber('student')
+            ->name('enrollments.applicants.cancel.revert');
         Route::get('/enrollments/{enrollment}', [AdministratorEnrollmentManagementController::class, 'show'])->whereNumber('enrollment')->name('enrollments.show');
 
         // Enrollment Actions

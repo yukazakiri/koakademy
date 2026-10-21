@@ -2,19 +2,170 @@ import type { SemesterSelectorProps } from "@/components/semester-selector";
 import type { User } from "@/types/user";
 import type { EnrollmentRow } from "./columns";
 
+/**
+ * Where an applicant sits in the admissions funnel.
+ *
+ * - `manual` — added by an administrator, no online submission on record
+ * - `awaiting_documents` — required uploads are still missing
+ * - `ready_for_review` — every document submitted, none reviewed yet
+ * - `reviewed` — the document checklist has been fully reviewed
+ */
+export type ApplicantStage = "manual" | "awaiting_documents" | "ready_for_review" | "reviewed" | "cancelled";
+
 export type ApplicantRow = {
     id: number;
     student_id: number | null;
+    lrn: string | null;
     name: string;
+    first_name: string;
+    last_name: string;
     email: string | null;
+    phone: string | null;
     student_type: string | null;
-    course: string | null;
-    department: string | null;
+    student_type_label: string | null;
     academic_year: number | null;
     scholarship_type: string | null;
+    scholarship_label: string | null;
+    course: string | null;
+    course_title: string | null;
+    department: string | null;
+    department_name: string | null;
     created_at: string | null;
-    deleted_at?: string | null;
-    is_trashed?: boolean;
+    applied_ago: string | null;
+    deleted_at: string | null;
+    is_trashed: boolean;
+    enrollment_id: number | null;
+    pipeline_status: string | null;
+    pipeline_step_key: string | null;
+    submission_channel: string | null;
+    requirements_total: number;
+    requirements_submitted: number;
+    requirements_reviewed: number;
+    requirements_missing: number;
+    stage: ApplicantStage;
+};
+
+export type ApplicantRequirement = {
+    id: number;
+    key: string;
+    label: string;
+    description: string | null;
+    required: boolean;
+    status: string;
+    evidence_path: string | null;
+    uploaded_at: string | null;
+    verified_at: string | null;
+    waived_at: string | null;
+    waiver_reason: string | null;
+};
+
+export type ApplicantDetail = {
+    applicant: {
+        id: number;
+        student_id: number | null;
+        lrn: string | null;
+        name: string;
+        first_name: string;
+        middle_name: string | null;
+        last_name: string;
+        email: string | null;
+        phone: string | null;
+        birth_date: string | null;
+        gender: string | null;
+        civil_status: string | null;
+        nationality: string | null;
+        religion: string | null;
+        address: string | null;
+        emergency_contact: string | null;
+        student_type: string | null;
+        student_type_label: string | null;
+        academic_year: number | null;
+        scholarship_type: string | null;
+        scholarship_label: string | null;
+        course_code: string | null;
+        course_title: string | null;
+        department_code: string | null;
+        department_name: string | null;
+        remarks: string | null;
+        created_at: string | null;
+        deleted_at: string | null;
+        is_trashed: boolean;
+    };
+    enrollment: {
+        id: number;
+        status: string;
+        current_step_key: string | null;
+        school_year: string | null;
+        semester: number | null;
+        submission_channel: string | null;
+        created_at: string | null;
+    } | null;
+    requirements: ApplicantRequirement[];
+    documents: {
+        requirement_id: number;
+        key: string;
+        label: string;
+        path: string;
+        uploaded_at: string | null;
+    }[];
+    cancellation: ApplicantCancellationSummary | null;
+    cancellation_history: ApplicantCancellationHistoryEntry[];
+};
+
+export type ApplicantFilterOptions = {
+    departments: { value: string; label: string }[];
+    courses: { value: string; label: string }[];
+    student_types: { value: string; label: string }[];
+    scholarships: { value: string; label: string }[];
+};
+
+export type ApplicantStageMeta = {
+    label: string;
+    description: string;
+    tone: string;
+};
+
+export type ApplicantCancellationReason = {
+    value: string;
+    label: string;
+    description: string;
+    requires_note: boolean;
+    applicant_initiated: boolean;
+};
+
+export type ApplicantCancellationSummary = {
+    id: number;
+    reason_code: string;
+    reason_label: string;
+    note: string | null;
+    cancelled_at: string | null;
+    cancelled_by: string | null;
+    email_subject: string | null;
+    email_body: string | null;
+    email_sent_at: string | null;
+};
+
+export type ApplicantCancellationHistoryEntry = {
+    id: number;
+    reason_label: string;
+    note: string | null;
+    cancelled_at: string | null;
+    cancelled_by: string | null;
+    reverted_at: string | null;
+    revert_reason: string | null;
+    email_sent_at: string | null;
+};
+
+export type ApplicantStats = {
+    total: number;
+    recent: number;
+    manual: number;
+    awaiting_documents: number;
+    ready_for_review: number;
+    reviewed: number;
+    with_scholarship: number;
+    cancelled: number;
+    deleted: number;
 };
 
 export interface EnrollmentManagementProps {
@@ -88,9 +239,26 @@ export interface EnrollmentApplicantsProps {
         to: number;
     };
     filters: {
-        search?: string;
-        per_page?: string | number;
+        search: string;
+        department: string;
+        course: string;
+        student_type: string;
+        scholarship: string;
+        stage: string;
+        applied_from: string;
+        applied_to: string;
+        include_deleted: boolean;
+        per_page: string | number;
+        sort: string;
+        direction: "asc" | "desc";
     };
+    stats: ApplicantStats;
+    stage_counts: Record<string, number>;
+    stage_meta: Record<string, ApplicantStageMeta>;
+    filter_options: ApplicantFilterOptions;
+    cancellation_reasons: ApplicantCancellationReason[];
+    enrollment_pipeline: EnrollmentPipeline;
+    flash?: { success?: string; error?: string } | null;
 }
 
 export interface Branding {

@@ -41,6 +41,7 @@ final class EmailTemplateCatalog
      */
     public const SYSTEM_KEYS = [
         'applicant_approved_for_requirements',
+        'applicant_cancelled',
         'class_schedule_changed',
         'student_tuition_adjusted',
         'statement_of_account_adjusted',
@@ -194,6 +195,12 @@ final class EmailTemplateCatalog
                 'subject' => 'Online Application Approved - Visit the Registrar | {{ organization_name }}',
                 'intro' => 'Good news — your application for {{ program }} has been reviewed and approved for the next step of the admission process.',
                 'tokens' => ['applicant_name' => 'Maria Santos', 'program' => 'BSCS', 'department' => 'CS', 'organization_name' => 'KoAkademy', 'sender_name' => 'Registrar Office'],
+                'protected' => false,
+            ],
+            'applicant_cancelled' => [
+                'subject' => 'Update on your application to {{ program }} | {{ organization_name }}',
+                'intro' => 'We are writing about your application for {{ program }}. After reviewing it, the Registrar\'s Office was not able to continue with it.\n\n{{ reason_detail }}',
+                'tokens' => ['applicant_name' => 'Maria Santos', 'program' => 'BSCS', 'department' => 'CS', 'reason' => 'Incomplete or missing documents', 'reason_detail' => 'The birth certificate was not uploaded.', 'organization_name' => 'KoAkademy', 'sender_name' => 'Registrar Office'],
                 'protected' => false,
             ],
             'class_schedule_changed' => [

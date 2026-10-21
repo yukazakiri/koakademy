@@ -120,6 +120,7 @@ it('every catalog entry maps to an email that actually sends mail', function ():
     // A template for an email that never fires would silently mislead administrators.
     $slugToClass = [
         'applicant_approved_for_requirements' => App\Notifications\ApplicantApprovedForRequirements::class,
+        'applicant_cancelled' => App\Notifications\ApplicantApplicationCancelled::class,
         'class_schedule_changed' => App\Notifications\ClassScheduleChangedNotification::class,
         'student_tuition_adjusted' => App\Notifications\StudentTuitionAdjustedNotification::class,
         'statement_of_account_adjusted' => App\Notifications\StatementOfAccountAdjustedNotification::class,

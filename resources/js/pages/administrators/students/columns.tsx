@@ -91,6 +91,8 @@ export const getStatusColor = (status: string | null) => {
             return "bg-rose-100 text-rose-800 hover:bg-rose-100/80 dark:bg-rose-950/40 dark:text-rose-300 border-rose-200 dark:border-rose-800";
         case "applicant":
             return "bg-amber-100 text-amber-800 hover:bg-amber-100/80 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200 dark:border-amber-800";
+        case "rejected":
+            return "bg-rose-100 text-rose-800 hover:bg-rose-100/80 dark:bg-rose-950/40 dark:text-rose-300 border-rose-200 dark:border-rose-800";
         default:
             return "bg-muted text-muted-foreground border-border";
     }

@@ -13,19 +13,23 @@ use App\Enrollment\EnrollmentFeePolicy;
 use App\Enrollment\EnrollmentPolicyResolver;
 use App\Enrollment\EnrollmentTransitionEngine;
 use App\Enrollment\EnrollmentWorkflowCoordinator;
+use App\Enums\ApplicantCancellationReason;
 use App\Enums\StudentStatus;
 use App\Exceptions\AssessmentExportLimitReached;
 use App\Exports\EnrollmentReportExport;
 use App\Features\DynamicEnrollmentPolicies;
+use App\Http\Requests\Administrators\CancelApplicantRequest;
 use App\Http\Requests\Administrators\GenerateBulkAssessmentsRequest;
 use App\Http\Requests\Administrators\SaveEnrollmentRequest;
 use App\Jobs\GenerateAssessmentPdfJob;
 use App\Jobs\GenerateEnrollmentReportPreviewPdfJob;
 use App\Jobs\SendClassChangeNotificationJob;
+use App\Models\ApplicantCancellation;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
 use App\Models\Course;
 use App\Models\EnrollmentDiscount;
+use App\Models\EnrollmentRequirement;
 use App\Models\Resource;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
@@ -35,6 +39,8 @@ use App\Models\SubjectEnrollment;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Notifications\ApplicantApprovedForRequirements;
+use App\Services\ApplicantCancellationService;
+use App\Services\ApplicantDirectoryService;
 use App\Services\AssessmentExportPayloadService;
 use App\Services\AssessmentFormDataService;
 use App\Services\ClassScheduleChangeNotificationService;
@@ -55,10 +61,12 @@ use FPDF;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -68,6 +76,7 @@ use Maatwebsite\Excel\Facades\Excel;
 use RuntimeException;
 use Spatie\Activitylog\Models\Activity;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 final class AdministratorEnrollmentManagementController extends Controller
@@ -83,6 +92,8 @@ final class AdministratorEnrollmentManagementController extends Controller
         private readonly EnrollmentCancellationService $enrollmentCancellationService,
         private readonly EnrollmentFeeCalculator $feeCalculator,
         private readonly EnrollmentFeePolicy $feePolicy,
+        private readonly ApplicantDirectoryService $applicantDirectory,
+        private readonly ApplicantCancellationService $applicantCancellation,
     ) {}
 
     public function index(GeneralSettingsService $settingsService): Response|RedirectResponse
@@ -410,7 +421,7 @@ final class AdministratorEnrollmentManagementController extends Controller
         ]);
     }
 
-    public function applicants(): Response|RedirectResponse
+    public function applicants(Request $request): Response|RedirectResponse
     {
         $user = Auth::user();
 
@@ -418,71 +429,9 @@ final class AdministratorEnrollmentManagementController extends Controller
             return redirect('/login');
         }
 
-        $search = request('search');
-        $sort = request('sort', 'created_at');
-        $direction = request('direction', 'desc');
-        $perPage = request('per_page', 10);
+        $filters = $this->applicantDirectory->normalizeFilters($request->query());
 
-        if ($perPage === 'all') {
-            $perPage = 100000;
-        } else {
-            $perPage = (int) $perPage;
-            if ($perPage <= 0) {
-                $perPage = 10;
-            }
-        }
-
-        $applicants = Student::query()
-            ->withTrashed()
-            ->where('status', StudentStatus::Applicant)
-            ->with('Course')
-            ->when($search, function ($query, $search): void {
-                $query->where(function ($q) use ($search): void {
-                    $q->where('first_name', 'like', "%{$search}%")
-                        ->orWhere('last_name', 'like', "%{$search}%")
-                        ->orWhere('middle_name', 'like', "%{$search}%")
-                        ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ["%{$search}%"])
-                        ->orWhere('student_id', 'like', "%{$search}%")
-                        ->orWhereHas('Course', function ($courseQuery) use ($search): void {
-                            $courseQuery->where('code', 'like', "%{$search}%")
-                                ->orWhere('department', 'like', "%{$search}%");
-                        });
-                });
-            })
-            ->when($sort === 'name', function ($query) use ($direction): void {
-                $query->orderBy('students.last_name', $direction)
-                    ->orderBy('students.first_name', $direction);
-            })
-            ->when($sort === 'student_id', function ($query) use ($direction): void {
-                $query->orderBy('students.student_id', $direction);
-            })
-            ->when(in_array($sort, ['course', 'department']), function ($query) use ($sort, $direction): void {
-                $query->leftJoin('courses', 'students.course_id', '=', 'courses.id')
-                    ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
-                    ->select('students.*')
-                    ->orderBy($sort === 'course' ? 'courses.code' : 'departments.code', $direction);
-            })
-            ->when($sort === 'created_at', function ($query) use ($direction): void {
-                $query->orderBy('students.created_at', $direction);
-            }, function ($query): void {
-                $query->orderBy('students.created_at', 'desc');
-            })
-            ->paginate($perPage)
-            ->withQueryString()
-            ->through(fn (Student $student): array => [
-                'id' => $student->id,
-                'student_id' => $student->student_id,
-                'name' => $student->full_name,
-                'email' => $student->email,
-                'student_type' => is_object($student->student_type) ? $student->student_type->value : $student->student_type,
-                'course' => $student->Course?->code,
-                'department' => $student->Course?->department?->code,
-                'academic_year' => $student->academic_year,
-                'scholarship_type' => $student->scholarship_type,
-                'created_at' => $student->created_at?->toDateTimeString(),
-                'deleted_at' => $student->deleted_at?->toDateTimeString(),
-                'is_trashed' => $student->trashed(),
-            ]);
+        $applicants = $this->applicantDirectory->paginate($filters);
 
         return Inertia::render('administrators/enrollments/applicants', [
             'user' => [
@@ -492,12 +441,161 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'role' => $user->role?->getLabel() ?? 'Administrator',
             ],
             'applicants' => $applicants,
-            'filters' => [
-                'search' => $search,
-                'per_page' => request('per_page', 10),
+            'filters' => Arr::except($filters, ['page']),
+            'stats' => $this->applicantDirectory->stats($filters),
+            'stage_counts' => $this->applicantDirectory->stageCounts($filters),
+            'stage_meta' => $this->applicantDirectory->stageMeta(),
+            'filter_options' => $this->applicantDirectory->filterOptions(),
+            'cancellation_reasons' => $this->applicantCancellation->reasons(),
+            'enrollment_pipeline' => [
+                ...$this->enrollmentPipelineService->getConfiguration(),
+                'steps' => $this->enrollmentPipelineService->getSteps(),
+                'status_options' => $this->enrollmentPipelineService->getStatusOptions(),
+                'status_classes' => $this->enrollmentPipelineService->getStatusColorClasses(),
             ],
             'flash' => session('flash'),
         ]);
+    }
+
+    /**
+     * Full applicant dossier backing the review drawer.
+     */
+    public function applicant(Request $request, Student $student): JsonResponse
+    {
+        $user = Auth::user();
+
+        if (! $user instanceof User) {
+            abort(403);
+        }
+
+        abort_if(! in_array($student->status, [StudentStatus::Applicant, StudentStatus::Rejected], true), 404);
+
+        return response()->json($this->applicantDirectory->detail($student));
+    }
+
+    /**
+     * The email that would be sent for a given reason, without sending it.
+     *
+     * The registrar sees the finished message in the dialog before confirming,
+     * so nothing reaches a student that was not read first.
+     */
+    public function previewApplicantCancellation(Request $request, Student $student): JsonResponse
+    {
+        $user = Auth::user();
+
+        if (! $user instanceof User) {
+            abort(403);
+        }
+
+        $reason = ApplicantCancellationReason::tryFrom((string) $request->query('reason', ''));
+
+        if (! $reason instanceof ApplicantCancellationReason) {
+            abort(422, 'Select a valid reason.');
+        }
+
+        abort_if($student->status !== StudentStatus::Applicant, 404);
+
+        return response()->json($this->applicantCancellation->preview($student, $reason, $request->query('note')));
+    }
+
+    /**
+     * Close an application and notify the applicant.
+     */
+    public function cancelApplicant(
+        CancelApplicantRequest $request,
+        Student $student,
+        ApplicantCancellationService $applicantCancellation,
+    ): RedirectResponse {
+        $user = Auth::user();
+
+        if (! $user instanceof User) {
+            abort(403);
+        }
+
+        $reason = ApplicantCancellationReason::from($request->validated('reason'));
+
+        try {
+            $cancellation = $applicantCancellation->cancel(
+                student: $student,
+                actor: $user,
+                reason: $reason,
+                note: $request->validated('note'),
+                sendEmail: $request->boolean('send_email', true),
+            );
+        } catch (RuntimeException $exception) {
+            return back()->with('flash', ['error' => $exception->getMessage()]);
+        }
+
+        $notified = $cancellation->email_sent_at !== null;
+
+        return back()->with('flash', [
+            'success' => $notified
+                ? sprintf('Application cancelled and %s was notified by email.', $student->full_name)
+                : sprintf('Application cancelled for %s. No email was sent.', $student->full_name),
+        ]);
+    }
+
+    /**
+     * Reverse a cancellation and return the application to the queue.
+     */
+    public function revertApplicantCancellation(
+        Request $request,
+        Student $student,
+        ApplicantCancellationService $applicantCancellation,
+    ): RedirectResponse {
+        $user = Auth::user();
+
+        if (! $user instanceof User) {
+            abort(403);
+        }
+
+        $cancellation = $applicantCancellation->activeFor($student);
+
+        if (! $cancellation instanceof ApplicantCancellation) {
+            return back()->with('flash', ['error' => 'There is no active cancellation to reverse for this applicant.']);
+        }
+
+        try {
+            $applicantCancellation->revert($cancellation, $user, $request->input('reason'));
+        } catch (RuntimeException $exception) {
+            return back()->with('flash', ['error' => $exception->getMessage()]);
+        }
+
+        return back()->with('flash', [
+            'success' => sprintf('The cancellation for %s was reversed and the application is back in the queue.', $student->full_name),
+        ]);
+    }
+
+    /**
+     * Stream a requirement document that an applicant uploaded online.
+     */
+    public function applicantDocument(Request $request, Student $student, EnrollmentRequirement $requirement): StreamedResponse
+    {
+        $user = Auth::user();
+
+        if (! $user instanceof User) {
+            abort(403);
+        }
+
+        abort_if(! in_array($student->status, [StudentStatus::Applicant, StudentStatus::Rejected], true), 404);
+
+        $enrollment = StudentEnrollment::query()
+            ->where('student_id', $student->id)
+            ->whereNull('deleted_at')
+            ->orderByDesc('id')
+            ->first();
+
+        abort_if(! $enrollment instanceof StudentEnrollment, 404);
+        abort_unless((int) $requirement->student_enrollment_id === (int) $enrollment->id, 404);
+
+        $path = (string) ($requirement->evidence_path ?? '');
+        abort_if($path === '', 404);
+
+        abort_unless(Storage::disk('private')->exists($path), 404);
+
+        $filename = basename($path);
+
+        return Storage::disk('private')->download($path, $filename);
     }
 
     public function notifyApplicantApproval(Student $student): RedirectResponse
@@ -2608,7 +2706,7 @@ final class AdministratorEnrollmentManagementController extends Controller
         }
 
         try {
-            return \Illuminate\Support\Facades\Storage::url($logoValue);
+            return Storage::url($logoValue);
         } catch (Throwable) {
             return $logoValue;
         }

@@ -312,16 +312,21 @@ export function ManageApplicantDialog({
                                 <SelectItem value="institutional">
                                     <div className="flex items-center gap-2">
                                         <span className="h-2 w-2 rounded-full bg-purple-500" />
-                                        Institutional
+                                        Institutional Scholarship
                                     </div>
                                 </SelectItem>
                                 <SelectItem value="private">
                                     <div className="flex items-center gap-2">
                                         <span className="h-2 w-2 rounded-full bg-orange-500" />
-                                        Private
+                                        Private/External Scholarship
                                     </div>
                                 </SelectItem>
-                                <SelectItem value="other">Other</SelectItem>
+                                <SelectItem value="other">
+                                    <div className="flex items-center gap-2">
+                                        <span className="h-2 w-2 rounded-full bg-amber-500" />
+                                        Other Scholarship
+                                    </div>
+                                </SelectItem>
                             </SelectContent>
                         </Select>
                         <div className="bg-muted/50 text-muted-foreground rounded-lg border p-3 text-xs">

@@ -38,6 +38,7 @@ const STATUSES = [
     { value: "dropped", label: "Dropped Out" },
     { value: "graduated", label: "Graduated" },
     { value: "transferred", label: "Transferred" },
+    { value: "rejected", label: "Application Rejected" },
 ];
 
 function formatYearLevel(value: number | null): string {

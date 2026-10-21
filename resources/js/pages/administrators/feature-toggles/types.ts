@@ -1,6 +1,7 @@
 export interface FeaturePolicy {
     enabled: boolean;
     mode: "legacy" | "enforced";
+    release_audience: "stable" | "beta" | "selected" | null;
     strategy: "defaults" | "targeted" | "percentage";
     percentage: number;
     allow_opt_in: boolean;

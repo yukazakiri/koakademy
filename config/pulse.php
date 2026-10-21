@@ -43,9 +43,13 @@ return [
     | data recorders regardless of their individual configurations. This
     | provides a single option to quickly disable all Pulse recording.
     |
+    | Pulse is off unless it is switched on. It records a slice of every
+    | request, and with the storage ingest driver each recorded event is
+    | written to the database during the request that produced it.
+    |
     */
 
-    'enabled' => env('PULSE_ENABLED', true),
+    'enabled' => env('PULSE_ENABLED', false),
 
     /*
     |--------------------------------------------------------------------------
@@ -79,6 +83,11 @@ return [
     | This configuration options determines the ingest driver that will be used
     | to capture entries from Pulse's recorders. Ingest drivers are great to
     | free up your request workers quickly by offloading the data storage.
+    |
+    | The "storage" driver writes every recorded entry to the database during
+    | the request that produced it. The "redis" driver buffers the entries
+    | and flushes them in the background, so set PULSE_INGEST_DRIVER=redis
+    | when Pulse runs against a busy application.
     |
     */
 
@@ -136,12 +145,19 @@ return [
     | Pulse, along with their configuration. Recorders gather application
     | event data from requests and tasks to pass to your ingest driver.
     |
+    | The sample rates below are deliberately below 1. A recorder that fires
+    | on every request or every cache lookup produces an event per
+    | interaction, and the ingest driver writes those events during the
+    | request that caused them. Sampling keeps the dashboard useful while
+    | keeping the cost proportional to the traffic. Exceptions and slow
+    | jobs stay at 1 because they are rare and every occurrence matters.
+    |
     */
 
     'recorders' => [
         Recorders\CacheInteractions::class => [
             'enabled' => env('PULSE_CACHE_INTERACTIONS_ENABLED', true),
-            'sample_rate' => env('PULSE_CACHE_INTERACTIONS_SAMPLE_RATE', 1),
+            'sample_rate' => env('PULSE_CACHE_INTERACTIONS_SAMPLE_RATE', 0.05),
             'ignore' => [
                 ...Pulse::defaultVendorCacheKeys(),
             ],
@@ -162,7 +178,7 @@ return [
 
         Recorders\Queues::class => [
             'enabled' => env('PULSE_QUEUES_ENABLED', true),
-            'sample_rate' => env('PULSE_QUEUES_SAMPLE_RATE', 1),
+            'sample_rate' => env('PULSE_QUEUES_SAMPLE_RATE', 0.5),
             'ignore' => [
                 // '/^Package\\\\Jobs\\\\/',
             ],
@@ -184,7 +200,7 @@ return [
 
         Recorders\SlowOutgoingRequests::class => [
             'enabled' => env('PULSE_SLOW_OUTGOING_REQUESTS_ENABLED', true),
-            'sample_rate' => env('PULSE_SLOW_OUTGOING_REQUESTS_SAMPLE_RATE', 1),
+            'sample_rate' => env('PULSE_SLOW_OUTGOING_REQUESTS_SAMPLE_RATE', 0.5),
             'threshold' => env('PULSE_SLOW_OUTGOING_REQUESTS_THRESHOLD', 1000),
             'ignore' => [
                 // '#^http://127\.0\.0\.1:13714#', // Inertia SSR...
@@ -198,7 +214,7 @@ return [
 
         Recorders\SlowQueries::class => [
             'enabled' => env('PULSE_SLOW_QUERIES_ENABLED', true),
-            'sample_rate' => env('PULSE_SLOW_QUERIES_SAMPLE_RATE', 1),
+            'sample_rate' => env('PULSE_SLOW_QUERIES_SAMPLE_RATE', 0.1),
             'threshold' => env('PULSE_SLOW_QUERIES_THRESHOLD', 1000),
             'location' => env('PULSE_SLOW_QUERIES_LOCATION', true),
             'max_query_length' => env('PULSE_SLOW_QUERIES_MAX_QUERY_LENGTH'),
@@ -210,7 +226,7 @@ return [
 
         Recorders\SlowRequests::class => [
             'enabled' => env('PULSE_SLOW_REQUESTS_ENABLED', true),
-            'sample_rate' => env('PULSE_SLOW_REQUESTS_SAMPLE_RATE', 1),
+            'sample_rate' => env('PULSE_SLOW_REQUESTS_SAMPLE_RATE', 0.1),
             'threshold' => env('PULSE_SLOW_REQUESTS_THRESHOLD', 1000),
             'ignore' => [
                 '#^/'.env('PULSE_PATH', 'pulse').'$#', // Pulse dashboard...
@@ -220,7 +236,7 @@ return [
 
         Recorders\UserJobs::class => [
             'enabled' => env('PULSE_USER_JOBS_ENABLED', true),
-            'sample_rate' => env('PULSE_USER_JOBS_SAMPLE_RATE', 1),
+            'sample_rate' => env('PULSE_USER_JOBS_SAMPLE_RATE', 0.5),
             'ignore' => [
                 // '/^Package\\\\Jobs\\\\/',
             ],
@@ -228,7 +244,7 @@ return [
 
         Recorders\UserRequests::class => [
             'enabled' => env('PULSE_USER_REQUESTS_ENABLED', true),
-            'sample_rate' => env('PULSE_USER_REQUESTS_SAMPLE_RATE', 1),
+            'sample_rate' => env('PULSE_USER_REQUESTS_SAMPLE_RATE', 0.1),
             'ignore' => [
                 '#^/'.env('PULSE_PATH', 'pulse').'$#', // Pulse dashboard...
                 '#^/telescope#', // Telescope dashboard...

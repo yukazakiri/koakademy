@@ -36,11 +36,15 @@ Production notes:
 
 ## Pulse
 
-Request/queue/cache performance dashboard. Gate `viewPulse` (`app/Providers/PulseServiceProvider.php`) allows the configured admin e-mail or Spatie `super_admin`. Disabled by default for a minimal local setup (`TELESCOPE_ENABLED=false`, `PULSE_ENABLED=false` in `.env.example`).
+Request/queue/cache performance dashboard. Gate `viewPulse` (`app/Providers/PulseServiceProvider.php`) allows the configured admin e-mail or Spatie `super_admin`. Disabled by default for a minimal local setup (`TELESCOPE_ENABLED=false`, `PULSE_ENABLED=false` in `.env.example`), and the configuration default is off as well, so a deployment that omits the variable records nothing.
+
+The recorders sample rather than record everything: cache interactions keep 5% of the events, requests and slow queries 10%, queues and user jobs 50%. Exceptions and slow jobs are kept in full because they are rare and every occurrence matters. Each rate is overridable (`PULSE_CACHE_INTERACTIONS_SAMPLE_RATE` and friends).
+
+The `storage` ingest driver writes every recorded entry to the database during the request that produced it. Set `PULSE_INGEST_DRIVER=redis` to buffer the entries and flush them in the background instead.
 
 ## Telescope
 
-Debug assistant for exceptions, failed requests/jobs, and scheduled tasks. Gate `viewTelescope` (`app/Providers/TelescopeServiceProvider.php`) allows Spatie role `developer`. Outside `local`, Telescope records only reportable exceptions, failed requests/jobs, scheduled tasks, and monitored tags, and hides `_token` plus cookie/auth headers.
+Debug assistant for exceptions, failed requests/jobs, and scheduled tasks. Gate `viewTelescope` (`app/Providers/TelescopeServiceProvider.php`) allows Spatie role `developer`. Outside `local`, Telescope records only reportable exceptions, failed requests/jobs, scheduled tasks, and monitored tags, and hides `_token` plus cookie/auth headers. The configuration default is off, so a deployment that omits `TELESCOPE_ENABLED` records nothing.
 
 ## Horizon
 

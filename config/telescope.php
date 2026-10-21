@@ -16,9 +16,13 @@ return [
     | of their individual configuration, which simply provides a single
     | and convenient way to enable or disable Telescope data storage.
     |
+    | Telescope is off unless it is switched on. Every watcher records into
+    | the storage driver during the request it observes, so an installation
+    | that never set the variable should not pay for it.
+    |
     */
 
-    'enabled' => env('TELESCOPE_ENABLED', true),
+    'enabled' => env('TELESCOPE_ENABLED', false),
 
     /*
     |--------------------------------------------------------------------------

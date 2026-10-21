@@ -215,12 +215,16 @@ return [
     | in all environments. These supervisors and settings handle all your
     | queued jobs and will be provisioned by Horizon during deployment.
     |
+    | The "scout" queue carries the search index updates. Scout pushes them
+    | off the request, so a worker has to drain that queue or the index
+    | falls behind the database.
+    |
     */
 
     'defaults' => [
         'supervisor-1' => [
             'connection' => 'redis',
-            'queue' => ['default', 'assessments'],
+            'queue' => ['default', 'assessments', 'scout'],
             'balance' => 'auto',
             'autoScalingStrategy' => 'time',
             'maxProcesses' => 1,

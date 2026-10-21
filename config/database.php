@@ -171,6 +171,18 @@ return [
     | provides a richer body of commands than a typical key-value system
     | such as Memcached. You may define your connection settings here.
     |
+    | Every connection below sets a connect timeout and a read timeout. The
+    | phpredis default for both is 0, which means "wait forever". That turns
+    | an unreachable Redis into a hung request: an Octane worker sits on the
+    | first cache read and never returns, so the pool drains into a full
+    | outage instead of a degraded service. A bounded timeout fails fast and
+    | lets the worker serve a cached or default response.
+    |
+    | The read timeout must stay above the queue `block_for` values (5s by
+    | default). The queue worker blocks on BLPOP for that long, and a read
+    | timeout at or below it would abort the worker with a socket timeout
+    | instead of simply returning an empty queue.
+    |
     */
 
     'redis' => [
@@ -181,6 +193,14 @@ return [
             'cluster' => env('REDIS_CLUSTER', 'redis'),
             'prefix' => env('REDIS_PREFIX', Str::slug((string) env('APP_NAME', 'laravel')).'-database-'),
             'persistent' => env('REDIS_PERSISTENT', false),
+
+            // Predis reads its socket timeouts from the connection parameters
+            // and calls the read timeout "read_write_timeout". phpredis ignores
+            // this block and reads "timeout" and "read_timeout" from the
+            // connection below, so both clients end up with the same bound.
+            'parameters' => [
+                'read_write_timeout' => (float) env('REDIS_READ_TIMEOUT', 10),
+            ],
         ],
 
         'default' => [
@@ -190,6 +210,8 @@ return [
             'password' => env('REDIS_PASSWORD'),
             'port' => env('REDIS_PORT', '6379'),
             'database' => env('REDIS_DB', '0'),
+            'timeout' => (float) env('REDIS_TIMEOUT', 3),
+            'read_timeout' => (float) env('REDIS_READ_TIMEOUT', 10),
         ],
 
         'cache' => [
@@ -199,6 +221,8 @@ return [
             'password' => env('REDIS_PASSWORD'),
             'port' => env('REDIS_PORT', '6379'),
             'database' => env('REDIS_CACHE_DB', '1'),
+            'timeout' => (float) env('REDIS_TIMEOUT', 3),
+            'read_timeout' => (float) env('REDIS_READ_TIMEOUT', 10),
         ],
 
         'queue-pdf' => [
@@ -208,6 +232,8 @@ return [
             'password' => env('REDIS_PASSWORD'),
             'port' => env('REDIS_PORT', '6379'),
             'database' => env('REDIS_PDF_QUEUE_DB', '3'),
+            'timeout' => (float) env('REDIS_TIMEOUT', 3),
+            'read_timeout' => (float) env('REDIS_READ_TIMEOUT', 10),
         ],
 
         'queue-assessment' => [
@@ -217,6 +243,8 @@ return [
             'password' => env('REDIS_PASSWORD'),
             'port' => env('REDIS_PORT', '6379'),
             'database' => env('REDIS_ASSESSMENT_QUEUE_DB', '5'),
+            'timeout' => (float) env('REDIS_TIMEOUT', 3),
+            'read_timeout' => (float) env('REDIS_READ_TIMEOUT', 10),
         ],
 
         'pulse' => [
@@ -226,6 +254,8 @@ return [
             'password' => env('REDIS_PASSWORD'),
             'port' => env('REDIS_PORT', '6379'),
             'database' => env('REDIS_PULSE_DB', '4'),
+            'timeout' => (float) env('REDIS_TIMEOUT', 3),
+            'read_timeout' => (float) env('REDIS_READ_TIMEOUT', 10),
         ],
 
     ],

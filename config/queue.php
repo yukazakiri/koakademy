@@ -48,6 +48,13 @@ return [
     |
     | Drivers: "sync", "database", "beanstalkd", "sqs", "redis", "null"
     |
+    | The "database" and "redis" connections dispatch after commit. A job
+    | pushed while a transaction is still open may describe a row that the
+    | transaction later rolls back, so the worker would read state that
+    | never existed. Deferring the push until the commit keeps the worker
+    | and the database in step, and it is what makes the Scout index
+    | commit-safe.
+    |
     */
 
     'connections' => [
@@ -62,7 +69,7 @@ return [
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
             'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
-            'after_commit' => false,
+            'after_commit' => true,
         ],
 
         'beanstalkd' => [
@@ -91,7 +98,7 @@ return [
             'queue' => env('REDIS_QUEUE', 'default'),
             'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 90),
             'block_for' => (int) env('REDIS_QUEUE_BLOCK_FOR', 5),
-            'after_commit' => false,
+            'after_commit' => true,
         ],
 
         'redis-pdf' => [

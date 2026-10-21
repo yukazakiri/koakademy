@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Str;
+
 return [
 
     /*
@@ -29,9 +31,13 @@ return [
     | names used by Scout. This prefix may be useful if you have multiple
     | "tenants" or applications sharing the same search infrastructure.
     |
+    | The prefix is derived from the application name so a shared Meilisearch
+    | instance keeps one installation from overwriting another installation's
+    | indexes. Override it with SCOUT_PREFIX when the name is not unique.
+    |
     */
 
-    'prefix' => env('SCOUT_PREFIX', ''),
+    'prefix' => env('SCOUT_PREFIX', Str::slug((string) env('APP_NAME', 'laravel')).'-scout-'),
 
     /*
     |--------------------------------------------------------------------------
@@ -42,9 +48,24 @@ return [
     | with your search engines are queued. When this is set to "true" then
     | all automatic data syncing will get queued for better performance.
     |
+    | Indexing is queued by default because a synchronous index is a blocking
+    | HTTP call to the search engine inside the request that saved the model.
+    | On a bulk import that call dominates the response time. The jobs are
+    | pushed to a dedicated "scout" queue so a slow search engine cannot
+    | starve the queues that serve the application.
+    |
+    | Set SCOUT_QUEUE=false to index synchronously again. The queue needs a
+    | worker: Horizon serves it from the "supervisor-1" supervisor, and the
+    | local and container stacks listen for it explicitly.
+    |
     */
 
-    'queue' => env('SCOUT_QUEUE', false),
+    'queue' => filter_var(env('SCOUT_QUEUE', true), FILTER_VALIDATE_BOOLEAN)
+        ? [
+            'connection' => env('SCOUT_QUEUE_CONNECTION'),
+            'queue' => env('SCOUT_QUEUE_NAME', 'scout'),
+        ]
+        : false,
 
     /*
     |--------------------------------------------------------------------------
@@ -55,9 +76,14 @@ return [
     | with your search indexes after every open database transaction has
     | been committed, thus preventing any discarded data from syncing.
     |
+    | Note that Scout itself does not read this flag; it is honoured through
+    | the queue connection, which is configured with "after_commit" so the
+    | indexing job is only pushed once the transaction that produced the
+    | model has been committed.
+    |
     */
 
-    'after_commit' => false,
+    'after_commit' => true,
 
     /*
     |--------------------------------------------------------------------------

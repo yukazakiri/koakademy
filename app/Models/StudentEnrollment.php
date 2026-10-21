@@ -493,7 +493,7 @@ final class StudentEnrollment extends Model
         parent::boot();
 
         self::creating(function (self $model): void {
-            $settings = GeneralSetting::query()->first();
+            $settings = app(GeneralSettingsService::class)->getGlobalSettingsModel();
             $pipeline = app(EnrollmentPipelineService::class);
 
             if (! $model->status) {

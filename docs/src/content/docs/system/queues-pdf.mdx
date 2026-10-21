@@ -14,10 +14,20 @@ Defined in `config/queue.php`:
 | Connection | Used for |
 | ---------- | -------- |
 | `database` | Default in development and tests (sync driver in CI) |
-| `redis` | Default application queues in production (`default`, `assessments`) |
+| `redis` | Default application queues in production (`default`, `assessments`, `scout`) |
 | `redis-pdf` | PDF generation jobs (`pdf-generation`) — isolated so a heavy render batch never delays transactional work |
 
-In production, **Horizon** supervisors consume these queues inside the container (the dev Compose stack runs the same layout: three workers on `default,assessments`, two on `pdf-generation` with raised memory and timeout). Production deployments should run the scheduler and workers via the provided supervisord variants.
+In production, **Horizon** supervisors consume these queues inside the container (the dev Compose stack runs the same layout: three workers on `default,assessments,scout`, two on `pdf-generation` with raised memory and timeout). Production deployments should run the scheduler and workers via the provided supervisord variants.
+
+The `database` and `redis` connections dispatch after commit. A job pushed while a transaction is still open can describe a row that the transaction later rolls back, so the worker would read state that never existed.
+
+## Search indexing
+
+Scout indexing is queued on its own `scout` queue, so saving a record never waits on the search engine and a slow index cannot starve the queues that serve the application.
+
+- `SCOUT_QUEUE=false` puts the indexing back on the request path.
+- `SCOUT_QUEUE_NAME` renames the queue; a worker has to drain it.
+- `SCOUT_PREFIX` namespaces the index. The default derives it from the application name, which keeps two installations that share one Meilisearch instance from overwriting each other.
 
 ## Job inventory (by purpose)
 

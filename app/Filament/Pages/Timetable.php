@@ -193,20 +193,7 @@ final class Timetable extends Page implements HasForms, HasTable
             ->orderBy('day_of_week')
             ->orderBy('start_time');
 
-        // Debug logging
-        Log::info('Timetable: loadSchedules query', [
-            'view' => $this->selectedView,
-            'selectedId' => $this->selectedId,
-            'selectedYearLevel' => $this->selectedYearLevel,
-            'sql' => $query->toSql(),
-            'bindings' => $query->getBindings(),
-        ]);
-
         $this->schedules = $query->get();
-
-        Log::info('Timetable: loadSchedules result', [
-            'count' => $this->schedules->count(),
-        ]);
 
         $this->detectConflicts();
     }

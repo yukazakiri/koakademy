@@ -13,7 +13,9 @@ import {
     type ValidationResult,
 } from "../lib/class-defaults";
 import { BasicsStep } from "./steps/basics-step";
+import { PolicyStep } from "./steps/policy-step";
 import { ReviewStep } from "./steps/review-step";
+import { ScheduleStep } from "./steps/schedule-step";
 import { TeachingStep } from "./steps/teaching-step";
 import { useClassForm } from "./use-class-form";
 
@@ -26,6 +28,13 @@ type ClassWizardProps = ClassDefaultsInput & {
 
 const draftKey = "koakademy:class-draft";
 
+/** The step each part of the wizard lives on. */
+const STEP_IDENTITY = 0;
+const STEP_TEACHING = 1;
+const STEP_SCHEDULE = 2;
+const STEP_POLICY = 3;
+const STEP_REVIEW = 4;
+
 function toWizardResult(result: ValidationResult): WizardValidationResult {
     return result === true ? true : result.message;
 }
@@ -36,13 +45,13 @@ function isDraftData(value: unknown): value is ClassFormData {
 
 function resolveSubmitError(errors: Record<string, string>): { title: string; message: string; step?: number } {
     if (errors.schedules) {
-        return { title: "Schedule conflict", message: errors.schedules, step: 1 };
+        return { title: "Schedule conflict", message: errors.schedules, step: STEP_SCHEDULE };
     }
 
     const scheduleErrorKey = Object.keys(errors).find((key) => key.startsWith("schedules."));
 
     if (scheduleErrorKey) {
-        return { title: "Schedule conflict", message: errors[scheduleErrorKey], step: 1 };
+        return { title: "Schedule conflict", message: errors[scheduleErrorKey], step: STEP_SCHEDULE };
     }
 
     const firstError = Object.values(errors).find((error) => typeof error === "string" && error.length > 0);
@@ -239,18 +248,32 @@ export function ClassWizard({ semester, school_year, options, mode = "create", c
                 }}
                 steps={[
                     {
-                        id: "basics",
-                        title: "Basics",
-                        description: "Type, subject, section",
+                        id: "identity",
+                        title: "Identity",
+                        description: "Program, subject, section",
                         isComplete: () => step1Valid === true,
                         isValid: () => toWizardResult(step1Valid),
                     },
                     {
                         id: "teaching",
                         title: "Teaching",
-                        description: "Faculty, room, schedule",
+                        description: "Faculty and room",
+                        isComplete: () => true,
+                        isValid: () => true,
+                    },
+                    {
+                        id: "schedule",
+                        title: "Schedule",
+                        description: "Weekly meetings",
                         isComplete: () => step2Valid === true,
                         isValid: () => toWizardResult(step2Valid),
+                    },
+                    {
+                        id: "policy",
+                        title: "Policy",
+                        description: "Features and appearance",
+                        isComplete: () => true,
+                        isValid: () => true,
                     },
                     {
                         id: "review",
@@ -261,7 +284,7 @@ export function ClassWizard({ semester, school_year, options, mode = "create", c
                     },
                 ]}
             >
-                {currentStep === 0 ? (
+                {currentStep === STEP_IDENTITY ? (
                     <BasicsStep
                         data={form.data}
                         options={options}
@@ -274,14 +297,17 @@ export function ClassWizard({ semester, school_year, options, mode = "create", c
                     />
                 ) : null}
 
-                {currentStep === 1 ? <TeachingStep data={form.data} options={options} onDataChange={applyDataChange} /> : null}
+                {currentStep === STEP_TEACHING ? <TeachingStep data={form.data} options={options} onDataChange={applyDataChange} /> : null}
 
-                {currentStep === 2 ? (
+                {currentStep === STEP_SCHEDULE ? <ScheduleStep data={form.data} options={options} onDataChange={applyDataChange} /> : null}
+
+                {currentStep === STEP_POLICY ? <PolicyStep data={form.data} onDataChange={applyDataChange} /> : null}
+
+                {currentStep === STEP_REVIEW ? (
                     <ReviewStep
                         data={form.data}
                         options={options}
                         collegeSubjects={collegeSubjects}
-                        onDataChange={applyDataChange}
                         onJumpToStep={setCurrentStep}
                     />
                 ) : null}

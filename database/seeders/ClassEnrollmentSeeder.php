@@ -15,6 +15,13 @@ use Illuminate\Database\Seeder;
 final class ClassEnrollmentSeeder extends Seeder
 {
     /**
+     * The sections reserved for the demo cohort.
+     *
+     * @var list<string>
+     */
+    private const array DEMO_SECTIONS = ['DEMO-A', 'DEMO-B', 'DEMO-C'];
+
+    /**
      * Run the database seeds.
      */
     public function run(): void
@@ -25,6 +32,10 @@ final class ClassEnrollmentSeeder extends Seeder
         $classes = Classes::all();
         $subjectEnrollments = SubjectEnrollment::query()->whereNull('class_id')->get();
 
+        // The demo classes carry a curated cohort that the faculty walkthrough
+        // depends on, so the automatic path leaves them alone.
+        $autoEnrolmentClasses = $classes->whereNotIn('section', self::DEMO_SECTIONS);
+
         // Auto-enroll students in classes based on their subject enrollments
         foreach ($subjectEnrollments as $subjectEnrollment) {
             $student = $students->where('id', $subjectEnrollment->student_id)->first();
@@ -32,9 +43,11 @@ final class ClassEnrollmentSeeder extends Seeder
                 continue;
             }
 
-            // Find appropriate class for this subject enrollment
-            $availableClasses = $classes->where('subject_code', $subjectEnrollment->subject->code)
-                ->where('school_year', $subjectEnrollment->school_year)
+            // Find appropriate class for this subject enrollment. The school
+            // year is matched in both the spaced and the compact format, the
+            // same way the academic period scope does.
+            $availableClasses = $autoEnrolmentClasses->where('subject_code', $subjectEnrollment->subject->code)
+                ->whereIn('school_year', self::schoolYearVariants($subjectEnrollment->school_year))
                 ->where('semester', $subjectEnrollment->semester);
 
             // Filter by academic year if subject has specific academic year
@@ -196,6 +209,22 @@ final class ClassEnrollmentSeeder extends Seeder
         $this->seedDemoFacultyClassEnrollments($schoolId);
 
         $this->command->info('Class enrollments seeded successfully!');
+    }
+
+    /**
+     * Both accepted spellings of a school year.
+     *
+     * @return list<string>
+     */
+    private static function schoolYearVariants(?string $schoolYear): array
+    {
+        if ($schoolYear === null || $schoolYear === '') {
+            return [];
+        }
+
+        $compact = str_replace(' ', '', $schoolYear);
+
+        return array_values(array_unique([$schoolYear, $compact]));
     }
 
     private function seedDemoFacultyClassEnrollments(int $schoolId): void

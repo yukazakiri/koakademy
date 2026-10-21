@@ -1,33 +1,69 @@
-import { BookOpen, Layers, Users } from "lucide-react";
+import { AlertTriangle, GraduationCap, Users } from "lucide-react";
+import type { ReactNode } from "react";
 
-export function ClassStats({ totalClasses, totalStudents }: { totalClasses: number; totalStudents: number }) {
-    const averageStudents = totalClasses > 0 ? Math.round(totalStudents / totalClasses) : 0;
+type ClassStatsProps = {
+    totalClasses: number;
+    totalStudents: number;
+    totalCapacity: number;
+    needsAttention: number;
+};
 
+type StatProps = {
+    label: string;
+    value: ReactNode;
+    subtext: string;
+    icon: ReactNode;
+    tone?: "default" | "alert";
+};
+
+function Stat({ label, value, subtext, icon, tone = "default" }: StatProps): ReactNode {
     return (
-        <div className="grid grid-cols-3 gap-3">
-            <div className="bg-card rounded-lg border-l-4 border-l-blue-500 p-3 shadow-sm">
-                <div className="flex items-center gap-2">
-                    <Layers className="h-4 w-4 text-blue-500" />
-                    <span className="text-muted-foreground text-xs font-medium tracking-wider uppercase">Classes</span>
-                </div>
-                <div className="mt-1 text-2xl font-bold tabular-nums">{totalClasses}</div>
+        <div
+            className={`rounded-xl border p-4 ${
+                tone === "alert" ? "border-destructive/30 bg-destructive/5" : "border-border bg-card"
+            }`}
+        >
+            <div className="flex items-center gap-2">
+                <span className={tone === "alert" ? "text-destructive" : "text-muted-foreground"}>{icon}</span>
+                <span className="text-muted-foreground text-[0.7rem] font-semibold uppercase tracking-wider">{label}</span>
             </div>
-            <div className="bg-card rounded-lg border-l-4 border-l-emerald-500 p-3 shadow-sm">
-                <div className="flex items-center gap-2">
-                    <Users className="h-4 w-4 text-emerald-500" />
-                    <span className="text-muted-foreground text-xs font-medium tracking-wider uppercase">Students</span>
-                </div>
-                <div className="mt-1 text-2xl font-bold tabular-nums">{totalStudents.toLocaleString()}</div>
-            </div>
-            <div className="bg-card rounded-lg border-l-4 border-l-amber-500 p-3 shadow-sm">
-                <div className="flex items-center gap-2">
-                    <BookOpen className="h-4 w-4 text-amber-500" />
-                    <span className="text-muted-foreground text-xs font-medium tracking-wider uppercase">Avg Size</span>
-                </div>
-                <div className="mt-1 text-2xl font-bold tabular-nums">{averageStudents}</div>
-            </div>
+            <div className={`mt-1.5 text-2xl font-semibold tabular-nums ${tone === "alert" ? "text-destructive" : ""}`}>{value}</div>
+            <div className="text-muted-foreground text-xs">{subtext}</div>
         </div>
     );
 }
 
+export function ClassStats({ totalClasses, totalStudents, totalCapacity, needsAttention }: ClassStatsProps) {
+    const fillRate = totalCapacity > 0 ? Math.round((totalStudents / totalCapacity) * 100) : 0;
+    const openSlots = Math.max(totalCapacity - totalStudents, 0);
 
+    return (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Stat
+                label="Sections"
+                value={totalClasses.toLocaleString()}
+                subtext="in the current term"
+                icon={<GraduationCap className="size-4" />}
+            />
+            <Stat
+                label="Enrolled"
+                value={totalStudents.toLocaleString()}
+                subtext={`${openSlots.toLocaleString()} seats still open`}
+                icon={<Users className="size-4" />}
+            />
+            <Stat
+                label="Capacity used"
+                value={`${fillRate}%`}
+                subtext={`of ${totalCapacity.toLocaleString()} seats`}
+                icon={<GraduationCap className="size-4" />}
+            />
+            <Stat
+                label="Needs attention"
+                value={needsAttention.toLocaleString()}
+                subtext={needsAttention === 0 ? "everything is in order" : "classes are waiting on someone"}
+                icon={<AlertTriangle className="size-4" />}
+                tone={needsAttention > 0 ? "alert" : "default"}
+            />
+        </div>
+    );
+}

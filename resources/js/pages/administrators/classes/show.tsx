@@ -36,6 +36,7 @@ import {
     useReactTable,
 } from "@tanstack/react-table";
 import { format, parse, set } from "date-fns";
+import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 import {
     AlertCircle,
     ArrowRightLeft,
@@ -56,10 +57,12 @@ import {
     MoreHorizontal,
     Pencil,
     Plus,
+    RotateCcw,
     Search,
     Trash2,
     Users,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
@@ -143,6 +146,8 @@ type ClassShowData = {
         view_url: string;
         edit_url: string;
     };
+    deleted_at: string | null;
+    is_archived: boolean;
 };
 
 type EnrollmentRow = {
@@ -178,9 +183,17 @@ type TransferableClass = {
     available_slots: number;
 };
 
+type ClassShowCapabilities = {
+    update: boolean;
+    delete: boolean;
+    restore: boolean;
+    force_delete: boolean;
+};
+
 interface ClassShowProps {
     user: User;
     class: ClassShowData;
+    capabilities?: ClassShowCapabilities;
     enrollments: EnrollmentPaginator;
     raw_schedules: RawScheduleEntry[];
     room_schedules: Record<number, RoomScheduleEntry[]>;
@@ -215,7 +228,6 @@ const END_HOUR = 21; // 9 PM
 const PIXELS_PER_HOUR = 60;
 const PIXELS_PER_MINUTE = PIXELS_PER_HOUR / 60;
 const SNAP_MINUTES = 15;
-const TOTAL_MINUTES = (END_HOUR - START_HOUR) * 60;
 
 function parseTimeToMinutes(timeValue: string): number {
     if (!timeValue) return 0;
@@ -722,7 +734,7 @@ function TimetableEditor({
     open: boolean;
     onOpenChange: (open: boolean) => void;
 }) {
-    const { data, setData, put, processing, reset } = useForm({
+    const { data, setData, put, processing } = useForm({
         schedules: initialSchedules.map((s, i) => ({
             ...s,
             temp_id: s.temp_id || `id-${i}-${Date.now()}`,
@@ -760,11 +772,11 @@ function TimetableEditor({
         return conflictSet;
     }, [data.schedules]);
 
-    const handleDragStart = (event: any) => {
-        setActiveId(event.active.id);
+    const handleDragStart = (event: DragStartEvent) => {
+        setActiveId(String(event.active.id));
     };
 
-    const handleDragEnd = (event: any) => {
+    const handleDragEnd = (event: DragEndEvent) => {
         const { active, over, delta } = event;
         setActiveId(null);
 
@@ -1201,7 +1213,7 @@ function StatCard({
     className,
     colorClass = "bg-primary/10 text-primary",
 }: {
-    icon: any;
+    icon: LucideIcon;
     label: string;
     value: string | number;
     subtext?: string;
@@ -1224,15 +1236,25 @@ function StatCard({
     );
 }
 
+const DEFAULT_CAPABILITIES: ClassShowCapabilities = {
+    update: false,
+    delete: false,
+    restore: false,
+    force_delete: false,
+};
+
 export default function AdministratorClassShow({
     user,
     class: classItem,
+    capabilities: rawCapabilities,
     enrollments,
     raw_schedules,
     room_schedules,
     rooms,
     transferable_classes,
 }: ClassShowProps) {
+    const capabilities = rawCapabilities ?? DEFAULT_CAPABILITIES;
+    const isArchived = Boolean(classItem.is_archived);
     const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
     const [moveStudentDialogOpen, setMoveStudentDialogOpen] = useState(false);
     const [studentToMove, setStudentToMove] = useState<EnrollmentRow | null>(null);
@@ -1493,107 +1515,130 @@ export default function AdministratorClassShow({
     ] as const;
 
     return (
-        <AdminLayout user={user} title="Class Details">
+        <AdminLayout user={user} title="Class record">
             <Head title={`Class • ${classItem.record_title}`} />
             <TooltipProvider>
-                <div className="mx-auto w-full max-w-7xl space-y-6 md:space-y-8">
-                    {/* Hero Section */}
-                    <div
-                        className="bg-card relative overflow-hidden rounded-xl border shadow-sm transition-all"
-                        style={{
-                            backgroundColor: classItem.settings?.banner_image_url ? undefined : hexToRgba(accentColor, 0.05) || undefined,
-                        }}
-                    >
-                        {/* Background Banner Image or Gradient */}
-                        {classItem.settings?.banner_image_url ? (
-                            <div
-                                className="absolute inset-0 z-0 opacity-20"
-                                style={{
-                                    backgroundImage: `url(${classItem.settings.banner_image_url})`,
-                                    backgroundSize: "cover",
-                                    backgroundPosition: "center",
-                                }}
-                            />
-                        ) : (
-                            <div
-                                className="absolute inset-0 z-0 bg-gradient-to-tr from-transparent opacity-20"
-                                style={{
-                                    backgroundImage: `linear-gradient(to top right, transparent, ${accentColor})`,
-                                }}
-                            />
-                        )}
-
-                        <div className="relative z-10 p-8 sm:p-10">
-                            <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-                                <div className="space-y-4">
-                                    <div className="text-muted-foreground flex items-center gap-2 text-sm font-medium">
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="text-muted-foreground hover:text-foreground h-6 px-0 hover:bg-transparent"
-                                            asChild
-                                        >
-                                            <Link href={route("administrators.classes.index")}>
-                                                <ChevronLeft className="mr-1 h-3 w-3" />
-                                                Back to Classes
-                                            </Link>
-                                        </Button>
-                                        <span className="opacity-50">/</span>
-                                        <span className="font-bold">{classItem.school_year}</span>
-                                        <span className="opacity-50">/</span>
-                                        <span className="font-bold uppercase">{classItem.semester}</span>
-                                    </div>
-
-                                    <div>
-                                        <h1 className="text-foreground text-4xl font-black tracking-tight drop-shadow-sm sm:text-5xl">
-                                            {classItem.record_title}
-                                        </h1>
-                                        <div className="mt-4 flex flex-wrap items-center gap-2">
-                                            <Badge variant="default" className="px-3 py-1 text-sm font-bold shadow-sm">
-                                                {classItem.subject_code}
-                                            </Badge>
-                                            <Badge variant="secondary" className="px-3 py-1 text-sm font-bold shadow-sm">
-                                                SEC {classItem.section}
-                                            </Badge>
-                                            <Badge variant="outline" className="px-3 py-1 text-sm font-bold">
-                                                {classItem.classification?.toUpperCase() ?? "N/A"}
-                                            </Badge>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                                    <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-                                        <Button
-                                            size="lg"
-                                            onClick={() => setScheduleDialogOpen(true)}
-                                            className="flex-1 font-bold shadow-sm sm:flex-none"
-                                        >
-                                            <CalendarIcon className="mr-2 h-5 w-5" />
-                                            Manage Schedule
-                                        </Button>
-                                        <Button size="lg" asChild variant="secondary" className="flex-1 font-bold shadow-sm sm:flex-none">
-                                            <Link href={route("administrators.classes.edit", { class: classItem.id })}>
-                                                <Pencil className="mr-2 h-5 w-5" />
-                                                Edit Class
-                                            </Link>
-                                        </Button>
-                                        <Button
-                                            size="icon"
-                                            asChild
-                                            variant="secondary"
-                                            className="h-11 w-11 shrink-0 shadow-sm"
-                                            title="Open in Filament"
-                                        >
-                                            <a href={classItem.filament?.view_url ?? "#"} target="_blank" rel="noreferrer">
-                                                <ArrowUpRight className="h-5 w-5" />
-                                            </a>
-                                        </Button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6">
+                    <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-sm">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            nativeButton={false}
+                            render={<Link href={route("administrators.classes.index")} />}
+                            className="text-muted-foreground hover:text-foreground -ml-2 h-7 px-2 hover:bg-transparent"
+                        >
+                            <ChevronLeft className="mr-1 size-3.5" />
+                            Classes
+                        </Button>
+                        <span className="opacity-50">/</span>
+                        <span className="font-medium text-foreground">{classItem.subject_code}</span>
+                        <span className="opacity-50">/</span>
+                        <span className="font-medium uppercase">{classItem.section}</span>
                     </div>
+
+                    <header className="flex flex-col gap-5 border-b pb-6 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="min-w-0 space-y-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Badge variant="default">{classItem.subject_code}</Badge>
+                                <Badge variant="secondary">Section {classItem.section}</Badge>
+                                <Badge variant="outline">{classItem.classification === "shs" ? "Senior high" : "College"}</Badge>
+                                {isArchived ? (
+                                    <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                                        Archived
+                                    </Badge>
+                                ) : null}
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <h1 className="text-3xl font-semibold tracking-tight text-balance">{classItem.record_title}</h1>
+                                <p className="text-muted-foreground text-sm text-pretty">
+                                    {classItem.subject_title}
+                                    {classItem.associated_courses ? ` · ${classItem.associated_courses}` : ""}
+                                </p>
+                            </div>
+
+                            <dl className="text-muted-foreground flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm">
+                                <div className="flex items-center gap-1.5">
+                                    <dt className="sr-only">Term</dt>
+                                    <CalendarIcon className="size-3.5" />
+                                    <dd className="tabular-nums">
+                                        {classItem.school_year} · Semester {classItem.semester}
+                                    </dd>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                    <dt className="sr-only">Faculty</dt>
+                                    <Users className="size-3.5" />
+                                    <dd>{classItem.faculty?.name ?? "No faculty assigned"}</dd>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                    <dt className="sr-only">Year level</dt>
+                                    <GraduationCap className="size-3.5" />
+                                    <dd>{classItem.year_level ?? "Year level not set"}</dd>
+                                </div>
+                            </dl>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                            {capabilities.update ? (
+                                <Button onClick={() => setScheduleDialogOpen(true)}>
+                                    <CalendarIcon className="size-4" />
+                                    Manage schedule
+                                </Button>
+                            ) : null}
+
+                            {capabilities.update ? (
+                                <Button
+                                    variant="secondary"
+                                    nativeButton={false}
+                                    render={<Link href={route("administrators.classes.edit", { class: classItem.id })} />}
+                                >
+                                    <Pencil className="size-4" />
+                                    Edit class
+                                </Button>
+                            ) : null}
+
+                            <Button
+                                size="icon"
+                                variant="outline"
+                                nativeButton={false}
+                                render={
+                                    <a href={classItem.filament?.view_url ?? "#"} target="_blank" rel="noreferrer" />
+                                }
+                                title="Open in Filament"
+                                aria-label="Open in Filament"
+                            >
+                                <ArrowUpRight className="size-4" />
+                            </Button>
+                        </div>
+                    </header>
+
+                    {isArchived ? (
+                        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm">
+                            <p className="text-muted-foreground">
+                                <span className="text-foreground font-medium">This class is archived.</span> It is out of the live list and its
+                                schedule blocks and enrolments are archived with it. Restoring it brings all of it back.
+                            </p>
+                            {capabilities.restore ? (
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                        router.post(
+                                            route("administrators.classes.restore", { class: classItem.id }),
+                                            {},
+                                            {
+                                                preserveScroll: true,
+                                                onSuccess: () => toast.success(`${classItem.record_title} restored.`),
+                                            },
+                                        );
+                                    }}
+                                >
+                                    <RotateCcw className="size-4" />
+                                    Restore class
+                                </Button>
+                            ) : null}
+                        </div>
+                    ) : null}
 
                     <TimetableEditor
                         classItem={classItem}
@@ -1915,16 +1960,18 @@ export default function AdministratorClassShow({
 
                                                                             return (
                                                                                 <Tooltip key={block.id}>
-                                                                                    <TooltipTrigger asChild>
-                                                                                        <div
-                                                                                            className={`absolute z-10 p-0.5 transition-all hover:z-20 hover:scale-[1.03]`}
-                                                                                            style={{
-                                                                                                top,
-                                                                                                height,
-                                                                                                left,
-                                                                                                width,
-                                                                                            }}
-                                                                                        >
+                                                                                    <TooltipTrigger
+                                                                                        render={
+                                                                                            <div
+                                                                                                className={`absolute z-10 p-0.5 transition-all hover:z-20 hover:scale-[1.03]`}
+                                                                                                style={{
+                                                                                                    top,
+                                                                                                    height,
+                                                                                                    left,
+                                                                                                    width,
+                                                                                                }}
+                                                                                            />
+                                                                                    }>
                                                                                             <div
                                                                                                 className={`flex h-full w-full flex-col overflow-hidden rounded-xl border-2 px-2 py-1.5 text-xs shadow-md ${block.hasConflict ? "bg-destructive/10 border-destructive text-destructive" : ""}`}
                                                                                                 style={
@@ -1947,8 +1994,7 @@ export default function AdministratorClassShow({
                                                                                                     <AlertCircle className="mt-auto h-4 w-4" />
                                                                                                 )}
                                                                                             </div>
-                                                                                        </div>
-                                                                                    </TooltipTrigger>
+                                                                                            </TooltipTrigger>
                                                                                     <TooltipContent className="rounded-xl p-3 shadow-xl">
                                                                                         <div className="text-sm">
                                                                                             <div className="mb-1 text-base font-extrabold">

@@ -86,6 +86,9 @@ final class AdministratorClassManagementController extends Controller
             'semester' => $this->nullableString($request->input('semester')),
             'available_slots' => $request->boolean('available_slots') ? true : null,
             'fully_enrolled' => $request->filled('fully_enrolled') ? $request->boolean('fully_enrolled') : null,
+            'needs_faculty' => $request->boolean('needs_faculty') ? true : null,
+            'needs_schedule' => $request->boolean('needs_schedule') ? true : null,
+            'over_capacity' => $request->boolean('over_capacity') ? true : null,
             'trashed' => in_array($request->input('trashed'), ['only', 'with'], true) ? (string) $request->input('trashed') : null,
         ];
 
@@ -128,6 +131,14 @@ final class AdministratorClassManagementController extends Controller
             $perPage,
             $page,
         ): array {
+            // The work queues and the rail counts are taken over the filtered
+            // set without the rail's own filters, so a queue never hides its
+            // own count and both class types stay visible.
+            $railBase = $this->buildClassListQuery($filters, ['classification', 'needs_faculty', 'needs_schedule', 'over_capacity']);
+
+            $queues = $this->classQueueCounts($railBase);
+            $classificationCounts = $this->classTypeCounts($railBase);
+
             $classesQuery = $this->buildClassListQuery($filters);
 
             $this->applyClassSort($classesQuery, $sort, $direction);
@@ -191,6 +202,8 @@ final class AdministratorClassManagementController extends Controller
                     'to' => $paginator->lastItem() ?? 0,
                     'total_students' => $totals['total_students'],
                     'total_capacity' => $totals['total_capacity'],
+                    'queues' => $queues,
+                    'classification_counts' => $classificationCounts,
                 ],
             ];
         };
@@ -787,6 +800,14 @@ final class AdministratorClassManagementController extends Controller
                     'view_url' => route('filament.admin.resources.classes.view', $class),
                     'edit_url' => route('filament.admin.resources.classes.edit', $class),
                 ],
+                'deleted_at' => $class->deleted_at?->toIso8601String(),
+                'is_archived' => $class->trashed(),
+            ],
+            'capabilities' => [
+                'update' => $this->canManageClasses('Update:Classes'),
+                'delete' => $this->canManageClasses('Delete:Classes'),
+                'restore' => $this->canManageClasses('Restore:Classes'),
+                'force_delete' => $this->canManageClasses('ForceDelete:Classes'),
             ],
             'enrollments' => $enrollments,
             'raw_schedules' => $class->schedules
@@ -1122,7 +1143,11 @@ final class AdministratorClassManagementController extends Controller
      *
      * @param  array<string, mixed>  $filters
      */
-    private function buildClassListQuery(array $filters): Builder
+    /**
+     * @param  array<string, mixed>  $filters
+     * @param  list<string>  $except  The filters to leave out of the query.
+     */
+    private function buildClassListQuery(array $filters, array $except = []): Builder
     {
         $query = Classes::query()
             ->currentAcademicPeriod()
@@ -1143,7 +1168,7 @@ final class AdministratorClassManagementController extends Controller
             $query->withTrashed();
         }
 
-        $this->applyClassFilters($query, $filters);
+        $this->applyClassFilters($query, $filters, $except);
 
         return $query;
     }
@@ -1153,13 +1178,19 @@ final class AdministratorClassManagementController extends Controller
      *
      * @param  array<string, mixed>  $filters
      */
-    private function applyClassFilters(Builder $query, array $filters): void
+    /**
+     * @param  array<string, mixed>  $filters
+     * @param  list<string>  $except  The filters to leave out of the query.
+     */
+    private function applyClassFilters(Builder $query, array $filters, array $except = []): void
     {
-        if ($filters['classification'] === 'college') {
+        $skip = static fn (string $key): bool => in_array($key, $except, true);
+
+        if (! $skip('classification') && $filters['classification'] === 'college') {
             $query->where(fn (Builder $classificationQuery) => $classificationQuery
                 ->whereNull('classes.classification')
                 ->orWhere('classes.classification', 'college'));
-        } elseif ($filters['classification'] === 'shs') {
+        } elseif (! $skip('classification') && $filters['classification'] === 'shs') {
             $query->where('classes.classification', 'shs');
         }
 
@@ -1227,9 +1258,80 @@ final class AdministratorClassManagementController extends Controller
 
         $this->applyEnrollmentFilters($query, $filters);
 
+        $this->applyQueueFilters($query, $filters, $except);
+
         if ($filters['search'] !== null) {
             $this->applyClassSearch($query, $filters['search']);
         }
+    }
+
+    /**
+     * The work queues: the classes that still need someone to act on them.
+     *
+     * @param  array<string, mixed>  $filters
+     */
+    private function applyQueueFilters(Builder $query, array $filters, array $except = []): void
+    {
+        $skip = static fn (string $key): bool => in_array($key, $except, true);
+
+        if (! $skip('needs_faculty') && $filters['needs_faculty'] === true) {
+            $query->whereNull('classes.faculty_id');
+        }
+
+        if (! $skip('needs_schedule') && $filters['needs_schedule'] === true) {
+            $query->whereDoesntHave('schedules');
+        }
+
+        if (! $skip('over_capacity') && $filters['over_capacity'] === true) {
+            $count = $this->enrollmentCountSubquery();
+
+            $query->whereRaw(
+                sprintf('classes.maximum_slots > 0 and classes.maximum_slots < %s', $count['sql']),
+                $count['bindings'],
+            );
+        }
+    }
+
+    /**
+     * How many classes of each type are in the filtered set.
+     *
+     * @return array{college: int, shs: int}
+     */
+    private function classTypeCounts(Builder $query): array
+    {
+        return [
+            'college' => (clone $query)
+                ->cloneWithout(['limit', 'offset'])
+                ->reorder()
+                ->where(fn (Builder $collegeQuery) => $collegeQuery
+                    ->whereNull('classes.classification')
+                    ->orWhere('classes.classification', 'college'))
+                ->count(),
+            'shs' => (clone $query)->cloneWithout(['limit', 'offset'])->reorder()->where('classes.classification', 'shs')->count(),
+        ];
+    }
+
+    /**
+     * How many classes in the filtered set are waiting on something.
+     *
+     * @return array{unassigned_faculty: int, no_schedule: int, over_capacity: int}
+     */
+    private function classQueueCounts(Builder $query): array
+    {
+        $count = $this->enrollmentCountSubquery();
+
+        return [
+            'unassigned_faculty' => (clone $query)->cloneWithout(['limit', 'offset'])->reorder()->whereNull('classes.faculty_id')->count(),
+            'no_schedule' => (clone $query)->cloneWithout(['limit', 'offset'])->reorder()->whereDoesntHave('schedules')->count(),
+            'over_capacity' => (clone $query)
+                ->cloneWithout(['limit', 'offset'])
+                ->reorder()
+                ->whereRaw(
+                    sprintf('classes.maximum_slots > 0 and classes.maximum_slots < %s', $count['sql']),
+                    $count['bindings'],
+                )
+                ->count(),
+        ];
     }
 
     private function applySubjectCodeFilter(Builder $query, string $subjectCode): void
@@ -1372,7 +1474,10 @@ final class AdministratorClassManagementController extends Controller
     {
         $count = $this->enrollmentCountSubquery();
 
-        $inner = (clone $query)->toBase()->reorder();
+        // paginate() leaves the limit and the offset on the builder, so they
+        // have to come off again: the totals cover the whole filtered set, not
+        // the page that was just fetched.
+        $inner = (clone $query)->toBase()->cloneWithout(['limit', 'offset'])->reorder();
         $inner->select(DB::raw('classes.maximum_slots as maximum_slots'));
         $inner->selectRaw($count['sql'].' as enrollment_count', $count['bindings']);
 

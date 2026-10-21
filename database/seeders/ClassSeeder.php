@@ -5,15 +5,97 @@ declare(strict_types=1);
 namespace Database\Seeders;
 
 use App\Models\Classes;
+use App\Models\Course;
 use App\Models\Faculty;
 use App\Models\Room;
 use App\Models\School;
 use App\Models\Subject;
 use App\Services\GeneralSettingsService;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Seeder;
 
 final class ClassSeeder extends Seeder
 {
+    /**
+     * The class offerings to seed.
+     *
+     * Every entry names its subject, the programs it belongs to, its section,
+     * its room and how the faculty is picked. Nothing is referenced by
+     * database id: the subject, the programs, the room and the faculty are
+     * all resolved by code at seed time, so the seeder survives a change to
+     * the ids the other seeders happen to use.
+     *
+     * A definition whose subject or whose programs no longer exist is skipped
+     * and reported, rather than taking the whole seed down.
+     *
+     * @var list<array{
+     *     subject: string,
+     *     courses: list<string>,
+     *     section: string,
+     *     room: string,
+     *     faculty: array{department: string, offset: int},
+     *     slots: int
+     * }>
+     */
+    private const array CLASS_DEFINITIONS = [
+        // First Year IT
+        ['subject' => 'IT111', 'courses' => ['BSIT'], 'section' => 'A', 'room' => 'Computer Lab 1', 'faculty' => ['department' => 'Information Technology', 'offset' => 0], 'slots' => 35],
+        ['subject' => 'IT111', 'courses' => ['BSIT'], 'section' => 'B', 'room' => 'Computer Lab 2', 'faculty' => ['department' => 'Information Technology', 'offset' => 1], 'slots' => 35],
+        ['subject' => 'IT112', 'courses' => ['BSIT'], 'section' => 'A', 'room' => 'Programming Lab', 'faculty' => ['department' => 'Information Technology', 'offset' => 0], 'slots' => 30],
+
+        // First Year General Education
+        ['subject' => 'MATH111', 'courses' => ['BSIT', 'BSBA-MM', 'BSHM'], 'section' => 'A', 'room' => 'Room 101', 'faculty' => ['department' => 'General Education', 'offset' => 0], 'slots' => 40],
+        ['subject' => 'ENG111', 'courses' => ['BSIT', 'BSBA-MM', 'BSHM'], 'section' => 'A', 'room' => 'Room 102', 'faculty' => ['department' => 'General Education', 'offset' => 1], 'slots' => 40],
+
+        // PATHFIT is open to every year of every program.
+        ['subject' => 'PATHFIT1', 'courses' => ['BSIT', 'BSBA-MM', 'BSHM', 'BSCS', 'BSBA-FM'], 'section' => 'A', 'room' => 'Auditorium', 'faculty' => ['department' => 'General Education', 'offset' => 0], 'slots' => 50],
+        ['subject' => 'PATHFIT1', 'courses' => ['BSIT', 'BSBA-MM', 'BSHM', 'BSCS', 'BSBA-FM'], 'section' => 'B', 'room' => 'Auditorium', 'faculty' => ['department' => 'General Education', 'offset' => 1], 'slots' => 50],
+
+        // Second Year IT
+        ['subject' => 'IT211', 'courses' => ['BSIT'], 'section' => 'A', 'room' => 'Computer Lab 3', 'faculty' => ['department' => 'Information Technology', 'offset' => 0], 'slots' => 30],
+        ['subject' => 'IT212', 'courses' => ['BSIT'], 'section' => 'A', 'room' => 'Computer Lab 4', 'faculty' => ['department' => 'Information Technology', 'offset' => 1], 'slots' => 30],
+        ['subject' => 'IT213', 'courses' => ['BSIT'], 'section' => 'A', 'room' => 'Programming Lab', 'faculty' => ['department' => 'Information Technology', 'offset' => 2], 'slots' => 30],
+
+        // Third Year IT
+        ['subject' => 'IT311', 'courses' => ['BSIT'], 'section' => 'A', 'room' => 'Computer Lab 1', 'faculty' => ['department' => 'Information Technology', 'offset' => 0], 'slots' => 25],
+        ['subject' => 'IT312', 'courses' => ['BSIT'], 'section' => 'A', 'room' => 'Network Lab', 'faculty' => ['department' => 'Information Technology', 'offset' => 1], 'slots' => 25],
+        ['subject' => 'IT313', 'courses' => ['BSIT'], 'section' => 'A', 'room' => 'Multimedia Lab', 'faculty' => ['department' => 'Information Technology', 'offset' => 2], 'slots' => 25],
+
+        // Fourth Year IT
+        ['subject' => 'IT411', 'courses' => ['BSIT'], 'section' => 'A', 'room' => 'Computer Lab 2', 'faculty' => ['department' => 'Information Technology', 'offset' => 0], 'slots' => 20],
+        ['subject' => 'IT412', 'courses' => ['BSIT'], 'section' => 'A', 'room' => 'Room 201', 'faculty' => ['department' => 'Information Technology', 'offset' => 1], 'slots' => 20],
+
+        // Business Administration
+        ['subject' => 'BA111', 'courses' => ['BSBA-MM'], 'section' => 'A', 'room' => 'Business Lab', 'faculty' => ['department' => 'Business Administration', 'offset' => 0], 'slots' => 35],
+        ['subject' => 'BA112', 'courses' => ['BSBA-MM'], 'section' => 'A', 'room' => 'Marketing Lab', 'faculty' => ['department' => 'Business Administration', 'offset' => 0], 'slots' => 35],
+        ['subject' => 'ACC111', 'courses' => ['BSBA-MM', 'BSBA-FM'], 'section' => 'A', 'room' => 'Accounting Lab', 'faculty' => ['department' => 'Business Administration', 'offset' => 1], 'slots' => 40],
+
+        // Hotel Management
+        ['subject' => 'HM111', 'courses' => ['BSHM'], 'section' => 'A', 'room' => 'Room 301', 'faculty' => ['department' => 'Hotel Management', 'offset' => 0], 'slots' => 30],
+        ['subject' => 'HM112', 'courses' => ['BSHM'], 'section' => 'A', 'room' => 'Kitchen Lab', 'faculty' => ['department' => 'Hotel Management', 'offset' => 1], 'slots' => 25],
+        ['subject' => 'HM113', 'courses' => ['BSHM'], 'section' => 'A', 'room' => 'Front Office Lab', 'faculty' => ['department' => 'Hotel Management', 'offset' => 0], 'slots' => 25],
+    ];
+
+    /**
+     * The three classes the demo faculty teaches. They are the ones the
+     * faculty walkthrough and the demo enrollment block rely on.
+     *
+     * @var list<array{
+     *     subject: string,
+     *     courses: list<string>,
+     *     section: string,
+     *     room: string,
+     *     slots: int
+     * }>
+     */
+    private const array DEMO_CLASS_DEFINITIONS = [
+        ['subject' => 'IT121', 'courses' => ['BSIT', 'BSBA-MM'], 'section' => 'DEMO-A', 'room' => 'Computer Lab 1', 'slots' => 30],
+        ['subject' => 'BA111', 'courses' => ['BSBA-MM', 'BSBA-FM'], 'section' => 'DEMO-B', 'room' => 'Business Lab', 'slots' => 30],
+        ['subject' => 'HM111', 'courses' => ['BSHM', 'BSTM'], 'section' => 'DEMO-C', 'room' => 'Room 301', 'slots' => 30],
+    ];
+
+    private const string DEMO_FACULTY_EMAIL = 'j.adams@koakademy.edu';
+
     /**
      * Run the database seeds.
      */
@@ -21,356 +103,149 @@ final class ClassSeeder extends Seeder
     {
         $school = School::query()->first();
         $schoolId = $school?->id ?? 1;
-        $faculties = Faculty::all();
-        $rooms = Room::all();
-        $subjects = Subject::all();
+
         $settings = app(GeneralSettingsService::class);
-        $currentSchoolYear = $settings->getCurrentSchoolYearString();
-        $currentSemester = $settings->getCurrentSemester();
+        $schoolYear = $settings->getCurrentSchoolYearString();
+        $semester = $settings->getCurrentSemester();
 
-        $classes = [
-            // First Year IT Classes
-            [
-                'subject_id' => $subjects->where('code', 'IT111')->first()->id,
-                'subject_code' => 'IT111',
-                'faculty_id' => $faculties->where('department', 'Information Technology')->first()->id,
-                'academic_year' => 1,
-                'semester' => 1,
-                'school_year' => '2024-2025',
-                'course_codes' => ['1'], // BSIT
-                'section' => 'A',
-                'room_id' => $rooms->where('name', 'Computer Lab 1')->first()->id,
-                'classification' => 'college',
-                'maximum_slots' => 35,
-            ],
-            [
-                'subject_id' => $subjects->where('code', 'IT111')->first()->id,
-                'subject_code' => 'IT111',
-                'faculty_id' => $faculties->where('department', 'Information Technology')->skip(1)->first()->id,
-                'academic_year' => 1,
-                'semester' => 1,
-                'school_year' => '2024-2025',
-                'course_codes' => ['1'], // BSIT
-                'section' => 'B',
-                'room_id' => $rooms->where('name', 'Computer Lab 2')->first()->id,
-                'classification' => 'college',
-                'maximum_slots' => 35,
-            ],
-            [
-                'subject_id' => $subjects->where('code', 'IT112')->first()->id,
-                'subject_code' => 'IT112',
-                'faculty_id' => $faculties->where('department', 'Information Technology')->first()->id,
-                'academic_year' => 1,
-                'semester' => 1,
-                'school_year' => '2024-2025',
-                'course_codes' => ['1'], // BSIT
-                'section' => 'A',
-                'room_id' => $rooms->where('name', 'Programming Lab')->first()->id,
-                'classification' => 'college',
-                'maximum_slots' => 30,
-            ],
-            [
-                'subject_id' => $subjects->where('code', 'MATH111')->first()->id,
-                'subject_code' => 'MATH111',
-                'faculty_id' => $faculties->where('department', 'General Education')->first()->id,
-                'academic_year' => 1,
-                'semester' => 1,
-                'school_year' => '2024-2025',
-                'course_codes' => ['1', '4', '2'], // BSIT, BSBA-MM, BSHM
-                'section' => 'A',
-                'room_id' => $rooms->where('name', 'Room 101')->first()->id,
-                'classification' => 'college',
-                'maximum_slots' => 40,
-            ],
-            [
-                'subject_id' => $subjects->where('code', 'ENG111')->first()->id,
-                'subject_code' => 'ENG111',
-                'faculty_id' => $faculties->where('department', 'General Education')->skip(1)->first()->id,
-                'academic_year' => 1,
-                'semester' => 1,
-                'school_year' => '2024-2025',
-                'course_codes' => ['1', '4', '2'], // BSIT, BSBA-MM, BSHM
-                'section' => 'A',
-                'room_id' => $rooms->where('name', 'Room 102')->first()->id,
-                'classification' => 'college',
-                'maximum_slots' => 40,
-            ],
+        $subjects = Subject::query()->get()->keyBy('code');
+        $courses = Course::query()->get()->keyBy('code');
+        $rooms = Room::query()->get()->keyBy('name');
+        $faculties = Faculty::query()->get();
 
-            // PATHFIT classes (available for all years)
-            [
-                'subject_id' => $subjects->where('code', 'PATHFIT1')->first()->id,
-                'subject_code' => 'PATHFIT1',
-                'faculty_id' => $faculties->where('department', 'General Education')->first()->id,
-                'academic_year' => null, // Available for all years
-                'semester' => 1,
-                'school_year' => '2024-2025',
-                'course_codes' => ['1', '4', '2', '6', '5'], // All courses
-                'section' => 'A',
-                'room_id' => $rooms->where('name', 'Auditorium')->first()->id,
-                'classification' => 'college',
-                'maximum_slots' => 50,
-            ],
-            [
-                'subject_id' => $subjects->where('code', 'PATHFIT1')->first()->id,
-                'subject_code' => 'PATHFIT1',
-                'faculty_id' => $faculties->where('department', 'General Education')->skip(1)->first()->id,
-                'academic_year' => null, // Available for all years
-                'semester' => 1,
-                'school_year' => '2024-2025',
-                'course_codes' => ['1', '4', '2', '6', '5'], // All courses
-                'section' => 'B',
-                'room_id' => $rooms->where('name', 'Auditorium')->first()->id,
-                'classification' => 'college',
-                'maximum_slots' => 50,
-            ],
+        $created = 0;
+        $skipped = [];
 
-            // Second Year IT Classes
-            [
-                'subject_id' => $subjects->where('code', 'IT211')->first()->id,
-                'subject_code' => 'IT211',
-                'faculty_id' => $faculties->where('department', 'Information Technology')->first()->id,
-                'academic_year' => 2,
-                'semester' => 1,
-                'school_year' => '2024-2025',
-                'course_codes' => ['1'], // BSIT
-                'section' => 'A',
-                'room_id' => $rooms->where('name', 'Computer Lab 3')->first()->id,
-                'classification' => 'college',
-                'maximum_slots' => 30,
-            ],
-            [
-                'subject_id' => $subjects->where('code', 'IT212')->first()->id,
-                'subject_code' => 'IT212',
-                'faculty_id' => $faculties->where('department', 'Information Technology')->skip(1)->first()->id,
-                'academic_year' => 2,
-                'semester' => 1,
-                'school_year' => '2024-2025',
-                'course_codes' => ['1'], // BSIT
-                'section' => 'A',
-                'room_id' => $rooms->where('name', 'Computer Lab 4')->first()->id,
-                'classification' => 'college',
-                'maximum_slots' => 30,
-            ],
-            [
-                'subject_id' => $subjects->where('code', 'IT213')->first()->id,
-                'subject_code' => 'IT213',
-                'faculty_id' => $faculties->where('department', 'Information Technology')->skip(2)->first()->id,
-                'academic_year' => 2,
-                'semester' => 1,
-                'school_year' => '2024-2025',
-                'course_codes' => ['1'], // BSIT
-                'section' => 'A',
-                'room_id' => $rooms->where('name', 'Programming Lab')->first()->id,
-                'classification' => 'college',
-                'maximum_slots' => 30,
-            ],
+        foreach (self::CLASS_DEFINITIONS as $definition) {
+            $outcome = $this->seedClass($definition, $subjects, $courses, $rooms, $faculties, $schoolId, $schoolYear, $semester);
 
-            // Third Year IT Classes
-            [
-                'subject_id' => $subjects->where('code', 'IT311')->first()->id,
-                'subject_code' => 'IT311',
-                'faculty_id' => $faculties->where('department', 'Information Technology')->first()->id,
-                'academic_year' => 3,
-                'semester' => 1,
-                'school_year' => '2024-2025',
-                'course_codes' => ['1'], // BSIT
-                'section' => 'A',
-                'room_id' => $rooms->where('name', 'Computer Lab 1')->first()->id,
-                'classification' => 'college',
-                'maximum_slots' => 25,
-            ],
-            [
-                'subject_id' => $subjects->where('code', 'IT312')->first()->id,
-                'subject_code' => 'IT312',
-                'faculty_id' => $faculties->where('department', 'Information Technology')->skip(1)->first()->id,
-                'academic_year' => 3,
-                'semester' => 1,
-                'school_year' => '2024-2025',
-                'course_codes' => ['1'], // BSIT
-                'section' => 'A',
-                'room_id' => $rooms->where('name', 'Network Lab')->first()->id,
-                'classification' => 'college',
-                'maximum_slots' => 25,
-            ],
-            [
-                'subject_id' => $subjects->where('code', 'IT313')->first()->id,
-                'subject_code' => 'IT313',
-                'faculty_id' => $faculties->where('department', 'Information Technology')->skip(2)->first()->id,
-                'academic_year' => 3,
-                'semester' => 1,
-                'school_year' => '2024-2025',
-                'course_codes' => ['1'], // BSIT
-                'section' => 'A',
-                'room_id' => $rooms->where('name', 'Multimedia Lab')->first()->id,
-                'classification' => 'college',
-                'maximum_slots' => 25,
-            ],
+            if ($outcome === true) {
+                $created++;
 
-            // Fourth Year IT Classes
-            [
-                'subject_id' => $subjects->where('code', 'IT411')->first()->id,
-                'subject_code' => 'IT411',
-                'faculty_id' => $faculties->where('department', 'Information Technology')->first()->id,
-                'academic_year' => 4,
-                'semester' => 1,
-                'school_year' => '2024-2025',
-                'course_codes' => ['1'], // BSIT
-                'section' => 'A',
-                'room_id' => $rooms->where('name', 'Computer Lab 2')->first()->id,
-                'classification' => 'college',
-                'maximum_slots' => 20,
-            ],
-            [
-                'subject_id' => $subjects->where('code', 'IT412')->first()->id,
-                'subject_code' => 'IT412',
-                'faculty_id' => $faculties->where('department', 'Information Technology')->skip(1)->first()->id,
-                'academic_year' => 4,
-                'semester' => 1,
-                'school_year' => '2024-2025',
-                'course_codes' => ['1'], // BSIT
-                'section' => 'A',
-                'room_id' => $rooms->where('name', 'Room 201')->first()->id,
-                'classification' => 'college',
-                'maximum_slots' => 20,
-            ],
+                continue;
+            }
 
-            // Business Administration Classes
-            [
-                'subject_id' => $subjects->where('code', 'BA111')->first()->id,
-                'subject_code' => 'BA111',
-                'faculty_id' => $faculties->where('department', 'Business Administration')->first()->id,
-                'academic_year' => 1,
-                'semester' => 1,
-                'school_year' => '2024-2025',
-                'course_codes' => ['4'], // BSBA-MM
-                'section' => 'A',
-                'room_id' => $rooms->where('name', 'Business Lab')->first()->id,
-                'classification' => 'college',
-                'maximum_slots' => 35,
-            ],
-            [
-                'subject_id' => $subjects->where('code', 'BA112')->first()->id,
-                'subject_code' => 'BA112',
-                'faculty_id' => $faculties->where('department', 'Business Administration')->first()->id,
-                'academic_year' => 1,
-                'semester' => 1,
-                'school_year' => '2024-2025',
-                'course_codes' => ['4'], // BSBA-MM
-                'section' => 'A',
-                'room_id' => $rooms->where('name', 'Marketing Lab')->first()->id,
-                'classification' => 'college',
-                'maximum_slots' => 35,
-            ],
-            [
-                'subject_id' => $subjects->where('code', 'ACC111')->first()->id,
-                'subject_code' => 'ACC111',
-                'faculty_id' => $faculties->where('department', 'Business Administration')->skip(1)->first()->id,
-                'academic_year' => 1,
-                'semester' => 1,
-                'school_year' => '2024-2025',
-                'course_codes' => ['4', '5'], // BSBA-MM, BSBA-FM
-                'section' => 'A',
-                'room_id' => $rooms->where('name', 'Accounting Lab')->first()->id,
-                'classification' => 'college',
-                'maximum_slots' => 40,
-            ],
+            $skipped[] = $outcome;
+        }
 
-            // Hotel Management Classes
-            [
-                'subject_id' => $subjects->where('code', 'HM111')->first()->id,
-                'subject_code' => 'HM111',
-                'faculty_id' => $faculties->where('department', 'Hotel Management')->first()->id,
-                'academic_year' => 1,
-                'semester' => 1,
-                'school_year' => '2024-2025',
-                'course_codes' => ['2'], // BSHM
-                'section' => 'A',
-                'room_id' => $rooms->where('name', 'Room 301')->first()->id,
-                'classification' => 'college',
-                'maximum_slots' => 30,
-            ],
-            [
-                'subject_id' => $subjects->where('code', 'HM112')->first()->id,
-                'subject_code' => 'HM112',
-                'faculty_id' => $faculties->where('department', 'Hotel Management')->skip(1)->first()->id,
-                'academic_year' => 1,
-                'semester' => 1,
-                'school_year' => '2024-2025',
-                'course_codes' => ['2'], // BSHM
-                'section' => 'A',
-                'room_id' => $rooms->where('name', 'Kitchen Lab')->first()->id,
-                'classification' => 'college',
-                'maximum_slots' => 25,
-            ],
-            [
-                'subject_id' => $subjects->where('code', 'HM113')->first()->id,
-                'subject_code' => 'HM113',
-                'faculty_id' => $faculties->where('department', 'Hotel Management')->first()->id,
-                'academic_year' => 1,
-                'semester' => 1,
-                'school_year' => '2024-2025',
-                'course_codes' => ['2'], // BSHM
-                'section' => 'A',
-                'room_id' => $rooms->where('name', 'Front Office Lab')->first()->id,
-                'classification' => 'college',
-                'maximum_slots' => 25,
-            ],
-        ];
-
-        $demoFaculty = $faculties->firstWhere('email', 'j.adams@koakademy.edu');
+        $demoFaculty = $faculties->firstWhere('email', self::DEMO_FACULTY_EMAIL);
 
         if ($demoFaculty !== null) {
-            $demoClasses = [
-                [
-                    'subject_id' => $subjects->where('code', 'IT121')->first()->id,
-                    'subject_code' => 'IT121',
-                    'faculty_id' => $demoFaculty->id,
-                    'academic_year' => 1,
-                    'semester' => $currentSemester,
-                    'school_year' => $currentSchoolYear,
-                    'course_codes' => ['1', '4'], // BSIT + BSBA-MM
-                    'section' => 'DEMO-A',
-                    'room_id' => $rooms->where('name', 'Computer Lab 1')->first()->id,
-                    'classification' => 'college',
-                    'maximum_slots' => 30,
-                ],
-                [
-                    'subject_id' => $subjects->where('code', 'BA111')->first()->id,
-                    'subject_code' => 'BA111',
-                    'faculty_id' => $demoFaculty->id,
-                    'academic_year' => 1,
-                    'semester' => $currentSemester,
-                    'school_year' => $currentSchoolYear,
-                    'course_codes' => ['4', '5'], // BSBA-MM + BSBA-FM
-                    'section' => 'DEMO-B',
-                    'room_id' => $rooms->where('name', 'Business Lab')->first()->id,
-                    'classification' => 'college',
-                    'maximum_slots' => 30,
-                ],
-                [
-                    'subject_id' => $subjects->where('code', 'HM111')->first()->id,
-                    'subject_code' => 'HM111',
-                    'faculty_id' => $demoFaculty->id,
-                    'academic_year' => 1,
-                    'semester' => $currentSemester,
-                    'school_year' => $currentSchoolYear,
-                    'course_codes' => ['2', '6'], // BSHM + BSTM
-                    'section' => 'DEMO-C',
-                    'room_id' => $rooms->where('name', 'Room 301')->first()->id,
-                    'classification' => 'college',
-                    'maximum_slots' => 30,
-                ],
-            ];
+            foreach (self::DEMO_CLASS_DEFINITIONS as $definition) {
+                $outcome = $this->seedClass(
+                    [...$definition, 'faculty' => ['department' => null, 'offset' => 0]],
+                    $subjects,
+                    $courses,
+                    $rooms,
+                    $faculties,
+                    $schoolId,
+                    $schoolYear,
+                    $semester,
+                    $demoFaculty,
+                );
 
-            $classes = [...$classes, ...$demoClasses];
+                if ($outcome === true) {
+                    $created++;
+
+                    continue;
+                }
+
+                $skipped[] = $outcome;
+            }
+        } else {
+            $this->command?->warn(sprintf('Skipped the demo classes: no faculty with the address %s.', self::DEMO_FACULTY_EMAIL));
         }
 
-        foreach ($classes as $class) {
-            Classes::query()->create(array_merge($class, [
-                'school_id' => $schoolId,
-            ]));
+        foreach ($skipped as $reason) {
+            $this->command?->warn(sprintf('Skipped a class: %s', $reason));
         }
 
-        $this->command->info('Classes seeded successfully!');
+        $this->command?->info(sprintf('Seeded %d class(es) for %s, semester %d.', $created, $schoolYear, $semester));
+    }
+
+    /**
+     * Create one class from its definition.
+     *
+     * @param  Collection<string, Subject>  $subjects
+     * @param  Collection<string, Course>  $courses
+     * @param  Collection<string, Room>  $rooms
+     * @param  Collection<int, Faculty>  $faculties
+     * @param  array{subject: string, courses: list<string>, section: string, room: string, faculty: array{department: string|null, offset: int}, slots: int}  $definition
+     * @return true|string True when the class was created, otherwise the reason it was skipped.
+     */
+    private function seedClass(
+        array $definition,
+        Collection $subjects,
+        Collection $courses,
+        Collection $rooms,
+        Collection $faculties,
+        int $schoolId,
+        string $schoolYear,
+        int $semester,
+        ?Faculty $demoFaculty = null,
+    ): true|string {
+        $subject = $subjects->get($definition['subject']);
+
+        if (! $subject instanceof Subject) {
+            return sprintf('the subject %s does not exist.', $definition['subject']);
+        }
+
+        $courseIds = collect($definition['courses'])
+            ->map(fn (string $code): ?int => $courses->get($code)?->id)
+            ->filter(fn (?int $id): bool => $id !== null)
+            ->values()
+            ->all();
+
+        if ($courseIds === []) {
+            return sprintf('none of the programs [%s] for %s exist.', implode(', ', $definition['courses']), $definition['subject']);
+        }
+
+        $alreadySeeded = Classes::query()
+            ->where('subject_code', $subject->code)
+            ->where('section', $definition['section'])
+            ->where('school_year', $schoolYear)
+            ->where('semester', $semester)
+            ->exists();
+
+        if ($alreadySeeded) {
+            return sprintf('%s section %s is already seeded for %s.', $subject->code, $definition['section'], $schoolYear);
+        }
+
+        $faculty = $demoFaculty ?? $this->resolveFaculty($faculties, $definition['faculty']['department'], $definition['faculty']['offset']);
+        $room = $rooms->get($definition['room']);
+
+        Classes::query()->create([
+            'subject_id' => $subject->id,
+            'subject_ids' => [$subject->id],
+            'subject_code' => $subject->code,
+            'faculty_id' => $faculty?->id,
+            'academic_year' => $subject->academic_year,
+            'semester' => $semester,
+            'school_year' => $schoolYear,
+            'course_codes' => $courseIds,
+            'section' => $definition['section'],
+            'room_id' => $room?->id,
+            'classification' => 'college',
+            'maximum_slots' => $definition['slots'],
+            'school_id' => $schoolId,
+        ]);
+
+        return true;
+    }
+
+    /**
+     * Pick the nth faculty member of a department.
+     *
+     * @param  Collection<int, Faculty>  $faculties
+     */
+    private function resolveFaculty(Collection $faculties, ?string $department, int $offset): ?Faculty
+    {
+        if ($department === null) {
+            return null;
+        }
+
+        $candidates = $faculties->where('department', $department)->values();
+
+        return $candidates->get($offset);
     }
 }

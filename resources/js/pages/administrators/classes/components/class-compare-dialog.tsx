@@ -86,13 +86,21 @@ function StudentRow({ student, isShared, searchTerm }: { student: StudentEntry; 
 
                 {student.student_enrollment_id && (
                     <Tooltip>
-                        <TooltipTrigger asChild>
-                            <Button asChild variant="ghost" size="icon" className="h-6 w-6">
-                                <Link href={route("administrators.enrollments.show", student.student_enrollment_id)}>
-                                    <ExternalLink className="h-3.5 w-3.5" />
-                                    <span className="sr-only">View Enrollment</span>
-                                </Link>
-                            </Button>
+                        <TooltipTrigger
+                            render={
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    nativeButton={false}
+                                    render={
+                                        <Link href={route("administrators.enrollments.show", student.student_enrollment_id)} />
+                                    }
+                                    className="h-6 w-6"
+                                />
+                            }
+                        >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                            <span className="sr-only">View Enrollment</span>
                         </TooltipTrigger>
                         <TooltipContent side="left">View Enrollment</TooltipContent>
                     </Tooltip>

@@ -19,7 +19,6 @@ import { VisualRadioButton } from "@/components/ui/visual-radio-button";
 import type { User } from "@/types/user";
 import { Head, Link, router, useForm, useRemember } from "@inertiajs/react";
 import {
-    Archive,
     BookOpen,
     CalendarIcon,
     Filter,
@@ -47,6 +46,7 @@ import { ClassCard } from "./components/class-card";
 import { ClassCompareDialog } from "./components/class-compare-dialog";
 import { ClassStats } from "./components/class-stats";
 import { DeleteClassDialog } from "./components/delete-class-dialog";
+import { ClassWorkspaceRail, type ClassRailFilters } from "./components/class-workspace-rail";
 import { DataTable, type PaginationMeta } from "./data-table";
 import { DataTablePagination } from "./data-table-pagination";
 
@@ -148,6 +148,15 @@ export type ClassListPayload = {
     meta: PaginationMeta & {
         total_students: number;
         total_capacity: number;
+        queues: {
+            unassigned_faculty: number;
+            no_schedule: number;
+            over_capacity: number;
+        };
+        classification_counts: {
+            college: number;
+            shs: number;
+        };
     };
 };
 
@@ -201,6 +210,9 @@ interface ClassesIndexProps {
         semester?: string | null;
         available_slots?: boolean | null;
         fully_enrolled?: boolean | null;
+        needs_faculty?: boolean | null;
+        needs_schedule?: boolean | null;
+        over_capacity?: boolean | null;
         trashed?: string | null;
         per_page?: number | string | null;
         sort?: string | null;
@@ -217,9 +229,6 @@ function createActiveFilters(filters?: ClassesIndexProps["filters"]): FilterType
         return activeFilters;
     }
 
-    if (filters.classification) {
-        activeFilters.push({ id: "classification", field: "classification", operator: "is", values: [filters.classification] });
-    }
     if (filters.course_id) activeFilters.push({ id: "course_id", field: "course_id", operator: "is", values: [filters.course_id] });
     if (filters.shs_track_id) activeFilters.push({ id: "shs_track_id", field: "shs_track_id", operator: "is", values: [filters.shs_track_id] });
     if (filters.room_id) activeFilters.push({ id: "room_id", field: "room_id", operator: "is", values: [filters.room_id] });
@@ -539,7 +548,14 @@ export default function AdministratorClassesIndex({
     );
 
     const classList = React.useMemo<ClassRow[]>(() => classes?.data ?? [], [classes]);
-    const classMeta = React.useMemo<PaginationMeta & { total_students: number; total_capacity: number }>(
+    const classMeta = React.useMemo<
+        PaginationMeta & {
+            total_students: number;
+            total_capacity: number;
+            queues: { unassigned_faculty: number; no_schedule: number; over_capacity: number };
+            classification_counts: { college: number; shs: number };
+        }
+    >(
         () =>
             classes?.meta ?? {
                 current_page: 1,
@@ -550,6 +566,8 @@ export default function AdministratorClassesIndex({
                 to: 0,
                 total_students: 0,
                 total_capacity: 0,
+                queues: { unassigned_faculty: 0, no_schedule: 0, over_capacity: 0 },
+                classification_counts: { college: 0, shs: 0 },
             },
         [classes],
     );
@@ -770,11 +788,41 @@ export default function AdministratorClassesIndex({
         navigateWithParams(buildFilterParams(search, activeFilters, sortOption, { page, per_page: perPage }), { replace: false });
     };
 
-    const handleTrashedChange = (trashed: string | null) => {
+    /**
+     * A work queue or a class type was picked in the rail.
+     *
+     * The rail owns these filters, so they are set on the query directly
+     * rather than through the toolbar's filter chips.
+     */
+    const handleRailFilterChange = (next: ClassRailFilters): void => {
         const params = buildFilterParams(search, activeFilters, sortOption, { page: 1 });
 
-        if (trashed) {
-            params.trashed = trashed;
+        if (next.classification) {
+            params.classification = next.classification;
+        } else {
+            delete params.classification;
+        }
+
+        if (next.needs_faculty) {
+            params.needs_faculty = "true";
+        } else {
+            delete params.needs_faculty;
+        }
+
+        if (next.needs_schedule) {
+            params.needs_schedule = "true";
+        } else {
+            delete params.needs_schedule;
+        }
+
+        if (next.over_capacity) {
+            params.over_capacity = "true";
+        } else {
+            delete params.over_capacity;
+        }
+
+        if (next.trashed) {
+            params.trashed = next.trashed;
         } else {
             delete params.trashed;
         }
@@ -784,15 +832,6 @@ export default function AdministratorClassesIndex({
 
     const filterFields: FilterFieldConfig[] = React.useMemo(
         () => [
-            {
-                key: "classification",
-                label: "Class Type",
-                type: "select",
-                icon: <GraduationCap className="h-4 w-4" />,
-                options: (options.classifications ?? [])
-                    .filter((option) => option.value !== "all")
-                    .map((option) => ({ ...option, icon: <GraduationCap className="text-muted-foreground h-4 w-4" /> })),
-            },
             {
                 key: "course_id",
                 label: "Course",
@@ -1500,23 +1539,28 @@ export default function AdministratorClassesIndex({
                     </>
                 );
 
+                const railFilters: ClassRailFilters = {
+                    classification: filters?.classification ?? null,
+                    needs_faculty: filters?.needs_faculty ?? null,
+                    needs_schedule: filters?.needs_schedule ?? null,
+                    over_capacity: filters?.over_capacity ?? null,
+                    trashed: filters?.trashed ?? null,
+                };
+
+                const needsAttention =
+                    classMeta.queues.unassigned_faculty + classMeta.queues.no_schedule + classMeta.queues.over_capacity;
+
                 return (
                     <div className="flex flex-col gap-6">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                             <div className="min-w-0">
-                                <h2 className="text-2xl font-semibold tracking-tight">Classes</h2>
-                                <p className="text-muted-foreground text-sm">Manage classes, track enrollment, and organize schedules.</p>
+                                <p className="text-muted-foreground text-xs font-semibold uppercase tracking-widest">Academics · Class sections</p>
+                                <h2 className="mt-1 text-3xl font-semibold tracking-tight">Classes</h2>
+                                <p className="text-muted-foreground mt-1 text-sm">
+                                    Plan sections, keep the schedule honest, and see what still needs someone.
+                                </p>
                             </div>
                             <div className="flex items-center gap-2">
-                                <Button
-                                    variant={isArchivedView ? "secondary" : "outline"}
-                                    size="sm"
-                                    onClick={() => handleTrashedChange(isArchivedView ? null : "only")}
-                                >
-                                    <Archive className="mr-1.5 h-4 w-4" />
-                                    <span className="hidden sm:inline">{isArchivedView ? "Back to classes" : "Archived"}</span>
-                                    <span className="sm:hidden">Arch</span>
-                                </Button>
                                 <Button variant="outline" size="sm" onClick={() => setIsCompareOpen(true)}>
                                     <GitCompare className="mr-1.5 h-4 w-4" />
                                     <span className="hidden sm:inline">Compare</span>
@@ -1544,83 +1588,102 @@ export default function AdministratorClassesIndex({
                             </div>
                         ) : null}
 
-                        <ClassStats totalClasses={filteredStatsTotalClasses} totalStudents={filteredStatsTotalStudents} />
+                        <div className="grid items-start gap-6 lg:grid-cols-[15rem_minmax(0,1fr)]">
+                            <aside className="lg:sticky lg:top-20">
+                                <ClassWorkspaceRail
+                                    filters={railFilters}
+                                    queues={classMeta.queues}
+                                    total={classMeta.total}
+                                    classificationCounts={classMeta.classification_counts}
+                                    onFilterChange={handleRailFilterChange}
+                                />
+                            </aside>
 
-                        {viewMode === "grid" ? (
-                            <div className="relative animate-in fade-in slide-in-from-bottom-4 overflow-hidden rounded-lg border duration-500">
-                                {isUpdating && (
-                                    <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center">
-                                        <span className="bg-background/90 text-muted-foreground rounded-full border px-3 py-1 text-xs shadow-sm">
-                                            Updating…
-                                        </span>
-                                    </div>
-                                )}
-                                <div className="flex flex-col gap-3 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                                    {toolbarContent}
-                                </div>
-                                {visibleClasses.length > 0 ? (
-                                    <div className="grid gap-4 p-4 md:grid-cols-2 2xl:grid-cols-3">
-                                        {visibleClasses.map((row) => (
-                                            <ClassCard
-                                                key={row.id}
-                                                classRow={row}
-                                                onManage={openManage}
-                                                onEdit={openEdit}
-                                                onDelete={confirmDelete}
-                                                onRestore={performRestore}
-                                                onForceDelete={performForceDelete}
-                                                onCopy={(id) => {
-                                                    setCopySourceId(id);
-                                                    setCopySection("A");
-                                                    setIsCopyOpen(true);
-                                                }}
-                                            />
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <div className="flex min-h-[280px] flex-col items-center justify-center p-8 text-center">
-                                        <div className="bg-muted/50 border-border flex h-14 w-14 items-center justify-center rounded-full border">
-                                            <Layers className="text-muted-foreground h-7 w-7" />
+                            <div className="flex min-w-0 flex-col gap-6">
+                                <ClassStats
+                                    totalClasses={filteredStatsTotalClasses}
+                                    totalStudents={filteredStatsTotalStudents}
+                                    totalCapacity={classMeta.total_capacity}
+                                    needsAttention={needsAttention}
+                                />
+
+                                    {viewMode === "grid" ? (
+                                <div className="relative animate-in fade-in slide-in-from-bottom-4 overflow-hidden rounded-lg border duration-500">
+                                    {isUpdating && (
+                                        <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center">
+                                            <span className="bg-background/90 text-muted-foreground rounded-full border px-3 py-1 text-xs shadow-sm">
+                                                Updating…
+                                            </span>
                                         </div>
-                                        <h3 className="mt-4 text-lg font-semibold">No classes found</h3>
-                                        <p className="text-muted-foreground mt-1.5 max-w-sm text-sm">Try adjusting your search or filters.</p>
-                                        {(search.trim() !== "" || activeFilters.length > 0) && (
-                                            <Button variant="outline" size="sm" className="mt-5" onClick={clearFilters}>
-                                                Clear search and filters
-                                            </Button>
-                                        )}
+                                    )}
+                                    <div className="flex flex-col gap-3 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                                        {toolbarContent}
                                     </div>
-                                )}
-                            </div>
-                        ) : (
-                            <DataTable
-                                columns={columns}
-                                data={visibleClasses}
-                                pagination={classMeta}
-                                sort={filters?.sort ?? "created_at"}
-                                direction={filters?.direction === "asc" ? "asc" : "desc"}
-                                onSortChange={handleColumnSortChange}
-                                onPageChange={handlePageChange}
-                                toolbar={toolbarContent}
-                                isLoading={isUpdating}
-                                onRowClick={(row) => {
-                                    router.visit(route("administrators.classes.show", { class: row.id }));
-                                }}
-                            />
-                        )}
+                                    {visibleClasses.length > 0 ? (
+                                        <div className="grid gap-4 p-4 md:grid-cols-2 2xl:grid-cols-3">
+                                            {visibleClasses.map((row) => (
+                                                <ClassCard
+                                                    key={row.id}
+                                                    classRow={row}
+                                                    onManage={openManage}
+                                                    onEdit={openEdit}
+                                                    onDelete={confirmDelete}
+                                                    onRestore={performRestore}
+                                                    onForceDelete={performForceDelete}
+                                                    onCopy={(id) => {
+                                                        setCopySourceId(id);
+                                                        setCopySection("A");
+                                                        setIsCopyOpen(true);
+                                                    }}
+                                                />
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="flex min-h-[280px] flex-col items-center justify-center p-8 text-center">
+                                            <div className="bg-muted/50 border-border flex h-14 w-14 items-center justify-center rounded-full border">
+                                                <Layers className="text-muted-foreground h-7 w-7" />
+                                            </div>
+                                            <h3 className="mt-4 text-lg font-semibold">No classes found</h3>
+                                            <p className="text-muted-foreground mt-1.5 max-w-sm text-sm">Try adjusting your search or filters.</p>
+                                            {(search.trim() !== "" || activeFilters.length > 0) && (
+                                                <Button variant="outline" size="sm" className="mt-5" onClick={clearFilters}>
+                                                    Clear search and filters
+                                                </Button>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <DataTable
+                                    columns={columns}
+                                    data={visibleClasses}
+                                    pagination={classMeta}
+                                    sort={filters?.sort ?? "created_at"}
+                                    direction={filters?.direction === "asc" ? "asc" : "desc"}
+                                    onSortChange={handleColumnSortChange}
+                                    onPageChange={handlePageChange}
+                                    toolbar={toolbarContent}
+                                    isLoading={isUpdating}
+                                    onRowClick={(row) => {
+                                        router.visit(route("administrators.classes.show", { class: row.id }));
+                                    }}
+                                />
+                            )}
 
-                        {viewMode === "grid" && (
-                            <DataTablePagination
-                                page={classMeta.current_page}
-                                lastPage={classMeta.last_page}
-                                perPage={classMeta.per_page}
-                                total={classMeta.total}
-                                from={classMeta.from}
-                                to={classMeta.to}
-                                isLoading={isUpdating}
-                                onPageChange={handlePageChange}
-                            />
-                        )}
+                            {viewMode === "grid" && (
+                                <DataTablePagination
+                                    page={classMeta.current_page}
+                                    lastPage={classMeta.last_page}
+                                    perPage={classMeta.per_page}
+                                    total={classMeta.total}
+                                    from={classMeta.from}
+                                    to={classMeta.to}
+                                    isLoading={isUpdating}
+                                    onPageChange={handlePageChange}
+                                />
+                            )}
+                            </div>
+                        </div>
                     </div>
                 );
             })()}

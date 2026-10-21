@@ -357,6 +357,48 @@ it('matches a search term against the program code of a class', function () {
         );
 });
 
+it('counts the enrolment totals over the whole filtered set and not just the page', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $this->actingAs($user);
+
+    $currentYear = date('Y');
+    $schoolYear = $currentYear.' - '.($currentYear + 1);
+
+    $course = Course::factory()->create(['code' => 'BSBA']);
+
+    // More classes than fit on one page, so a totals query that inherits the
+    // page limit would report the page instead of the whole set.
+    for ($index = 0; $index < 12; $index++) {
+        $class = Classes::factory()->create([
+            'school_year' => $schoolYear,
+            'semester' => 1,
+            'classification' => 'college',
+            'course_codes' => [$course->id],
+            'maximum_slots' => 20,
+            'section' => 'A',
+        ]);
+
+        ClassEnrollment::factory()->create([
+            'class_id' => $class->id,
+            'student_id' => Student::factory()->create([
+                'course_id' => $course->id,
+                'document_location_id' => null,
+            ])->id,
+        ]);
+    }
+
+    $this->get(route('administrators.classes.index', ['per_page' => 10]))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->component('administrators/classes/index', false)
+            ->has('classes.data', 10)
+            ->where('classes.meta.total', 12)
+            // Twelve classes with one enrolment each, even though only ten rows are on the page.
+            ->where('classes.meta.total_students', 12)
+            ->where('classes.meta.total_capacity', 240)
+        );
+});
+
 it('filters classes by the program they belong to', function () {
     $user = User::factory()->create(['role' => UserRole::Admin]);
     $this->actingAs($user);

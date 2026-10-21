@@ -1,9 +1,9 @@
 import AdminLayout from "@/components/administrators/admin-layout";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { User } from "@/types/user";
 import { Head, Link } from "@inertiajs/react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Pencil } from "lucide-react";
 import type { ReactNode } from "react";
 import { route } from "ziggy-js";
 import { ClassWizard } from "./forms/class-wizard";
@@ -47,30 +47,55 @@ export default function AdministratorClassCreate({
         <AdminLayout user={user} title={isEditing ? "Edit class" : "Create class"}>
             <Head title={isEditing ? `Edit class • ${class_title ?? "Class"}` : "Create class"} />
 
-            <div className="space-y-6">
-                <div className="bg-card flex flex-col gap-4 rounded-2xl border p-5 shadow-2xl md:flex-row md:items-start md:justify-between">
-                    <div className="space-y-2">
-                        <Button variant="outline" size="sm" asChild>
-                            <Link href={route("administrators.classes.index")}>
-                                <ArrowLeft className="size-4" />
-                                Back to classes
-                            </Link>
+            <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6">
+                <header className="flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex min-w-0 flex-col gap-3">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            nativeButton={false}
+                            render={<Link href={route("administrators.classes.index")} />}
+                            className="text-muted-foreground hover:text-foreground -ml-2 w-fit"
+                        >
+                            <ArrowLeft className="size-4" />
+                            Back to classes
                         </Button>
-                        <div>
-                            <h1 className="text-3xl font-bold tracking-tight">{isEditing ? `Edit ${class_title ?? "class"}` : "New class"}</h1>
-                            <p className="text-muted-foreground max-w-2xl">
+
+                        <div className="min-w-0">
+                            <p className="text-muted-foreground text-xs font-semibold uppercase tracking-widest">Academics · Class sections</p>
+                            <h1 className="mt-1 truncate text-3xl font-semibold tracking-tight text-balance">
+                                {isEditing ? class_title || "Edit class" : "New class"}
+                            </h1>
+                            <p className="text-muted-foreground mt-1.5 max-w-2xl text-sm text-pretty">
                                 {isEditing
-                                    ? "Update this class using the same guided form. Nothing changes until you click Update."
-                                    : "Set up a new class in three short steps. Nothing is final until you click Create."}
+                                    ? "Change the class and its schedule. Nothing is saved until you confirm on the last step."
+                                    : "Set up a class in five short steps. Nothing is saved until you confirm on the last step."}
                             </p>
                         </div>
                     </div>
-                </div>
+
+                    <div className="flex flex-wrap items-center gap-2 sm:pt-10">
+                        <Badge variant="outline" className="tabular-nums">
+                            {schoolYear} · Semester {semester}
+                        </Badge>
+                        {isEditing ? (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                nativeButton={false}
+                                render={<Link href={route("administrators.classes.show", { class: class_id })} />}
+                            >
+                                <Pencil className="size-4" />
+                                Open record
+                            </Button>
+                        ) : null}
+                    </div>
+                </header>
 
                 {flash ? (
-                    <Alert>
-                        <AlertDescription>{flash.message}</AlertDescription>
-                    </Alert>
+                    <div className="rounded-lg border bg-card px-4 py-3 text-sm" role="status">
+                        {flash.message}
+                    </div>
                 ) : null}
 
                 <ClassWizard

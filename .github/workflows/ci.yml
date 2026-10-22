@@ -153,7 +153,7 @@ jobs:
       - name: Verify patched runtime versions
         run: |
           php -r 'version_compare(PHP_VERSION, "8.5.12", ">=") || exit(fprintf(STDERR, "PHP %s is vulnerable to CVE-2026-109618 and CVE-2026-109619; 8.5.12 or newer is required.\n", PHP_VERSION));'
-          node -e 'const [a,b,c]=process.versions.node.split(".").map(Number); if (a*1e6+b*1e3+c < 22*1e6+23*1e3+4) { console.error(`Node ${process.versions.node} is missing the October 2026 security fixes; 22.23.4 or newer is required.`); process.exit(1); }'
+          node -e 'const [a,b,c]=process.versions.node.split(".").map(Number); if (a*1e6+b*1e3+c < 22*1e6+23*1e3+4) { console.error("Node " + process.versions.node + " is missing the October 2026 security fixes; 22.23.4 or newer is required."); process.exit(1); }'
           php -v | head -1
           node --version
 

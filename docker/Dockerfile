@@ -54,6 +54,7 @@ RUN APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= PORTAL_HOST= ADM
 # -----------------------------------------------------------------------------
 FROM node:26.12.1-bookworm-slim@sha256:28147155d47dc31abe0a46e0d12b59b2fb3d0a2dcc5dc65fce76a074180b16fe AS build-assets
 WORKDIR /app
+COPY package.json package-lock.json ./
 # puppeteer.config.cjs disables the Chromium download that would otherwise run
 # on every npm install. It has to be in place before the install step.
 COPY puppeteer.config.cjs ./

@@ -33,6 +33,12 @@ RUN mkdir -p \
     storage/logs \
     bootstrap/cache
 
+# google/apiclient-services ships 336 generated service classes (~138 MB) but
+# the application only talks to the Google Calendar API. Trim the unused ones
+# before the autoloader is generated, so the authoritative classmap only maps
+# classes that are actually present in the image.
+RUN php docker/trim-google-api-services.php trim app Modules
+
 RUN composer dump-autoload --optimize --classmap-authoritative --no-dev --no-scripts
 
 # -----------------------------------------------------------------------------
@@ -68,7 +74,13 @@ COPY --from=wayfinder /app/resources/js/wayfinder ./resources/js/wayfinder
 RUN WAYFINDER_GENERATE=false npm run build
 # SSR runs in the production container, so retain only its runtime dependency
 # tree after the asset build has completed.
-RUN npm prune --omit=dev
+#
+# --omit=optional also drops the platform specific native payloads that ship
+# as optional dependencies (the @napi-rs/canvas binaries alone are ~66 MB) and
+# the build-time peer tree (vite, rolldown, lightningcss) that npm keeps
+# installed because boneyard-js declares vite as a peer dependency. Nothing in
+# the SSR graph reaches them, and the check below proves it.
+RUN npm prune --omit=dev --omit=optional
 
 # -----------------------------------------------------------------------------
 # Stage 4: Final Runtime Image
@@ -221,13 +233,23 @@ COPY --from=build-assets /usr/local/bin/node /usr/local/bin/node
 # Validate the generated SSR bundle against the pruned production tree: resolve
 # every bare package import Node must load when the SSR server boots, so a
 # dev-only runtime import fails the build instead of the healthcheck.
+# The script lives under the application root so that Node resolves the bare
+# specifiers it imports against the same /app/node_modules tree the SSR bundle
+# itself loads at runtime.
+COPY --link docker/verify-ssr-runtime-deps.mjs /app/docker/verify-ssr-runtime-deps.mjs
 RUN test -f bootstrap/ssr/ssr.js \
-    && node --input-type=module -e "import('node:fs').then(async ({ readFileSync }) => { const src = readFileSync('bootstrap/ssr/ssr.js', 'utf8'); const specs = [...new Set([...src.matchAll(/from\s+['\"]([^'\"./][^'\"]*)['\"]/g)].map((m) => m[1]))]; if (!specs.length) throw new Error('no SSR externals found in bootstrap/ssr/ssr.js'); for (const spec of specs) await import(spec); console.log('SSR externals OK: ' + specs.join(', ')); })"
+    && node docker/verify-ssr-runtime-deps.mjs bootstrap/ssr
 
 # R2 uses Laravel's S3 filesystem driver. Keep its adapter in the production
 # image so storage-backed branding and uploads cannot turn page rendering into
 # a runtime 500.
 RUN php -r 'require "vendor/autoload.php"; class_exists(\League\Flysystem\AwsS3V3\PortableVisibilityConverter::class) || exit(1);'
+
+# Fail the build when a Google API class the application references did not
+# survive the vendor trim, so a new API usage can never silently break at
+# runtime. This runs here rather than in the vendor stage because the vendor
+# stage carries a different PHP patch release than the application requires.
+RUN php docker/trim-google-api-services.php verify app Modules
 
 # Set ownership
 RUN chown -R ${USER}:${USER} ${ROOT}/storage ${ROOT}/bootstrap/cache ${ROOT}/.config ${ROOT}/.data /tmp/nginx \

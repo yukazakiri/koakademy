@@ -21,7 +21,9 @@
 # -----------------------------------------------------------------------------
 # Dependencies (installed in Dockerfile stages)
 # -----------------------------------------------------------------------------
-node_modules/
+# The **/ form also matches nested trees such as docs/node_modules, which
+# would otherwise be copied into the image by the final application copy.
+**/node_modules
 vendor/
 
 # -----------------------------------------------------------------------------
@@ -109,6 +111,23 @@ README.md
 CHANGELOG.md
 CONTRIBUTING.md
 LICENSE
+
+# The application serves its documentation from docs/src/content/docs, so the
+# docs sources stay in the context. The generated Astro site and its
+# dependencies do not: the documentation site is built and published by the
+# separate docs workflow.
+docs/dist/
+docs/.astro/
+
+# -----------------------------------------------------------------------------
+# Agent Tooling
+# -----------------------------------------------------------------------------
+# Development-time assistant configuration. It is not read by the application
+# at build or at runtime, so it only inflates the final application copy.
+.agents/
+.grok/
+.pi/
+boneyard-capture/
 
 
 # -----------------------------------------------------------------------------

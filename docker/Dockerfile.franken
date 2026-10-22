@@ -33,6 +33,12 @@ RUN mkdir -p \
     storage/logs \
     bootstrap/cache
 
+# google/apiclient-services ships 336 generated service classes (~138 MB) but
+# the application only talks to the Google Calendar API. Trim the unused ones
+# before the autoloader is generated, so the authoritative classmap only maps
+# classes that are actually present in the image.
+RUN php docker/trim-google-api-services.php trim app Modules
+
 RUN composer dump-autoload --optimize --classmap-authoritative --no-dev --no-scripts
 
 # -----------------------------------------------------------------------------
@@ -66,7 +72,13 @@ COPY --from=wayfinder /app/resources/js/wayfinder ./resources/js/wayfinder
 RUN WAYFINDER_GENERATE=false npm run build
 # SSR runs in the production container, so retain only its runtime dependency
 # tree after the asset build has completed.
-RUN npm prune --omit=dev
+#
+# --omit=optional also drops the platform specific native payloads that ship
+# as optional dependencies (the @napi-rs/canvas binaries alone are ~66 MB) and
+# the build-time peer tree (vite, rolldown, lightningcss) that npm keeps
+# installed because boneyard-js declares vite as a peer dependency. Nothing in
+# the SSR graph reaches them, and the check below proves it.
+RUN npm prune --omit=dev --omit=optional
 
 # -----------------------------------------------------------------------------
 # Stage 4: Final Runtime Image (FrankenPHP served through Laravel Octane)
@@ -210,13 +222,23 @@ COPY --from=build-assets /usr/local/bin/node /usr/local/bin/node
 # Validate the generated SSR bundle against the pruned production tree: resolve
 # every bare package import Node must load when the SSR server boots, so a
 # dev-only runtime import fails the build instead of the healthcheck.
+# The script lives under the application root so that Node resolves the bare
+# specifiers it imports against the same /app/node_modules tree the SSR bundle
+# itself loads at runtime.
+COPY --link docker/verify-ssr-runtime-deps.mjs /app/docker/verify-ssr-runtime-deps.mjs
 RUN test -f bootstrap/ssr/ssr.js \
-    && node --input-type=module -e "import('node:fs').then(async ({ readFileSync }) => { const src = readFileSync('bootstrap/ssr/ssr.js', 'utf8'); const specs = [...new Set([...src.matchAll(/from\s+['\"]([^'\"./][^'\"]*)['\"]/g)].map((m) => m[1]))]; if (!specs.length) throw new Error('no SSR externals found in bootstrap/ssr/ssr.js'); for (const spec of specs) await import(spec); console.log('SSR externals OK: ' + specs.join(', ')); })"
+    && node docker/verify-ssr-runtime-deps.mjs bootstrap/ssr
 
 # R2 uses Laravel's S3 filesystem driver. Keep its adapter in the production
 # image so storage-backed branding and uploads cannot turn page rendering into
 # a runtime 500.
 RUN php -r 'require "vendor/autoload.php"; class_exists(\League\Flysystem\AwsS3V3\PortableVisibilityConverter::class) || exit(1);'
+
+# Fail the build when a Google API class the application references did not
+# survive the vendor trim, so a new API usage can never silently break at
+# runtime. This runs here rather than in the vendor stage because the vendor
+# stage carries a different PHP patch release than the application requires.
+RUN php docker/trim-google-api-services.php verify app Modules
 
 # The delivery workflow generates version-franken.json containing this image's
 # immutable reference. Local builds fall back to the tracked version.json.
@@ -229,8 +251,21 @@ RUN if [ -f version-franken.json ]; then \
 RUN chown -R ${USER}:${USER} ${ROOT}/storage ${ROOT}/bootstrap/cache ${ROOT}/.config ${ROOT}/.data \
     && chmod -R 777 /tmp/opcache-file-cache
 
-# Allow FrankenPHP to bind to port 8000 and 2019 as non-root
-RUN setcap CAP_NET_BIND_SERVICE=+eip /usr/local/bin/frankenphp
+# Allow FrankenPHP to bind to port 8000 and 2019 as non-root.
+#
+# The upstream base image already ships cap_net_bind_service=ep on this
+# binary, which grants the capability to the exec'ing process: on exec the
+# permitted set becomes F(permitted) & bounding and the effective set is
+# raised to it because the file carries the effective flag. A non-root
+# process therefore keeps the capability it needs to bind a privileged port.
+#
+# The inheritable flag was the only difference from the base image, and it is
+# not needed here: a file's inheritable bit only narrows the intersection
+# with the exec'ing process's (empty) inheritable set, it never grants the
+# capability to a child. Re-applying the base image's own ep value keeps the
+# guarantee while avoiding a copy-up of the 58 MB binary into a new layer,
+# which cost 20.7 MB of compressed image size.
+RUN setcap CAP_NET_BIND_SERVICE=+ep /usr/local/bin/frankenphp
 
 USER root
 

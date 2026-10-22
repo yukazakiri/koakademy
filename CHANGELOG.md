@@ -1,5 +1,78 @@
 # Changelog
 
+## [1.29.0](https://github.com/yukazakiri/koakademy/compare/v1.28.0...v1.29.0) (2026-10-22)
+
+
+### Features
+
+* **admissions:** rebuild the applicants inbox with application cancellation ([#452](https://github.com/yukazakiri/koakademy/issues/452)) ([171b692](https://github.com/yukazakiri/koakademy/commit/171b692e62deadf54419300b4200d3a4ebf2d829))
+* **ai:** integrate Astro Trail observability for Laravel AI agents ([5d0e377](https://github.com/yukazakiri/koakademy/commit/5d0e37732c25564625dde0e52453fd5bc984f21f))
+* **enrollment:** extend delivery cancellation and curriculum selection ([#393](https://github.com/yukazakiri/koakademy/issues/393)) ([d06c6a7](https://github.com/yukazakiri/koakademy/commit/d06c6a752334a2cb78943a3358fec735142fcea6))
+* **enrollment:** support pinned lecture and laboratory discount scope ([#395](https://github.com/yukazakiri/koakademy/issues/395)) ([b332a81](https://github.com/yukazakiri/koakademy/commit/b332a81c3668517883bbb43f0cd528e4f441cb94))
+* **enrollment:** truthful workflow builder, runtime fixes, and enrollment cancellation ([#390](https://github.com/yukazakiri/koakademy/issues/390)) ([99a4995](https://github.com/yukazakiri/koakademy/commit/99a49957d200b60339b1b3a6ee47e6149ee4db0c))
+* **features:** redesign feature access and add Beta Access distribution ([#454](https://github.com/yukazakiri/koakademy/issues/454)) ([11ed276](https://github.com/yukazakiri/koakademy/commit/11ed27617638b34304b26cb787b453e426e8cfb5))
+* **filament:** install and configure undo toast plugin ([#386](https://github.com/yukazakiri/koakademy/issues/386)) ([32e294b](https://github.com/yukazakiri/koakademy/commit/32e294bbcfda9ceb66ea8502c7dd5969881cd345))
+* **profile:** revamp profile UI with ReUI and add universal calendar sync (Phase 1) ([#389](https://github.com/yukazakiri/koakademy/issues/389)) ([6df5ba3](https://github.com/yukazakiri/koakademy/commit/6df5ba35bab359f4b663a24430f404b76994b2d5))
+* **search:** add curriculum edit links and schedule search ([#450](https://github.com/yukazakiri/koakademy/issues/450)) ([ca27622](https://github.com/yukazakiri/koakademy/commit/ca2762266c0d3eab0efdc93e940160e6eac410f5))
+* **users:** add administrator security and access management ([2e5ea27](https://github.com/yukazakiri/koakademy/commit/2e5ea2708ae01c7c60fb0ac64857641a6e5325d8))
+* **users:** add administrator security and access management ([#396](https://github.com/yukazakiri/koakademy/issues/396)) ([530a97c](https://github.com/yukazakiri/koakademy/commit/530a97c8962977a9cb1e20bfa1853a17dd4e5d80))
+* **users:** rebuild user management on the ReUI data grid ([#443](https://github.com/yukazakiri/koakademy/issues/443)) ([60a8d10](https://github.com/yukazakiri/koakademy/commit/60a8d10a8322e4516e8808e9b3bac1d23fde16b9))
+* **users:** revamp administrator account directory ([c4de260](https://github.com/yukazakiri/koakademy/commit/c4de260ee08f5dea0d69fac4cb2bcc8f569fa3f7))
+
+
+### Bug Fixes
+
+* **admissions:** register the applicant routes in the Ziggy manifest ([#453](https://github.com/yukazakiri/koakademy/issues/453)) ([b04c7a9](https://github.com/yukazakiri/koakademy/commit/b04c7a9d12724cde0d2c15a9ad2b50574ee1a668))
+* **auth:** derive faculty signup role from the institutional record ([#442](https://github.com/yukazakiri/koakademy/issues/442)) ([68d2843](https://github.com/yukazakiri/koakademy/commit/68d284378f984857bbd37cdf9fc0c2d6b481b799))
+* **classes:** move the class list to server-side filtering, sorting and pagination ([#451](https://github.com/yukazakiri/koakademy/issues/451)) ([478e4cc](https://github.com/yukazakiri/koakademy/commit/478e4ccf1a5bc8f9af87f8b0a6aebd9bf90f9bff))
+* **docker:** bump FrankenPHP base image to 1.13.1 for laravel/octane 2.21 ([#394](https://github.com/yukazakiri/koakademy/issues/394)) ([07ad17c](https://github.com/yukazakiri/koakademy/commit/07ad17ca54d78aa17dc9934b7e1081bae760d7b4))
+* **enrollments:** repair the grade verification endpoint ([#445](https://github.com/yukazakiri/koakademy/issues/445)) ([af7b350](https://github.com/yukazakiri/koakademy/commit/af7b350ee0b8e30fa37986b78a78932421faef90))
+* **enrollment:** unify assessed fees and configurable pricing rules ([#391](https://github.com/yukazakiri/koakademy/issues/391)) ([6565863](https://github.com/yukazakiri/koakademy/commit/6565863605ff47e73e714ff80bec25cd3939a09d))
+* **global-search:** match what users type and make every portal agree ([#397](https://github.com/yukazakiri/koakademy/issues/397)) ([2cfe153](https://github.com/yukazakiri/koakademy/commit/2cfe15355117b579afe8ddad221f3f059c0afe6b))
+* **grading:** normalize checklist subject status wording ([2a977f9](https://github.com/yukazakiri/koakademy/commit/2a977f96c7edd0df13ab7f8575af775da28ce9ac))
+* **mail:** publish missing mail recipient lookup migration ([#444](https://github.com/yukazakiri/koakademy/issues/444)) ([08cc8e8](https://github.com/yukazakiri/koakademy/commit/08cc8e8d4ae42dbc9951ceffaae5d42b0a443e96))
+* **search:** expose global search routes in Ziggy manifest ([#441](https://github.com/yukazakiri/koakademy/issues/441)) ([19be243](https://github.com/yukazakiri/koakademy/commit/19be243e55c8a76667463ebd93e07bf8a92540a6))
+* **search:** restore Scout index names and narrow class search in the engine ([#459](https://github.com/yukazakiri/koakademy/issues/459)) ([12e2974](https://github.com/yukazakiri/koakademy/commit/12e2974cffe3da79a3a647255e0c10c283960cd0))
+* **security:** patch PHP and Node runtimes for October 2026 CVEs ([#457](https://github.com/yukazakiri/koakademy/issues/457)) ([e95c506](https://github.com/yukazakiri/koakademy/commit/e95c506c27b22e76f5853388c7ed166db2a123d0))
+* **settings:** make settings delete recoverable and lock the API down ([#448](https://github.com/yukazakiri/koakademy/issues/448)) ([06be0d1](https://github.com/yukazakiri/koakademy/commit/06be0d1535824999a1d4cbf865f513f31e4280ad))
+* **users:** allow safe administrator self-edit ([#446](https://github.com/yukazakiri/koakademy/issues/446)) ([6d0fe88](https://github.com/yukazakiri/koakademy/commit/6d0fe888ac0188f710721af84b65b5c6f3ba52d9))
+* **users:** expose user management routes in Ziggy manifest ([#447](https://github.com/yukazakiri/koakademy/issues/447)) ([6508482](https://github.com/yukazakiri/koakademy/commit/65084821c645dc68f0607d5ebb75cc53c3893384))
+* **users:** restore detail viewing for existing directory viewers ([604e1a6](https://github.com/yukazakiri/koakademy/commit/604e1a61c5cea62f7d8fcda09e9f0ed6fba500fd))
+* **users:** tolerate existing user management schema on upgrade ([7a34b72](https://github.com/yukazakiri/koakademy/commit/7a34b7247074a3861ceed8d2c9af0b4407d7050c))
+* **users:** unify system role resolution through Spatie ([#398](https://github.com/yukazakiri/koakademy/issues/398)) ([4e3dd68](https://github.com/yukazakiri/koakademy/commit/4e3dd680cd2d4b065368ae54555735317ecb5545))
+
+
+### Performance Improvements
+
+* **docker:** cut runtime image size by shipping only what the app needs ([#460](https://github.com/yukazakiri/koakademy/issues/460)) ([056027c](https://github.com/yukazakiri/koakademy/commit/056027c0ee400c0ad9cd8ca6e7fc67ce6dfe693f))
+* **grading:** centralise the grade formula and cut bulk and dashboard query counts ([#449](https://github.com/yukazakiri/koakademy/issues/449)) ([0ab5dd1](https://github.com/yukazakiri/koakademy/commit/0ab5dd1207ec93724a495423b7bafd2b7f19ba86))
+* **runtime:** bound the redis timeouts, queue the scout index and sample the recorders ([#455](https://github.com/yukazakiri/koakademy/issues/455)) ([b995018](https://github.com/yukazakiri/koakademy/commit/b99501813430948a6d39fd225a0e8e7b52e68460))
+* **tables:** remove N+1 relation queries from the administrator tables ([#456](https://github.com/yukazakiri/koakademy/issues/456)) ([4616d8c](https://github.com/yukazakiri/koakademy/commit/4616d8c644ce0de8a3f3eed15b89453ba0b71fa9))
+
+
+### Continuous Integration
+
+* gate delivery on validated source and production approval ([#458](https://github.com/yukazakiri/koakademy/issues/458)) ([027d2bb](https://github.com/yukazakiri/koakademy/commit/027d2bb72dd4fd1a4a7315d184fafe5efdd4cd3f))
+* retry the production dependency audit on registry outages ([f12bf06](https://github.com/yukazakiri/koakademy/commit/f12bf068cca0562c6d05d261501b443390b0e2af))
+* run installer checks on release публикаation ([402388a](https://github.com/yukazakiri/koakademy/commit/402388a5a2e1e13f371cdd4597bcf5cf36a1a0b2))
+* satisfy shellcheck on the production dependency audit script ([ef71503](https://github.com/yukazakiri/koakademy/commit/ef7150361e1002c89ab2ff0f93256cfccd194014))
+
+
+### Documentation
+
+* **features:** document platform capabilities and organize to OSS standards ([eec2bb9](https://github.com/yukazakiri/koakademy/commit/eec2bb928fa3f874786cfc1fea82adb11daa0a40))
+* organize project guides in Astro documentation ([#392](https://github.com/yukazakiri/koakademy/issues/392)) ([81770b1](https://github.com/yukazakiri/koakademy/commit/81770b116d2d44e8d06e51cb63838b3c8350e882))
+
+
+### Tests
+
+* **users:** align admin fixtures with action permissions ([44e4398](https://github.com/yukazakiri/koakademy/commit/44e4398f393390b7eb725f910b41c192dc137240))
+
+
+### Maintenance
+
+* **deps:** update composer dependencies and rebuild filament assets ([23af9f9](https://github.com/yukazakiri/koakademy/commit/23af9f9d38068ba56e969a403f0d2124a1d7fad1))
+
 ## [1.28.0](https://github.com/yukazakiri/koakademy/compare/v1.27.0...v1.28.0) (2026-10-13)
 
 

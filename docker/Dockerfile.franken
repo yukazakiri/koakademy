@@ -38,7 +38,7 @@ RUN composer dump-autoload --optimize --classmap-authoritative --no-dev --no-scr
 # -----------------------------------------------------------------------------
 # Stage 2: Generate Wayfinder Files (requires the application's PHP version)
 # -----------------------------------------------------------------------------
-FROM dunglas/frankenphp:1.13.1-php8.5@sha256:4a8eebee6b3bed92d01ffa6ec5b1bc2cb9c2ab7eeb546027a3f7e6a52937ebbb AS wayfinder
+FROM dunglas/frankenphp:1.13.2-php8.5@sha256:8a7a935deb33959200628497b8201423c8b777d513a62ac1b69a91c624afdb3d AS wayfinder
 # The application boots during wayfinder:generate and config/backup.php
 # instantiates ZipArchive, so the extension must be present in this stage.
 RUN install-php-extensions zip
@@ -50,9 +50,11 @@ RUN APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= PORTAL_HOST= ADM
 # -----------------------------------------------------------------------------
 # Stage 3: Build Frontend Assets
 # -----------------------------------------------------------------------------
-FROM node:26-bookworm-slim@sha256:cd9f682fa2885cd1056e830424764158570061c59736a1da836bc3d73df095ae AS build-assets
+FROM node:26.12.1-trixie-slim@sha256:36793bcbb160a6a16cede1e62b93f84e26b78a972a8a4c0b879c1c12f22761ec AS build-assets
 WORKDIR /app
-COPY package.json package-lock.json ./
+# puppeteer.config.cjs disables the Chromium download that would otherwise run
+# on every npm install. It has to be in place before the install step.
+COPY puppeteer.config.cjs ./
 RUN npm ci
 COPY . .
 # Copy PHP dependencies and generated Wayfinder files.
@@ -77,7 +79,7 @@ RUN npm prune --omit=dev
 # 1 and autorestart turns it into a respawn loop, so the task never reports
 # healthy. After bumping laravel/octane, bump this pin in the same commit and keep
 # it at or above the version octane requires.
-FROM dunglas/frankenphp:1.13.1-php8.5@sha256:4a8eebee6b3bed92d01ffa6ec5b1bc2cb9c2ab7eeb546027a3f7e6a52937ebbb
+FROM dunglas/frankenphp:1.13.2-php8.5@sha256:8a7a935deb33959200628497b8201423c8b777d513a62ac1b69a91c624afdb3d
 
 LABEL maintainer="Yuka <128908897+yukazakiri@users.noreply.github.com>"
 LABEL org.opencontainers.image.title="KoAkademy"
@@ -100,7 +102,7 @@ ENV TZ=${TZ}
 ENV ROOT=${ROOT}
 ENV USER=laravel
 ENV INERTIA_SSR_ENABLED=true
-ENV INERTIA_SSR_RUNTIME=/usr/bin/node
+ENV INERTIA_SSR_RUNTIME=/usr/local/bin/node
 ENV COMPOSER_FUND=0
 ENV COMPOSER_MAX_PARALLEL_HTTP=48
 ENV XDG_CONFIG_HOME=${ROOT}/.config
@@ -116,7 +118,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zip \
     unzip \
     supervisor \
-    nodejs \
+    libatomic1 \
+    libstdc++6 \
     libcap2-bin \
     librsvg2-bin \
     mdbtools \
@@ -197,6 +200,11 @@ COPY --chown=${USER}:${USER} --from=build-assets /app/node_modules ./node_module
 COPY --chown=${USER}:${USER} --from=build-assets /app/public/build ./public/build
 COPY --chown=${USER}:${USER} . .
 COPY --chown=${USER}:${USER} --from=build-assets /app/bootstrap/ssr ./bootstrap/ssr
+
+# The Inertia SSR runtime must not fall back to the distribution's Node package:
+# Debian ships an end-of-life Node release that receives no security fixes.
+# Reuse the patched Node runtime from the asset build stage instead.
+COPY --from=build-assets /usr/local/bin/node /usr/local/bin/node
 
 # Validate the generated SSR bundle against the pruned production tree: resolve
 # every bare package import Node must load when the SSR server boots, so a

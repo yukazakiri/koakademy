@@ -38,7 +38,7 @@ RUN composer dump-autoload --optimize --classmap-authoritative --no-dev --no-scr
 # -----------------------------------------------------------------------------
 # Stage 2: Generate Wayfinder Files (requires the application's PHP version)
 # -----------------------------------------------------------------------------
-FROM php:8.5-fpm@sha256:70076c1cae0cd0ba6761832417e3a1df3e5560f0544eb0fe40357373e54420fe AS wayfinder
+FROM php:8.5.12-fpm@sha256:f665ad19c093eee54db3a03c89102d6828b1bbf4f327689e5947a8686c6585a1 AS wayfinder
 # The application boots during wayfinder:generate and config/backup.php
 # instantiates ZipArchive, so the extension must be present in this stage.
 RUN apt-get update && apt-get install -y --no-install-recommends libzip-dev \
@@ -52,9 +52,11 @@ RUN APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= PORTAL_HOST= ADM
 # -----------------------------------------------------------------------------
 # Stage 3: Build Frontend Assets
 # -----------------------------------------------------------------------------
-FROM node:26-bookworm-slim@sha256:cd9f682fa2885cd1056e830424764158570061c59736a1da836bc3d73df095ae AS build-assets
+FROM node:26.12.1-bookworm-slim@sha256:28147155d47dc31abe0a46e0d12b59b2fb3d0a2dcc5dc65fce76a074180b16fe AS build-assets
 WORKDIR /app
-COPY package.json package-lock.json ./
+# puppeteer.config.cjs disables the Chromium download that would otherwise run
+# on every npm install. It has to be in place before the install step.
+COPY puppeteer.config.cjs ./
 RUN npm ci
 COPY . .
 # Copy PHP dependencies and generated Wayfinder files.
@@ -70,7 +72,7 @@ RUN npm prune --omit=dev
 # -----------------------------------------------------------------------------
 # Stage 4: Final Runtime Image
 # -----------------------------------------------------------------------------
-FROM php:8.5-fpm@sha256:70076c1cae0cd0ba6761832417e3a1df3e5560f0544eb0fe40357373e54420fe
+FROM php:8.5.12-fpm@sha256:f665ad19c093eee54db3a03c89102d6828b1bbf4f327689e5947a8686c6585a1
 
 LABEL maintainer="Yuka <128908897+yukazakiri@users.noreply.github.com>"
 LABEL org.opencontainers.image.title="KoAkademy"
@@ -92,7 +94,7 @@ ENV TZ=${TZ}
 ENV ROOT=${ROOT}
 ENV USER=laravel
 ENV INERTIA_SSR_ENABLED=true
-ENV INERTIA_SSR_RUNTIME=/usr/bin/node
+ENV INERTIA_SSR_RUNTIME=/usr/local/bin/node
 ENV COMPOSER_FUND=0
 ENV COMPOSER_MAX_PARALLEL_HTTP=48
 ENV XDG_CONFIG_HOME=${ROOT}/.config
@@ -113,7 +115,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     supervisor \
     nginx \
-    nodejs \
+    libatomic1 \
+    libstdc++6 \
     libpng-dev \
     libjpeg62-turbo-dev \
     libfreetype6-dev \
@@ -208,6 +211,11 @@ COPY --chown=${USER}:${USER} --from=build-assets /app/node_modules ./node_module
 COPY --chown=${USER}:${USER} --from=build-assets /app/public/build ./public/build
 COPY --chown=${USER}:${USER} . .
 COPY --chown=${USER}:${USER} --from=build-assets /app/bootstrap/ssr ./bootstrap/ssr
+
+# The Inertia SSR runtime must not fall back to the distribution's Node package:
+# Debian ships an end-of-life Node release that receives no security fixes.
+# Reuse the patched Node runtime from the asset build stage instead.
+COPY --from=build-assets /usr/local/bin/node /usr/local/bin/node
 
 # Validate the generated SSR bundle against the pruned production tree: resolve
 # every bare package import Node must load when the SSR server boots, so a

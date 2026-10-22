@@ -29,7 +29,7 @@ normalize_environment_value APP_ENV "${APP_ENV:-production}"
 normalize_environment_value APP_DEBUG "${APP_DEBUG:-false}"
 
 export OCTANE_WORKERS="$(strip_optional_quotes "${OCTANE_WORKERS:-2}")"
-export OCTANE_MAX_REQUESTS="$(strip_optional_quotes "${OCTANE_MAX_REQUESTS:-500}")"
+export OCTANE_MAX_REQUESTS="$(strip_optional_quotes "${OCTANE_MAX_REQUESTS:-100}")"
 
 if [ -n "${DEBUGBAR_ENABLED+x}" ]; then
     normalize_environment_value DEBUGBAR_ENABLED "${DEBUGBAR_ENABLED}"

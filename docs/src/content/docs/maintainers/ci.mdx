@@ -14,7 +14,7 @@ CI is intentionally secret-free and fork-safe. Actions are commit-SHA pinned, ch
 | Job                           | Contract                                                                                                                     |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | Classify pull request         | Detect and validate exact same-repository Release Please metadata-only updates                                               |
-| Application and documentation | PHP 8.5, Node 22, Composer install/audit, Pint, application build, Pest, docs sync/link checks, Compose, and installer syntax |
+| Application and documentation | PHP 8.5.12, Node 22.23.4, runtime version verification, Composer install/audit, npm audit, Pint, application build, Pest, docs sync/link checks, Compose, and installer syntax |
 | Workflow security             | Check every workflow with checksum-pinned `actionlint` and `zizmor`                                                          |
 | Conventional PR title         | Automatically infer and apply a Conventional Commit title, then validate the current GitHub title                            |
 | required                      | Stable `CI / required` branch-protection aggregator                                                                          |

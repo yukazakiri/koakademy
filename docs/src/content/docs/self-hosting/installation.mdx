@@ -206,11 +206,21 @@ For operators running on dedicated bare metal, standard Linux VPS, or hardened o
 
 - **OS**: Ubuntu 24.04 LTS / Debian 12
 - **PHP**: PHP 8.5 CLI with extensions: `bcmath`, `curl`, `gd`, `intl`, `mbstring`, `pcntl`, `pdo_pgsql`, `redis`, `xml`, `zip`
-- **Node.js**: Node.js 22+ & npm
+- **Node.js**: Node.js 22.23.4+ & npm
 - **Database**: PostgreSQL 16+ or 18
 - **Cache/Queue**: Redis 7+ or 8
 - **PDF Engine**: Gotenberg 8 (or external Cloudflare Browser Rendering service)
 - **Web Server**: [FrankenPHP](https://frankenphp.dev/) standalone binary or Caddy/Nginx
+
+:::caution[Runtime floors are security requirements]
+Use **PHP 8.5.12 or newer** and **Node.js 22.23.4 or newer**.
+
+PHP 8.5.12 fixes CVE-2026-109618 and CVE-2026-109619, two critical unauthenticated remote code execution flaws published on 21 October 2026. The PHP project states that upgrading is the only complete mitigation, and the application refuses to boot in a production environment on an unpatched interpreter.
+
+Node.js 22.23.4 fixes CVE-2026-111497, a Brotli decoder out-of-bounds write that permits remote code execution, together with the CVE-2026-106069 and CVE-2026-105482 hostname and DNS resolution flaws.
+
+The published container images already pin these versions, so Docker and Swarm deployments need no manual action beyond pulling the current image.
+:::
 
 ### 1. Install System Dependencies
 

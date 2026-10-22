@@ -8,11 +8,21 @@ This guide covers native development and testing. Production operators should us
 
 ## Toolchain
 
-- PHP 8.5 and Composer 2
-- Node.js 22 and npm
+- PHP 8.5.12 or newer and Composer 2
+- Node.js 22.23.4 or newer and npm
 - `rsvg-convert` from `librsvg2-bin` for SVG brand uploads
 - SQLite for the default test/development path, or PostgreSQL for integration work
 - Redis and Gotenberg when working on queues, sessions, cache, or PDF features
+
+The PHP and Node.js floors are security requirements, not preferences. PHP 8.5.12 fixes CVE-2026-109618 and CVE-2026-109619, and Node.js 22.23.4 fixes CVE-2026-111497. The application logs a warning when it detects an unpatched interpreter and refuses to boot in a production environment.
+
+If your local PHP predates 8.5.12, use the bundled development container instead. It builds on Ubuntu 24.04 and pulls the current PHP 8.5 patch release:
+
+```sh
+docker compose build laravel.test
+docker compose run --rm laravel.test composer install
+docker compose run --rm laravel.test php artisan test
+```
 
 The repository also includes a development-oriented `compose.yaml`. It is not the production topology and publishes additional tools and ports.
 

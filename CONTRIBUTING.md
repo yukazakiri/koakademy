@@ -12,7 +12,7 @@ Thank you for contributing to KoAkademy! Contributions should be focused, well-t
 
 ## Development Setup
 
-KoAkademy runs on **PHP 8.5**, **Laravel 13**, **Inertia 3**, **React 19**, and **Node.js 22**. Follow the [Development guide](docs/src/content/docs/start-here/development.mdx) for full installation instructions:
+KoAkademy runs on **PHP 8.5.12 or newer**, **Laravel 13**, **Inertia 3**, **React 19**, and **Node.js 22.23.4 or newer**. The PHP and Node.js floors are security requirements: PHP 8.5.12 fixes CVE-2026-109618 and CVE-2026-109619, and Node.js 22.23.4 fixes CVE-2026-111497. Follow the [Development guide](docs/src/content/docs/start-here/development.mdx) for full installation instructions:
 
 ```sh
 # 1. Clone the repository and install dependencies

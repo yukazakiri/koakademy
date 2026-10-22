@@ -25,6 +25,7 @@ use App\Services\Newsletter\NewsletterSettingsService;
 use App\Services\Newsletter\NewsletterSubscriptionService;
 use App\Services\VersionService;
 use App\Support\HostingSecurity;
+use App\Support\RuntimeSecurity;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Migrations\Migrator;
@@ -48,6 +49,7 @@ use Livewire\Livewire;
 use Nwidart\Modules\Contracts\RepositoryInterface;
 use PhpOffice\PhpSpreadsheet\Cell\Cell;
 use PhpOffice\PhpSpreadsheet\Cell\DefaultValueBinder;
+use RuntimeException;
 use Throwable;
 
 final class AppServiceProvider extends ServiceProvider
@@ -107,6 +109,8 @@ final class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $this->guardAgainstUnpatchedRuntime();
+
         $this->resetPhpSpreadsheetValueBinderBetweenUnitsOfWork();
 
         // Global (command palette) search: every term of a multi-word query must
@@ -218,6 +222,36 @@ final class AppServiceProvider extends ServiceProvider
         if (! config('horizon.dev_command')) {
             DevCommands::except('horizon');
         }
+    }
+
+    /**
+     * Refuse to run on a PHP interpreter that predates the October 2026
+     * security release.
+     *
+     * PHP 8.5.12 fixes CVE-2026-109618 and CVE-2026-109619, two critical
+     * unauthenticated remote code execution flaws. The PHP project states
+     * that upgrading is the only complete mitigation, so a production
+     * deployment on an older patch release must stop serving traffic rather
+     * than expose student data.
+     *
+     * Local and testing environments only warn. A developer workstation
+     * running an unpatched interpreter is not internet reachable, and
+     * hard failing there would block every contributor from running the test
+     * suite on the machine they already have.
+     */
+    private function guardAgainstUnpatchedRuntime(): void
+    {
+        if (RuntimeSecurity::phpVersionIsSupported()) {
+            return;
+        }
+
+        $message = RuntimeSecurity::phpVersionMessage();
+
+        if ($this->app->environment('production')) {
+            throw new RuntimeException($message);
+        }
+
+        Log::warning($message);
     }
 
     /**

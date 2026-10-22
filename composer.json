@@ -15,7 +15,7 @@
     ],
     "license": "AGPL-3.0-or-later",
     "require": {
-        "php": ">=8.5 <8.6",
+        "php": ">=8.5.12 <8.6",
         "achyutn/filament-log-viewer": "^2.0",
         "alizharb/filament-activity-log": "^2.0",
         "astrophp/trail": "^0.3.1",

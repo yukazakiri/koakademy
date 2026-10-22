@@ -3,6 +3,7 @@ services:
     image: caddy:2.10.0-alpine
     environment:
       KOAKADEMY_DOMAIN: ${KOAKADEMY_DOMAIN}
+      KOAKADEMY_MAX_REQUEST_BODY: ${KOAKADEMY_MAX_REQUEST_BODY:-420M}
     configs:
       - source: caddyfile
         target: /etc/caddy/Caddyfile

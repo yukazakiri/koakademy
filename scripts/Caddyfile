@@ -1,5 +1,14 @@
 {$KOAKADEMY_DOMAIN} {
     encode zstd gzip
 
+    # Enforce the decoded request body size at the edge, independently of the
+    # PHP post_max_size. The PHP security advisories for CVE-2026-109618 and
+    # CVE-2026-109619 ask operators to bound the request size in the frontend
+    # so a hostile multipart body cannot reach the PHP memory limit. Keep this
+    # in step with PHP's post_max_size unless an operator lowers it.
+    request_body {
+        max_size {$KOAKADEMY_MAX_REQUEST_BODY:420M}
+    }
+
     reverse_proxy app:8000
 }

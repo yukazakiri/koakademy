@@ -229,11 +229,17 @@ return [
     | server. Workers control concurrency, and max_requests limits how many
     | requests a worker handles before restarting to prevent memory leaks.
     |
+    | The default is deliberately low. The PHP security advisory for
+    | CVE-2026-109619 requires the request that produced stale worker state
+    | and the request that consumes it to reach the same worker, so recycling
+    | workers sooner shrinks that window. PHP 8.5.12 resets the affected state
+    | on every request, which is the actual fix.
+    |
     */
 
     'frankenphp' => [
         'workers' => env('OCTANE_WORKERS', 'auto'),
-        'max_requests' => env('OCTANE_MAX_REQUESTS', 500),
+        'max_requests' => env('OCTANE_MAX_REQUESTS', 100),
     ],
 
 ];

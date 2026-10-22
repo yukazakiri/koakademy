@@ -27,7 +27,7 @@ Scout indexing is queued on its own `scout` queue, so saving a record never wait
 
 - `SCOUT_QUEUE=false` puts the indexing back on the request path.
 - `SCOUT_QUEUE_NAME` renames the queue; a worker has to drain it.
-- `SCOUT_PREFIX` namespaces the index. The default derives it from the application name, which keeps two installations that share one Meilisearch instance from overwriting each other.
+- `SCOUT_PREFIX` namespaces the index. It is empty by default, so the index names stay the ones the installation already has. Set it only when the installation shares a Meilisearch instance with another one, and import the searchable models afterwards: a prefix renames every index, and the new names start out empty.
 
 ## Job inventory (by purpose)
 

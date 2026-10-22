@@ -206,8 +206,7 @@ final class GlobalSearchService
                 ->query($this->administratorStudentScope())
                 ->paginate($perPage)
                 ->through(fn (Student $student): array => $this->administratorStudentRow($student)),
-            'classes' => Classes::search($query)
-                ->query($this->administratorClassScope())
+            'classes' => $this->classSearch($query, $this->administratorClassScope(), withinCurrentPeriod: true)
                 ->paginate($perPage)
                 ->through(fn (Classes $class): array => $this->administratorClassRow($class)),
             'users' => User::search($query)
@@ -270,8 +269,7 @@ final class GlobalSearchService
         }
 
         return match ($group) {
-            'classes' => Classes::search($query)
-                ->query($this->facultyClassScope($faculty))
+            'classes' => $this->classSearch($query, $this->facultyClassScope($faculty), withinCurrentPeriod: true)
                 ->paginate($perPage)
                 ->through(fn (Classes $class): array => $this->facultyClassRow($class)),
             'students' => $this->paginateFacultyStudents($faculty, $query, $perPage),
@@ -311,6 +309,7 @@ final class GlobalSearchService
                 $limit,
                 $this->studentClassScope((int) $studentId),
                 fn (Classes $class): array => $this->studentClassRow($class),
+                withinCurrentPeriod: false,
             );
         }
 
@@ -352,8 +351,7 @@ final class GlobalSearchService
             'subjects' => Subject::search($query)
                 ->paginate($perPage)
                 ->through(fn (Subject $subject): array => $this->studentSubjectRow($subject)),
-            'classes' => Classes::search($query)
-                ->query($this->studentClassScope((int) $studentId))
+            'classes' => $this->classSearch($query, $this->studentClassScope((int) $studentId), withinCurrentPeriod: false)
                 ->paginate($perPage)
                 ->through(fn (Classes $class): array => $this->studentClassRow($class)),
             'courses' => Course::search($query)
@@ -533,6 +531,34 @@ final class GlobalSearchService
     }
 
     /**
+     * Build a class search with the constraints a portal's scope applies.
+     *
+     * A Scout scope is evaluated against the database after the search engine
+     * has already ranked and cut the rows. Meilisearch therefore returns the
+     * best matches across every school year, and the scope then discards the
+     * ones outside the current period, which can leave a group empty even
+     * though the period has matches. A scope that narrows the academic period
+     * therefore also passes the period as a search filter, so the engine
+     * narrows the candidates before it ranks and cuts them.
+     *
+     * @param  Closure(Builder): Builder  $scope
+     */
+    private function classSearch(string $query, Closure $scope, bool $withinCurrentPeriod): \Laravel\Scout\Builder
+    {
+        $builder = Classes::search($query);
+
+        if ($withinCurrentPeriod) {
+            $period = (new Classes)->getCurrentAcademicPeriod();
+
+            $builder = $builder
+                ->whereIn('school_year', $period['school_year_variants'])
+                ->where('semester', $period['semester']);
+        }
+
+        return $builder->query($scope);
+    }
+
+    /**
      * @return Closure(Builder): Builder
      */
     private function facultyClassScope(Faculty $faculty): Closure
@@ -660,10 +686,9 @@ final class GlobalSearchService
      * @param  Closure(Classes): array<string, mixed>  $map
      * @return list<array<string, mixed>>
      */
-    private function classResults(string $query, int $limit, Closure $scope, Closure $map): array
+    private function classResults(string $query, int $limit, Closure $scope, Closure $map, bool $withinCurrentPeriod = true): array
     {
-        return Classes::search($query)
-            ->query($scope)
+        return $this->classSearch($query, $scope, $withinCurrentPeriod)
             ->take($limit)
             ->get()
             ->map($map)

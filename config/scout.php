@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-use Illuminate\Support\Str;
-
 return [
 
     /*
@@ -31,13 +29,16 @@ return [
     | names used by Scout. This prefix may be useful if you have multiple
     | "tenants" or applications sharing the same search infrastructure.
     |
-    | The prefix is derived from the application name so a shared Meilisearch
-    | instance keeps one installation from overwriting another installation's
-    | indexes. Override it with SCOUT_PREFIX when the name is not unique.
+    | The default is empty, which keeps the index names the installation has
+    | always used. A derived prefix renames every index, so an existing
+    | Meilisearch instance would answer "index not found" until the data was
+    | imported again under the new names. Set SCOUT_PREFIX only when the
+    | installation actually shares a Meilisearch instance, and import the
+    | searchable models afterwards so both index sets exist.
     |
     */
 
-    'prefix' => env('SCOUT_PREFIX', Str::slug((string) env('APP_NAME', 'laravel')).'-scout-'),
+    'prefix' => (string) env('SCOUT_PREFIX', ''),
 
     /*
     |--------------------------------------------------------------------------

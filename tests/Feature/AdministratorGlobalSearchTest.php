@@ -172,6 +172,55 @@ it('gives every row the destination the palette and the results page share', fun
     expect($courseRow['url'])->toContain("/administrators/curriculum/programs/{$course->id}");
 });
 
+it('narrows the class search to the current academic period inside the search engine', function (): void {
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+
+    $course = Course::factory()->create(['code' => 'BSIT']);
+    $subject = Subject::factory()->create(['code' => 'IT401', 'course_id' => $course->id]);
+
+    Classes::factory()->create([
+        'subject_id' => $subject->id,
+        'subject_code' => $subject->code,
+        'section' => 'A',
+        'classification' => 'college',
+        'school_year' => '2025 - 2026',
+        'semester' => 1,
+        'course_codes' => [(string) $course->id],
+        'room_id' => Room::factory()->create()->id,
+    ]);
+
+    actingAs($admin);
+
+    $service = app(App\Services\GlobalSearchService::class);
+
+    $build = function (bool $withinCurrentPeriod) use ($service): Laravel\Scout\Builder {
+        $method = new ReflectionMethod($service, 'classSearch');
+        $method->setAccessible(true);
+
+        return $method->invoke(
+            $service,
+            'IT401',
+            fn (Illuminate\Database\Eloquent\Builder $builder): Illuminate\Database\Eloquent\Builder => $builder,
+            $withinCurrentPeriod,
+        );
+    };
+
+    $withPeriod = $build(true);
+    $withoutPeriod = $build(false);
+
+    // The engine has to narrow the candidates before it ranks and cuts them.
+    // A scope alone is applied to the database afterwards, which can empty a
+    // group even though the current period holds matches.
+    expect($withPeriod->whereIns)->toHaveKey('school_year')
+        ->and($withPeriod->whereIns['school_year'])->toContain('2025 - 2026')
+        ->and($withPeriod->wheres)->toContain([
+            'field' => 'semester',
+            'operator' => '=',
+            'value' => 1,
+        ])
+        ->and($withoutPeriod->whereIns)->toBeEmpty();
+});
+
 it('finds a program by its department code', function (): void {
     $admin = User::factory()->create(['role' => UserRole::Admin]);
 

@@ -81,14 +81,20 @@ it('bounds the read timeout for the predis client as well', function (): void {
 });
 
 /**
- * A shared Meilisearch instance must not let one installation overwrite
- * another installation's indexes.
+ * A derived index prefix renames every index. An existing Meilisearch instance
+ * then answers "index not found" until the searchable models are imported again
+ * under the new names, so the default has to stay empty. A prefix is opt-in
+ * through SCOUT_PREFIX for installations that really do share an instance.
  */
-it('namespaces the search index', function (): void {
-    $prefix = config('scout.prefix');
+it('keeps the search index names unchanged unless a prefix is configured', function (): void {
+    expect(config('scout.prefix'))->toBe('')
+        ->and(runtimeEnvDefault('scout.php', 'SCOUT_PREFIX'))->toBe("''");
+});
 
-    expect($prefix)->not->toBe('')
-        ->and($prefix)->toContain('scout');
+it('reads the search index prefix from the environment', function (): void {
+    config(['scout.prefix' => 'shared-scout-']);
+
+    expect(config('scout.prefix'))->toBe('shared-scout-');
 });
 
 /**

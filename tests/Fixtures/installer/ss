@@ -1,0 +1,8 @@
+#!/usr/bin/env sh
+
+set -eu
+
+printf 'State Recv-Q Send-Q Local Address:Port Peer Address:Port\n'
+if test -n "${KOAKADEMY_INSTALLER_TEST_PORT_CONFLICT:-}"; then
+    printf 'LISTEN 0 128 0.0.0.0:%s 0.0.0.0:*\n' "$KOAKADEMY_INSTALLER_TEST_PORT_CONFLICT"
+fi

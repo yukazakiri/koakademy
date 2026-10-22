@@ -5,7 +5,7 @@ description: Required pull request validation for application, documentation, an
 
 # CI Pipeline
 
-`.github/workflows/ci.yml` runs for pull requests into `master` and explicit manual dispatches. It does not repeat the full suite after merge; a `master` push lets Delivery maintain the reviewed Release Please PR. Delivery builds containers only after that release PR is merged.
+`.github/workflows/ci.yml` runs for pull requests into `master`, explicit manual dispatches, and reusable calls from Delivery. Delivery passes the selected immutable source commit and requires the full suite before Release Please or container publication. This covers direct pushes, administrator merges, manual release requests, and tag recovery without relying on branch protection alone.
 
 CI is intentionally secret-free and fork-safe. Actions are commit-SHA pinned, checkout credentials are not persisted, permissions are scoped per job, event values are passed to shells through environment variables, and every job has a timeout.
 
@@ -14,14 +14,15 @@ CI is intentionally secret-free and fork-safe. Actions are commit-SHA pinned, ch
 | Job                           | Contract                                                                                                                     |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | Classify pull request         | Detect and validate exact same-repository Release Please metadata-only updates                                               |
-| Application and documentation | PHP 8.5.12, Node 22.23.4, runtime version verification, Composer install/audit, npm audit, Pint, application build, Pest, docs sync/link checks, Compose, and installer syntax |
-| Workflow security             | Check every workflow with checksum-pinned `actionlint` and `zizmor`                                                          |
-| Conventional PR title         | Automatically infer and apply a Conventional Commit title, then validate the current GitHub title                            |
+| Application and documentation | PHP 8.5.12, Node 26.12.1, runtime version verification, Composer install/audit, production npm audit, Pint, JavaScript unit tests, stable/edge installer fixtures, application build, Pest, docs sync/link checks, and Compose/Swarm/shell validation |
+| Workflow security             | Test the required-check policy and check every workflow with checksum-pinned `actionlint` and `zizmor`                       |
+| Documentation production build | Install the separate docs lockfile on Node 22.23.4, check generated docs/links, and build Astro before merge                  |
+| Conventional PR title         | Validate the current GitHub title after the separate metadata automation normalizes it; skipped outside pull requests         |
 | required                      | Stable `CI / required` branch-protection aggregator                                                                          |
 
-The test environment is hermetic: SQLite in memory, array cache/session/mail, sync queues, null broadcasting, Scout's collection driver, and optional observability disabled. Composer downloads and npm dependencies are cached.
+Application boot uses SQLite, array cache/session/mail, sync queues, null broadcasting, and disabled optional observability. Pest then uses its isolated SQLite file and test-specific overrides from `phpunit.xml` and `tests/Pest.php`. Composer downloads and both npm lockfiles have separate caches. The application Node runtime matches both production Dockerfiles; documentation retains its own patched Node 22 toolchain.
 
-Delivery owns the only multi-architecture release-image build. The path-filtered documentation deployment owns the Astro production build, while CI still catches generated-document and local-link drift before merge.
+Delivery owns the multi-architecture container build and registry credentials. CI builds the frontend/SSR bundle for tests; Delivery builds production images only after validation. The frontend must precede Pest because HTTP tests render Vite-backed views. The path-filtered Pages workflow rebuilds the same documentation source, checks generated docs/links, and publishes only from `master`.
 
 Standalone module registry validation runs in the separate
 [KoAkademy module registry](https://github.com/yukazakiri/koakademy-modules)
@@ -30,27 +31,42 @@ pull requests, while pushes to `master` additionally verify the Ed25519
 signature. The Pages workflow repeats both checks before publishing. Registry
 contributors never need access to the private signing key.
 
-Release Please pull requests use a fast path because they do not change application code. The classifier trusts only the same-repository Release Please branch and requires the change set to be exactly `.release-please-manifest.json`, `CHANGELOG.md`, and `version.json`. It then checks matching stable versions, the generated PR title, and the changelog entry. Any additional file automatically restores the full application and workflow-security suite.
+Release Please pull requests use a fast path because they do not change application code. The classifier accepts only the same-repository Release Please branch with exactly three modified, non-renamed files: `.release-please-manifest.json`, `CHANGELOG.md`, and `version.json`. It checks matching stable versions, the generated PR title, and the changelog entry. Additional files, renames, or deletions restore the full suite. Delivery and manual dispatches never use this fast path.
+
+The `required` job evaluates `.github/ci-required.jq`. It accepts skipped validation jobs only for the validated release-metadata PR path, and a skipped title job only outside pull requests. Missing, failed, cancelled, or unexpectedly skipped jobs fail closed. `bash tests/ci-required.sh` tests this policy without application dependencies. Recovery audits workflows and the gate policy from the current workflow revision while application/docs checks use the selected historical source.
 
 ## Reproduce locally
 
 ```sh
 composer install
 npm ci
-composer audit --locked
+composer audit --locked --abandoned=report
+npm audit --omit=dev --audit-level=high
 vendor/bin/pint --test
+npm run test:email-canvas
+npm run test:enrollment-workflow
+bash tests/ci-required.sh
+bash tests/installer-release.sh stable
+bash tests/installer-release.sh edge
 npm run build
 php artisan test --parallel --compact
 npm run docs:check
+npm --prefix docs ci
+npm --prefix docs run build
 KOAKADEMY_ENV_FILE=.env.production.example \
   docker compose --env-file .env.production.example -f compose.production.yaml config --quiet
-bash -n scripts/install.sh scripts/koakademy scripts/check-release-assets.sh \
-  scripts/generate-version-metadata.sh tests/installer-release.sh
+for script in docker/start-container docker/healthcheck docker/pulse-process \
+  docker/nightwatch-process docker/run-scripts.sh docker/docker-scripts/*.sh; do
+  sh -n "$script"
+done
+for script in scripts/install.sh scripts/koakademy scripts/check-release-assets.sh \
+  scripts/generate-version-metadata.sh tests/installer-release.sh tests/ci-required.sh; do
+  bash -n "$script"
+done
 shellcheck scripts/install.sh scripts/koakademy scripts/koakademy-app-entrypoint.sh \
-  scripts/check-release-assets.sh tests/installer-release.sh \
-  tests/Fixtures/installer/docker tests/Fixtures/installer/curl
-bash tests/installer-release.sh stable
-bash tests/installer-release.sh edge
+  scripts/check-release-assets.sh scripts/generate-version-metadata.sh \
+  tests/installer-release.sh tests/ci-required.sh \
+  tests/Fixtures/installer/docker tests/Fixtures/installer/curl tests/Fixtures/installer/ss
 docker compose --env-file tests/Fixtures/installer/swarm-stack.env \
   -f scripts/swarm-stack.yml config --quiet
 docker compose --env-file tests/Fixtures/installer/swarm-stack.env \
@@ -65,7 +81,7 @@ docker stack config --compose-file scripts/swarm-stack-direct.yml >/dev/null
 Run a focused test while iterating:
 
 ```sh
-php artisan test --compact tests/Unit/GitHubActionsContractTest.php
+bash tests/ci-required.sh
 php artisan test --compact --filter="shows the setup screen"
 ```
 
@@ -73,8 +89,9 @@ php artisan test --compact --filter="shows the setup screen"
 
 - **Branch protection:** require only `CI / required`; individual job names can evolve without changing repository settings.
 - **No secrets:** do not add registry credentials or deployment side effects to CI. Privileged publication stays in [Delivery](./releases/).
-- **Forks:** pull-request validation remains secret-free and never publishes artifacts.
+- **Forks:** pull-request validation remains secret-free and never publishes artifacts. Reusable CI receives no inherited secrets from Delivery.
 - **PR titles:** the metadata-only `pull_request_target` workflow may read the title, description, labels, and changed-file names to infer a Conventional Commit type and scope. It never checks out or executes contributor code. Maintainers should review the inferred title because it controls release notes and SemVer.
-- **Release ordering:** a same-repository `master` push maintains Release Please; only its merged release PR starts stable image publication. CI is not repeated after merge.
-- **Administrator bypass:** branch protection does not apply to administrators, so an administrator can intentionally merge and publish before `CI / required` completes.
-- **Existing quality debt:** repository-wide Prettier, PHPStan, strict Composer validation, and npm audit are not blocking until their independent findings are resolved.
+- **Release ordering:** Delivery reruns the full suite on the exact source commit before maintaining Release Please or publishing edge/stable images. Builds, replication, and promotion all depend on this gate.
+- **Production approval:** stable finalization uses the `production` environment; edge finalization uses `container-publishing`. Configure required reviewers and protected-branch restrictions on `production` in GitHub. Delivery verifies those rules before stable publication and fails closed if they are absent or unreadable.
+- **Repository setup:** require `CI / required` for `master`, require PR reviews, and review administrator bypass policy in GitHub. These settings are not controlled by workflow YAML.
+- **Existing quality debt:** repository-wide ESLint/Prettier, PHPStan, and strict Composer validation are not introduced as new blocking checks here. Production npm audit is blocking at high/critical severity; resolve unrelated lint/static-analysis debt before adding those gates.

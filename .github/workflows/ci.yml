@@ -5,12 +5,18 @@ on:
     branches:
       - master
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      source_sha:
+        description: Immutable source commit selected by Delivery
+        required: true
+        type: string
 
 permissions: {}
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || inputs.source_sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   scope:
@@ -32,7 +38,7 @@ jobs:
             core.setOutput('release_only', 'false');
 
             if (context.eventName !== 'pull_request') {
-              core.info('Manual CI dispatches always run the full validation suite.');
+              core.info('Delivery and manual CI dispatches always run the full validation suite.');
               return;
             }
 
@@ -62,7 +68,11 @@ jobs:
             const changedFiles = new Set(files.map((file) => file.filename));
             const releaseOnly =
               changedFiles.size === allowedFiles.size &&
-              [...changedFiles].every((file) => allowedFiles.has(file));
+              files.every((file) =>
+                allowedFiles.has(file.filename) &&
+                file.status === 'modified' &&
+                !file.previous_filename
+              );
 
             core.info(`Release metadata only: ${releaseOnly}`);
             core.setOutput('release_only', releaseOnly ? 'true' : 'false');
@@ -116,6 +126,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
 
       - name: Set up PHP 8.5
@@ -141,19 +152,18 @@ jobs:
           key: composer-${{ runner.os }}-php85-${{ hashFiles('composer.lock') }}
           restore-keys: composer-${{ runner.os }}-php85-
 
-      - name: Set up Node.js 22
+      - name: Set up Node.js 26
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          # Pinned to the first 22.x release that carries the October 2026
-          # security fixes. Do not widen this back to "22".
-          node-version: "22.23.4"
+          # Match the patched Node runtime in both production Dockerfiles.
+          node-version: "26.12.1"
           cache: npm
           cache-dependency-path: package-lock.json
 
       - name: Verify patched runtime versions
         run: |
           php -r 'version_compare(PHP_VERSION, "8.5.12", ">=") || exit(fprintf(STDERR, "PHP %s is vulnerable to CVE-2026-109618 and CVE-2026-109619; 8.5.12 or newer is required.\n", PHP_VERSION));'
-          node -e 'const [a,b,c]=process.versions.node.split(".").map(Number); if (a*1e6+b*1e3+c < 22*1e6+23*1e3+4) { console.error("Node " + process.versions.node + " is missing the October 2026 security fixes; 22.23.4 or newer is required."); process.exit(1); }'
+          node -e 'const [a,b,c]=process.versions.node.split(".").map(Number); if (a*1e6+b*1e3+c < 26*1e6+12*1e3+1) { console.error("Node " + process.versions.node + " is missing the October 2026 security fixes; 26.12.1 or newer is required."); process.exit(1); }'
           php -v | head -1
           node --version
 
@@ -172,6 +182,16 @@ jobs:
       - name: Check PHP formatting
         run: vendor/bin/pint --test
 
+      - name: Run JavaScript unit tests
+        run: |
+          npm run test:email-canvas
+          npm run test:enrollment-workflow
+
+      - name: Exercise stable and edge installer fixtures
+        run: |
+          bash tests/installer-release.sh stable
+          bash tests/installer-release.sh edge
+
       - name: Build application frontend
         run: npm run build
 
@@ -188,10 +208,14 @@ jobs:
 
       - name: Check shell syntax
         run: |
-          sh -n docker/start-container docker/healthcheck docker/pulse-process \
-            docker/run-scripts.sh docker/run.sh docker/docker-scripts/*.sh
-          bash -n scripts/install.sh scripts/koakademy scripts/check-release-assets.sh \
-            scripts/generate-version-metadata.sh tests/installer-release.sh
+          for script in docker/start-container docker/healthcheck docker/pulse-process \
+            docker/nightwatch-process docker/run-scripts.sh docker/docker-scripts/*.sh; do
+            sh -n "${script}"
+          done
+          for script in scripts/install.sh scripts/koakademy scripts/check-release-assets.sh \
+            scripts/generate-version-metadata.sh tests/installer-release.sh; do
+            bash -n "${script}"
+          done
           shellcheck scripts/install.sh scripts/koakademy scripts/koakademy-app-entrypoint.sh \
             scripts/check-release-assets.sh scripts/generate-version-metadata.sh \
             tests/installer-release.sh tests/Fixtures/installer/docker tests/Fixtures/installer/curl
@@ -222,7 +246,15 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Recovery validates the workflow that runs, not an old tag's workflows.
+          ref: ${{ github.workflow_sha }}
           persist-credentials: false
+
+      - name: Test required-check policy
+        run: |
+          bash -n tests/ci-required.sh
+          sh -n tests/Fixtures/installer/ss
+          bash tests/ci-required.sh
 
       - name: Install actionlint
         env:
@@ -257,6 +289,43 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: '"${RUNNER_TEMP}/zizmor" --persona auditor --min-severity medium --format github .github/workflows'
+
+  docs:
+    name: Documentation production build
+    if: needs.scope.outputs.release_only != 'true'
+    needs:
+      - scope
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: docs
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up documentation runtime
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # Keep the documentation toolchain on its patched Node 22 runtime.
+          node-version: "22.23.4"
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+
+      - name: Install documentation dependencies
+        run: npm ci
+
+      - name: Check generated docs and local links
+        run: npm --prefix .. run docs:check
+
+      - name: Build Astro site
+        run: npm run build
 
   pr-title:
     name: Conventional PR title
@@ -303,17 +372,30 @@ jobs:
       - scope
       - validate
       - workflow-security
+      - docs
       - pr-title
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    permissions: {}
+    permissions:
+      contents: read
     env:
       JOB_RESULTS: ${{ toJSON(needs) }}
+      CI_EVENT_NAME: ${{ github.event_name }}
+      RELEASE_ONLY: ${{ needs.scope.outputs.release_only }}
 
     steps:
+      - name: Check out required-check policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
       - name: Confirm all required jobs passed
         run: |
-          if ! jq --exit-status 'all(.[]; .result == "success" or .result == "skipped")' <<<"${JOB_RESULTS}"; then
+          if ! jq --exit-status \
+            --arg event_name "${CI_EVENT_NAME}" \
+            --arg release_only "${RELEASE_ONLY}" \
+            --from-file .github/ci-required.jq <<<"${JOB_RESULTS}"; then
             printf 'One or more required CI jobs did not succeed.\n' >&2
             exit 1
           fi

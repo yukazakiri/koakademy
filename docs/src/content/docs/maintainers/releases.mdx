@@ -1,36 +1,46 @@
 ---
 title: Releases & Versioning
-description: Reviewed stable releases, immutable GHCR images, and installer assets.
+description: Validated edge and reviewed stable releases, multi-registry images, approval gates, and installer assets.
 ---
 
 # Releases & Versioning
 
-KoAkademy publishes only reviewed stable releases. Delivery has two focused responsibilities: maintain the Release Please pull request after a `master` merge, then publish an image and installer bundle only when that reviewed release is created.
+Delivery validates its selected source with reusable CI before any release automation or publication. It maintains reviewed Release Please PRs, publishes edge images for unreleased `master` commits, and publishes stable images plus installer assets when the reviewed release is created.
 
 | Source event | Result |
 | --- | --- |
 | Pull request | CI validation only; no artifacts or credentials |
-| `master` merge | Release Please creates or updates a draft release PR |
-| Merged Release Please PR | Exact `vX.Y.Z` tag, multi-architecture GHCR image, checksummed installer bundle, published GitHub Release |
+| `master` push | Full CI; Release Please creates/updates the release PR; unreleased commits publish edge images |
+| Merged Release Please PR | Full CI; exact `vX.Y.Z` tag; multi-architecture PHP-FPM and FrankenPHP images in GHCR and Docker Hub; production approval boundary before stable finalization |
+| Manual `version: X.Y.Z` on `master` | Full CI; request a newer stable version through Release Please; no direct image publication |
+| Manual `tag: vX.Y.Z` on `master` | Validate the published automation-created release and master ancestry; run CI for the tag commit; recover missing delivery outputs without silently replacing existing immutable images |
 
-Stable production releases do not use a rolling `latest` or manual version
-override. Production deployments resolve the GitHub Release asset and use its
-immutable GHCR digest. The separate `edge` channel follows the current
-unreleased `master` commit for staging and development; it is not a stable
-release and uses the mutable `edge-frankenphp` image.
+Production deployments should use the exact stable image reference from release
+metadata, not a moving alias. Delivery also maintains `latest`, major, and minor
+aliases for the newest matching stable release; recovery of an older release
+does not move those aliases backwards. The separate `edge` channel follows
+current `master` for staging/development and uses mutable `edge` (PHP-FPM) and
+`edge-frankenphp` (FrankenPHP) aliases. An older concurrent build checks current
+`master` before moving edge aliases.
 
 ## Release flow
 
 Release Please reads Conventional Commit titles from merged work and opens a reviewed PR. Merging that PR updates `CHANGELOG.md`, `.release-please-manifest.json`, and the tracked `version.json` version, creates the exact `vX.Y.Z` tag, and creates a draft GitHub Release.
 
-The same Delivery run then:
+After full source validation, the same Delivery run:
 
-1. Checks out the tag's immutable commit and verifies its version metadata.
-2. Builds the FrankenPHP image for `linux/amd64` and `linux/arm64`.
-3. Pushes `ghcr.io/yukazakiri/koakademy:sha-<commit>` and `:vX.Y.Z`.
-4. Verifies the release tag resolves to the built digest and contains both architectures.
-5. Publishes BuildKit SBOM/provenance and GitHub attestation.
-6. Rewrites the release `version.json` to the digest, checksums the installer bundle, uploads it, and publishes the draft release.
+1. Checks out the immutable source commit and determines edge or stable metadata.
+2. Reuses existing SHA-tagged images only after verifying attestations from this repository's Delivery workflow on `master`. Invalid provenance blocks publication instead of overwriting the SHA tag.
+3. Builds missing PHP-FPM and FrankenPHP images on native `linux/amd64` and `linux/arm64` runners, with separate BuildKit caches, SBOMs, and provenance.
+4. Merges immutable `sha-<commit>` and `sha-<commit>-franken` manifests in GHCR.
+5. Enters `production` for stable finalization (`container-publishing` for edge), replicates matching digests to Docker Hub, restores embedded version metadata, attests new images, and verifies digests/architectures/attestation manifests.
+6. Promotes verified channel/SemVer aliases. Stable delivery checksums and uploads the installer bundle and publishes the GitHub release.
+
+`version.json` currently records the protected SHA tag, not a digest reference.
+The image digest is independently verified across both registries before
+promotion. Do not rewrite an existing SHA or exact SemVer tag to a different
+image. A registry outage or failed attestation verification is not permission
+to replace an immutable tag.
 
 The delivery job validates the complete asset contract before uploading: the
 bootstrap, operator command, Swarm files, Compose fallback, environment example,
@@ -58,7 +68,7 @@ guidance.
 
 Every release contains:
 
-- `version.json` with the immutable GHCR image digest
+- `version.json` with the immutable GHCR SHA-tagged image reference and source commit
 - `install.sh` and `koakademy`
 - `swarm-stack.yml`, `swarm-stack-direct.yml`, `Caddyfile`, and `koakademy-app-entrypoint.sh`
 - `compose.production.yaml` and `default.env.production.example`
@@ -76,12 +86,24 @@ sha256sum --check SHA256SUMS
 | --- | --- |
 | `RELEASE_PLEASE_TOKEN` | Fine-grained token with Contents, Pull requests, and Issues read/write for Release Please |
 | `release-automation` | Protected environment for Release Please |
-| `container-publishing` | Protected environment for GHCR publishing and release assets |
+| `DOCKERHUB_IMAGE` | Actions variable containing `namespace/repository`; required for both image variants |
+| `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | Docker Hub publication credentials; available to both publishing environments |
+| `container-publishing` | Protected environment for immutable container builds and automatic edge finalization |
+| `production` | Stable finalization: require reviewers, prevent self-review where supported, and allow only protected `master` deployments |
+| `CI / required` | Required `master` status check; require PR review and review administrator bypass policy separately |
 
-The built-in GitHub token publishes the repository's GHCR package, attestations, and release assets. Keep both environments limited to protected branches.
+The built-in GitHub token publishes GHCR packages, attestations, and release assets. CI receives no deployment secrets. Keep all release/publishing environments limited to the protected `master` branch. If Docker Hub credentials are environment-scoped, configure them for both `container-publishing` and `production`; repository-scoped secrets are available to both.
+
+**GitHub setup is required:** YAML's `environment: production` declaration does
+not enforce manual approval by itself. Stable delivery checks that this
+environment already has required reviewers and protected-branch restrictions;
+missing or unreadable configuration blocks publication. Configure these rules
+in Settings → Environments before releasing. No
+workflow in this repository deploys application servers automatically; operators
+deploy approved release images using the installer/operator commands.
 
 ## Recovery and rollback
 
-Delivery deliberately does not rebuild old releases or move image tags. If a published release has a registry or asset incident, investigate and repair it during a maintenance window with the exact tag and digest; do not make a new build overwrite an immutable tag.
+Run Delivery manually from `master` with exactly one existing stable `tag` to recover a delivery. Recovery verifies the release author/publication state and that its commit is an ancestor of `master`; current CI must still pass against that historical source. Missing images can be built, verified existing GHCR images can repair a missing Docker Hub copy, and release assets can be reassembled. Divergent registry digests or missing/invalid provenance on existing images fail closed and require investigation. A partial run that pushed a SHA manifest but never attested it needs operator repair, not an automatic overwrite.
 
 Application rollback uses the prior exact image recorded by `koakademy update`. It never reverses database migrations automatically. Read release notes and restore the matching database backup when prior code cannot use the migrated schema.

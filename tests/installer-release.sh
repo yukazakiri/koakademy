@@ -50,6 +50,12 @@ bash "$repository_root/scripts/check-release-assets.sh" "$release_directory"
 
 ln -s "$repository_root/tests/Fixtures/installer/docker" "$fixture_bin/docker"
 ln -s "$repository_root/tests/Fixtures/installer/curl" "$fixture_bin/curl"
+# Bootstrap port checks must not inspect services on the test runner's host.
+ln -s "$repository_root/tests/Fixtures/installer/ss" "$fixture_bin/ss"
+if [[ "$(KOAKADEMY_INSTALLER_TEST_PORT_CONFLICT=80 "$fixture_bin/ss" -ltn)" != *"0.0.0.0:80"* ]]; then
+    printf 'Installer port fixture must preserve explicit conflict simulation.\n' >&2
+    exit 1
+fi
 
 export KOAKADEMY_INSTALLER_TEST_STATE="$state_directory"
 export KOAKADEMY_INSTALLER_TEST_RELEASE_DIR="$release_directory"

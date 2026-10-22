@@ -213,11 +213,23 @@ jobs:
             } >> "${GITHUB_OUTPUT}"
           fi
 
+  validate:
+    name: Validate delivery source
+    needs:
+      - trust
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      source_sha: ${{ needs.trust.outputs.source_sha }}
+
   release-please:
     name: Maintain release PR
     if: needs.trust.outputs.mode == 'automatic' || needs.trust.outputs.mode == 'manual-release'
     needs:
       - trust
+      - validate
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: release-automation
@@ -247,9 +259,11 @@ jobs:
     if: >-
       always() &&
       needs.trust.result == 'success' &&
+      needs.validate.result == 'success' &&
       (needs.release-please.result == 'success' || needs.release-please.result == 'skipped')
     needs:
       - trust
+      - validate
       - release-please
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -324,6 +338,23 @@ jobs:
             printf 'source_sha=%s\n' "${SOURCE_SHA}"
           } >> "${GITHUB_OUTPUT}"
 
+      - name: Require protected production approvals for stable delivery
+        if: steps.plan.outputs.channel == 'stable'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { data: environment } = await github.rest.repos.getEnvironment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              environment_name: 'production',
+            });
+            const approval = environment.protection_rules?.find((rule) => rule.type === 'required_reviewers');
+            if (!approval?.reviewers?.length || !environment.deployment_branch_policy?.protected_branches) {
+              throw new Error(
+                'Configure production with required reviewers and protected-branch deployments before publishing stable releases.',
+              );
+            }
+
   publish:
     name: Publish ${{ needs.prepare.outputs.channel }} containers
     if: >-
@@ -336,6 +367,7 @@ jobs:
     timeout-minutes: 15
     environment: container-publishing
     permissions:
+      attestations: read
       contents: read
       packages: write
     outputs:
@@ -411,7 +443,17 @@ jobs:
           dockerhub_ref="${DOCKERHUB_IMAGE}:sha-${SOURCE_SHA}"
 
           remote_digest() {
-            "${RUNNER_TEMP}/crane" digest "$1" 2>/dev/null || true
+            local error_file="${RUNNER_TEMP}/crane-digest-error"
+            if "${RUNNER_TEMP}/crane" digest "$1" 2>"${error_file}"; then
+              return 0
+            fi
+            # Only a missing manifest is safe to create. Auth/network failures
+            # must not be mistaken for permission to replace an immutable tag.
+            if grep -Eq 'MANIFEST_UNKNOWN|NAME_UNKNOWN' "${error_file}"; then
+              return 0
+            fi
+            cat "${error_file}" >&2
+            return 1
           }
 
           verify_provenance() {
@@ -420,34 +462,12 @@ jobs:
 
             printf 'Verifying provenance for %s@%s...\n' "${subject_name}" "${subject_digest}"
 
-            attestation_json="$(gh attestation verify \
+            gh attestation verify \
               "oci://${subject_name}@${subject_digest}" \
-              --owner "${GITHUB_REPOSITORY_OWNER}" \
-              --format json 2>&1)" || {
-              printf 'Provenance verification failed: %s\n' "${attestation_json}" >&2
-              return 1
-            }
-
-            workflow_ref="$(jq --raw-output \
-              '.verificationResult.statement.predicate.buildDefinition.externalParameters.workflow.ref' \
-              <<<"${attestation_json}")"
-            workflow_repo="$(jq --raw-output \
-              '.verificationResult.statement.predicate.buildDefinition.externalParameters.workflow.repository' \
-              <<<"${attestation_json}")"
-
-            if [[ "${workflow_repo}" != "https://github.com/${GITHUB_REPOSITORY}" ]]; then
-              printf 'Provenance workflow repository %s does not match expected %s.\n' \
-                "${workflow_repo}" "https://github.com/${GITHUB_REPOSITORY}" >&2
-              return 1
-            fi
-
-            if [[ ! "${workflow_ref}" =~ ^refs/heads/master(@refs/heads/master)?$ ]]; then
-              printf 'Provenance workflow ref %s is not from the master branch.\n' "${workflow_ref}" >&2
-              return 1
-            fi
-
-            printf 'Provenance verified: built by %s from %s\n' "${workflow_repo}" "${workflow_ref}"
-            return 0
+              --repo "${GITHUB_REPOSITORY}" \
+              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/delivery.yml" \
+              --source-ref refs/heads/master \
+              --deny-self-hosted-runners
           }
 
           ghcr_digest="$(remote_digest "${ghcr_ref}")"
@@ -464,10 +484,8 @@ jobs:
               replication_required=false
               digest="${ghcr_digest}"
             else
-              printf 'Existing GHCR image lacks valid provenance; rebuilding is required.\n' >&2
-              build_required=true
-              replication_required=true
-              digest=
+              printf 'Existing GHCR image lacks valid provenance; refusing to overwrite its immutable SHA tag.\n' >&2
+              exit 1
             fi
           elif [[ -n "${ghcr_digest}" && -z "${dockerhub_digest}" ]]; then
             if verify_provenance "ghcr.io/${GITHUB_REPOSITORY}" "${ghcr_digest}"; then
@@ -476,10 +494,8 @@ jobs:
               replication_required=true
               digest="${ghcr_digest}"
             else
-              printf 'Existing GHCR image lacks valid provenance; rebuilding is required.\n' >&2
-              build_required=true
-              replication_required=true
-              digest=
+              printf 'Existing GHCR image lacks valid provenance; refusing to overwrite its immutable SHA tag.\n' >&2
+              exit 1
             fi
           else
             printf 'Immutable SHA tags are missing from one registry or have different digests.\n' >&2
@@ -503,7 +519,15 @@ jobs:
           dockerhub_ref="${DOCKERHUB_IMAGE}:sha-${SOURCE_SHA}-franken"
 
           remote_digest() {
-            "${RUNNER_TEMP}/crane" digest "$1" 2>/dev/null || true
+            local error_file="${RUNNER_TEMP}/crane-digest-error"
+            if "${RUNNER_TEMP}/crane" digest "$1" 2>"${error_file}"; then
+              return 0
+            fi
+            if grep -Eq 'MANIFEST_UNKNOWN|NAME_UNKNOWN' "${error_file}"; then
+              return 0
+            fi
+            cat "${error_file}" >&2
+            return 1
           }
 
           verify_provenance() {
@@ -512,34 +536,12 @@ jobs:
 
             printf 'Verifying provenance for %s@%s...\n' "${subject_name}" "${subject_digest}"
 
-            attestation_json="$(gh attestation verify \
+            gh attestation verify \
               "oci://${subject_name}@${subject_digest}" \
-              --owner "${GITHUB_REPOSITORY_OWNER}" \
-              --format json 2>&1)" || {
-              printf 'Provenance verification failed: %s\n' "${attestation_json}" >&2
-              return 1
-            }
-
-            workflow_ref="$(jq --raw-output \
-              '.verificationResult.statement.predicate.buildDefinition.externalParameters.workflow.ref' \
-              <<<"${attestation_json}")"
-            workflow_repo="$(jq --raw-output \
-              '.verificationResult.statement.predicate.buildDefinition.externalParameters.workflow.repository' \
-              <<<"${attestation_json}")"
-
-            if [[ "${workflow_repo}" != "https://github.com/${GITHUB_REPOSITORY}" ]]; then
-              printf 'Provenance workflow repository %s does not match expected %s.\n' \
-                "${workflow_repo}" "https://github.com/${GITHUB_REPOSITORY}" >&2
-              return 1
-            fi
-
-            if [[ ! "${workflow_ref}" =~ ^refs/heads/master(@refs/heads/master)?$ ]]; then
-              printf 'Provenance workflow ref %s is not from the master branch.\n' "${workflow_ref}" >&2
-              return 1
-            fi
-
-            printf 'Provenance verified: built by %s from %s\n' "${workflow_repo}" "${workflow_ref}"
-            return 0
+              --repo "${GITHUB_REPOSITORY}" \
+              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/delivery.yml" \
+              --source-ref refs/heads/master \
+              --deny-self-hosted-runners
           }
 
           ghcr_digest="$(remote_digest "${ghcr_ref}")"
@@ -556,10 +558,8 @@ jobs:
               replication_required=false
               digest="${ghcr_digest}"
             else
-              printf 'Existing GHCR FrankenPHP image lacks valid provenance; rebuilding is required.\n' >&2
-              build_required=true
-              replication_required=true
-              digest=
+              printf 'Existing GHCR FrankenPHP image lacks valid provenance; refusing to overwrite its immutable SHA tag.\n' >&2
+              exit 1
             fi
           elif [[ -n "${ghcr_digest}" && -z "${dockerhub_digest}" ]]; then
             if verify_provenance "ghcr.io/${GITHUB_REPOSITORY}" "${ghcr_digest}"; then
@@ -568,10 +568,8 @@ jobs:
               replication_required=true
               digest="${ghcr_digest}"
             else
-              printf 'Existing GHCR FrankenPHP image lacks valid provenance; rebuilding is required.\n' >&2
-              build_required=true
-              replication_required=true
-              digest=
+              printf 'Existing GHCR FrankenPHP image lacks valid provenance; refusing to overwrite its immutable SHA tag.\n' >&2
+              exit 1
             fi
           else
             printf 'Immutable FrankenPHP SHA tags are missing from one registry or have different digests.\n' >&2
@@ -587,8 +585,12 @@ jobs:
   build:
     name: Build ${{ matrix.platform }} images
     if: >-
-      needs.publish.outputs.build_required == 'true' ||
-      needs.publish.outputs.build_required_franken == 'true'
+      always() &&
+      needs.publish.result == 'success' &&
+      (
+        needs.publish.outputs.build_required == 'true' ||
+        needs.publish.outputs.build_required_franken == 'true'
+      )
     needs:
       - publish
     runs-on: ${{ matrix.runner }}
@@ -729,7 +731,7 @@ jobs:
 
   merge:
     name: Merge multi-platform manifests
-    if: needs.build.result == 'success'
+    if: always() && needs.publish.result == 'success' && needs.build.result == 'success'
     needs:
       - publish
       - build
@@ -818,7 +820,9 @@ jobs:
       - merge
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    environment: container-publishing
+    # Configure required reviewers on production; edge publication stays automatic.
+    environment:
+      name: ${{ needs.publish.outputs.channel == 'stable' && 'production' || 'container-publishing' }}
     permissions:
       attestations: write
       contents: write
@@ -1074,7 +1078,15 @@ jobs:
           DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
         run: |
           remote_digest() {
-            "${RUNNER_TEMP}/crane" digest "$1" 2>/dev/null || true
+            local error_file="${RUNNER_TEMP}/crane-digest-error"
+            if "${RUNNER_TEMP}/crane" digest "$1" 2>"${error_file}"; then
+              return 0
+            fi
+            if grep -Eq 'MANIFEST_UNKNOWN|NAME_UNKNOWN' "${error_file}"; then
+              return 0
+            fi
+            cat "${error_file}" >&2
+            return 1
           }
 
           verify_alias() {

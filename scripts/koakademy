@@ -324,6 +324,7 @@ write_initial_runtime() {
 KOAKADEMY_DOMAIN=$domain
 KOAKADEMY_NODE=$(docker info --format '{{.Name}}')
 KOAKADEMY_NETWORK=koakademy_private
+KOAKADEMY_MAX_REQUEST_BODY=420M
 APP_NAME=KoAkademy
 APP_URL=$app_url
 PORTAL_HOST=$portal_host

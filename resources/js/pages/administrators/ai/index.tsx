@@ -47,6 +47,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Shdr14 } from "@/components/ui/shdr-14";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import type { FeatureFlags } from "@/types/feature-flags";
 import type { User } from "@/types/user";
 import { Head, usePage } from "@inertiajs/react";
 import {
@@ -130,8 +131,26 @@ function getGreeting(name: string): string {
 }
 
 export default function AdministratorAiChatPage({ initialConversation, initialConversationId }: AiChatPageProps) {
-    const { auth } = usePage<{ auth: { user: User } }>().props;
+    const { auth, featureFlags } = usePage<{
+        auth: { user: User };
+        featureFlags?: FeatureFlags;
+    }>().props;
     const user = auth.user;
+    const enabledAgents = React.useMemo(() => {
+        const aiFlags = featureFlags?.ai;
+
+        if (!aiFlags) {
+            return ADMIN_AGENTS;
+        }
+
+        if (aiFlags.any === false) {
+            return [];
+        }
+
+        return ADMIN_AGENTS.filter(
+            (agent) => aiFlags.agents?.[agent.key] !== false,
+        );
+    }, [featureFlags?.ai]);
 
     const [mobileDrawerOpen, setMobileDrawerOpen] = React.useState(false);
     const [searchQuery, setSearchQuery] = React.useState("");
@@ -143,10 +162,21 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
     const [isLoadingMore, setIsLoadingMore] = React.useState(false);
     const [totalConversations, setTotalConversations] = React.useState(0);
 
-    const [selectedAgent, setSelectedAgent] = React.useState<AgentRoleKey>("admin_executive");
+    const [selectedAgent, setSelectedAgent] = React.useState<AgentRoleKey>(
+        enabledAgents[0]?.key ?? "admin_executive",
+    );
     const [selectedModel, setSelectedModel] = React.useState<string>("");
     const [availableModels, setAvailableModels] = React.useState<ModelOption[]>([]);
     const [selectedFiles, setSelectedFiles] = React.useState<File[]>([]);
+
+    React.useEffect(() => {
+        if (
+            enabledAgents.length > 0 &&
+            !enabledAgents.some((agent) => agent.key === selectedAgent)
+        ) {
+            setSelectedAgent(enabledAgents[0].key);
+        }
+    }, [enabledAgents, selectedAgent]);
 
     // ReUI AI Chat style interactive controls
     const [isThinkingMode, setIsThinkingMode] = React.useState(false);
@@ -617,7 +647,14 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
         }
     };
 
-    const activeAgentMeta = ADMIN_AGENTS.find((a) => a.key === selectedAgent) || ADMIN_AGENTS[0];
+    const activeAgentMeta = enabledAgents.find((a) => a.key === selectedAgent) || enabledAgents[0] || ADMIN_AGENTS[0];
+    const promptSuggestions = React.useMemo(
+        () =>
+            DEFAULT_PROMPT_SUGGESTIONS.filter((suggestion) =>
+                enabledAgents.some((agent) => agent.key === suggestion.agent),
+            ),
+        [enabledAgents],
+    );
 
     const firstName = user.name?.split(" ")[0] || "Administrator";
     const activeModel = availableModels.find((model) => model.id === selectedModel);
@@ -950,39 +987,41 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                 {/* ------------------------------------------------------------- */}
                 {/* Specialist Agent Tabs Bar (Matching Design System)             */}
                 {/* ------------------------------------------------------------- */}
-                <div className="no-scrollbar flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border/70 bg-muted/20 px-3 py-2 backdrop-blur-sm sm:px-4">
-                    {ADMIN_AGENTS.map((agent) => {
-                        const isSelected = selectedAgent === agent.key;
-                        const Icon = agent.icon;
-                        return (
-                            <button
-                                key={agent.key}
-                                type="button"
-                                onClick={() => {
-                                    setSelectedAgent(agent.key);
-                                    toast.success(`Active specialist: ${agent.label}`);
-                                }}
-                                className={cn(
-                                    "flex shrink-0 cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-all",
-                                    isSelected
-                                        ? "bg-[#9333ea] font-semibold text-white shadow-md shadow-purple-500/20"
-                                        : "border border-border/70 bg-background/80 text-muted-foreground hover:bg-muted hover:text-foreground"
-                                )}
-                            >
-                                <Icon className="size-3.5" />
-                                <span>{agent.label}</span>
-                                <span
+                {enabledAgents.length > 0 && (
+                    <div className="no-scrollbar flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border/70 bg-muted/20 px-3 py-2 backdrop-blur-sm sm:px-4">
+                        {enabledAgents.map((agent) => {
+                            const isSelected = selectedAgent === agent.key;
+                            const Icon = agent.icon;
+                            return (
+                                <button
+                                    key={agent.key}
+                                    type="button"
+                                    onClick={() => {
+                                        setSelectedAgent(agent.key);
+                                        toast.success(`Active specialist: ${agent.label}`);
+                                    }}
                                     className={cn(
-                                        "ml-0.5 rounded-md px-1.5 py-0.2 font-mono text-[10px]",
-                                        isSelected ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
+                                        "flex shrink-0 cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-all",
+                                        isSelected
+                                            ? "bg-[#9333ea] font-semibold text-white shadow-md shadow-purple-500/20"
+                                            : "border border-border/70 bg-background/80 text-muted-foreground hover:bg-muted hover:text-foreground"
                                     )}
                                 >
-                                    {agent.badge}
-                                </span>
-                            </button>
-                        );
-                    })}
-                </div>
+                                    <Icon className="size-3.5" />
+                                    <span>{agent.label}</span>
+                                    <span
+                                        className={cn(
+                                            "ml-0.5 rounded-md px-1.5 py-0.2 font-mono text-[10px]",
+                                            isSelected ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
+                                        )}
+                                    >
+                                        {agent.badge}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
 
                 {/* ------------------------------------------------------------- */}
                 {/* Main Content Workspace (Full Width Canvas)                     */}
@@ -1036,11 +1075,16 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                                 {/* Center Composer Container */}
                                 <div className="mt-8 w-full">
                                     {renderComposerBox()}
+                                    {enabledAgents.length === 0 && (
+                                        <div className="border-border/70 bg-muted/30 text-muted-foreground mx-auto max-w-xl rounded-2xl border px-4 py-3 text-center text-sm">
+                                            AI assistants are currently disabled for this account. You can still read and download previous conversations.
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Suggested Prompts */}
                                 <div className="mt-5 flex w-full flex-wrap justify-center gap-2">
-                                    {DEFAULT_PROMPT_SUGGESTIONS.map((suggestion) => {
+                                    {promptSuggestions.map((suggestion) => {
                                         const Icon = suggestion.icon;
                                         return (
                                             <button
@@ -1431,6 +1475,10 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
     /* Render Composer Box (Matches @reui/ai-chat-1 screenshot design)        */
     /* --------------------------------------------------------------------- */
     function renderComposerBox() {
+        if (enabledAgents.length === 0) {
+            return null;
+        }
+
         return (
             <div className="w-full">
                 {/* File Attachments Pills */}
@@ -1660,7 +1708,7 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                                             Switch specialist
                                         </p>
                                         <div className="grid gap-1">
-                                            {ADMIN_AGENTS.map((agent) => {
+                                            {enabledAgents.map((agent) => {
                                                 const Icon = agent.icon;
                                                 const isActive = agent.key === selectedAgent;
                                                 return (

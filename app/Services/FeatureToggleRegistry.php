@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Enums\UserRole;
 use App\Features\Contracts\FeatureToggle;
 use App\Features\Toggles\AdminDeveloperMode;
+use App\Features\Toggles\AiAdminExecutive;
 use App\Features\Toggles\AiFacultyAssistant;
 use App\Features\Toggles\AiFinanceAssistant;
 use App\Features\Toggles\AiHelpDeskAssistant;
@@ -31,6 +32,8 @@ use App\Features\Toggles\FacultyResources;
 use App\Features\Toggles\FacultySchedule;
 use App\Features\Toggles\FacultySettings;
 use App\Features\Toggles\FacultyToolkit;
+use App\Features\Toggles\McpExternalIntegrations;
+use App\Features\Toggles\McpServerAccess;
 use App\Features\Toggles\OnlineCollegeEnrollment;
 use App\Features\Toggles\OnlineTesdaEnrollment;
 use App\Features\Toggles\StudentAnnouncements;
@@ -103,11 +106,16 @@ final class FeatureToggleRegistry
         'online-tesda-enrollment' => OnlineTesdaEnrollment::class,
 
         // AI features
+        'ai-admin-executive' => AiAdminExecutive::class,
         'ai-student-advisor' => AiStudentAdvisor::class,
         'ai-faculty-assistant' => AiFacultyAssistant::class,
         'ai-registrar-auditor' => AiRegistrarAuditor::class,
         'ai-finance-assistant' => AiFinanceAssistant::class,
         'ai-help-desk-assistant' => AiHelpDeskAssistant::class,
+
+        // MCP features
+        'mcp-server-access' => McpServerAccess::class,
+        'mcp-external-integrations' => McpExternalIntegrations::class,
     ];
 
     /**
@@ -136,9 +144,9 @@ final class FeatureToggleRegistry
                     $public => true,
                     str_starts_with($key, 'student-'), $key === 'ai-student-advisor' => $role->isStudent(),
                     str_starts_with($key, 'faculty-'), $key === 'ai-faculty-assistant' => $role->isFaculty(),
-                    $key === 'admin-developer-mode', $key === 'ai-registrar-auditor' => $role->canAccessAdminPortal(),
+                    $key === 'admin-developer-mode', $key === 'ai-registrar-auditor', $key === 'ai-admin-executive', $key === 'mcp-external-integrations' => $role->canAccessAdminPortal(),
                     $key === 'ai-finance-assistant' => $role->canAccessAdminPortal() || $role->isStudent(),
-                    $key === 'ai-help-desk-assistant' => true,
+                    $key === 'ai-help-desk-assistant', $key === 'mcp-server-access' => true,
                     default => false,
                 };
             })));
@@ -147,7 +155,7 @@ final class FeatureToggleRegistry
             'faculty-assessments', 'faculty-inbox', 'faculty-office-hours',
             'faculty-requests-approvals', 'faculty-insights', 'faculty-forms',
         ], true);
-        $privileged = str_ends_with($key, '-developer-mode') || str_starts_with($key, 'ai-');
+        $privileged = str_ends_with($key, '-developer-mode') || str_starts_with($key, 'ai-') || str_starts_with($key, 'mcp-');
 
         return [
             'roles' => $roles, 'default_enabled' => ! $experimental && ! $privileged,

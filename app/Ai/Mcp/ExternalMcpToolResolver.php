@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace App\Ai\Mcp;
 
+use App\Features\Toggles\McpExternalIntegrations;
 use App\Models\McpServer;
+use App\Models\User;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Laravel\Ai\Contracts\Tool;
+use Laravel\Pennant\Feature;
 use Throwable;
 
 /**
@@ -42,6 +46,12 @@ final class ExternalMcpToolResolver
      */
     public function forAgent(string $agent): array
     {
+        $user = Auth::user();
+
+        if (! $user instanceof User || ! Feature::for($user)->active(McpExternalIntegrations::class)) {
+            return [];
+        }
+
         $tools = [];
         $skipped = 0;
 

@@ -32,8 +32,8 @@ import {
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { FeatureInspector } from "./inspector";
-import type { AuditEntry, BetaGroup, FeatureUser, ManagedFeature } from "./types";
-import { portalFeatureUrl } from "./types";
+import type { AuditEntry, BetaGroup, FeatureUser, ManagedFeature, ManagedFeatureWithPolicy } from "./types";
+import { fallbackPolicy, portalFeatureUrl } from "./types";
 import { UserPicker } from "./user-picker";
 
 export interface FeaturePageProps {
@@ -44,11 +44,15 @@ export interface FeaturePageProps {
     audit: AuditEntry[];
 }
 
-export function releaseStatus(feature: ManagedFeature): {
+export function releaseStatus(feature: ManagedFeatureWithPolicy): {
     label: string;
     variant: "warning-light" | "destructive-light" | "info-light" | "success-light";
     detail: string;
 } {
+    if (feature.release_status === "uninitialized" || feature.policy.revision === 0) {
+        return { label: "Uninitialized", variant: "warning-light", detail: "Run migrations" };
+    }
+
     const policy = feature.policy;
     if (policy.mode === "legacy") return { label: "Legacy Preserved", variant: "warning-light", detail: "Legacy mode" };
     if (!policy.enabled) return { label: "Disabled", variant: "destructive-light", detail: "Turned off" };
@@ -65,7 +69,15 @@ export function releaseStatus(feature: ManagedFeature): {
 }
 
 export default function FeatureTogglesIndex(props: FeaturePageProps) {
-    const { features, roles, schools, groups, audit } = props;
+    const { roles, schools, groups, audit } = props;
+    const features = useMemo<ManagedFeatureWithPolicy[]>(
+        () =>
+            props.features.map((feature) => ({
+                ...feature,
+                policy: feature.policy ?? fallbackPolicy(feature),
+            })),
+        [props.features],
+    );
 
     // Active main navigation tab
     const [activeTab, setActiveTab] = useState<"catalog" | "groups" | "simulator" | "audit" | "guide">("catalog");
@@ -165,7 +177,7 @@ export default function FeatureTogglesIndex(props: FeaturePageProps) {
     const hasActiveFilters = search.trim() !== "" || selectedCategory !== "all" || selectedStatus !== "all" || selectedTier !== "all";
 
     // Quick toggle feature directly from card
-    const handleCardToggle = (feature: ManagedFeature) => {
+    const handleCardToggle = (feature: ManagedFeatureWithPolicy) => {
         setTogglingKeys((prev) => ({ ...prev, [feature.key]: true }));
         router.post(
             portalFeatureUrl(toggle.url(feature.key)),

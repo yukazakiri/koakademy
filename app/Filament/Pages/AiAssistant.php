@@ -7,6 +7,8 @@ namespace App\Filament\Pages;
 use App\Ai\Agents\BursarFinanceAgent;
 use App\Ai\Agents\CampusSupportAgent;
 use App\Ai\Agents\RegistrarAuditAgent;
+use App\Models\User;
+use App\Services\Ai\AiAgentAccess;
 use App\Services\Ai\AiSettingsService;
 use BackedEnum;
 use Filament\Notifications\Notification;
@@ -18,6 +20,13 @@ use UnitEnum;
 
 final class AiAssistant extends Page
 {
+    /** @var array<string, string> */
+    private const array AGENT_LABELS = [
+        'registrar_auditor' => 'Registrar Compliance & Records Auditor',
+        'bursar_finance' => 'Bursar & Tuition Intelligence',
+        'campus_support' => 'Campus 24/7 Support & Policies',
+    ];
+
     public string $selectedAgent = 'registrar_auditor';
 
     public string $prompt = '';
@@ -41,6 +50,42 @@ final class AiAssistant extends Page
     #[Override]
     protected static ?string $title = 'AI Assistant Workspace';
 
+    public static function canAccess(): bool
+    {
+        $user = Auth::user();
+
+        return $user instanceof User
+            && app(AiAgentAccess::class)->hasAnyEnabled($user, AiAgentAccess::FILAMENT_AGENT_KEYS);
+    }
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return self::canAccess();
+    }
+
+    public function mount(): void
+    {
+        $available = array_keys($this->getAvailableAgents());
+
+        abort_if($available === [], 403);
+
+        if (! in_array($this->selectedAgent, $available, true)) {
+            $this->selectedAgent = $available[0];
+        }
+    }
+
+    /**
+     * Agents enabled for the signed-in Filament user.
+     *
+     * @return array<string, string>
+     */
+    public function getAvailableAgents(): array
+    {
+        $enabled = app(AiAgentAccess::class)->enabledKeys(Auth::user(), AiAgentAccess::FILAMENT_AGENT_KEYS);
+
+        return array_intersect_key(self::AGENT_LABELS, array_flip($enabled));
+    }
+
     public function askAgent(): void
     {
         $trimmed = mb_trim($this->prompt);
@@ -50,6 +95,16 @@ final class AiAssistant extends Page
                 ->warning()
                 ->title('Prompt Required')
                 ->body('Please enter a prompt or instruction for the AI agent.')
+                ->send();
+
+            return;
+        }
+
+        if (! app(AiAgentAccess::class)->isEnabled($this->selectedAgent, Auth::user())) {
+            Notification::make()
+                ->warning()
+                ->title('Agent Unavailable')
+                ->body('The selected AI agent is not active for this account.')
                 ->send();
 
             return;

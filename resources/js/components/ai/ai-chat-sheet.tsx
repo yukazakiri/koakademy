@@ -25,6 +25,8 @@ import {
     SheetTrigger,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import type { FeatureFlags } from "@/types/feature-flags";
+import { usePage } from "@inertiajs/react";
 import {
     Bot,
     Calculator,
@@ -122,12 +124,43 @@ export function AiChatSheet({
     open,
     onOpenChange,
 }: AiChatSheetProps) {
-    const [selectedAgent, setSelectedAgent] = React.useState<AgentRoleKey>(defaultAgent);
+    const { featureFlags } = usePage<{ featureFlags?: FeatureFlags }>().props;
+    const enabledAgentKeys = React.useMemo<AgentRoleKey[]>(() => {
+        const aiFlags = featureFlags?.ai;
+
+        if (!aiFlags) {
+            return Object.keys(AGENT_METAS) as AgentRoleKey[];
+        }
+
+        if (aiFlags.any === false) {
+            return [];
+        }
+
+        return (Object.keys(AGENT_METAS) as AgentRoleKey[]).filter(
+            (key) => aiFlags.agents?.[key] !== false,
+        );
+    }, [featureFlags?.ai]);
+
+    const initialAgent =
+        enabledAgentKeys.includes(defaultAgent)
+            ? defaultAgent
+            : (enabledAgentKeys[0] ?? defaultAgent);
+
+    const [selectedAgent, setSelectedAgent] = React.useState<AgentRoleKey>(initialAgent);
     const [availableModels, setAvailableModels] = React.useState<ModelOption[]>([]);
     const [selectedModel, setSelectedModel] = React.useState<string>("");
     const [modelPopoverOpen, setModelPopoverOpen] = React.useState(false);
     const [selectedFiles, setSelectedFiles] = React.useState<File[]>([]);
     const scrollAreaRef = React.useRef<HTMLDivElement>(null);
+
+    React.useEffect(() => {
+        if (
+            enabledAgentKeys.length > 0 &&
+            !enabledAgentKeys.includes(selectedAgent)
+        ) {
+            setSelectedAgent(enabledAgentKeys[0]);
+        }
+    }, [enabledAgentKeys, selectedAgent]);
 
     const {
         messages,
@@ -250,6 +283,10 @@ export function AiChatSheet({
         return <FileType className="size-3 text-sky-500" />;
     };
 
+    if (enabledAgentKeys.length === 0) {
+        return null;
+    }
+
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>
             {trigger && <SheetTrigger asChild>{trigger}</SheetTrigger>}
@@ -292,7 +329,7 @@ export function AiChatSheet({
 
                     {/* Agent Role Pills */}
                     <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-1 no-scrollbar">
-                        {(Object.keys(AGENT_METAS) as AgentRoleKey[]).map((key) => {
+                        {enabledAgentKeys.map((key) => {
                             const isSelected = selectedAgent === key;
                             const Icon = AGENT_METAS[key].icon;
                             return (

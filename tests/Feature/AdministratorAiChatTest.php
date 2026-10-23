@@ -3,15 +3,28 @@
 declare(strict_types=1);
 
 use App\Enums\UserRole;
+use App\Features\Toggles\AiAdminExecutive;
+use App\Features\Toggles\AiFinanceAssistant;
+use App\Features\Toggles\AiHelpDeskAssistant;
+use App\Features\Toggles\AiRegistrarAuditor;
 use App\Models\User;
 use App\Services\Ai\AiSettingsService;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Ai\Models\Conversation;
 use Laravel\Ai\Models\ConversationMessage;
+use Laravel\Pennant\Feature;
 
 beforeEach(function (): void {
     $this->withoutVite();
     app(AiSettingsService::class)->clearCache();
+
+    // The administrator workspace now follows the same agent flags as the
+    // portal. Existing coverage exercises every agent, so opt them all in.
+    Feature::flushCache();
+    Feature::activateForEveryone(AiAdminExecutive::class);
+    Feature::activateForEveryone(AiRegistrarAuditor::class);
+    Feature::activateForEveryone(AiFinanceAssistant::class);
+    Feature::activateForEveryone(AiHelpDeskAssistant::class);
 });
 
 it('reports available models with server-verified document capabilities', function (): void {

@@ -10,12 +10,8 @@ use App\Ai\Agents\CampusSupportAgent;
 use App\Ai\Agents\FacultyCopilotAgent;
 use App\Ai\Agents\RegistrarAuditAgent;
 use App\Ai\Agents\StudentAdvisorAgent;
-use App\Features\Toggles\AiFacultyAssistant;
-use App\Features\Toggles\AiFinanceAssistant;
-use App\Features\Toggles\AiHelpDeskAssistant;
-use App\Features\Toggles\AiRegistrarAuditor;
-use App\Features\Toggles\AiStudentAdvisor;
 use App\Models\User;
+use App\Services\Ai\AiAgentAccess;
 use App\Services\Ai\AiAttachmentProcessor;
 use App\Services\Ai\AiDocumentGeneratorService;
 use App\Services\Ai\AiSettingsService;
@@ -32,7 +28,6 @@ use Laravel\Ai\Approvals\Decisions;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Files\Document;
 use Laravel\Ai\Models\Conversation;
-use Laravel\Pennant\Feature;
 use Stringable;
 use Throwable;
 
@@ -41,7 +36,7 @@ final class AiChatController extends Controller
     /**
      * Send a prompt or tool approval decision to the selected agent and stream response.
      */
-    public function chat(Request $request): mixed
+    public function chat(Request $request, AiAgentAccess $agentAccess): mixed
     {
         $user = Auth::user();
         abort_unless($user instanceof User, 401);
@@ -55,14 +50,7 @@ final class AiChatController extends Controller
         }
 
         $validated = $request->validate([
-            'agent' => ['required', 'string', Rule::in([
-                'admin_executive',
-                'student_advisor',
-                'faculty_copilot',
-                'registrar_auditor',
-                'bursar_finance',
-                'campus_support',
-            ])],
+            'agent' => ['required', 'string', Rule::in(AiAgentAccess::AGENT_KEYS)],
             'provider' => ['nullable', 'string', 'max:64'],
             'model' => ['nullable', 'string', 'max:255'],
             'auto_approve' => ['nullable', 'boolean'],
@@ -75,16 +63,7 @@ final class AiChatController extends Controller
             'attachments.*' => ['file', 'max:20480'],
         ]);
 
-        $featureClass = match ($validated['agent']) {
-            'admin_executive' => AiRegistrarAuditor::class,
-            'student_advisor' => AiStudentAdvisor::class,
-            'faculty_copilot' => AiFacultyAssistant::class,
-            'registrar_auditor' => AiRegistrarAuditor::class,
-            'bursar_finance' => AiFinanceAssistant::class,
-            'campus_support' => AiHelpDeskAssistant::class,
-        };
-
-        if (Feature::defined($featureClass) && ! Feature::for($user)->active($featureClass)) {
+        if (! $agentAccess->isEnabled($validated['agent'], $user)) {
             abort(403, 'The requested AI assistant is not active for your role.');
         }
 

@@ -43,8 +43,11 @@ use App\Models\StudentTuition;
 use App\Models\Subject;
 use App\Models\SubjectEnrollment;
 use App\Models\User;
+use App\Services\FeatureAccessService;
 use App\Services\GeneralSettingsService;
 use App\Services\TenantContext;
+use Illuminate\Support\Facades\DB;
+use Laravel\Pennant\Feature;
 use Spatie\Permission\Models\Permission;
 
 beforeEach(function (): void {
@@ -605,6 +608,32 @@ it('returns 404 when mcp is disabled in settings', function (): void {
         ]);
 
     $response->assertNotFound();
+});
+
+it('returns 404 when the authenticated user is not enrolled in inbound mcp access', function (): void {
+    app(GeneralSettingsService::class)->updateApiManagementConfig([
+        'public_api_enabled' => true,
+        'public_settings_enabled' => true,
+        'public_settings_fields' => ['site_name'],
+        'mcp_enabled' => true,
+    ]);
+
+    DB::table('feature_definitions')
+        ->where('key', 'mcp-server-access')
+        ->update(['mode' => 'enforced', 'enabled' => false]);
+    app(FeatureAccessService::class)->reset();
+    Feature::flushCache();
+
+    $token = $this->staff->createToken('Staff Bearer', ['mcp:read'])->plainTextToken;
+
+    $this->withToken($token)
+        ->withHeader('X-KoAkademy-School', (string) $this->school->id)
+        ->postJson('/mcp/koakademy', [
+            'jsonrpc' => '2.0',
+            'id' => 1,
+            'method' => 'tools/list',
+        ])
+        ->assertNotFound();
 });
 
 it('returns school details with active departments and capabilities', function (): void {

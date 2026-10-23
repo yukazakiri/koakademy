@@ -16,8 +16,9 @@ import {
 } from "@/components/ui/popover";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import type { FeatureFlags } from "@/types/feature-flags";
 import type { User } from "@/types/user";
-import { router } from "@inertiajs/react";
+import { router, usePage } from "@inertiajs/react";
 import {
     Calculator,
     ChevronDown,
@@ -120,6 +121,23 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
     const widgetExpandedKey = `koakademy_ai_widget_expanded_${userId}`;
     const widgetAgentKey = `koakademy_ai_widget_agent_${userId}`;
     const widgetPersistenceKey = `koakademy_ai_widget_${userId}`;
+    const { featureFlags } = usePage<{ featureFlags?: FeatureFlags }>().props;
+
+    const enabledAgents = React.useMemo(() => {
+        const aiFlags = featureFlags?.ai;
+
+        if (!aiFlags) {
+            return ADMIN_AGENTS;
+        }
+
+        if (aiFlags.any === false) {
+            return [];
+        }
+
+        return ADMIN_AGENTS.filter(
+            (agent) => aiFlags.agents?.[agent.key] !== false,
+        );
+    }, [featureFlags?.ai]);
 
     const [isOpen, setIsOpen] = React.useState<boolean>(() => {
         if (typeof window !== "undefined") {
@@ -145,14 +163,14 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
         if (typeof window !== "undefined") {
             try {
                 const saved = sessionStorage.getItem(widgetAgentKey) as AgentRoleKey;
-                if (saved && ADMIN_AGENTS.some((a) => a.key === saved)) {
+                if (saved && enabledAgents.some((a) => a.key === saved)) {
                     return saved;
                 }
             } catch {
                 // Ignore storage errors
             }
         }
-        return "admin_executive";
+        return enabledAgents[0]?.key ?? "admin_executive";
     });
 
     const handleOpenChange = React.useCallback((open: boolean) => {
@@ -187,6 +205,15 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
             }
         }
     }, [widgetAgentKey]);
+
+    React.useEffect(() => {
+        if (
+            enabledAgents.length > 0 &&
+            !enabledAgents.some((agent) => agent.key === selectedAgent)
+        ) {
+            handleAgentChange(enabledAgents[0].key);
+        }
+    }, [enabledAgents, handleAgentChange, selectedAgent]);
 
     // Dynamic model options from configured providers
     const [availableModels, setAvailableModels] = React.useState<ModelOption[]>(
@@ -310,7 +337,9 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
     }, [isOpen, availableModels.length, selectedModel]);
 
     const activeMeta =
-        ADMIN_AGENTS.find((a) => a.key === selectedAgent) || ADMIN_AGENTS[0];
+        enabledAgents.find((a) => a.key === selectedAgent) ||
+        enabledAgents[0] ||
+        ADMIN_AGENTS[0];
     const ActiveIcon = activeMeta.icon;
 
     const handleFilesAdded = (filesToAdd: FileList | File[]) => {
@@ -384,6 +413,10 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
             ? cleanName.slice(0, 18) + "…"
             : cleanName;
     }, [availableModels, selectedModel]);
+
+    if (enabledAgents.length === 0) {
+        return null;
+    }
 
     return (
         <TooltipProvider>
@@ -541,7 +574,7 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
 
                             {/* Specialist Tabs Matching Screenshot */}
                             <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto pt-2.5 pb-0.5">
-                                {ADMIN_AGENTS.map((agent) => {
+                                {enabledAgents.map((agent) => {
                                     const isSelected =
                                         selectedAgent === agent.key;
                                     const Icon = agent.icon;

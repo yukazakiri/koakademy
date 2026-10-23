@@ -12,6 +12,7 @@ use App\Features\Toggles\StudentSignaturePad;
 use App\Models\GeneralSetting;
 use App\Models\School;
 use App\Models\User;
+use App\Services\Ai\AiAgentAccess;
 use App\Services\AnalyticsSettingsService;
 use App\Services\FacultyClassShareService;
 use App\Services\GeneralSettingsService;
@@ -71,6 +72,7 @@ final class HandleInertiaRequests extends Middleware
         $featureValues = $onboardingService->getAllFeatureValues($user);
         $studentInformationUpdatesEnabled = $user && Feature::for($user)->active(StudentInformationUpdates::class);
         $libraryEnabled = (bool) $generalSettingsService->getGlobalSetting('library_module_enabled', false);
+        $aiAgentFlags = app(AiAgentAccess::class)->flagsFor($user);
 
         return array_merge(
             parent::share($request),
@@ -119,6 +121,10 @@ final class HandleInertiaRequests extends Middleware
                         ['library' => $libraryEnabled]
                     ),
                     'library' => $libraryEnabled,
+                    'ai' => [
+                        'any' => in_array(true, $aiAgentFlags, true),
+                        'agents' => $aiAgentFlags,
+                    ],
                     'studentSignaturePad' => $user && Feature::for($user)->active(StudentSignaturePad::class),
                     'studentAvatarUpload' => $user && Feature::for($user)->active(StudentAvatarUpload::class),
                     'studentInformationUpdates' => $studentInformationUpdatesEnabled,

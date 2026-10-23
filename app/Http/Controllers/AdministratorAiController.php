@@ -14,6 +14,7 @@ use App\Models\GeneralSetting;
 use App\Models\Student;
 use App\Models\StudentClearance;
 use App\Models\User;
+use App\Services\Ai\AiAgentAccess;
 use App\Services\Ai\AiAttachmentProcessor;
 use App\Services\Ai\AiDocumentGeneratorService;
 use App\Services\Ai\AiSettingsService;
@@ -91,12 +92,7 @@ final class AdministratorAiController extends Controller
         }
 
         $validated = $request->validate([
-            'agent' => ['nullable', 'string', Rule::in([
-                'admin_executive',
-                'registrar_auditor',
-                'bursar_finance',
-                'campus_support',
-            ])],
+            'agent' => ['nullable', 'string', Rule::in(AiAgentAccess::ADMIN_AGENT_KEYS)],
             'provider' => ['nullable', 'string', 'max:64'],
             'model' => ['nullable', 'string', 'max:255'],
             'thinking' => ['nullable', 'boolean'],
@@ -111,6 +107,12 @@ final class AdministratorAiController extends Controller
             'attachments.*' => ['file', 'max:20480', 'mimes:pdf,doc,docx,rtf,odt,ods,xlsx,xls,csv,tsv,txt,md,json,sql,log,png,jpg,jpeg,webp,gif,bmp,tif,tiff'],
         ]);
 
+        $agentKey = $validated['agent'] ?? 'admin_executive';
+
+        if (! app(AiAgentAccess::class)->isEnabled($agentKey, $user)) {
+            abort(403, 'The requested administrative AI assistant is not active.');
+        }
+
         $thinkingMode = (bool) ($validated['thinking'] ?? false);
         $searchMode = (bool) ($validated['search'] ?? false);
 
@@ -118,7 +120,6 @@ final class AdministratorAiController extends Controller
             session(['ai_auto_approve_actions' => (bool) ($validated['auto_approve'] ?? false)]);
         }
 
-        $agentKey = $validated['agent'] ?? 'admin_executive';
         $agent = $this->resolveAgent($agentKey);
 
         $selectedProvider = $validated['provider'] ?? null;
@@ -827,15 +828,15 @@ final class AdministratorAiController extends Controller
         abort_unless($user instanceof User && $user->canAccessAdminPortal(), 403);
 
         $validated = $request->validate([
-            'agent' => ['nullable', 'string', Rule::in([
-                'admin_executive',
-                'registrar_auditor',
-                'bursar_finance',
-                'campus_support',
-            ])],
+            'agent' => ['nullable', 'string', Rule::in(AiAgentAccess::ADMIN_AGENT_KEYS)],
         ]);
 
         $agentKey = (string) ($validated['agent'] ?? 'admin_executive');
+
+        if (! app(AiAgentAccess::class)->isEnabled($agentKey, $user)) {
+            abort(403, 'The requested administrative AI assistant is not active.');
+        }
+
         $agent = $this->resolveAgent($agentKey);
 
         $tools = [];

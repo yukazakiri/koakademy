@@ -50,7 +50,7 @@ final class GlobalSearchService
     public const int EXPANDED_RESULT_LIMIT = 20;
 
     /** @var list<string> */
-    public const array ADMINISTRATOR_GROUPS = ['students', 'classes', 'users', 'faculty', 'enrollments', 'courses', 'schedule'];
+    public const array ADMINISTRATOR_GROUPS = ['students', 'classes', 'users', 'faculty', 'enrollments', 'courses', 'subjects', 'schedule'];
 
     /** @var list<string> */
     public const array FACULTY_GROUPS = ['classes', 'students'];
@@ -177,6 +177,16 @@ final class GlobalSearchService
                 ->all();
         }
 
+        if ($type === 'all' || $type === 'subjects') {
+            $results['subjects'] = Subject::search($query)
+                ->query(fn (Builder $builder): Builder => $builder->with('course'))
+                ->take($limit)
+                ->get()
+                ->map(fn (Subject $subject): array => $this->administratorSubjectRow($subject))
+                ->values()
+                ->all();
+        }
+
         if ($type === 'all' || $type === 'schedule') {
             $results['schedule'] = $this->administratorScheduleQuery($query)
                 ->limit($limit)->get()
@@ -219,6 +229,10 @@ final class GlobalSearchService
             'courses' => Course::search($query)
                 ->paginate($perPage)
                 ->through(fn (Course $course): array => $this->administratorCourseRow($course)),
+            'subjects' => Subject::search($query)
+                ->query(fn (Builder $builder): Builder => $builder->with('course'))
+                ->paginate($perPage)
+                ->through(fn (Subject $subject): array => $this->administratorSubjectRow($subject)),
             'schedule' => $this->administratorScheduleQuery($query)->paginate($perPage)
                 ->through(fn (Schedule $schedule): array => $this->administratorScheduleRow($schedule)),
             default => $this->emptyPaginator($perPage),
@@ -815,6 +829,21 @@ final class GlobalSearchService
             'class_count' => (int) ($student->class_count ?? 0),
             'sections' => $sections,
             'url' => route('faculty.students.show', $student),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function administratorSubjectRow(Subject $subject): array
+    {
+        return $this->subjectSummary($subject) + [
+            'course_code' => $subject->course?->code,
+            'course_title' => $subject->course?->title,
+            'url' => $subject->course === null ? null : route('administrators.curriculum.programs.show', [
+                'course' => $subject->course->getRouteKey(),
+                'search' => $subject->code,
+            ]),
         ];
     }
 

@@ -956,7 +956,7 @@ export function GlobalCommandContent({
                                 <div className="flex flex-col gap-0.5">
                                     <div className="font-medium">{highlightSearchTerms(result.title, searchText)}</div>
                                     <div className="text-muted-foreground text-xs">
-                                        {result.code} · {result.units} Units
+                                        {result.code} · {result.units} Units{result.course_code ? ` · ${result.course_code}` : ""}
                                     </div>
                                 </div>
                             </CommandItem>

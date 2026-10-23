@@ -64,6 +64,8 @@ export type StudentSearchResult = {
 };
 
 export type SubjectSearchResult = {
+    course_code?: string | null;
+    course_title?: string | null;
     id: number;
     code: string;
     title: string;

@@ -1,5 +1,6 @@
 import AdminLayout from "@/components/administrators/admin-layout";
 import { AuthorityCodePicker, type AuthorityCodeOption } from "@/components/administrators/authority-code-picker";
+import { IconTile } from "@/components/reui/icon-tile";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -20,7 +21,6 @@ import { Label } from "@/components/ui/label";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type { User } from "@/types/user";
 import { Head, Link, router, useForm, type InertiaForm } from "@inertiajs/react";
@@ -35,9 +35,27 @@ import {
     getSortedRowModel,
     useReactTable,
 } from "@tanstack/react-table";
-import { ArrowUpDown, BookOpen, ChevronLeft, Edit, FilePenLine, GraduationCap, Plus, Search, Settings, Trash2 } from "lucide-react";
+import {
+    ArrowUpDown,
+    BookOpen,
+    CalendarDays,
+    ChevronLeft,
+    Edit,
+    FilePenLine,
+    GraduationCap,
+    Layers3,
+    List,
+    Map as MapIcon,
+    Plus,
+    Search,
+    Settings,
+    Trash2,
+    Waypoints,
+} from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { route } from "ziggy-js";
+import { Tabs, TabsContent, TabsList, TabsTab } from "../curriculum-tabs";
+import { FormSection, Workspace, WorkspaceMetric } from "../curriculum-workspace";
 
 type DepartmentOption = { id: number; name: string; code: string };
 type ProgramPayload = {
@@ -170,110 +188,116 @@ function SubjectFields({
 
     return (
         <div className="grid gap-5">
-            <div className="grid gap-4 md:grid-cols-2">
-                <div className="grid gap-2">
-                    <Label className="text-foreground/80 font-semibold">Subject Code</Label>
-                    <Input placeholder="e.g. CS101" value={form.data.code} onChange={(e) => form.setData("code", e.target.value)} />
-                    <FieldError message={form.errors.code} />
+            <FormSection title="Subject identity" description="Define how this subject appears in the curriculum.">
+                <div className="grid gap-4 md:grid-cols-2">
+                    <div className="grid gap-2">
+                        <Label className="text-foreground/80 font-semibold">Subject Code</Label>
+                        <Input placeholder="e.g. CS101" value={form.data.code} onChange={(e) => form.setData("code", e.target.value)} />
+                        <FieldError message={form.errors.code} />
+                    </div>
+                    <div className="grid gap-2">
+                        <Label className="text-foreground/80 font-semibold">Subject Title</Label>
+                        <Input placeholder="e.g. Intro to CS" value={form.data.title} onChange={(e) => form.setData("title", e.target.value)} />
+                        <FieldError message={form.errors.title} />
+                    </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                    <div className="grid gap-2">
+                        <Label className="text-foreground/80 font-semibold">Classification</Label>
+                        <Select value={form.data.classification} onValueChange={(v) => form.setData("classification", v)}>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Select" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {classificationOptions.map((o) => (
+                                    <SelectItem key={o.value} value={o.value}>
+                                        {o.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <FieldError message={form.errors.classification} />
+                    </div>
+                    <div className="grid gap-2">
+                        <Label className="text-foreground/80 font-semibold">Group</Label>
+                        <Input placeholder="e.g. Core" value={form.data.group} onChange={(e) => form.setData("group", e.target.value)} />
+                        <FieldError message={form.errors.group} />
+                    </div>
+                </div>
+            </FormSection>
+            <FormSection title="Units & contact hours" description="Set credit units independently from lecture and laboratory hours.">
+                <div className="grid gap-4 md:grid-cols-3">
+                    <div className="grid gap-2">
+                        <Label className="text-foreground/80 font-semibold">Units</Label>
+                        <Input type="number" min="0" value={form.data.units} onChange={(e) => form.setData("units", e.target.value)} />
+                        <FieldError message={form.errors.units} />
+                    </div>
+                    <div className="grid gap-2">
+                        <Label className="text-foreground/80 font-semibold">Lecture Hours</Label>
+                        <Input type="number" min="0" value={form.data.lecture} onChange={(e) => form.setData("lecture", e.target.value)} />
+                        <FieldError message={form.errors.lecture} />
+                    </div>
+                    <div className="grid gap-2">
+                        <Label className="text-foreground/80 font-semibold">Lab Hours</Label>
+                        <Input type="number" min="0" value={form.data.laboratory} onChange={(e) => form.setData("laboratory", e.target.value)} />
+                        <FieldError message={form.errors.laboratory} />
+                    </div>
+                </div>
+            </FormSection>
+            <FormSection title="Placement & requirements" description="Choose the term and subjects students must complete first.">
+                <div className="grid gap-4 md:grid-cols-2">
+                    <div className="grid gap-2">
+                        <Label className="text-foreground/80 font-semibold">Academic Year</Label>
+                        <Select value={form.data.academic_year} onValueChange={(v) => form.setData("academic_year", v)}>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Select year" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {yearOptions.map((o) => (
+                                    <SelectItem key={o.value} value={o.value}>
+                                        {o.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <FieldError message={form.errors.academic_year} />
+                    </div>
+                    <div className="grid gap-2">
+                        <Label className="text-foreground/80 font-semibold">Semester</Label>
+                        <Select value={form.data.semester} onValueChange={(v) => form.setData("semester", v)}>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Select semester" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {semesterOptions.map((o) => (
+                                    <SelectItem key={o.value} value={o.value}>
+                                        {o.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <FieldError message={form.errors.semester} />
+                    </div>
                 </div>
                 <div className="grid gap-2">
-                    <Label className="text-foreground/80 font-semibold">Subject Title</Label>
-                    <Input placeholder="e.g. Intro to CS" value={form.data.title} onChange={(e) => form.setData("title", e.target.value)} />
-                    <FieldError message={form.errors.title} />
+                    <Label className="text-foreground/80 font-semibold">Prerequisites</Label>
+                    <MultiSelect
+                        options={prereqOptions}
+                        selected={form.data.pre_riquisite.map(String)}
+                        onChange={(sel: string[]) => form.setData("pre_riquisite", sel.map(Number))}
+                        placeholder="Select prerequisites..."
+                        searchPlaceholder="Search subjects..."
+                        className="bg-background w-full"
+                    />
+                    <FieldError message={form.errors.pre_riquisite as string | undefined} />
                 </div>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-                <div className="grid gap-2">
-                    <Label className="text-foreground/80 font-semibold">Classification</Label>
-                    <Select value={form.data.classification} onValueChange={(v) => form.setData("classification", v)}>
-                        <SelectTrigger>
-                            <SelectValue placeholder="Select" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {classificationOptions.map((o) => (
-                                <SelectItem key={o.value} value={o.value}>
-                                    {o.label}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                    <FieldError message={form.errors.classification} />
+                <div className="bg-muted/30 border-border/50 flex items-center gap-2 rounded-lg border p-3">
+                    <Checkbox id="is-credited" checked={form.data.is_credited} onCheckedChange={(c) => form.setData("is_credited", Boolean(c))} />
+                    <Label htmlFor="is-credited" className="text-foreground/80 cursor-pointer font-semibold select-none">
+                        Mark as credited subject
+                    </Label>
                 </div>
-                <div className="grid gap-2">
-                    <Label className="text-foreground/80 font-semibold">Group</Label>
-                    <Input placeholder="e.g. Core" value={form.data.group} onChange={(e) => form.setData("group", e.target.value)} />
-                    <FieldError message={form.errors.group} />
-                </div>
-            </div>
-            <div className="grid gap-4 md:grid-cols-3">
-                <div className="grid gap-2">
-                    <Label className="text-foreground/80 font-semibold">Units</Label>
-                    <Input type="number" min="0" value={form.data.units} onChange={(e) => form.setData("units", e.target.value)} />
-                    <FieldError message={form.errors.units} />
-                </div>
-                <div className="grid gap-2">
-                    <Label className="text-foreground/80 font-semibold">Lecture Hours</Label>
-                    <Input type="number" min="0" value={form.data.lecture} onChange={(e) => form.setData("lecture", e.target.value)} />
-                    <FieldError message={form.errors.lecture} />
-                </div>
-                <div className="grid gap-2">
-                    <Label className="text-foreground/80 font-semibold">Lab Hours</Label>
-                    <Input type="number" min="0" value={form.data.laboratory} onChange={(e) => form.setData("laboratory", e.target.value)} />
-                    <FieldError message={form.errors.laboratory} />
-                </div>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-                <div className="grid gap-2">
-                    <Label className="text-foreground/80 font-semibold">Academic Year</Label>
-                    <Select value={form.data.academic_year} onValueChange={(v) => form.setData("academic_year", v)}>
-                        <SelectTrigger>
-                            <SelectValue placeholder="Select year" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {yearOptions.map((o) => (
-                                <SelectItem key={o.value} value={o.value}>
-                                    {o.label}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                    <FieldError message={form.errors.academic_year} />
-                </div>
-                <div className="grid gap-2">
-                    <Label className="text-foreground/80 font-semibold">Semester</Label>
-                    <Select value={form.data.semester} onValueChange={(v) => form.setData("semester", v)}>
-                        <SelectTrigger>
-                            <SelectValue placeholder="Select semester" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {semesterOptions.map((o) => (
-                                <SelectItem key={o.value} value={o.value}>
-                                    {o.label}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                    <FieldError message={form.errors.semester} />
-                </div>
-            </div>
-            <div className="grid gap-2">
-                <Label className="text-foreground/80 font-semibold">Prerequisites</Label>
-                <MultiSelect
-                    options={prereqOptions}
-                    selected={form.data.pre_riquisite.map(String)}
-                    onChange={(sel: string[]) => form.setData("pre_riquisite", sel.map(Number))}
-                    placeholder="Select prerequisites..."
-                    searchPlaceholder="Search subjects..."
-                    className="bg-background w-full"
-                />
-                <FieldError message={form.errors.pre_riquisite as string | undefined} />
-            </div>
-            <div className="bg-muted/30 border-border/50 flex items-center gap-2 rounded-lg border p-3">
-                <Checkbox id="is-credited" checked={form.data.is_credited} onCheckedChange={(c) => form.setData("is_credited", Boolean(c))} />
-                <Label htmlFor="is-credited" className="text-foreground/80 cursor-pointer font-semibold select-none">
-                    Mark as credited subject
-                </Label>
-            </div>
+            </FormSection>
         </div>
     );
 }
@@ -298,7 +322,9 @@ export default function CurriculumProgramShow({
     const [deleteSubject, setDeleteSubject] = useState<SubjectPayload | null>(null);
     const [sorting, setSorting] = useState<SortingState>([]);
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
-    const [globalFilter, setGlobalFilter] = useState("");
+    const [globalFilter, setGlobalFilter] = useState(() =>
+        typeof window === "undefined" ? "" : (new URLSearchParams(window.location.search).get("search") ?? ""),
+    );
 
     const subjectOptionMap = useMemo(() => new Map(subject_options.map((o) => [o.id, o])), [subject_options]);
     const classificationMap = useMemo(() => new Map(classification_options.map((o) => [o.value, o.label])), [classification_options]);
@@ -529,46 +555,70 @@ export default function CurriculumProgramShow({
         initialState: { pagination: { pageSize: 10 } },
     });
 
+    const [subjectView, setSubjectView] = useState("map");
+    const [yearFilter, setYearFilter] = useState("all");
+    const visibleSubjects = subjects.filter(
+        (subject) =>
+            (yearFilter === "all" || String(subject.academic_year ?? "unplaced") === yearFilter) &&
+            `${subject.code} ${subject.title} ${subject.classification ?? ""}`.toLowerCase().includes((globalFilter ?? "").toLowerCase()),
+    );
+    const mapYears = [...new Set(visibleSubjects.map((subject) => subject.academic_year))].sort((a, b) => (a ?? 999) - (b ?? 999));
+
     return (
         <AdminLayout user={user} title={`Program: ${program.code}`}>
             <Head title={`Program: ${program.code}`} />
-            <div className="flex flex-col gap-6">
-                {/* Header */}
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex items-center gap-4">
-                        <div className="bg-primary/10 rounded-xl p-3">
-                            <GraduationCap className="text-primary size-6" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl font-bold tracking-tight">{program.code}</h1>
-                            <p className="text-muted-foreground text-sm">{program.title}</p>
+            <Workspace>
+                <header className="bg-card rounded-xl border p-5 sm:p-7">
+                    <Link
+                        href={route("administrators.curriculum.programs.index")}
+                        className="text-muted-foreground hover:text-foreground mb-6 inline-flex items-center gap-1 text-sm"
+                    >
+                        <ChevronLeft className="size-4" /> Program catalog
+                    </Link>
+                    <div className="flex items-start gap-4">
+                        <IconTile variant="soft" size="lg">
+                            <GraduationCap />
+                        </IconTile>
+                        <div className="min-w-0 flex-1">
+                            <div className="mb-2 flex flex-wrap gap-2">
+                                <Badge variant="secondary">{program.code}</Badge>
+                                <Badge variant="outline">{program.curriculum_year || "Year not assigned"}</Badge>
+                            </div>
+                            <h1 className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">{program.title}</h1>
+                            <p className="text-muted-foreground mt-2 text-sm">
+                                {program.department_name || "No department assigned"} · {program.course_type_name || "Curriculum pathway"}
+                            </p>
                         </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="secondary" className="px-2.5 py-0.5 text-xs">
-                            {stats.subjects} subjects
-                        </Badge>
-                        <Badge variant="outline" className="bg-background px-2.5 py-0.5 text-xs">
-                            {stats.total_units} units
-                        </Badge>
-                        <Badge variant="outline" className="bg-background px-2.5 py-0.5 text-xs">
-                            {stats.credited_subjects} credited
-                        </Badge>
-                        <Button asChild variant="ghost" size="sm">
-                            <Link href={route("administrators.curriculum.programs.index")}>
-                                <ChevronLeft className="mr-1 size-4" />
-                                Programs
-                            </Link>
-                        </Button>
-                    </div>
+                </header>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <WorkspaceMetric
+                        icon={BookOpen}
+                        label="Subjects"
+                        value={stats.subjects}
+                        detail={`${stats.credited_subjects} credited subjects`}
+                    />
+                    <WorkspaceMetric icon={Layers3} label="Curriculum units" value={stats.total_units} detail="Across all mapped subjects" />
+                    <WorkspaceMetric
+                        icon={CalendarDays}
+                        label="Academic years"
+                        value={stats.academic_years}
+                        detail="Organized by year and semester"
+                    />
+                    <WorkspaceMetric
+                        icon={Waypoints}
+                        label="Prerequisite links"
+                        value={stats.subjects_with_requisites}
+                        detail="Subjects with entry requirements"
+                    />
                 </div>
 
                 {/* Tabs */}
-                <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value === "settings" ? "settings" : "subjects")}>
+                <Tabs className="gap-5" value={activeTab} onValueChange={(value) => setActiveTab(value === "settings" ? "settings" : "subjects")}>
                     <TabsList variant="underline">
                         <TabsTab value="subjects">
                             <BookOpen className="mr-1.5 size-4" />
-                            Subjects ({stats.subjects})
+                            Curriculum & subjects
                         </TabsTab>
                         <TabsTab value="settings">
                             <Settings className="mr-1.5 size-4" />
@@ -582,8 +632,10 @@ export default function CurriculumProgramShow({
                             <CardHeader className="bg-muted/20 border-b pb-4">
                                 <div className="flex flex-col justify-between gap-4 sm:flex-row">
                                     <div>
-                                        <CardTitle className="text-lg">Curriculum Subjects</CardTitle>
-                                        <CardDescription>Manage subjects for this program.</CardDescription>
+                                        <CardTitle className="text-lg">Study plan</CardTitle>
+                                        <CardDescription>
+                                            Browse the sequence by term, or switch to the subject list for detailed comparisons.
+                                        </CardDescription>
                                     </div>
                                     <div className="flex flex-wrap items-center gap-3">
                                         <div className="relative w-full sm:w-64">
@@ -603,43 +655,160 @@ export default function CurriculumProgramShow({
                                     </div>
                                 </div>
                             </CardHeader>
-                            <CardContent className="p-0">
-                                <Table>
-                                    <TableHeader className="bg-muted/30">
-                                        {table.getHeaderGroups().map((hg) => (
-                                            <TableRow key={hg.id} className="hover:bg-transparent">
-                                                {hg.headers.map((h) => (
-                                                    <TableHead key={h.id} className="py-3">
-                                                        {h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}
-                                                    </TableHead>
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4">
+                                <div className="bg-muted flex gap-1 rounded-lg p-1" aria-label="Subject view">
+                                    <Button
+                                        variant={subjectView === "map" ? "secondary" : "ghost"}
+                                        onClick={() => setSubjectView("map")}
+                                        aria-pressed={subjectView === "map"}
+                                    >
+                                        <MapIcon className="size-4" /> Study plan
+                                    </Button>
+                                    <Button
+                                        variant={subjectView === "list" ? "secondary" : "ghost"}
+                                        onClick={() => setSubjectView("list")}
+                                        aria-pressed={subjectView === "list"}
+                                    >
+                                        <List className="size-4" /> Subject list
+                                    </Button>
+                                </div>
+                                {subjectView === "map" && (
+                                    <Select value={yearFilter} onValueChange={setYearFilter}>
+                                        <SelectTrigger className="w-44" aria-label="Filter academic year">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="all">All years</SelectItem>
+                                            {[...new Set(subjects.map((subject) => subject.academic_year))]
+                                                .sort((a, b) => (a ?? 999) - (b ?? 999))
+                                                .map((year) => (
+                                                    <SelectItem key={year ?? "unplaced"} value={String(year ?? "unplaced")}>
+                                                        {year ? `Year ${year}` : "Unassigned year"}
+                                                    </SelectItem>
                                                 ))}
-                                            </TableRow>
-                                        ))}
-                                    </TableHeader>
-                                    <TableBody>
-                                        {table.getRowModel().rows?.length ? (
-                                            table.getRowModel().rows.map((row) => (
-                                                <TableRow key={row.id} className="group hover:bg-muted/20">
-                                                    {row.getVisibleCells().map((cell) => (
-                                                        <TableCell key={cell.id} className="py-3">
-                                                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                                                        </TableCell>
+                                        </SelectContent>
+                                    </Select>
+                                )}
+                            </div>
+                            {subjectView === "map" ? (
+                                <div className="bg-muted/15 space-y-6 p-4 sm:p-6">
+                                    {mapYears.map((year) => (
+                                        <section key={year ?? "unplaced"}>
+                                            <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
+                                                <CalendarDays className="text-primary size-4" />
+                                                {year ? `Year ${year}` : "Unassigned year"}
+                                                <span className="text-muted-foreground font-normal">
+                                                    · {visibleSubjects.filter((subject) => subject.academic_year === year).length} subjects
+                                                </span>
+                                            </h3>
+                                            <div className="grid gap-4 lg:grid-cols-2">
+                                                {[
+                                                    ...new Set(
+                                                        visibleSubjects
+                                                            .filter((subject) => subject.academic_year === year)
+                                                            .map((subject) => subject.semester),
+                                                    ),
+                                                ]
+                                                    .sort((a, b) => (a ?? 999) - (b ?? 999))
+                                                    .map((semester) => {
+                                                        const term = visibleSubjects.filter(
+                                                            (subject) => subject.academic_year === year && subject.semester === semester,
+                                                        );
+                                                        return (
+                                                            <div key={semester ?? "unplaced"} className="bg-card overflow-hidden rounded-xl border">
+                                                                <div className="bg-muted/40 flex items-center justify-between border-b px-4 py-3 text-sm">
+                                                                    <h4 className="font-semibold">
+                                                                        {semesterOptions.find((option) => option.value === String(semester))?.label ??
+                                                                            (semester ? `Semester ${semester}` : "Unassigned semester")}
+                                                                    </h4>
+                                                                    <span className="text-muted-foreground text-xs tabular-nums">
+                                                                        {term.reduce((sum, subject) => sum + Number(subject.units ?? 0), 0)} units
+                                                                    </span>
+                                                                </div>
+                                                                <div className="divide-y">
+                                                                    {term.map((subject) => (
+                                                                        <div key={subject.id} className="flex items-start gap-3 p-4">
+                                                                            <div className="min-w-0 flex-1">
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => openEditSubject(subject)}
+                                                                                    className="text-primary text-left text-xs font-semibold underline-offset-4 hover:underline"
+                                                                                >
+                                                                                    {subject.code}
+                                                                                </button>
+                                                                                <p className="mt-1 text-sm font-medium">{subject.title}</p>
+                                                                                <div className="text-muted-foreground mt-2 flex flex-wrap items-center gap-2 text-xs">
+                                                                                    <span>{subject.units ?? 0} units</span>
+                                                                                    {subject.is_credited && (
+                                                                                        <Badge variant="secondary">Credited</Badge>
+                                                                                    )}
+                                                                                </div>
+                                                                                <div className="mt-2">{renderPrereqs(subject)}</div>
+                                                                            </div>
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                size="icon"
+                                                                                aria-label={`Edit ${subject.code}`}
+                                                                                onClick={() => openEditSubject(subject)}
+                                                                            >
+                                                                                <Edit className="size-4" />
+                                                                            </Button>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                            </div>
+                                        </section>
+                                    ))}
+                                    {!visibleSubjects.length && (
+                                        <div className="py-12 text-center">
+                                            <BookOpen className="text-muted-foreground mx-auto mb-3 size-8" />
+                                            <h3 className="font-semibold">No subjects to display</h3>
+                                            <p className="text-muted-foreground mt-1 text-sm">Add a subject or change your search and year filter.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <CardContent className="overflow-x-auto p-0">
+                                    <Table>
+                                        <TableHeader className="bg-muted/30">
+                                            {table.getHeaderGroups().map((hg) => (
+                                                <TableRow key={hg.id} className="hover:bg-transparent">
+                                                    {hg.headers.map((h) => (
+                                                        <TableHead key={h.id} className="py-3">
+                                                            {h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}
+                                                        </TableHead>
                                                     ))}
                                                 </TableRow>
-                                            ))
-                                        ) : (
-                                            <TableRow>
-                                                <TableCell colSpan={columns.length} className="text-muted-foreground h-32 text-center">
-                                                    {subjects.length === 0
-                                                        ? "No subjects yet. Add the first subject."
-                                                        : "No subjects match your search."}
-                                                </TableCell>
-                                            </TableRow>
-                                        )}
-                                    </TableBody>
-                                </Table>
-                            </CardContent>
-                            {table.getPageCount() > 1 && (
+                                            ))}
+                                        </TableHeader>
+                                        <TableBody>
+                                            {table.getRowModel().rows?.length ? (
+                                                table.getRowModel().rows.map((row) => (
+                                                    <TableRow key={row.id} className="group hover:bg-muted/20">
+                                                        {row.getVisibleCells().map((cell) => (
+                                                            <TableCell key={cell.id} className="py-3">
+                                                                {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                                            </TableCell>
+                                                        ))}
+                                                    </TableRow>
+                                                ))
+                                            ) : (
+                                                <TableRow>
+                                                    <TableCell colSpan={columns.length} className="text-muted-foreground h-32 text-center">
+                                                        {subjects.length === 0
+                                                            ? "No subjects yet. Add the first subject."
+                                                            : "No subjects match your search."}
+                                                    </TableCell>
+                                                </TableRow>
+                                            )}
+                                        </TableBody>
+                                    </Table>
+                                </CardContent>
+                            )}
+                            {subjectView === "list" && table.getPageCount() > 1 && (
                                 <div className="flex items-center justify-end space-x-2 border-t p-4">
                                     <Button variant="outline" size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
                                         Previous
@@ -664,100 +833,125 @@ export default function CurriculumProgramShow({
                             </CardHeader>
                             <CardContent>
                                 <form className="grid gap-6" onSubmit={handleProgramSubmit}>
-                                    <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
-                                        <div className="grid gap-2 lg:col-span-1">
-                                            <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-                                                Program Code
-                                            </Label>
-                                            <Input
-                                                value={programForm.data.code}
-                                                className="font-medium"
-                                                onChange={(e) => programForm.setData("code", e.target.value)}
-                                            />
-                                            <FieldError message={programForm.errors.code} />
-                                        </div>
-                                        <div className="grid gap-2 lg:col-span-3">
-                                            <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-                                                Program Title
-                                            </Label>
-                                            <Input
-                                                value={programForm.data.title}
-                                                className="font-medium"
-                                                onChange={(e) => programForm.setData("title", e.target.value)}
-                                            />
-                                            <FieldError message={programForm.errors.title} />
-                                        </div>
-                                        <div className="grid gap-2 lg:col-span-2">
-                                            <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Department</Label>
-                                            <Select
-                                                value={programForm.data.department_id}
-                                                onValueChange={(v) => programForm.setData("department_id", v)}
+                                    <nav aria-label="Settings sections" className="bg-muted/30 flex flex-wrap gap-2 rounded-xl border p-3">
+                                        {[
+                                            ["program-identity", "Identity & fees"],
+                                            ["program-notes", "Description & notes"],
+                                            ["program-reporting", "Regulatory profile"],
+                                        ].map(([id, label]) => (
+                                            <a
+                                                key={id}
+                                                href={`#${id}`}
+                                                className="hover:bg-background focus-visible:ring-ring rounded-lg px-3 py-2 text-sm font-medium focus-visible:ring-2"
                                             >
-                                                <SelectTrigger>
-                                                    <SelectValue placeholder="Select department" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {departments.map((d) => (
-                                                        <SelectItem key={d.id} value={String(d.id)}>
-                                                            {d.code} — {d.name}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                            <FieldError message={programForm.errors.department_id} />
+                                                {label}
+                                            </a>
+                                        ))}
+                                    </nav>
+                                    <FormSection
+                                        id="program-identity"
+                                        title="Identity & fees"
+                                        description="Core program information, department ownership, and base rates."
+                                    >
+                                        <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+                                            <div className="grid gap-2 lg:col-span-1">
+                                                <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+                                                    Program Code
+                                                </Label>
+                                                <Input
+                                                    value={programForm.data.code}
+                                                    className="font-medium"
+                                                    onChange={(e) => programForm.setData("code", e.target.value)}
+                                                />
+                                                <FieldError message={programForm.errors.code} />
+                                            </div>
+                                            <div className="grid gap-2 lg:col-span-3">
+                                                <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+                                                    Program Title
+                                                </Label>
+                                                <Input
+                                                    value={programForm.data.title}
+                                                    className="font-medium"
+                                                    onChange={(e) => programForm.setData("title", e.target.value)}
+                                                />
+                                                <FieldError message={programForm.errors.title} />
+                                            </div>
+                                            <div className="grid gap-2 lg:col-span-2">
+                                                <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+                                                    Department
+                                                </Label>
+                                                <Select
+                                                    value={programForm.data.department_id}
+                                                    onValueChange={(v) => programForm.setData("department_id", v)}
+                                                >
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Select department" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {departments.map((d) => (
+                                                            <SelectItem key={d.id} value={String(d.id)}>
+                                                                {d.code} — {d.name}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                <FieldError message={programForm.errors.department_id} />
+                                            </div>
+                                            <div className="grid gap-2 lg:col-span-2">
+                                                <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+                                                    Course Type
+                                                </Label>
+                                                <Select
+                                                    value={programForm.data.course_type_id}
+                                                    onValueChange={(v) => programForm.setData("course_type_id", v)}
+                                                >
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Select type" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {course_types.map((t) => (
+                                                            <SelectItem key={t.id} value={String(t.id)}>
+                                                                {t.name}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                <FieldError message={programForm.errors.course_type_id} />
+                                            </div>
+                                            <div className="grid gap-2 lg:col-span-2">
+                                                <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+                                                    Curriculum Year
+                                                </Label>
+                                                <Input
+                                                    value={programForm.data.curriculum_year}
+                                                    onChange={(e) => programForm.setData("curriculum_year", e.target.value)}
+                                                />
+                                                <FieldError message={programForm.errors.curriculum_year} />
+                                            </div>
+                                            <div className="grid gap-2">
+                                                <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+                                                    Lec per Unit
+                                                </Label>
+                                                <Input
+                                                    type="number"
+                                                    value={programForm.data.lec_per_unit}
+                                                    onChange={(e) => programForm.setData("lec_per_unit", e.target.value)}
+                                                />
+                                                <FieldError message={programForm.errors.lec_per_unit} />
+                                            </div>
+                                            <div className="grid gap-2 lg:col-span-2">
+                                                <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+                                                    Misc Fee
+                                                </Label>
+                                                <Input
+                                                    type="number"
+                                                    value={programForm.data.miscelaneous}
+                                                    onChange={(e) => programForm.setData("miscelaneous", e.target.value)}
+                                                />
+                                                <FieldError message={programForm.errors.miscelaneous} />
+                                            </div>
                                         </div>
-                                        <div className="grid gap-2 lg:col-span-2">
-                                            <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-                                                Course Type
-                                            </Label>
-                                            <Select
-                                                value={programForm.data.course_type_id}
-                                                onValueChange={(v) => programForm.setData("course_type_id", v)}
-                                            >
-                                                <SelectTrigger>
-                                                    <SelectValue placeholder="Select type" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {course_types.map((t) => (
-                                                        <SelectItem key={t.id} value={String(t.id)}>
-                                                            {t.name}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                            <FieldError message={programForm.errors.course_type_id} />
-                                        </div>
-                                        <div className="grid gap-2 lg:col-span-2">
-                                            <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-                                                Curriculum Year
-                                            </Label>
-                                            <Input
-                                                value={programForm.data.curriculum_year}
-                                                onChange={(e) => programForm.setData("curriculum_year", e.target.value)}
-                                            />
-                                            <FieldError message={programForm.errors.curriculum_year} />
-                                        </div>
-                                        <div className="grid gap-2">
-                                            <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-                                                Lec per Unit
-                                            </Label>
-                                            <Input
-                                                type="number"
-                                                value={programForm.data.lec_per_unit}
-                                                onChange={(e) => programForm.setData("lec_per_unit", e.target.value)}
-                                            />
-                                            <FieldError message={programForm.errors.lec_per_unit} />
-                                        </div>
-                                        <div className="grid gap-2 lg:col-span-2">
-                                            <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Misc Fee</Label>
-                                            <Input
-                                                type="number"
-                                                value={programForm.data.miscelaneous}
-                                                onChange={(e) => programForm.setData("miscelaneous", e.target.value)}
-                                            />
-                                            <FieldError message={programForm.errors.miscelaneous} />
-                                        </div>
-                                    </div>
+                                    </FormSection>
                                     {programForm.data.curriculum_kind === "tesda_qualification" && (
                                         <div className="border-border/70 grid gap-4 rounded-lg border p-4 md:grid-cols-2">
                                             <div className="md:col-span-2">
@@ -850,271 +1044,290 @@ export default function CurriculumProgramShow({
                                             )}
                                         </div>
                                     )}
-                                    <div className="grid gap-5 md:grid-cols-2">
-                                        <div className="grid gap-2">
-                                            <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-                                                Description
-                                            </Label>
-                                            <Textarea
-                                                className="min-h-[100px] resize-none"
-                                                value={programForm.data.description}
-                                                onChange={(e) => programForm.setData("description", e.target.value)}
-                                            />
-                                            <FieldError message={programForm.errors.description} />
-                                        </div>
-                                        <div className="grid gap-2">
-                                            <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Remarks</Label>
-                                            <Textarea
-                                                className="min-h-[100px] resize-none"
-                                                value={programForm.data.remarks}
-                                                onChange={(e) => programForm.setData("remarks", e.target.value)}
-                                            />
-                                            <FieldError message={programForm.errors.remarks} />
-                                        </div>
-                                    </div>
-                                    <div className="border-border/70 grid gap-4 rounded-lg border p-4 md:grid-cols-2 lg:grid-cols-4">
-                                        <div className="col-span-full">
-                                            <p className="text-sm font-semibold">CHED Form B/C program profile</p>
-                                            <p className="text-muted-foreground text-xs">
-                                                Leave unknown fields empty; they will remain in the reporting-quality queue.
-                                            </p>
-                                        </div>
-                                        {authority_codes.authorities.length > 0 && (
-                                            <div className="grid gap-2 lg:col-span-2">
-                                                <Label htmlFor="program-authority-code">
-                                                    Official authority code{" "}
-                                                    <span className="text-muted-foreground font-normal">
-                                                        (optional{authority_codes.is_ched_accredited ? " · CHED-accredited" : ""})
-                                                    </span>
+                                    <FormSection id="program-notes" title="Description & notes" description="Give staff context about this pathway.">
+                                        <div className="grid gap-5 md:grid-cols-2">
+                                            <div className="grid gap-2">
+                                                <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+                                                    Description
                                                 </Label>
-                                                <AuthorityCodePicker
-                                                    id="program-authority-code"
-                                                    value={programForm.data.industry_course_code_id}
-                                                    initialLabel={programForm.data.industry_course_code_label}
-                                                    onSelect={(option: AuthorityCodeOption | null) => {
-                                                        programForm.setData("industry_course_code_id", option ? String(option.id) : "");
-                                                        programForm.setData("industry_course_code_label", option ? option.label : "");
-                                                    }}
-                                                    error={programForm.errors.industry_course_code_id}
+                                                <Textarea
+                                                    className="min-h-[100px] resize-none"
+                                                    value={programForm.data.description}
+                                                    onChange={(e) => programForm.setData("description", e.target.value)}
                                                 />
-                                                {program.industry_course_code_authority && (
-                                                    <p className="text-muted-foreground text-xs">
-                                                        Currently linked: {program.industry_course_code_label} ·{" "}
-                                                        {program.industry_course_code_authority}
-                                                    </p>
-                                                )}
-                                                <FieldError message={programForm.errors.industry_course_code_id} />
+                                                <FieldError message={programForm.errors.description} />
                                             </div>
-                                        )}
-                                        <div className="grid gap-2">
-                                            <Label htmlFor="ched-reporting-level">CHED worksheet / education level</Label>
-                                            <Select
-                                                value={programForm.data.ched_reporting_level || "__unknown"}
-                                                onValueChange={(value) =>
-                                                    programForm.setData("ched_reporting_level", value === "__unknown" ? "" : (value ?? ""))
-                                                }
-                                            >
-                                                <SelectTrigger id="ched-reporting-level">
-                                                    <SelectValue placeholder="Select education level" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="__unknown">Unknown</SelectItem>
-                                                    {ched_options.reporting_levels.map((option) => (
-                                                        <SelectItem key={option.value} value={option.value}>
-                                                            {option.label}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                            <FieldError message={programForm.errors.ched_reporting_level} />
+                                            <div className="grid gap-2">
+                                                <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+                                                    Remarks
+                                                </Label>
+                                                <Textarea
+                                                    className="min-h-[100px] resize-none"
+                                                    value={programForm.data.remarks}
+                                                    onChange={(e) => programForm.setData("remarks", e.target.value)}
+                                                />
+                                                <FieldError message={programForm.errors.remarks} />
+                                            </div>
                                         </div>
-                                        {(
-                                            [
-                                                { key: "ched_program_code", label: "Official CHED program code", type: "text" },
-                                                { key: "ched_major_code", label: "CHED major code (if applicable)", type: "text" },
-                                                { key: "ched_year_implemented", label: "Year implemented (PO / DO)", type: "number" },
-                                                { key: "ched_other_delivery_mode", label: "Other delivery mode (OT)", type: "text" },
-                                            ] as const
-                                        ).map((field) => (
-                                            <div key={field.key} className="grid gap-2">
-                                                <Label htmlFor={field.key}>{field.label}</Label>
+                                    </FormSection>
+                                    <FormSection
+                                        id="program-reporting"
+                                        title="Regulatory profile"
+                                        description="Reporting identifiers, authority information, and delivery details."
+                                    >
+                                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                                            <div className="col-span-full">
+                                                <p className="text-sm font-semibold">CHED Form B/C program profile</p>
+                                                <p className="text-muted-foreground text-xs">
+                                                    Leave unknown fields empty; they will remain in the reporting-quality queue.
+                                                </p>
+                                            </div>
+                                            {authority_codes.authorities.length > 0 && (
+                                                <div className="grid gap-2 lg:col-span-2">
+                                                    <Label htmlFor="program-authority-code">
+                                                        Official authority code{" "}
+                                                        <span className="text-muted-foreground font-normal">
+                                                            (optional{authority_codes.is_ched_accredited ? " · CHED-accredited" : ""})
+                                                        </span>
+                                                    </Label>
+                                                    <AuthorityCodePicker
+                                                        id="program-authority-code"
+                                                        value={programForm.data.industry_course_code_id}
+                                                        initialLabel={programForm.data.industry_course_code_label}
+                                                        onSelect={(option: AuthorityCodeOption | null) => {
+                                                            programForm.setData("industry_course_code_id", option ? String(option.id) : "");
+                                                            programForm.setData("industry_course_code_label", option ? option.label : "");
+                                                        }}
+                                                        error={programForm.errors.industry_course_code_id}
+                                                    />
+                                                    {program.industry_course_code_authority && (
+                                                        <p className="text-muted-foreground text-xs">
+                                                            Currently linked: {program.industry_course_code_label} ·{" "}
+                                                            {program.industry_course_code_authority}
+                                                        </p>
+                                                    )}
+                                                    <FieldError message={programForm.errors.industry_course_code_id} />
+                                                </div>
+                                            )}
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="ched-reporting-level">CHED worksheet / education level</Label>
+                                                <Select
+                                                    value={programForm.data.ched_reporting_level || "__unknown"}
+                                                    onValueChange={(value) =>
+                                                        programForm.setData("ched_reporting_level", value === "__unknown" ? "" : (value ?? ""))
+                                                    }
+                                                >
+                                                    <SelectTrigger id="ched-reporting-level">
+                                                        <SelectValue placeholder="Select education level" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="__unknown">Unknown</SelectItem>
+                                                        {ched_options.reporting_levels.map((option) => (
+                                                            <SelectItem key={option.value} value={option.value}>
+                                                                {option.label}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                <FieldError message={programForm.errors.ched_reporting_level} />
+                                            </div>
+                                            {(
+                                                [
+                                                    { key: "ched_program_code", label: "Official CHED program code", type: "text" },
+                                                    { key: "ched_major_code", label: "CHED major code (if applicable)", type: "text" },
+                                                    { key: "ched_year_implemented", label: "Year implemented (PO / DO)", type: "number" },
+                                                    { key: "ched_other_delivery_mode", label: "Other delivery mode (OT)", type: "text" },
+                                                ] as const
+                                            ).map((field) => (
+                                                <div key={field.key} className="grid gap-2">
+                                                    <Label htmlFor={field.key}>{field.label}</Label>
+                                                    <Input
+                                                        id={field.key}
+                                                        type={field.type}
+                                                        value={programForm.data[field.key]}
+                                                        onChange={(event) => programForm.setData(field.key, event.target.value)}
+                                                    />
+                                                    <FieldError message={programForm.errors[field.key]} />
+                                                </div>
+                                            ))}
+                                            <div className="grid gap-2">
+                                                <Label>Major</Label>
                                                 <Input
-                                                    id={field.key}
-                                                    type={field.type}
-                                                    value={programForm.data[field.key]}
-                                                    onChange={(event) => programForm.setData(field.key, event.target.value)}
+                                                    value={programForm.data.ched_major}
+                                                    onChange={(e) => programForm.setData("ched_major", e.target.value)}
                                                 />
-                                                <FieldError message={programForm.errors[field.key]} />
+                                                <FieldError message={programForm.errors.ched_major} />
                                             </div>
-                                        ))}
-                                        <div className="grid gap-2">
-                                            <Label>Major</Label>
-                                            <Input
-                                                value={programForm.data.ched_major}
-                                                onChange={(e) => programForm.setData("ched_major", e.target.value)}
-                                            />
-                                            <FieldError message={programForm.errors.ched_major} />
+                                            <div className="grid gap-2">
+                                                <Label>Thesis / Dissertation</Label>
+                                                <Select
+                                                    value={programForm.data.ched_has_thesis || undefined}
+                                                    onValueChange={(value) =>
+                                                        programForm.setData("ched_has_thesis", value === "__unknown" ? "" : value)
+                                                    }
+                                                >
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Unknown" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="__unknown">Unknown</SelectItem>
+                                                        {ched_options.has_thesis.map((option) => (
+                                                            <SelectItem key={option.value} value={option.value}>
+                                                                {option.label}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                <FieldError message={programForm.errors.ched_has_thesis} />
+                                            </div>
+                                            <div className="grid gap-2">
+                                                <Label>Program status</Label>
+                                                <Select
+                                                    value={programForm.data.ched_program_status || undefined}
+                                                    onValueChange={(value) =>
+                                                        programForm.setData("ched_program_status", value === "__unknown" ? "" : value)
+                                                    }
+                                                >
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Unknown" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="__unknown">Unknown</SelectItem>
+                                                        {ched_options.program_statuses.map((option) => (
+                                                            <SelectItem key={option.value} value={option.value}>
+                                                                {option.label}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                <FieldError message={programForm.errors.ched_program_status} />
+                                            </div>
+                                            <div className="grid gap-2">
+                                                <Label>Delivery mode</Label>
+                                                <Select
+                                                    value={programForm.data.ched_delivery_mode || undefined}
+                                                    onValueChange={(value) =>
+                                                        programForm.setData("ched_delivery_mode", value === "__unknown" ? "" : value)
+                                                    }
+                                                >
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Unknown" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="__unknown">Unknown</SelectItem>
+                                                        {ched_options.delivery_modes.map((option) => (
+                                                            <SelectItem key={option.value} value={option.value}>
+                                                                {option.label}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                <FieldError message={programForm.errors.ched_delivery_mode} />
+                                            </div>
+                                            <div className="grid gap-2">
+                                                <Label>Authority category</Label>
+                                                <Select
+                                                    value={programForm.data.ched_authority_category || undefined}
+                                                    onValueChange={(value) =>
+                                                        programForm.setData("ched_authority_category", value === "__unknown" ? "" : value)
+                                                    }
+                                                >
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Unknown" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="__unknown">Unknown</SelectItem>
+                                                        {ched_options.authority_categories.map((option) => (
+                                                            <SelectItem key={option.value} value={option.value}>
+                                                                {option.label}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                <FieldError message={programForm.errors.ched_authority_category} />
+                                            </div>
+                                            <div className="grid gap-2">
+                                                <Label>Authority serial</Label>
+                                                <Input
+                                                    value={programForm.data.ched_authority_serial}
+                                                    onChange={(e) => programForm.setData("ched_authority_serial", e.target.value)}
+                                                />
+                                                <FieldError message={programForm.errors.ched_authority_serial} />
+                                            </div>
+                                            <div className="grid gap-2">
+                                                <Label>Authority year</Label>
+                                                <Input
+                                                    type="number"
+                                                    value={programForm.data.ched_authority_year}
+                                                    onChange={(e) => programForm.setData("ched_authority_year", e.target.value)}
+                                                />
+                                                <FieldError message={programForm.errors.ched_authority_year} />
+                                            </div>
+                                            <div className="grid gap-2">
+                                                <Label>Other program reference</Label>
+                                                <Input
+                                                    value={programForm.data.ched_authority_other_program}
+                                                    onChange={(e) => programForm.setData("ched_authority_other_program", e.target.value)}
+                                                />
+                                                <FieldError message={programForm.errors.ched_authority_other_program} />
+                                            </div>
+                                            <div className="grid gap-2">
+                                                <Label>Normal length (years)</Label>
+                                                <Input
+                                                    type="number"
+                                                    min="0"
+                                                    max="999.9"
+                                                    step="0.5"
+                                                    value={programForm.data.ched_normal_length_years}
+                                                    onChange={(e) => programForm.setData("ched_normal_length_years", e.target.value)}
+                                                />
+                                                <FieldError message={programForm.errors.ched_normal_length_years} />
+                                            </div>
+                                            <div className="grid gap-2">
+                                                <Label>Required units</Label>
+                                                <Input
+                                                    type="number"
+                                                    min="0"
+                                                    max="65535"
+                                                    value={programForm.data.ched_program_credit_units}
+                                                    onChange={(e) => programForm.setData("ched_program_credit_units", e.target.value)}
+                                                />
+                                                <FieldError message={programForm.errors.ched_program_credit_units} />
+                                            </div>
+                                            <div className="grid gap-2">
+                                                <Label>Tuition per unit</Label>
+                                                <Input
+                                                    type="number"
+                                                    min="0"
+                                                    max="9999999999.99"
+                                                    step="0.01"
+                                                    value={programForm.data.ched_tuition_per_unit}
+                                                    onChange={(e) => programForm.setData("ched_tuition_per_unit", e.target.value)}
+                                                />
+                                                <FieldError message={programForm.errors.ched_tuition_per_unit} />
+                                            </div>
+                                            <div className="grid gap-2">
+                                                <Label>Program fee</Label>
+                                                <Input
+                                                    type="number"
+                                                    min="0"
+                                                    max="9999999999.99"
+                                                    step="0.01"
+                                                    value={programForm.data.ched_program_fee}
+                                                    onChange={(e) => programForm.setData("ched_program_fee", e.target.value)}
+                                                />
+                                                <FieldError message={programForm.errors.ched_program_fee} />
+                                            </div>
                                         </div>
-                                        <div className="grid gap-2">
-                                            <Label>Thesis / Dissertation</Label>
-                                            <Select
-                                                value={programForm.data.ched_has_thesis || undefined}
-                                                onValueChange={(value) => programForm.setData("ched_has_thesis", value === "__unknown" ? "" : value)}
-                                            >
-                                                <SelectTrigger>
-                                                    <SelectValue placeholder="Unknown" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="__unknown">Unknown</SelectItem>
-                                                    {ched_options.has_thesis.map((option) => (
-                                                        <SelectItem key={option.value} value={option.value}>
-                                                            {option.label}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                            <FieldError message={programForm.errors.ched_has_thesis} />
-                                        </div>
-                                        <div className="grid gap-2">
-                                            <Label>Program status</Label>
-                                            <Select
-                                                value={programForm.data.ched_program_status || undefined}
-                                                onValueChange={(value) =>
-                                                    programForm.setData("ched_program_status", value === "__unknown" ? "" : value)
-                                                }
-                                            >
-                                                <SelectTrigger>
-                                                    <SelectValue placeholder="Unknown" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="__unknown">Unknown</SelectItem>
-                                                    {ched_options.program_statuses.map((option) => (
-                                                        <SelectItem key={option.value} value={option.value}>
-                                                            {option.label}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                            <FieldError message={programForm.errors.ched_program_status} />
-                                        </div>
-                                        <div className="grid gap-2">
-                                            <Label>Delivery mode</Label>
-                                            <Select
-                                                value={programForm.data.ched_delivery_mode || undefined}
-                                                onValueChange={(value) =>
-                                                    programForm.setData("ched_delivery_mode", value === "__unknown" ? "" : value)
-                                                }
-                                            >
-                                                <SelectTrigger>
-                                                    <SelectValue placeholder="Unknown" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="__unknown">Unknown</SelectItem>
-                                                    {ched_options.delivery_modes.map((option) => (
-                                                        <SelectItem key={option.value} value={option.value}>
-                                                            {option.label}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                            <FieldError message={programForm.errors.ched_delivery_mode} />
-                                        </div>
-                                        <div className="grid gap-2">
-                                            <Label>Authority category</Label>
-                                            <Select
-                                                value={programForm.data.ched_authority_category || undefined}
-                                                onValueChange={(value) =>
-                                                    programForm.setData("ched_authority_category", value === "__unknown" ? "" : value)
-                                                }
-                                            >
-                                                <SelectTrigger>
-                                                    <SelectValue placeholder="Unknown" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="__unknown">Unknown</SelectItem>
-                                                    {ched_options.authority_categories.map((option) => (
-                                                        <SelectItem key={option.value} value={option.value}>
-                                                            {option.label}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                            <FieldError message={programForm.errors.ched_authority_category} />
-                                        </div>
-                                        <div className="grid gap-2">
-                                            <Label>Authority serial</Label>
-                                            <Input
-                                                value={programForm.data.ched_authority_serial}
-                                                onChange={(e) => programForm.setData("ched_authority_serial", e.target.value)}
-                                            />
-                                            <FieldError message={programForm.errors.ched_authority_serial} />
-                                        </div>
-                                        <div className="grid gap-2">
-                                            <Label>Authority year</Label>
-                                            <Input
-                                                type="number"
-                                                value={programForm.data.ched_authority_year}
-                                                onChange={(e) => programForm.setData("ched_authority_year", e.target.value)}
-                                            />
-                                            <FieldError message={programForm.errors.ched_authority_year} />
-                                        </div>
-                                        <div className="grid gap-2">
-                                            <Label>Other program reference</Label>
-                                            <Input
-                                                value={programForm.data.ched_authority_other_program}
-                                                onChange={(e) => programForm.setData("ched_authority_other_program", e.target.value)}
-                                            />
-                                            <FieldError message={programForm.errors.ched_authority_other_program} />
-                                        </div>
-                                        <div className="grid gap-2">
-                                            <Label>Normal length (years)</Label>
-                                            <Input
-                                                type="number"
-                                                min="0"
-                                                max="999.9"
-                                                step="0.5"
-                                                value={programForm.data.ched_normal_length_years}
-                                                onChange={(e) => programForm.setData("ched_normal_length_years", e.target.value)}
-                                            />
-                                            <FieldError message={programForm.errors.ched_normal_length_years} />
-                                        </div>
-                                        <div className="grid gap-2">
-                                            <Label>Required units</Label>
-                                            <Input
-                                                type="number"
-                                                min="0"
-                                                max="65535"
-                                                value={programForm.data.ched_program_credit_units}
-                                                onChange={(e) => programForm.setData("ched_program_credit_units", e.target.value)}
-                                            />
-                                            <FieldError message={programForm.errors.ched_program_credit_units} />
-                                        </div>
-                                        <div className="grid gap-2">
-                                            <Label>Tuition per unit</Label>
-                                            <Input
-                                                type="number"
-                                                min="0"
-                                                max="9999999999.99"
-                                                step="0.01"
-                                                value={programForm.data.ched_tuition_per_unit}
-                                                onChange={(e) => programForm.setData("ched_tuition_per_unit", e.target.value)}
-                                            />
-                                            <FieldError message={programForm.errors.ched_tuition_per_unit} />
-                                        </div>
-                                        <div className="grid gap-2">
-                                            <Label>Program fee</Label>
-                                            <Input
-                                                type="number"
-                                                min="0"
-                                                max="9999999999.99"
-                                                step="0.01"
-                                                value={programForm.data.ched_program_fee}
-                                                onChange={(e) => programForm.setData("ched_program_fee", e.target.value)}
-                                            />
-                                            <FieldError message={programForm.errors.ched_program_fee} />
-                                        </div>
-                                    </div>
-                                    <div className="flex justify-end pt-2">
+                                    </FormSection>
+                                    <div className="bg-card sticky bottom-3 z-10 flex items-center justify-between gap-3 rounded-xl border p-4 shadow-sm">
+                                        <p className="text-muted-foreground text-xs" role="status">
+                                            {programForm.hasErrors
+                                                ? "Review highlighted fields before saving."
+                                                : programForm.isDirty
+                                                  ? "Unsaved changes"
+                                                  : "Program details up to date"}
+                                        </p>
                                         <Button type="submit" disabled={programForm.processing}>
                                             <FilePenLine className="mr-2 size-4" />
                                             Save Program Details
@@ -1125,7 +1338,7 @@ export default function CurriculumProgramShow({
                         </Card>
                     </TabsContent>
                 </Tabs>
-            </div>
+            </Workspace>
 
             {/* Create Subject Dialog */}
             <Dialog
@@ -1138,7 +1351,7 @@ export default function CurriculumProgramShow({
                     }
                 }}
             >
-                <DialogContent className="bg-card border shadow-lg sm:max-w-2xl">
+                <DialogContent className="bg-card max-h-[90dvh] overflow-y-auto rounded-2xl border shadow-lg motion-reduce:animate-none sm:max-w-3xl">
                     <DialogHeader className="mb-4 border-b pb-4">
                         <DialogTitle className="text-xl">Add Subject</DialogTitle>
                         <DialogDescription>Add a new subject under {program.code}.</DialogDescription>
@@ -1168,7 +1381,7 @@ export default function CurriculumProgramShow({
                     }
                 }}
             >
-                <DialogContent className="bg-card border shadow-lg sm:max-w-2xl">
+                <DialogContent className="bg-card max-h-[90dvh] overflow-y-auto rounded-2xl border shadow-lg motion-reduce:animate-none sm:max-w-3xl">
                     <DialogHeader className="mb-4 border-b pb-4">
                         <DialogTitle className="text-xl">Edit Subject</DialogTitle>
                         <DialogDescription>Update {editSubject?.code} details.</DialogDescription>

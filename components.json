@@ -27,6 +27,7 @@
     "@bklit": "https://ui.bklit.com/r/{name}.json",
     "@smoothui": "https://smoothui.dev/r/{name}.json",
     "@spectrumui": "https://ui.spectrumhq.in/r/{name}.json",
-    "@beui": "https://beui.dev/r/{name}.json"
+    "@beui": "https://beui.dev/r/{name}.json",
+    "@animate-ui": "https://animate-ui.com/r/{name}.json"
   }
 }

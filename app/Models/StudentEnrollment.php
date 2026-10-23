@@ -345,6 +345,31 @@ final class StudentEnrollment extends Model
     }
 
     /**
+     * Determine whether at least one enrolled subject has no class assignment.
+     *
+     * This is intentionally query-free once the caller has eager-loaded
+     * `subjectsEnrolled.subject` and `student.classEnrollments.class`; the
+     * widget uses it to filter a whole chunk of enrollments without hydrating
+     * every matching class offering.
+     */
+    public function hasMissingClasses(): bool
+    {
+        $student = $this->student;
+
+        if (! $student) {
+            return false;
+        }
+
+        $period = $this->missingClassPeriod();
+
+        return $this->missingSubjectEnrollments(
+            $student,
+            $period['school_year_variants'],
+            $period['semester'],
+        )->isNotEmpty();
+    }
+
+    /**
      * Get missing classes as a collection for RepeatableEntry
      * This is an accessor for the infolist
      */
@@ -356,119 +381,71 @@ final class StudentEnrollment extends Model
             return $this->newCollection();
         }
 
-        $subjectEnrollments = $this->subjectsEnrolled()->with('subject')->get();
+        $period = $this->missingClassPeriod();
+        $missingSubjectEnrollments = $this->missingSubjectEnrollments(
+            $student,
+            $period['school_year_variants'],
+            $period['semester'],
+        );
 
-        $period = $this->getCurrentAcademicPeriod();
-        $schoolYearVariants = $this->school_year
-            ? $this->resolveSchoolYearVariants($this->school_year)
-            : $period['school_year_variants'];
-        $semester = $this->semester ?: $period['semester'];
+        if ($missingSubjectEnrollments->isEmpty()) {
+            return $this->newCollection();
+        }
 
-        $enrolledSubjectCodes = $student->classEnrollments()
-            ->with('class')
-            ->where('status', true)
-            ->whereHas('class', function ($query) use ($schoolYearVariants, $semester): void {
-                $query->whereIn('school_year', $schoolYearVariants)
-                    ->where('semester', $semester);
-            })
-            ->get()
-            ->pluck('class.subject_code')
-            ->flatMap(fn ($subjectCode): array => collect(explode(',', (string) $subjectCode))
-                ->map(fn (string $code): string => mb_strtoupper(mb_trim($code)))
-                ->filter()
-                ->all())
-            ->unique()
-            ->values()
-            ->all();
+        $subjects = $missingSubjectEnrollments
+            ->map(fn (SubjectEnrollment $subjectEnrollment): ?Subject => $subjectEnrollment->subject)
+            ->filter()
+            ->unique('id')
+            ->values();
+
+        [$classesBySubjectId, $slotCounts] = $this->candidateClassesForSubjects($subjects, $period);
+
         $allMissingClasses = [];
 
-        // Only process if we have subject enrollments
-        if ($subjectEnrollments->isNotEmpty()) {
-            foreach ($subjectEnrollments as $subjectEnrollment) {
-                $subject = $subjectEnrollment->subject;
+        foreach ($missingSubjectEnrollments as $subjectEnrollment) {
+            $subject = $subjectEnrollment->subject;
 
-                if (! $subject) {
-                    continue;
-                }
+            if (! $subject) {
+                continue;
+            }
 
-                $subjectCode = (string) $subject->code;
-                $normalizedSubjectCode = mb_strtoupper(mb_trim($subjectCode));
+            $subjectCode = (string) $subject->code;
+            $availableClasses = $classesBySubjectId->get($subject->id, collect());
 
-                if (! in_array($normalizedSubjectCode, $enrolledSubjectCodes, true)) {
-                    // Find available classes for this subject with relationships
-                    $availableClasses = Classes::query()
-                        ->with('faculty', 'schedules.room')
-                        ->whereIn('school_year', $schoolYearVariants)
-                        ->where('semester', $semester)
-                        ->whereJsonContains('course_codes', $subject->course_id)
-                        ->where(function ($query) use ($subject): void {
-                            $query->whereJsonContains('subject_ids', $subject->id)
-                                ->orWhereRaw('LOWER(TRIM(subject_code)) = LOWER(TRIM(?))', [$subject->code])
-                                ->orWhereRaw('LOWER(subject_code) LIKE LOWER(?)', ['%'.$subject->code.'%']);
-                        })
-                        ->get()
-                        ->map(function ($class) use ($subjectCode) {
-                            $enrolledCount = ClassEnrollment::where('class_id', $class->id)->count();
-                            $maxSlots = $class->maximum_slots ?: 0;
-                            $availableSlots = $maxSlots > 0 ? $maxSlots - $enrolledCount : PHP_INT_MAX;
+            if ($availableClasses->isEmpty()) {
+                $allMissingClasses[] = (object) [
+                    'class_id' => null,
+                    'subject_code' => $subjectCode,
+                    'subject_title' => $subject->title,
+                    'section' => '—',
+                    'faculty' => '—',
+                    'schedule' => '—',
+                    'room' => '—',
+                    'available_slots' => null,
+                    'max_slots' => 0,
+                    'is_full' => false,
+                ];
 
-                            // Format schedule
-                            $scheduleText = 'TBA';
-                            if ($class->schedules->isNotEmpty()) {
-                                $schedules = $class->schedules
-                                    ->map(function ($schedule): string {
-                                        $day = $schedule->day_of_week;
-                                        // Handle both string and Carbon instances
-                                        $startTime = $schedule->start_time instanceof Carbon
-                                            ? $schedule->start_time->format('h:i A')
-                                            : date('h:i A', strtotime((string) $schedule->start_time));
-                                        $endTime = $schedule->end_time instanceof Carbon
-                                            ? $schedule->end_time->format('h:i A')
-                                            : date('h:i A', strtotime((string) $schedule->end_time));
-                                        $roomName = $schedule->room->name ?? 'TBA';
+                continue;
+            }
 
-                                        return "{$day} {$startTime}-{$endTime} ({$roomName})";
-                                    })
-                                    ->implode(', ');
-                                $scheduleText = $schedules;
-                            }
+            foreach ($availableClasses as $class) {
+                $enrolledCount = (int) ($slotCounts[$class->id] ?? 0);
+                $maxSlots = $class->maximum_slots ?: 0;
+                $availableSlots = $maxSlots > 0 ? $maxSlots - $enrolledCount : PHP_INT_MAX;
 
-                            // Get room name (fallback)
-                            $roomName = $class->room?->name ?? 'TBA';
-
-                            return (object) [
-                                'class_id' => $class->id,
-                                'subject_code' => $subjectCode,
-                                'subject_title' => $class->subject_title,
-                                'section' => $class->section,
-                                'faculty' => $class->faculty->full_name ?? 'TBA',
-                                'schedule' => $scheduleText,
-                                'room' => $roomName,
-                                'available_slots' => $availableSlots,
-                                'max_slots' => $maxSlots,
-                                'is_full' => $maxSlots > 0 && $enrolledCount >= $maxSlots,
-                            ];
-                        });
-
-                    if ($availableClasses->isEmpty()) {
-                        $allMissingClasses[] = (object) [
-                            'class_id' => null,
-                            'subject_code' => $subjectCode,
-                            'subject_title' => $subject->title,
-                            'section' => '—',
-                            'faculty' => '—',
-                            'schedule' => '—',
-                            'room' => '—',
-                            'available_slots' => null,
-                            'max_slots' => 0,
-                            'is_full' => false,
-                        ];
-
-                        continue;
-                    }
-
-                    $allMissingClasses = array_merge($allMissingClasses, $availableClasses->all());
-                }
+                $allMissingClasses[] = (object) [
+                    'class_id' => $class->id,
+                    'subject_code' => $subjectCode,
+                    'subject_title' => $class->subject_title,
+                    'section' => $class->section,
+                    'faculty' => $class->faculty->full_name ?? 'TBA',
+                    'schedule' => $this->formatSchedule($class),
+                    'room' => $class->room?->name ?? 'TBA',
+                    'available_slots' => $availableSlots,
+                    'max_slots' => $maxSlots,
+                    'is_full' => $maxSlots > 0 && $enrolledCount >= $maxSlots,
+                ];
             }
         }
 
@@ -593,6 +570,189 @@ final class StudentEnrollment extends Model
             'deleted_at' => 'datetime',
             'enrollment_policy_snapshot_id' => 'integer',
         ];
+    }
+
+    /**
+     * @return array{school_year_variants: array<string>, semester: int}
+     */
+    private function missingClassPeriod(): array
+    {
+        $period = $this->getCurrentAcademicPeriod();
+
+        return [
+            'school_year_variants' => $this->school_year
+                ? $this->resolveSchoolYearVariants($this->school_year)
+                : $period['school_year_variants'],
+            'semester' => (int) ($this->semester ?: $period['semester']),
+        ];
+    }
+
+    /**
+     * Subject enrollments whose subject has no active class assignment.
+     *
+     * @param  array<string>  $schoolYearVariants
+     * @return Collection<int, SubjectEnrollment>
+     */
+    private function missingSubjectEnrollments(Student $student, array $schoolYearVariants, int $semester): Collection
+    {
+        $this->loadMissing(['subjectsEnrolled.subject']);
+
+        $enrolledSubjectCodes = $this->enrolledSubjectCodes($student, $schoolYearVariants, $semester);
+
+        return $this->subjectsEnrolled
+            ->filter(function (SubjectEnrollment $subjectEnrollment) use ($enrolledSubjectCodes): bool {
+                $subject = $subjectEnrollment->subject;
+
+                return $subject instanceof Subject
+                    && ! in_array($this->normalizedSubjectCode($subject->code), $enrolledSubjectCodes, true);
+            })
+            ->values();
+    }
+
+    /**
+     * Normalized subject codes from the student's active class enrollments.
+     *
+     * Uses the eager-loaded relation when available so a page of enrollments
+     * does not issue one query per record.
+     *
+     * @param  array<string>  $schoolYearVariants
+     * @return array<int, string>
+     */
+    private function enrolledSubjectCodes(Student $student, array $schoolYearVariants, int $semester): array
+    {
+        $student->loadMissing(['classEnrollments.class']);
+
+        return $student->classEnrollments
+            ->filter(function (ClassEnrollment $classEnrollment) use ($schoolYearVariants, $semester): bool {
+                $class = $classEnrollment->class;
+
+                return (bool) $classEnrollment->status
+                    && $class instanceof Classes
+                    && in_array($class->school_year, $schoolYearVariants, true)
+                    && (int) $class->semester === $semester;
+            })
+            ->pluck('class.subject_code')
+            ->flatMap(fn (?string $subjectCode): array => collect(explode(',', (string) $subjectCode))
+                ->map(fn (string $code): string => $this->normalizedSubjectCode($code))
+                ->filter()
+                ->all())
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Resolve every candidate class for the given subjects in a constant
+     * number of statements: one offerings query, its eager loads, and one
+     * grouped count for the enrolled slots.
+     *
+     * @param  Collection<int, Subject>  $subjects
+     * @param  array{school_year_variants: array<string>, semester: int}  $period
+     * @return array{0: Collection<int, Collection<int, Classes>>, 1: array<int, int>}
+     */
+    private function candidateClassesForSubjects(Collection $subjects, array $period): array
+    {
+        if ($subjects->isEmpty()) {
+            return [collect(), []];
+        }
+
+        $classes = Classes::query()
+            ->with(['faculty', 'room', 'Subject', 'SubjectByCodeFallback', 'ShsSubject', 'schedules.room'])
+            ->whereIn('school_year', $period['school_year_variants'])
+            ->where('semester', $period['semester'])
+            ->where(function (Builder $query) use ($subjects): void {
+                foreach ($subjects as $subject) {
+                    $query->orWhere(function (Builder $subjectQuery) use ($subject): void {
+                        $subjectQuery
+                            ->where(function (Builder $courseQuery) use ($subject): void {
+                                $courseQuery->whereJsonContains('course_codes', $subject->course_id);
+
+                                if ($subject->course_id !== null) {
+                                    $courseQuery->orWhereJsonContains('course_codes', (string) $subject->course_id);
+                                }
+                            })
+                            ->where(function (Builder $matchingQuery) use ($subject): void {
+                                $matchingQuery
+                                    ->whereJsonContains('subject_ids', $subject->id)
+                                    ->orWhereJsonContains('subject_ids', (string) $subject->id)
+                                    ->orWhereRaw('LOWER(TRIM(subject_code)) = LOWER(TRIM(?))', [$subject->code])
+                                    ->orWhereRaw('LOWER(subject_code) LIKE LOWER(?)', ['%'.$subject->code.'%']);
+                            });
+                    });
+                }
+            })
+            ->get();
+
+        $slotCounts = $classes->isEmpty()
+            ? []
+            : ClassEnrollment::query()
+                ->whereIn('class_id', $classes->modelKeys())
+                ->groupBy('class_id')
+                ->selectRaw('class_id, COUNT(*) as aggregate')
+                ->pluck('aggregate', 'class_id')
+                ->map(fn (int|string $count): int => (int) $count)
+                ->all();
+
+        $classesBySubjectId = $subjects->mapWithKeys(fn (Subject $subject): array => [
+            $subject->id => $classes
+                ->filter(fn (Classes $class): bool => $this->classTeachesSubject($class, $subject))
+                ->values(),
+        ]);
+
+        return [$classesBySubjectId, $slotCounts];
+    }
+
+    private function classTeachesSubject(Classes $class, Subject $subject): bool
+    {
+        $courseId = $subject->course_id;
+        $courseCodes = (array) $class->course_codes;
+        $matchesCourse = in_array($courseId, $courseCodes, true)
+            || ($courseId !== null && in_array((string) $courseId, array_map(static fn (mixed $code): string => (string) $code, $courseCodes), true));
+
+        if (! $matchesCourse) {
+            return false;
+        }
+
+        $subjectIds = (array) $class->subject_ids;
+        if (
+            in_array($subject->id, $subjectIds, true)
+            || in_array((string) $subject->id, array_map(static fn (mixed $id): string => (string) $id, $subjectIds), true)
+        ) {
+            return true;
+        }
+
+        $subjectCode = $this->normalizedSubjectCode($subject->code);
+        $classCode = $this->normalizedSubjectCode($class->subject_code);
+
+        return $classCode === $subjectCode || ($subjectCode !== '' && str_contains($classCode, $subjectCode));
+    }
+
+    private function normalizedSubjectCode(?string $code): string
+    {
+        return mb_strtoupper(mb_trim((string) $code));
+    }
+
+    private function formatSchedule(Classes $class): string
+    {
+        if ($class->schedules->isEmpty()) {
+            return 'TBA';
+        }
+
+        return $class->schedules
+            ->map(function ($schedule): string {
+                $day = $schedule->day_of_week;
+                // Handle both string and Carbon instances
+                $startTime = $schedule->start_time instanceof Carbon
+                    ? $schedule->start_time->format('h:i A')
+                    : date('h:i A', strtotime((string) $schedule->start_time));
+                $endTime = $schedule->end_time instanceof Carbon
+                    ? $schedule->end_time->format('h:i A')
+                    : date('h:i A', strtotime((string) $schedule->end_time));
+                $roomName = $schedule->room->name ?? 'TBA';
+
+                return "{$day} {$startTime}-{$endTime} ({$roomName})";
+            })
+            ->implode(', ');
     }
 
     /**

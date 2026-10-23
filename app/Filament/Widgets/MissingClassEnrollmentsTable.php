@@ -26,6 +26,10 @@ use Override;
  */
 final class MissingClassEnrollmentsTable extends BaseWidget
 {
+    private const int ENROLLMENT_CHUNK_SIZE = 500;
+
+    private const int ID_FILTER_CHUNK_SIZE = 500;
+
     #[Override]
     protected static ?int $sort = 5;
 
@@ -156,12 +160,24 @@ final class MissingClassEnrollmentsTable extends BaseWidget
         // Get IDs of enrollments with missing classes (computed once)
         $enrollmentIds = $this->getEnrollmentIdsWithMissingClasses();
 
-        // Return query filtered to only those IDs
-        return StudentEnrollment::query()
-            ->whereIn('id', $enrollmentIds)
+        $query = StudentEnrollment::query()
             ->withTrashed()
-            ->with(['student', 'course', 'subjectsEnrolled.subject'])
+            // Loading the relations here keeps the accessor query-free for
+            // the rows that are actually rendered on the current page.
+            ->with(['student.classEnrollments.class', 'course', 'subjectsEnrolled.subject'])
             ->latest('created_at');
+
+        if ($enrollmentIds === []) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        // A single whereIn with tens of thousands of IDs exceeds database
+        // placeholder limits, so the filter is split into chunks.
+        return $query->where(function (Builder $query) use ($enrollmentIds): void {
+            foreach (array_chunk($enrollmentIds, self::ID_FILTER_CHUNK_SIZE) as $chunk) {
+                $query->orWhereIn('id', $chunk);
+            }
+        });
     }
 
     protected function getTableEmptyStateHeading(): string
@@ -180,7 +196,12 @@ final class MissingClassEnrollmentsTable extends BaseWidget
     }
 
     /**
-     * Pre-compute and cache enrollment IDs that have missing classes
+     * Pre-compute and cache enrollment IDs that have missing classes.
+     *
+     * Enrollments are processed in chunks so a period with thousands of
+     * records does not hydrate every enrollment, subject and class offering
+     * at once. Missing-class existence is derived from the already-loaded
+     * relations, so this stays at a constant number of statements per chunk.
      */
     private function getEnrollmentIdsWithMissingClasses(): array
     {
@@ -188,21 +209,22 @@ final class MissingClassEnrollmentsTable extends BaseWidget
             return $this->enrollmentIdsWithMissing;
         }
 
-        // Get all enrollments for current period
-        $enrollments = StudentEnrollment::query()
+        $enrollmentIds = [];
+
+        StudentEnrollment::query()
             ->currentAcademicPeriod()
             ->withTrashed()
-            ->with(['student', 'course', 'subjectsEnrolled.subject'])
             ->whereHas('subjectsEnrolled')
-            ->get();
+            ->with(['subjectsEnrolled.subject', 'student.classEnrollments.class'])
+            ->chunkById(self::ENROLLMENT_CHUNK_SIZE, function ($enrollments) use (&$enrollmentIds): void {
+                foreach ($enrollments as $enrollment) {
+                    if ($enrollment->hasMissingClasses()) {
+                        $enrollmentIds[] = $enrollment->id;
+                    }
+                }
+            });
 
-        // Filter to only those with missing classes
-        $this->enrollmentIdsWithMissing = $enrollments
-            ->filter(fn (StudentEnrollment $record): bool => $record->missing_classes_for_infolist->isNotEmpty())
-            ->pluck('id')
-            ->toArray();
-
-        return $this->enrollmentIdsWithMissing;
+        return $this->enrollmentIdsWithMissing = $enrollmentIds;
     }
 
     /**

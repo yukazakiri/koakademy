@@ -25,9 +25,9 @@ use App\Services\ClassCurriculumPlacementService;
 use App\Services\ClassScheduleChangeNotificationService;
 use App\Services\GeneralSettingsService;
 use App\Support\Database\JsonArrayQuery;
+use App\Support\Database\SqlDialect;
 use Exception;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Query\Expression;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -1337,7 +1337,7 @@ final class AdministratorClassManagementController extends Controller
     private function applySubjectCodeFilter(Builder $query, string $subjectCode): void
     {
         $like = '%'.$subjectCode.'%';
-        $operator = $this->caseInsensitiveLikeOperator($query);
+        $operator = SqlDialect::likeOperator($query);
 
         $query->where(function (Builder $codeQuery) use ($like, $operator): void {
             $codeQuery->where('classes.subject_code', $operator, $like);
@@ -1397,7 +1397,7 @@ final class AdministratorClassManagementController extends Controller
         }
 
         $like = '%'.$term.'%';
-        $operator = $this->caseInsensitiveLikeOperator($query);
+        $operator = SqlDialect::likeOperator($query);
 
         $query->where(function (Builder $searchQuery) use ($query, $like, $operator): void {
             $searchQuery
@@ -1405,7 +1405,7 @@ final class AdministratorClassManagementController extends Controller
                 ->orWhere('classes.section', $operator, $like)
                 ->orWhere('classes.school_year', $operator, $like)
                 ->orWhere('classes.classification', $operator, $like)
-                ->orWhere($this->textCast($query, 'classes.semester'), $operator, $like)
+                ->orWhere(DB::raw(SqlDialect::textCast($query, 'classes.semester')), $operator, $like)
                 // The record title a user sees is "<subject codes> - <section>",
                 // so that exact shape has to match as well.
                 ->orWhereRaw(
@@ -1516,26 +1516,6 @@ final class AdministratorClassManagementController extends Controller
             'sql' => '('.$scoped->toSql().')',
             'bindings' => $scoped->getBindings(),
         ];
-    }
-
-    /**
-     * The LIKE operator that ignores case on the current driver.
-     */
-    private function caseInsensitiveLikeOperator(Builder $query): string
-    {
-        return $query->getConnection()->getDriverName() === 'pgsql' ? 'ilike' : 'like';
-    }
-
-    /**
-     * Render a column as text so it can be compared against a string.
-     */
-    private function textCast(Builder $query, string $column): Expression
-    {
-        return DB::raw(
-            $query->getConnection()->getDriverName() === 'pgsql'
-                ? sprintf('%s::text', $column)
-                : sprintf('CAST(%s AS TEXT)', $column)
-        );
     }
 
     /**

@@ -32,10 +32,10 @@ final class AdministratorLibraryBorrowRecordController extends Controller
             ->when(is_string($search) && mb_trim($search) !== '', function ($query) use ($search): void {
                 $term = mb_trim($search);
                 $query->where(function ($nested) use ($term): void {
-                    $nested->whereHas('book', fn ($bookQuery) => $bookQuery->where('title', 'ilike', "%{$term}%"))
+                    $nested->whereHas('book', fn ($bookQuery) => $bookQuery->whereLike('title', "%{$term}%"))
                         ->orWhereHas('user', fn ($userQuery) => $userQuery
-                            ->where('name', 'ilike', "%{$term}%")
-                            ->orWhere('email', 'ilike', "%{$term}%"));
+                            ->whereLike('name', "%{$term}%")
+                            ->orWhereLike('email', "%{$term}%"));
                 });
             })
             ->when(is_string($status) && $status !== '' && $status !== 'all', function ($query) use ($status): void {

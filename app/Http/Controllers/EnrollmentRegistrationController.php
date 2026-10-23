@@ -632,8 +632,8 @@ final class EnrollmentRegistrationController extends Controller
 
         if ($search !== '') {
             $subjectsQuery->where(function ($query) use ($search): void {
-                $query->where('code', 'ilike', "%{$search}%")
-                    ->orWhere('title', 'ilike', "%{$search}%");
+                $query->whereLike('code', "%{$search}%")
+                    ->orWhereLike('title', "%{$search}%");
             });
         }
 

@@ -44,8 +44,8 @@ final class ClassPostController extends Controller
         if ($request->has('search')) {
             $search = $request->input('search');
             $query->where(function ($q) use ($search): void {
-                $q->where('title', 'ilike', "%{$search}%")
-                    ->orWhere('content', 'ilike', "%{$search}%");
+                $q->whereLike('title', "%{$search}%")
+                    ->orWhereLike('content', "%{$search}%");
             });
         }
 

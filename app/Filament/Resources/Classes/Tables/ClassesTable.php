@@ -11,6 +11,8 @@ use App\Models\Room;
 use App\Models\ShsStrand;
 use App\Models\ShsTrack;
 use App\Models\Subject;
+use App\Support\Database\JsonArrayQuery;
+use App\Support\Database\SqlDialect;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
@@ -63,68 +65,30 @@ final class ClassesTable
                 TextColumn::make('subject_code')
                     ->label('Subject(s)')
                     ->searchable(query: function (Builder $query, string $search): void {
-                        if ($query->getConnection()->getDriverName() === 'sqlite') {
-                            $query->where(function (Builder $sqliteQuery) use ($search): void {
-                                $like = "%{$search}%";
+                        $like = "%{$search}%";
+                        $operator = SqlDialect::likeOperator($query);
 
-                                $sqliteQuery
-                                    ->where('subject_code', 'like', $like)
-                                    ->orWhereHas('Subject', function (Builder $subjectQuery) use ($like): void {
-                                        $subjectQuery->where('code', 'like', $like)
-                                            ->orWhere('title', 'like', $like);
-                                    })
-                                    ->orWhereHas('ShsSubject', function (Builder $subjectQuery) use ($like): void {
-                                        $subjectQuery->where('code', 'like', $like)
-                                            ->orWhere('title', 'like', $like);
-                                    })
-                                    ->orWhereRaw('
-                                        subject_ids IS NOT NULL
-                                        AND EXISTS (
-                                            SELECT 1
-                                            FROM subject
-                                            JOIN json_each(classes.subject_ids) AS subject_id
-                                                ON subject.id = CAST(subject_id.value AS INTEGER)
-                                            WHERE subject.code LIKE ? OR subject.title LIKE ?
-                                        )
-                                    ', [$like, $like]);
-                            });
-
-                            return;
-                        }
-
-                        $query->where(function ($q) use ($search): void {
-                            $searchPattern = preg_quote($search, '/');
-
-                            // Search in subject_code field (when not null)
-                            $q->where(function ($subQ) use ($search, $searchPattern): void {
-                                $subQ->whereNotNull('subject_code')
-                                    ->where(function ($codeQ) use ($search, $searchPattern): void {
-                                        $codeQ->whereRaw('subject_code ~* ?', ["\\y{$searchPattern}\\y"])
-                                            ->orWhere('subject_code', 'ilike', "%{$search}%");
-                                    });
-                            })
-                                // Search via Subject relationship (subject_id)
-                                ->orWhereHas('Subject', function ($subQuery) use ($search, $searchPattern): void {
-                                    $subQuery->where(function ($codeQ) use ($search, $searchPattern): void {
-                                        $codeQ->whereRaw('code ~* ?', ["\\y{$searchPattern}\\y"])
-                                            ->orWhere('code', 'ilike', "%{$search}%");
-                                    })->orWhere('title', 'ilike', "%{$search}%");
+                        $query->where(function (Builder $searchQuery) use ($like, $operator): void {
+                            $searchQuery
+                                ->where('subject_code', $operator, $like)
+                                ->orWhereHas('Subject', function (Builder $subjectQuery) use ($like, $operator): void {
+                                    $subjectQuery->where('code', $operator, $like)
+                                        ->orWhere('title', $operator, $like);
                                 })
-                                // Search via SHS subject relationship
-                                ->orWhereHas('ShsSubject', function ($subQuery) use ($search, $searchPattern): void {
-                                    $subQuery->where(function ($codeQ) use ($search, $searchPattern): void {
-                                        $codeQ->whereRaw('code ~* ?', ["\\y{$searchPattern}\\y"])
-                                            ->orWhere('code', 'ilike', "%{$search}%");
-                                    })->orWhere('title', 'ilike', "%{$search}%");
-                                })
-                                // Search via multiple subjects (subject_ids JSON array)
-                                ->orWhereRaw('
-                                    subject_ids IS NOT NULL
-                                    AND EXISTS (
-                                        SELECT 1 FROM subject, jsonb_array_elements_text(classes.subject_ids::jsonb) AS subject_id
-                                        WHERE subject.id = subject_id::bigint
-                                        AND (subject.code ~* ? OR subject.code ILIKE ? OR subject.title ILIKE ?)
-                                    )', ["\\y{$searchPattern}\\y", "%{$search}%", "%{$search}%"]);
+                                ->orWhereHas('ShsSubject', function (Builder $subjectQuery) use ($like, $operator): void {
+                                    $subjectQuery->where('code', $operator, $like)
+                                        ->orWhere('title', $operator, $like);
+                                });
+
+                            // The subject ids are a JSON array, not a relation column.
+                            JsonArrayQuery::whereElementMatches(
+                                $searchQuery,
+                                'classes.subject_ids',
+                                sprintf('subject.code %1$s ? OR subject.title %1$s ?', $operator),
+                                [$like, $like],
+                                'or',
+                                'JOIN subject ON subject.id = {element}',
+                            );
                         });
                     })
                     ->sortable()
@@ -273,29 +237,29 @@ final class ClassesTable
                     ->searchable()
                     ->preload()
                     ->placeholder('Filter by course')
-                    ->query(function (Builder $builder, array $data): void {
+                    ->query(function (Builder $query, array $data): void {
                         $courseId = $data['value'] ?? null;
 
                         if (empty($courseId)) {
                             return;
                         }
 
-                        $builder->where('classification', 'college')
-                            ->whereRaw('(
-                                EXISTS (
-                                    SELECT 1 FROM subject
-                                    WHERE subject.id = classes.subject_id
-                                    AND subject.course_id = ?
-                                )
-                                OR (
-                                    subject_ids IS NOT NULL
-                                    AND EXISTS (
-                                        SELECT 1 FROM subject, jsonb_array_elements_text(classes.subject_ids::jsonb) AS subject_id
-                                        WHERE subject.id = subject_id::bigint
-                                        AND subject.course_id = ?
-                                    )
-                                )
-                            )', [$courseId, $courseId]);
+                        $query->where('classification', 'college')
+                            ->where(function (Builder $courseQuery) use ($courseId): void {
+                                $courseQuery->whereHas('Subject', function (Builder $subjectQuery) use ($courseId): void {
+                                    $subjectQuery->where('course_id', $courseId);
+                                });
+
+                                // A class can point at multiple subjects through subject_ids.
+                                JsonArrayQuery::whereElementMatches(
+                                    $courseQuery,
+                                    'classes.subject_ids',
+                                    'subject.course_id = ?',
+                                    [$courseId],
+                                    'or',
+                                    'JOIN subject ON subject.id = {element}',
+                                );
+                            });
                     }),
 
                 SelectFilter::make('shs_track_id')
@@ -304,14 +268,14 @@ final class ClassesTable
                     ->searchable()
                     ->preload()
                     ->placeholder('Filter by track')
-                    ->query(function (Builder $builder, array $data): void {
+                    ->query(function (Builder $query, array $data): void {
                         $trackId = $data['value'] ?? null;
 
                         if (empty($trackId)) {
                             return;
                         }
 
-                        $builder->where('classification', 'shs')
+                        $query->where('classification', 'shs')
                             ->where('shs_track_id', $trackId);
                     }),
 
@@ -321,14 +285,14 @@ final class ClassesTable
                     ->searchable()
                     ->preload()
                     ->placeholder('Filter by strand')
-                    ->query(function (Builder $builder, array $data): void {
+                    ->query(function (Builder $query, array $data): void {
                         $strandId = $data['value'] ?? null;
 
                         if (empty($strandId)) {
                             return;
                         }
 
-                        $builder->where('classification', 'shs')
+                        $query->where('classification', 'shs')
                             ->where('shs_strand_id', $strandId);
                     }),
 
@@ -354,14 +318,14 @@ final class ClassesTable
                     ->options(fn () => Room::all()->pluck('name', 'id'))
                     ->searchable()
                     ->preload()
-                    ->query(function (Builder $builder, array $data): void {
+                    ->query(function (Builder $query, array $data): void {
                         $roomId = $data['value'] ?? null;
 
                         if (empty($roomId)) {
                             return;
                         }
 
-                        $builder->whereRaw('(
+                        $query->whereRaw('(
                             room_id = ?
                             OR EXISTS (
                                 SELECT 1 FROM schedule
@@ -393,14 +357,14 @@ final class ClassesTable
                     ])
                     ->label('College Year Level')
                     ->indicator('College Year')
-                    ->query(function (Builder $builder, array $data): void {
+                    ->query(function (Builder $query, array $data): void {
                         $year = $data['value'] ?? null;
 
                         if (empty($year)) {
                             return;
                         }
 
-                        $builder->where('classification', 'college')
+                        $query->where('classification', 'college')
                             ->where('academic_year', $year);
                     }),
 
@@ -411,14 +375,14 @@ final class ClassesTable
                     ])
                     ->label('SHS Grade Level')
                     ->indicator('SHS Grade')
-                    ->query(function (Builder $builder, array $data): void {
+                    ->query(function (Builder $query, array $data): void {
                         $gradeLevel = $data['value'] ?? null;
 
                         if (empty($gradeLevel)) {
                             return;
                         }
 
-                        $builder->where('classification', 'shs')
+                        $query->where('classification', 'shs')
                             ->where('grade_level', $gradeLevel);
                     }),
 

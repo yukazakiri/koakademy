@@ -83,7 +83,7 @@ final class JsonArrayQuery
                 ),
                 'json_element::bigint',
             ],
-            'mysql' => [
+            'mysql', 'mariadb' => [
                 sprintf("JSON_TABLE(%s, '$[*]' COLUMNS (value BIGINT PATH '$')) AS json_element", $column),
                 'json_element.value',
             ],

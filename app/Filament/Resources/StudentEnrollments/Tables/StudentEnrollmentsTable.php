@@ -9,6 +9,7 @@ use App\Models\Course;
 use App\Models\StudentEnrollment;
 use App\Services\EnrollmentPipelineService;
 use App\Services\GeneralSettingsService;
+use App\Support\Database\SqlDialect;
 use Exception;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
@@ -103,23 +104,24 @@ final class StudentEnrollmentsTable
                             ->multiple()
                             ->preload(),
                     ])
-                    ->query(function (Builder $builder, array $data): Builder {
+                    ->query(function (Builder $query, array $data): Builder {
                         if (
                             ! isset($data['course_id']) ||
                             empty($data['course_id'])
                         ) {
-                            return $builder;
+                            return $query;
                         }
 
-                        return $builder->whereExists(function ($query) use (
+                        return $query->whereExists(function ($query) use (
                             $data
                         ): void {
                             $query
                                 ->select(DB::raw(1))
                                 ->from('students')
-                                ->whereRaw(
-                                    'CAST(student_enrollment.student_id AS BIGINT) = students.id'
-                                )
+                                ->whereRaw(sprintf(
+                                    '%s = students.id',
+                                    SqlDialect::integerCast($query, 'student_enrollment.student_id'),
+                                ))
                                 ->whereIn(
                                     'students.course_id',
                                     $data['course_id']

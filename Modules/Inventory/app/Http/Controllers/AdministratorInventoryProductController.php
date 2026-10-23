@@ -40,11 +40,11 @@ final class AdministratorInventoryProductController extends Controller
         if (is_string($search) && mb_trim($search) !== '') {
             $term = mb_trim($search);
             $query->where(function ($nested) use ($term): void {
-                $nested->where('name', 'ilike', "%{$term}%")
-                    ->orWhere('sku', 'ilike', "%{$term}%")
-                    ->orWhere('location_building', 'ilike', "%{$term}%")
-                    ->orWhere('location_floor', 'ilike', "%{$term}%")
-                    ->orWhere('location_area', 'ilike', "%{$term}%");
+                $nested->whereLike('name', "%{$term}%")
+                    ->orWhereLike('sku', "%{$term}%")
+                    ->orWhereLike('location_building', "%{$term}%")
+                    ->orWhereLike('location_floor', "%{$term}%")
+                    ->orWhereLike('location_area', "%{$term}%");
             });
         }
 

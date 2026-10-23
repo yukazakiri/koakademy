@@ -80,10 +80,10 @@ final class StudentEnrollmentForm
                         ->with('Course') // Eager load Course relationship
                         ->where(function ($query) use ($search): void {
                             $query->where('id', 'like', "%{$search}%")
-                                ->orWhere('first_name', 'ilike', "%{$search}%")
-                                ->orWhere('last_name', 'ilike', "%{$search}%")
+                                ->orWhereLike('first_name', "%{$search}%")
+                                ->orWhereLike('last_name', "%{$search}%")
                                 ->orWhereHas('Course', function ($query) use ($search): void {
-                                    $query->where('code', 'ilike', "%{$search}%");
+                                    $query->whereLike('code', "%{$search}%");
                                 });
                         })
                         ->limit(50)
@@ -763,8 +763,8 @@ final class StudentEnrollmentForm
                                 // Search subjects by both code and title
                                 $subjects = Subject::query()->where('course_id', $selectedCourse)
                                     ->where(function ($query) use ($search): void {
-                                        $query->where('code', 'ilike', sprintf('%%%s%%', $search))
-                                            ->orWhere('title', 'ilike', sprintf('%%%s%%', $search));
+                                        $query->whereLike('code', sprintf('%%%s%%', $search))
+                                            ->orWhereLike('title', sprintf('%%%s%%', $search));
                                     })
                                     ->whereNotIn('id', $enrolledSubjectIds)
                                     ->orderBy('academic_year')

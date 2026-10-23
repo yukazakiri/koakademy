@@ -36,9 +36,9 @@ final class AdministratorAuditLogController extends Controller
             ->with(['causer'])
             ->when($search && is_string($search), function ($query) use ($search): void {
                 $query->where(function ($nested) use ($search): void {
-                    $nested->where('description', 'ilike', "%{$search}%")
-                        ->orWhere('subject_type', 'ilike', "%{$search}%")
-                        ->orWhere('log_name', 'ilike', "%{$search}%");
+                    $nested->whereLike('description', "%{$search}%")
+                        ->orWhereLike('subject_type', "%{$search}%")
+                        ->orWhereLike('log_name', "%{$search}%");
                 });
             })
             ->when($event && $event !== 'all', fn ($query) => $query->where('event', $event))

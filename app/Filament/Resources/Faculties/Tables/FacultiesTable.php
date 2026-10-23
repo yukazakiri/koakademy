@@ -105,32 +105,32 @@ final class FacultiesTable
                         ->toArray()),
                 Filter::make('has_current_classes')
                     ->label('Has Current Classes')
-                    ->query(function (Builder $builder): Builder {
+                    ->query(function (Builder $query): Builder {
                         $generalSettingsService = app(GeneralSettingsService::class);
                         $schoolYearWithSpaces = $generalSettingsService->getCurrentSchoolYearString();
                         $schoolYearNoSpaces = str_replace(' ', '', $schoolYearWithSpaces);
                         $semester = $generalSettingsService->getCurrentSemester();
 
-                        return $builder->whereExists(function ($subQuery) use ($schoolYearWithSpaces, $schoolYearNoSpaces, $semester): void {
+                        return $query->whereExists(function ($subQuery) use ($schoolYearWithSpaces, $schoolYearNoSpaces, $semester): void {
                             $subQuery->select(DB::raw(1))
                                 ->from('classes')
-                                ->whereRaw('classes.faculty_id::text = faculty.id::text')
+                                ->whereColumn('classes.faculty_id', '=', 'faculty.id')
                                 ->whereIn('classes.school_year', [$schoolYearWithSpaces, $schoolYearNoSpaces])
                                 ->where('classes.semester', $semester);
                         });
                     }),
                 Filter::make('no_current_classes')
                     ->label('No Current Classes')
-                    ->query(function (Builder $builder): Builder {
+                    ->query(function (Builder $query): Builder {
                         $generalSettingsService = app(GeneralSettingsService::class);
                         $schoolYearWithSpaces = $generalSettingsService->getCurrentSchoolYearString();
                         $schoolYearNoSpaces = str_replace(' ', '', $schoolYearWithSpaces);
                         $semester = $generalSettingsService->getCurrentSemester();
 
-                        return $builder->whereNotExists(function ($subQuery) use ($schoolYearWithSpaces, $schoolYearNoSpaces, $semester): void {
+                        return $query->whereNotExists(function ($subQuery) use ($schoolYearWithSpaces, $schoolYearNoSpaces, $semester): void {
                             $subQuery->select(DB::raw(1))
                                 ->from('classes')
-                                ->whereRaw('classes.faculty_id::text = faculty.id::text')
+                                ->whereColumn('classes.faculty_id', '=', 'faculty.id')
                                 ->whereIn('classes.school_year', [$schoolYearWithSpaces, $schoolYearNoSpaces])
                                 ->where('classes.semester', $semester);
                         });

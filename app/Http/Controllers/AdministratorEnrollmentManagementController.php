@@ -55,9 +55,12 @@ use App\Services\StudentDirectoryQuery;
 use App\Services\TenantContext;
 use App\Services\TuitionAdjustmentRecalculationService;
 use App\Settings\SiteSettings;
+use App\Support\Database\SqlDialect;
 use Closure;
 use Exception;
 use FPDF;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -213,16 +216,20 @@ final class AdministratorEnrollmentManagementController extends Controller
             ->where('status', '!=', $pendingStatus))
             ->count();
 
-        $enrolledByDepartment = fn () => $excludingAbandoned(StudentEnrollment::query()
-            ->withTrashed()
-            ->where('student_enrollment.school_year', $currentSchoolYearString)
-            ->where('student_enrollment.semester', $currentSemester)
-            ->where('student_enrollment.status', '!=', $pendingStatus))
-            ->join('courses', DB::raw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT)'), '=', 'courses.id')
-            ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
-            ->selectRaw('TRIM(departments.code) as department, count(*) as count')
-            ->groupByRaw('TRIM(departments.code)')
-            ->get();
+        $enrolledByDepartment = function () use ($excludingAbandoned, $currentSchoolYearString, $currentSemester, $pendingStatus): Collection {
+            $query = StudentEnrollment::query()
+                ->withTrashed()
+                ->where('student_enrollment.school_year', $currentSchoolYearString)
+                ->where('student_enrollment.semester', $currentSemester)
+                ->where('student_enrollment.status', '!=', $pendingStatus);
+
+            return $excludingAbandoned($query)
+                ->join('courses', DB::raw($this->courseIdCast($query)), '=', 'courses.id')
+                ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
+                ->selectRaw('TRIM(departments.code) as department, count(*) as count')
+                ->groupByRaw('TRIM(departments.code)')
+                ->get();
+        };
 
         $enrolledByYearLevel = fn () => $excludingAbandoned(StudentEnrollment::query()
             ->withTrashed()
@@ -2278,7 +2285,7 @@ final class AdministratorEnrollmentManagementController extends Controller
             ->where('student_enrollment.status', '!=', $this->enrollmentPipelineService->getPendingStatus());
 
         if ($department !== 'all') {
-            $query->join('courses', DB::raw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT)'), '=', 'courses.id')
+            $query->join('courses', DB::raw($this->courseIdCast($query)), '=', 'courses.id')
                 ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
                 ->whereRaw('TRIM(departments.code) = ?', [mb_trim($department)]);
         }
@@ -2308,8 +2315,9 @@ final class AdministratorEnrollmentManagementController extends Controller
             ->withTrashed()
             ->where('student_enrollment.school_year', $currentSchoolYearString)
             ->where('student_enrollment.semester', $currentSemester)
-            ->where('student_enrollment.status', '!=', $this->enrollmentPipelineService->getPendingStatus())
-            ->join('courses', DB::raw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT)'), '=', 'courses.id')
+            ->where('student_enrollment.status', '!=', $this->enrollmentPipelineService->getPendingStatus());
+
+        $query->join('courses', DB::raw($this->courseIdCast($query)), '=', 'courses.id')
             ->leftJoin('departments', 'courses.department_id', '=', 'departments.id');
 
         if ($yearLevel !== 'all') {
@@ -3193,9 +3201,23 @@ final class AdministratorEnrollmentManagementController extends Controller
     }
 
     /**
+     * Render the enrollment course reference as an integer for joins against courses.id.
+     *
+     * student_enrollment.course_id is stored as text on SQLite and MySQL, while
+     * courses.id is an integer, so the comparison needs a driver-aware cast.
+     */
+    private function courseIdCast(Builder|QueryBuilder $query): string
+    {
+        return SqlDialect::integerCast(
+            $query,
+            sprintf('NULLIF(%s, %s)', SqlDialect::textCast($query, 'student_enrollment.course_id'), "''"),
+        );
+    }
+
+    /**
      * Get list of students enrolled in a specific course/program.
      *
-     * @param  \Illuminate\Database\Eloquent\Builder<StudentEnrollment>  $baseQuery
+     * @param  Builder<StudentEnrollment>  $baseQuery
      * @param  array<string, mixed>  $filters
      */
     private function getEnrolledByCourseReport($baseQuery, array $filters): array
@@ -3206,7 +3228,7 @@ final class AdministratorEnrollmentManagementController extends Controller
             $query->whereExists(function ($subquery) use ($filters): void {
                 $subquery->select(DB::raw(1))
                     ->from('courses')
-                    ->whereRaw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT) = courses.id')
+                    ->whereRaw(sprintf('%s = courses.id', $this->courseIdCast($subquery)))
                     ->where('code', (string) $filters['course_filter']);
             });
         }
@@ -3216,7 +3238,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 $subquery->select(DB::raw(1))
                     ->from('courses')
                     ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
-                    ->whereRaw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT) = courses.id')
+                    ->whereRaw(sprintf('%s = courses.id', $this->courseIdCast($subquery)))
                     ->whereRaw('TRIM(departments.code) = ?', [mb_trim((string) $filters['department_filter'])]);
             });
         }
@@ -3330,7 +3352,7 @@ final class AdministratorEnrollmentManagementController extends Controller
     /**
      * Get enrollment summary grouped by department, course, and year level.
      *
-     * @param  \Illuminate\Database\Eloquent\Builder<StudentEnrollment>  $baseQuery
+     * @param  Builder<StudentEnrollment>  $baseQuery
      * @param  array<string, mixed>  $filters
      */
     private function getEnrollmentSummaryReport($baseQuery, array $filters): array
@@ -3342,7 +3364,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 $subquery->select(DB::raw(1))
                     ->from('courses')
                     ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
-                    ->whereRaw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT) = courses.id')
+                    ->whereRaw(sprintf('%s = courses.id', $this->courseIdCast($subquery)))
                     ->whereRaw('TRIM(departments.code) = ?', [mb_trim((string) $filters['department_filter'])]);
             });
         }

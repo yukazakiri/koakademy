@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Enums\StudentType;
 use App\Models\Student;
+use App\Support\Database\SqlDialect;
 use Exception;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -22,12 +23,13 @@ final class FixCollegeStudentIds extends Command
     public function handle(): int
     {
         $dryRun = $this->option('dry-run');
+        $studentIdText = SqlDialect::textCast(Student::query(), 'student_id');
 
         $this->info('🔍 Analyzing college student IDs...');
 
         // Find students with 7 or 8 digit IDs
         $affectedStudents = Student::where('student_type', StudentType::College->value)
-            ->whereRaw('LENGTH(CAST(student_id AS TEXT)) >= 7')
+            ->whereRaw(sprintf('LENGTH(%s) >= 7', $studentIdText))
             ->orderBy('student_id')
             ->get();
 
@@ -149,7 +151,7 @@ final class FixCollegeStudentIds extends Command
 
         // Verify the results
         $remainingBadIds = Student::where('student_type', StudentType::College->value)
-            ->whereRaw('LENGTH(CAST(student_id AS TEXT)) >= 7')
+            ->whereRaw(sprintf('LENGTH(%s) >= 7', $studentIdText))
             ->count();
 
         if ($remainingBadIds === 0) {

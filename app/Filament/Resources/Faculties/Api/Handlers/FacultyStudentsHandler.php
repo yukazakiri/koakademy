@@ -121,10 +121,10 @@ final class FacultyStudentsHandler extends Handlers
                 AllowedFilter::partial('student_id'),
                 AllowedFilter::callback('search', function ($query, $value): void {
                     $query->where(function ($q) use ($value): void {
-                        $q->where('first_name', 'ilike', "%{$value}%")
-                            ->orWhere('last_name', 'ilike', "%{$value}%")
-                            ->orWhere('student_id', 'ilike', "%{$value}%")
-                            ->orWhere('email', 'ilike', "%{$value}%");
+                        $q->whereLike('first_name', "%{$value}%")
+                            ->orWhereLike('last_name', "%{$value}%")
+                            ->orWhereLike('student_id', "%{$value}%")
+                            ->orWhereLike('email', "%{$value}%");
                     });
                 }),
                 AllowedFilter::callback('class_id', function ($query, $value) use ($classIds): void {

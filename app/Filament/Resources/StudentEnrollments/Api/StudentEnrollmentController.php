@@ -125,8 +125,8 @@ final class StudentEnrollmentController extends Controller
                 $q->where('id', 'like', "%{$search}%")
                     ->orWhere('student_id', 'like', "%{$search}%")
                     ->orWhereHas('student', function ($studentQuery) use ($search): void {
-                        $studentQuery->where('first_name', 'ilike', "%{$search}%")
-                            ->orWhere('last_name', 'ilike', "%{$search}%");
+                        $studentQuery->whereLike('first_name', "%{$search}%")
+                            ->orWhereLike('last_name', "%{$search}%");
                     });
             });
         }

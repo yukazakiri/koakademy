@@ -420,9 +420,9 @@ final class FacultyController extends Controller
             ->when($request->filled('filter.search'), function ($q) use ($request): void {
                 $search = $request->input('filter.search');
                 $q->whereHas('student', function ($sq) use ($search): void {
-                    $sq->where('first_name', 'ilike', "%{$search}%")
-                        ->orWhere('last_name', 'ilike', "%{$search}%")
-                        ->orWhere('email', 'ilike', "%{$search}%");
+                    $sq->whereLike('first_name', "%{$search}%")
+                        ->orWhereLike('last_name', "%{$search}%")
+                        ->orWhereLike('email', "%{$search}%");
                 });
             })
             ->get();

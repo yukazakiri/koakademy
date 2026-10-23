@@ -22,9 +22,9 @@ final class AdministratorStudentDocumentController extends Controller
             ->with('DocumentLocation')
             ->when($search, function ($query, $search): void {
                 $query->where(function ($q) use ($search): void {
-                    $q->where('first_name', 'ilike', "%{$search}%")
-                        ->orWhere('last_name', 'ilike', "%{$search}%")
-                        ->orWhere('student_id', 'ilike', "%{$search}%");
+                    $q->whereLike('first_name', "%{$search}%")
+                        ->orWhereLike('last_name', "%{$search}%")
+                        ->orWhereLike('student_id', "%{$search}%");
                 });
             })
             ->orderBy('last_name')

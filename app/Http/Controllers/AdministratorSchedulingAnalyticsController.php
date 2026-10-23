@@ -288,11 +288,11 @@ final class AdministratorSchedulingAnalyticsController extends Controller
 
         $students = Student::query()
             ->where(function ($q) use ($query): void {
-                $q->where('first_name', 'ilike', "%{$query}%")
-                    ->orWhere('last_name', 'ilike', "%{$query}%")
-                    ->orWhere('student_id', 'ilike', "%{$query}%")
-                    ->orWhere('lrn', 'ilike', "%{$query}%")
-                    ->orWhere('email', 'ilike', "%{$query}%");
+                $q->whereLike('first_name', "%{$query}%")
+                    ->orWhereLike('last_name', "%{$query}%")
+                    ->orWhereLike('student_id', "%{$query}%")
+                    ->orWhereLike('lrn', "%{$query}%")
+                    ->orWhereLike('email', "%{$query}%");
             })
             ->limit(20)
             ->get(['id', 'student_id', 'first_name', 'last_name', 'middle_name', 'course_id', 'academic_year']);

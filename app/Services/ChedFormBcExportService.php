@@ -11,6 +11,7 @@ use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Support\ChedProgramGroup;
 use App\Support\ChedProgramGrouper;
+use App\Support\Database\SqlDialect;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
@@ -516,9 +517,13 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
      */
     private function queryEnrollmentMatrix(string $schoolYear, ?int $semester, ?int $schoolId): Collection
     {
-        $query = StudentEnrollment::query()
-            ->join('students', function ($join): void {
-                $join->whereRaw('CAST(student_enrollment.student_id AS BIGINT) = students.id');
+        $query = StudentEnrollment::query();
+        $query
+            ->join('students', function ($join) use ($query): void {
+                $join->whereRaw(sprintf(
+                    '%s = students.id',
+                    SqlDialect::integerCast($query, 'student_enrollment.student_id'),
+                ));
             })
             ->whereNull('student_enrollment.deleted_at')
             ->whereNull('students.deleted_at');
@@ -705,9 +710,13 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
         }
 
         // 1. Enrollment Equity Aggregates per course
-        $enrQuery = StudentEnrollment::query()
-            ->join('students', function ($join): void {
-                $join->whereRaw('CAST(student_enrollment.student_id AS BIGINT) = students.id');
+        $enrQuery = StudentEnrollment::query();
+        $enrQuery
+            ->join('students', function ($join) use ($enrQuery): void {
+                $join->whereRaw(sprintf(
+                    '%s = students.id',
+                    SqlDialect::integerCast($enrQuery, 'student_enrollment.student_id'),
+                ));
             })
             ->whereNull('student_enrollment.deleted_at')
             ->whereNull('students.deleted_at')
@@ -822,9 +831,13 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
             ->values()
             ->all();
 
-        $enrQuery = StudentEnrollment::query()
-            ->join('students', function ($join): void {
-                $join->whereRaw('CAST(student_enrollment.student_id AS BIGINT) = students.id');
+        $enrQuery = StudentEnrollment::query();
+        $enrQuery
+            ->join('students', function ($join) use ($enrQuery): void {
+                $join->whereRaw(sprintf(
+                    '%s = students.id',
+                    SqlDialect::integerCast($enrQuery, 'student_enrollment.student_id'),
+                ));
             })
             ->whereNull('student_enrollment.deleted_at')
             ->whereNull('students.deleted_at')
@@ -982,8 +995,11 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
         ];
 
         $results = (clone $query)
-            ->join('courses', function ($join) use ($courseColumn): void {
-                $join->whereRaw("CAST({$courseColumn} AS BIGINT) = courses.id");
+            ->join('courses', function ($join) use ($courseColumn, $query): void {
+                $join->whereRaw(sprintf(
+                    '%s = courses.id',
+                    SqlDialect::integerCast($query, $courseColumn),
+                ));
             })
             ->selectRaw(implode(', ', $selects))
             ->groupBy('courses.id')

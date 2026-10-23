@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\UserRole;
 use App\Exports\StudentListExport;
+use App\Http\Controllers\Api\V1\ApiPagination;
 use App\Http\Requests\Administrators\CopyClassRequest;
 use App\Http\Requests\Administrators\StoreClassRequest;
 use App\Http\Requests\Administrators\UpdateClassRequest;
@@ -1570,8 +1571,9 @@ final class AdministratorClassManagementController extends Controller
     private function resolveClassPerPage(mixed $perPage): int
     {
         $perPage = (int) $perPage;
+        $perPage = in_array($perPage, self::CLASS_PAGE_SIZES, true) ? $perPage : 20;
 
-        return in_array($perPage, self::CLASS_PAGE_SIZES, true) ? $perPage : 20;
+        return ApiPagination::perPage($perPage);
     }
 
     /**

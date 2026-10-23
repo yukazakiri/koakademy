@@ -87,8 +87,7 @@ final class ClassEnrollmentController extends Controller
         }
 
         // Paginate results
-        $perPage = (int) $request->input('per_page', 15);
-        $perPage = min(max($perPage, 1), 100);
+        $perPage = ApiPagination::perPage($request->input('per_page'));
 
         $enrollments = $query->paginate($perPage);
 
@@ -434,8 +433,7 @@ final class ClassEnrollmentController extends Controller
         }
 
         // Paginate results
-        $perPage = (int) $request->input('per_page', 15);
-        $perPage = min(max($perPage, 1), 100);
+        $perPage = ApiPagination::perPage($request->input('per_page'));
 
         $enrollments = $query->paginate($perPage);
 

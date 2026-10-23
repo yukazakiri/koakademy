@@ -18,6 +18,7 @@ use App\Enums\StudentStatus;
 use App\Exceptions\AssessmentExportLimitReached;
 use App\Exports\EnrollmentReportExport;
 use App\Features\DynamicEnrollmentPolicies;
+use App\Http\Controllers\Api\V1\ApiPagination;
 use App\Http\Requests\Administrators\CancelApplicantRequest;
 use App\Http\Requests\Administrators\GenerateBulkAssessmentsRequest;
 use App\Http\Requests\Administrators\SaveEnrollmentRequest;
@@ -265,8 +266,8 @@ final class AdministratorEnrollmentManagementController extends Controller
         $courseFilter = request('course_filter', 'all');
         $sort = request('sort', 'created_at');
         $direction = request('direction', 'desc') === 'asc' ? 'asc' : 'desc';
-        $perPageInput = request('per_page', 'all');
-        $perPage = $perPageInput === 'all' ? 100000 : max(10, min(150, (int) $perPageInput));
+        $perPageInput = request('per_page', ApiPagination::defaultPerPage());
+        $perPage = ApiPagination::perPage($perPageInput);
 
         $enrollments = fn () => StudentEnrollment::query()
             ->withTrashed()
@@ -385,7 +386,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'search' => $search,
                 'sort' => $sort,
                 'direction' => $direction,
-                'per_page' => $perPageInput,
+                'per_page' => $perPage,
                 'page' => (int) request('page', 1),
                 'status_filter' => $statusFilter,
                 'department_filter' => $departmentFilter,

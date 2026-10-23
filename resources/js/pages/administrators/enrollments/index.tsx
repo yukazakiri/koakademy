@@ -234,7 +234,7 @@ export default function AdministratorEnrollmentsIndex({
         const activeSearch = overrides.search !== undefined ? overrides.search : enrollmentSearch;
         const activeSort = overrides.sort !== undefined ? overrides.sort : (filters.sort ?? "created_at");
         const activeDirection = overrides.direction !== undefined ? overrides.direction : (filters.direction ?? "desc");
-        const activePerPage = overrides.per_page !== undefined ? overrides.per_page : (filters.per_page ?? "all");
+        const activePerPage = overrides.per_page !== undefined ? overrides.per_page : (filters.per_page ?? 20);
         const activePage = overrides.page !== undefined ? overrides.page : (enrollments?.current_page ?? 1);
 
         const params: Record<string, string | number | null> = {

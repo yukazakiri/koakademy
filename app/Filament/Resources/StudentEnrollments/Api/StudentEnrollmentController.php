@@ -7,6 +7,7 @@ namespace App\Filament\Resources\StudentEnrollments\Api;
 use App\Data\Enrollment\EnrollmentSubmissionData;
 use App\Enrollment\EnrollmentWorkflowCoordinator;
 use App\Filament\Resources\StudentEnrollments\Api\Transformers\StudentEnrollmentTransformer;
+use App\Http\Controllers\Api\V1\ApiPagination;
 use App\Http\Controllers\Controller;
 use App\Models\Course;
 use App\Models\School;
@@ -142,7 +143,7 @@ final class StudentEnrollmentController extends Controller
         $query->orderBy($sortBy, $sortDirection);
 
         // Pagination
-        $perPage = min((int) $request->input('per_page', 15), 100);
+        $perPage = ApiPagination::perPage($request->input('per_page'));
 
         return StudentEnrollmentTransformer::collection(
             $query->paginate($perPage)

@@ -156,11 +156,9 @@ export function DataTable<TData, TValue>({
     const selectionActionsContent = selectionActions ? selectionActions(selectedRows) : null;
     const clientPageCount = Math.max(table.getPageCount(), 1);
     const clientCurrentPage = Math.min(table.getState().pagination.pageIndex + 1, clientPageCount);
-    const pageSizeOptions = isServerSide ? [10, 50, 150] : [10, 25, 50, 100];
+    const pageSizeOptions = isServerSide ? [10, 20, 50, 100] : [10, 25, 50, 100];
     const selectedPageSize = isServerSide
-        ? pagination && (pagination.per_page > 200 || pagination.per_page === 100000)
-            ? "all"
-            : pagination?.per_page.toString()
+        ? pagination?.per_page.toString()
         : table.getState().pagination.pageSize >= 100000
           ? "all"
           : table.getState().pagination.pageSize.toString();
@@ -210,7 +208,7 @@ export function DataTable<TData, TValue>({
                                             {pageSize}
                                         </SelectItem>
                                     ))}
-                                    <SelectItem value="all">All</SelectItem>
+                                    {!isServerSide && <SelectItem value="all">All</SelectItem>}
                                 </SelectContent>
                             </Select>
                         </>

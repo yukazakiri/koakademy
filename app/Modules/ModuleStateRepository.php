@@ -138,8 +138,13 @@ final class ModuleStateRepository
             return false;
         }
 
-        if ($this->databaseAvailable !== null) {
-            return $this->databaseAvailable;
+        // Only cache a positive result. The table can be created after this
+        // repository is first resolved (migrations, test bootstrap, or a
+        // worker that booted before the database was ready), so a cached
+        // negative result would pin the legacy fallback for the rest of the
+        // request and silently skip later database writes.
+        if ($this->databaseAvailable === true) {
+            return true;
         }
 
         try {
@@ -149,7 +154,7 @@ final class ModuleStateRepository
                 'message' => $exception->getMessage(),
             ]);
 
-            return $this->databaseAvailable = false;
+            return false;
         }
     }
 

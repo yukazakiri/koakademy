@@ -61,11 +61,11 @@ final class AppServiceProvider extends ServiceProvider
     {
         $this->app->scoped(GeneralSettingsService::class);
         $this->app->singleton(ExportFailureHandler::class);
-        $this->app->singleton(ModuleManifestRepository::class);
-        $this->app->singleton(ModuleStateRepository::class);
+        $this->app->scoped(ModuleManifestRepository::class);
+        $this->app->scoped(ModuleStateRepository::class);
         $this->app->singleton(RegistryClient::class);
         $this->app->singleton(VersionConstraint::class);
-        $this->app->singleton(CompatibilityChecker::class);
+        $this->app->scoped(CompatibilityChecker::class);
 
         $this->app->resolving(Migrator::class, function (Migrator $migrator): void {
             $migrationPath = (string) config('modules.paths.generator.migration.path');
@@ -80,7 +80,6 @@ final class AppServiceProvider extends ServiceProvider
         });
 
         // scoped = one instance per HTTP request, so Auth is always available when first used
-        $this->app->scoped(GeneralSettingsService::class);
         $this->app->scoped(NewsletterSettingsService::class);
         $this->app->scoped(NewsletterSubscriptionService::class);
         $this->app->scoped(\App\Services\Ai\AiSettingsService::class);

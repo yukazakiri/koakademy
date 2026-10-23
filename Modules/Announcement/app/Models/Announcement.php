@@ -38,6 +38,12 @@ final class Announcement extends Model
         'faculty_layout',
     ];
 
+    /**
+     * Cached column list for Schema::hasColumn checks (SQLite issues many pragma queries per call).
+     * The cache is shared across workers and invalidated after migrations; no process-local static.
+     */
+    private const string SCHEMA_COLUMNS_CACHE_KEY = 'announcement_schema_columns';
+
     protected $table = 'announcements';
 
     protected $fillable = [
@@ -77,24 +83,20 @@ final class Announcement extends Model
         'is_active' => true,
     ];
 
-    /**
-     * Per-request cache for Schema::hasColumn checks (SQLite issues many pragma queries per call).
-     *
-     * @var list<string>|null
-     */
-    private static ?array $schemaColumnCache = null;
-
     public static function schemaHasCachedColumn(string $column): bool
     {
-        if (self::$schemaColumnCache === null) {
-            self::$schemaColumnCache = Cache::remember(
-                'announcement_schema_columns',
-                now()->addDay(),
-                static fn (): array => Schema::getColumnListing('announcements')
-            );
-        }
+        $columns = Cache::remember(
+            self::SCHEMA_COLUMNS_CACHE_KEY,
+            now()->addDay(),
+            static fn (): array => Schema::getColumnListing('announcements')
+        );
 
-        return in_array($column, self::$schemaColumnCache, true);
+        return in_array($column, $columns, true);
+    }
+
+    public static function flushSchemaColumnCache(): void
+    {
+        Cache::forget(self::SCHEMA_COLUMNS_CACHE_KEY);
     }
 
     public function user(): BelongsTo

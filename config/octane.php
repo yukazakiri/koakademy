@@ -2,6 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Modules\ModuleManifestRepository;
+use App\Modules\ModuleStateRepository;
+use App\Services\FeatureAccessService;
+use App\Services\GeneralSettingsService;
+use App\Services\TenantContext;
 use Laravel\Octane\Contracts\OperationTerminated;
 use Laravel\Octane\Events\RequestHandled;
 use Laravel\Octane\Events\RequestReceived;
@@ -134,7 +139,11 @@ return [
     ],
 
     'flush' => [
-        //
+        GeneralSettingsService::class,
+        TenantContext::class,
+        FeatureAccessService::class,
+        ModuleStateRepository::class,
+        ModuleManifestRepository::class,
     ],
 
     /*

@@ -10,12 +10,9 @@ use Nwidart\Modules\Module;
 
 final class DatabaseActivator implements ActivatorInterface
 {
-    private readonly ModuleStateRepository $states;
-
-    public function __construct(Container $app)
-    {
-        $this->states = $app->make(ModuleStateRepository::class);
-    }
+    public function __construct(
+        private readonly Container $app,
+    ) {}
 
     public function enable(Module $module): void
     {
@@ -31,7 +28,7 @@ final class DatabaseActivator implements ActivatorInterface
     {
         $moduleName = $module instanceof Module ? $module->getName() : $module;
 
-        return $this->states->isEnabled($moduleName) === $status;
+        return $this->states()->isEnabled($moduleName) === $status;
     }
 
     public function setActive(Module $module, bool $active): void
@@ -41,18 +38,28 @@ final class DatabaseActivator implements ActivatorInterface
 
     public function setActiveByName(string $name, bool $active): void
     {
-        $this->states->setEnabled($name, $active);
+        $this->states()->setEnabled($name, $active);
     }
 
     public function delete(Module $module): void
     {
-        $this->states->setEnabled($module->getName(), false);
+        $this->states()->setEnabled($module->getName(), false);
     }
 
     public function reset(): void
     {
-        foreach ($this->states->enabledModuleNames() as $moduleName) {
-            $this->states->setEnabled($moduleName, false);
+        $states = $this->states();
+
+        foreach ($states->enabledModuleNames() as $moduleName) {
+            $states->setEnabled($moduleName, false);
         }
+    }
+
+    /**
+     * Resolve per call so the activator does not pin the first request's scoped repository.
+     */
+    private function states(): ModuleStateRepository
+    {
+        return $this->app->make(ModuleStateRepository::class);
     }
 }

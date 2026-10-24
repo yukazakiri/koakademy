@@ -73,6 +73,17 @@ final class Schedule extends Model
         return $this->where('class_id', $classId)->get();
     }
 
+    protected static function booted(): void
+    {
+        // Sessions of an online class are never given a room.
+        self::saving(function (Schedule $schedule): void {
+            if ($schedule->room_id !== null && Classes::withTrashed()->whereKey($schedule->class_id)->value('delivery_mode') === Classes::DELIVERY_ONLINE) {
+                $schedule->room_id = null;
+                $schedule->unsetRelation('room');
+            }
+        });
+    }
+
     protected function formattedStartTime(): Attribute
     {
         return Attribute::make(get: fn () => $this->start_time->format('h:i A'));

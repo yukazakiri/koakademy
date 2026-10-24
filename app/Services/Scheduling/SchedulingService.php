@@ -22,11 +22,16 @@ final readonly class SchedulingService
      * Synchronize all schedule blocks for a class in place without delete-all ID churn.
      *
      * @param  array<int, array<string, mixed>>  $incomingSchedules
+     * @param  array<int, array<string, mixed>>|null  $oldSnapshot
      * @return Collection<int, Schedule>
      */
-    public function syncClassSchedules(Classes $class, array $incomingSchedules, ?User $actor = null): Collection
-    {
-        $oldSnapshot = $this->notificationService->snapshot($class);
+    public function syncClassSchedules(
+        Classes $class,
+        array $incomingSchedules,
+        ?User $actor = null,
+        ?array $oldSnapshot = null,
+    ): Collection {
+        $oldSnapshot ??= $this->notificationService->snapshot($class);
 
         $synced = DB::transaction(function () use ($class, $incomingSchedules): Collection {
             $existingSchedules = $class->schedules()->withTrashed()->get();
@@ -64,7 +69,7 @@ final readonly class SchedulingService
                     'day_of_week' => (string) $scheduleData['day_of_week'],
                     'start_time' => $this->normalizeTimeString((string) $scheduleData['start_time']),
                     'end_time' => $this->normalizeTimeString((string) $scheduleData['end_time']),
-                    'room_id' => isset($scheduleData['room_id']) && $scheduleData['room_id'] !== ''
+                    'room_id' => ! $class->isOnline() && isset($scheduleData['room_id']) && $scheduleData['room_id'] !== ''
                         ? (int) $scheduleData['room_id']
                         : null,
                     'component_type' => isset($scheduleData['component_type']) && is_string($scheduleData['component_type'])
@@ -124,7 +129,10 @@ final readonly class SchedulingService
         ?User $actor = null,
         bool $applyToPatternGroup = false,
     ): Schedule {
-        $class = $schedule->class;
+        $class = $schedule->class?->fresh();
+        if ($class?->isOnline()) {
+            $attributes['room_id'] = null;
+        }
         $oldSnapshot = $class ? $this->notificationService->snapshot($class) : [];
 
         DB::transaction(function () use ($schedule, $attributes, $applyToPatternGroup): void {
@@ -206,7 +214,7 @@ final readonly class SchedulingService
 
         $created = DB::transaction(function () use ($class, $uniqueDays, $startTime, $endTime, $roomId, $componentType, $status, $patternGroupId): Collection {
             $blocks = collect();
-            $effectiveRoomId = $roomId ?? ($class->room_id ? (int) $class->room_id : null);
+            $effectiveRoomId = $class->isOnline() ? null : $roomId;
 
             foreach ($uniqueDays as $day) {
                 /** @var Schedule $schedule */
@@ -295,7 +303,7 @@ final readonly class SchedulingService
                     'day_of_week' => $schedule->day_of_week,
                     'start_time' => $schedule->start_time?->format('H:i:s'),
                     'end_time' => $schedule->end_time?->format('H:i:s'),
-                    'room_id' => $schedule->room_id,
+                    'room_id' => $target->isOnline() ? null : $schedule->room_id,
                     'subject_id' => $schedule->subject_id ?? $target->subject_id,
                     'component_type' => $schedule->component_type ?? 'lecture',
                     'pattern_group_id' => $newPatternGroupId,

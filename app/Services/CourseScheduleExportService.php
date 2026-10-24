@@ -56,7 +56,7 @@ final readonly class CourseScheduleExportService
      *         section_groups: list<array{
      *             section: string,
      *             label: string,
-     *             rows: list<array{code: string, title: string, units: int|null, schedule: string, room: string, face_to_face: string}>
+     *             rows: list<array{code: string, title: string, units: int|null, schedule: string, room: string, delivery_mode: string, face_to_face: string}>
      *         }>
      *     }>
      * }
@@ -91,6 +91,7 @@ final readonly class CourseScheduleExportService
                 'section',
                 'course_codes',
                 'classification',
+                'delivery_mode',
             ]);
 
         $courseSubjects = Subject::query()
@@ -163,13 +164,13 @@ final readonly class CourseScheduleExportService
     }
 
     /**
-     * @param  Collection<int, array{code: string, title: string, section: string, units: int|null, schedule: string, room: string, face_to_face: string, _year: string, _day_order: int, _start_minutes: int}>  $rows
+     * @param  Collection<int, array{code: string, title: string, section: string, units: int|null, schedule: string, room: string, delivery_mode: string, face_to_face: string, _year: string, _day_order: int, _start_minutes: int}>  $rows
      * @return array{
      *     show_section_labels: bool,
      *     section_groups: list<array{
      *         section: string,
      *         label: string,
-     *         rows: list<array{code: string, title: string, units: int|null, schedule: string, room: string, face_to_face: string}>
+     *         rows: list<array{code: string, title: string, units: int|null, schedule: string, room: string, delivery_mode: string, face_to_face: string}>
      *     }>
      * }
      */
@@ -209,7 +210,7 @@ final readonly class CourseScheduleExportService
     }
 
     /**
-     * @return list<array{code: string, title: string, section: string, units: int|null, schedule: string, room: string, face_to_face: string, _year: string, _day_order: int, _start_minutes: int}>
+     * @return list<array{code: string, title: string, section: string, units: int|null, schedule: string, room: string, delivery_mode: string, face_to_face: string, _year: string, _day_order: int, _start_minutes: int}>
      */
     private function rowsForClass(Classes $class, ?Subject $subject, string $year): array
     {
@@ -235,8 +236,9 @@ final readonly class CourseScheduleExportService
                     'section' => $class->section ?: '—',
                     'units' => $subject instanceof Subject ? $subject->units : null,
                     'schedule' => $firstMeeting->start_time->format('g:i A').' – '.$firstMeeting->end_time->format('g:i A').' '.$days->map(fn (string $day): string => self::DAY_ABBREVIATIONS[$day] ?? Str::upper($day))->implode(''),
-                    'room' => $firstMeeting->room?->name ?: '—',
-                    'face_to_face' => $days->map(fn (string $day): string => Str::upper($day))->implode(', '),
+                    'room' => $class->isOnline() ? 'Online' : ($firstMeeting->room?->name ?: '—'),
+                    'delivery_mode' => $class->delivery_mode,
+                    'face_to_face' => $class->isOnline() ? 'Online' : $days->map(fn (string $day): string => Str::upper($day))->implode(', '),
                     '_year' => $year,
                     '_day_order' => $days->map(fn (string $day): int => self::DAY_ORDER[$day] ?? 99)->min() ?? 99,
                     '_start_minutes' => ((int) $firstMeeting->start_time->format('H') * 60) + (int) $firstMeeting->start_time->format('i'),

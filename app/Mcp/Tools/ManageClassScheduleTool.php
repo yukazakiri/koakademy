@@ -367,7 +367,7 @@ final class ManageClassScheduleTool extends Tool
         $endTime = Carbon::parse($validated['end_time'])->format('H:i:s');
 
         $schedule = Schedule::query()->where('class_id', $class->id)->first();
-        $effectiveRoomId = $validated['room_id'] ?? $schedule?->room_id ?? $class->room_id;
+        $effectiveRoomId = $class->isOnline() ? null : ($validated['room_id'] ?? $schedule?->room_id ?? $class->room_id);
 
         $this->guardScheduleConflicts($effectiveRoomId, $class->faculty_id, $dayOfWeek, $startTime, $endTime, $class->school_year, (int) $class->semester, $schedule?->id, $class->id);
 
@@ -453,6 +453,10 @@ final class ManageClassScheduleTool extends Tool
 
         if (! $class instanceof Classes) {
             return Response::structured(['error' => true, 'message' => "Class #{$validated['class_id']} not found."]);
+        }
+
+        if ($class->isOnline()) {
+            return Response::structured(['error' => true, 'message' => 'Online classes cannot be assigned a room.']);
         }
 
         $room = $this->resolveOptionalRoom($validated['room_id'] ?? null, $validated['room_name'] ?? null);

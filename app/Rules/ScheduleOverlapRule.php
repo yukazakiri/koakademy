@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace App\Rules;
 
+use App\Models\Classes;
 use App\Models\Schedule;
+use App\Services\ClassCurriculumPlacementService;
 use App\Services\GeneralSettingsService;
+use App\Services\Scheduling\ScheduleConflictService;
 use Closure;
 use Illuminate\Contracts\Validation\DataAwareRule;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Arr;
 use Illuminate\Translation\PotentiallyTranslatedString;
 
 final class ScheduleOverlapRule implements DataAwareRule, ValidationRule
@@ -43,11 +47,26 @@ final class ScheduleOverlapRule implements DataAwareRule, ValidationRule
 
         $this->conflictingSchedule = null;
         $this->conflictType = 'room';
+        $existingClass = $this->excludedClassId !== null ? Classes::query()->find($this->excludedClassId) : null;
+        $class = $existingClass instanceof Classes ? clone $existingClass : new Classes;
+        $attributes = Arr::only($this->data, [
+            'delivery_mode', 'faculty_id', 'school_year', 'semester', 'classification',
+            'section', 'academic_year', 'course_codes', 'shs_strand_id', 'grade_level',
+            'subject_id', 'subject_ids',
+        ]);
+
+        if (($attributes['classification'] ?? $class->classification) === 'college') {
+            // Conflict checks must use the same authoritative year that is persisted.
+            $attributes = app(ClassCurriculumPlacementService::class)->normalizeCollegeAttributes($attributes, $existingClass);
+        }
+
+        $class->fill($attributes);
+
         $generalSettingsService = app(GeneralSettingsService::class);
-        $schoolYearVariants = $this->resolveSchoolYearVariants($generalSettingsService);
-        $semester = $this->resolveSemester($generalSettingsService);
-        $facultyId = is_string($this->data['faculty_id'] ?? null) && mb_trim($this->data['faculty_id']) !== ''
-            ? mb_trim($this->data['faculty_id'])
+        $schoolYearVariants = $this->resolveSchoolYearVariants($generalSettingsService, $class);
+        $semester = $this->resolveSemester($generalSettingsService, $class);
+        $facultyId = is_string($class->faculty_id) && mb_trim($class->faculty_id) !== ''
+            ? mb_trim($class->faculty_id)
             : null;
 
         foreach ($value as $schedule) {
@@ -57,7 +76,7 @@ final class ScheduleOverlapRule implements DataAwareRule, ValidationRule
 
             $scheduleIdForExclusion = $this->resolveScheduleIdForExclusion($schedule['id'] ?? null);
 
-            if (! empty($schedule['room_id'])) {
+            if (! $class->isOnline() && ! empty($schedule['room_id'])) {
                 $roomConflict = $this->buildOverlapBaseQuery($schedule, $schoolYearVariants, $semester, $scheduleIdForExclusion)
                     ->where('room_id', $schedule['room_id'])
                     ->first();
@@ -79,6 +98,22 @@ final class ScheduleOverlapRule implements DataAwareRule, ValidationRule
                 if ($facultyConflict instanceof Schedule) {
                     $this->conflictingSchedule = $facultyConflict;
                     $this->conflictType = 'faculty';
+                    break;
+                }
+            }
+
+            if (filled($class->section) && filled($class->classification)) {
+                $cohortConflict = $this->buildOverlapBaseQuery($schedule, $schoolYearVariants, $semester, $scheduleIdForExclusion)
+                    ->whereHas('class', fn (Builder $query) => $query
+                        ->where('section', $class->section)
+                        ->where('classification', $class->classification))
+                    ->get()
+                    ->first(fn (Schedule $existing): bool => $existing->class instanceof Classes
+                        && app(ScheduleConflictService::class)->sharesStudentCohort($class, $existing->class));
+
+                if ($cohortConflict instanceof Schedule) {
+                    $this->conflictingSchedule = $cohortConflict;
+                    $this->conflictType = 'section';
                     break;
                 }
             }
@@ -104,6 +139,15 @@ final class ScheduleOverlapRule implements DataAwareRule, ValidationRule
                     ' to '.
                     $this->conflictingSchedule->end_time->format('h:i A').
                     '.';
+            }
+
+            if ($this->conflictType === 'section') {
+                return sprintf("The student cohort is already scheduled for '%s' on %s from %s to %s.",
+                    $className,
+                    $this->conflictingSchedule->day_of_week,
+                    $this->conflictingSchedule->start_time->format('h:i A'),
+                    $this->conflictingSchedule->end_time->format('h:i A'),
+                );
             }
 
             $roomName = $this->conflictingSchedule->room?->name ?? 'the selected room';
@@ -139,7 +183,7 @@ final class ScheduleOverlapRule implements DataAwareRule, ValidationRule
     private function buildOverlapBaseQuery(
         array $schedule,
         array $schoolYearVariants,
-        int $semester,
+        int|string $semester,
         ?int $scheduleIdForExclusion,
     ): Builder {
         $query = Schedule::with(['class', 'room'])
@@ -202,9 +246,9 @@ final class ScheduleOverlapRule implements DataAwareRule, ValidationRule
     /**
      * @return array<int, string>
      */
-    private function resolveSchoolYearVariants(GeneralSettingsService $generalSettingsService): array
+    private function resolveSchoolYearVariants(GeneralSettingsService $generalSettingsService, Classes $class): array
     {
-        $schoolYear = $this->data['school_year'] ?? $generalSettingsService->getCurrentSchoolYearString();
+        $schoolYear = $class->school_year ?? $generalSettingsService->getCurrentSchoolYearString();
 
         if (! is_string($schoolYear) || mb_trim($schoolYear) === '') {
             $schoolYear = $generalSettingsService->getCurrentSchoolYearString();
@@ -216,9 +260,9 @@ final class ScheduleOverlapRule implements DataAwareRule, ValidationRule
         return array_values(array_unique([$normalizedSchoolYear, $compactSchoolYear]));
     }
 
-    private function resolveSemester(GeneralSettingsService $generalSettingsService): int
+    private function resolveSemester(GeneralSettingsService $generalSettingsService, Classes $class): int|string
     {
-        $semester = $this->data['semester'] ?? $generalSettingsService->getCurrentSemester();
+        $semester = $class->semester ?? $generalSettingsService->getCurrentSemester();
 
         if (is_int($semester)) {
             return $semester;
@@ -226,6 +270,10 @@ final class ScheduleOverlapRule implements DataAwareRule, ValidationRule
 
         if (is_string($semester) && ctype_digit($semester)) {
             return (int) $semester;
+        }
+
+        if ($semester === 'summer') {
+            return $semester;
         }
 
         return $generalSettingsService->getCurrentSemester();

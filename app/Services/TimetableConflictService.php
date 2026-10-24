@@ -58,7 +58,9 @@ final class TimetableConflictService
     public function detectTimeRoomConflicts(Collection $schedules): array
     {
         $conflicts = [];
-        $grouped = $schedules->groupBy(fn ($schedule): string => $schedule->day_of_week.'_'.$schedule->room_id);
+        $grouped = $schedules
+            ->filter(fn ($schedule): bool => $schedule->room_id !== null && ! ($schedule->class?->isOnline() ?? false))
+            ->groupBy(fn ($schedule): string => $schedule->day_of_week.'_'.$schedule->room_id);
 
         foreach ($grouped as $dayRoom => $dayRoomSchedules) {
             if ($dayRoomSchedules->count() > 1) {

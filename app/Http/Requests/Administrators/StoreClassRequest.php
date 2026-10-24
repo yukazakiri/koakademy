@@ -51,11 +51,13 @@ final class StoreClassRequest extends FormRequest
             'semester' => ['required', Rule::in(['1', '2', 1, 2, 'summer'])],
             'school_year' => ['required', 'string', 'max:50'],
             'section' => ['required', Rule::in(['A', 'B', 'C', 'D'])],
+            'delivery_mode' => ['sometimes', Rule::in(['face_to_face', 'online'])],
             'room_id' => ['nullable', 'integer', 'exists:rooms,id'],
             'maximum_slots' => ['required', 'integer', 'min:1'],
 
             // Schedule (optional so classes can be created as unscheduled offerings first)
             'schedules' => ['nullable', 'array', new NonOverlappingScheduleBlocksRule, new ScheduleOverlapRule],
+            'schedules.*.id' => ['prohibited'],
             'schedules.*.day_of_week' => ['required', Rule::in(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])],
             'schedules.*.start_time' => ['required', 'date_format:H:i'],
             'schedules.*.end_time' => ['required', 'date_format:H:i'],
@@ -63,6 +65,7 @@ final class StoreClassRequest extends FormRequest
             'schedules.*.component_type' => ['nullable', 'string', Rule::in(['lecture', 'lab'])],
             'schedules.*.pattern_group_id' => ['nullable', 'string', 'max:64'],
             'schedules.*.status' => ['nullable', 'string', Rule::in(['draft', 'published'])],
+            'schedules.*.subject_id' => ['nullable', 'integer', 'exists:subject,id'],
 
             // Settings
             'settings' => ['nullable', 'array'],
@@ -92,5 +95,29 @@ final class StoreClassRequest extends FormRequest
             'subject_code_shs.required_if' => 'Please select an SHS subject.',
             'schedules.required' => 'Please add at least one schedule entry.',
         ];
+    }
+
+    /**
+     * An online class never occupies a room, so rooms are stripped before
+     * validation. This keeps room-conflict checks from firing on rooms that
+     * were left over from a face to face draft.
+     */
+    protected function prepareForValidation(): void
+    {
+        if ($this->input('delivery_mode') !== 'online') {
+            return;
+        }
+
+        $schedules = $this->input('schedules');
+
+        $this->merge([
+            'room_id' => null,
+            'schedules' => is_array($schedules)
+                ? array_map(
+                    static fn (mixed $schedule): mixed => is_array($schedule) ? [...$schedule, 'room_id' => null] : $schedule,
+                    $schedules,
+                )
+                : $schedules,
+        ]);
     }
 }

@@ -31,7 +31,8 @@ final readonly class TermOfferingGeneratorService
         $numericSemester = is_numeric($semesterRaw) ? (int) $semesterRaw : 1;
         $sections = array_values(array_unique(array_filter(array_map(strval(...), (array) ($params['sections'] ?? ['A'])))));
         $maximumSlots = isset($params['maximum_slots']) ? max(1, (int) $params['maximum_slots']) : 40;
-        $roomId = ! empty($params['room_id']) ? (int) $params['room_id'] : null;
+        $deliveryMode = (string) ($params['delivery_mode'] ?? Classes::DELIVERY_FACE_TO_FACE);
+        $roomId = $deliveryMode !== Classes::DELIVERY_ONLINE && ! empty($params['room_id']) ? (int) $params['room_id'] : null;
         $facultyId = ! empty($params['faculty_id']) ? (string) $params['faculty_id'] : null;
 
         $compactSchoolYear = str_replace(' ', '', $schoolYear);
@@ -76,6 +77,7 @@ final readonly class TermOfferingGeneratorService
                 $strandId,
                 $gradeLevel,
                 $maximumSlots,
+                $deliveryMode,
                 $roomId,
                 $facultyId,
             ): array {
@@ -106,6 +108,7 @@ final readonly class TermOfferingGeneratorService
                             'semester' => $numericSemester,
                             'section' => $section,
                             'maximum_slots' => $maximumSlots,
+                            'delivery_mode' => $deliveryMode,
                             'room_id' => $roomId,
                             'faculty_id' => $facultyId,
                             'settings' => Classes::getDefaultSettings(),
@@ -157,6 +160,7 @@ final readonly class TermOfferingGeneratorService
             $schoolYear,
             $numericSemester,
             $maximumSlots,
+            $deliveryMode,
             $roomId,
             $facultyId,
         ): array {
@@ -200,6 +204,7 @@ final readonly class TermOfferingGeneratorService
                         'semester' => $numericSemester,
                         'section' => $section,
                         'maximum_slots' => $maximumSlots,
+                        'delivery_mode' => $deliveryMode,
                         'room_id' => $roomId,
                         'faculty_id' => $facultyId,
                         'settings' => Classes::getDefaultSettings(),

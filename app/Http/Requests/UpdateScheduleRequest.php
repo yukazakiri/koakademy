@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests;
 
+use App\Models\Schedule;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -46,5 +47,13 @@ final class UpdateScheduleRequest extends FormRequest
             'end_time.after' => 'The end time must be after the start time.',
             'day_of_week.in' => 'The day must be a valid weekday (Monday through Saturday).',
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $schedule = $this->route('schedule');
+        if ($schedule instanceof Schedule && $schedule->class?->isOnline()) {
+            $this->merge(['room_id' => null]);
+        }
     }
 }

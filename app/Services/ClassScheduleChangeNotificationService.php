@@ -21,19 +21,20 @@ use Illuminate\Support\Facades\Notification;
 final class ClassScheduleChangeNotificationService
 {
     /**
-     * @return array<int, array{day_of_week: string, start_time: string, end_time: string, room_id: int|null, room_name: string|null}>
+     * @return array<int, array{day_of_week: string, start_time: string, end_time: string, room_id: int|null, room_name: string|null, delivery_mode?: string}>
      */
     public function snapshot(Classes $class): array
     {
         return $this->formatScheduleSnapshot(
             $class->schedules()
                 ->with('room:id,name')
-                ->get()
+                ->get(),
+            $class->delivery_mode ?? Classes::DELIVERY_FACE_TO_FACE,
         );
     }
 
     /**
-     * @param  array<int, array{day_of_week: string, start_time: string, end_time: string, room_id: int|null, room_name: string|null}>  $oldSnapshot
+     * @param  array<int, array{day_of_week: string, start_time: string, end_time: string, room_id: int|null, room_name: string|null, delivery_mode?: string}>  $oldSnapshot
      */
     public function notifyIfChanged(Classes $class, array $oldSnapshot, ?User $changedBy = null): int
     {
@@ -190,17 +191,18 @@ final class ClassScheduleChangeNotificationService
 
     /**
      * @param  iterable<int, mixed>  $schedules
-     * @return array<int, array{day_of_week: string, start_time: string, end_time: string, room_id: int|null, room_name: string|null}>
+     * @return array<int, array{day_of_week: string, start_time: string, end_time: string, room_id: int|null, room_name: string|null, delivery_mode?: string}>
      */
-    private function formatScheduleSnapshot(iterable $schedules): array
+    private function formatScheduleSnapshot(iterable $schedules, string $deliveryMode): array
     {
         return collect($schedules)
             ->map(fn ($schedule): array => [
                 'day_of_week' => (string) $schedule->day_of_week,
                 'start_time' => $this->formatTime($schedule->start_time),
                 'end_time' => $this->formatTime($schedule->end_time),
-                'room_id' => $schedule->room_id !== null ? (int) $schedule->room_id : null,
-                'room_name' => $schedule->room?->name,
+                'room_id' => $deliveryMode !== Classes::DELIVERY_ONLINE && $schedule->room_id !== null ? (int) $schedule->room_id : null,
+                'room_name' => $deliveryMode === Classes::DELIVERY_ONLINE ? 'Online' : $schedule->room?->name,
+                'delivery_mode' => $deliveryMode,
             ])
             ->sortBy(fn (array $schedule): string => sprintf(
                 '%d|%s|%s|%s',
@@ -214,8 +216,8 @@ final class ClassScheduleChangeNotificationService
     }
 
     /**
-     * @param  array<int, array{day_of_week: string, start_time: string, end_time: string, room_id: int|null, room_name: string|null}>  $snapshot
-     * @return array<int, array{day_of_week: string, start_time: string, end_time: string, room_id: int|null}>
+     * @param  array<int, array{day_of_week: string, start_time: string, end_time: string, room_id: int|null, room_name: string|null, delivery_mode?: string}>  $snapshot
+     * @return array<int, array{day_of_week: string, start_time: string, end_time: string, room_id: int|null, delivery_mode: string}>
      */
     private function canonicalize(array $snapshot): array
     {
@@ -225,6 +227,7 @@ final class ClassScheduleChangeNotificationService
                 'start_time' => $schedule['start_time'],
                 'end_time' => $schedule['end_time'],
                 'room_id' => $schedule['room_id'],
+                'delivery_mode' => $schedule['delivery_mode'] ?? Classes::DELIVERY_FACE_TO_FACE,
             ])
             ->sortBy(fn (array $schedule): string => sprintf(
                 '%d|%s|%s|%s',
@@ -238,7 +241,7 @@ final class ClassScheduleChangeNotificationService
     }
 
     /**
-     * @param  array<int, array{day_of_week: string, start_time: string, end_time: string, room_id: int|null, room_name: string|null}>  $snapshot
+     * @param  array<int, array{day_of_week: string, start_time: string, end_time: string, room_id: int|null, room_name: string|null, delivery_mode?: string}>  $snapshot
      * @return array<int, string>
      */
     private function summarize(array $snapshot): array
@@ -249,7 +252,9 @@ final class ClassScheduleChangeNotificationService
                 $schedule['day_of_week'],
                 $this->displayTime($schedule['start_time']),
                 $this->displayTime($schedule['end_time']),
-                $schedule['room_name'] ? ' at '.$schedule['room_name'] : ''
+                ($schedule['delivery_mode'] ?? Classes::DELIVERY_FACE_TO_FACE) === Classes::DELIVERY_ONLINE
+                    ? ' (Online)'
+                    : (! empty($schedule['room_name']) ? ' at '.$schedule['room_name'] : '')
             ))
             ->values()
             ->all();
@@ -372,6 +377,7 @@ final class ClassScheduleChangeNotificationService
                 facultyName: $class->faculty?->full_name,
                 changedAt: $change->created_at,
             );
+            $notification->afterCommit();
 
             if ($studentNotification->user instanceof User) {
                 $studentNotification->user->notify($notification);

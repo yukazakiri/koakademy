@@ -65,7 +65,7 @@ final class UpdateHandler extends Handlers
         ];
 
         $settingsData = [];
-        $requestData = $request->all();
+        $requestData = $request->except('schedules');
 
         // Extract settings from request
         foreach ($settingsFields as $field) {

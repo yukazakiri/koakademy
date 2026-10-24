@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Classes\Api\Requests;
 
+use App\Models\Classes;
 use App\Rules\NonOverlappingScheduleBlocksRule;
 use App\Rules\ScheduleOverlapRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -25,6 +26,11 @@ final class UpdateClassesRequest extends FormRequest
      */
     public function rules(): array
     {
+        $record = $this->route('id');
+        $classId = $record instanceof Classes
+            ? (int) $record->getKey()
+            : (is_numeric($record) ? (int) $record : null);
+
         return [
             'subject_code' => 'sometimes|nullable|string',
             'faculty_id' => 'sometimes|nullable|string',
@@ -46,7 +52,7 @@ final class UpdateClassesRequest extends FormRequest
             'subject_ids.*' => 'nullable|integer',
 
             // Schedule Validation
-            'schedules' => ['sometimes', 'array', new NonOverlappingScheduleBlocksRule, new ScheduleOverlapRule],
+            'schedules' => ['sometimes', 'array', new NonOverlappingScheduleBlocksRule, new ScheduleOverlapRule($classId)],
             'schedules.*.day_of_week' => 'required_with:schedules|string|in:Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday',
             'schedules.*.start_time' => 'required_with:schedules',
             'schedules.*.end_time' => 'required_with:schedules|after:schedules.*.start_time',

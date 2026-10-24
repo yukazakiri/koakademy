@@ -406,6 +406,7 @@ final class ManageClassScheduleTool implements Approvable, Tool
                 }
 
                 if (filled($cData['day_of_week'] ?? null) && filled($cData['start_time'] ?? null) && filled($cData['end_time'] ?? null)) {
+                    $roomId = $class->isOnline() ? null : $roomId;
                     $dayOfWeek = mb_convert_case(mb_trim((string) $cData['day_of_week']), MB_CASE_TITLE);
                     $startTime = Carbon::parse($cData['start_time'])->format('H:i:s');
                     $endTime = Carbon::parse($cData['end_time'])->format('H:i:s');
@@ -457,7 +458,7 @@ final class ManageClassScheduleTool implements Approvable, Tool
         }
 
         $roomId = $validated['room_id'] ?? null;
-        if (! $roomId && filled($validated['room_name'] ?? null)) {
+        if (! $class->isOnline() && ! $roomId && filled($validated['room_name'] ?? null)) {
             $roomId = $this->resolveOptionalRoom(null, $validated['room_name'])?->id;
         }
 
@@ -474,7 +475,7 @@ final class ManageClassScheduleTool implements Approvable, Tool
             $schedule = Schedule::query()->where('class_id', $class->id)->first();
         }
 
-        $effectiveRoomId = $roomId ?? $schedule?->room_id ?? $class->room_id;
+        $effectiveRoomId = $class->isOnline() ? null : ($roomId ?? $schedule?->room_id ?? $class->room_id);
         try {
             $this->guardScheduleConflicts($effectiveRoomId, $class->faculty_id, $dayOfWeek, $startTime, $endTime, $class->school_year, (int) $class->semester, $schedule?->id, $class->id);
         } catch (InvalidArgumentException $e) {
@@ -567,6 +568,10 @@ final class ManageClassScheduleTool implements Approvable, Tool
         $class = Classes::query()->find($validated['class_id']);
         if (! $class instanceof Classes) {
             return json_encode(['error' => true, 'message' => "Class #{$validated['class_id']} not found."]);
+        }
+
+        if ($class->isOnline()) {
+            return json_encode(['error' => true, 'message' => 'Online classes cannot be assigned a room.']);
         }
 
         $room = $this->resolveOptionalRoom($validated['room_id'] ?? null, $validated['room_name'] ?? null);

@@ -475,18 +475,11 @@ final class AdministratorSchedulingAnalyticsController extends Controller
         $class = DB::transaction(function () use ($validated, $schedules): Classes {
             $class = Classes::query()->create($validated);
 
-            foreach ($schedules as $scheduleData) {
-                $class->schedules()->create([
-                    'day_of_week' => $scheduleData['day_of_week'],
-                    'start_time' => $scheduleData['start_time'],
-                    'end_time' => $scheduleData['end_time'],
-                    'room_id' => $scheduleData['room_id'] ?? $class->room_id,
-                    'subject_id' => $class->subject_id,
-                    'component_type' => $scheduleData['component_type'] ?? 'lecture',
-                    'pattern_group_id' => $scheduleData['pattern_group_id'] ?? null,
-                    'status' => $scheduleData['status'] ?? 'published',
-                ]);
-            }
+            app(SchedulingService::class)->syncClassSchedules(
+                $class,
+                $schedules,
+                Auth::user() instanceof User ? Auth::user() : null,
+            );
 
             return $class;
         });
@@ -520,6 +513,10 @@ final class AdministratorSchedulingAnalyticsController extends Controller
     ): JsonResponse {
         abort_unless($request->user()?->isAdministrative() ?? false, 403);
 
+        if ($class->isOnline()) {
+            $request->merge(['room_id' => null]);
+        }
+
         $validated = $request->validate([
             'days' => ['required', 'array', 'min:1'],
             'days.*' => ['required', 'string', Rule::in(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'])],
@@ -537,7 +534,9 @@ final class AdministratorSchedulingAnalyticsController extends Controller
             array_values($validated['days']),
             (string) $validated['start_time'],
             (string) $validated['end_time'],
-            isset($validated['room_id']) ? (int) $validated['room_id'] : null,
+            array_key_exists('room_id', $validated)
+                ? ($validated['room_id'] !== null ? (int) $validated['room_id'] : null)
+                : ($class->room_id !== null ? (int) $class->room_id : null),
             (string) ($validated['component_type'] ?? 'lecture'),
             (string) ($validated['status'] ?? 'published'),
             $actor,
@@ -567,8 +566,13 @@ final class AdministratorSchedulingAnalyticsController extends Controller
     ): JsonResponse {
         abort_unless($request->user()?->isAdministrative() ?? false, 403);
 
+        if ($request->input('delivery_mode') === Classes::DELIVERY_ONLINE) {
+            $request->merge(['room_id' => null]);
+        }
+
         $validated = $request->validate([
             'classification' => ['required', Rule::in(['college', 'shs'])],
+            'delivery_mode' => ['sometimes', Rule::in([Classes::DELIVERY_FACE_TO_FACE, Classes::DELIVERY_ONLINE])],
             'school_year' => ['required', 'string', 'max:50'],
             'semester' => ['required', Rule::in(['1', '2', 1, 2, 'summer'])],
             'sections' => ['required', 'array', 'min:1'],
@@ -684,15 +688,22 @@ final class AdministratorSchedulingAnalyticsController extends Controller
 
         $hours = $conflictService->calculateClassHours($class);
 
+        $normalizedSubjectCode = collect(explode(',', (string) $class->subject_code))
+            ->map(fn (string $part): string => mb_trim($part))
+            ->filter()
+            ->unique()
+            ->implode(', ');
+
         return [
             'id' => $class->id,
-            'subject_code' => $class->subject_code,
+            'subject_code' => $normalizedSubjectCode !== '' ? $normalizedSubjectCode : $class->subject_code,
             'subject_title' => $class->subject_title,
             'section' => $class->section,
             'grade_level' => $yearLevel,
             'year_levels' => $yearLevels,
             'course_year_levels' => $courseYearLevels,
             'classification' => $class->classification,
+            'delivery_mode' => $class->delivery_mode,
             'shs_strand_id' => $class->shs_strand_id,
             'faculty_id' => $class->faculty_id,
             'faculty_name' => $class->Faculty ? $class->Faculty->first_name.' '.$class->Faculty->last_name : null,

@@ -987,7 +987,7 @@ final class FacultyClassController extends Controller
                     'day_of_week' => $scheduleData['day_of_week'],
                     'start_time' => $scheduleData['start_time'],
                     'end_time' => $scheduleData['end_time'],
-                    'room_id' => (int) $scheduleData['room_id'],
+                    'room_id' => isset($scheduleData['room_id']) ? (int) $scheduleData['room_id'] : null,
                 ]);
 
                 if (method_exists($schedule, 'restore') && method_exists($schedule, 'trashed') && $schedule->trashed()) {
@@ -1004,7 +1004,7 @@ final class FacultyClassController extends Controller
                 'day_of_week' => $scheduleData['day_of_week'],
                 'start_time' => $scheduleData['start_time'],
                 'end_time' => $scheduleData['end_time'],
-                'room_id' => (int) $scheduleData['room_id'],
+                'room_id' => isset($scheduleData['room_id']) ? (int) $scheduleData['room_id'] : null,
             ]);
 
             $keptIds[] = $newSchedule->id;

@@ -133,6 +133,25 @@ return [
             'key' => env('OPENAI_API_KEY'),
             'url' => env('OPENAI_URL', 'https://api.openai.com/v1'),
             'store' => env('OPENAI_STORE', true),
+            'models' => [
+                'text' => [
+                    'default' => env('OPENAI_TEXT_MODEL', 'gpt-6.1-sol'),
+                    'cheapest' => env('OPENAI_TEXT_MODEL_CHEAPEST', 'gpt-6-luna'),
+                    'smartest' => env('OPENAI_TEXT_MODEL_SMARTEST', 'gpt-6-astra'),
+                ],
+                'image' => [
+                    'default' => env('OPENAI_IMAGE_MODEL', 'gpt-image-2.5-flare'),
+                ],
+                'audio' => [
+                    'default' => env('OPENAI_AUDIO_MODEL', 'gpt-4o-mini-tts'),
+                ],
+                'transcription' => [
+                    'default' => env('OPENAI_TRANSCRIPTION_MODEL', 'gpt-4o-mini-transcribe'),
+                ],
+                'embeddings' => [
+                    'default' => env('OPENAI_EMBEDDINGS_MODEL', 'text-embedding-3-small'),
+                ],
+            ],
         ],
 
         'openai-compatible' => [

@@ -67,6 +67,7 @@
         "moataz-01/filament-notification-sound": "^1.0",
         "mohammed-mojaly/laralyze": "^0.7.2",
         "mozex/laravel-scout-bulk-actions": "^1.7",
+        "owenvoke/blade-fontawesome": "^3.3",
         "predis/predis": "^3.2",
         "pusher/pusher-php-server": "^7.2",
         "pxlrbt/filament-environment-indicator": "^3.0",

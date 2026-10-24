@@ -204,7 +204,7 @@ export function BirdsEyeView({ schedule, statusById, conflicts, highlightDay, ba
 
                                                 <div className="flex gap-2">
                                                     <Button asChild size="sm" className="w-full">
-                                                        <Link href={entry.class_id ? `/classes/${entry.class_id}` : "/classes"}>
+                                                        <Link href={entry.class_id ? `/faculty/classes/${entry.class_id}` : "/faculty/classes"}>
                                                             View Class Details
                                                         </Link>
                                                     </Button>

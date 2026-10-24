@@ -429,6 +429,8 @@ export function AnnouncementBanner({ announcements, displayMode: defaultDisplayM
         if (startsAt && startsAt > now) return false;
         if (endsAt && endsAt < now) return false;
 
+        if (a.requires_acknowledgment && acknowledgedIds.includes(a.id)) return false;
+
         return a.non_dismissible || !dismissedIds.includes(a.id);
     });
 

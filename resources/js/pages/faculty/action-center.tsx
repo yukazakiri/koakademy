@@ -518,7 +518,7 @@ export default function ActionCenter({ user, action_center }: ActionCenterProps)
                         {!searchQuery && priorityFilter === "all" && (
                             <EmptyContent>
                                 <Button asChild variant="default">
-                                    <Link href="/classes">Go to My Classes</Link>
+                                    <Link href="/faculty/classes">Go to My Classes</Link>
                                 </Button>
                             </EmptyContent>
                         )}

@@ -1,9 +1,10 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AlertTriangle, Building2, User as UserIcon, X } from "lucide-react";
+import { AlertTriangle, Building2, Layers, User as UserIcon, X } from "lucide-react";
 
 type ConflictClass = {
+    id?: number;
     subject_code: string;
     section: string;
     room: string | null;
@@ -15,7 +16,7 @@ type ScheduleConflict = {
     time: string;
     class_1: ConflictClass;
     class_2: ConflictClass;
-    conflict_type: "room" | "faculty";
+    conflict_type: "room" | "faculty" | "section";
 };
 
 type SchedulingConflictsPanelProps = {
@@ -48,7 +49,7 @@ export default function SchedulingConflictsPanel({
                     <CardHeader className="pb-2">
                         <div className="flex items-center justify-between">
                             <CardTitle className="text-destructive flex items-center gap-2 text-sm">
-                                <AlertTriangle className="h-4 w-4" /> Schedule Conflicts
+                                <AlertTriangle className="h-4 w-4" /> Schedule Conflicts ({conflicts.length})
                             </CardTitle>
                             <Button variant="ghost" size="sm" onClick={onCloseExpanded} className="h-7 px-2">
                                 <X className="h-3.5 w-3.5" />
@@ -57,9 +58,7 @@ export default function SchedulingConflictsPanel({
                     </CardHeader>
                     <CardContent>
                         <p className="text-muted-foreground mb-3 text-xs">
-                            Conflicting classes share the same {conflicts.some((c) => c.conflict_type === "room") ? "room" : ""}
-                            {conflicts.some((c) => c.conflict_type === "room") && conflicts.some((c) => c.conflict_type === "faculty") ? " or " : ""}
-                            {conflicts.some((c) => c.conflict_type === "faculty") ? "faculty member" : ""} at the same time.
+                            Conflicting classes overlap in the same room, share the same instructor, or belong to the same student cohort section at the same time.
                         </p>
 
                         <div className="grid gap-2">
@@ -77,10 +76,15 @@ export default function SchedulingConflictsPanel({
                                                 <Building2 className="mr-0.5 h-3 w-3" />
                                                 Room
                                             </>
-                                        ) : (
+                                        ) : c.conflict_type === "faculty" ? (
                                             <>
                                                 <UserIcon className="mr-0.5 h-3 w-3" />
                                                 Faculty
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Layers className="mr-0.5 h-3 w-3" />
+                                                Section Cohort
                                             </>
                                         )}
                                     </Badge>

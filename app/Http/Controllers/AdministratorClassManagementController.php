@@ -469,7 +469,6 @@ final class AdministratorClassManagementController extends Controller
 
         $schedules = null;
         if (array_key_exists('schedules', $validated)) {
-            $oldScheduleSnapshot = $scheduleChangeNotifications->snapshot($class);
             $schedules = Arr::wrap($validated['schedules']);
             unset($validated['schedules']);
         }
@@ -478,20 +477,9 @@ final class AdministratorClassManagementController extends Controller
         $class->save();
 
         if (is_array($schedules)) {
-            $class->schedules()->delete();
-
-            foreach ($schedules as $scheduleData) {
-                $class->schedules()->create([
-                    'day_of_week' => $scheduleData['day_of_week'],
-                    'start_time' => $scheduleData['start_time'],
-                    'end_time' => $scheduleData['end_time'],
-                    'room_id' => $scheduleData['room_id'],
-                ]);
-            }
-
-            $scheduleChangeNotifications->notifyIfChanged(
+            app(\App\Services\Scheduling\SchedulingService::class)->syncClassSchedules(
                 $class,
-                $oldScheduleSnapshot ?? [],
+                $schedules,
                 Auth::user() instanceof User ? Auth::user() : null
             );
         }
@@ -580,9 +568,16 @@ final class AdministratorClassManagementController extends Controller
 
         $newClass->push();
 
+        $copySchedules = $request->boolean('copy_schedules', true);
+        if ($copySchedules) {
+            app(\App\Services\Scheduling\SchedulingService::class)->copyClassSchedules($class, $newClass);
+        }
+
         return redirect()->route('administrators.classes.index')->with('flash', [
             'type' => 'success',
-            'message' => 'Class copied successfully (schedules not copied).',
+            'message' => $copySchedules
+                ? 'Class and schedules copied successfully.'
+                : 'Class copied successfully (schedules not copied).',
             'class_id' => $newClass->id,
         ]);
     }

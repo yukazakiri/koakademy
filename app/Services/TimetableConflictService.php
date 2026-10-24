@@ -302,6 +302,14 @@ final class TimetableConflictService
     }
 
     /**
+     * Check if two classes have overlapping schedules on the same day.
+     */
+    public function hasScheduleConflict(\App\Models\Classes $classA, \App\Models\Classes $classB): bool
+    {
+        return app(Scheduling\ScheduleConflictService::class)->hasScheduleConflict($classA, $classB);
+    }
+
+    /**
      * Find time overlaps between schedules
      */
     private function findTimeOverlaps(Collection $schedules): array

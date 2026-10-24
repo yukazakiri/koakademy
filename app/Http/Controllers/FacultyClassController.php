@@ -965,6 +965,9 @@ final class FacultyClassController extends Controller
         /** @var array<int, array<string, mixed>> $incoming */
         $incoming = $validated['schedules'] ?? [];
 
+        $notificationService = app(\App\Services\ClassScheduleChangeNotificationService::class);
+        $oldSnapshot = $notificationService->snapshot($class);
+
         $existingSchedules = $class->schedules()->withTrashed()->get()->keyBy('id');
         $keptIds = [];
 
@@ -1010,6 +1013,14 @@ final class FacultyClassController extends Controller
         $class->schedules()
             ->whereNotIn('id', $keptIds)
             ->delete();
+
+        $class->unsetRelation('schedules');
+        $class->unsetRelation('Schedule');
+        $notificationService->notifyIfChanged(
+            $class,
+            $oldSnapshot,
+            Auth::user() instanceof User ? Auth::user() : null
+        );
 
         return redirect()
             ->back()

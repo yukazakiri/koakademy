@@ -47,6 +47,10 @@ final class Schedule extends Model
         'end_time',
         'room_id',
         'class_id',
+        'subject_id',
+        'component_type',
+        'pattern_group_id',
+        'status',
     ];
 
     public function room()
@@ -57,6 +61,11 @@ final class Schedule extends Model
     public function class()
     {
         return $this->belongsTo(Classes::class, 'class_id');
+    }
+
+    public function subjectModel()
+    {
+        return $this->belongsTo(Subject::class, 'subject_id');
     }
 
     public function getSchedulesByClass($classId)
@@ -102,6 +111,18 @@ final class Schedule extends Model
         });
     }
 
+    protected function scopeForAcademicPeriod(Builder $builder, string $schoolYear, int|string $semester): Builder
+    {
+        $normalizedSchoolYear = GeneralSettingsService::normalizeSchoolYear($schoolYear);
+        $compactSchoolYear = str_replace(' ', '', $normalizedSchoolYear);
+        $schoolYearVariants = array_values(array_unique([$schoolYear, $normalizedSchoolYear, $compactSchoolYear]));
+
+        return $builder->whereHas('class', function (Builder $builder) use ($schoolYearVariants, $semester): void {
+            $builder->whereIn('school_year', $schoolYearVariants)
+                ->where('semester', $semester);
+        });
+    }
+
     protected function casts(): array
     {
         return [
@@ -110,6 +131,10 @@ final class Schedule extends Model
             'end_time' => 'datetime:H:i',
             'room_id' => 'integer',
             'class_id' => 'integer',
+            'subject_id' => 'integer',
+            'component_type' => 'string',
+            'pattern_group_id' => 'string',
+            'status' => 'string',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
             'deleted_at' => 'datetime',

@@ -51,15 +51,18 @@ final class StoreClassRequest extends FormRequest
             'semester' => ['required', Rule::in(['1', '2', 1, 2, 'summer'])],
             'school_year' => ['required', 'string', 'max:50'],
             'section' => ['required', Rule::in(['A', 'B', 'C', 'D'])],
-            'room_id' => ['required', 'integer', 'exists:rooms,id'],
+            'room_id' => ['nullable', 'integer', 'exists:rooms,id'],
             'maximum_slots' => ['required', 'integer', 'min:1'],
 
-            // Schedule
-            'schedules' => ['required', 'array', new NonOverlappingScheduleBlocksRule, new ScheduleOverlapRule],
+            // Schedule (optional so classes can be created as unscheduled offerings first)
+            'schedules' => ['nullable', 'array', new NonOverlappingScheduleBlocksRule, new ScheduleOverlapRule],
             'schedules.*.day_of_week' => ['required', Rule::in(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])],
             'schedules.*.start_time' => ['required', 'date_format:H:i'],
             'schedules.*.end_time' => ['required', 'date_format:H:i'],
-            'schedules.*.room_id' => ['required', 'integer', 'exists:rooms,id'],
+            'schedules.*.room_id' => ['nullable', 'integer', 'exists:rooms,id'],
+            'schedules.*.component_type' => ['nullable', 'string', Rule::in(['lecture', 'lab'])],
+            'schedules.*.pattern_group_id' => ['nullable', 'string', 'max:64'],
+            'schedules.*.status' => ['nullable', 'string', Rule::in(['draft', 'published'])],
 
             // Settings
             'settings' => ['nullable', 'array'],

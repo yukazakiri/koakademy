@@ -57,12 +57,14 @@ import * as React from "react";
 import { toast } from "sonner";
 import { route } from "ziggy-js";
 import CreateClassDialog from "./components/create-class-dialog";
+import GenerateOfferingsDialog, { type GenerateOfferingsPayload } from "./components/generate-offerings-dialog";
 import ScheduleExportDialog from "./components/schedule-export-dialog";
 import SchedulingConflictsPanel from "./components/scheduling-conflicts-panel";
-import SchedulingFiltersBar from "./components/scheduling-filters-bar";
+import SchedulingFiltersBar, { type PlanningLens } from "./components/scheduling-filters-bar";
 import SchedulingHeader from "./components/scheduling-header";
 import SchedulingRoomAssignmentSidebar from "./components/scheduling-room-assignment-sidebar";
 import SchedulingStatsRow from "./components/scheduling-stats-row";
+import SchedulingUnscheduledQueue from "./components/scheduling-unscheduled-queue";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -74,6 +76,9 @@ type ScheduleEntry = {
     time_range: string;
     room: string | null;
     room_id?: number | null;
+    component_type?: string;
+    pattern_group_id?: string | null;
+    status?: string;
 };
 
 type DragData = {
@@ -92,36 +97,52 @@ type ClassScheduleData = {
     grade_level: string | null;
     year_levels: string[];
     course_year_levels: Record<string, string[]>;
+    classification?: string;
+    shs_strand_id?: number | null;
     faculty_id?: string | null;
     faculty_name: string | null;
+    room_id?: number | null;
     room_name: string | null;
+    maximum_slots?: number;
     courses: string;
     course_ids: number[];
     student_count: number;
+    lecture_hours?: number;
+    lab_hours?: number;
+    required_hours?: number;
+    scheduled_hours?: number;
+    is_unscheduled?: boolean;
+    is_complete?: boolean;
     schedules: ScheduleEntry[];
 };
 
 type CourseOption = { id: number; code: string; title: string };
-type RoomOption = { id: number; name: string; class_code: string | null };
+type RoomOption = { id: number; name: string; class_code: string | null; capacity?: number; type?: string; building?: string | null };
 type FacultyOption = { id: string; name: string; department: string | null };
 type LogContext = Record<string, unknown>;
 
 type ScheduleConflict = {
     day: string;
     time: string;
-    class_1: { subject_code: string; section: string; room: string | null; faculty: string | null };
-    class_2: { subject_code: string; section: string; room: string | null; faculty: string | null };
-    conflict_type: "room" | "faculty";
+    schedule_1_id?: number;
+    schedule_2_id?: number;
+    class_1: { id?: number; subject_code: string; section: string; room: string | null; faculty: string | null };
+    class_2: { id?: number; subject_code: string; section: string; room: string | null; faculty: string | null };
+    conflict_type: "room" | "faculty" | "section";
 };
 
 type ScheduleUpdateResponse = {
     schedule: {
+        id?: number;
         day_of_week: string;
         start_time: string;
         end_time: string;
         time_range: string;
         room: string | null;
         room_id: number | null;
+        component_type?: string;
+        pattern_group_id?: string | null;
+        status?: string;
     };
     conflicts: ScheduleConflict[];
 };
@@ -141,6 +162,9 @@ type ScheduleConfigurationSelection = {
 type ScheduleStats = {
     total_classes: number;
     total_students: number;
+    unscheduled_classes_count?: number;
+    incomplete_classes_count?: number;
+    draft_schedules_count?: number;
     classes_by_year_level: Record<string, number>;
     classes_by_course: Record<string, number>;
     schedule_conflicts: ScheduleConflict[];
@@ -170,6 +194,13 @@ interface SchedulingAnalyticsProps {
     user: User;
     schedule_data: ClassScheduleData[];
     stats: ScheduleStats;
+    term_context?: {
+        school_year: string;
+        semester: string;
+        semester_label: string;
+        available_school_years: string[];
+        available_semesters: Array<{ value: string; label: string }>;
+    };
     filters: {
         available_courses: CourseOption[];
         available_year_levels: string[];
@@ -588,8 +619,8 @@ function WeeklyTimetable({
     const getConflicts = (cls: ClassScheduleData) => {
         return conflicts.filter(
             (c) =>
-                (c.class_1.subject_code === cls.subject_code && c.class_1.section === cls.section) ||
-                (c.class_2.subject_code === cls.subject_code && c.class_2.section === cls.section),
+                (c.class_1.id !== undefined ? c.class_1.id === cls.id : c.class_1.subject_code === cls.subject_code && c.class_1.section === cls.section) ||
+                (c.class_2.id !== undefined ? c.class_2.id === cls.id : c.class_2.subject_code === cls.subject_code && c.class_2.section === cls.section),
         );
     };
     const blocksByDay = React.useMemo(() => {
@@ -818,7 +849,12 @@ function WeeklyTimetable({
                                                     <span className="font-medium text-red-600 dark:text-red-400">
                                                         {otherClass.subject_code} ({otherClass.section})
                                                     </span>{" "}
-                                                    — Same {c.conflict_type === "room" ? "Room" : "Faculty"}
+                                                    — Same{" "}
+                                                    {c.conflict_type === "room"
+                                                        ? "Room"
+                                                        : c.conflict_type === "faculty"
+                                                          ? "Faculty"
+                                                          : "Section Cohort"}
                                                 </span>
                                             </li>
                                         );
@@ -1142,8 +1178,9 @@ function ScheduleConfigurationDialog({
     );
 }
 
-export default function SchedulingAnalytics({ user, schedule_data, stats, filters, creation_options, defaults }: SchedulingAnalyticsProps) {
+export default function SchedulingAnalytics({ user, schedule_data, stats, term_context, filters, creation_options, defaults }: SchedulingAnalyticsProps) {
     // Filter state
+    const [planningLens, setPlanningLens] = React.useState<PlanningLens>("overview");
     const [search, setSearch] = React.useState("");
     const [courseFilter, setCourseFilter] = React.useState("all");
     const [yearFilter, setYearFilter] = React.useState("all");
@@ -1152,7 +1189,12 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
     const [facultyFilter, setFacultyFilter] = React.useState("all");
 
     const [createDialogOpen, setCreateDialogOpen] = React.useState(false);
+    const [generateDialogOpen, setGenerateDialogOpen] = React.useState(false);
     const [exportDialogOpen, setExportDialogOpen] = React.useState(false);
+    const [queueOpen, setQueueOpen] = React.useState<boolean>(() =>
+        schedule_data.some((c) => c.is_unscheduled || c.schedules.length === 0 || (c.scheduled_hours ?? 0) < (c.required_hours ?? 3)),
+    );
+    const [isPublishing, setIsPublishing] = React.useState(false);
 
     // Student search state
     const [studentQuery, setStudentQuery] = React.useState("");
@@ -1758,12 +1800,22 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
             const previousData = localData;
 
             setLocalData((prev) =>
-                prev
-                    .map((cls) => ({
+                prev.map((cls) => {
+                    if (!cls.schedules.some((schedule) => schedule.id === scheduleId)) {
+                        return cls;
+                    }
+                    const nextSchedules = cls.schedules.filter((schedule) => schedule.id !== scheduleId);
+                    const totalMin = nextSchedules.reduce((acc, s) => acc + Math.max(0, parseMinutes(s.end_time) - parseMinutes(s.start_time)), 0);
+                    const nextScheduledHours = Math.round((totalMin / 60) * 100) / 100;
+                    const reqHours = cls.required_hours ?? 3;
+                    return {
                         ...cls,
-                        schedules: cls.schedules.filter((schedule) => schedule.id !== scheduleId),
-                    }))
-                    .filter((cls) => cls.schedules.length > 0),
+                        schedules: nextSchedules,
+                        scheduled_hours: nextScheduledHours,
+                        is_unscheduled: nextSchedules.length === 0,
+                        is_complete: nextScheduledHours >= reqHours,
+                    };
+                }),
             );
 
             try {
@@ -1860,22 +1912,158 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
     const conflicts = React.useMemo(() => {
         if (!hasFilters) return localConflicts;
         return localConflicts.filter((c) => {
-            const match = (x: { subject_code: string; section: string }) =>
-                filteredData.some((d) => d.subject_code === x.subject_code && d.section === x.section);
+            const match = (x: { id?: number; subject_code: string; section: string }) =>
+                filteredData.some((d) => (x.id !== undefined ? d.id === x.id : d.subject_code === x.subject_code && d.section === x.section));
             return match(c.class_1) || match(c.class_2);
         });
     }, [filteredData, localConflicts, hasFilters]);
 
+    const draftCount = React.useMemo(
+        () => localData.reduce((acc, c) => acc + c.schedules.filter((s) => s.status === "draft").length, 0),
+        [localData],
+    );
+
+    const handleTermChange = (nextSchoolYear: string, nextSemester: string) => {
+        router.get(
+            route("administrators.scheduling-analytics.index"),
+            { school_year: nextSchoolYear, semester: nextSemester },
+            { preserveState: false },
+        );
+    };
+
+    const handlePlanningLensChange = (lens: PlanningLens) => {
+        setPlanningLens(lens);
+        if (lens === "cohort") {
+            setQueueOpen(true);
+            setRoomFilter("all");
+            setFacultyFilter("all");
+        } else if (lens === "room") {
+            setCourseFilter("all");
+            setYearFilter("all");
+            setSectionFilter("all");
+            setFacultyFilter("all");
+        } else if (lens === "faculty") {
+            setCourseFilter("all");
+            setYearFilter("all");
+            setSectionFilter("all");
+            setRoomFilter("all");
+        }
+    };
+
+    const handlePlacePattern = async (payload: {
+        classId: number;
+        days: string[];
+        start_time: string;
+        end_time: string;
+        room_id: number | null;
+        component_type: "lecture" | "lab";
+        status: "draft" | "published";
+    }) => {
+        try {
+            const res = await axios.post(
+                route("administrators.scheduling-analytics.classes.schedules.store", { class: payload.classId }),
+                {
+                    days: payload.days,
+                    start_time: payload.start_time,
+                    end_time: payload.end_time,
+                    room_id: payload.room_id,
+                    component_type: payload.component_type,
+                    status: payload.status,
+                },
+            );
+            const result = res.data as { class: ClassScheduleData; conflicts: ScheduleConflict[] };
+            setLocalData((prev) => prev.map((cls) => (cls.id === payload.classId ? result.class : cls)));
+            setLocalConflicts(result.conflicts ?? []);
+            toast.success(`Placed ${payload.days.length} schedule block${payload.days.length === 1 ? "" : "s"} for ${result.class.subject_code}.`);
+            if (result.conflicts?.length > 0) {
+                toast.warning(`${result.conflicts.length} schedule conflict${result.conflicts.length === 1 ? "" : "s"} detected.`);
+            }
+        } catch (error: unknown) {
+            let msg = "Failed to place schedule blocks.";
+            if (axios.isAxiosError(error) && error.response?.data?.message) {
+                msg = String(error.response.data.message);
+            }
+            toast.error(msg);
+            throw error;
+        }
+    };
+
+    const handleGenerateOfferings = async (payload: GenerateOfferingsPayload) => {
+        try {
+            const res = await axios.post(route("administrators.scheduling-analytics.offerings.generate"), payload);
+            const result = res.data as {
+                created_count: number;
+                skipped_count: number;
+                subjects_found: number;
+                classes: ClassScheduleData[];
+            };
+            if (result.classes?.length > 0) {
+                setLocalData((prev) => [...prev, ...result.classes]);
+                setQueueOpen(true);
+            }
+            if (result.subjects_found === 0) {
+                toast.warning("No curriculum subjects found for the selected program, year level, and semester.");
+            } else if (result.created_count > 0) {
+                toast.success(
+                    `Generated ${result.created_count} class offering${result.created_count === 1 ? "" : "s"} (${result.skipped_count} already existed).`,
+                );
+            } else {
+                toast.info(`All ${result.skipped_count} class offerings for this cohort already exist.`);
+            }
+        } catch (error: unknown) {
+            let msg = "Failed to generate cohort offerings.";
+            if (axios.isAxiosError(error) && error.response?.data?.message) {
+                msg = String(error.response.data.message);
+            }
+            toast.error(msg);
+            throw error;
+        }
+    };
+
+    const handlePublishTerm = async () => {
+        setIsPublishing(true);
+        try {
+            const res = await axios.post(route("administrators.scheduling-analytics.publish"), {
+                school_year: term_context?.school_year ?? defaults.school_year,
+                semester: term_context?.semester ?? defaults.semester,
+            });
+            const result = res.data as { published_count: number; conflicts: ScheduleConflict[] };
+            setLocalData((prev) =>
+                prev.map((c) => ({
+                    ...c,
+                    schedules: c.schedules.map((s) => ({ ...s, status: "published" })),
+                })),
+            );
+            setLocalConflicts(result.conflicts ?? []);
+            toast.success(`Published ${result.published_count} draft schedule block${result.published_count === 1 ? "" : "s"}.`);
+        } catch (error: unknown) {
+            let msg = "Unable to publish term schedule.";
+            if (axios.isAxiosError(error) && error.response?.data?.message) {
+                msg = String(error.response.data.message);
+            }
+            toast.error(msg);
+        } finally {
+            setIsPublishing(false);
+        }
+    };
+
     return (
-        <AdminLayout user={user} title="Schedule Overview">
-            <Head title="Schedule Overview" />
+        <AdminLayout user={user} title="Schedule Planner">
+            <Head title="Schedule Planner" />
 
             <div className="space-y-4">
                 {/* ── Header ── */}
                 <SchedulingHeader
+                    termContext={term_context}
+                    onTermChange={handleTermChange}
+                    onGenerateCohort={() => setGenerateDialogOpen(true)}
                     onCreateClass={() => setCreateDialogOpen(true)}
+                    onPublishTerm={handlePublishTerm}
+                    draftCount={draftCount}
+                    conflictCount={localConflicts.length}
+                    isPublishing={isPublishing}
                     onExport={() => setExportDialogOpen(true)}
-                    onSync={() => router.reload({ only: ["schedule_data", "stats", "filters"] })}
+                    onSync={() => router.reload({ only: ["schedule_data", "stats", "filters", "term_context"] })}
                 />
 
                 {/* ── Stats row ── */}
@@ -1888,6 +2076,8 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
                     onToggleConflictsExpanded={() => setConflictsExpanded(!conflictsExpanded)}
                     activeStudent={activeStudent}
                     onClearActiveStudent={() => setActiveStudent(null)}
+                    queueOpen={queueOpen}
+                    onToggleQueue={() => setQueueOpen((prev) => !prev)}
                 />
 
                 {/* ── Conflicts banner ── */}
@@ -1901,12 +2091,16 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
 
                 {/* ── Unified filter bar ── */}
                 <SchedulingFiltersBar
+                    planningLens={planningLens}
+                    onPlanningLensChange={handlePlanningLensChange}
                     search={search}
                     onSearchChange={setSearch}
                     courseFilter={courseFilter}
                     onCourseFilterChange={setCourseFilter}
                     yearFilter={yearFilter}
                     onYearFilterChange={setYearFilter}
+                    sectionFilter={sectionFilter}
+                    onSectionFilterChange={setSectionFilter}
                     roomFilter={roomFilter}
                     onRoomFilterChange={setRoomFilter}
                     facultyFilter={facultyFilter}
@@ -1919,10 +2113,11 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
                     hasFilters={!!hasFilters}
                     onClearFilters={clearFilters}
                     filteredCount={filteredData.length}
-                    totalCount={schedule_data.length}
+                    totalCount={localData.length}
                     isLoadingStudent={isLoadingStudent}
                     availableCourses={filters.available_courses}
                     availableYearLevels={filters.available_year_levels}
+                    availableSections={filters.available_sections}
                     availableRooms={filters.available_rooms}
                     availableFaculty={filters.available_faculty}
                 />
@@ -1941,8 +2136,19 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
                         className="text-foreground bg-background/95 dark:border-border/50 pointer-events-none fixed top-0 left-0 z-[9999] rounded-md border px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap opacity-0 shadow-2xl backdrop-blur-md transition-opacity duration-150 ease-out"
                     />
 
-                    <div className={`flex gap-4 ${editMode && viewMode === "timetable" ? "flex-row" : ""}`}>
-                        <Card className={`${editMode && viewMode === "timetable" ? "flex-1" : "w-full"}`}>
+                    <div className="flex flex-col gap-4 lg:flex-row">
+                        {queueOpen && (
+                            <SchedulingUnscheduledQueue
+                                classes={filteredData}
+                                allClasses={localData}
+                                rooms={creation_options.rooms}
+                                onPlacePattern={handlePlacePattern}
+                                onGenerateCohort={() => setGenerateDialogOpen(true)}
+                                onSelectClass={(cls) => setSelectedClass(localData.find((c) => c.id === cls.id) ?? null)}
+                            />
+                        )}
+
+                        <Card className="min-w-0 flex-1">
                             <CardHeader className="flex flex-row items-center justify-between pb-3">
                                 <div>
                                     <CardTitle className="flex items-center gap-2 text-base">
@@ -2213,6 +2419,17 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
+            <GenerateOfferingsDialog
+                open={generateDialogOpen}
+                onOpenChange={setGenerateDialogOpen}
+                schoolYear={term_context?.school_year ?? defaults.school_year}
+                semester={term_context?.semester ?? defaults.semester}
+                courses={creation_options.courses}
+                shsStrands={creation_options.shs_strands}
+                rooms={creation_options.rooms}
+                onGenerate={handleGenerateOfferings}
+            />
 
             <CreateClassDialog
                 open={createDialogOpen}

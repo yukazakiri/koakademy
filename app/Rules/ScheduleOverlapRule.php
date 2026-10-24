@@ -7,18 +7,16 @@ namespace App\Rules;
 use App\Models\Schedule;
 use App\Services\GeneralSettingsService;
 use Closure;
-use Filament\Notifications\Notification;
 use Illuminate\Contracts\Validation\DataAwareRule;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Translation\PotentiallyTranslatedString;
-
-// use Illuminate\Translation\PotentiallyTranslatedString;
 
 final class ScheduleOverlapRule implements DataAwareRule, ValidationRule
 {
     private ?Schedule $conflictingSchedule = null;
+
+    private string $conflictType = 'room';
 
     /**
      * @var array<string, mixed>
@@ -39,101 +37,55 @@ final class ScheduleOverlapRule implements DataAwareRule, ValidationRule
         mixed $value,
         Closure $fail
     ): void {
+        if (! is_array($value) || $value === []) {
+            return;
+        }
+
         $this->conflictingSchedule = null;
+        $this->conflictType = 'room';
         $generalSettingsService = app(GeneralSettingsService::class);
         $schoolYearVariants = $this->resolveSchoolYearVariants($generalSettingsService);
         $semester = $this->resolveSemester($generalSettingsService);
+        $facultyId = is_string($this->data['faculty_id'] ?? null) && mb_trim($this->data['faculty_id']) !== ''
+            ? mb_trim($this->data['faculty_id'])
+            : null;
 
-        // dd($attribute);
         foreach ($value as $schedule) {
-            if (empty($schedule['room_id'])) {
+            if (! is_array($schedule) || empty($schedule['day_of_week']) || empty($schedule['start_time']) || empty($schedule['end_time'])) {
                 continue;
             }
 
-            $query = Schedule::with('class')
-                ->where('day_of_week', $schedule['day_of_week'])
-                ->where('room_id', $schedule['room_id'])
-                ->whereHas('class', function (Builder $query) use ($schoolYearVariants, $semester): void {
-                    $query->whereIn('school_year', $schoolYearVariants)
-                        ->where('semester', $semester);
-                })
-                ->where(function ($query) use ($schedule): void {
-                    $query
-                        ->where(function ($subQuery) use ($schedule): void {
-                            // New schedule starts during another schedule
-                            $subQuery
-                                ->where(
-                                    'start_time',
-                                    '<=',
-                                    $schedule['start_time']
-                                )
-                                ->where(
-                                    'end_time',
-                                    '>',
-                                    $schedule['start_time']
-                                );
-                        })
-                        ->orWhere(function ($subQuery) use ($schedule): void {
-                            // New schedule ends during another schedule
-                            $subQuery
-                                ->where(
-                                    'start_time',
-                                    '<',
-                                    $schedule['end_time']
-                                )
-                                ->where(
-                                    'end_time',
-                                    '>=',
-                                    $schedule['end_time']
-                                );
-                        })
-                        ->orWhere(function ($subQuery) use ($schedule): void {
-                            // New schedule completely overlaps another schedule
-                            $subQuery
-                                ->where(
-                                    'start_time',
-                                    '>=',
-                                    $schedule['start_time']
-                                )
-                                ->where(
-                                    'end_time',
-                                    '<=',
-                                    $schedule['end_time']
-                                );
-                        });
-                });
-
             $scheduleIdForExclusion = $this->resolveScheduleIdForExclusion($schedule['id'] ?? null);
 
-            if ($scheduleIdForExclusion !== null) {
-                $query->whereKeyNot($scheduleIdForExclusion);
+            if (! empty($schedule['room_id'])) {
+                $roomConflict = $this->buildOverlapBaseQuery($schedule, $schoolYearVariants, $semester, $scheduleIdForExclusion)
+                    ->where('room_id', $schedule['room_id'])
+                    ->first();
+
+                if ($roomConflict instanceof Schedule) {
+                    $this->conflictingSchedule = $roomConflict;
+                    $this->conflictType = 'room';
+                    break;
+                }
             }
 
-            if ($this->excludedClassId !== null) {
-                $query->where('class_id', '!=', $this->excludedClassId);
-            }
+            if ($facultyId !== null) {
+                $facultyConflict = $this->buildOverlapBaseQuery($schedule, $schoolYearVariants, $semester, $scheduleIdForExclusion)
+                    ->whereHas('class', function (Builder $query) use ($facultyId): void {
+                        $query->where('faculty_id', $facultyId);
+                    })
+                    ->first();
 
-            $existingSchedule = $query->first();
-
-            if ($existingSchedule) {
-                $this->conflictingSchedule = $existingSchedule;
-                break;
+                if ($facultyConflict instanceof Schedule) {
+                    $this->conflictingSchedule = $facultyConflict;
+                    $this->conflictType = 'faculty';
+                    break;
+                }
             }
         }
 
-        if ($this->conflictingSchedule) {
+        if ($this->conflictingSchedule instanceof Schedule) {
             $fail($this->message());
-            $notification = Notification::make()
-                ->danger()
-                ->title('Schedule Conflict')
-                ->body($this->message());
-            $authenticatedUser = Auth::guard()->user();
-
-            $notification->send();
-
-            if ($authenticatedUser !== null) {
-                $notification->sendToDatabase($authenticatedUser);
-            }
         }
     }
 
@@ -144,10 +96,22 @@ final class ScheduleOverlapRule implements DataAwareRule, ValidationRule
                 ? $this->conflictingSchedule->class->subject_code
                 : 'Unknown Class';
 
+            if ($this->conflictType === 'faculty') {
+                return sprintf("The assigned faculty member is already scheduled for '%s' on ", $className).
+                    $this->conflictingSchedule->day_of_week.
+                    ' from '.
+                    $this->conflictingSchedule->start_time->format('h:i A').
+                    ' to '.
+                    $this->conflictingSchedule->end_time->format('h:i A').
+                    '.';
+            }
+
+            $roomName = $this->conflictingSchedule->room?->name ?? 'the selected room';
+
             return sprintf("The schedule you are trying to add conflicts with another class on '%s' on ", $className).
                 $this->conflictingSchedule->day_of_week.
                 ' in '.
-                $this->conflictingSchedule->room->name.
+                $roomName.
                 ' from '.
                 $this->conflictingSchedule->start_time->format('h:i A').
                 ' to '.
@@ -166,6 +130,52 @@ final class ScheduleOverlapRule implements DataAwareRule, ValidationRule
         $this->data = $data;
 
         return $this;
+    }
+
+    /**
+     * @param  array<string, mixed>  $schedule
+     * @param  array<int, string>  $schoolYearVariants
+     */
+    private function buildOverlapBaseQuery(
+        array $schedule,
+        array $schoolYearVariants,
+        int $semester,
+        ?int $scheduleIdForExclusion,
+    ): Builder {
+        $query = Schedule::with(['class', 'room'])
+            ->where('day_of_week', $schedule['day_of_week'])
+            ->whereHas('class', function (Builder $query) use ($schoolYearVariants, $semester): void {
+                $query->whereIn('school_year', $schoolYearVariants)
+                    ->where('semester', $semester);
+            })
+            ->where(function ($query) use ($schedule): void {
+                $query
+                    ->where(function ($subQuery) use ($schedule): void {
+                        $subQuery
+                            ->where('start_time', '<=', $schedule['start_time'])
+                            ->where('end_time', '>', $schedule['start_time']);
+                    })
+                    ->orWhere(function ($subQuery) use ($schedule): void {
+                        $subQuery
+                            ->where('start_time', '<', $schedule['end_time'])
+                            ->where('end_time', '>=', $schedule['end_time']);
+                    })
+                    ->orWhere(function ($subQuery) use ($schedule): void {
+                        $subQuery
+                            ->where('start_time', '>=', $schedule['start_time'])
+                            ->where('end_time', '<=', $schedule['end_time']);
+                    });
+            });
+
+        if ($scheduleIdForExclusion !== null) {
+            $query->whereKeyNot($scheduleIdForExclusion);
+        }
+
+        if ($this->excludedClassId !== null) {
+            $query->where('class_id', '!=', $this->excludedClassId);
+        }
+
+        return $query;
     }
 
     private function resolveScheduleIdForExclusion(mixed $scheduleId): ?int

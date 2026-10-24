@@ -29,6 +29,9 @@ final class UpdateScheduleRequest extends FormRequest
             'start_time' => ['required', 'date_format:H:i'],
             'end_time' => ['required', 'date_format:H:i', 'after:start_time'],
             'room_id' => ['nullable', 'integer', 'exists:rooms,id'],
+            'component_type' => ['nullable', 'string', 'in:lecture,lab'],
+            'status' => ['nullable', 'string', 'in:draft,published'],
+            'apply_to_pattern_group' => ['nullable', 'boolean'],
         ];
     }
 

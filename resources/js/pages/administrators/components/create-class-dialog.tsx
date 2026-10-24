@@ -601,11 +601,7 @@ export default function CreateClassDialog({
     );
 
     const handleSubmit = async () => {
-        if (form.data.schedules.length === 0) {
-            toast.error("Please add at least one schedule block.");
-            return;
-        }
-        if (form.data.schedules.some((s) => s.room_id === null)) {
+        if (form.data.schedules.length > 0 && form.data.schedules.some((s) => s.room_id === null)) {
             toast.error("Please assign a room to every schedule block.");
             return;
         }

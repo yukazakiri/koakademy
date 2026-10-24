@@ -7,20 +7,26 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { BookOpen, Building2, Check, ChevronsUpDown, GraduationCap, Loader2, Search, User as UserIcon, X } from "lucide-react";
+import { BookOpen, Building2, Check, ChevronsUpDown, GraduationCap, Layers, LayoutGrid, Loader2, Search, User as UserIcon, X } from "lucide-react";
 
 type CourseOption = { id: number; code: string; title: string };
-type RoomOption = { id: number; name: string; class_code: string | null };
+type RoomOption = { id: number; name: string; class_code: string | null; capacity?: number; type?: string };
 type FacultyOption = { id: string; name: string; department: string | null };
 type StudentSearchResult = { id: number; student_id: number; name: string };
 
+export type PlanningLens = "overview" | "cohort" | "room" | "faculty";
+
 type SchedulingFiltersBarProps = {
+    planningLens?: PlanningLens;
+    onPlanningLensChange?: (lens: PlanningLens) => void;
     search: string;
     onSearchChange: (value: string) => void;
     courseFilter: string;
     onCourseFilterChange: (value: string) => void;
     yearFilter: string;
     onYearFilterChange: (value: string) => void;
+    sectionFilter?: string;
+    onSectionFilterChange?: (value: string) => void;
     roomFilter: string;
     onRoomFilterChange: (value: string) => void;
     facultyFilter: string;
@@ -37,17 +43,22 @@ type SchedulingFiltersBarProps = {
     isLoadingStudent: boolean;
     availableCourses: CourseOption[];
     availableYearLevels: string[];
+    availableSections?: string[];
     availableRooms: RoomOption[];
     availableFaculty: FacultyOption[];
 };
 
 export default function SchedulingFiltersBar({
+    planningLens = "overview",
+    onPlanningLensChange,
     search,
     onSearchChange,
     courseFilter,
     onCourseFilterChange,
     yearFilter,
     onYearFilterChange,
+    sectionFilter = "all",
+    onSectionFilterChange,
     roomFilter,
     onRoomFilterChange,
     facultyFilter,
@@ -64,6 +75,7 @@ export default function SchedulingFiltersBar({
     isLoadingStudent,
     availableCourses,
     availableYearLevels,
+    availableSections = ["A", "B", "C", "D"],
     availableRooms,
     availableFaculty,
 }: SchedulingFiltersBarProps) {
@@ -74,7 +86,67 @@ export default function SchedulingFiltersBar({
 
     return (
         <Card className="bg-muted/30 border shadow-none">
-            <CardContent className="p-3">
+            <CardContent className="space-y-3 p-3">
+                {onPlanningLensChange && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-muted-foreground mr-1 text-xs font-medium">Planning Lens:</span>
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant={planningLens === "overview" ? "default" : "outline"}
+                                className="h-7 px-2.5 text-xs"
+                                onClick={() => onPlanningLensChange("overview")}
+                            >
+                                <LayoutGrid className="mr-1.5 h-3 w-3" /> Master Overview
+                            </Button>
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant={planningLens === "cohort" ? "default" : "outline"}
+                                className="h-7 px-2.5 text-xs"
+                                onClick={() => onPlanningLensChange("cohort")}
+                            >
+                                <Layers className="mr-1.5 h-3 w-3" /> By Cohort / Block Section
+                            </Button>
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant={planningLens === "room" ? "default" : "outline"}
+                                className="h-7 px-2.5 text-xs"
+                                onClick={() => onPlanningLensChange("room")}
+                            >
+                                <Building2 className="mr-1.5 h-3 w-3" /> By Room
+                            </Button>
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant={planningLens === "faculty" ? "default" : "outline"}
+                                className="h-7 px-2.5 text-xs"
+                                onClick={() => onPlanningLensChange("faculty")}
+                            >
+                                <UserIcon className="mr-1.5 h-3 w-3" /> By Faculty
+                            </Button>
+                        </div>
+
+                        {planningLens === "cohort" && (
+                            <span className="text-primary text-xs font-medium">
+                                Tip: Select a Course, Year Level, and Section (A–D) to plan one block section&apos;s conflict-free week.
+                            </span>
+                        )}
+                        {planningLens === "room" && (
+                            <span className="text-primary text-xs font-medium">
+                                Tip: Select a Room below to inspect its weekly utilization and open time windows.
+                            </span>
+                        )}
+                        {planningLens === "faculty" && (
+                            <span className="text-primary text-xs font-medium">
+                                Tip: Select an Instructor below to review teaching load and avoid double-booking.
+                            </span>
+                        )}
+                    </div>
+                )}
+
                 <div className="flex flex-wrap items-center gap-2">
                     <div className="relative min-w-[180px] flex-1">
                         <Search className="text-muted-foreground absolute top-2.5 left-2.5 h-3.5 w-3.5" />
@@ -87,7 +159,12 @@ export default function SchedulingFiltersBar({
                     </div>
 
                     <Select value={courseFilter} onValueChange={onCourseFilterChange}>
-                        <SelectTrigger className="h-9 w-[150px] text-xs">
+                        <SelectTrigger
+                            className={cn(
+                                "h-9 w-[150px] text-xs",
+                                planningLens === "cohort" && courseFilter === "all" && "border-primary ring-primary/20 ring-2",
+                            )}
+                        >
                             <div className="flex items-center gap-1.5">
                                 <BookOpen className="text-muted-foreground h-3 w-3" />
                                 <SelectValue placeholder="Course" />
@@ -104,7 +181,12 @@ export default function SchedulingFiltersBar({
                     </Select>
 
                     <Select value={yearFilter} onValueChange={onYearFilterChange}>
-                        <SelectTrigger className="h-9 w-[130px] text-xs">
+                        <SelectTrigger
+                            className={cn(
+                                "h-9 w-[130px] text-xs",
+                                planningLens === "cohort" && yearFilter === "all" && "border-primary ring-primary/20 ring-2",
+                            )}
+                        >
                             <div className="flex items-center gap-1.5">
                                 <GraduationCap className="text-muted-foreground h-3 w-3" />
                                 <SelectValue placeholder="Year" />
@@ -120,6 +202,30 @@ export default function SchedulingFiltersBar({
                         </SelectContent>
                     </Select>
 
+                    {onSectionFilterChange && (
+                        <Select value={sectionFilter} onValueChange={onSectionFilterChange}>
+                            <SelectTrigger
+                                className={cn(
+                                    "h-9 w-[125px] text-xs",
+                                    planningLens === "cohort" && sectionFilter === "all" && "border-primary ring-primary/20 ring-2",
+                                )}
+                            >
+                                <div className="flex items-center gap-1.5">
+                                    <Layers className="text-muted-foreground h-3 w-3" />
+                                    <SelectValue placeholder="Section" />
+                                </div>
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Sections</SelectItem>
+                                {availableSections.map((sec) => (
+                                    <SelectItem key={sec} value={sec}>
+                                        Section {sec}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    )}
+
                     <Popover open={roomFilterOpen} onOpenChange={setRoomFilterOpen}>
                         <PopoverTrigger asChild>
                             <Button
@@ -127,7 +233,10 @@ export default function SchedulingFiltersBar({
                                 variant="outline"
                                 role="combobox"
                                 aria-expanded={roomFilterOpen}
-                                className="h-9 w-[160px] justify-between px-3 text-xs font-normal"
+                                className={cn(
+                                    "h-9 w-[160px] justify-between px-3 text-xs font-normal",
+                                    planningLens === "room" && roomFilter === "all" && "border-primary ring-primary/20 ring-2",
+                                )}
                             >
                                 <span className="flex min-w-0 items-center gap-1.5">
                                     <Building2 className="text-muted-foreground h-3 w-3 shrink-0" />
@@ -136,7 +245,7 @@ export default function SchedulingFiltersBar({
                                 <ChevronsUpDown className="text-muted-foreground ml-2 h-3 w-3 shrink-0 opacity-50" />
                             </Button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-[220px] p-0" align="start">
+                        <PopoverContent className="w-[240px] p-0" align="start">
                             <Command>
                                 <CommandInput placeholder="Search rooms..." />
                                 <CommandList>
@@ -163,7 +272,9 @@ export default function SchedulingFiltersBar({
                                             >
                                                 <Check className={cn("h-3.5 w-3.5", roomFilter === String(room.id) ? "opacity-100" : "opacity-0")} />
                                                 <span className="truncate">{room.name}</span>
-                                                {room.class_code && <span className="text-muted-foreground ml-auto text-xs">{room.class_code}</span>}
+                                                <span className="text-muted-foreground ml-auto text-[10px]">
+                                                    {room.capacity ? `${room.capacity} seats` : (room.class_code ?? "")}
+                                                </span>
                                             </CommandItem>
                                         ))}
                                     </CommandGroup>
@@ -179,7 +290,10 @@ export default function SchedulingFiltersBar({
                                 variant="outline"
                                 role="combobox"
                                 aria-expanded={facultyFilterOpen}
-                                className="h-9 w-[180px] justify-between px-3 text-xs font-normal"
+                                className={cn(
+                                    "h-9 w-[180px] justify-between px-3 text-xs font-normal",
+                                    planningLens === "faculty" && facultyFilter === "all" && "border-primary ring-primary/20 ring-2",
+                                )}
                             >
                                 <span className="flex min-w-0 items-center gap-1.5">
                                     <UserIcon className="text-muted-foreground h-3 w-3 shrink-0" />
@@ -260,7 +374,7 @@ export default function SchedulingFiltersBar({
                 </div>
 
                 {hasFilters && (
-                    <div className="text-muted-foreground mt-2 flex items-center gap-1.5 text-xs">
+                    <div className="text-muted-foreground flex items-center gap-1.5 text-xs">
                         Showing <span className="text-foreground font-semibold">{filteredCount}</span> of {totalCount} classes
                         {isLoadingStudent && <Loader2 className="ml-2 h-3 w-3 animate-spin" />}
                     </div>

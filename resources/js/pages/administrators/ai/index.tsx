@@ -1,3 +1,4 @@
+import { agentTools as fetchAgentTools, analyticsSummary, chat, conversations as conversationList, destroyConversation, index as aiIndex, updateConversation } from "@/actions/App/Http/Controllers/AdministratorAiController";
 import AdminLayout from "@/components/administrators/admin-layout";
 import {
     Message,
@@ -131,6 +132,7 @@ function getGreeting(name: string): string {
 }
 
 export default function AdministratorAiChatPage({ initialConversation, initialConversationId }: AiChatPageProps) {
+    const pageUrl = usePage().url;
     const { auth, featureFlags } = usePage<{
         auth: { user: User };
         featureFlags?: FeatureFlags;
@@ -240,8 +242,10 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
         isLoading,
         conversationId,
         lastError,
-        clearError,
         sendPrompt,
+        retryLastRequest,
+        approvalDecisions,
+        approvalsLocked,
         submitDecision,
         submitAllDecisions,
         autoApprove,
@@ -250,10 +254,11 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
         regenerateAssistant,
         stop,
         clearChat,
-        loadConversationMessages,
+        loadConversation,
     } = useAiChat({
         agent: selectedAgent,
-        endpoint: "/administrators/ai/chat",
+        context: { page: pageUrl },
+        endpoint: chat.url(),
         initialConversationId: initialConversationId || initialConversation?.id,
         initialMessages: initialConversation?.messages || [],
         onConversationCreated: (newId, title) => {
@@ -267,7 +272,7 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                 ...prev.filter((c) => c.id !== newId),
             ]);
             if (typeof window !== "undefined") {
-                const newUrl = `/administrators/ai?conversation=${newId}`;
+                const newUrl = aiIndex.url({ query: { conversation: newId } });
                 window.history.pushState(null, "", newUrl);
             }
         },
@@ -298,7 +303,7 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                 params.set("query", query.trim());
             }
 
-            const res = await fetch(`/administrators/ai/conversations?${params.toString()}`, {
+            const res = await fetch(conversationList.url({ query: { page, query: query.trim() || undefined } }), {
                 headers: { "X-Requested-With": "XMLHttpRequest" },
             });
             if (res.ok) {
@@ -350,7 +355,7 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
     // first primary-provider model > first model. Legacy best-free heuristics
     // are intentionally no longer used.
     React.useEffect(() => {
-        fetch("/administrators/ai/analytics-summary", {
+        fetch(analyticsSummary.url(), {
             headers: { "X-Requested-With": "XMLHttpRequest" },
         })
             .then((res) => res.json())
@@ -399,7 +404,7 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
     React.useEffect(() => {
         let cancelled = false;
         setToolsLoading(true);
-        fetch(`/administrators/ai/agent-tools?agent=${encodeURIComponent(selectedAgent)}`, {
+        fetch(fetchAgentTools.url({ query: { agent: selectedAgent } }), {
             headers: { "X-Requested-With": "XMLHttpRequest" },
         })
             .then((res) => (res.ok ? res.json() : null))
@@ -450,36 +455,25 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
             return;
         }
 
-        try {
-            const res = await fetch(`/administrators/ai/conversations/${id}`, {
-                headers: { "X-Requested-With": "XMLHttpRequest" },
-            });
-            if (!res.ok) {
-                throw new Error("Could not load conversation.");
-            }
-            const data = await res.json();
-            loadConversationMessages(data.messages || [], data.conversation.id);
-
+        if (await loadConversation(id)) {
             if (typeof window !== "undefined") {
-                window.history.pushState(null, "", `/administrators/ai?conversation=${id}`);
+                window.history.pushState(null, "", aiIndex.url({ query: { conversation: id } }));
             }
             setMobileDrawerOpen(false);
-        } catch (error: unknown) {
-            toast.error(error instanceof Error ? error.message : "Failed to load conversation history.");
         }
     };
 
     const handleNewChat = () => {
         clearChat();
         if (typeof window !== "undefined") {
-            window.history.pushState(null, "", "/administrators/ai");
+            window.history.pushState(null, "", aiIndex.url());
         }
         setMobileDrawerOpen(false);
     };
 
     const handleRenameConversation = async (id: string, newTitle: string) => {
         const csrfToken = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || "";
-        const res = await fetch(`/administrators/ai/conversations/${id}`, {
+        const res = await fetch(updateConversation.url(id), {
             method: "PATCH",
             headers: {
                 "Content-Type": "application/json",
@@ -501,7 +495,7 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
 
     const handleDeleteConversation = async (id: string) => {
         const csrfToken = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || "";
-        const res = await fetch(`/administrators/ai/conversations/${id}`, {
+        const res = await fetch(destroyConversation.url(id), {
             method: "DELETE",
             headers: {
                 "X-Requested-With": "XMLHttpRequest",
@@ -574,7 +568,9 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
         setSelectedAgent(suggestion.agent);
         sendPrompt(suggestion.prompt, undefined, {
             agent: suggestion.agent,
-            model: selectedModel || undefined,
+            model: selectedModel.includes(":") ? selectedModel.split(":").slice(1).join(":") : selectedModel || undefined,
+            provider: activeModel?.provider,
+            supportsDocuments: activeModel?.supports_documents,
             thinking: isThinkingMode,
             search: isSearchMode,
         });
@@ -1206,16 +1202,16 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                                                                                 size="sm"
                                                                                 variant="outline"
                                                                                 className="h-7 text-xs border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                                                                                disabled={isLoading || approvalsLocked}
                                                                                 onClick={() => submitAllDecisions("reject")}
-                                                                                disabled={isLoading}
                                                                             >
                                                                                 Reject All
                                                                             </Button>
                                                                             <Button
                                                                                 size="sm"
                                                                                 className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+                                                                                disabled={isLoading || approvalsLocked}
                                                                                 onClick={() => submitAllDecisions("approve")}
-                                                                                disabled={isLoading}
                                                                             >
                                                                                 Approve All
                                                                             </Button>
@@ -1228,7 +1224,8 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                                                                         approval={approval}
                                                                         onDecision={submitDecision}
                                                                         onApproveAll={message.pendingApprovals!.length > 1 ? () => submitAllDecisions("approve") : undefined}
-                                                                        disabled={isLoading}
+                                                                        disabled={isLoading || approvalsLocked}
+                                                                        decision={approvalDecisions[approval.id]?.action}
                                                                     />
                                                                 ))}
                                                             </div>
@@ -1277,24 +1274,14 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                                                     <p className="text-destructive/90 mt-0.5">{lastError.message}</p>
                                                 </div>
                                             </div>
-                                            {lastError.retryPrompt && (
+                                            {lastError.retryable !== false && (
                                                 <Button
                                                     type="button"
                                                     variant="outline"
                                                     size="sm"
                                                     className="border-destructive/30 hover:bg-destructive/15 h-7 shrink-0 text-xs"
-                                                    onClick={() => {
-                                                        clearError();
-                                                        sendPrompt(lastError.retryPrompt!, selectedFiles, {
-                                                            model: selectedModel.includes(":")
-                                                                ? selectedModel.split(":").slice(1).join(":")
-                                                                : selectedModel || undefined,
-                                                            provider: activeModel?.provider,
-                                                            supportsDocuments: activeModel?.supports_documents,
-                                                            thinking: isThinkingMode,
-                                                            search: isSearchMode,
-                                                        });
-                                                    }}
+                                                    onClick={retryLastRequest}
+                                                    disabled={isLoading}
                                                 >
                                                     <RefreshCw className="mr-1 size-3" />
                                                     Retry

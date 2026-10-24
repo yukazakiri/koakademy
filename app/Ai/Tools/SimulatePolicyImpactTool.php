@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Ai\Tools;
 
-use App\Models\Student;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
@@ -14,34 +13,31 @@ final class SimulatePolicyImpactTool implements Tool
 {
     public function description(): Stringable|string
     {
-        return 'Simulate the projected statistical impact of modifying enrollment or admissions policies on student retention, capacity, and qualification rates.';
+        return 'Report whether a proposed enrollment or admissions policy can be simulated with supported institutional records. Eligibility and retention projections are unavailable without a defined cohort, policy rules, and a validated impact model.';
     }
 
     public function handle(Request $request): Stringable|string
     {
         $validated = $request->validate([
-            'policy_id' => 'sometimes|integer',
+            'policy_id' => 'sometimes|integer|min:1',
             'minimum_gwa_threshold' => 'required|numeric',
-            'max_units_allowed' => 'required|integer',
+            'max_units_allowed' => 'required|integer|min:1',
         ]);
 
-        $totalActiveStudents = Student::query()->where('status', 'enrolled')->count();
-        if ($totalActiveStudents === 0) {
-            $totalActiveStudents = 450; // Reference baseline for simulation
-        }
-
-        $projectedEligible = (int) round($totalActiveStudents * 0.88);
-        $projectedAtRisk = $totalActiveStudents - $projectedEligible;
-
         return json_encode([
-            'simulation_id' => 'sim_'.bin2hex(random_bytes(4)),
+            'status' => 'unavailable',
+            'available' => false,
+            'reason' => 'policy_impact_model_unavailable',
+            'message' => 'No simulation was performed. This tool does not have a supported policy-evaluation model defining the academic period, cohort, GWA scale and comparison direction, unit-load basis, or retention effects.',
+            'simulation_id' => null,
+            'policy_id' => $validated['policy_id'] ?? null,
             'minimum_gwa_threshold' => $validated['minimum_gwa_threshold'],
             'max_units_allowed' => $validated['max_units_allowed'],
-            'cohort_size' => $totalActiveStudents,
-            'projected_eligible_count' => $projectedEligible,
-            'projected_restricted_count' => $projectedAtRisk,
-            'retention_impact_percentage' => -2.4,
-            'recommendation' => 'The proposed threshold maintains healthy enrollment while flagging students with critical prerequisite deficiencies.',
+            'cohort_size' => null,
+            'projected_eligible_count' => null,
+            'projected_restricted_count' => null,
+            'retention_impact_percentage' => null,
+            'recommendation' => null,
         ], JSON_PRETTY_PRINT);
     }
 

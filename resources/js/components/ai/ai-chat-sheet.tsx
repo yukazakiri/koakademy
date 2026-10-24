@@ -1,3 +1,4 @@
+import { analyticsSummary } from "@/actions/App/Http/Controllers/AdministratorAiController";
 import {
     FileUpload,
     FileUploadContent,
@@ -124,7 +125,9 @@ export function AiChatSheet({
     open,
     onOpenChange,
 }: AiChatSheetProps) {
-    const { featureFlags } = usePage<{ featureFlags?: FeatureFlags }>().props;
+    const page = usePage<{ featureFlags?: FeatureFlags }>();
+    const { featureFlags } = page.props;
+    const pageUrl = page.url;
     const enabledAgentKeys = React.useMemo<AgentRoleKey[]>(() => {
         const aiFlags = featureFlags?.ai;
 
@@ -140,6 +143,13 @@ export function AiChatSheet({
             (key) => aiFlags.agents?.[key] !== false,
         );
     }, [featureFlags?.ai]);
+
+    const [internalOpen, setInternalOpen] = React.useState(false);
+    const effectiveOpen = open ?? internalOpen;
+    const handleOpenChange = (next: boolean) => {
+        setInternalOpen(next);
+        onOpenChange?.(next);
+    };
 
     const initialAgent =
         enabledAgentKeys.includes(defaultAgent)
@@ -168,15 +178,17 @@ export function AiChatSheet({
         setInput,
         isLoading,
         lastError,
-        lastPrompt,
-        clearError,
         sendPrompt,
+        retryLastRequest,
+        approvalDecisions,
+        approvalsLocked,
         submitDecision,
         resendUserMessage,
         regenerateAssistant,
         clearChat,
     } = useAiChat({
         agent: selectedAgent,
+        context: { page: pageUrl },
     });
 
     const activeMeta = AGENT_METAS[selectedAgent];
@@ -205,8 +217,8 @@ export function AiChatSheet({
     // Fetch available model options when sheet is opened.
     // Priority: saved preference > server global default > Default badge > primary > first.
     React.useEffect(() => {
-        if (open && availableModels.length === 0) {
-            fetch("/administrators/ai/analytics-summary", {
+        if (effectiveOpen && availableModels.length === 0) {
+            fetch(analyticsSummary.url(), {
                 headers: { "X-Requested-With": "XMLHttpRequest" },
             })
                 .then((res) => res.json())
@@ -239,7 +251,7 @@ export function AiChatSheet({
                 })
                 .catch(() => {});
         }
-    }, [open, availableModels.length, selectedModel]);
+    }, [effectiveOpen, availableModels.length, selectedModel]);
 
     const activeModelName = React.useMemo(() => {
         const found = availableModels.find((m) => m.id === selectedModel);
@@ -264,7 +276,8 @@ export function AiChatSheet({
     const handleSend = () => {
         if ((!input.trim() && selectedFiles.length === 0) || isLoading) return;
         sendPrompt(input, selectedFiles, {
-            model: selectedModel || undefined,
+            model: selectedModel.includes(":") ? selectedModel.split(":").slice(1).join(":") : selectedModel || undefined,
+            provider: availableModels.find((model) => model.id === selectedModel)?.provider,
         });
         setSelectedFiles([]);
     };
@@ -288,7 +301,7 @@ export function AiChatSheet({
     }
 
     return (
-        <Sheet open={open} onOpenChange={onOpenChange}>
+        <Sheet open={effectiveOpen} onOpenChange={handleOpenChange}>
             {trigger && <SheetTrigger asChild>{trigger}</SheetTrigger>}
 
             <SheetContent
@@ -459,7 +472,8 @@ export function AiChatSheet({
                                                     key={approval.id}
                                                     approval={approval}
                                                     onDecision={submitDecision}
-                                                    disabled={isLoading}
+                                                    decision={approvalDecisions[approval.id]?.action}
+                                                    disabled={isLoading || approvalsLocked}
                                                 />
                                             ))}
                                         </div>
@@ -482,12 +496,7 @@ export function AiChatSheet({
                                 title={lastError.title}
                                 message={lastError.message}
                                 retryLabel="Retry Request"
-                                onRetry={() => {
-                                    clearError();
-                                    if (lastPrompt) {
-                                        sendPrompt(lastPrompt, selectedFiles);
-                                    }
-                                }}
+                                onRetry={lastError.retryable === false ? undefined : retryLastRequest}
                                 variant="Card"
                             />
                         </div>

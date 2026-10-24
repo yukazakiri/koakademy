@@ -9,14 +9,17 @@ interface InteractiveTableProps {
     caption?: string;
 }
 
+export function serializeCsv(rows: readonly (readonly unknown[])[]): string {
+    return rows
+        .map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(","))
+        .join("\r\n");
+}
+
 export function InteractiveTable({ headers, rows, caption }: InteractiveTableProps) {
     const [copied, setCopied] = React.useState(false);
 
     const exportCsv = () => {
-        const csvContent =
-            headers.map((h) => `"${h}"`).join(",") +
-            "\n" +
-            rows.map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(",")).join("\n");
+        const csvContent = serializeCsv([headers, ...rows]);
 
         const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
         const url = URL.createObjectURL(blob);

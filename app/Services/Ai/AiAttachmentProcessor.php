@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\Ai;
 
+use App\Models\User;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Laravel\Ai\Files\Document;
 use Laravel\Ai\Files\Image;
@@ -44,7 +47,8 @@ final class AiAttachmentProcessor
             // 1. Process Images
             if ($this->isImage($extension, $mime)) {
                 try {
-                    $attachments[] = Image::fromPath($realPath, $mime);
+                    $attachmentPath = $this->persistForReplay($file, $extension) ?? $realPath;
+                    $attachments[] = Image::fromPath($attachmentPath, $mime)->as($originalName);
                     $dataContexts[] = "[Attached Image: {$originalName} ({$mime})]";
                 } catch (Throwable) {
                     $dataContexts[] = "[Image could not be attached: {$originalName} ({$mime})]";
@@ -68,7 +72,8 @@ final class AiAttachmentProcessor
                         : "[PDF attachment omitted because this provider accepts image inputs only: {$originalName}. Text extraction was unavailable; upload page images or choose a document-capable model.]";
                 } else {
                     try {
-                        $attachments[] = Document::fromPath($realPath)->withMimeType($mime);
+                        $attachmentPath = $this->persistForReplay($file, $extension) ?? $realPath;
+                        $attachments[] = Document::fromPath($attachmentPath)->withMimeType($mime)->as($originalName);
                     } catch (Throwable) {
                         $dataContexts[] = "[PDF could not be attached: {$originalName}]";
                     }
@@ -116,7 +121,8 @@ final class AiAttachmentProcessor
             // to providers that only accept images as attachments.
             if ($supportsDocumentAttachments && ! isset($documentText)) {
                 try {
-                    $attachments[] = Document::fromPath($realPath)->withMimeType($mime);
+                    $attachmentPath = $this->persistForReplay($file, $extension) ?? $realPath;
+                    $attachments[] = Document::fromPath($attachmentPath)->withMimeType($mime)->as($originalName);
                     $dataContexts[] = "[Attached Document: {$originalName} ({$mime})]";
                 } catch (Throwable) {
                     $dataContexts[] = "[Document could not be attached: {$originalName} ({$mime})]";
@@ -250,6 +256,39 @@ final class AiAttachmentProcessor
     }
 
     /**
+     * Store a private copy of an authenticated user's upload so conversation
+     * replay can reconstruct the SDK attachment after the request ends.
+     */
+    private function persistForReplay(UploadedFile $file, string $extension): ?string
+    {
+        $user = Auth::user();
+        if (! $user instanceof User) {
+            return null;
+        }
+
+        try {
+            $safeExt = preg_replace('/[^a-z0-9]/', '', $extension) ?: 'bin';
+            $filename = Str::uuid7().'.'.$safeExt;
+            $stored = Storage::disk('private')->putFileAs(
+                'ai/attachments/'.$user->id,
+                $file,
+                $filename,
+                ['visibility' => 'private'],
+            );
+
+            if (! is_string($stored) || $stored === '') {
+                return null;
+            }
+
+            $absolutePath = Storage::disk('private')->path($stored);
+
+            return is_file($absolutePath) ? $absolutePath : null;
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
      * Extract tabular sheet rows into formatted Markdown table text.
      */
     private function extractSpreadsheetData(UploadedFile $file, string $extension): ?string
@@ -268,6 +307,8 @@ final class AiAttachmentProcessor
 
             $output = [];
             $totalRowsProcessed = 0;
+            $totalRowsAvailable = 0;
+            $truncated = false;
             $sheetsToProcess = array_slice($sheets, 0, 5);
 
             foreach ($sheetsToProcess as $sheet) {
@@ -284,11 +325,15 @@ final class AiAttachmentProcessor
 
                 $sheetOutput = [];
                 $sheetOutput[] = "### [Spreadsheet: {$file->getClientOriginalName()} · Sheet: '{$title}']";
+                $sheetRowsAdded = 0;
 
                 if ($this->isHeaderlessDocument($nonEmptyRows)) {
                     foreach ($nonEmptyRows as $row) {
+                        $totalRowsAvailable++;
                         if ($totalRowsProcessed >= self::MAX_SPREADSHEET_ROWS) {
-                            break 2;
+                            $truncated = true;
+
+                            continue;
                         }
                         $cells = array_map(
                             static fn (mixed $value): string => str_replace(['|', "\n", "\r"], [' ', ' ', ' '], mb_trim((string) $value)),
@@ -296,8 +341,11 @@ final class AiAttachmentProcessor
                         );
                         $sheetOutput[] = '- '.implode(' | ', array_filter($cells, fn (string $value): bool => $value !== ''));
                         $totalRowsProcessed++;
+                        $sheetRowsAdded++;
                     }
-                    $output[] = implode("\n", $sheetOutput);
+                    if ($sheetRowsAdded > 0) {
+                        $output[] = implode("\n", $sheetOutput);
+                    }
 
                     continue;
                 }
@@ -312,7 +360,6 @@ final class AiAttachmentProcessor
                         break;
                     }
                     $metadataLines[] = mb_trim((string) ($populated[0] ?? ''));
-
                 }
 
                 if (! empty($metadataLines)) {
@@ -321,10 +368,20 @@ final class AiAttachmentProcessor
 
                 if ($headerIdx === null) {
                     // Fallback: list non-empty rows directly
-                    foreach (array_slice($nonEmptyRows, 0, 50) as $rIdx => $r) {
+                    foreach ($nonEmptyRows as $rIdx => $r) {
+                        $totalRowsAvailable++;
+                        if ($totalRowsProcessed >= self::MAX_SPREADSHEET_ROWS) {
+                            $truncated = true;
+
+                            continue;
+                        }
                         $sheetOutput[] = '- Row '.($rIdx + 1).': '.implode(' | ', array_filter($r, fn ($v) => filled($v)));
+                        $totalRowsProcessed++;
+                        $sheetRowsAdded++;
                     }
-                    $output[] = implode("\n", $sheetOutput);
+                    if ($sheetRowsAdded > 0) {
+                        $output[] = implode("\n", $sheetOutput);
+                    }
 
                     continue;
                 }
@@ -336,10 +393,6 @@ final class AiAttachmentProcessor
 
                 $dataRows = array_slice($nonEmptyRows, $headerIdx + 1);
                 foreach ($dataRows as $row) {
-                    if ($totalRowsProcessed >= self::MAX_SPREADSHEET_ROWS) {
-                        break 2;
-                    }
-
                     $populated = array_values(array_filter($row, fn ($v) => filled($v)));
                     if (empty($populated)) {
                         continue;
@@ -347,7 +400,16 @@ final class AiAttachmentProcessor
 
                     // If row is a section marker (single cell spanning across), format as subtitle row
                     if (count($populated) === 1 && filled($row[0] ?? null)) {
-                        $sheetOutput[] = "\n**[Section: {$row[0]}]**\n";
+                        if ($totalRowsProcessed < self::MAX_SPREADSHEET_ROWS) {
+                            $sheetOutput[] = "\n**[Section: {$row[0]}]**\n";
+                        }
+
+                        continue;
+                    }
+
+                    $totalRowsAvailable++;
+                    if ($totalRowsProcessed >= self::MAX_SPREADSHEET_ROWS) {
+                        $truncated = true;
 
                         continue;
                     }
@@ -360,13 +422,17 @@ final class AiAttachmentProcessor
                     }
                     $sheetOutput[] = '| '.implode(' | ', $cells).' |';
                     $totalRowsProcessed++;
+                    $sheetRowsAdded++;
                 }
 
-                $output[] = implode("\n", $sheetOutput);
+                if ($sheetRowsAdded > 0) {
+                    $output[] = implode("\n", $sheetOutput);
+                }
             }
 
-            if ($totalRowsProcessed >= self::MAX_SPREADSHEET_ROWS) {
-                $output[] = "\n*(Note: Displaying first ".self::MAX_SPREADSHEET_ROWS.' rows from this spreadsheet)*';
+            if ($truncated) {
+                $omitted = max(0, $totalRowsAvailable - $totalRowsProcessed);
+                $output[] = "\n*(Note: Displaying first {$totalRowsProcessed} of {$totalRowsAvailable} rows from this spreadsheet; {$omitted} rows omitted.)*";
             }
 
             return implode("\n\n", $output);

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Ai\Mcp;
 
 use App\Features\Toggles\McpExternalIntegrations;
-use App\Models\McpServer;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -30,10 +29,8 @@ final class ExternalMcpToolResolver
      * Upper bound on external tools per agent.
      *
      * Every advertised tool is sent on every request, so an unbounded list
-     * inflates cost and degrades the model's ability to pick the right tool
-     * among the KoAkademy ones. Truncation is recorded so the agent can say
-     * the integration is partially available rather than pretending the list
-     * is complete.
+     * inflates cost and degrades tool selection. When there are omissions or
+     * failures, reserve one slot for explicit, model-readable diagnostics.
      */
     public const int MAX_TOOLS_PER_AGENT = 12;
 
@@ -53,63 +50,54 @@ final class ExternalMcpToolResolver
         }
 
         $tools = [];
-        $skipped = 0;
+        $issues = [];
 
         foreach ($this->registry->serversForAgent($agent) as $server) {
-            foreach ($this->toolsFor($server) as $tool) {
-                if (count($tools) >= self::MAX_TOOLS_PER_AGENT) {
-                    $skipped++;
+            if (($server->enabled_tools ?? []) === []) {
+                continue;
+            }
 
-                    continue 2;
+            try {
+                $discovered = $this->registry->tools($server);
+            } catch (Throwable $e) {
+                Log::warning('mcp.tools_unavailable', ['server' => $server->name, 'error' => $e->getMessage()]);
+                $issues[] = ['server' => $server->name, 'status' => 'unavailable', 'message' => 'Discovery failed. Ask an administrator to check the server connection and authentication.'];
+
+                continue;
+            }
+
+            foreach ($discovered as $tool) {
+                if (! $server->exposesTool($tool->name)) {
+                    continue;
                 }
 
-                $tools[] = $tool;
+                try {
+                    $tools[] = new ExternalMcpTool(
+                        tool: $tool,
+                        serverName: $server->name,
+                        readOnly: ($tool->annotations['readOnlyHint'] ?? false) === true,
+                    );
+                } catch (Throwable $e) {
+                    $issues[] = ['server' => $server->name, 'tool' => $tool->name, 'status' => 'unsupported_schema', 'message' => $e->getMessage()];
+                }
             }
         }
 
-        if ($skipped > 0) {
-            Log::info('mcp.tools_truncated', [
-                'agent' => $agent,
-                'skipped' => $skipped,
-                'limit' => self::MAX_TOOLS_PER_AGENT,
-            ]);
+        if (count($tools) > self::MAX_TOOLS_PER_AGENT || $issues !== []) {
+            $omitted = array_splice($tools, self::MAX_TOOLS_PER_AGENT - 1);
+            if ($omitted !== []) {
+                $issues[] = [
+                    'status' => 'tool_limit',
+                    'limit' => self::MAX_TOOLS_PER_AGENT,
+                    'omitted_count' => count($omitted),
+                    'omitted_tools' => array_slice(array_map(fn (Tool $tool): string => $tool->name(), $omitted), 0, 20),
+                    'message' => 'One catalog slot is reserved for diagnostics. Narrow the enabled tools for this agent to make other tools available.',
+                ];
+                Log::info('mcp.tools_truncated', ['agent' => $agent, 'skipped' => count($omitted), 'limit' => self::MAX_TOOLS_PER_AGENT]);
+            }
+            $tools[] = new McpIntegrationStatusTool(array_slice($issues, 0, 20));
         }
 
         return $tools;
-    }
-
-    /**
-     * @return list<ExternalMcpTool>
-     */
-    private function toolsFor(McpServer $server): array
-    {
-        $client = $this->registry->client($server->name);
-
-        if ($client === null) {
-            return [];
-        }
-
-        try {
-            $discovered = $client->tools();
-        } catch (Throwable $e) {
-            // An unreachable integration degrades to "this capability is not
-            // available right now"; it must not abort the chat turn.
-            Log::warning('mcp.tools_unavailable', [
-                'server' => $server->name,
-                'error' => $e->getMessage(),
-            ]);
-
-            return [];
-        }
-
-        return $discovered
-            ->filter(fn ($tool): bool => $server->exposesTool($tool->name))
-            ->map(fn ($tool): ExternalMcpTool => new ExternalMcpTool(
-                tool: $tool,
-                serverName: $server->name,
-                readOnly: ($tool->annotations['readOnlyHint'] ?? false) === true,
-            ))
-            ->values()
-            ->all();
     }
 }

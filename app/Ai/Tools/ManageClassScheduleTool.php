@@ -22,12 +22,13 @@ use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use Laravel\Ai\Approvals\Approval;
 use Laravel\Ai\Concerns\InteractsWithApprovals;
+use Laravel\Ai\Contracts\Approvable;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
 use Throwable;
 
-final class ManageClassScheduleTool implements Tool
+final class ManageClassScheduleTool implements Approvable, Tool
 {
     use InteractsWithApprovals;
 

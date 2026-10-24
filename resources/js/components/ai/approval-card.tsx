@@ -17,9 +17,10 @@ interface ApprovalCardProps {
     onDecision: (id: string, action: "approve" | "reject", result?: string) => void;
     onApproveAll?: () => void;
     disabled?: boolean;
+    decision?: "approve" | "reject";
 }
 
-export function ApprovalCard({ approval, onDecision, onApproveAll, disabled = false }: ApprovalCardProps) {
+export function ApprovalCard({ approval, onDecision, onApproveAll, disabled = false, decision }: ApprovalCardProps) {
     const [rejecting, setRejecting] = React.useState(false);
     const [rejectReason, setRejectReason] = React.useState("");
 
@@ -42,6 +43,7 @@ export function ApprovalCard({ approval, onDecision, onApproveAll, disabled = fa
             </CardHeader>
 
             <CardContent className="p-4 space-y-3">
+                {decision && <p role="status" className="text-xs text-muted-foreground">{decision === "approve" ? "Approval" : "Rejection"} selected. Choose an option for each remaining action to send all decisions together.</p>}
                 <p className="text-xs text-foreground/90 font-medium">
                     {approval.reason || "This operation alters official records and requires confirmation."}
                 </p>

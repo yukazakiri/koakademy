@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace App\Services\Ai;
 
+use App\Ai\Agents\AdminExecutiveAgent;
+use App\Ai\Agents\BursarFinanceAgent;
+use App\Ai\Agents\CampusSupportAgent;
+use App\Ai\Agents\FacultyCopilotAgent;
+use App\Ai\Agents\RegistrarAuditAgent;
+use App\Ai\Agents\StudentAdvisorAgent;
 use App\Features\Contracts\FeatureToggle;
 use App\Features\Toggles\AiAdminExecutive;
 use App\Features\Toggles\AiFacultyAssistant;
@@ -12,6 +18,7 @@ use App\Features\Toggles\AiHelpDeskAssistant;
 use App\Features\Toggles\AiRegistrarAuditor;
 use App\Features\Toggles\AiStudentAdvisor;
 use App\Models\User;
+use Laravel\Ai\Contracts\Agent;
 use Laravel\Pennant\Feature;
 
 /**
@@ -58,12 +65,29 @@ final class AiAgentAccess
         'campus_support' => AiHelpDeskAssistant::class,
     ];
 
+    /** @var array<string, class-string<Agent>> */
+    private const array AGENT_CLASSES = [
+        'admin_executive' => AdminExecutiveAgent::class,
+        'student_advisor' => StudentAdvisorAgent::class,
+        'faculty_copilot' => FacultyCopilotAgent::class,
+        'registrar_auditor' => RegistrarAuditAgent::class,
+        'bursar_finance' => BursarFinanceAgent::class,
+        'campus_support' => CampusSupportAgent::class,
+    ];
+
     /**
      * @return class-string<FeatureToggle>|null
      */
     public function featureClassFor(string $agentKey): ?string
     {
         return self::AGENT_FEATURES[$agentKey] ?? null;
+    }
+
+    public function keyForClass(string $agentClass): ?string
+    {
+        $flipped = array_flip(self::AGENT_CLASSES);
+
+        return $flipped[$agentClass] ?? null;
     }
 
     public function isEnabled(string $agentKey, ?User $user): bool

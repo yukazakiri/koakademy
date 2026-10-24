@@ -42,13 +42,11 @@ final class ComprehensiveScheduleService
         $dayOfWeek = $dayOfWeek ? mb_convert_case(mb_trim($dayOfWeek), MB_CASE_TITLE) : null;
         $identifier = $identifier ? mb_trim($identifier) : null;
 
-        if ($classId || $subjectCode || $section) {
-            $target = 'class';
-        } else {
-            $target = mb_strtolower($targetType);
-            if ($target === 'auto' || empty($target)) {
-                $target = $this->detectTargetType($identifier);
-            }
+        $target = mb_strtolower($targetType);
+        if ($target === 'auto' || empty($target)) {
+            $target = ($classId || $subjectCode || $section)
+                ? 'class'
+                : $this->detectTargetType($identifier);
         }
 
         return match ($target) {
@@ -298,6 +296,10 @@ final class ComprehensiveScheduleService
                     ->orWhere('first_name', 'like', "%{$identifier}%")
                     ->orWhere('last_name', 'like', "%{$identifier}%")
                     ->orWhereRaw("TRIM(CONCAT_WS(' ', first_name, last_name)) LIKE ?", ["%{$identifier}%"]);
+
+                if (is_numeric($identifier)) {
+                    $q->orWhere('id', (int) $identifier);
+                }
 
                 if (filled($cleanName) && $cleanName !== $identifier) {
                     $q->orWhereRaw("TRIM(CONCAT_WS(' ', first_name, last_name)) LIKE ?", ["%{$cleanName}%"]);

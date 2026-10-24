@@ -1,5 +1,7 @@
 "use client";
 
+import { analyticsSummary, chat as adminAiChat, index as adminAiIndex } from "@/actions/App/Http/Controllers/AdministratorAiController";
+
 import {
     Message,
     MessageAvatar,
@@ -121,7 +123,9 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
     const widgetExpandedKey = `koakademy_ai_widget_expanded_${userId}`;
     const widgetAgentKey = `koakademy_ai_widget_agent_${userId}`;
     const widgetPersistenceKey = `koakademy_ai_widget_${userId}`;
-    const { featureFlags } = usePage<{ featureFlags?: FeatureFlags }>().props;
+    const page = usePage<{ featureFlags?: FeatureFlags }>();
+    const { featureFlags } = page.props;
+    const pageUrl = page.url;
 
     const enabledAgents = React.useMemo(() => {
         const aiFlags = featureFlags?.ai;
@@ -237,9 +241,10 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
         isLoading,
         conversationId,
         lastError,
-        lastPrompt,
-        clearError,
         sendPrompt,
+        retryLastRequest,
+        approvalDecisions,
+        approvalsLocked,
         submitDecision,
         submitAllDecisions,
         autoApprove,
@@ -250,7 +255,8 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
         stop,
     } = useAiChat({
         agent: selectedAgent,
-        endpoint: "/administrators/ai/chat",
+        context: { page: pageUrl },
+        endpoint: adminAiChat.url(),
         persistenceKey: widgetPersistenceKey,
     });
 
@@ -278,7 +284,7 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
     // Fetch available models once when opened
     React.useEffect(() => {
         if (isOpen && availableModels.length === 0) {
-            fetch("/administrators/ai/analytics-summary", {
+            fetch(analyticsSummary.url(), {
                 headers: { "X-Requested-With": "XMLHttpRequest" },
             })
                 .then((res) => res.json())
@@ -360,11 +366,19 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
         setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
     };
 
+    const selectedModelOptions = React.useCallback(
+        () => ({
+            model: selectedModel.includes(":")
+                ? selectedModel.split(":").slice(1).join(":")
+                : selectedModel || undefined,
+            provider: availableModels.find((m) => m.id === selectedModel)?.provider,
+        }),
+        [availableModels, selectedModel]
+    );
+
     const handleSend = () => {
         if ((!input.trim() && selectedFiles.length === 0) || isLoading) return;
-        sendPrompt(input, selectedFiles, {
-            model: selectedModel || undefined,
-        });
+        sendPrompt(input, selectedFiles, selectedModelOptions());
         setSelectedFiles([]);
         setInput("");
         if (textareaRef.current) {
@@ -380,9 +394,7 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
     };
 
     const handleSuggestionClick = (prompt: string) => {
-        sendPrompt(prompt, [], {
-            model: selectedModel || undefined,
-        });
+        sendPrompt(prompt, [], selectedModelOptions());
     };
 
     const getFileIcon = (file: File) => {
@@ -528,9 +540,11 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                                         className="size-7.5 rounded-lg text-muted-foreground hover:bg-neutral-800 hover:text-white"
                                         onClick={() => {
                                             handleOpenChange(false);
-                                            const targetUrl = conversationId
-                                                ? `/administrators/ai?conversation=${conversationId}`
-                                                : "/administrators/ai";
+                                            const targetUrl = adminAiIndex.url(
+                                                conversationId
+                                                    ? { query: { conversation: conversationId } }
+                                                    : undefined
+                                            );
                                             router.visit(targetUrl);
                                         }}
                                         title="Open in full page AI Chat"
@@ -771,16 +785,16 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                                                                                 size="sm"
                                                                                 variant="outline"
                                                                                 className="h-7 text-xs border-amber-500/40 text-amber-300 hover:bg-amber-500/15"
+                                                                                disabled={isLoading || approvalsLocked}
                                                                                 onClick={() => submitAllDecisions("reject")}
-                                                                                disabled={isLoading}
                                                                             >
                                                                                 Reject All
                                                                             </Button>
                                                                             <Button
                                                                                 size="sm"
                                                                                 className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+                                                                                disabled={isLoading || approvalsLocked}
                                                                                 onClick={() => submitAllDecisions("approve")}
-                                                                                disabled={isLoading}
                                                                             >
                                                                                 Approve All
                                                                             </Button>
@@ -793,7 +807,8 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                                                                         approval={approval}
                                                                         onDecision={submitDecision}
                                                                         onApproveAll={msg.pendingApprovals!.length > 1 ? () => submitAllDecisions("approve") : undefined}
-                                                                        disabled={isLoading}
+                                                                        disabled={isLoading || approvalsLocked}
+                                                                        decision={approvalDecisions[approval.id]?.action}
                                                                     />
                                                                 ))}
                                                             </div>
@@ -812,11 +827,7 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                                                             onResend={() =>
                                                                 resendUserMessage(
                                                                     msg.id,
-                                                                    {
-                                                                        model:
-                                                                            selectedModel ||
-                                                                            undefined,
-                                                                    }
+                                                                    selectedModelOptions()
                                                                 )
                                                             }
                                                         />
@@ -837,11 +848,7 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                                                                 onRegenerate={() =>
                                                                     regenerateAssistant(
                                                                         msg.id,
-                                                                        {
-                                                                            model:
-                                                                                selectedModel ||
-                                                                                undefined,
-                                                                        }
+                                                                        selectedModelOptions()
                                                                     )
                                                                 }
                                                             />
@@ -882,18 +889,8 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                                             type="button"
                                             size="sm"
                                             variant="outline"
-                                            onClick={() => {
-                                                clearError();
-                                                if (lastPrompt) {
-                                                    sendPrompt(
-                                                        lastPrompt,
-                                                        selectedFiles,
-                                                        {
-                                                            model: selectedModel,
-                                                        }
-                                                    );
-                                                }
-                                            }}
+                                            onClick={retryLastRequest}
+                                            disabled={isLoading || lastError.retryable === false}
                                             className="h-7 rounded-lg border-destructive/40 text-xs text-destructive hover:bg-destructive/15"
                                         >
                                             Retry

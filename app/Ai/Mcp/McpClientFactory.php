@@ -6,7 +6,9 @@ namespace App\Ai\Mcp;
 
 use App\Models\McpServer;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 use Laravel\Mcp\Client;
+use Laravel\Mcp\WebClient;
 use Throwable;
 
 /**
@@ -20,6 +22,10 @@ final class McpClientFactory
 {
     public function make(McpServer $server): Client
     {
+        if ($server->transport === McpServer::TRANSPORT_LOCAL && $server->auth_type === McpServer::AUTH_BEARER) {
+            throw new InvalidArgumentException('Bearer authentication requires the web transport. Configure local MCP servers without HTTP bearer authentication.');
+        }
+
         $client = match ($server->transport) {
             McpServer::TRANSPORT_LOCAL => Client::local(
                 (string) $server->command,
@@ -34,16 +40,15 @@ final class McpClientFactory
         if ($server->auth_type === McpServer::AUTH_BEARER) {
             $token = $server->bearerToken();
 
-            if ($token !== null) {
+            if ($token !== null && $client instanceof WebClient) {
                 $client = $client->withToken($token);
             }
         }
 
-        return $client
-            ->withTimeout((float) $server->timeout_seconds)
-            // Discovery is a network round trip on every prompt, and the tool
-            // list changes rarely, so cache it per server.
-            ->withCache('tools', $this->cacheKeyFor($server));
+        // withCache's first argument is a store, not a resource name. Its TTL
+        // comes from remote response hints, so the registry instead caches only
+        // discovery metadata using this server's configured TTL.
+        return $client->withTimeout((float) $server->timeout_seconds)->withoutCache();
     }
 
     /**
@@ -64,10 +69,5 @@ final class McpClientFactory
 
             throw $e;
         }
-    }
-
-    private function cacheKeyFor(McpServer $server): string
-    {
-        return 'mcp-tools:'.$server->school_id.':'.$server->name;
     }
 }

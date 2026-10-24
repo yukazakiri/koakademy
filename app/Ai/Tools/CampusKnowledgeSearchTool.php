@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Ai\Tools;
 
-use App\Models\GeneralSetting;
+use App\Models\GradingPolicy;
+use App\Services\GeneralSettingsService;
+use App\Services\GradingSystemService;
+use App\Services\TenantContext;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
@@ -14,41 +17,57 @@ final class CampusKnowledgeSearchTool implements Tool
 {
     public function description(): Stringable|string
     {
-        return 'Search the institutional knowledge base, campus policies, student handbook, and academic calendar.';
+        return 'Look up recorded academic period and grading configuration facts for the current school. General student handbook, attendance, and clearance prose are not stored in a verified institutional knowledge base and are reported as unavailable.';
     }
 
     public function handle(Request $request): Stringable|string
     {
         $validated = $request->validate([
-            'query' => 'required|string',
+            'query' => 'required|string|max:500',
         ]);
 
-        $setting = GeneralSetting::query()->first();
-        $schoolYear = $setting?->getSchoolYearString() ?? 'Current Academic Year';
-        $semester = $setting?->getSemester() ?? '1st Semester';
+        $school = app(TenantContext::class)->getCurrentSchool();
+        $settingsService = app(GeneralSettingsService::class);
+        $schoolYear = $settingsService->getCurrentSchoolYearString();
+        $semester = $settingsService->getAvailableSemesters()[$settingsService->getCurrentSemester()] ?? (string) $settingsService->getCurrentSemester();
 
-        // Knowledge base matches
-        $knowledgeMatches = [
-            'enrollment' => "Admissions & Enrollment: Open online during designated enrollment windows. Clearance must be satisfied prior to official registration. Current Period: {$schoolYear}, {$semester}.",
-            'clearance' => 'Clearance Policy: Students must settle library loans, laboratory damages, and outstanding accounting balances before receiving permits.',
-            'grading' => 'Grading Policy: Passing threshold is standard 75% or 3.0 equivalent. Midterm and Final examinations contribute to the semester GWA.',
-            'attendance' => 'Attendance Policy: Unexcused absences exceeding 20% of class hours lead to an automatic Incomplete or Dropped status.',
-        ];
-
-        $matchedText = [];
         $queryLower = mb_strtolower($validated['query']);
+        $wantsGrading = str_contains($queryLower, 'grad') || str_contains($queryLower, 'gwa') || str_contains($queryLower, 'pass');
+        $wantsEnrollment = str_contains($queryLower, 'enroll') || str_contains($queryLower, 'semester') || str_contains($queryLower, 'term') || str_contains($queryLower, 'year');
 
-        foreach ($knowledgeMatches as $key => $content) {
-            if (str_contains($queryLower, $key)) {
-                $matchedText[] = $content;
+        $gradingFacts = null;
+        if ($wantsGrading && $school !== null && GradingPolicy::query()->where('school_id', $school->id)->exists()) {
+            $gradingConfig = app(GradingSystemService::class)->getConfig($school);
+            $gradingFacts = [
+                'name' => $gradingConfig['name'] ?? null,
+                'input_type' => $gradingConfig['input_type'] ?? null,
+                'direction' => $gradingConfig['direction'] ?? null,
+                'gwa_formula' => $gradingConfig['gwa_formula'] ?? null,
+                'bands' => $gradingConfig['bands'] ?? [],
+                'components' => $gradingConfig['components'] ?? [],
+            ];
+        }
+
+        $unavailableTopics = [];
+        foreach (['attendance', 'clearance', 'handbook', 'discipline', 'refund'] as $topic) {
+            if (str_contains($queryLower, $topic)) {
+                $unavailableTopics[] = $topic;
             }
         }
 
-        if (empty($matchedText)) {
-            $matchedText[] = "General Institutional Policy: For specialized inquiries, consult the Office of Student Affairs or Registrar. Current Academic Period: {$schoolYear}, {$semester}.";
-        }
-
-        return implode("\n\n", $matchedText);
+        return (string) json_encode([
+            'query' => $validated['query'],
+            'status' => ($unavailableTopics === [] && ($wantsEnrollment || $gradingFacts !== null)) ? 'partial' : 'unavailable',
+            'available' => $unavailableTopics === [] && ($wantsEnrollment || $gradingFacts !== null),
+            'reason' => 'handbook_corpus_not_configured',
+            'message' => 'No general student handbook, attendance rulebook, or clearance policy corpus is stored in KoAkademy. Only the recorded academic period and configured school grading policy (when present) are returned.',
+            'academic_period' => [
+                'school_year' => $schoolYear,
+                'semester' => $semester,
+            ],
+            'grading_policy' => $gradingFacts,
+            'unavailable_topics' => $unavailableTopics,
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
     public function schema(JsonSchema $schema): array

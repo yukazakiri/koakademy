@@ -1,8 +1,7 @@
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
+import { shsStrands, shsSubjects } from "@/routes/administrators/classes/options";
 import { useEffect, useState, type ReactNode } from "react";
-import { route } from "ziggy-js";
 import type { EntityOption, ShsSubjectOption, ValueOption } from "../../lib/class-defaults";
 
 type ShsTrackStrandSubjectProps = {
@@ -30,6 +29,7 @@ function isShsSubjectOption(value: unknown): value is ShsSubjectOption {
 
 async function fetchOptionData<T>(url: string, guard: (value: unknown) => value is T): Promise<T[]> {
     const response = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!response.ok) throw new Error("Curriculum options could not be loaded.");
     const payload = (await response.json()) as Partial<OptionsResponse<unknown>>;
     const rows = Array.isArray(payload.data) ? payload.data : [];
 
@@ -50,6 +50,7 @@ export function ShsTrackStrandSubject({
 }: ShsTrackStrandSubjectProps): ReactNode {
     const [strands, setStrands] = useState<EntityOption[]>([]);
     const [subjects, setSubjects] = useState<ShsSubjectOption[]>([]);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [loadingStrands, setLoadingStrands] = useState(false);
     const [loadingSubjects, setLoadingSubjects] = useState(false);
 
@@ -59,10 +60,22 @@ export function ShsTrackStrandSubject({
             return;
         }
 
+        let active = true;
         setLoadingStrands(true);
-        fetchOptionData<EntityOption>(route("administrators.classes.options.shs-strands", { track_id: trackId }), isEntityOption)
-            .then(setStrands)
-            .finally(() => setLoadingStrands(false));
+        setLoadError(null);
+        fetchOptionData<EntityOption>(shsStrands.url({ query: { track_id: trackId } }), isEntityOption)
+            .then((rows) => {
+                if (active) setStrands(rows);
+            })
+            .catch(() => {
+                if (active) setLoadError("Strands could not be loaded. Select the track again to retry.");
+            })
+            .finally(() => {
+                if (active) setLoadingStrands(false);
+            });
+        return () => {
+            active = false;
+        };
     }, [trackId]);
 
     useEffect(() => {
@@ -71,16 +84,28 @@ export function ShsTrackStrandSubject({
             return;
         }
 
+        let active = true;
         setLoadingSubjects(true);
-        fetchOptionData<ShsSubjectOption>(route("administrators.classes.options.shs-subjects", { strand_id: strandId }), isShsSubjectOption)
-            .then(setSubjects)
-            .finally(() => setLoadingSubjects(false));
+        setLoadError(null);
+        fetchOptionData<ShsSubjectOption>(shsSubjects.url({ query: { strand_id: strandId } }), isShsSubjectOption)
+            .then((rows) => {
+                if (active) setSubjects(rows);
+            })
+            .catch(() => {
+                if (active) setLoadError("Subjects could not be loaded. Select the strand again to retry.");
+            })
+            .finally(() => {
+                if (active) setLoadingSubjects(false);
+            });
+        return () => {
+            active = false;
+        };
     }, [strandId]);
 
     return (
-        <div className="grid gap-5 lg:grid-cols-2">
+        <div className="grid gap-6 lg:grid-cols-2">
             <div className="space-y-2">
-                <Label>SHS Track</Label>
+                <Label htmlFor="shs-track">Track</Label>
                 <Select
                     value={trackId ? String(trackId) : ""}
                     onValueChange={(value) => {
@@ -89,7 +114,7 @@ export function ShsTrackStrandSubject({
                         onSubjectCodeChange("");
                     }}
                 >
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger id="shs-track" className="w-full">
                         <SelectValue placeholder="Choose a track" />
                     </SelectTrigger>
                     <SelectContent>
@@ -103,7 +128,7 @@ export function ShsTrackStrandSubject({
             </div>
 
             <div className="space-y-2">
-                <Label>SHS Strand</Label>
+                <Label htmlFor="shs-strand">Strand</Label>
                 <Select
                     value={strandId ? String(strandId) : ""}
                     onValueChange={(value) => {
@@ -112,8 +137,12 @@ export function ShsTrackStrandSubject({
                     }}
                     disabled={!trackId || loadingStrands}
                 >
-                    <SelectTrigger className="w-full">
-                        {loadingStrands ? <span className="flex items-center gap-2 text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Loading strands</span> : <SelectValue placeholder="Choose a strand" />}
+                    <SelectTrigger id="shs-strand" className="w-full">
+                        {loadingStrands ? (
+                            <span className="text-muted-foreground flex items-center gap-2">Loading strands</span>
+                        ) : (
+                            <SelectValue placeholder="Choose a strand" />
+                        )}
                     </SelectTrigger>
                     <SelectContent>
                         {strands.map((strand) => (
@@ -126,10 +155,14 @@ export function ShsTrackStrandSubject({
             </div>
 
             <div className="space-y-2">
-                <Label>SHS Subject</Label>
+                <Label htmlFor="shs-subject">Subject</Label>
                 <Select value={subjectCode} onValueChange={onSubjectCodeChange} disabled={!strandId || loadingSubjects}>
-                    <SelectTrigger className="w-full">
-                        {loadingSubjects ? <span className="flex items-center gap-2 text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Loading subjects</span> : <SelectValue placeholder="Choose a subject" />}
+                    <SelectTrigger id="shs-subject" className="w-full">
+                        {loadingSubjects ? (
+                            <span className="text-muted-foreground flex items-center gap-2">Loading subjects</span>
+                        ) : (
+                            <SelectValue placeholder="Choose a subject" />
+                        )}
                     </SelectTrigger>
                     <SelectContent>
                         {subjects.map((subject) => (
@@ -142,9 +175,9 @@ export function ShsTrackStrandSubject({
             </div>
 
             <div className="space-y-2">
-                <Label>Grade level</Label>
+                <Label htmlFor="shs-grade">Grade level</Label>
                 <Select value={gradeLevel} onValueChange={onGradeLevelChange}>
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger id="shs-grade" className="w-full">
                         <SelectValue placeholder="Choose a grade level" />
                     </SelectTrigger>
                     <SelectContent>
@@ -156,6 +189,11 @@ export function ShsTrackStrandSubject({
                     </SelectContent>
                 </Select>
             </div>
+            {loadError ? (
+                <p role="alert" className="text-destructive text-sm lg:col-span-2">
+                    {loadError}
+                </p>
+            ) : null}
         </div>
     );
 }

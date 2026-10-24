@@ -183,7 +183,7 @@ function renderTriggerNode(
         return option?.label ?? node.props.placeholder ?? "Select an option";
     }
 
-    if (React.isValidElement<{ children?: React.ReactNode }>(node) && node.type === React.Fragment) {
+    if (React.isValidElement<{ children?: React.ReactNode }>(node) && node.props.children !== undefined) {
         return React.cloneElement(node, undefined, renderTriggerChildren(node.props.children, option, value));
     }
 

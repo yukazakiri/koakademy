@@ -19,9 +19,9 @@ export function DataTableViewOptions<TData>({ table }: DataTableViewOptionsProps
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="ml-auto hidden h-8 lg:flex">
+                <Button variant="ghost" className="h-9 gap-2 px-3 text-sm">
                     <Settings2 className="mr-2 h-4 w-4" />
-                    View
+                    Columns
                 </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-[150px]">
@@ -29,16 +29,23 @@ export function DataTableViewOptions<TData>({ table }: DataTableViewOptionsProps
                 <DropdownMenuSeparator />
                 {table
                     .getAllColumns()
-                    .filter((column) => typeof column.accessorFn !== "undefined" && column.getCanHide())
+                    .filter((column) => column.getCanHide())
                     .map((column) => {
                         return (
                             <DropdownMenuCheckboxItem
                                 key={column.id}
-                                className="capitalize"
                                 checked={column.getIsVisible()}
                                 onCheckedChange={(value) => column.toggleVisibility(!!value)}
                             >
-                                {column.id.replace(/_/g, " ")}
+                                {(
+                                    {
+                                        record_title: "Class section",
+                                        program: "Program & level",
+                                        faculty: "Faculty",
+                                        period: "Term",
+                                        students_count: "Enrollment",
+                                    } as Record<string, string>
+                                )[column.id] ?? column.id}
                             </DropdownMenuCheckboxItem>
                         );
                     })}

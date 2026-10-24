@@ -35,19 +35,21 @@ export function SectionSlotInput({
     const semesterLabel = semesters.find((option) => option.value === semester)?.label ?? semester;
 
     return (
-        <div className="grid gap-5 lg:grid-cols-[1.2fr_1fr_1fr]">
+        <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
             <div className="space-y-2">
-                <Label>Section</Label>
-                <div className="grid grid-cols-4 gap-2">
+                <Label id="section-label">Section</Label>
+                <div className="grid grid-cols-4 gap-2" role="group" aria-labelledby="section-label">
                     {sections.map((option) => (
                         <Button
                             key={option.value}
                             type="button"
                             variant="outline"
                             onClick={() => onSectionChange(option.value)}
+                            aria-pressed={section === option.value}
                             className={cn(
-                                "h-11 rounded-xl border bg-card/70 text-base font-semibold",
-                                section === option.value && "border-primary bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground",
+                                "bg-card h-11 rounded-lg border text-base font-semibold",
+                                section === option.value &&
+                                    "border-primary bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground",
                             )}
                         >
                             {option.value}
@@ -59,7 +61,14 @@ export function SectionSlotInput({
             <div className="space-y-2">
                 <Label htmlFor="maximum_slots">Maximum slots</Label>
                 <div className="flex items-center gap-2">
-                    <Button type="button" variant="outline" size="icon" onClick={() => onMaximumSlotsChange(clampSlots(maximumSlots - 1))}>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="size-11"
+                        aria-label="Decrease capacity"
+                        onClick={() => onMaximumSlotsChange(clampSlots(maximumSlots - 1))}
+                    >
                         <Minus className="size-4" />
                     </Button>
                     <Input
@@ -71,7 +80,14 @@ export function SectionSlotInput({
                         onChange={(event) => onMaximumSlotsChange(clampSlots(Number(event.target.value) || 1))}
                         className="h-11 text-center"
                     />
-                    <Button type="button" variant="outline" size="icon" onClick={() => onMaximumSlotsChange(clampSlots(maximumSlots + 1))}>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="size-11"
+                        aria-label="Increase capacity"
+                        onClick={() => onMaximumSlotsChange(clampSlots(maximumSlots + 1))}
+                    >
                         <Plus className="size-4" />
                     </Button>
                 </div>
@@ -79,7 +95,7 @@ export function SectionSlotInput({
 
             <div className="space-y-2">
                 <Label>Term</Label>
-                <div className="flex min-h-11 flex-wrap items-center gap-2 rounded-xl border bg-muted/30 px-3">
+                <div className="bg-muted/30 flex min-h-11 flex-wrap items-center gap-2 rounded-lg border px-3">
                     <Badge variant="secondary">{semesterLabel}</Badge>
                     <Badge variant="outline">{schoolYear}</Badge>
                 </div>

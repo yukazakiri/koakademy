@@ -1,11 +1,11 @@
 import AdminLayout from "@/components/administrators/admin-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { index, show } from "@/routes/administrators/classes";
 import type { User } from "@/types/user";
 import { Head, Link } from "@inertiajs/react";
-import { ArrowLeft, Pencil } from "lucide-react";
+import { ArrowLeft, ArrowUpRight } from "lucide-react";
 import type { ReactNode } from "react";
-import { route } from "ziggy-js";
 import { ClassWizard } from "./forms/class-wizard";
 import type { ClassFormData, ClassFormOptions } from "./lib/class-defaults";
 
@@ -47,45 +47,46 @@ export default function AdministratorClassCreate({
         <AdminLayout user={user} title={isEditing ? "Edit class" : "Create class"}>
             <Head title={isEditing ? `Edit class • ${class_title ?? "Class"}` : "Create class"} />
 
-            <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6">
-                <header className="flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-start sm:justify-between">
+            <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-6">
+                <header className="bg-card flex flex-col gap-4 rounded-xl border p-6 sm:flex-row sm:items-start sm:justify-between">
                     <div className="flex min-w-0 flex-col gap-3">
                         <Button
                             variant="ghost"
                             size="sm"
                             nativeButton={false}
-                            render={<Link href={route("administrators.classes.index")} />}
-                            className="text-muted-foreground hover:text-foreground -ml-2 w-fit"
+                            render={<Link href={index.url()} />}
+                            className="text-muted-foreground hover:text-foreground -ml-2 h-11 w-fit px-3 text-sm"
                         >
-                            <ArrowLeft className="size-4" />
+                            <ArrowLeft className="size-4" aria-hidden="true" />
                             Back to classes
                         </Button>
 
                         <div className="min-w-0">
-                            <p className="text-muted-foreground text-xs font-semibold uppercase tracking-widest">Academics · Class sections</p>
-                            <h1 className="mt-1 truncate text-3xl font-semibold tracking-tight text-balance">
+                            <p className="text-muted-foreground text-sm font-medium">Academic operations / Classes</p>
+                            <h1 className="mt-1 text-3xl font-semibold tracking-tight text-balance">
                                 {isEditing ? class_title || "Edit class" : "New class"}
                             </h1>
-                            <p className="text-muted-foreground mt-1.5 max-w-2xl text-sm text-pretty">
+                            <p className="text-muted-foreground mt-2 max-w-2xl text-sm text-pretty">
                                 {isEditing
-                                    ? "Change the class and its schedule. Nothing is saved until you confirm on the last step."
-                                    : "Set up a class in five short steps. Nothing is saved until you confirm on the last step."}
+                                    ? "Manage the class details, teaching assignment, and timetable in one workspace. Review your changes before saving."
+                                    : "Set up a class with a clear curriculum, teaching assignment, and weekly timetable. Review everything before creating the record."}
                             </p>
                         </div>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2 sm:pt-10">
-                        <Badge variant="outline" className="tabular-nums">
-                            {schoolYear} · Semester {semester}
+                        <Badge variant="outline" className="px-3 py-2 text-sm tabular-nums">
+                            {schoolYear} · {options.semesters.find((term) => term.value === semester)?.label ?? semester}
                         </Badge>
-                        {isEditing ? (
+                        {isEditing && class_id ? (
                             <Button
                                 variant="outline"
                                 size="sm"
+                                className="h-11 px-3 text-sm"
                                 nativeButton={false}
-                                render={<Link href={route("administrators.classes.show", { class: class_id })} />}
+                                render={<Link href={show.url(class_id)} />}
                             >
-                                <Pencil className="size-4" />
+                                <ArrowUpRight className="size-4" aria-hidden="true" />
                                 Open record
                             </Button>
                         ) : null}
@@ -93,7 +94,7 @@ export default function AdministratorClassCreate({
                 </header>
 
                 {flash ? (
-                    <div className="rounded-lg border bg-card px-4 py-3 text-sm" role="status">
+                    <div className="bg-card rounded-lg border px-4 py-3 text-sm" role="status">
                         {flash.message}
                     </div>
                 ) : null}

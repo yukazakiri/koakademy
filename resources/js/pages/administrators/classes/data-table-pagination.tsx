@@ -2,6 +2,7 @@ import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-r
 
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { ReactNode } from "react";
 
 const PAGE_SIZES = [10, 20, 30, 40, 50];
 
@@ -14,6 +15,7 @@ interface DataTablePaginationProps {
     to: number;
     isLoading?: boolean;
     onPageChange?: (page: number, perPage: number) => void;
+    viewOptions?: ReactNode;
 }
 
 export function DataTablePagination({
@@ -25,6 +27,7 @@ export function DataTablePagination({
     to,
     isLoading = false,
     onPageChange,
+    viewOptions,
 }: DataTablePaginationProps) {
     const goTo = (nextPage: number, nextPerPage = perPage) => {
         if (isLoading) {
@@ -35,20 +38,24 @@ export function DataTablePagination({
     };
 
     return (
-        <div className="flex flex-wrap items-center justify-between gap-3 px-2">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-t p-4 sm:px-6">
             <div className="text-muted-foreground text-sm">
-                {total === 0 ? "No rows" : `Showing ${from} to ${to} of ${total} row(s)`}
+                {total === 0 ? "0 classes" : `${from.toLocaleString()}–${to.toLocaleString()} of ${total.toLocaleString()} classes`}
             </div>
-            <div className="flex items-center gap-6 lg:gap-8">
+            <div className="flex flex-wrap items-center gap-4 sm:gap-6">
+                {viewOptions}
                 <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium">Rows per page</p>
+                    <label htmlFor="classes-per-page" className="text-muted-foreground text-sm">
+                        Per page
+                    </label>
                     <Select
                         value={`${perPage}`}
+                        disabled={isLoading}
                         onValueChange={(value) => {
                             goTo(1, Number(value));
                         }}
                     >
-                        <SelectTrigger className="h-8 w-[70px]">
+                        <SelectTrigger id="classes-per-page" className="h-9 w-20">
                             <SelectValue placeholder={perPage} />
                         </SelectTrigger>
                         <SelectContent side="top">
@@ -60,34 +67,19 @@ export function DataTablePagination({
                         </SelectContent>
                     </Select>
                 </div>
-                <div className="flex w-[100px] items-center justify-center text-sm font-medium">
+                <div className="flex items-center justify-center text-sm tabular-nums">
                     Page {page} of {Math.max(lastPage, 1)}
                 </div>
                 <div className="flex items-center gap-2">
-                    <Button
-                        variant="outline"
-                        className="hidden h-8 w-8 p-0 lg:flex"
-                        onClick={() => goTo(1)}
-                        disabled={page <= 1 || isLoading}
-                    >
+                    <Button variant="outline" className="hidden h-8 w-8 p-0 lg:flex" onClick={() => goTo(1)} disabled={page <= 1 || isLoading}>
                         <span className="sr-only">Go to first page</span>
                         <ChevronsLeft className="h-4 w-4" />
                     </Button>
-                    <Button
-                        variant="outline"
-                        className="h-8 w-8 p-0"
-                        onClick={() => goTo(page - 1)}
-                        disabled={page <= 1 || isLoading}
-                    >
+                    <Button variant="outline" className="h-8 w-8 p-0" onClick={() => goTo(page - 1)} disabled={page <= 1 || isLoading}>
                         <span className="sr-only">Go to previous page</span>
                         <ChevronLeft className="h-4 w-4" />
                     </Button>
-                    <Button
-                        variant="outline"
-                        className="h-8 w-8 p-0"
-                        onClick={() => goTo(page + 1)}
-                        disabled={page >= lastPage || isLoading}
-                    >
+                    <Button variant="outline" className="h-8 w-8 p-0" onClick={() => goTo(page + 1)} disabled={page >= lastPage || isLoading}>
                         <span className="sr-only">Go to next page</span>
                         <ChevronRight className="h-4 w-4" />
                     </Button>

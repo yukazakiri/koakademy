@@ -1,6 +1,6 @@
 import AdminLayout from "@/components/administrators/admin-layout";
 import { ClassScheduleVisualizer } from "@/components/administrators/classes/schedule-visualizer";
-import { Filters, type FilterFieldConfig, type Filter as FilterType } from "@/components/reui/filters";
+import { type FilterFieldConfig, type Filter as FilterType } from "@/components/reui/filters";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,17 +11,28 @@ import { Label } from "@/components/ui/label";
 import { MultiSelect as SearchableMultiSelect } from "@/components/ui/multi-select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { VisualRadioButton } from "@/components/ui/visual-radio-button";
+import {
+    index as classIndex,
+    copy as copyClass,
+    create as createClass,
+    destroy as destroyClass,
+    forceDestroy as forceDestroyClass,
+    restore as restoreClass,
+    show as showClass,
+    update as updateClass,
+} from "@/routes/administrators/classes";
+import { shsStrands, shsSubjects, subjects } from "@/routes/administrators/classes/options";
+import { index as schedulePlanner } from "@/routes/administrators/scheduling-analytics";
 import type { User } from "@/types/user";
 import { Head, Link, router, useForm, useRemember } from "@inertiajs/react";
+import type { RowSelectionState } from "@tanstack/react-table";
 import {
     BookOpen,
     CalendarIcon,
-    Filter,
     GitCompare,
     GraduationCap,
     Layers,
@@ -32,34 +43,37 @@ import {
     Palette,
     Pencil,
     Plus,
-    RotateCcw,
-    Search,
     Settings2,
     Trash2,
     Users,
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import { route } from "ziggy-js";
 import { ClassRow, getColumns, type ClassCapabilities } from "./columns";
 import { ClassCard } from "./components/class-card";
 import { ClassCompareDialog } from "./components/class-compare-dialog";
-import { ClassStats } from "./components/class-stats";
+import { semesterLabel } from "./components/class-list-details";
+import { ClassListToolbar, type ClassWorkspaceFilters } from "./components/class-list-toolbar";
+import type { ClassActionHandlers } from "./components/class-row-actions";
+import { ClassSelectionToolbar } from "./components/class-selection-toolbar";
 import { DeleteClassDialog } from "./components/delete-class-dialog";
-import { ClassWorkspaceRail, type ClassRailFilters } from "./components/class-workspace-rail";
 import { DataTable, type PaginationMeta } from "./data-table";
 import { DataTablePagination } from "./data-table-pagination";
+import { DeliveryModePicker } from "./forms/fields/delivery-mode-picker";
+import { ScheduleGrid } from "./forms/fields/schedule-grid";
+import {
+    createDefaultSchedule,
+    deliveryModeLabel,
+    normalizeClassDelivery,
+    type ClassSchedule as ClassFormSchedule,
+    type DeliveryMode,
+} from "./lib/class-defaults";
 
 type SelectOption = { value: string; label: string };
 
 type EntityOption = { id: string | number; label: string };
 
-type ClassSchedule = {
-    id?: number;
-    day_of_week: string;
-    start_time: string;
-    end_time: string;
-    room_id: number;
+type ClassSchedule = ClassFormSchedule & {
     room?: EntityOption | null;
 };
 
@@ -81,6 +95,7 @@ type SelectedClass = {
     id: number;
     record_title: string;
     classification: "college" | "shs" | string;
+    delivery_mode?: DeliveryMode;
     subject_code: string;
     subject_title: string;
     section: string;
@@ -266,15 +281,6 @@ function buildSubjectCodeFromSubjectOptions(selectedIds: string[], subjectOption
     return Array.from(new Set(codes)).join(", ");
 }
 
-function createDefaultSchedule(defaultRoomId: number): ClassSchedule {
-    return {
-        day_of_week: "Monday",
-        start_time: "08:00",
-        end_time: "09:00",
-        room_id: defaultRoomId,
-    };
-}
-
 function parseTimeToMinutes(value: string): number | null {
     const match = value.match(/^(\d{1,2}):(\d{2})$/);
 
@@ -359,27 +365,31 @@ function SchedulePlanner({
     setSchedules,
     rooms,
     dayOptions,
-    defaultRoomId,
     classRoomId,
+    deliveryMode,
 }: {
     schedules: ClassSchedule[];
     setSchedules: (nextSchedules: ClassSchedule[]) => void;
     rooms: EntityOption[];
     dayOptions: SelectOption[];
-    defaultRoomId: number;
-    classRoomId: number;
+    classRoomId: number | null;
+    deliveryMode: DeliveryMode;
 }) {
-    React.useEffect(() => {
-        if (schedules.length === 0) {
-            setSchedules([createDefaultSchedule(defaultRoomId)]);
-        }
-    }, [defaultRoomId, schedules.length, setSchedules]);
-
-    const selectedRoomId = Number(classRoomId || defaultRoomId);
-    const selectedRoomLabel = rooms.find((room) => Number(room.id) === selectedRoomId)?.label ?? "selected class room";
+    const selectedRoomId = classRoomId || null;
+    const selectedRoomLabel = rooms.find((room) => Number(room.id) === selectedRoomId)?.label ?? "unassigned room";
 
     const updateScheduleAt = (index: number, patch: Partial<ClassSchedule>) => {
-        setSchedules(schedules.map((schedule, scheduleIndex) => (scheduleIndex === index ? { ...schedule, ...patch } : schedule)));
+        setSchedules(
+            schedules.map((schedule, scheduleIndex) =>
+                scheduleIndex === index
+                    ? {
+                          ...schedule,
+                          ...patch,
+                          room_id: patch.room_id === undefined ? schedule.room_id : patch.room_id || null,
+                      }
+                    : schedule,
+            ),
+        );
     };
 
     const applyClassRoomToAllSchedules = () => {
@@ -387,7 +397,7 @@ function SchedulePlanner({
     };
 
     const addSchedule = () => {
-        const sourceSchedule = schedules[schedules.length - 1] ?? createDefaultSchedule(classRoomId || defaultRoomId);
+        const sourceSchedule = schedules[schedules.length - 1] ?? createDefaultSchedule(selectedRoomId);
         const nextSchedule = {
             ...createDefaultSchedule(selectedRoomId),
             day_of_week: sourceSchedule.day_of_week,
@@ -410,21 +420,34 @@ function SchedulePlanner({
     };
 
     const removeSchedule = (index: number) => {
-        if (schedules.length <= 1) {
-            return;
-        }
-
         setSchedules(schedules.filter((_, scheduleIndex) => scheduleIndex !== index));
     };
 
     const activeDays = new Set(schedules.map((schedule) => schedule.day_of_week).filter(Boolean)).size;
     const invalidBlocks = getInvalidScheduleIndexes(schedules).size;
 
+    if (deliveryMode === "online") {
+        return (
+            <section aria-label="Online schedule" className="space-y-4">
+                <p className="text-muted-foreground text-sm">Online meetings do not use a room.</p>
+                <ScheduleGrid
+                    schedules={schedules}
+                    rooms={[]}
+                    dayOptions={dayOptions}
+                    primaryRoomId={null}
+                    isOnline
+                    onSchedulesChange={setSchedules}
+                />
+            </section>
+        );
+    }
+
     return (
         <div className="space-y-4">
             <div className="bg-card/70 flex flex-col gap-3 rounded-xl border p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
                 <div className="space-y-1">
                     <h3 className="text-sm font-semibold">Weekly schedule</h3>
+                    <Badge variant="outline">Face to face</Badge>
                     <p className="text-muted-foreground text-xs">Drag blocks on desktop, or right-click a block for quick edits.</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -437,7 +460,7 @@ function SchedulePlanner({
                     {invalidBlocks > 0 ? <Badge variant="destructive">{invalidBlocks} invalid</Badge> : null}
                     <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={applyClassRoomToAllSchedules}>
                         <MapPin className="mr-1 h-3.5 w-3.5" />
-                        Apply {selectedRoomLabel} to all
+                        {selectedRoomId ? `Apply ${selectedRoomLabel} to all` : "Clear all room assignments"}
                     </Button>
                     <Button type="button" size="sm" className="h-8 text-xs" onClick={addSchedule}>
                         <Plus className="mr-1 h-3.5 w-3.5" />
@@ -457,15 +480,15 @@ function SchedulePlanner({
                     <div className="h-[720px] min-w-[860px]">
                         <ClassScheduleVisualizer
                             className="h-full min-h-0"
-                            schedules={schedules}
-                            rooms={rooms}
+                            schedules={schedules.map((schedule) => ({ ...schedule, room_id: schedule.room_id ?? 0 }))}
+                            rooms={[{ id: 0, label: "Room unassigned" }, ...rooms]}
                             dayOptions={dayOptions}
                             onScheduleChange={(index, nextSchedule) => {
                                 updateScheduleAt(index, nextSchedule);
                             }}
                             onDuplicateSchedule={duplicateAt}
                             onRemoveSchedule={removeSchedule}
-                            canRemoveSchedule={schedules.length > 1}
+                            canRemoveSchedule
                         />
                     </div>
                 </div>
@@ -638,6 +661,18 @@ export default function AdministratorClassesIndex({
     const [copySection, setCopySection] = React.useState("A");
     const [pendingDelete, setPendingDelete] = React.useState<ClassRow | null>(null);
     const [isCompareOpen, setIsCompareOpen] = React.useState(false);
+    const [compareInitialClassIds, setCompareInitialClassIds] = React.useState<[number, number] | undefined>();
+    const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
+    const selectedClasses = classList.filter((row) => rowSelection[String(row.id)]);
+
+    React.useEffect(() => {
+        setRowSelection({});
+    }, [classList]);
+
+    const openCompare = (classIds?: [number, number]) => {
+        setCompareInitialClassIds(classIds);
+        setIsCompareOpen(true);
+    };
 
     const [collegeSubjectOptions, setCollegeSubjectOptions] = React.useState<
         {
@@ -695,7 +730,7 @@ export default function AdministratorClassesIndex({
         // expose, so a filter that arrived in the URL is never silently dropped
         // by the next navigation.
         Object.entries(filters ?? {}).forEach(([key, value]) => {
-            if (key === "search" || key === "sort" || key === "direction") {
+            if (["search", "sort", "direction", ...filterFields.map((field) => field.key)].includes(key)) {
                 return;
             }
 
@@ -703,7 +738,7 @@ export default function AdministratorClassesIndex({
                 return;
             }
 
-            appliedFilters[key] = value as string | number;
+            appliedFilters[key] = typeof value === "boolean" ? String(value) : value;
         });
 
         filterValues.forEach((filter) => {
@@ -717,13 +752,10 @@ export default function AdministratorClassesIndex({
         return { ...appliedFilters, ...extra };
     };
 
-    const navigateWithParams = (
-        params: Record<string, string | number>,
-        options: { replace?: boolean } = {},
-    ) => {
+    const navigateWithParams = (params: Record<string, string | number>, options: { replace?: boolean } = {}) => {
         cancelPendingSearch();
         setIsUpdating(true);
-        router.get(route("administrators.classes.index"), params, {
+        router.get(classIndex.url(), params, {
             only: ["classes", "filters"],
             preserveScroll: true,
             preserveState: true,
@@ -739,17 +771,13 @@ export default function AdministratorClassesIndex({
         debouncedSearchRef.current = setTimeout(() => {
             debouncedSearchRef.current = null;
             setIsUpdating(true);
-            router.get(
-                route("administrators.classes.index"),
-                buildFilterParams(nextSearch, activeFilters, sortOption, { page: 1 }),
-                {
-                    only: ["classes", "filters"],
-                    preserveScroll: true,
-                    preserveState: true,
-                    replace: true,
-                    onFinish: () => setIsUpdating(false),
-                },
-            );
+            router.get(classIndex.url(), buildFilterParams(nextSearch, activeFilters, sortOption, { page: 1 }), {
+                only: ["classes", "filters"],
+                preserveScroll: true,
+                preserveState: true,
+                replace: true,
+                onFinish: () => setIsUpdating(false),
+            });
         }, 300);
     };
 
@@ -764,7 +792,7 @@ export default function AdministratorClassesIndex({
         setActiveFilters([]);
         setSortOption("created_at:desc");
         cancelPendingSearch();
-        navigateWithParams(buildFilterParams("", [], "created_at:desc", { page: 1 }));
+        navigateWithParams({ sort: "created_at", direction: "desc", per_page: classMeta.per_page, page: 1 });
     };
 
     const handleSortChange = (value: string) => {
@@ -789,12 +817,9 @@ export default function AdministratorClassesIndex({
     };
 
     /**
-     * A work queue or a class type was picked in the rail.
-     *
-     * The rail owns these filters, so they are set on the query directly
-     * rather than through the toolbar's filter chips.
+     * Workspace controls share the same server query as advanced filters.
      */
-    const handleRailFilterChange = (next: ClassRailFilters): void => {
+    const handleWorkspaceFilterChange = (next: ClassWorkspaceFilters): void => {
         const params = buildFilterParams(search, activeFilters, sortOption, { page: 1 });
 
         if (next.classification) {
@@ -899,7 +924,10 @@ export default function AdministratorClassesIndex({
                 label: "SHS Grade",
                 type: "select",
                 icon: <GraduationCap className="h-4 w-4" />,
-                options: (options.grade_levels ?? []).map((option) => ({ ...option, icon: <GraduationCap className="text-muted-foreground h-4 w-4" /> })),
+                options: (options.grade_levels ?? []).map((option) => ({
+                    ...option,
+                    icon: <GraduationCap className="text-muted-foreground h-4 w-4" />,
+                })),
             },
             {
                 key: "available_slots",
@@ -926,33 +954,25 @@ export default function AdministratorClassesIndex({
         setIsManageOpen(true);
         setIsSelectedClassLoading(true);
 
-        router.get(
-            route("administrators.classes.index"),
-            { selected: classId },
-            {
-                preserveState: true,
-                replace: true,
-                only: ["selected_class"],
-                onFinish: () => setIsSelectedClassLoading(false),
-            },
-        );
+        router.get(classIndex.url(), buildFilterParams(search, activeFilters, sortOption, { selected: classId }), {
+            preserveState: true,
+            replace: true,
+            only: ["selected_class"],
+            onFinish: () => setIsSelectedClassLoading(false),
+        });
     };
 
-    const openEdit = (classId: number) => {
+    const openEdit = (classId: number, tab: ClassDialogTab = "details") => {
         setIsEditOpen(true);
-        setEditActiveTab("details");
+        setEditActiveTab(tab);
         setIsSelectedClassLoading(true);
 
-        router.get(
-            route("administrators.classes.index"),
-            { selected: classId },
-            {
-                preserveState: true,
-                replace: true,
-                only: ["selected_class"],
-                onFinish: () => setIsSelectedClassLoading(false),
-            },
-        );
+        router.get(classIndex.url(), buildFilterParams(search, activeFilters, sortOption, { selected: classId }), {
+            preserveState: true,
+            replace: true,
+            only: ["selected_class"],
+            onFinish: () => setIsSelectedClassLoading(false),
+        });
     };
 
     const confirmDelete = (row: ClassRow) => {
@@ -962,7 +982,7 @@ export default function AdministratorClassesIndex({
     const performDelete = () => {
         if (!pendingDelete) return;
 
-        router.delete(route("administrators.classes.destroy", { class: pendingDelete.id }), {
+        router.delete(destroyClass.url(pendingDelete.id), {
             preserveScroll: true,
             onSuccess: () => {
                 setPendingDelete(null);
@@ -973,7 +993,7 @@ export default function AdministratorClassesIndex({
 
     const performRestore = (row: ClassRow) => {
         router.post(
-            route("administrators.classes.restore", { class: row.id }),
+            restoreClass.url(row.id),
             {},
             {
                 preserveScroll: true,
@@ -983,32 +1003,27 @@ export default function AdministratorClassesIndex({
     };
 
     const performForceDelete = (row: ClassRow) => {
-        router.delete(
-            route("administrators.classes.force-destroy", { class: row.id }),
-            {
-                preserveScroll: true,
-                onSuccess: () => toast.success(`${row.record_title} permanently deleted.`),
-            },
-        );
+        router.delete(forceDestroyClass.url(row.id), {
+            preserveScroll: true,
+            onSuccess: () => toast.success(`${row.record_title} permanently deleted.`),
+        });
     };
 
-    const columns = React.useMemo(
-        () =>
-            getColumns({
-                onManage: openManage,
-                onEdit: openEdit,
-                onDelete: confirmDelete,
-                onRestore: performRestore,
-                onForceDelete: performForceDelete,
-                onCopy: (id) => {
-                    setCopySourceId(id);
-                    setCopySection("A");
-                    setIsCopyOpen(true);
-                },
-                capabilities,
-            }),
-        [capabilities, openManage, openEdit],
-    );
+    const classActions: ClassActionHandlers = {
+        onManage: openManage,
+        onEdit: openEdit,
+        onSchedule: (id) => openEdit(id, "schedule"),
+        onDelete: confirmDelete,
+        onRestore: performRestore,
+        onForceDelete: performForceDelete,
+        onCopy: (id) => {
+            setCopySourceId(id);
+            setCopySection("A");
+            setIsCopyOpen(true);
+        },
+        capabilities,
+    };
+    const columns = getColumns(classActions);
 
     const editForm = useForm({
         classification: "college" as "college" | "shs",
@@ -1026,7 +1041,8 @@ export default function AdministratorClassesIndex({
         semester: defaults.semester,
         school_year: defaults.school_year,
         section: "A",
-        room_id: options.rooms[0]?.id ?? 0,
+        delivery_mode: "face_to_face" as DeliveryMode,
+        room_id: null as number | null,
         maximum_slots: 40,
 
         schedules: [] as ClassSchedule[],
@@ -1084,47 +1100,49 @@ export default function AdministratorClassesIndex({
     React.useEffect(() => {
         if (!isEditOpen || !selected_class) return;
 
-        editForm.setData({
-            classification: (selected_class.classification as "college" | "shs") ?? "college",
-            course_codes: selected_class.course_ids ?? [],
-            subject_ids: selected_class.subject_ids ?? [],
-            subject_code: selected_class.subject_code ?? "",
-            academic_year: selected_class.academic_year ?? null,
+        editForm.setData(
+            normalizeClassDelivery({
+                classification: (selected_class.classification as "college" | "shs") ?? "college",
+                course_codes: selected_class.course_ids ?? [],
+                subject_ids: selected_class.subject_ids ?? [],
+                subject_code: selected_class.subject_code ?? "",
+                academic_year: selected_class.academic_year ?? null,
 
-            shs_track_id: selected_class.shs_track ? Number(selected_class.shs_track.id) : null,
-            shs_strand_id: selected_class.shs_strand ? Number(selected_class.shs_strand.id) : null,
-            subject_code_shs: selected_class.classification === "shs" ? selected_class.subject_code : "",
-            grade_level: selected_class.grade_level ?? null,
+                shs_track_id: selected_class.shs_track ? Number(selected_class.shs_track.id) : null,
+                shs_strand_id: selected_class.shs_strand ? Number(selected_class.shs_strand.id) : null,
+                subject_code_shs: selected_class.classification === "shs" ? selected_class.subject_code : "",
+                grade_level: selected_class.grade_level ?? null,
 
-            faculty_id: selected_class.faculty ? String(selected_class.faculty.id) : null,
-            semester: normalizeSemester(selected_class.semester),
-            school_year: selected_class.school_year,
-            section: selected_class.section,
-            room_id: Number(selected_class.room?.id ?? options.rooms[0]?.id ?? 0),
-            maximum_slots: selected_class.maximum_slots,
+                faculty_id: selected_class.faculty ? String(selected_class.faculty.id) : null,
+                semester: normalizeSemester(selected_class.semester),
+                school_year: selected_class.school_year,
+                section: selected_class.section,
+                delivery_mode: selected_class.delivery_mode,
+                room_id: selected_class.room ? Number(selected_class.room.id) : null,
+                maximum_slots: selected_class.maximum_slots,
 
-            schedules: selected_class.schedules.map((s) => ({
-                day_of_week: s.day_of_week,
-                start_time: s.start_time,
-                end_time: s.end_time,
-                room_id: s.room_id,
-            })),
+                schedules: selected_class.schedules.map((s) => ({
+                    ...s,
+                    room: undefined,
+                    room_id: s.room_id,
+                })),
 
-            settings: {
-                background_color: selected_class.settings.background_color ?? "#ffffff",
-                accent_color: selected_class.settings.accent_color ?? "#3b82f6",
-                theme: selected_class.settings.theme ?? "default",
-                enable_announcements: selected_class.settings.enable_announcements ?? true,
-                enable_grade_visibility: selected_class.settings.enable_grade_visibility ?? true,
-                enable_attendance_tracking: selected_class.settings.enable_attendance_tracking ?? false,
-                allow_late_submissions: selected_class.settings.allow_late_submissions ?? false,
-                enable_discussion_board: selected_class.settings.enable_discussion_board ?? false,
-                notify_students_on_schedule_changes: selected_class.settings.notify_students_on_schedule_changes ?? true,
-                custom: selected_class.settings.custom ?? {},
-                banner_image: null as File | null,
-            },
-            remove_banner_image: false,
-        } as typeof editForm.data);
+                settings: {
+                    background_color: selected_class.settings.background_color ?? "#ffffff",
+                    accent_color: selected_class.settings.accent_color ?? "#3b82f6",
+                    theme: selected_class.settings.theme ?? "default",
+                    enable_announcements: selected_class.settings.enable_announcements ?? true,
+                    enable_grade_visibility: selected_class.settings.enable_grade_visibility ?? true,
+                    enable_attendance_tracking: selected_class.settings.enable_attendance_tracking ?? false,
+                    allow_late_submissions: selected_class.settings.allow_late_submissions ?? false,
+                    enable_discussion_board: selected_class.settings.enable_discussion_board ?? false,
+                    notify_students_on_schedule_changes: selected_class.settings.notify_students_on_schedule_changes ?? true,
+                    custom: selected_class.settings.custom ?? {},
+                    banner_image: null as File | null,
+                },
+                remove_banner_image: false,
+            }),
+        );
 
         setSubjectCodeTouched(false);
         void loadCollegeSubjects(selected_class.course_ids ?? []);
@@ -1149,11 +1167,7 @@ export default function AdministratorClassesIndex({
         setCollegeSubjectsLoading(true);
 
         try {
-            const response = await fetch(
-                route("administrators.classes.options.subjects", {
-                    course_ids: courseIds,
-                }),
-            );
+            const response = await fetch(subjects.url({ query: { course_ids: courseIds } }));
             const data = (await response.json()) as {
                 data: {
                     id: number;
@@ -1200,11 +1214,7 @@ export default function AdministratorClassesIndex({
         setShsStrandsLoading(true);
 
         try {
-            const response = await fetch(
-                route("administrators.classes.options.shs-strands", {
-                    track_id: trackId,
-                }),
-            );
+            const response = await fetch(shsStrands.url({ query: { track_id: trackId } }));
             const data = (await response.json()) as { data: EntityOption[] };
             setShsStrandOptions(data.data);
         } finally {
@@ -1221,11 +1231,7 @@ export default function AdministratorClassesIndex({
         setShsSubjectsLoading(true);
 
         try {
-            const response = await fetch(
-                route("administrators.classes.options.shs-subjects", {
-                    strand_id: strandId,
-                }),
-            );
+            const response = await fetch(shsSubjects.url({ query: { strand_id: strandId } }));
             const data = (await response.json()) as {
                 data: { code: string; label: string; title: string }[];
             };
@@ -1435,258 +1441,215 @@ export default function AdministratorClassesIndex({
         );
     };
 
+    const hasListFilters =
+        search.trim() !== "" ||
+        Object.entries(filters).some(
+            ([key, value]) => !["search", "sort", "direction", "per_page"].includes(key) && value !== null && value !== undefined && value !== "",
+        );
+    const emptyState = (
+        <div className="flex flex-col items-center gap-4 px-6 py-16 text-center">
+            <BookOpen className="text-muted-foreground size-8" aria-hidden="true" />
+            <div className="space-y-2">
+                <h3 className="text-base font-semibold">
+                    {hasListFilters
+                        ? "No classes match these filters"
+                        : filters.trashed === "only"
+                          ? "No archived classes"
+                          : "No classes in this term"}
+                </h3>
+                <p className="text-muted-foreground max-w-md text-sm">
+                    {hasListFilters
+                        ? "Adjust your search or reset the filters to see more class sections."
+                        : "Create a class section to assign faculty, enroll students, and plan its schedule."}
+                </p>
+            </div>
+            {hasListFilters ? (
+                <Button type="button" variant="outline" className="h-10 px-4 text-sm" onClick={clearFilters}>
+                    Reset search and filters
+                </Button>
+            ) : capabilities.create ? (
+                <Link href={createClass.url()} className={buttonVariants({ variant: "outline", className: "h-10 px-4 text-sm" })}>
+                    Create class
+                </Link>
+            ) : null}
+        </div>
+    );
+
     return (
         <AdminLayout user={user} title="Classes">
             <Head title="Administrators • Classes" />
 
-            {(() => {
-                // The totals cover the whole filtered set, not just the page on
-                // screen, so they stay stable while paging through the list.
-                const filteredStatsTotalStudents = classMeta.total_students;
-                const filteredStatsTotalClasses = classMeta.total;
-                const isArchivedView = filters?.trashed === "only";
+            <div className="flex min-w-0 flex-col gap-8">
+                <header className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="space-y-2">
+                        <p className="text-muted-foreground text-sm">Academic operations</p>
+                        <h1 className="text-2xl font-semibold tracking-tight">Classes</h1>
+                        <p className="text-muted-foreground max-w-xl text-base">
+                            Organize class sections, faculty assignments, and weekly schedules.
+                        </p>
+                    </div>
+                    <div className="flex flex-wrap gap-3">
+                        <Link href={schedulePlanner.url()} className={buttonVariants({ variant: "outline", className: "h-10 gap-2 px-4 text-sm" })}>
+                            <CalendarIcon className="size-4" aria-hidden="true" />
+                            Schedule planner
+                        </Link>
+                        {capabilities.create ? (
+                            <Link href={createClass.url()} className={buttonVariants({ className: "h-10 gap-2 px-4 text-sm" })}>
+                                <Plus className="size-4" aria-hidden="true" /> Create class
+                            </Link>
+                        ) : null}
+                    </div>
+                </header>
 
-                const toolbarContent = (
-                    <>
-                        <div className="relative max-w-md flex-1">
-                            <Search className="text-muted-foreground absolute top-2.5 left-2.5 h-4 w-4" />
-                            <Input
-                                ref={searchInputRef}
-                                placeholder="Search classes... (Press '/' to focus)"
-                                className="bg-background pl-8"
-                                value={search}
-                                onFocus={() => {
-                                    searchInputFocusedRef.current = true;
-                                }}
-                                onBlur={() => {
-                                    searchInputFocusedRef.current = false;
-                                }}
-                                onChange={(event) => {
-                                    handleSearchChange(event.target.value);
-                                }}
-                            />
+                <div className="flex flex-wrap items-center gap-x-8 gap-y-3 text-sm" aria-label="Current academic term">
+                    <div className="flex flex-wrap items-center gap-3">
+                        <CalendarIcon className="text-muted-foreground size-4" aria-hidden="true" />
+                        <span className="text-muted-foreground">Current term</span>
+                        <span className="font-medium">{defaults.school_year || "School year not set"}</span>
+                        <span className="text-muted-foreground">{semesterLabel(defaults.semester)}</span>
+                    </div>
+                    <p className="text-muted-foreground">Class records are scoped to the current academic term.</p>
+                </div>
+
+                <section className="bg-card min-w-0 overflow-hidden rounded-xl border" aria-labelledby="class-sections-heading">
+                    <div className="flex flex-col gap-4 border-b p-4 sm:p-6 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="space-y-1">
+                            <h2 id="class-sections-heading" className="text-base font-semibold">
+                                {filters.trashed === "only" ? "Archived classes" : "Class sections"}
+                                <span className="text-muted-foreground ml-2 font-normal tabular-nums">{classMeta.total.toLocaleString()}</span>
+                            </h2>
+                            <p className="text-muted-foreground text-sm">
+                                {classMeta.total_students.toLocaleString()} enrollments · {classMeta.total_capacity.toLocaleString()} total places
+                            </p>
                         </div>
-
-                        <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-3">
+                            <Button type="button" variant="ghost" className="h-9 gap-2 px-3 text-sm" onClick={() => openCompare()}>
+                                <GitCompare className="size-4" aria-hidden="true" /> Compare students
+                            </Button>
                             <Select value={sortOption} onValueChange={handleSortChange}>
-                                <SelectTrigger className="h-8 w-[180px]">
+                                <SelectTrigger className="h-9 w-40" aria-label="Sort classes">
                                     <SelectValue placeholder="Sort classes" />
                                 </SelectTrigger>
                                 <SelectContent align="end">
                                     <SelectItem value="created_at:desc">Latest added</SelectItem>
                                     <SelectItem value="created_at:asc">Oldest added</SelectItem>
-                                    <SelectItem value="record_title:asc">Class A-Z</SelectItem>
-                                    <SelectItem value="record_title:desc">Class Z-A</SelectItem>
+                                    <SelectItem value="record_title:asc">Class A to Z</SelectItem>
+                                    <SelectItem value="record_title:desc">Class Z to A</SelectItem>
+                                    <SelectItem value="faculty:asc">Faculty A to Z</SelectItem>
+                                    <SelectItem value="faculty:desc">Faculty Z to A</SelectItem>
                                     <SelectItem value="students_count:desc">Most enrolled</SelectItem>
                                     <SelectItem value="students_count:asc">Least enrolled</SelectItem>
                                     <SelectItem value="period:asc">Earliest term</SelectItem>
                                     <SelectItem value="period:desc">Latest term</SelectItem>
                                 </SelectContent>
                             </Select>
-
-                            <Filters
-                                fields={filterFields}
-                                filters={activeFilters}
-                                onChange={handleFiltersChange}
-                                trigger={
-                                    <Button variant="outline" className="relative gap-2" size="sm">
-                                        <Filter className="h-4 w-4" />
-                                        Filters
-                                        {activeFilters.length > 0 && (
-                                            <Badge variant="secondary" className="ml-1 h-5 min-w-5 rounded-full px-1.5 text-xs">
-                                                {activeFilters.length}
-                                            </Badge>
-                                        )}
-                                    </Button>
-                                }
-                            />
-
-                            {(search.trim() !== "" || activeFilters.length > 0) && (
+                            <div className="flex items-center gap-1 rounded-lg border p-1" role="group" aria-label="Class display">
                                 <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={clearFilters}
-                                    className="text-muted-foreground hover:text-foreground h-8 px-2"
-                                >
-                                    <RotateCcw className="mr-2 h-3.5 w-3.5" />
-                                    Reset
-                                </Button>
-                            )}
-
-                            <Separator orientation="vertical" className="mx-1 h-8" />
-
-                            <div className="flex items-center rounded-md border p-0.5">
-                                <Button
-                                    variant={viewMode === "grid" ? "secondary" : "ghost"}
-                                    size="icon"
-                                    className="h-7 w-7"
-                                    onClick={() => setViewMode("grid")}
-                                    title="Grid view"
-                                >
-                                    <LayoutGrid className="h-4 w-4" />
-                                </Button>
-                                <Button
+                                    type="button"
                                     variant={viewMode === "list" ? "secondary" : "ghost"}
                                     size="icon"
-                                    className="h-7 w-7"
+                                    className="size-8"
                                     onClick={() => setViewMode("list")}
-                                    title="List view"
+                                    aria-label="Table view"
+                                    aria-pressed={viewMode === "list"}
                                 >
-                                    <List className="h-4 w-4" />
+                                    <List className="size-4" aria-hidden="true" />
                                 </Button>
-                            </div>
-                        </div>
-                    </>
-                );
-
-                const railFilters: ClassRailFilters = {
-                    classification: filters?.classification ?? null,
-                    needs_faculty: filters?.needs_faculty ?? null,
-                    needs_schedule: filters?.needs_schedule ?? null,
-                    over_capacity: filters?.over_capacity ?? null,
-                    trashed: filters?.trashed ?? null,
-                };
-
-                const needsAttention =
-                    classMeta.queues.unassigned_faculty + classMeta.queues.no_schedule + classMeta.queues.over_capacity;
-
-                return (
-                    <div className="flex flex-col gap-6">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                            <div className="min-w-0">
-                                <p className="text-muted-foreground text-xs font-semibold uppercase tracking-widest">Academics · Class sections</p>
-                                <h2 className="mt-1 text-3xl font-semibold tracking-tight">Classes</h2>
-                                <p className="text-muted-foreground mt-1 text-sm">
-                                    Plan sections, keep the schedule honest, and see what still needs someone.
-                                </p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <Button variant="outline" size="sm" onClick={() => setIsCompareOpen(true)}>
-                                    <GitCompare className="mr-1.5 h-4 w-4" />
-                                    <span className="hidden sm:inline">Compare</span>
-                                    <span className="sm:hidden">Cmp</span>
+                                <Button
+                                    type="button"
+                                    variant={viewMode === "grid" ? "secondary" : "ghost"}
+                                    size="icon"
+                                    className="size-8"
+                                    onClick={() => setViewMode("grid")}
+                                    aria-label="Card view"
+                                    aria-pressed={viewMode === "grid"}
+                                >
+                                    <LayoutGrid className="size-4" aria-hidden="true" />
                                 </Button>
-                                {capabilities.create ? (
-                                    <Link
-                                        href={route("administrators.classes.create")}
-                                        className={buttonVariants({ size: "sm" })}
-                                    >
-                                        <Plus className="mr-1.5 h-4 w-4" />
-                                        <span className="hidden sm:inline">New class</span>
-                                        <span className="sm:hidden">New</span>
-                                    </Link>
-                                ) : null}
-                            </div>
-                        </div>
-
-                        {isArchivedView ? (
-                            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm">
-                                <p className="text-muted-foreground">
-                                    <span className="text-foreground font-medium">Archived classes.</span> These classes and their schedules and
-                                    enrolments were removed from the live list. Restoring one brings all of it back.
-                                </p>
-                            </div>
-                        ) : null}
-
-                        <div className="grid items-start gap-6 lg:grid-cols-[15rem_minmax(0,1fr)]">
-                            <aside className="lg:sticky lg:top-20">
-                                <ClassWorkspaceRail
-                                    filters={railFilters}
-                                    queues={classMeta.queues}
-                                    total={classMeta.total}
-                                    classificationCounts={classMeta.classification_counts}
-                                    onFilterChange={handleRailFilterChange}
-                                />
-                            </aside>
-
-                            <div className="flex min-w-0 flex-col gap-6">
-                                <ClassStats
-                                    totalClasses={filteredStatsTotalClasses}
-                                    totalStudents={filteredStatsTotalStudents}
-                                    totalCapacity={classMeta.total_capacity}
-                                    needsAttention={needsAttention}
-                                />
-
-                                    {viewMode === "grid" ? (
-                                <div className="relative animate-in fade-in slide-in-from-bottom-4 overflow-hidden rounded-lg border duration-500">
-                                    {isUpdating && (
-                                        <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center">
-                                            <span className="bg-background/90 text-muted-foreground rounded-full border px-3 py-1 text-xs shadow-sm">
-                                                Updating…
-                                            </span>
-                                        </div>
-                                    )}
-                                    <div className="flex flex-col gap-3 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                                        {toolbarContent}
-                                    </div>
-                                    {visibleClasses.length > 0 ? (
-                                        <div className="grid gap-4 p-4 md:grid-cols-2 2xl:grid-cols-3">
-                                            {visibleClasses.map((row) => (
-                                                <ClassCard
-                                                    key={row.id}
-                                                    classRow={row}
-                                                    onManage={openManage}
-                                                    onEdit={openEdit}
-                                                    onDelete={confirmDelete}
-                                                    onRestore={performRestore}
-                                                    onForceDelete={performForceDelete}
-                                                    onCopy={(id) => {
-                                                        setCopySourceId(id);
-                                                        setCopySection("A");
-                                                        setIsCopyOpen(true);
-                                                    }}
-                                                />
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <div className="flex min-h-[280px] flex-col items-center justify-center p-8 text-center">
-                                            <div className="bg-muted/50 border-border flex h-14 w-14 items-center justify-center rounded-full border">
-                                                <Layers className="text-muted-foreground h-7 w-7" />
-                                            </div>
-                                            <h3 className="mt-4 text-lg font-semibold">No classes found</h3>
-                                            <p className="text-muted-foreground mt-1.5 max-w-sm text-sm">Try adjusting your search or filters.</p>
-                                            {(search.trim() !== "" || activeFilters.length > 0) && (
-                                                <Button variant="outline" size="sm" className="mt-5" onClick={clearFilters}>
-                                                    Clear search and filters
-                                                </Button>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            ) : (
-                                <DataTable
-                                    columns={columns}
-                                    data={visibleClasses}
-                                    pagination={classMeta}
-                                    sort={filters?.sort ?? "created_at"}
-                                    direction={filters?.direction === "asc" ? "asc" : "desc"}
-                                    onSortChange={handleColumnSortChange}
-                                    onPageChange={handlePageChange}
-                                    toolbar={toolbarContent}
-                                    isLoading={isUpdating}
-                                    onRowClick={(row) => {
-                                        router.visit(route("administrators.classes.show", { class: row.id }));
-                                    }}
-                                />
-                            )}
-
-                            {viewMode === "grid" && (
-                                <DataTablePagination
-                                    page={classMeta.current_page}
-                                    lastPage={classMeta.last_page}
-                                    perPage={classMeta.per_page}
-                                    total={classMeta.total}
-                                    from={classMeta.from}
-                                    to={classMeta.to}
-                                    isLoading={isUpdating}
-                                    onPageChange={handlePageChange}
-                                />
-                            )}
                             </div>
                         </div>
                     </div>
-                );
-            })()}
+                    <ClassListToolbar
+                        search={search}
+                        searchInputRef={searchInputRef}
+                        onSearchChange={handleSearchChange}
+                        onSearchFocusChange={(focused) => {
+                            searchInputFocusedRef.current = focused;
+                        }}
+                        filters={filters}
+                        onWorkspaceFilterChange={handleWorkspaceFilterChange}
+                        activeFilters={activeFilters}
+                        filterFields={filterFields}
+                        onFiltersChange={handleFiltersChange}
+                        queues={classMeta.queues}
+                        hasFilters={hasListFilters}
+                        onReset={clearFilters}
+                    />
+                    {filters.trashed === "only" ? (
+                        <p className="bg-muted/40 text-muted-foreground border-b px-4 py-4 text-sm sm:px-6">
+                            Archived classes retain their schedules and enrollments. Restore a class to return it to the active list.
+                        </p>
+                    ) : null}
+                    <ClassSelectionToolbar
+                        selectedClasses={selectedClasses}
+                        onClear={() => setRowSelection({})}
+                        onCompare={() => {
+                            if (selectedClasses.length === 2) openCompare([selectedClasses[0].id, selectedClasses[1].id]);
+                        }}
+                        {...classActions}
+                    />
+                    <div className="sr-only" role="status">
+                        {isUpdating ? "Updating class list" : `${classMeta.total} classes found`}
+                    </div>
+                    {viewMode === "grid" ? (
+                        <div aria-busy={isUpdating}>
+                            <div className={isUpdating ? "opacity-60" : undefined}>
+                                {visibleClasses.length > 0 ? (
+                                    <div className="grid gap-4 p-4 sm:p-6 md:grid-cols-2 2xl:grid-cols-3">
+                                        {visibleClasses.map((row) => (
+                                            <ClassCard
+                                                key={row.id}
+                                                classRow={row}
+                                                selected={Boolean(rowSelection[String(row.id)])}
+                                                onSelect={(selected) => setRowSelection((current) => ({ ...current, [String(row.id)]: selected }))}
+                                                {...classActions}
+                                            />
+                                        ))}
+                                    </div>
+                                ) : (
+                                    emptyState
+                                )}
+                            </div>
+                            <DataTablePagination
+                                page={classMeta.current_page}
+                                lastPage={classMeta.last_page}
+                                perPage={classMeta.per_page}
+                                total={classMeta.total}
+                                from={classMeta.from}
+                                to={classMeta.to}
+                                isLoading={isUpdating}
+                                onPageChange={handlePageChange}
+                            />
+                        </div>
+                    ) : (
+                        <DataTable
+                            columns={columns}
+                            data={visibleClasses}
+                            pagination={classMeta}
+                            sort={filters.sort ?? "created_at"}
+                            direction={filters.direction === "asc" ? "asc" : "desc"}
+                            onSortChange={handleColumnSortChange}
+                            onPageChange={handlePageChange}
+                            isLoading={isUpdating}
+                            getRowId={(row) => String(row.id)}
+                            rowSelection={rowSelection}
+                            onRowSelectionChange={setRowSelection}
+                            emptyState={emptyState}
+                            onRowClick={(row) => router.visit(showClass.url(row.id))}
+                        />
+                    )}
+                </section>
+            </div>
 
             <Dialog open={isCopyOpen} onOpenChange={setIsCopyOpen}>
                 <DialogContent>
@@ -1719,7 +1682,7 @@ export default function AdministratorClassesIndex({
                             onClick={() => {
                                 if (!copySourceId) return;
                                 router.post(
-                                    route("administrators.classes.copy", { class: copySourceId }),
+                                    copyClass.url(copySourceId),
                                     { section: copySection },
                                     { preserveScroll: true, onSuccess: () => setIsCopyOpen(false) },
                                 );
@@ -1738,9 +1701,6 @@ export default function AdministratorClassesIndex({
                     if (!open) {
                         setIsSelectedClassLoading(false);
                     }
-                    if (open) {
-                        setEditActiveTab("details");
-                    }
                 }}
             >
                 <DialogContent className="bg-background/95 supports-[backdrop-filter]:bg-background/60 flex h-[95vh] w-full flex-col gap-0 overflow-hidden p-0 backdrop-blur sm:max-w-3xl md:max-w-5xl lg:max-w-[90vw] xl:max-w-[1400px]">
@@ -1749,8 +1709,8 @@ export default function AdministratorClassesIndex({
                         <DialogDescription>Update the class record and schedule.</DialogDescription>
                     </DialogHeader>
 
-                    {!selected_class ? (
-                        <div className="text-muted-foreground flex-1 p-6 text-sm">
+                    {isSelectedClassLoading || !selected_class ? (
+                        <div className="text-muted-foreground flex-1 p-6 text-sm" role="status">
                             {isSelectedClassLoading ? "Loading class details..." : "Select a class first."}
                         </div>
                     ) : (
@@ -2128,24 +2088,38 @@ export default function AdministratorClassesIndex({
                                                             </Select>
                                                         </div>
 
-                                                        <div className="space-y-2">
-                                                            <Label>Room</Label>
-                                                            <Select
-                                                                value={String(editForm.data.room_id)}
-                                                                onValueChange={(val) => editForm.setData("room_id", Number(val))}
-                                                            >
-                                                                <SelectTrigger className="w-full">
-                                                                    <SelectValue placeholder="Room" />
-                                                                </SelectTrigger>
-                                                                <SelectContent>
-                                                                    {options.rooms.map((room) => (
-                                                                        <SelectItem key={room.id} value={String(room.id)}>
-                                                                            {room.label}
-                                                                        </SelectItem>
-                                                                    ))}
-                                                                </SelectContent>
-                                                            </Select>
+                                                        <div className="sm:col-span-2">
+                                                            <DeliveryModePicker
+                                                                value={editForm.data.delivery_mode}
+                                                                onChange={(delivery_mode) =>
+                                                                    editForm.setData((data) => normalizeClassDelivery({ ...data, delivery_mode }))
+                                                                }
+                                                            />
                                                         </div>
+
+                                                        {editForm.data.delivery_mode === "online" ? (
+                                                            <p className="text-muted-foreground text-sm">Online classes do not use a room.</p>
+                                                        ) : (
+                                                            <div className="space-y-2">
+                                                                <Label htmlFor="edit-class-room">Primary room (optional)</Label>
+                                                                <Select
+                                                                    value={String(editForm.data.room_id ?? 0)}
+                                                                    onValueChange={(val) => editForm.setData("room_id", Number(val) || null)}
+                                                                >
+                                                                    <SelectTrigger id="edit-class-room" className="w-full">
+                                                                        <SelectValue placeholder="Room" />
+                                                                    </SelectTrigger>
+                                                                    <SelectContent>
+                                                                        <SelectItem value="0">Assign a room later</SelectItem>
+                                                                        {options.rooms.map((room) => (
+                                                                            <SelectItem key={room.id} value={String(room.id)}>
+                                                                                {room.label}
+                                                                            </SelectItem>
+                                                                        ))}
+                                                                    </SelectContent>
+                                                                </Select>
+                                                            </div>
+                                                        )}
 
                                                         <div className="space-y-2">
                                                             <Label>Class size limit</Label>
@@ -2165,11 +2139,11 @@ export default function AdministratorClassesIndex({
                                     <TabsContent value="schedule" className="m-0 flex h-full min-h-[500px] flex-col outline-none">
                                         <SchedulePlanner
                                             schedules={editForm.data.schedules}
-                                            setSchedules={(nextSchedules) => editForm.setData("schedules", nextSchedules)}
+                                            setSchedules={(schedules) => editForm.setData((data) => normalizeClassDelivery({ ...data, schedules }))}
                                             rooms={options.rooms}
                                             dayOptions={options.day_of_week}
-                                            defaultRoomId={Number(options.rooms[0]?.id ?? 0)}
-                                            classRoomId={Number(editForm.data.room_id)}
+                                            classRoomId={editForm.data.room_id}
+                                            deliveryMode={editForm.data.delivery_mode}
                                         />
                                     </TabsContent>
 
@@ -2191,10 +2165,16 @@ export default function AdministratorClassesIndex({
                             Cancel
                         </Button>
                         <Button
-                            disabled={editForm.processing || !selected_class || getInvalidScheduleIndexes(editForm.data.schedules).size > 0}
+                            disabled={
+                                editForm.processing ||
+                                isSelectedClassLoading ||
+                                !selected_class ||
+                                getInvalidScheduleIndexes(editForm.data.schedules).size > 0
+                            }
                             onClick={() => {
-                                if (!selected_class) return;
-                                editForm.patch(route("administrators.classes.update", { class: selected_class.id }), {
+                                if (isSelectedClassLoading || !selected_class) return;
+                                editForm.transform((data) => normalizeClassDelivery(data));
+                                editForm.patch(updateClass.url(selected_class.id), {
                                     preserveScroll: true,
                                     forceFormData: true,
                                     onError: (errors) => {
@@ -2240,6 +2220,7 @@ export default function AdministratorClassesIndex({
                                 <Badge variant="outline" className="capitalize">
                                     {selected_class.classification}
                                 </Badge>
+                                <Badge variant="outline">{deliveryModeLabel(selected_class.delivery_mode)}</Badge>
                                 <Badge variant="secondary">
                                     {selected_class.students_count} / {selected_class.maximum_slots || "—"} enrolled
                                 </Badge>
@@ -2271,8 +2252,12 @@ export default function AdministratorClassesIndex({
                                         </div>
 
                                         <div className="grid gap-2">
-                                            <div className="text-muted-foreground text-xs">Room</div>
-                                            <div className="text-foreground font-medium">{selected_class.room?.label ?? "—"}</div>
+                                            <div className="text-muted-foreground text-xs">Primary room</div>
+                                            <div className="text-foreground font-medium">
+                                                {selected_class.delivery_mode === "online"
+                                                    ? "Online (no room needed)"
+                                                    : (selected_class.room?.label ?? "Unassigned")}
+                                            </div>
                                         </div>
 
                                         {selected_class.classification === "college" ? (
@@ -2318,7 +2303,11 @@ export default function AdministratorClassesIndex({
                                                             {schedule.start_time} – {schedule.end_time}
                                                         </div>
                                                     </div>
-                                                    <div className="text-muted-foreground mt-2 text-sm">Room: {schedule.room?.label ?? "—"}</div>
+                                                    <div className="text-muted-foreground mt-2 text-sm">
+                                                        {selected_class.delivery_mode === "online"
+                                                            ? "Online (no room needed)"
+                                                            : `Face to face · Room: ${schedule.room?.label ?? "Unassigned"}`}
+                                                    </div>
                                                 </div>
                                             ))
                                         )}
@@ -2327,6 +2316,7 @@ export default function AdministratorClassesIndex({
                                             type="button"
                                             variant="outline"
                                             onClick={() => {
+                                                setEditActiveTab("schedule");
                                                 setIsEditOpen(true);
                                             }}
                                         >
@@ -2431,10 +2421,7 @@ export default function AdministratorClassesIndex({
                                                 </Table>
                                             </div>
 
-                                            <Link
-                                                href={route("administrators.classes.show", { class: selected_class.id })}
-                                                className={buttonVariants({ variant: "outline" })}
-                                            >
+                                            <Link href={showClass.url(selected_class.id)} className={buttonVariants({ variant: "outline" })}>
                                                 Open full enrollments page
                                             </Link>
                                         </TabsContent>
@@ -2458,10 +2445,7 @@ export default function AdministratorClassesIndex({
                                                 )}
                                             </div>
 
-                                            <Link
-                                                href={route("administrators.classes.show", { class: selected_class.id })}
-                                                className={buttonVariants({ variant: "outline" })}
-                                            >
+                                            <Link href={showClass.url(selected_class.id)} className={buttonVariants({ variant: "outline" })}>
                                                 Open full posts page
                                             </Link>
                                         </TabsContent>
@@ -2485,10 +2469,7 @@ export default function AdministratorClassesIndex({
                                 Edit class
                             </Button>
                             {selected_class ? (
-                                <Link
-                                    href={route("administrators.classes.show", { class: selected_class.id })}
-                                    className={buttonVariants({ variant: "outline" })}
-                                >
+                                <Link href={showClass.url(selected_class.id)} className={buttonVariants({ variant: "outline" })}>
                                     <BookOpen className="mr-2 h-4 w-4" />
                                     Open class page
                                 </Link>
@@ -2516,7 +2497,14 @@ export default function AdministratorClassesIndex({
             <ClassCompareDialog
                 open={isCompareOpen}
                 onOpenChange={setIsCompareOpen}
-                classes={classList.map((c) => ({ id: c.id, record_title: c.record_title, subject_code: c.subject_code, section: c.section }))}
+                initialClassIds={compareInitialClassIds}
+                classes={classList.map((c) => ({
+                    id: c.id,
+                    record_title: c.record_title,
+                    subject_code: c.subject_code,
+                    section: c.section,
+                    delivery_mode: c.delivery_mode,
+                }))}
             />
         </AdminLayout>
     );

@@ -1,2457 +1,528 @@
 import AdminLayout from "@/components/administrators/admin-layout";
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
+import { WeeklySchedule, type WeeklyScheduleEvent } from "@/components/administrators/classes/weekly-schedule";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-    ContextMenu,
-    ContextMenuContent,
-    ContextMenuItem,
-    ContextMenuLabel,
-    ContextMenuSeparator,
-    ContextMenuTrigger,
-} from "@/components/ui/context-menu";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import type { User } from "@/types/user";
-import type { DragEndEvent, DragMoveEvent, DragOverEvent, DragStartEvent } from "@dnd-kit/core";
-import { DndContext, DragOverlay, MouseSensor, TouchSensor, useDraggable, useDroppable, useSensor, useSensors } from "@dnd-kit/core";
-import { Head, router } from "@inertiajs/react";
+import { index as classesIndex, create as createClass, edit as editClass, show as showClass } from "@/routes/administrators/classes";
+import { index as plannerIndex, publish } from "@/routes/administrators/scheduling-analytics";
+import { store as storeSessions } from "@/routes/administrators/scheduling-analytics/classes/schedules";
+import { generate } from "@/routes/administrators/scheduling-analytics/offerings";
+import { destroy as destroySession, update as updateSession } from "@/routes/administrators/scheduling-analytics/schedules";
+import { search as searchStudents, schedule as studentSchedule } from "@/routes/administrators/scheduling-analytics/students";
+import { Head, Link, router } from "@inertiajs/react";
 import axios from "axios";
-import {
-    AlertTriangle,
-    BookOpen,
-    Calendar,
-    Clock,
-    Eye,
-    GraduationCap,
-    GripVertical,
-    LayoutGrid,
-    List,
-    Loader2,
-    MapPin,
-    Pencil,
-    Search,
-    Settings2,
-    Trash2,
-    User as UserIcon,
-    Users,
-} from "lucide-react";
-import * as React from "react";
+import { ArrowLeft, MoreHorizontal, Plus, Search } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { route } from "ziggy-js";
-import CreateClassDialog from "./components/create-class-dialog";
 import GenerateOfferingsDialog, { type GenerateOfferingsPayload } from "./components/generate-offerings-dialog";
 import ScheduleExportDialog from "./components/schedule-export-dialog";
-import SchedulingConflictsPanel from "./components/scheduling-conflicts-panel";
-import SchedulingFiltersBar, { type PlanningLens } from "./components/scheduling-filters-bar";
-import SchedulingHeader from "./components/scheduling-header";
-import SchedulingRoomAssignmentSidebar from "./components/scheduling-room-assignment-sidebar";
-import SchedulingStatsRow from "./components/scheduling-stats-row";
-import SchedulingUnscheduledQueue from "./components/scheduling-unscheduled-queue";
+import SchedulingFiltersBar, { emptyPlannerFilters, type PlannerFilters } from "./components/scheduling-filters-bar";
+import { scheduledHours } from "./components/scheduling-readiness";
+import SchedulingReviewDialog from "./components/scheduling-review-dialog";
+import SchedulingSessionDialog, { type SessionValues } from "./components/scheduling-session-dialog";
+import type {
+    ClassScheduleData,
+    ScheduleConflict,
+    ScheduleUpdateResponse,
+    SchedulingAnalyticsProps,
+    StudentSchedule,
+    StudentSearchResult,
+} from "./components/scheduling-types";
+import { matchesPlannerGroup } from "./components/scheduling-view";
 
-// ── Types ──────────────────────────────────────────────────────────
-
-type ScheduleEntry = {
-    id?: number;
-    day_of_week: string;
-    start_time: string;
-    end_time: string;
-    time_range: string;
-    room: string | null;
-    room_id?: number | null;
-    component_type?: string;
-    pattern_group_id?: string | null;
-    status?: string;
-};
-
-type DragData = {
-    block: Block;
-    scheduleId: number;
-    originalDay: string;
-    originalStartTime: string;
-    originalEndTime: string;
-};
-
-type ClassScheduleData = {
-    id: number;
-    subject_code: string;
-    subject_title: string;
-    section: string;
-    grade_level: string | null;
-    year_levels: string[];
-    course_year_levels: Record<string, string[]>;
-    classification?: string;
-    shs_strand_id?: number | null;
-    faculty_id?: string | null;
-    faculty_name: string | null;
-    room_id?: number | null;
-    room_name: string | null;
-    maximum_slots?: number;
-    courses: string;
-    course_ids: number[];
-    student_count: number;
-    lecture_hours?: number;
-    lab_hours?: number;
-    required_hours?: number;
-    scheduled_hours?: number;
-    is_unscheduled?: boolean;
-    is_complete?: boolean;
-    schedules: ScheduleEntry[];
-};
-
-type CourseOption = { id: number; code: string; title: string };
-type RoomOption = { id: number; name: string; class_code: string | null; capacity?: number; type?: string; building?: string | null };
-type FacultyOption = { id: string; name: string; department: string | null };
-type LogContext = Record<string, unknown>;
-
-type ScheduleConflict = {
-    day: string;
-    time: string;
-    schedule_1_id?: number;
-    schedule_2_id?: number;
-    class_1: { id?: number; subject_code: string; section: string; room: string | null; faculty: string | null };
-    class_2: { id?: number; subject_code: string; section: string; room: string | null; faculty: string | null };
-    conflict_type: "room" | "faculty" | "section";
-};
-
-type ScheduleUpdateResponse = {
-    schedule: {
-        id?: number;
-        day_of_week: string;
-        start_time: string;
-        end_time: string;
-        time_range: string;
-        room: string | null;
-        room_id: number | null;
-        component_type?: string;
-        pattern_group_id?: string | null;
-        status?: string;
-    };
-    conflicts: ScheduleConflict[];
-};
-
-type ScheduleConfigurationValues = {
-    day_of_week: string;
-    start_time: string;
-    end_time: string;
-    room_id: number | null;
-};
-
-type ScheduleConfigurationSelection = {
-    classItem: ClassScheduleData;
-    schedule: ScheduleEntry;
-};
-
-type ScheduleStats = {
-    total_classes: number;
-    total_students: number;
-    unscheduled_classes_count?: number;
-    incomplete_classes_count?: number;
-    draft_schedules_count?: number;
-    classes_by_year_level: Record<string, number>;
-    classes_by_course: Record<string, number>;
-    schedule_conflicts: ScheduleConflict[];
-};
-
-type StudentSearchResult = {
-    id: number;
-    student_id: number;
-    name: string;
-    course_id: number | null;
-    academic_year: number | null;
-};
-
-type StudentSchedule = {
-    student: { id: number; student_id: number; name: string; course: string | null; academic_year: number | null };
-    schedule: Array<{
-        id: number;
-        subject_code: string;
-        subject_title: string;
-        section: string;
-        faculty_name: string | null;
-        schedules: ScheduleEntry[];
-    }>;
-};
-
-interface SchedulingAnalyticsProps {
-    user: User;
-    schedule_data: ClassScheduleData[];
-    stats: ScheduleStats;
-    term_context?: {
-        school_year: string;
-        semester: string;
-        semester_label: string;
-        available_school_years: string[];
-        available_semesters: Array<{ value: string; label: string }>;
-    };
-    filters: {
-        available_courses: CourseOption[];
-        available_year_levels: string[];
-        available_sections: string[];
-        available_rooms: RoomOption[];
-        available_faculty: FacultyOption[];
-        current_filters: { course: string | null; year_level: string | null; section: string | null };
-    };
-    creation_options: {
-        rooms: RoomOption[];
-        faculty: FacultyOption[];
-        courses: Array<{ id: number; code: string; title: string; curriculum_year: string | null }>;
-        shs_tracks: Array<{ id: number; track_name: string }>;
-        shs_strands: Array<{ id: number; strand_name: string; track_id: number; track_name: string | null }>;
-        sections: string[];
-        semesters: Array<{ value: string; label: string }>;
-    };
-    defaults: { semester: string; school_year: string };
-}
-
-// ── Constants ──────────────────────────────────────────────────────
-
-const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
-const DAYS_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
-const HOUR_START = 7;
-const HOUR_END = 19;
-const CELL_H = 56; // px per hour
-
-const PALETTES = [
-    {
-        accent: "border-l-rose-500",
-        bg: "bg-rose-500/10 dark:bg-rose-400/15",
-        text: "text-rose-700 dark:text-rose-300",
-        badge: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300",
-        border: "border-rose-200 dark:border-rose-800",
-    },
-    {
-        accent: "border-l-sky-500",
-        bg: "bg-sky-500/10 dark:bg-sky-400/15",
-        text: "text-sky-700 dark:text-sky-300",
-        badge: "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300",
-        border: "border-sky-200 dark:border-sky-800",
-    },
-    {
-        accent: "border-l-amber-500",
-        bg: "bg-amber-500/10 dark:bg-amber-400/15",
-        text: "text-amber-700 dark:text-amber-300",
-        badge: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-        border: "border-amber-200 dark:border-amber-800",
-    },
-    {
-        accent: "border-l-emerald-500",
-        bg: "bg-emerald-500/10 dark:bg-emerald-400/15",
-        text: "text-emerald-700 dark:text-emerald-300",
-        badge: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-        border: "border-emerald-200 dark:border-emerald-800",
-    },
-    {
-        accent: "border-l-violet-500",
-        bg: "bg-violet-500/10 dark:bg-violet-400/15",
-        text: "text-violet-700 dark:text-violet-300",
-        badge: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300",
-        border: "border-violet-200 dark:border-violet-800",
-    },
-    {
-        accent: "border-l-orange-500",
-        bg: "bg-orange-500/10 dark:bg-orange-400/15",
-        text: "text-orange-700 dark:text-orange-300",
-        badge: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
-        border: "border-orange-200 dark:border-orange-800",
-    },
-    {
-        accent: "border-l-teal-500",
-        bg: "bg-teal-500/10 dark:bg-teal-400/15",
-        text: "text-teal-700 dark:text-teal-300",
-        badge: "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300",
-        border: "border-teal-200 dark:border-teal-800",
-    },
-    {
-        accent: "border-l-pink-500",
-        bg: "bg-pink-500/10 dark:bg-pink-400/15",
-        text: "text-pink-700 dark:text-pink-300",
-        badge: "bg-pink-100 text-pink-700 dark:bg-pink-900/40 dark:text-pink-300",
-        border: "border-pink-200 dark:border-pink-800",
-    },
-    {
-        accent: "border-l-cyan-500",
-        bg: "bg-cyan-500/10 dark:bg-cyan-400/15",
-        text: "text-cyan-700 dark:text-cyan-300",
-        badge: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300",
-        border: "border-cyan-200 dark:border-cyan-800",
-    },
-    {
-        accent: "border-l-indigo-500",
-        bg: "bg-indigo-500/10 dark:bg-indigo-400/15",
-        text: "text-indigo-700 dark:text-indigo-300",
-        badge: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300",
-        border: "border-indigo-200 dark:border-indigo-800",
-    },
-    {
-        accent: "border-l-lime-500",
-        bg: "bg-lime-500/10 dark:bg-lime-400/15",
-        text: "text-lime-700 dark:text-lime-300",
-        badge: "bg-lime-100 text-lime-700 dark:bg-lime-900/40 dark:text-lime-300",
-        border: "border-lime-200 dark:border-lime-800",
-    },
-    {
-        accent: "border-l-fuchsia-500",
-        bg: "bg-fuchsia-500/10 dark:bg-fuchsia-400/15",
-        text: "text-fuchsia-700 dark:text-fuchsia-300",
-        badge: "bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/40 dark:text-fuchsia-300",
-        border: "border-fuchsia-200 dark:border-fuchsia-800",
-    },
-];
-
-// ── Helpers ─────────────────────────────────────────────────────────
-
-function hashStr(s: string): number {
-    let h = 0;
-    for (let i = 0; i < s.length; i++) h = s.charCodeAt(i) + ((h << 5) - h);
-    return Math.abs(h);
-}
-
-const getPalette = (s: string) => PALETTES[hashStr(s) % PALETTES.length];
-
-/** Parse "09:00 AM" → total minutes from midnight */
-function parseMinutes(t: string): number {
-    if (!t) return 0;
-    const m = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
-    if (!m) return 0;
-    let h = parseInt(m[1]);
-    const min = parseInt(m[2]);
-    const ap = m[3]?.toUpperCase();
-    if (ap === "PM" && h !== 12) h += 12;
-    if (ap === "AM" && h === 12) h = 0;
-    return h * 60 + min;
-}
-
-function fmtHour(h: number): string {
-    if (h === 0) return "12 AM";
-    if (h === 12) return "12 PM";
-    return h > 12 ? `${h - 12} PM` : `${h} AM`;
-}
-
-type Block = {
-    cls: ClassScheduleData;
-    sched: ScheduleEntry;
-    dayIdx: number;
-    topPx: number;
-    heightPx: number;
-    col: number;
-    totalCols: number;
-};
-
-function buildBlocks(data: ClassScheduleData[]): Block[] {
-    // Build raw blocks
-    const raw: Omit<Block, "col" | "totalCols">[] = [];
-    for (const cls of data) {
-        for (const sched of cls.schedules) {
-            const dayIdx = DAYS.indexOf(sched.day_of_week);
-            if (dayIdx < 0) continue;
-            const startMin = parseMinutes(sched.start_time);
-            const endMin = parseMinutes(sched.end_time);
-            const topPx = (startMin / 60 - HOUR_START) * CELL_H;
-            const heightPx = Math.max(((endMin - startMin) / 60) * CELL_H, 20);
-            raw.push({ cls, sched, dayIdx, topPx, heightPx });
-        }
-    }
-
-    // Layout overlapping blocks per day
-    const result: Block[] = [];
-    for (let d = 0; d < 6; d++) {
-        const dayBlocks = raw.filter((b) => b.dayIdx === d).sort((a, b) => a.topPx - b.topPx);
-        // Greedy column assignment
-        const columns: { end: number }[] = [];
-        const assigned = dayBlocks.map((b) => {
-            const bEnd = b.topPx + b.heightPx;
-            let col = columns.findIndex((c) => c.end <= b.topPx + 1);
-            if (col === -1) {
-                col = columns.length;
-                columns.push({ end: bEnd });
-            } else {
-                columns[col].end = bEnd;
-            }
-            return { ...b, col, totalCols: 0 };
-        });
-        const numCols = columns.length;
-        assigned.forEach((b) => {
-            b.totalCols = numCols;
-            result.push(b as Block);
-        });
-    }
-    return result;
-}
-
-/** Convert total minutes from midnight to "HH:MM" (24h) */
-function minutesToHHMM(totalMin: number): string {
-    const h = Math.floor(totalMin / 60);
-    const m = totalMin % 60;
-    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-}
-
-/** Convert total minutes from midnight to "h:mm AM/PM" */
-function minutesToDisplay(totalMin: number): string {
-    let h = Math.floor(totalMin / 60);
-    const m = totalMin % 60;
-    const ap = h >= 12 ? "PM" : "AM";
-    if (h === 0) h = 12;
-    else if (h > 12) h -= 12;
-    return `${h}:${String(m).padStart(2, "0")} ${ap}`;
-}
-
-function toApiTime(value: string): string {
-    if (/^\d{2}:\d{2}$/.test(value)) {
-        return value;
-    }
-
-    const minutes = parseMinutes(value);
-    return minutesToHHMM(minutes);
-}
-
-function logError(scope: string, error: unknown, context: LogContext = {}): void {
+function requestError(error: unknown): Error {
     if (axios.isAxiosError(error)) {
-        console.error(`[SchedulingAnalytics:${scope}] API error`, {
-            message: error.message,
-            method: error.config?.method,
-            url: error.config?.url,
-            status: error.response?.status,
-            statusText: error.response?.statusText,
-            response: error.response?.data,
-            context,
-        });
-        return;
+        const errors = error.response?.data?.errors;
+        const first =
+            errors &&
+            Object.values(errors)
+                .flat()
+                .find((message) => typeof message === "string");
+        return new Error(String(first || error.response?.data?.message || "Unable to save changes. Please try again."));
     }
+    return error instanceof Error ? error : new Error("Unable to save changes. Please try again.");
+}
 
-    if (error instanceof Error) {
-        console.error(`[SchedulingAnalytics:${scope}] Error`, {
-            message: error.message,
-            stack: error.stack,
-            context,
-        });
-        return;
-    }
-
-    console.error(`[SchedulingAnalytics:${scope}] Unknown error`, {
-        error,
-        context,
+export default function SchedulingAnalytics({
+    user,
+    schedule_data,
+    stats,
+    term_context,
+    filters,
+    creation_options,
+    defaults,
+}: SchedulingAnalyticsProps) {
+    const [classes, setClasses] = useState(schedule_data);
+    const [conflicts, setConflicts] = useState(stats.schedule_conflicts);
+    const [selection, setSelection] = useState<{ classId: number; sessionId?: number } | null>(null);
+    const [viewFilters, setViewFilters] = useState<PlannerFilters>({
+        ...emptyPlannerFilters,
+        course: filters.current_filters.course || "all",
+        year: filters.current_filters.year_level || "all",
+        section: filters.current_filters.section || "all",
     });
-}
+    const [search, setSearch] = useState("");
+    const [needsTimesOnly, setNeedsTimesOnly] = useState(false);
+    const [reviewOpen, setReviewOpen] = useState(false);
+    const [conflictsOpen, setConflictsOpen] = useState(false);
+    const [generateOpen, setGenerateOpen] = useState(false);
+    const [exportOpen, setExportOpen] = useState(false);
+    const [publishing, setPublishing] = useState(false);
+    const [studentQuery, setStudentQuery] = useState("");
+    const [students, setStudents] = useState<StudentSearchResult[]>([]);
+    const [activeStudent, setActiveStudent] = useState<StudentSchedule | null>(null);
+    const [loadingStudent, setLoadingStudent] = useState(false);
+    const [searchingStudent, setSearchingStudent] = useState(false);
+    const studentRequest = useRef(0);
+    const schoolYear = term_context?.school_year ?? defaults.school_year;
+    const semester = term_context?.semester ?? defaults.semester;
 
-const SNAP_MINUTES = 15;
-
-// ── DraggableBlock ─────────────────────────────────────────────────
-
-function DraggableBlock({
-    id,
-    data,
-    disabled,
-    className,
-    style,
-    children,
-}: {
-    id: string;
-    data: DragData;
-    disabled?: boolean;
-    className?: string;
-    style?: React.CSSProperties;
-    children: React.ReactNode;
-}) {
-    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id, data, disabled });
-    return (
-        <div ref={setNodeRef} {...listeners} {...attributes} className={`${className || ""} ${isDragging ? "opacity-30" : ""}`} style={style}>
-            {children}
-        </div>
-    );
-}
-
-// ── DroppableDay ───────────────────────────────────────────────────
-
-function DroppableDay({ dayIdx, children, isOver }: { dayIdx: number; children: React.ReactNode; isOver?: boolean }) {
-    const { setNodeRef, isOver: dropIsOver } = useDroppable({ id: `day-${dayIdx}`, data: { dayIdx } });
-    const active = isOver ?? dropIsOver;
-    return (
-        <div ref={setNodeRef} className={`relative border-r transition-colors duration-150 last:border-r-0 ${active ? "bg-primary/5" : ""}`}>
-            {children}
-        </div>
-    );
-}
-
-// ── ClassDetailsDialog ──────────────────────────────────────────────
-
-function ClassDetailsDialog({
-    classItem,
-    activeCourseId,
-    open,
-    onOpenChange,
-}: {
-    classItem: ClassScheduleData | null;
-    activeCourseId: string;
-    open: boolean;
-    onOpenChange: (o: boolean) => void;
-}) {
-    if (!classItem) return null;
-    const pal = getPalette(classItem.subject_code);
-    const displayedYearLevels =
-        activeCourseId === "all" ? classItem.year_levels : (classItem.course_year_levels?.[activeCourseId] ?? classItem.year_levels);
-    return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="bg-background text-foreground border-border sm:max-w-[480px]">
-                <DialogHeader>
-                    <div className="mb-1 flex items-center gap-3">
-                        <div className={`rounded-xl p-2.5 ${pal.badge}`}>
-                            <BookOpen className="h-5 w-5" />
-                        </div>
-                        <div>
-                            <DialogTitle>{classItem.subject_code}</DialogTitle>
-                            <DialogDescription>{classItem.subject_title}</DialogDescription>
-                        </div>
-                    </div>
-                </DialogHeader>
-                <div className="grid gap-4 py-3">
-                    <div className="grid grid-cols-2 gap-4">
-                        <InfoField icon={<Users className="h-4 w-4" />} label="Section" value={classItem.section} />
-                        <InfoField icon={<GraduationCap className="h-4 w-4" />} label="Course" value={classItem.courses || "N/A"} />
-                        <InfoField label="Year Level" value={displayedYearLevels.join(", ") || classItem.grade_level || "N/A"} />
-                        <InfoField label="Students" value={`${classItem.student_count} Enrolled`} />
-                        <div className="col-span-2">
-                            <InfoField icon={<UserIcon className="h-4 w-4" />} label="Faculty" value={classItem.faculty_name || "TBA"} />
-                        </div>
-                    </div>
-                    <Separator />
-                    <div className="space-y-2">
-                        <Label className="text-sm font-semibold">Schedule</Label>
-                        {classItem.schedules.length > 0 ? (
-                            classItem.schedules.map((s, i) => (
-                                <div key={i} className={`flex items-center justify-between rounded-lg border p-2.5 ${pal.bg} ${pal.border}`}>
-                                    <div className="flex items-center gap-2">
-                                        <Calendar className={`h-3.5 w-3.5 ${pal.text}`} />
-                                        <span className="text-sm font-medium">{s.day_of_week}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-muted-foreground flex items-center gap-1 text-xs">
-                                            <Clock className="h-3 w-3" />
-                                            {s.time_range}
-                                        </span>
-                                        {s.room && (
-                                            <Badge variant="outline" className="text-xs">
-                                                <MapPin className="mr-0.5 h-3 w-3" />
-                                                {s.room}
-                                            </Badge>
-                                        )}
-                                    </div>
-                                </div>
-                            ))
-                        ) : (
-                            <p className="text-muted-foreground text-sm italic">No schedule assigned.</p>
-                        )}
-                    </div>
-                </div>
-            </DialogContent>
-        </Dialog>
-    );
-}
-
-function InfoField({ icon, label, value }: { icon?: React.ReactNode; label: string; value: string }) {
-    return (
-        <div className="space-y-0.5">
-            <Label className="text-muted-foreground text-[10px] tracking-wider uppercase">{label}</Label>
-            <div className="text-foreground flex items-center gap-1.5 text-sm font-medium">
-                {icon && <span className="text-muted-foreground">{icon}</span>}
-                {value}
-            </div>
-        </div>
-    );
-}
-// ── WeeklyTimetable ─────────────────────────────────────────────────
-
-function WeeklyTimetable({
-    data,
-    onBlockClick,
-    conflicts = [],
-    editMode = false,
-    onResizeStart,
-    dropPreview,
-    selectedScheduleId,
-    onScheduleSelect,
-    onScheduleDelete,
-    onScheduleConfigure,
-    onClassView,
-    onClassEdit,
-}: {
-    data: ClassScheduleData[];
-    onBlockClick: (c: ClassScheduleData) => void;
-    conflicts?: ScheduleConflict[];
-    editMode?: boolean;
-    onResizeStart?: (scheduleId: number, edge: "top" | "bottom", initialY: number, startMin: number, endMin: number) => void;
-    dropPreview?: {
-        day: string;
-        startMin: number;
-        duration: number;
-        subject: string;
-        pal: { bg: string; border: string; text: string; accent: string; badge: string };
-    } | null;
-    selectedScheduleId?: number | null;
-    onScheduleSelect?: (scheduleId: number | null) => void;
-    onScheduleDelete?: (scheduleId: number) => void;
-    onScheduleConfigure?: (classItem: ClassScheduleData, schedule: ScheduleEntry) => void;
-    onClassView?: (classId: number) => void;
-    onClassEdit?: (classId: number) => void;
-}) {
-    const hours = React.useMemo(() => Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i), []);
-    const blocks = React.useMemo(() => buildBlocks(data), [data]);
-    const totalH = (HOUR_END - HOUR_START + 1) * CELL_H;
-    const [openContextMenuId, setOpenContextMenuId] = React.useState<string | null>(null);
-
-    const getConflicts = (cls: ClassScheduleData) => {
-        return conflicts.filter(
-            (c) =>
-                (c.class_1.id !== undefined ? c.class_1.id === cls.id : c.class_1.subject_code === cls.subject_code && c.class_1.section === cls.section) ||
-                (c.class_2.id !== undefined ? c.class_2.id === cls.id : c.class_2.subject_code === cls.subject_code && c.class_2.section === cls.section),
-        );
-    };
-    const blocksByDay = React.useMemo(() => {
-        const m = new Map<number, Block[]>();
-        for (let d = 0; d < 6; d++) m.set(d, []);
-        blocks.forEach((b) => m.get(b.dayIdx)?.push(b));
-        return m;
-    }, [blocks]);
-
-    // Count per day
-    const dayCounts = React.useMemo(() => {
-        const counts: number[] = [0, 0, 0, 0, 0, 0];
-        const seen = new Set<string>();
-        blocks.forEach((b) => {
-            const key = `${b.dayIdx}-${b.cls.id}`;
-            if (!seen.has(key)) {
-                seen.add(key);
-                counts[b.dayIdx]++;
+    useEffect(() => setClasses(schedule_data), [schedule_data]);
+    useEffect(() => setConflicts(stats.schedule_conflicts), [stats.schedule_conflicts]);
+    useEffect(() => {
+        const controller = new AbortController();
+        const query = studentQuery.trim();
+        setStudents([]);
+        setSearchingStudent(false);
+        if (query.length < 2) return;
+        const timer = setTimeout(async () => {
+            setSearchingStudent(true);
+            try {
+                const response = await axios.get(searchStudents.url({ query: { query } }), { signal: controller.signal });
+                if (!controller.signal.aborted) setStudents(response.data.students ?? []);
+            } catch (error) {
+                if (!controller.signal.aborted) toast.error(requestError(error).message);
+            } finally {
+                if (!controller.signal.aborted) setSearchingStudent(false);
             }
-        });
-        return counts;
-    }, [blocks]);
+        }, 300);
+        return () => {
+            controller.abort();
+            clearTimeout(timer);
+        };
+    }, [studentQuery]);
 
-    if (data.length === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="bg-muted mb-4 rounded-full p-4">
-                    <Calendar className="text-muted-foreground h-10 w-10" />
-                </div>
-                <h3 className="mb-1 text-lg font-semibold">No classes to display</h3>
-                <p className="text-muted-foreground max-w-sm text-sm">Adjust your filters or try a different combination to see scheduled classes.</p>
-            </div>
-        );
-    }
-
-    const renderBlock = (b: Block, i: number) => {
-        const classConflicts = getConflicts(b.cls);
-        const hasConflict = classConflicts.length > 0;
-        const schedId = b.sched.id;
-
-        const pal = getPalette(b.cls.subject_code);
-        const w = b.totalCols > 1 ? `calc(${100 / b.totalCols}% - 2px)` : "calc(100% - 4px)";
-        const l = b.totalCols > 1 ? `calc(${(b.col / b.totalCols) * 100}% + 2px)` : "2px";
-        const blockStyle = { top: b.topPx, height: Math.max(b.heightPx - 2, 18), width: w, left: l };
-
-        const resizeHandles =
-            editMode && onResizeStart && schedId ? (
-                <>
-                    <div
-                        className="absolute top-0 right-0 left-0 z-50 flex h-3.5 cursor-ns-resize items-center justify-center rounded-t-md opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/10 dark:hover:bg-white/10"
-                        onPointerDown={(e) => {
-                            e.stopPropagation();
-                            onResizeStart(schedId, "top", e.clientY, parseMinutes(b.sched.start_time), parseMinutes(b.sched.end_time));
-                        }}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onTouchStart={(e) => e.stopPropagation()}
-                        aria-label={`Resize start time for ${b.cls.subject_title}`}
-                    >
-                        <div className="bg-foreground/35 h-1 w-8 rounded-full" />
-                    </div>
-                    <div
-                        className="absolute right-0 bottom-0 left-0 z-50 flex h-3.5 cursor-ns-resize items-center justify-center rounded-b-md opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/10 dark:hover:bg-white/10"
-                        onPointerDown={(e) => {
-                            e.stopPropagation();
-                            onResizeStart(schedId, "bottom", e.clientY, parseMinutes(b.sched.start_time), parseMinutes(b.sched.end_time));
-                        }}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onTouchStart={(e) => e.stopPropagation()}
-                        aria-label={`Resize end time for ${b.cls.subject_title}`}
-                    >
-                        <div className="bg-foreground/35 h-1 w-8 rounded-full" />
-                    </div>
-                </>
-            ) : null;
-
-        const blockInner = (
-            <>
-                {editMode && <GripVertical className="text-muted-foreground absolute top-0.5 right-0.5 h-3 w-3 opacity-60" />}
-                {hasConflict && !editMode && <AlertTriangle className="absolute top-0.5 right-0.5 h-3 w-3 animate-pulse text-red-500" />}
-
-                <div className={`truncate text-[11px] leading-tight font-bold ${hasConflict ? "text-red-700 dark:text-red-300" : pal.text}`}>
-                    {b.cls.subject_title}
-                </div>
-                {b.heightPx > 28 && <div className="text-muted-foreground truncate text-[10px] leading-tight">{b.cls.section}</div>}
-                {b.heightPx > 48 && (
-                    <div className="text-muted-foreground mt-0.5 flex items-center gap-0.5 truncate text-[9px]">
-                        <MapPin className="h-2.5 w-2.5 shrink-0" />
-                        {b.sched.room || "—"}
-                    </div>
-                )}
-                {b.heightPx > 64 && b.cls.faculty_name && (
-                    <div className="text-muted-foreground mt-0.5 flex items-center gap-0.5 truncate text-[9px]">
-                        <UserIcon className="h-2.5 w-2.5 shrink-0" />
-                        {b.cls.faculty_name}
-                    </div>
-                )}
-            </>
-        );
-
-        const isSelected = selectedScheduleId === schedId;
-        const baseClassName = `group absolute overflow-hidden rounded-md border-l-[3px] ${hasConflict ? "border-l-red-500 ring-2 ring-red-400/50 dark:ring-red-500/40" : pal.accent} ${hasConflict ? "bg-red-500/12 dark:bg-red-400/15" : pal.bg} ${isSelected ? "ring-2 ring-primary z-30" : ""} p-1 text-left transition-[box-shadow,filter,opacity,transform] hover:z-20 hover:shadow-lg hover:brightness-95`;
-
-        if (editMode && schedId) {
-            const contextMenuId = `sched-${schedId}`;
-            const dragData: DragData = {
-                block: b,
-                scheduleId: schedId,
-                originalDay: b.sched.day_of_week,
-                originalStartTime: b.sched.start_time,
-                originalEndTime: b.sched.end_time,
-            };
-            return (
-                <ContextMenu key={`${b.cls.id}-${schedId}-${i}`} onOpenChange={(open) => setOpenContextMenuId(open ? contextMenuId : null)}>
-                    <ContextMenuTrigger asChild>
-                        <DraggableBlock
-                            id={`sched-${schedId}`}
-                            data={dragData}
-                            disabled={openContextMenuId === contextMenuId}
-                            className={`${baseClassName} cursor-grab active:cursor-grabbing`}
-                            style={blockStyle}
-                        >
-                            <button
-                                type="button"
-                                className="absolute inset-0 z-20"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onScheduleSelect?.(isSelected ? null : schedId);
-                                }}
-                                aria-label={`Select ${b.cls.subject_title} schedule`}
-                            />
-                            {resizeHandles}
-                            <div className="pointer-events-none relative z-10">{blockInner}</div>
-                        </DraggableBlock>
-                    </ContextMenuTrigger>
-                    <ContextMenuContent className="w-52">
-                        <ContextMenuLabel className="truncate">{b.cls.subject_code}</ContextMenuLabel>
-                        <ContextMenuItem onSelect={() => onScheduleConfigure?.(b.cls, b.sched)}>
-                            <Settings2 className="h-3.5 w-3.5" />
-                            Configure schedule
-                        </ContextMenuItem>
-                        <ContextMenuItem onSelect={() => onScheduleSelect?.(isSelected ? null : schedId)}>
-                            {isSelected ? "Clear selection" : "Select for room assignment"}
-                        </ContextMenuItem>
-                        <ContextMenuItem onSelect={() => onBlockClick(b.cls)}>
-                            <BookOpen className="h-3.5 w-3.5" />
-                            Quick details
-                        </ContextMenuItem>
-                        <ContextMenuSeparator />
-                        <ContextMenuItem onSelect={() => onClassView?.(b.cls.id)}>
-                            <Eye className="h-3.5 w-3.5" />
-                            View class
-                        </ContextMenuItem>
-                        <ContextMenuItem onSelect={() => onClassEdit?.(b.cls.id)}>
-                            <Pencil className="h-3.5 w-3.5" />
-                            Edit class
-                        </ContextMenuItem>
-                        <ContextMenuSeparator />
-                        <ContextMenuItem
-                            variant="destructive"
-                            disabled={!onScheduleDelete}
-                            onSelect={() => {
-                                if (schedId && onScheduleDelete) {
-                                    onScheduleDelete(schedId);
-                                }
-                            }}
-                        >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            Delete block
-                        </ContextMenuItem>
-                    </ContextMenuContent>
-                </ContextMenu>
-            );
+    const selectStudent = async (student: StudentSearchResult) => {
+        const request = ++studentRequest.current;
+        setStudentQuery("");
+        setStudents([]);
+        setLoadingStudent(true);
+        try {
+            const response = await axios.get<StudentSchedule>(studentSchedule.url(student.id));
+            if (request === studentRequest.current) setActiveStudent(response.data);
+        } catch (error) {
+            if (request === studentRequest.current) toast.error(requestError(error).message);
+        } finally {
+            if (request === studentRequest.current) setLoadingStudent(false);
         }
-
-        const scheduleButton = (
-            <button onClick={() => onBlockClick(b.cls)} className={`${baseClassName} cursor-pointer active:scale-[0.98]`} style={blockStyle}>
-                {blockInner}
-            </button>
-        );
-
-        return (
-            <ContextMenu key={`${b.cls.id}-${i}`}>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <ContextMenuTrigger asChild>{scheduleButton}</ContextMenuTrigger>
-                    </TooltipTrigger>
-                    <TooltipContent
-                        side="right"
-                        className="bg-popover text-popover-foreground border-border max-w-[260px] space-y-2 border p-3 shadow-md"
-                    >
-                        <div>
-                            <div className="font-bold">{b.cls.subject_title}</div>
-                            <div className="text-muted-foreground text-xs">{b.cls.subject_title}</div>
-                        </div>
-                        <div className="grid gap-0.5">
-                            <div className="text-muted-foreground text-xs">
-                                Section: <span className="text-foreground font-medium">{b.cls.section}</span>
-                            </div>
-                            <div className="text-muted-foreground text-xs">
-                                Time: <span className="text-foreground font-medium">{b.sched.time_range}</span>
-                            </div>
-                            {b.sched.room && (
-                                <div className="text-muted-foreground text-xs">
-                                    Room: <span className="text-foreground font-medium">{b.sched.room}</span>
-                                </div>
-                            )}
-                            <div className="text-muted-foreground text-xs">
-                                Faculty: <span className="text-foreground font-medium">{b.cls.faculty_name || "TBA"}</span>
-                            </div>
-                        </div>
-                        {hasConflict && (
-                            <div className="mt-2 rounded border border-red-200 bg-red-50 p-2 dark:border-red-900/50 dark:bg-red-950/30">
-                                <div className="mb-1 flex items-center gap-1 text-xs font-semibold text-red-600 dark:text-red-400">
-                                    <AlertTriangle className="h-3 w-3" /> Conflicts
-                                </div>
-                                <ul className="grid gap-1">
-                                    {classConflicts.map((c, idx) => {
-                                        const otherClass =
-                                            c.class_1.subject_code === b.cls.subject_code && c.class_1.section === b.cls.section
-                                                ? c.class_2
-                                                : c.class_1;
-                                        return (
-                                            <li key={idx} className="text-muted-foreground flex gap-1.5 text-xs">
-                                                <span className="mt-0.5 text-red-500">•</span>
-                                                <span>
-                                                    <span className="font-medium text-red-600 dark:text-red-400">
-                                                        {otherClass.subject_code} ({otherClass.section})
-                                                    </span>{" "}
-                                                    — Same{" "}
-                                                    {c.conflict_type === "room"
-                                                        ? "Room"
-                                                        : c.conflict_type === "faculty"
-                                                          ? "Faculty"
-                                                          : "Section Cohort"}
-                                                </span>
-                                            </li>
-                                        );
-                                    })}
-                                </ul>
-                            </div>
-                        )}
-                    </TooltipContent>
-                </Tooltip>
-                <ContextMenuContent className="w-52">
-                    <ContextMenuLabel className="truncate">{b.cls.subject_code}</ContextMenuLabel>
-                    <ContextMenuItem onSelect={() => onBlockClick(b.cls)}>
-                        <BookOpen className="h-3.5 w-3.5" />
-                        Quick details
-                    </ContextMenuItem>
-                    <ContextMenuSeparator />
-                    <ContextMenuItem onSelect={() => onClassView?.(b.cls.id)}>
-                        <Eye className="h-3.5 w-3.5" />
-                        View class
-                    </ContextMenuItem>
-                    <ContextMenuItem onSelect={() => onClassEdit?.(b.cls.id)}>
-                        <Pencil className="h-3.5 w-3.5" />
-                        Edit class
-                    </ContextMenuItem>
-                </ContextMenuContent>
-            </ContextMenu>
-        );
     };
-
-    return (
-        <TooltipProvider delayDuration={200}>
-            <ScrollArea className="h-[680px] w-full rounded-xl border">
-                <div className="min-w-[860px]">
-                    {/* Day headers */}
-                    <div className="bg-muted/50 sticky top-0 z-20 grid grid-cols-[60px_repeat(6,1fr)] border-b backdrop-blur">
-                        <div className="flex items-center justify-center border-r p-2">
-                            <Clock className="text-muted-foreground h-3.5 w-3.5" />
-                        </div>
-                        {DAYS.map((day, i) => (
-                            <div key={day} className="border-r p-2 text-center last:border-r-0">
-                                <div className="text-xs font-semibold">{DAYS_SHORT[i]}</div>
-                                <div className="text-muted-foreground text-[10px]">
-                                    {dayCounts[i]} class{dayCounts[i] !== 1 ? "es" : ""}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-
-                    {/* Grid body */}
-                    <div className="grid grid-cols-[60px_repeat(6,1fr)]">
-                        {/* Time gutter */}
-                        <div className="border-r">
-                            {hours.map((h) => (
-                                <div
-                                    key={h}
-                                    className="text-muted-foreground flex items-start justify-end border-b border-dashed pt-1 pr-2 font-mono text-[10px]"
-                                    style={{ height: CELL_H }}
-                                >
-                                    {fmtHour(h)}
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* Day columns */}
-                        {DAYS.map((dayName, dayIdx) => {
-                            const dayContent = (
-                                <>
-                                    {/* Hour gridlines */}
-                                    {hours.map((h) => (
-                                        <div
-                                            key={h}
-                                            className="border-border/40 absolute w-full border-b border-dashed"
-                                            style={{ top: (h - HOUR_START) * CELL_H }}
-                                        />
-                                    ))}
-                                    {/* Schedule blocks */}
-                                    {(blocksByDay.get(dayIdx) || []).map((b, i) => renderBlock(b, i))}
-
-                                    {/* The Ghost Drop Placeholder */}
-                                    {dropPreview && dropPreview.day === dayName && (
-                                        <div
-                                            className={`absolute right-[2px] left-[2px] rounded-md border-[2.5px] border-dashed ${dropPreview.pal.accent.replace("border-l-[3px]", "border-current")} bg-background/60 pointer-events-none z-10 flex items-start p-1.5 opacity-80 backdrop-blur-[1px]`}
-                                            style={{
-                                                top: (dropPreview.startMin / 60 - HOUR_START) * CELL_H,
-                                                height: (dropPreview.duration / 60) * CELL_H,
-                                            }}
-                                        >
-                                            <span className={`text-[10px] font-bold tracking-tight uppercase opacity-70 ${dropPreview.pal.text}`}>
-                                                {dropPreview.subject} (Drop Here)
-                                            </span>
-                                        </div>
-                                    )}
-                                </>
-                            );
-
-                            if (editMode) {
-                                return (
-                                    <DroppableDay key={dayIdx} dayIdx={dayIdx}>
-                                        <div style={{ height: totalH }}>{dayContent}</div>
-                                    </DroppableDay>
-                                );
-                            }
-                            return (
-                                <div key={dayIdx} className="relative border-r last:border-r-0" style={{ height: totalH }}>
-                                    {dayContent}
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            </ScrollArea>
-        </TooltipProvider>
+    const clearStudent = () => {
+        studentRequest.current++;
+        setActiveStudent(null);
+        setLoadingStudent(false);
+    };
+    const matchesProgramAndYear = (item: ClassScheduleData) => matchesPlannerGroup(item, viewFilters.course, viewFilters.year);
+    const sections = [...new Set(classes.filter(matchesProgramAndYear).map((item) => item.section))].sort();
+    const visibleClasses = classes.filter(
+        (item) =>
+            matchesProgramAndYear(item) &&
+            (viewFilters.section === "all" || item.section === viewFilters.section) &&
+            (viewFilters.room === "all" || item.schedules.some((session) => String(session.room_id) === viewFilters.room)) &&
+            (viewFilters.faculty === "all" || item.faculty_id === viewFilters.faculty) &&
+            (!activeStudent || activeStudent.schedule.some((entry) => entry.id === item.id)),
     );
-}
-
-// ── ScheduleListView ────────────────────────────────────────────────
-
-function ScheduleListView({ data, onClassClick }: { data: ClassScheduleData[]; onClassClick: (c: ClassScheduleData) => void }) {
-    if (data.length === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-                <Search className="text-muted-foreground mb-3 h-8 w-8 opacity-30" />
-                <p className="text-muted-foreground">No classes match your current filters.</p>
-            </div>
-        );
-    }
-    return (
-        <div className="overflow-hidden rounded-xl border">
-            <Table>
-                <TableHeader className="bg-muted/50">
-                    <TableRow>
-                        <TableHead>Subject</TableHead>
-                        <TableHead>Section</TableHead>
-                        <TableHead className="hidden md:table-cell">Faculty</TableHead>
-                        <TableHead className="hidden md:table-cell">Room</TableHead>
-                        <TableHead className="hidden lg:table-cell">Schedule</TableHead>
-                        <TableHead className="text-right">Students</TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    {data.map((c) => {
-                        const pal = getPalette(c.subject_code);
-                        return (
-                            <TableRow key={c.id} className="hover:bg-muted/30 cursor-pointer transition-colors" onClick={() => onClassClick(c)}>
-                                <TableCell>
-                                    <div className="flex items-center gap-2.5">
-                                        <div className={`h-9 w-1 shrink-0 rounded-full ${pal.accent.replace("border-l-", "bg-")}`} />
-                                        <div>
-                                            <div className="font-medium">{c.subject_code}</div>
-                                            <div className="text-muted-foreground max-w-[180px] truncate text-xs">{c.subject_title}</div>
-                                        </div>
-                                    </div>
-                                </TableCell>
-                                <TableCell>
-                                    <Badge variant="secondary" className={`${pal.badge} text-xs`}>
-                                        {c.section}
-                                    </Badge>
-                                </TableCell>
-                                <TableCell className="text-muted-foreground hidden text-sm md:table-cell">{c.faculty_name || "TBA"}</TableCell>
-                                <TableCell className="text-muted-foreground hidden text-sm md:table-cell">{c.schedules[0]?.room || "—"}</TableCell>
-                                <TableCell className="hidden lg:table-cell">
-                                    <div className="flex flex-col gap-0.5">
-                                        {c.schedules.slice(0, 2).map((s, i) => (
-                                            <span key={i} className="text-muted-foreground text-xs">
-                                                {s.day_of_week.slice(0, 3)} {s.time_range}
-                                            </span>
-                                        ))}
-                                        {c.schedules.length > 2 && (
-                                            <span className="text-muted-foreground text-[10px]">+{c.schedules.length - 2} more</span>
-                                        )}
-                                    </div>
-                                </TableCell>
-                                <TableCell className="text-right font-medium">{c.student_count}</TableCell>
-                            </TableRow>
-                        );
-                    })}
-                </TableBody>
-            </Table>
-        </div>
+    const needsTimes = (item: ClassScheduleData) => scheduledHours(item.schedules) < (item.required_hours ?? 3) || item.schedules.length === 0;
+    const classList = visibleClasses.filter(
+        (item) =>
+            (!needsTimesOnly || needsTimes(item)) &&
+            `${item.subject_code} ${item.subject_title} ${item.section} ${item.faculty_name ?? ""}`
+                .toLowerCase()
+                .includes(search.trim().toLowerCase()),
     );
-}
-// ── Main Component ──────────────────────────────────────────────────
-
-function ScheduleConfigurationDialog({
-    selection,
-    rooms,
-    open,
-    isSaving,
-    onOpenChange,
-    onSave,
-}: {
-    selection: ScheduleConfigurationSelection | null;
-    rooms: RoomOption[];
-    open: boolean;
-    isSaving: boolean;
-    onOpenChange: (open: boolean) => void;
-    onSave: (values: ScheduleConfigurationValues) => void;
-}) {
-    const [values, setValues] = React.useState<ScheduleConfigurationValues>({
-        day_of_week: "Monday",
-        start_time: "08:00",
-        end_time: "09:00",
-        room_id: null,
-    });
-
-    React.useEffect(() => {
-        if (!selection || !open) {
-            return;
-        }
-
-        setValues({
-            day_of_week: selection.schedule.day_of_week,
-            start_time: toApiTime(selection.schedule.start_time),
-            end_time: toApiTime(selection.schedule.end_time),
-            room_id: selection.schedule.room_id ?? null,
-        });
-    }, [open, selection]);
-
-    if (!selection) {
-        return null;
-    }
-
-    const startMinutes = parseMinutes(values.start_time);
-    const endMinutes = parseMinutes(values.end_time);
-    const hasInvalidTimeRange = endMinutes <= startMinutes;
-
-    return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[420px]">
-                <DialogHeader>
-                    <DialogTitle>Configure schedule</DialogTitle>
-                    <DialogDescription>
-                        {selection.classItem.subject_code} ({selection.classItem.section})
-                    </DialogDescription>
-                </DialogHeader>
-
-                <div className="grid gap-4 py-2">
-                    <div className="grid gap-2">
-                        <Label htmlFor="schedule-day">Day</Label>
-                        <Select value={values.day_of_week} onValueChange={(day) => setValues((current) => ({ ...current, day_of_week: day }))}>
-                            <SelectTrigger id="schedule-day" className="w-full">
-                                <SelectValue placeholder="Select day" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {DAYS.map((day) => (
-                                    <SelectItem key={day} value={day}>
-                                        {day}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                        <div className="grid gap-2">
-                            <Label htmlFor="schedule-start-time">Start time</Label>
-                            <Input
-                                id="schedule-start-time"
-                                type="time"
-                                min={minutesToHHMM(HOUR_START * 60)}
-                                max={minutesToHHMM(HOUR_END * 60 - SNAP_MINUTES)}
-                                step={SNAP_MINUTES * 60}
-                                value={values.start_time}
-                                onChange={(event) => setValues((current) => ({ ...current, start_time: event.target.value }))}
-                            />
-                        </div>
-                        <div className="grid gap-2">
-                            <Label htmlFor="schedule-end-time">End time</Label>
-                            <Input
-                                id="schedule-end-time"
-                                type="time"
-                                min={minutesToHHMM(HOUR_START * 60 + SNAP_MINUTES)}
-                                max={minutesToHHMM(HOUR_END * 60)}
-                                step={SNAP_MINUTES * 60}
-                                value={values.end_time}
-                                onChange={(event) => setValues((current) => ({ ...current, end_time: event.target.value }))}
-                                aria-invalid={hasInvalidTimeRange}
-                            />
-                        </div>
-                    </div>
-
-                    {hasInvalidTimeRange && <p className="text-destructive text-sm">End time must be after the start time.</p>}
-
-                    <div className="grid gap-2">
-                        <Label htmlFor="schedule-room">Room</Label>
-                        <Select
-                            value={values.room_id ? String(values.room_id) : "none"}
-                            onValueChange={(roomId) =>
-                                setValues((current) => ({
-                                    ...current,
-                                    room_id: roomId === "none" ? null : Number(roomId),
-                                }))
-                            }
-                        >
-                            <SelectTrigger id="schedule-room" className="w-full">
-                                <SelectValue placeholder="Select room" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="none">No room assigned</SelectItem>
-                                {rooms.map((room) => (
-                                    <SelectItem key={room.id} value={String(room.id)}>
-                                        {room.name}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                </div>
-
-                <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
-                        Cancel
-                    </Button>
-                    <Button type="button" onClick={() => onSave(values)} disabled={isSaving || hasInvalidTimeRange}>
-                        {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        Save changes
-                    </Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
+    const draftCount = classes.reduce((count, item) => count + item.schedules.filter((session) => session.status === "draft").length, 0);
+    const selectedClass = classes.find((item) => item.id === selection?.classId);
+    const selectedSession = selectedClass?.schedules.find((session) => session.id === selection?.sessionId);
+    const conflictIds = useMemo(
+        () => new Set(conflicts.flatMap((conflict) => [conflict.schedule_1_id, conflict.schedule_2_id]).filter((id) => id !== undefined)),
+        [conflicts],
     );
-}
-
-export default function SchedulingAnalytics({ user, schedule_data, stats, term_context, filters, creation_options, defaults }: SchedulingAnalyticsProps) {
-    // Filter state
-    const [planningLens, setPlanningLens] = React.useState<PlanningLens>("overview");
-    const [search, setSearch] = React.useState("");
-    const [courseFilter, setCourseFilter] = React.useState("all");
-    const [yearFilter, setYearFilter] = React.useState("all");
-    const [sectionFilter, setSectionFilter] = React.useState("all");
-    const [roomFilter, setRoomFilter] = React.useState("all");
-    const [facultyFilter, setFacultyFilter] = React.useState("all");
-
-    const [createDialogOpen, setCreateDialogOpen] = React.useState(false);
-    const [generateDialogOpen, setGenerateDialogOpen] = React.useState(false);
-    const [exportDialogOpen, setExportDialogOpen] = React.useState(false);
-    const [queueOpen, setQueueOpen] = React.useState<boolean>(() =>
-        schedule_data.some((c) => c.is_unscheduled || c.schedules.length === 0 || (c.scheduled_hours ?? 0) < (c.required_hours ?? 3)),
+    const events: WeeklyScheduleEvent[] = visibleClasses.flatMap((item) =>
+        item.schedules
+            .filter((session) => viewFilters.room === "all" || String(session.room_id) === viewFilters.room)
+            .map((session, index) => ({
+                id: `${item.id}:${session.id ?? index}`,
+                day: session.day_of_week,
+                start: session.start_time,
+                end: session.end_time,
+                title: `${item.subject_code}${viewFilters.section === "all" ? ` · ${item.section}` : ""}`,
+                location: session.room ?? "Room to assign",
+                online: item.delivery_mode === "online",
+                conflict: session.id !== undefined && conflictIds.has(session.id),
+            })),
     );
-    const [isPublishing, setIsPublishing] = React.useState(false);
 
-    // Student search state
-    const [studentQuery, setStudentQuery] = React.useState("");
-    const [studentResults, setStudentResults] = React.useState<StudentSearchResult[]>([]);
-    const [activeStudent, setActiveStudent] = React.useState<StudentSchedule | null>(null);
-    const [isSearchingStudent, setIsSearchingStudent] = React.useState(false);
-    const [isLoadingStudent, setIsLoadingStudent] = React.useState(false);
-    const studentTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    // View & dialog state
-    const [viewMode, setViewMode] = React.useState<"timetable" | "list">("timetable");
-    const [selectedClass, setSelectedClass] = React.useState<ClassScheduleData | null>(null);
-    const [conflictsExpanded, setConflictsExpanded] = React.useState(false);
-
-    const [editMode, setEditMode] = React.useState(false);
-    const [selectedScheduleForRoom, setSelectedScheduleForRoom] = React.useState<number | null>(null);
-    const [scheduleConfigurationSelection, setScheduleConfigurationSelection] = React.useState<ScheduleConfigurationSelection | null>(null);
-    const [activeDrag, setActiveDrag] = React.useState<(DragData & { width: number; height: number }) | null>(null);
-    const [activeDragDelta, setActiveDragDelta] = React.useState(0);
-    const [hoveredDay, setHoveredDay] = React.useState<string | null>(null);
-    const [pendingMove, setPendingMove] = React.useState<{
-        scheduleId: number;
-        subjectCode: string;
-        section: string;
-        fromDay: string;
-        toDay: string;
-        fromTime: string;
-        toTime: string;
-        newStartTime: string;
-        newEndTime: string;
-    } | null>(null);
-    const [isSaving, setIsSaving] = React.useState(false);
-    const [localData, setLocalData] = React.useState<ClassScheduleData[]>(schedule_data);
-    const [localConflicts, setLocalConflicts] = React.useState<ScheduleConflict[]>(stats.schedule_conflicts);
-    const [resizing, setResizing] = React.useState<{
-        scheduleId: number;
-        edge: "top" | "bottom";
-        initialY: number;
-        originalStartMin: number;
-        originalEndMin: number;
-        currentStartMin?: number;
-        currentEndMin?: number;
-    } | null>(null);
-    const localDataRef = React.useRef(localData);
-    const [isDeletingSchedule, setIsDeletingSchedule] = React.useState(false);
-    const resizeTooltipRef = React.useRef<HTMLDivElement>(null);
-
-    // Sync localData when server data changes
-    React.useEffect(() => {
-        setLocalData(schedule_data);
-    }, [schedule_data]);
-
-    React.useEffect(() => {
-        setLocalConflicts(stats.schedule_conflicts);
-    }, [stats.schedule_conflicts]);
-
-    React.useEffect(() => {
-        localDataRef.current = localData;
-    }, [localData]);
-
-    // DnD sensors
-    const mouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: 8 } });
-    const touchSensor = useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } });
-    React.useEffect(() => {
-        if (!resizing) return;
-
-        const handlePointerMove = (e: PointerEvent) => {
-            const deltaY = e.clientY - resizing.initialY;
-            const pxPerMin = CELL_H / 60;
-            const deltaMin = Math.round(deltaY / pxPerMin);
-
-            let nStart = resizing.originalStartMin;
-            let nEnd = resizing.originalEndMin;
-
-            if (resizing.edge === "top") {
-                nStart += deltaMin;
-                nStart = Math.round(nStart / SNAP_MINUTES) * SNAP_MINUTES;
-                nStart = Math.max(HOUR_START * 60, Math.min(nStart, nEnd - SNAP_MINUTES));
-            } else {
-                nEnd += deltaMin;
-                nEnd = Math.round(nEnd / SNAP_MINUTES) * SNAP_MINUTES;
-                nEnd = Math.max(nStart + SNAP_MINUTES, Math.min(nEnd, HOUR_END * 60));
-            }
-
-            // Only trigger re-render if the snapped 15-min interval actually changed
-            if (nStart !== resizing.currentStartMin || nEnd !== resizing.currentEndMin) {
-                resizing.currentStartMin = nStart;
-                resizing.currentEndMin = nEnd;
-
-                setLocalData((prev) =>
-                    prev.map((cls) => ({
-                        ...cls,
-                        schedules: cls.schedules.map((s) => {
-                            if (s.id === resizing.scheduleId) {
-                                return {
-                                    ...s,
-                                    start_time: minutesToDisplay(nStart),
-                                    end_time: minutesToDisplay(nEnd),
-                                    time_range: `${minutesToDisplay(nStart)} - ${minutesToDisplay(nEnd)}`,
-                                };
-                            }
-                            return s;
-                        }),
+    const saveSession = async (values: SessionValues) => {
+        if (!selectedClass) throw new Error("Class no longer available. Refresh the page and try again.");
+        try {
+            if (selectedSession?.id !== undefined) {
+                const response = await axios.patch<ScheduleUpdateResponse>(updateSession.url(selectedSession.id), {
+                    ...values,
+                    day_of_week: values.days[0],
+                });
+                setClasses((previous) =>
+                    previous.map((item) => ({
+                        ...item,
+                        schedules: item.schedules.map((session) =>
+                            session.id === selectedSession.id ? { ...session, ...response.data.schedule } : session,
+                        ),
                     })),
                 );
-            }
-
-            // Update DOM tooltip directly to avoid React lag
-            if (resizeTooltipRef.current) {
-                resizeTooltipRef.current.style.opacity = "1";
-                resizeTooltipRef.current.style.transform = `translate(${e.clientX + 16}px, ${e.clientY - 16}px)`;
-                resizeTooltipRef.current.innerText = `${minutesToDisplay(nStart)} - ${minutesToDisplay(nEnd)}`;
-            }
-        };
-
-        const handlePointerUp = () => {
-            if (resizeTooltipRef.current) resizeTooltipRef.current.style.opacity = "0";
-            setResizing(null);
-
-            const targetCls = localDataRef.current.find((c) => c.schedules.some((s) => s.id === resizing.scheduleId));
-            const targetSched = targetCls?.schedules.find((s) => s.id === resizing.scheduleId);
-            if (!targetCls || !targetSched) return;
-
-            const newStartMin = parseMinutes(targetSched.start_time);
-            const newEndMin = parseMinutes(targetSched.end_time);
-
-            if (newStartMin !== resizing.originalStartMin || newEndMin !== resizing.originalEndMin) {
-                const moveData = {
-                    scheduleId: resizing.scheduleId,
-                    subjectCode: targetCls.subject_code,
-                    section: targetCls.section,
-                    fromDay: targetSched.day_of_week,
-                    toDay: targetSched.day_of_week,
-                    fromTime: minutesToDisplay(resizing.originalStartMin),
-                    toTime: minutesToDisplay(newStartMin),
-                    newStartTime: minutesToHHMM(newStartMin),
-                    newEndTime: minutesToHHMM(newEndMin),
-                };
-
-                let hasConflict = false;
-                for (const c of localDataRef.current) {
-                    for (const s of c.schedules) {
-                        if (s.id === resizing.scheduleId) continue;
-                        if (s.day_of_week !== targetSched.day_of_week) continue;
-
-                        const sameRoom = targetSched.room_id && s.room_id === targetSched.room_id;
-                        const sameFaculty = targetCls.faculty_id && c.faculty_id === targetCls.faculty_id;
-
-                        if (sameRoom || sameFaculty) {
-                            const sStart = parseMinutes(s.start_time);
-                            const sEnd = parseMinutes(s.end_time);
-                            if (newStartMin < sEnd && newEndMin > sStart) {
-                                hasConflict = true;
-                            }
-                        }
-                    }
-                }
-
-                if (hasConflict) setPendingMove(moveData);
-                else executeMove(moveData);
-            }
-        };
-
-        window.addEventListener("pointermove", handlePointerMove);
-        window.addEventListener("pointerup", handlePointerUp);
-
-        return () => {
-            window.removeEventListener("pointermove", handlePointerMove);
-            window.removeEventListener("pointerup", handlePointerUp);
-        };
-    }, [resizing]);
-
-    const handleResizeStart = React.useCallback(
-        (scheduleId: number, edge: "top" | "bottom", initialY: number, originalStartMin: number, originalEndMin: number) => {
-            if (!editMode) return;
-            setResizing({ scheduleId, edge, initialY, originalStartMin, originalEndMin });
-        },
-        [editMode],
-    );
-
-    const sensors = useSensors(mouseSensor, touchSensor);
-
-    // Student search handlers
-    const searchStudents = React.useCallback(async (q: string) => {
-        if (q.length < 2) {
-            setStudentResults([]);
-            return;
-        }
-        setIsSearchingStudent(true);
-        try {
-            const res = await fetch(route("administrators.scheduling-analytics.students.search", { query: q }));
-            const data = await res.json();
-            setStudentResults(data.students || []);
-        } catch {
-            setStudentResults([]);
-        } finally {
-            setIsSearchingStudent(false);
-        }
-    }, []);
-
-    const handleStudentQueryChange = (v: string) => {
-        setStudentQuery(v);
-        if (studentTimeoutRef.current) clearTimeout(studentTimeoutRef.current);
-        studentTimeoutRef.current = setTimeout(() => searchStudents(v), 300);
-    };
-
-    const selectStudent = async (s: StudentSearchResult) => {
-        setIsLoadingStudent(true);
-        setStudentQuery("");
-        setStudentResults([]);
-        try {
-            const res = await fetch(route("administrators.scheduling-analytics.students.schedule", { studentId: s.id }));
-            setActiveStudent(await res.json());
-        } catch {
-            /* ignore */
-        } finally {
-            setIsLoadingStudent(false);
-        }
-    };
-
-    // ── Drag-and-drop handlers ──────────────────────────────────────
-    const handleDragStart = (event: DragStartEvent) => {
-        const data = event.active.data.current as DragData;
-        const rect = event.active.rect.current.initial;
-        setActiveDrag({
-            ...data,
-            width: rect?.width || 200,
-            height: rect?.height || 50,
-        });
-        setActiveDragDelta(0);
-    };
-
-    const handleDragMove = React.useCallback((event: DragMoveEvent) => {
-        setActiveDragDelta(event.delta.y);
-    }, []);
-
-    const handleDragOver = React.useCallback((event: DragOverEvent) => {
-        const overDayIdx = event.over?.data?.current?.dayIdx;
-        if (overDayIdx !== undefined) {
-            setHoveredDay(DAYS[overDayIdx]);
-        } else {
-            setHoveredDay(null);
-        }
-    }, []);
-
-    const handleDragEnd = (event: DragEndEvent) => {
-        setActiveDrag(null);
-        setActiveDragDelta(0);
-        setHoveredDay(null);
-        const { active, over, delta } = event;
-        if (!over || !active.data.current) return;
-
-        const data = active.data.current as DragData;
-        const overData = over.data.current as { dayIdx?: number } | undefined;
-        const newDayIdx = overData?.dayIdx;
-        if (newDayIdx === undefined) return;
-
-        const newDay = DAYS[newDayIdx];
-        const b = data.block;
-
-        // Calculate new time from vertical delta
-        const pxPerMin = CELL_H / 60;
-        const deltaMin = Math.round(delta.y / pxPerMin);
-        const oldStartMin = parseMinutes(data.originalStartTime);
-        const oldEndMin = parseMinutes(data.originalEndTime);
-        const duration = oldEndMin - oldStartMin;
-
-        let newStartMin = oldStartMin + deltaMin;
-        // Snap to 15-minute grid
-        newStartMin = Math.round(newStartMin / SNAP_MINUTES) * SNAP_MINUTES;
-        // Clamp to valid range
-        newStartMin = Math.max(HOUR_START * 60, Math.min(newStartMin, HOUR_END * 60 - duration));
-        const newEndMin = newStartMin + duration;
-
-        // If nothing changed, skip
-        if (newDay === data.originalDay && newStartMin === oldStartMin) return;
-
-        const moveData = {
-            scheduleId: data.scheduleId,
-            subjectCode: b.cls.subject_code,
-            section: b.cls.section,
-            fromDay: data.originalDay,
-            toDay: newDay,
-            fromTime: minutesToDisplay(oldStartMin),
-            toTime: minutesToDisplay(newStartMin),
-            newStartTime: minutesToHHMM(newStartMin),
-            newEndTime: minutesToHHMM(newEndMin),
-        };
-
-        const targetCls = localData.find((c) => c.schedules.some((s) => s.id === data.scheduleId));
-        const targetSched = targetCls?.schedules.find((s) => s.id === data.scheduleId);
-
-        let hasConflict = false;
-        if (targetCls && targetSched) {
-            for (const c of localData) {
-                for (const s of c.schedules) {
-                    if (s.id === data.scheduleId) continue;
-                    if (s.day_of_week !== newDay) continue;
-
-                    const sameRoom = targetSched.room_id && s.room_id === targetSched.room_id;
-                    const sameFaculty = targetCls.faculty_id && c.faculty_id === targetCls.faculty_id;
-
-                    if (sameRoom || sameFaculty) {
-                        const sStart = parseMinutes(s.start_time);
-                        const sEnd = parseMinutes(s.end_time);
-                        if (newStartMin < sEnd && newEndMin > sStart) {
-                            hasConflict = true;
-                        }
-                    }
-                }
-            }
-        }
-
-        if (hasConflict) {
-            setPendingMove(moveData);
-        } else {
-            executeMove(moveData);
-        }
-    };
-
-    const applyScheduleUpdate = React.useCallback((scheduleId: number, schedule: ScheduleUpdateResponse["schedule"]) => {
-        setLocalData((prev) =>
-            prev.map((cls) => ({
-                ...cls,
-                schedules: cls.schedules.map((s) =>
-                    s.id === scheduleId
-                        ? {
-                              ...s,
-                              day_of_week: schedule.day_of_week,
-                              start_time: schedule.start_time,
-                              end_time: schedule.end_time,
-                              time_range: schedule.time_range,
-                              room: schedule.room,
-                              room_id: schedule.room_id,
-                          }
-                        : s,
-                ),
-            })),
-        );
-    }, []);
-
-    const executeMove = async (move: NonNullable<typeof pendingMove>) => {
-        setPendingMove(null);
-        setIsSaving(true);
-
-        // Optimistic update
-        const prevData = [...localData];
-        setLocalData((prev) =>
-            prev.map((cls) => ({
-                ...cls,
-                schedules: cls.schedules.map((s) => {
-                    if (s.id === move.scheduleId) {
-                        return {
-                            ...s,
-                            day_of_week: move.toDay,
-                            start_time: minutesToDisplay(parseInt(move.newStartTime.split(":")[0]) * 60 + parseInt(move.newStartTime.split(":")[1])),
-                            end_time: minutesToDisplay(parseInt(move.newEndTime.split(":")[0]) * 60 + parseInt(move.newEndTime.split(":")[1])),
-                            time_range: `${minutesToDisplay(parseInt(move.newStartTime.split(":")[0]) * 60 + parseInt(move.newStartTime.split(":")[1]))} - ${minutesToDisplay(parseInt(move.newEndTime.split(":")[0]) * 60 + parseInt(move.newEndTime.split(":")[1]))}`,
-                        };
-                    }
-                    return s;
-                }),
-            })),
-        );
-
-        try {
-            const res = await axios.patch(route("administrators.scheduling-analytics.schedules.update", { schedule: move.scheduleId }), {
-                day_of_week: move.toDay,
-                start_time: move.newStartTime,
-                end_time: move.newEndTime,
-            });
-
-            const result = res.data as ScheduleUpdateResponse;
-
-            applyScheduleUpdate(move.scheduleId, result.schedule);
-
-            setLocalConflicts(result.conflicts ?? []);
-            toast.success(`Moved ${move.subjectCode} (${move.section}) to ${move.toDay} at ${move.toTime}`);
-
-            if (result.conflicts?.length > 0) {
-                toast.warning(`${result.conflicts.length} schedule conflict${result.conflicts.length > 1 ? "s" : ""} detected after move.`);
-            }
-        } catch (error: unknown) {
-            logError("executeMove.patch", error, { move });
-            // Rollback optimistic update
-            setLocalData(prevData);
-
-            let msg = "An unexpected error occurred.";
-            if (axios.isAxiosError(error) && error.response?.data?.message) {
-                msg = error.response.data.message;
-            } else if (error instanceof Error) {
-                msg = error.message;
-            }
-
-            toast.error("Failed to update schedule", {
-                description: msg,
-            });
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    const confirmMove = () => {
-        if (pendingMove) executeMove(pendingMove);
-    };
-
-    const cancelMove = () => setPendingMove(null);
-
-    const handleClassCreated = (classItem: ClassScheduleData) => {
-        setLocalData((prev) => [...prev, classItem]);
-    };
-
-    const assignRoomToSchedule = async (scheduleId: number, roomId: number | null) => {
-        const targetCls = localData.find((c) => c.schedules.some((s) => s.id === scheduleId));
-        const targetSched = targetCls?.schedules.find((s) => s.id === scheduleId);
-        if (!targetCls || !targetSched) {
-            logError("assignRoomToSchedule.resolveTarget", new Error("Target class or schedule not found."), {
-                scheduleId,
-                roomId,
-                availableClasses: localData.length,
-            });
-            toast.error("Could not find selected schedule. Please refresh and try again.");
-            return;
-        }
-
-        const prevRoomId = targetSched.room_id;
-
-        setLocalData((prev) =>
-            prev.map((cls) => ({
-                ...cls,
-                schedules: cls.schedules.map((s) =>
-                    s.id === scheduleId
-                        ? { ...s, room_id: roomId, room: roomId ? (creation_options.rooms.find((r) => r.id === roomId)?.name ?? null) : null }
-                        : s,
-                ),
-            })),
-        );
-
-        try {
-            const res = await axios.patch(route("administrators.scheduling-analytics.schedules.update", { schedule: scheduleId }), {
-                day_of_week: targetSched.day_of_week,
-                start_time: toApiTime(targetSched.start_time),
-                end_time: toApiTime(targetSched.end_time),
-                room_id: roomId,
-            });
-
-            const result = res.data as ScheduleUpdateResponse;
-
-            applyScheduleUpdate(scheduleId, result.schedule);
-
-            setLocalConflicts(result.conflicts ?? []);
-
-            toast.success(`Room updated for ${targetCls.subject_code}`);
-
-            if (result.conflicts?.length > 0) {
-                toast.warning(`${result.conflicts.length} schedule conflict${result.conflicts.length > 1 ? "s" : ""} detected.`);
-            }
-        } catch (error: unknown) {
-            logError("assignRoomToSchedule.patch", error, {
-                scheduleId,
-                roomId,
-                previousRoomId: prevRoomId,
-                dayOfWeek: targetSched.day_of_week,
-                startTime: targetSched.start_time,
-                endTime: targetSched.end_time,
-                classId: targetCls.id,
-                subjectCode: targetCls.subject_code,
-                section: targetCls.section,
-            });
-
-            setLocalData((prev) =>
-                prev.map((cls) => ({
-                    ...cls,
-                    schedules: cls.schedules.map((s) =>
-                        s.id === scheduleId
-                            ? {
-                                  ...s,
-                                  room_id: prevRoomId,
-                                  room: prevRoomId ? (creation_options.rooms.find((r) => r.id === prevRoomId)?.name ?? null) : null,
-                              }
-                            : s,
-                    ),
-                })),
-            );
-
-            let msg = "Failed to update room.";
-            if (axios.isAxiosError(error) && error.response?.data?.message) {
-                msg = error.response.data.message;
-            }
-            toast.error(msg);
-        }
-    };
-
-    const openScheduleConfiguration = React.useCallback((classItem: ClassScheduleData, schedule: ScheduleEntry) => {
-        setScheduleConfigurationSelection({ classItem, schedule });
-    }, []);
-
-    const closeScheduleConfiguration = React.useCallback((open: boolean) => {
-        if (!open) {
-            setScheduleConfigurationSelection(null);
-        }
-    }, []);
-
-    const saveScheduleConfiguration = async (values: ScheduleConfigurationValues) => {
-        const selection = scheduleConfigurationSelection;
-        const scheduleId = selection?.schedule.id;
-
-        if (!selection || !scheduleId) {
-            toast.error("Selected schedule block was not found.");
-            return;
-        }
-
-        const startMin = parseMinutes(values.start_time);
-        const endMin = parseMinutes(values.end_time);
-
-        if (endMin <= startMin) {
-            toast.error("End time must be after the start time.");
-            return;
-        }
-
-        const previousData = localData;
-        const selectedRoom = values.room_id ? (creation_options.rooms.find((room) => room.id === values.room_id)?.name ?? null) : null;
-
-        setIsSaving(true);
-        setLocalData((prev) =>
-            prev.map((cls) => ({
-                ...cls,
-                schedules: cls.schedules.map((schedule) =>
-                    schedule.id === scheduleId
-                        ? {
-                              ...schedule,
-                              day_of_week: values.day_of_week,
-                              start_time: minutesToDisplay(startMin),
-                              end_time: minutesToDisplay(endMin),
-                              time_range: `${minutesToDisplay(startMin)} - ${minutesToDisplay(endMin)}`,
-                              room: selectedRoom,
-                              room_id: values.room_id,
-                          }
-                        : schedule,
-                ),
-            })),
-        );
-
-        try {
-            const res = await axios.patch(route("administrators.scheduling-analytics.schedules.update", { schedule: scheduleId }), {
-                day_of_week: values.day_of_week,
-                start_time: values.start_time,
-                end_time: values.end_time,
-                room_id: values.room_id,
-            });
-
-            const result = res.data as ScheduleUpdateResponse;
-            applyScheduleUpdate(scheduleId, result.schedule);
-            setLocalConflicts(result.conflicts ?? []);
-            setScheduleConfigurationSelection(null);
-
-            toast.success(`Updated ${selection.classItem.subject_code} (${selection.classItem.section})`);
-
-            if (result.conflicts?.length > 0) {
-                toast.warning(`${result.conflicts.length} schedule conflict${result.conflicts.length > 1 ? "s" : ""} detected.`);
-            }
-        } catch (error: unknown) {
-            setLocalData(previousData);
-            logError("saveScheduleConfiguration.patch", error, { scheduleId, values });
-
-            let message = "Failed to update schedule.";
-            if (axios.isAxiosError(error) && error.response?.data?.message) {
-                message = String(error.response.data.message);
-            } else if (error instanceof Error) {
-                message = error.message;
-            }
-
-            toast.error(message);
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    const deleteSchedule = React.useCallback(
-        async (scheduleId: number) => {
-            if (!editMode || isDeletingSchedule) {
-                return;
-            }
-
-            const targetClass = localData.find((c) => c.schedules.some((s) => s.id === scheduleId));
-            const targetSchedule = targetClass?.schedules.find((s) => s.id === scheduleId);
-
-            if (!targetClass || !targetSchedule) {
-                toast.error("Selected schedule block was not found.");
-                return;
-            }
-
-            const shouldDelete = window.confirm(
-                `Delete ${targetClass.subject_code} (${targetClass.section}) on ${targetSchedule.day_of_week} ${targetSchedule.time_range}?`,
-            );
-
-            if (!shouldDelete) {
-                return;
-            }
-
-            setIsDeletingSchedule(true);
-
-            const previousData = localData;
-
-            setLocalData((prev) =>
-                prev.map((cls) => {
-                    if (!cls.schedules.some((schedule) => schedule.id === scheduleId)) {
-                        return cls;
-                    }
-                    const nextSchedules = cls.schedules.filter((schedule) => schedule.id !== scheduleId);
-                    const totalMin = nextSchedules.reduce((acc, s) => acc + Math.max(0, parseMinutes(s.end_time) - parseMinutes(s.start_time)), 0);
-                    const nextScheduledHours = Math.round((totalMin / 60) * 100) / 100;
-                    const reqHours = cls.required_hours ?? 3;
-                    return {
-                        ...cls,
-                        schedules: nextSchedules,
-                        scheduled_hours: nextScheduledHours,
-                        is_unscheduled: nextSchedules.length === 0,
-                        is_complete: nextScheduledHours >= reqHours,
-                    };
-                }),
-            );
-
-            try {
-                const res = await axios.delete(route("administrators.scheduling-analytics.schedules.destroy", { schedule: scheduleId }));
-                const result = res.data as { conflicts?: ScheduleConflict[] };
-
-                setLocalConflicts(result.conflicts ?? []);
-
-                if (selectedScheduleForRoom === scheduleId) {
-                    setSelectedScheduleForRoom(null);
-                }
-
-                toast.success("Schedule block deleted.");
-            } catch (error: unknown) {
-                setLocalData(previousData);
-                logError("deleteSchedule.delete", error, { scheduleId });
-
-                let message = "Failed to delete schedule block.";
-                if (axios.isAxiosError(error) && error.response?.data?.message) {
-                    message = String(error.response.data.message);
-                } else if (error instanceof Error) {
-                    message = error.message;
-                }
-
-                toast.error(message);
-            } finally {
-                setIsDeletingSchedule(false);
-            }
-        },
-        [editMode, isDeletingSchedule, localData, selectedScheduleForRoom],
-    );
-
-    // Combined filtering
-    const filteredData = React.useMemo(() => {
-        let d = localData;
-
-        if (search) {
-            const q = search.toLowerCase();
-            d = d.filter(
-                (c) =>
-                    c.subject_code.toLowerCase().includes(q) ||
-                    c.subject_title.toLowerCase().includes(q) ||
-                    c.section.toLowerCase().includes(q) ||
-                    c.faculty_name?.toLowerCase().includes(q) ||
-                    c.courses?.toLowerCase().includes(q),
-            );
-        }
-        if (courseFilter !== "all") {
-            d = d.filter((c) => c.course_ids?.some((cid) => String(cid) === courseFilter));
-        }
-        if (yearFilter !== "all") {
-            d = d.filter((c) => {
-                const yearLevels = courseFilter === "all" ? c.year_levels : (c.course_year_levels?.[courseFilter] ?? c.year_levels);
-
-                return yearLevels.includes(yearFilter);
-            });
-        }
-        if (sectionFilter !== "all") d = d.filter((c) => c.section === sectionFilter);
-        if (roomFilter !== "all") {
-            const id = parseInt(roomFilter);
-            d = d.filter((c) => c.schedules.some((s) => s.room_id === id));
-        }
-        if (facultyFilter !== "all") d = d.filter((c) => c.faculty_id === facultyFilter);
-
-        // Student filter (exclusive)
-        if (activeStudent) {
-            const classIds = new Set(activeStudent.schedule.map((s) => s.id));
-            d = d.filter((c) => classIds.has(c.id));
-        }
-
-        return d;
-    }, [localData, search, courseFilter, yearFilter, sectionFilter, roomFilter, facultyFilter, activeStudent]);
-
-    const hasFilters =
-        search ||
-        courseFilter !== "all" ||
-        yearFilter !== "all" ||
-        sectionFilter !== "all" ||
-        roomFilter !== "all" ||
-        facultyFilter !== "all" ||
-        activeStudent;
-
-    const clearFilters = () => {
-        setSearch("");
-        setCourseFilter("all");
-        setYearFilter("all");
-        setSectionFilter("all");
-        setRoomFilter("all");
-        setFacultyFilter("all");
-        setActiveStudent(null);
-        setStudentQuery("");
-    };
-
-    const conflicts = React.useMemo(() => {
-        if (!hasFilters) return localConflicts;
-        return localConflicts.filter((c) => {
-            const match = (x: { id?: number; subject_code: string; section: string }) =>
-                filteredData.some((d) => (x.id !== undefined ? d.id === x.id : d.subject_code === x.subject_code && d.section === x.section));
-            return match(c.class_1) || match(c.class_2);
-        });
-    }, [filteredData, localConflicts, hasFilters]);
-
-    const draftCount = React.useMemo(
-        () => localData.reduce((acc, c) => acc + c.schedules.filter((s) => s.status === "draft").length, 0),
-        [localData],
-    );
-
-    const handleTermChange = (nextSchoolYear: string, nextSemester: string) => {
-        router.get(
-            route("administrators.scheduling-analytics.index"),
-            { school_year: nextSchoolYear, semester: nextSemester },
-            { preserveState: false },
-        );
-    };
-
-    const handlePlanningLensChange = (lens: PlanningLens) => {
-        setPlanningLens(lens);
-        if (lens === "cohort") {
-            setQueueOpen(true);
-            setRoomFilter("all");
-            setFacultyFilter("all");
-        } else if (lens === "room") {
-            setCourseFilter("all");
-            setYearFilter("all");
-            setSectionFilter("all");
-            setFacultyFilter("all");
-        } else if (lens === "faculty") {
-            setCourseFilter("all");
-            setYearFilter("all");
-            setSectionFilter("all");
-            setRoomFilter("all");
-        }
-    };
-
-    const handlePlacePattern = async (payload: {
-        classId: number;
-        days: string[];
-        start_time: string;
-        end_time: string;
-        room_id: number | null;
-        component_type: "lecture" | "lab";
-        status: "draft" | "published";
-    }) => {
-        try {
-            const res = await axios.post(
-                route("administrators.scheduling-analytics.classes.schedules.store", { class: payload.classId }),
-                {
-                    days: payload.days,
-                    start_time: payload.start_time,
-                    end_time: payload.end_time,
-                    room_id: payload.room_id,
-                    component_type: payload.component_type,
-                    status: payload.status,
-                },
-            );
-            const result = res.data as { class: ClassScheduleData; conflicts: ScheduleConflict[] };
-            setLocalData((prev) => prev.map((cls) => (cls.id === payload.classId ? result.class : cls)));
-            setLocalConflicts(result.conflicts ?? []);
-            toast.success(`Placed ${payload.days.length} schedule block${payload.days.length === 1 ? "" : "s"} for ${result.class.subject_code}.`);
-            if (result.conflicts?.length > 0) {
-                toast.warning(`${result.conflicts.length} schedule conflict${result.conflicts.length === 1 ? "" : "s"} detected.`);
-            }
-        } catch (error: unknown) {
-            let msg = "Failed to place schedule blocks.";
-            if (axios.isAxiosError(error) && error.response?.data?.message) {
-                msg = String(error.response.data.message);
-            }
-            toast.error(msg);
-            throw error;
-        }
-    };
-
-    const handleGenerateOfferings = async (payload: GenerateOfferingsPayload) => {
-        try {
-            const res = await axios.post(route("administrators.scheduling-analytics.offerings.generate"), payload);
-            const result = res.data as {
-                created_count: number;
-                skipped_count: number;
-                subjects_found: number;
-                classes: ClassScheduleData[];
-            };
-            if (result.classes?.length > 0) {
-                setLocalData((prev) => [...prev, ...result.classes]);
-                setQueueOpen(true);
-            }
-            if (result.subjects_found === 0) {
-                toast.warning("No curriculum subjects found for the selected program, year level, and semester.");
-            } else if (result.created_count > 0) {
-                toast.success(
-                    `Generated ${result.created_count} class offering${result.created_count === 1 ? "" : "s"} (${result.skipped_count} already existed).`,
-                );
+                setConflicts(response.data.conflicts ?? []);
             } else {
-                toast.info(`All ${result.skipped_count} class offerings for this cohort already exist.`);
+                const response = await axios.post<{ class: ClassScheduleData; conflicts: ScheduleConflict[] }>(storeSessions.url(selectedClass.id), {
+                    ...values,
+                    status: "draft",
+                });
+                setClasses((previous) => previous.map((item) => (item.id === selectedClass.id ? response.data.class : item)));
+                setConflicts(response.data.conflicts ?? []);
             }
-        } catch (error: unknown) {
-            let msg = "Failed to generate cohort offerings.";
-            if (axios.isAxiosError(error) && error.response?.data?.message) {
-                msg = String(error.response.data.message);
-            }
-            toast.error(msg);
+            toast.success(selectedSession ? "Session updated." : "Class times added.");
+        } catch (error) {
+            throw requestError(error);
+        }
+    };
+    const removeSession = async () => {
+        if (selectedSession?.id === undefined) return;
+        try {
+            const response = await axios.delete<{ conflicts: ScheduleConflict[] }>(destroySession.url(selectedSession.id));
+            setClasses((previous) =>
+                previous.map((item) => ({ ...item, schedules: item.schedules.filter((session) => session.id !== selectedSession.id) })),
+            );
+            setConflicts(response.data.conflicts ?? []);
+            toast.success("Session removed.");
+        } catch (error) {
+            throw requestError(error);
+        }
+    };
+    const generateClasses = async (payload: GenerateOfferingsPayload) => {
+        try {
+            const response = await axios.post<{ created_count: number; skipped_count: number; subjects_found: number; classes: ClassScheduleData[] }>(
+                generate.url(),
+                payload,
+            );
+            setClasses((previous) => [...previous, ...(response.data.classes ?? [])]);
+            if (!response.data.subjects_found) toast.info("No subjects found for this program, year, and semester.");
+            else toast.success(`${response.data.created_count} classes added. ${response.data.skipped_count} already existed.`);
+        } catch (error) {
+            toast.error(requestError(error).message);
             throw error;
         }
     };
-
-    const handlePublishTerm = async () => {
-        setIsPublishing(true);
+    const publishTerm = async () => {
+        setPublishing(true);
         try {
-            const res = await axios.post(route("administrators.scheduling-analytics.publish"), {
-                school_year: term_context?.school_year ?? defaults.school_year,
-                semester: term_context?.semester ?? defaults.semester,
+            const response = await axios.post<{ published_count: number; conflicts: ScheduleConflict[] }>(publish.url(), {
+                school_year: schoolYear,
+                semester,
             });
-            const result = res.data as { published_count: number; conflicts: ScheduleConflict[] };
-            setLocalData((prev) =>
-                prev.map((c) => ({
-                    ...c,
-                    schedules: c.schedules.map((s) => ({ ...s, status: "published" })),
-                })),
+            setClasses((previous) =>
+                previous.map((item) => ({ ...item, schedules: item.schedules.map((session) => ({ ...session, status: "published" })) })),
             );
-            setLocalConflicts(result.conflicts ?? []);
-            toast.success(`Published ${result.published_count} draft schedule block${result.published_count === 1 ? "" : "s"}.`);
-        } catch (error: unknown) {
-            let msg = "Unable to publish term schedule.";
-            if (axios.isAxiosError(error) && error.response?.data?.message) {
-                msg = String(error.response.data.message);
-            }
-            toast.error(msg);
+            setConflicts(response.data.conflicts ?? []);
+            setReviewOpen(false);
+            toast.success(`${response.data.published_count} sessions published.`);
+        } catch (error) {
+            if (axios.isAxiosError(error) && Array.isArray(error.response?.data?.conflicts)) setConflicts(error.response.data.conflicts);
+            toast.error(requestError(error).message);
         } finally {
-            setIsPublishing(false);
+            setPublishing(false);
         }
     };
 
     return (
         <AdminLayout user={user} title="Schedule Planner">
-            <Head title="Schedule Planner" />
-
-            <div className="space-y-4">
-                {/* ── Header ── */}
-                <SchedulingHeader
-                    termContext={term_context}
-                    onTermChange={handleTermChange}
-                    onGenerateCohort={() => setGenerateDialogOpen(true)}
-                    onCreateClass={() => setCreateDialogOpen(true)}
-                    onPublishTerm={handlePublishTerm}
-                    draftCount={draftCount}
-                    conflictCount={localConflicts.length}
-                    isPublishing={isPublishing}
-                    onExport={() => setExportDialogOpen(true)}
-                    onSync={() => router.reload({ only: ["schedule_data", "stats", "filters", "term_context"] })}
-                />
-
-                {/* ── Stats row ── */}
-                <SchedulingStatsRow
-                    filteredData={filteredData}
-                    totalClasses={stats.total_classes}
-                    hasFilters={!!hasFilters}
-                    conflicts={conflicts}
-                    conflictsExpanded={conflictsExpanded}
-                    onToggleConflictsExpanded={() => setConflictsExpanded(!conflictsExpanded)}
-                    activeStudent={activeStudent}
-                    onClearActiveStudent={() => setActiveStudent(null)}
-                    queueOpen={queueOpen}
-                    onToggleQueue={() => setQueueOpen((prev) => !prev)}
-                />
-
-                {/* ── Conflicts banner ── */}
-                <SchedulingConflictsPanel
-                    conflicts={conflicts}
-                    expanded={conflictsExpanded}
-                    showBadge={false}
-                    onToggleExpanded={() => setConflictsExpanded(!conflictsExpanded)}
-                    onCloseExpanded={() => setConflictsExpanded(false)}
-                />
-
-                {/* ── Unified filter bar ── */}
-                <SchedulingFiltersBar
-                    planningLens={planningLens}
-                    onPlanningLensChange={handlePlanningLensChange}
-                    search={search}
-                    onSearchChange={setSearch}
-                    courseFilter={courseFilter}
-                    onCourseFilterChange={setCourseFilter}
-                    yearFilter={yearFilter}
-                    onYearFilterChange={setYearFilter}
-                    sectionFilter={sectionFilter}
-                    onSectionFilterChange={setSectionFilter}
-                    roomFilter={roomFilter}
-                    onRoomFilterChange={setRoomFilter}
-                    facultyFilter={facultyFilter}
-                    onFacultyFilterChange={setFacultyFilter}
-                    studentQuery={studentQuery}
-                    onStudentQueryChange={handleStudentQueryChange}
-                    isSearchingStudent={isSearchingStudent}
-                    studentResults={studentResults}
-                    onSelectStudent={selectStudent}
-                    hasFilters={!!hasFilters}
-                    onClearFilters={clearFilters}
-                    filteredCount={filteredData.length}
-                    totalCount={localData.length}
-                    isLoadingStudent={isLoadingStudent}
-                    availableCourses={filters.available_courses}
-                    availableYearLevels={filters.available_year_levels}
-                    availableSections={filters.available_sections}
-                    availableRooms={filters.available_rooms}
-                    availableFaculty={filters.available_faculty}
-                />
-
-                {/* ── Main schedule view ── */}
-                <DndContext
-                    sensors={sensors}
-                    onDragStart={handleDragStart}
-                    onDragMove={handleDragMove}
-                    onDragOver={handleDragOver}
-                    onDragEnd={handleDragEnd}
-                >
-                    {/* Global resize tooltip */}
-                    <div
-                        ref={resizeTooltipRef}
-                        className="text-foreground bg-background/95 dark:border-border/50 pointer-events-none fixed top-0 left-0 z-[9999] rounded-md border px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap opacity-0 shadow-2xl backdrop-blur-md transition-opacity duration-150 ease-out"
-                    />
-
-                    <div className="flex flex-col gap-4 lg:flex-row">
-                        {queueOpen && (
-                            <SchedulingUnscheduledQueue
-                                classes={filteredData}
-                                allClasses={localData}
-                                rooms={creation_options.rooms}
-                                onPlacePattern={handlePlacePattern}
-                                onGenerateCohort={() => setGenerateDialogOpen(true)}
-                                onSelectClass={(cls) => setSelectedClass(localData.find((c) => c.id === cls.id) ?? null)}
-                            />
-                        )}
-
-                        <Card className="min-w-0 flex-1">
-                            <CardHeader className="flex flex-row items-center justify-between pb-3">
-                                <div>
-                                    <CardTitle className="flex items-center gap-2 text-base">
-                                        Weekly Schedule
-                                        {editMode && (
-                                            <Badge
-                                                variant="outline"
-                                                className="bg-primary/10 text-primary hover:bg-primary/10 border-primary/20 text-[10px]"
-                                            >
-                                                Edit Mode
-                                            </Badge>
-                                        )}
-                                    </CardTitle>
-                                    <CardDescription className="text-xs">
-                                        {editMode ? "Drag and drop classes to reschedule them." : "Click any block for details."}
-                                    </CardDescription>
-                                </div>
-                                <div className="flex items-center gap-4">
-                                    {viewMode === "timetable" && (
-                                        <div className="flex items-center gap-2">
-                                            <Label htmlFor="edit-mode" className="cursor-pointer text-xs font-medium">
-                                                Edit Mode
-                                            </Label>
-                                            <Switch
-                                                id="edit-mode"
-                                                checked={editMode}
-                                                onCheckedChange={(v) => {
-                                                    setEditMode(v);
-                                                    if (!v) setSelectedScheduleForRoom(null);
-                                                }}
-                                            />
-                                        </div>
-                                    )}
-                                    <div className="bg-muted flex rounded-lg p-0.5">
-                                        <Button
-                                            variant={viewMode === "timetable" ? "secondary" : "ghost"}
-                                            size="sm"
-                                            onClick={() => {
-                                                setViewMode("timetable");
-                                            }}
-                                            className="h-7 rounded-md px-2.5 text-xs"
-                                        >
-                                            <LayoutGrid className="mr-1 h-3.5 w-3.5" /> Timetable
-                                        </Button>
-                                        <Button
-                                            variant={viewMode === "list" ? "secondary" : "ghost"}
-                                            size="sm"
-                                            onClick={() => {
-                                                setViewMode("list");
-                                                setEditMode(false);
-                                                setSelectedScheduleForRoom(null);
-                                            }}
-                                            className="h-7 rounded-md px-2.5 text-xs"
-                                        >
-                                            <List className="mr-1 h-3.5 w-3.5" /> List
-                                        </Button>
-                                    </div>
-                                </div>
-                            </CardHeader>
-                            <CardContent className="pt-0">
-                                {viewMode === "timetable" ? (
-                                    (() => {
-                                        let dropPreview = null;
-                                        if (activeDrag) {
-                                            const pxPerMin = CELL_H / 60;
-                                            const deltaMin = Math.round(activeDragDelta / pxPerMin);
-                                            const snappedDeltaMin = Math.round(deltaMin / SNAP_MINUTES) * SNAP_MINUTES;
-
-                                            const oldStartMin = parseMinutes(activeDrag.originalStartTime);
-                                            const duration = parseMinutes(activeDrag.originalEndTime) - oldStartMin;
-
-                                            let newStartMin = oldStartMin + snappedDeltaMin;
-                                            newStartMin = Math.max(HOUR_START * 60, Math.min(newStartMin, HOUR_END * 60 - duration));
-
-                                            dropPreview = {
-                                                day: hoveredDay || activeDrag.originalDay,
-                                                startMin: newStartMin,
-                                                duration: duration,
-                                                subject: activeDrag.block.cls.subject_title,
-                                                pal: getPalette(activeDrag.block.cls.subject_code),
-                                            };
-                                        }
-                                        return (
-                                            <WeeklyTimetable
-                                                data={filteredData}
-                                                onBlockClick={(c) => {
-                                                    if (editMode) {
-                                                        setSelectedClass(null);
-                                                    } else {
-                                                        setSelectedClass(c);
-                                                    }
-                                                }}
-                                                conflicts={conflicts}
-                                                editMode={editMode}
-                                                onResizeStart={handleResizeStart}
-                                                dropPreview={dropPreview}
-                                                selectedScheduleId={selectedScheduleForRoom}
-                                                onScheduleSelect={setSelectedScheduleForRoom}
-                                                onScheduleDelete={deleteSchedule}
-                                                onScheduleConfigure={openScheduleConfiguration}
-                                                onClassView={(classId) => router.visit(route("administrators.classes.show", { class: classId }))}
-                                                onClassEdit={(classId) => router.visit(route("administrators.classes.edit", { class: classId }))}
-                                            />
-                                        );
-                                    })()
-                                ) : (
-                                    <ScheduleListView data={filteredData} onClassClick={setSelectedClass} />
-                                )}
-                            </CardContent>
-                        </Card>
-
-                        {editMode && viewMode === "timetable" && (
-                            <SchedulingRoomAssignmentSidebar
-                                rooms={creation_options.rooms}
-                                localData={localData}
-                                selectedScheduleForRoom={selectedScheduleForRoom}
-                                onAssignRoom={assignRoomToSchedule}
-                                onClearSelection={() => {
-                                    setSelectedScheduleForRoom(null);
-                                }}
-                            />
-                        )}
+            <Head title="Schedule planner" />
+            <div className="mx-auto w-full max-w-screen-2xl space-y-6">
+                <header className="space-y-4">
+                    <Link href={classesIndex()} className="text-muted-foreground hover:text-foreground inline-flex items-center gap-2 text-sm">
+                        <ArrowLeft className="size-4" aria-hidden="true" />
+                        Classes
+                    </Link>
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div className="space-y-2">
+                            <h1 className="text-2xl font-semibold tracking-tight">Schedule planner</h1>
+                            <p className="text-muted-foreground max-w-2xl text-sm text-pretty">
+                                Choose a section, add class times, then check the week.
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Button onClick={() => setReviewOpen(true)} disabled={publishing}>
+                                Review schedule
+                            </Button>
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="outline" size="icon" aria-label="More planner actions">
+                                        <MoreHorizontal className="size-4" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => setGenerateOpen(true)}>Add classes from curriculum</DropdownMenuItem>
+                                    <DropdownMenuItem asChild>
+                                        <Link href={createClass()}>Create a class</Link>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => setExportOpen(true)}>Export schedule PDF</DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => router.reload({ only: ["schedule_data", "stats", "filters", "term_context"] })}>
+                                        Refresh schedule
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </div>
                     </div>
-
-                    <DragOverlay dropAnimation={null}>
-                        {activeDrag
-                            ? (() => {
-                                  const pal = getPalette(activeDrag.block.cls.subject_code);
-                                  const classConflicts = conflicts.filter(
-                                      (c) =>
-                                          (c.class_1.subject_code === activeDrag.block.cls.subject_code &&
-                                              c.class_1.section === activeDrag.block.cls.section) ||
-                                          (c.class_2.subject_code === activeDrag.block.cls.subject_code &&
-                                              c.class_2.section === activeDrag.block.cls.section),
-                                  );
-                                  const hasConflict = classConflicts.length > 0;
-                                  const baseClassName = `overflow-hidden rounded-md border-l-[3px] ${hasConflict ? "border-l-red-500 ring-2 ring-red-400/50 dark:ring-red-500/40" : pal.accent} ${hasConflict ? "bg-red-500/12 dark:bg-red-400/15" : pal.bg} p-1 text-left shadow-2xl opacity-90`;
-
-                                  const pxPerMin = CELL_H / 60;
-                                  const deltaMin = Math.round(activeDragDelta / pxPerMin);
-                                  const snappedDeltaMin = Math.round(deltaMin / SNAP_MINUTES) * SNAP_MINUTES;
-
-                                  const oldStartMin = parseMinutes(activeDrag.originalStartTime);
-                                  const oldEndMin = parseMinutes(activeDrag.originalEndTime);
-                                  const duration = oldEndMin - oldStartMin;
-
-                                  let newStartMin = oldStartMin + snappedDeltaMin;
-                                  newStartMin = Math.max(HOUR_START * 60, Math.min(newStartMin, HOUR_END * 60 - duration));
-                                  const newEndMin = newStartMin + duration;
-
-                                  return (
-                                      <div
-                                          style={{
-                                              position: "relative",
-                                              width: activeDrag.width,
-                                              height: activeDrag.height,
-                                              transform: "scale(1.02) rotate(1deg)",
-                                              transformOrigin: "top left",
-                                              transition: "transform 0.15s ease-out",
-                                              zIndex: 9999,
-                                          }}
-                                      >
-                                          {/* The mirrored block */}
-                                          <div
-                                              className={baseClassName}
-                                              style={{ width: "100%", height: "100%", boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.4)" }}
-                                          >
-                                              <div
-                                                  className={`truncate text-[11px] leading-tight font-bold ${hasConflict ? "text-red-700 dark:text-red-300" : pal.text}`}
-                                              >
-                                                  {activeDrag.block.cls.subject_title}
-                                              </div>
-                                              {activeDrag.block.heightPx > 28 && (
-                                                  <div className="text-muted-foreground truncate text-[10px] leading-tight">
-                                                      {activeDrag.block.cls.section}
-                                                  </div>
-                                              )}
-                                              {activeDrag.block.heightPx > 48 && (
-                                                  <div className="text-muted-foreground mt-0.5 flex items-center gap-0.5 truncate text-[9px]">
-                                                      <MapPin className="h-2.5 w-2.5 shrink-0" />
-                                                      {activeDrag.block.sched.room || "—"}
-                                                  </div>
-                                              )}
-                                              {activeDrag.block.heightPx > 64 && activeDrag.block.cls.faculty_name && (
-                                                  <div className="text-muted-foreground mt-0.5 flex items-center gap-0.5 truncate text-[9px]">
-                                                      <UserIcon className="h-2.5 w-2.5 shrink-0" />
-                                                      {activeDrag.block.cls.faculty_name}
-                                                  </div>
-                                              )}
-                                          </div>
-
-                                          {/* The floating tooltip positioned below the block */}
-                                          <div className="text-foreground bg-background/95 dark:border-border/50 absolute top-[calc(100%+8px)] left-1/2 z-[10000] flex -translate-x-1/2 items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap shadow-2xl backdrop-blur-md">
-                                              <div className="flex items-center gap-1.5">
-                                                  <Calendar className="text-primary h-3.5 w-3.5" />
-                                                  <span className="text-primary">{hoveredDay || activeDrag.originalDay}</span>
-                                              </div>
-                                              <div className="bg-border mx-0.5 h-1 w-1 rounded-full" />
-                                              <div className="text-muted-foreground flex items-center gap-1.5">
-                                                  <Clock className="h-3.5 w-3.5" />
-                                                  <span>
-                                                      {minutesToDisplay(newStartMin)} - {minutesToDisplay(newEndMin)}
-                                                  </span>
-                                              </div>
-                                          </div>
-                                      </div>
-                                  );
-                              })()
-                            : null}
-                    </DragOverlay>
-                </DndContext>
+                    <div className="flex flex-wrap items-center gap-3">
+                        <Label htmlFor="planner-school-year" className="text-muted-foreground text-sm">
+                            Term
+                        </Label>
+                        {term_context ? (
+                            <>
+                                <Select
+                                    value={schoolYear}
+                                    onValueChange={(value) =>
+                                        router.get(plannerIndex.url(), { school_year: value, semester }, { preserveState: false })
+                                    }
+                                >
+                                    <SelectTrigger id="planner-school-year" className="w-40">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {term_context.available_school_years.map((year) => (
+                                            <SelectItem key={year} value={year}>
+                                                {year}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <Select
+                                    value={semester}
+                                    onValueChange={(value) =>
+                                        router.get(plannerIndex.url(), { school_year: schoolYear, semester: value }, { preserveState: false })
+                                    }
+                                >
+                                    <SelectTrigger aria-label="Semester" className="w-40">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {term_context.available_semesters.map((item) => (
+                                            <SelectItem key={item.value} value={item.value}>
+                                                {item.label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </>
+                        ) : (
+                            <span className="text-sm">
+                                {schoolYear} · Semester {semester}
+                            </span>
+                        )}
+                        {draftCount > 0 && <span className="text-muted-foreground text-sm">{draftCount} draft sessions</span>}
+                    </div>
+                </header>
+                <SchedulingFiltersBar
+                    value={viewFilters}
+                    onChange={setViewFilters}
+                    options={filters}
+                    sections={sections}
+                    studentQuery={studentQuery}
+                    onStudentQueryChange={setStudentQuery}
+                    students={students}
+                    onSelectStudent={(student) => void selectStudent(student)}
+                    loadingStudent={loadingStudent || searchingStudent}
+                    activeStudentName={activeStudent?.student.name}
+                    onClearStudent={clearStudent}
+                />
+                <div className="text-muted-foreground flex flex-wrap items-center justify-between gap-2 text-sm">
+                    <p>
+                        {visibleClasses.length} classes · {visibleClasses.filter(needsTimes).length} need times
+                    </p>
+                    {conflicts.length > 0 && (
+                        <Button variant="ghost" className="text-destructive" onClick={() => setConflictsOpen(true)}>
+                            {conflicts.length} schedule conflicts · Review
+                        </Button>
+                    )}
+                </div>
+                <div className="grid min-w-0 items-start gap-6 xl:grid-cols-[20rem_minmax(0,1fr)]">
+                    <section aria-labelledby="planner-classes-heading" className="bg-card min-w-0 rounded-xl border">
+                        <div className="space-y-4 p-4">
+                            <div className="flex items-center justify-between gap-2">
+                                <h2 id="planner-classes-heading" className="font-semibold">
+                                    Classes
+                                </h2>
+                                <label className="text-muted-foreground flex items-center gap-2 text-xs">
+                                    <input
+                                        type="checkbox"
+                                        checked={needsTimesOnly}
+                                        onChange={(event) => setNeedsTimesOnly(event.target.checked)}
+                                        className="accent-primary size-4"
+                                    />
+                                    Needs times only
+                                </label>
+                            </div>
+                            <div className="relative">
+                                <Search className="text-muted-foreground pointer-events-none absolute top-3 left-3 size-4" aria-hidden="true" />
+                                <Input
+                                    aria-label="Find a class"
+                                    placeholder="Find a class"
+                                    className="pl-10"
+                                    value={search}
+                                    onChange={(event) => setSearch(event.target.value)}
+                                />
+                            </div>
+                        </div>
+                        <div className="max-h-72 divide-y overflow-y-auto xl:max-h-[40rem]">
+                            {classList.map((item) => (
+                                <div key={item.id} className="space-y-3 p-4">
+                                    <div className="space-y-1">
+                                        <Link href={showClass(item.id)} className="text-sm font-semibold hover:underline">
+                                            {item.subject_code} · {item.section}
+                                        </Link>
+                                        <p className="text-muted-foreground line-clamp-2 text-sm">{item.subject_title}</p>
+                                    </div>
+                                    <p className="text-muted-foreground text-xs">
+                                        {item.delivery_mode === "online" ? "Online" : "Face to face"} ·{" "}
+                                        {Number(scheduledHours(item.schedules).toFixed(2))}/{item.required_hours ?? 3} hours scheduled
+                                    </p>
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+                                            {item.faculty_name ?? "Instructor to assign"}
+                                        </span>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            aria-label={`Add times for ${item.subject_code}, section ${item.section}`}
+                                            onClick={() => setSelection({ classId: item.id })}
+                                        >
+                                            <Plus className="size-4" aria-hidden="true" />
+                                            Add times
+                                        </Button>
+                                    </div>
+                                </div>
+                            ))}
+                            {!classList.length && (
+                                <div className="space-y-3 p-6 text-sm">
+                                    <p className="text-muted-foreground">
+                                        {classes.length ? "No classes match these filters." : "Add classes to start planning this term."}
+                                    </p>
+                                    {!classes.length && (
+                                        <Button variant="outline" onClick={() => setGenerateOpen(true)}>
+                                            Add from curriculum
+                                        </Button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </section>
+                    <section aria-labelledby="planner-week-heading" className="bg-card min-w-0 overflow-hidden rounded-xl border">
+                        <div className="space-y-1 p-4">
+                            <h2 id="planner-week-heading" className="font-semibold">
+                                Weekly schedule
+                            </h2>
+                            <p className="text-muted-foreground text-sm">Select a session to change its day, time, or room.</p>
+                        </div>
+                        <WeeklySchedule
+                            events={events}
+                            emptyMessage="No class times yet. Choose Add times beside a class to begin."
+                            onSelect={(event) => {
+                                const [classId, sessionId] = event.id.split(":").map(Number);
+                                if (classes.find((item) => item.id === classId)?.schedules.some((session) => session.id === sessionId))
+                                    setSelection({ classId, sessionId });
+                            }}
+                        />
+                    </section>
+                </div>
             </div>
-
-            <ScheduleConfigurationDialog
-                selection={scheduleConfigurationSelection}
-                rooms={creation_options.rooms}
-                open={!!scheduleConfigurationSelection}
-                isSaving={isSaving}
-                onOpenChange={closeScheduleConfiguration}
-                onSave={saveScheduleConfiguration}
+            {selectedClass && (
+                <SchedulingSessionDialog
+                    key={`${selectedClass.id}:${selection?.sessionId ?? "new"}`}
+                    classItem={selectedClass}
+                    session={selectedSession}
+                    rooms={creation_options.rooms}
+                    onClose={() => setSelection(null)}
+                    onSave={saveSession}
+                    onDelete={removeSession}
+                />
+            )}
+            <SchedulingReviewDialog
+                key={`${reviewOpen}-${draftCount}`}
+                open={reviewOpen}
+                onOpenChange={setReviewOpen}
+                classes={classes}
+                conflictCount={conflicts.length}
+                draftCount={draftCount}
+                termLabel={`${schoolYear} · ${term_context?.semester_label ?? `Semester ${semester}`}`}
+                isPublishing={publishing}
+                onPublish={publishTerm}
+                onResolveConflicts={() => {
+                    setReviewOpen(false);
+                    setConflictsOpen(true);
+                }}
             />
-
-            <ClassDetailsDialog
-                classItem={selectedClass}
-                activeCourseId={courseFilter}
-                open={!!selectedClass}
-                onOpenChange={(o) => !o && setSelectedClass(null)}
-            />
-
-            <ScheduleExportDialog
-                open={exportDialogOpen}
-                onOpenChange={setExportDialogOpen}
-                courses={filters.available_courses}
-                initialCourseId={courseFilter === "all" ? null : Number(courseFilter)}
-            />
-
-            {/* Move Confirmation Dialog */}
-            <AlertDialog open={!!pendingMove} onOpenChange={(o) => !o && cancelMove()}>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Confirm Schedule Change</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            Are you sure you want to move{" "}
-                            <strong>
-                                {pendingMove?.subjectCode} ({pendingMove?.section})
-                            </strong>
-                            ?
-                            <div className="bg-muted mt-4 space-y-2 rounded-lg p-3">
-                                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-sm">
-                                    <div className="text-right">
-                                        <div className="font-semibold">{pendingMove?.fromDay}</div>
-                                        <div className="text-muted-foreground">{pendingMove?.fromTime}</div>
-                                    </div>
-                                    <div className="text-muted-foreground px-2">→</div>
-                                    <div>
-                                        <div className="text-primary font-semibold">{pendingMove?.toDay}</div>
-                                        <div className="text-primary font-medium">{pendingMove?.toTime}</div>
-                                    </div>
+            <Dialog open={conflictsOpen} onOpenChange={setConflictsOpen}>
+                <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
+                    <DialogHeader>
+                        <DialogTitle>Schedule conflicts</DialogTitle>
+                        <DialogDescription>These sessions overlap in this term. Open a class to adjust its times or room.</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-3">
+                        {conflicts.map((conflict, index) => (
+                            <div key={index} className="space-y-2 rounded-lg border p-4 text-sm">
+                                <p className="text-destructive font-medium">
+                                    {conflict.conflict_type === "section"
+                                        ? "Same section"
+                                        : conflict.conflict_type === "faculty"
+                                          ? "Same instructor"
+                                          : "Same room"}{" "}
+                                    · {conflict.day}
+                                </p>
+                                <p className="text-muted-foreground">{conflict.time}</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {[conflict.class_1, conflict.class_2].map((item, i) => (
+                                        <Button
+                                            key={i}
+                                            variant="outline"
+                                            size="sm"
+                                            disabled={!item.id}
+                                            onClick={() => {
+                                                if (item.id) router.visit(editClass.url(item.id));
+                                            }}
+                                        >
+                                            {item.subject_code} · {item.section}
+                                        </Button>
+                                    ))}
                                 </div>
                             </div>
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel disabled={isSaving}>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={confirmMove} disabled={isSaving}>
-                            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Confirm Move"}
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
-
+                        ))}
+                        {!conflicts.length && <p className="text-sm">No schedule conflicts detected.</p>}
+                    </div>
+                </DialogContent>
+            </Dialog>
             <GenerateOfferingsDialog
-                open={generateDialogOpen}
-                onOpenChange={setGenerateDialogOpen}
-                schoolYear={term_context?.school_year ?? defaults.school_year}
-                semester={term_context?.semester ?? defaults.semester}
+                open={generateOpen}
+                onOpenChange={setGenerateOpen}
+                schoolYear={schoolYear}
+                semester={semester}
                 courses={creation_options.courses}
                 shsStrands={creation_options.shs_strands}
                 rooms={creation_options.rooms}
-                onGenerate={handleGenerateOfferings}
+                onGenerate={generateClasses}
             />
-
-            <CreateClassDialog
-                open={createDialogOpen}
-                onOpenChange={setCreateDialogOpen}
-                options={creation_options}
-                defaults={defaults}
-                existingSchedules={localData.flatMap((cls) =>
-                    cls.schedules.map((sched) => ({
-                        id: sched.id ?? cls.id,
-                        subject_code: cls.subject_code,
-                        subject_title: cls.subject_title,
-                        section: cls.section,
-                        faculty_name: cls.faculty_name,
-                        room_id: sched.room_id ?? null,
-                        room: sched.room ?? null,
-                        day_of_week: sched.day_of_week,
-                        start_time: sched.start_time,
-                        end_time: sched.end_time,
-                        time_range: sched.time_range,
-                    })),
-                )}
-                onClassCreated={handleClassCreated}
+            <ScheduleExportDialog
+                open={exportOpen}
+                onOpenChange={setExportOpen}
+                courses={filters.available_courses}
+                initialCourseId={viewFilters.course === "all" ? null : Number(viewFilters.course)}
             />
         </AdminLayout>
     );

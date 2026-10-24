@@ -1,64 +1,259 @@
-import { ClassScheduleVisualizer } from "@/components/administrators/classes/schedule-visualizer";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CalendarPlus, DoorOpen } from "lucide-react";
-import type { ReactNode } from "react";
-import { createDefaultSchedule, type ClassSchedule, type EntityOption, type ValueOption } from "../../lib/class-defaults";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
+import { CalendarDays, Plus, Trash2 } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { type ClassSchedule, type EntityOption, type ValueOption } from "../../lib/class-defaults";
 
 type ScheduleGridProps = {
     schedules: ClassSchedule[];
     rooms: EntityOption[];
     dayOptions: ValueOption[];
-    primaryRoomId: number;
+    primaryRoomId: number | null;
+    isOnline: boolean;
     onSchedulesChange: (schedules: ClassSchedule[]) => void;
 };
 
-export function ScheduleGrid({ schedules, rooms, dayOptions, primaryRoomId, onSchedulesChange }: ScheduleGridProps): ReactNode {
-    const activeDays = new Set(schedules.map((schedule) => schedule.day_of_week).filter(Boolean)).size;
+const selectClassName =
+    "h-11 w-full min-w-0 rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
-    const addBlock = (): void => {
-        onSchedulesChange([...schedules, createDefaultSchedule(primaryRoomId)]);
+const presets = [
+    { label: "Mon / Wed / Fri", days: ["Monday", "Wednesday", "Friday"], start: "08:00", end: "09:00" },
+    { label: "Tue / Thu", days: ["Tuesday", "Thursday"], start: "08:00", end: "09:30" },
+    { label: "One long meeting", days: ["Monday"], start: "08:00", end: "11:00" },
+];
+
+function toMinutes(time: string): number {
+    return Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
+}
+
+function sessionIssue(schedule: ClassSchedule, others: ClassSchedule[]): string | null {
+    if (!schedule.start_time || !schedule.end_time || schedule.end_time <= schedule.start_time) {
+        return "The end time must be after the start time.";
+    }
+
+    const overlaps = others.some(
+        (other) => other.day_of_week === schedule.day_of_week && other.start_time < schedule.end_time && other.end_time > schedule.start_time,
+    );
+
+    return overlaps ? "This overlaps another meeting on the same day." : null;
+}
+
+export function ScheduleGrid({ schedules, rooms, dayOptions, primaryRoomId, isOnline, onSchedulesChange }: ScheduleGridProps): ReactNode {
+    const [days, setDays] = useState<string[]>(["Monday", "Wednesday", "Friday"]);
+    const [start, setStart] = useState("08:00");
+    const [end, setEnd] = useState("09:00");
+    const [error, setError] = useState<string | null>(null);
+
+    const weeklyHours = schedules.reduce((total, item) => total + Math.max(0, toMinutes(item.end_time) - toMinutes(item.start_time)), 0) / 60;
+
+    const update = (index: number, changes: Partial<ClassSchedule>): void => {
+        onSchedulesChange(schedules.map((item, itemIndex) => (itemIndex === index ? { ...item, ...changes } : item)));
+    };
+
+    const addMeetings = (): void => {
+        if (days.length === 0 || !start || !end || end <= start) {
+            setError("Pick at least one day, and an end time after the start time.");
+
+            return;
+        }
+
+        const groupId = days.length > 1 ? crypto.randomUUID() : null;
+        const additions = dayOptions
+            .filter((day) => days.includes(day.value))
+            .map((day): ClassSchedule => ({
+                day_of_week: day.value,
+                start_time: start,
+                end_time: end,
+                room_id: isOnline ? null : primaryRoomId,
+                component_type: "lecture",
+                pattern_group_id: groupId,
+            }));
+
+        onSchedulesChange([...schedules, ...additions]);
+        setError(null);
     };
 
     return (
-        <div className="space-y-4">
-            <div className="flex flex-col gap-3 rounded-xl border bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="secondary">{schedules.length} blocks</Badge>
-                    <Badge variant="outline">{activeDays} active days</Badge>
+        <div className="space-y-6">
+            <section aria-label="Add meetings" className="bg-muted/30 space-y-4 rounded-lg border p-4 sm:p-5">
+                <div className="space-y-1">
+                    <h4 className="text-sm font-semibold">Add meeting times</h4>
+                    <p className="text-muted-foreground text-sm">Pick the days and the time. The class repeats on those days every week.</p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                    {schedules.length > 1 ? (
+
+                <div className="flex flex-wrap gap-2">
+                    {presets.map((preset) => (
                         <Button
+                            key={preset.label}
                             type="button"
                             variant="outline"
-                            onClick={() => onSchedulesChange(schedules.map((schedule) => ({ ...schedule, room_id: primaryRoomId })))}
+                            className="h-10 px-3"
+                            onClick={() => {
+                                setDays(preset.days);
+                                setStart(preset.start);
+                                setEnd(preset.end);
+                            }}
                         >
-                            <DoorOpen className="size-4" />
-                            Apply primary room to all
+                            {preset.label}
                         </Button>
-                    ) : null}
-                    <Button type="button" onClick={addBlock}>
-                        <CalendarPlus className="size-4" />
-                        Add block
+                    ))}
+                </div>
+
+                <div className="flex flex-wrap gap-2" role="group" aria-label="Meeting days">
+                    {dayOptions.map((day) => {
+                        const selected = days.includes(day.value);
+
+                        return (
+                            <Button
+                                key={day.value}
+                                type="button"
+                                variant="outline"
+                                aria-pressed={selected}
+                                aria-label={day.label}
+                                className={cn("h-10 min-w-12 px-3", selected && "border-primary bg-primary/10 text-primary")}
+                                onClick={() => setDays(selected ? days.filter((value) => value !== day.value) : [...days, day.value])}
+                            >
+                                {day.label.slice(0, 3)}
+                            </Button>
+                        );
+                    })}
+                </div>
+
+                <div className="flex flex-wrap items-end gap-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="meeting-start">Starts</Label>
+                        <Input
+                            id="meeting-start"
+                            type="time"
+                            className="h-11 w-36"
+                            value={start}
+                            onChange={(event) => setStart(event.target.value)}
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="meeting-end">Ends</Label>
+                        <Input id="meeting-end" type="time" className="h-11 w-36" value={end} onChange={(event) => setEnd(event.target.value)} />
+                    </div>
+                    <Button type="button" className="h-11 px-4" onClick={addMeetings}>
+                        <Plus className="size-4" aria-hidden="true" />
+                        Add {days.length} {days.length === 1 ? "meeting" : "meetings"}
                     </Button>
                 </div>
-            </div>
 
-            <ClassScheduleVisualizer
-                schedules={schedules}
-                rooms={rooms}
-                dayOptions={dayOptions}
-                onScheduleChange={(index, schedule) => onSchedulesChange(schedules.map((item, itemIndex) => (itemIndex === index ? schedule : item)))}
-                onDuplicateSchedule={(index) => {
-                    const schedule = schedules[index];
-                    if (schedule) {
-                        onSchedulesChange([...schedules, { ...schedule }]);
-                    }
-                }}
-                onRemoveSchedule={(index) => onSchedulesChange(schedules.filter((_, itemIndex) => itemIndex !== index))}
-                canRemoveSchedule={schedules.length > 1}
-            />
+                {error ? (
+                    <p role="alert" className="text-destructive text-sm">
+                        {error}
+                    </p>
+                ) : null}
+            </section>
+
+            {schedules.length === 0 ? (
+                <div className="flex items-start gap-4 rounded-lg border border-dashed p-5">
+                    <CalendarDays className="text-muted-foreground mt-0.5 size-5 shrink-0" aria-hidden="true" />
+                    <p className="text-muted-foreground max-w-xl text-sm">
+                        No meetings yet. You can save the class now and set its times later from the schedule planner.
+                    </p>
+                </div>
+            ) : (
+                <div className="space-y-3">
+                    <p className="text-muted-foreground text-sm" aria-live="polite">
+                        <span className="text-foreground font-medium">
+                            {schedules.length} {schedules.length === 1 ? "meeting" : "meetings"}
+                        </span>{" "}
+                        · {Number(weeklyHours.toFixed(1))} hours per week
+                    </p>
+                    <ul className="divide-y rounded-lg border">
+                        {schedules.map((schedule, index) => {
+                            const issue = sessionIssue(
+                                schedule,
+                                schedules.filter((_, otherIndex) => otherIndex !== index),
+                            );
+
+                            return (
+                                <li key={schedule.id ?? `meeting-${index}`} className={cn("space-y-3 p-4", issue && "bg-destructive/5")}>
+                                    <div className={cn("grid gap-3", isOnline ? "sm:grid-cols-3" : "sm:grid-cols-4")}>
+                                        <div className="space-y-1.5">
+                                            <Label htmlFor={`meeting-${index}-day`}>Day</Label>
+                                            <select
+                                                id={`meeting-${index}-day`}
+                                                className={selectClassName}
+                                                value={schedule.day_of_week}
+                                                onChange={(event) => update(index, { day_of_week: event.target.value })}
+                                            >
+                                                {dayOptions.map((day) => (
+                                                    <option key={day.value} value={day.value}>
+                                                        {day.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label htmlFor={`meeting-${index}-start`}>Starts</Label>
+                                            <Input
+                                                id={`meeting-${index}-start`}
+                                                type="time"
+                                                className="h-11"
+                                                value={schedule.start_time}
+                                                aria-invalid={Boolean(issue)}
+                                                onChange={(event) => update(index, { start_time: event.target.value })}
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label htmlFor={`meeting-${index}-end`}>Ends</Label>
+                                            <Input
+                                                id={`meeting-${index}-end`}
+                                                type="time"
+                                                className="h-11"
+                                                value={schedule.end_time}
+                                                aria-invalid={Boolean(issue)}
+                                                onChange={(event) => update(index, { end_time: event.target.value })}
+                                            />
+                                        </div>
+                                        {isOnline ? null : (
+                                            <div className="space-y-1.5">
+                                                <Label htmlFor={`meeting-${index}-room`}>Room</Label>
+                                                <select
+                                                    id={`meeting-${index}-room`}
+                                                    className={selectClassName}
+                                                    value={schedule.room_id ?? 0}
+                                                    onChange={(event) => update(index, { room_id: Number(event.target.value) || null })}
+                                                >
+                                                    <option value={0}>Assign later</option>
+                                                    {rooms.map((room) => (
+                                                        <option key={room.id} value={room.id}>
+                                                            {room.label}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center justify-between gap-2">
+                                        <p
+                                            className={cn("text-sm", issue ? "text-destructive" : "text-muted-foreground")}
+                                            role={issue ? "alert" : undefined}
+                                        >
+                                            {issue ?? `Every ${schedule.day_of_week}`}
+                                        </p>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            className="text-muted-foreground hover:text-destructive h-10 px-3"
+                                            aria-label={`Remove meeting ${index + 1}`}
+                                            onClick={() => onSchedulesChange(schedules.filter((_, itemIndex) => itemIndex !== index))}
+                                        >
+                                            <Trash2 className="size-4" aria-hidden="true" />
+                                            Remove
+                                        </Button>
+                                    </div>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                </div>
+            )}
         </div>
     );
 }

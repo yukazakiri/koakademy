@@ -18,6 +18,7 @@ export type GenerateOfferingsPayload = {
     sections: string[];
     maximum_slots: number;
     room_id: number | null;
+    delivery_mode: "face_to_face" | "online";
     course_id?: number;
     academic_year?: number;
     shs_strand_id?: number;
@@ -56,6 +57,7 @@ export default function GenerateOfferingsDialog({
     const [sections, setSections] = React.useState<string[]>(["A"]);
     const [maximumSlots, setMaximumSlots] = React.useState<number>(40);
     const [defaultRoomId, setDefaultRoomId] = React.useState<string>("none");
+    const [deliveryMode, setDeliveryMode] = React.useState<"face_to_face" | "online">("face_to_face");
     const [isGenerating, setIsGenerating] = React.useState(false);
 
     React.useEffect(() => {
@@ -82,7 +84,8 @@ export default function GenerateOfferingsDialog({
                 semester,
                 sections,
                 maximum_slots: maximumSlots,
-                room_id: defaultRoomId !== "none" ? parseInt(defaultRoomId, 10) : null,
+                room_id: deliveryMode === "online" || defaultRoomId === "none" ? null : parseInt(defaultRoomId, 10),
+                delivery_mode: deliveryMode,
                 ...(classification === "college"
                     ? {
                           course_id: parseInt(courseId, 10),
@@ -100,9 +103,7 @@ export default function GenerateOfferingsDialog({
         }
     };
 
-    const canSubmit =
-        sections.length > 0 &&
-        (classification === "college" ? Boolean(courseId && academicYear) : Boolean(strandId && gradeLevel));
+    const canSubmit = sections.length > 0 && (classification === "college" ? Boolean(courseId && academicYear) : Boolean(strandId && gradeLevel));
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -110,10 +111,10 @@ export default function GenerateOfferingsDialog({
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <Sparkles className="text-primary h-5 w-5" />
-                        Generate Cohort Offerings from Curriculum
+                        Add classes from curriculum
                     </DialogTitle>
                     <DialogDescription>
-                        Bulk-create unscheduled class offerings for AY {schoolYear} (Semester {semester}) from the program curriculum so you can immediately schedule them in the Planning Queue.
+                        Add subjects from the curriculum for {schoolYear}, semester {semester}. You can assign their class times next.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -205,7 +206,7 @@ export default function GenerateOfferingsDialog({
                     )}
 
                     <div className="space-y-1.5">
-                        <Label className="text-xs font-semibold">Block Sections to Generate</Label>
+                        <Label className="text-xs font-semibold">Sections</Label>
                         <div className="flex flex-wrap gap-2">
                             {ALL_SECTIONS.map((sec) => {
                                 const active = sections.includes(sec);
@@ -215,6 +216,7 @@ export default function GenerateOfferingsDialog({
                                         type="button"
                                         size="sm"
                                         variant={active ? "default" : "outline"}
+                                        aria-pressed={active}
                                         className="h-8 px-3 text-xs"
                                         onClick={() => toggleSection(sec)}
                                     >
@@ -225,9 +227,21 @@ export default function GenerateOfferingsDialog({
                         </div>
                     </div>
 
+                    <div className="space-y-2">
+                        <Label htmlFor="offerings-delivery-mode">How are these classes taught?</Label>
+                        <Select value={deliveryMode} onValueChange={(value) => setDeliveryMode(value as "face_to_face" | "online")}>
+                            <SelectTrigger id="offerings-delivery-mode" className="w-full">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="face_to_face">Face to face</SelectItem>
+                                <SelectItem value="online">Online</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
                     <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1.5">
-                            <Label className="text-xs">Max Slots per Section</Label>
+                            <Label className="text-xs">Students per class</Label>
                             <Input
                                 type="number"
                                 min={1}
@@ -236,22 +250,26 @@ export default function GenerateOfferingsDialog({
                                 onChange={(e) => setMaximumSlots(Math.max(1, parseInt(e.target.value || "40", 10)))}
                             />
                         </div>
-                        <div className="space-y-1.5">
-                            <Label className="text-xs">Default Room (Optional)</Label>
-                            <Select value={defaultRoomId} onValueChange={setDefaultRoomId}>
-                                <SelectTrigger>
-                                    <SelectValue placeholder="TBA / Assign later" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="none">TBA (Assign during scheduling)</SelectItem>
-                                    {rooms.map((r) => (
-                                        <SelectItem key={r.id} value={String(r.id)}>
-                                            {r.name}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
+                        {deliveryMode === "online" ? (
+                            <p className="text-muted-foreground self-end py-2 text-sm">No room reserved for online classes.</p>
+                        ) : (
+                            <div className="space-y-1.5">
+                                <Label className="text-xs">Default Room (Optional)</Label>
+                                <Select value={defaultRoomId} onValueChange={setDefaultRoomId}>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="TBA / Assign later" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="none">TBA (Assign during scheduling)</SelectItem>
+                                        {rooms.map((r) => (
+                                            <SelectItem key={r.id} value={String(r.id)}>
+                                                {r.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -261,7 +279,7 @@ export default function GenerateOfferingsDialog({
                     </Button>
                     <Button type="button" onClick={handleSubmit} disabled={!canSubmit || isGenerating}>
                         {isGenerating ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}
-                        Generate Offerings
+                        Add classes
                     </Button>
                 </DialogFooter>
             </DialogContent>

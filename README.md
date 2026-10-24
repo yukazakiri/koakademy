@@ -1,262 +1,193 @@
-﻿<h1 align="center">KoAkademy</h1>
+<div align="center">
 
-<p align="center">
-  <strong>An open-source school administration platform built from real classroom experience.</strong><br>
-  Your students' records belong to your institution—not to a vendor subscription.
-</p>
+# 🎓 KoAkademy
 
-<p align="center">
-  <a href="#why-koakademy"><strong>Why KoAkademy</strong></a> ·
-  <a href="#the-platform"><strong>The Platform</strong></a> ·
-  <a href="#the-stack"><strong>Stack</strong></a> ·
-  <a href="#quick-start"><strong>Quick Start</strong></a> ·
-  <a href="#operate-it"><strong>Operate It</strong></a> ·
-  <a href="CONTRIBUTING.md"><strong>Contributing</strong></a>
-</p>
+**School management that institutions can own — and developers can help shape.**
 
-<p align="center">
-  <a href="https://github.com/yukazakiri/koakademy/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/yukazakiri/koakademy/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/yukazakiri/koakademy/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/yukazakiri/koakademy?sort=semver"></a>
-  <a href="LICENSE.md"><img alt="AGPL-3.0-or-later licence" src="https://img.shields.io/badge/licence-AGPL--3.0--or--later-0b6e4f.svg"></a>
-  <img alt="PHP 8.5" src="https://img.shields.io/badge/PHP-8.5-777bb4.svg">
-  <img alt="Laravel 13" src="https://img.shields.io/badge/Laravel-13-ff2d20.svg">
-  <img alt="Docker" src="https://img.shields.io/badge/runs%20on-Docker-2496ed.svg">
-</p>
+An open-source, self-hosted platform for enrollment, academics, finance, and day-to-day school operations. Built with real school workflows in mind, starting in the Philippines.
 
-<p align="center">
-  <img alt="KoAkademy administrator dashboard with institutional overview, enrolment monitoring, and finance shortcuts" src="docs/src/assets/screenshots/admin-dashboard.png" width="100%">
-</p>
+[Explore the project](#what-is-koakademy) · [Run it locally](#try-koakademy-locally) · [View the architecture](#under-the-hood) · [Contribute](#join-the-community)
 
----
+[![CI](https://github.com/yukazakiri/koakademy/actions/workflows/ci.yml/badge.svg)](https://github.com/yukazakiri/koakademy/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/yukazakiri/koakademy?sort=semver)](https://github.com/yukazakiri/koakademy/releases)
+[![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-0b6e4f)](LICENSE.md)
+[![PHP 8.5](https://img.shields.io/badge/PHP-8.5-777bb4)](composer.json)
+[![Laravel 13](https://img.shields.io/badge/Laravel-13-ff2d20)](composer.json)
+[![Contributions welcome](https://img.shields.io/badge/contributions-welcome-2ea44f)](CONTRIBUTING.md)
 
-> [!WARNING]
-> KoAkademy is beta software and is not yet recommended for production use. Pre-v2 releases can contain breaking changes or incompatible upgrades. Evaluate it in staging, keep tested backups, and review the [security guidance](SECURITY.md) before storing institutional data.
+<img src="docs/src/assets/screenshots/admin-dashboard.png" alt="KoAkademy administrator dashboard" width="100%">
 
-## Why KoAkademy
+</div>
 
-KoAkademy started in 2023 as a college feasibility project here in the Philippines. Back then, my groupmates and I were just students trying to solve a real problem at our school: the existing systems were either too expensive, too rigid, or simply not built for how Philippine schools actually operate. We wrote the first version in vanilla PHP. In 2024, we rebuilt it on Laravel. After graduation, I kept going—alone at first, then with the help of tools like Codex, and now as a working developer.
+> [!CAUTION]
+> **Beta / not production-ready.** KoAkademy is evolving and has [open security, data-integrity, and performance audit findings](https://github.com/yukazakiri/koakademy/issues/440). **Do not expose it to the public internet with real student, staff, health, or financial records until those issues have been resolved and the deployment has been independently reviewed.** Explore with synthetic data in an isolated development or staging environment. See [current limitations](#status-and-limitations) and [security guidance](SECURITY.md).
 
-The system went live at our school and has been running there ever since. Today, two schools use it as part of their core infrastructure. I have never charged for it. I am not great at closing deals, and honestly, I have never been paid for this project. I just wanted to help my school innovate, even a little.
+## What is KoAkademy?
 
-That is why I open-sourced it. If your institution cannot afford a commercial SIS or LIS, you should still have access to a system that respects your data and your budget.
+Every school deserves tools it can understand, adapt, and operate without being locked into someone else's pricing or roadmap.
 
-**School software holds more than a timetable.** It holds student identities, grades, tuition, medical records, attendance, and years of institutional history. When that system is a hosted product, the school inherits someone else'"'"'s pricing, roadmap, retention policy, and operational decisions.
+KoAkademy brings essential school workflows into one self-hosted Laravel application. It is designed for administrators, registrars, faculty, and students, while giving developers a real-world codebase to learn from and extend.
 
-KoAkademy takes a different position: **the institution should own the system of record.** It is a complete school administration and learning platform that runs on infrastructure you choose. The PostgreSQL database, object storage, backups, domains, and upgrade schedule are yours to manage and audit.
+**Why build it?** The project began in 2023 as a college feasibility project in the Philippines. Its first version used vanilla PHP; it was rebuilt with Laravel in 2024. Experience with actual school operations shaped the workflows you see here — especially enrollment, registrar processes, and billing.
 
-No per-student pricing. No feature gates hidden behind a sales call. Just a tool that works.
+This is not a claim that one system already fits every institution. It is an invitation to **build more accessible, adaptable school software together**.
 
-## From the Author
+### What you can explore
 
-Yes, this project is only half complete. But it is usable today, and it is already helping real schools. If you have suggestions, improvements, or just want to rant about a bug you found, you are always welcome. And if KoAkademy has been useful to you, a star on the repository goes a long way—it keeps me motivated to continue.
+| Area | What KoAkademy includes |
+| --- | --- |
+| **Enrollment and admissions** | Configurable, versioned enrollment blueprints with eligibility checks, approvals, simulation, staged publication, and rollback. |
+| **Academic management** | Students, faculty, courses, programs, classes, schedules, attendance, grading, and reporting. |
+| **Role-focused portals** | Administrator, faculty, and student experiences for their daily tasks. |
+| **Finance and billing** | Tuition assessment, payment recording, statements, receipts, and reporting. |
+| **Optional modules** | Library, inventory, cashier, announcements, notification tools, student medical records, and Forms. |
+| **Administration** | Institution branding, role-based access controls, authentication options, and operator-managed infrastructure. |
 
-Feel free to try it and share feedback. Even the harsh kind. I appreciate every single one.
+Features vary in maturity. Treat this as a **codebase to evaluate and improve**, not a fully audited school information system.
 
-## A Note on School Operations
-
-Every feature and data model in KoAkademy is shaped by the day-to-day workflow of real Philippine schools. The enrollment flow, grading schema, finance structure, and registrar processes reflect how schools here actually operate—which can differ quite a bit from what you might call "standard" international practice.
-
-If you are from another country and find that our data schema or school operations do not quite match yours, pull requests are genuinely appreciated. I would love to make KoAkademy flexible enough to support schools worldwide, but I can only build for what I know. Your input helps us all.
-
-## Screenshots
+### A look inside
 
 <table>
-  <tr>
-    <td width="50%">
-      <img alt="KoAkademy enrolment management table" src="docs/src/assets/screenshots/enrollments.png">
-      <p align="center"><sub><b>Enrollment</b> — track applicants, verification status, balances, and the registrar workflow in one place.</sub></p>
-    </td>
-    <td width="50%">
-      <img alt="KoAkademy classes and academic scheduling workspace" src="docs/src/assets/screenshots/classes.png">
-      <p align="center"><sub><b>Academics</b> — manage sections, capacity, curricula, and schedules with the school context intact.</sub></p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <img alt="KoAkademy finance dashboard" src="docs/src/assets/screenshots/finance.png">
-      <p align="center"><sub><b>Finance</b> — assess tuition, receive payments, and issue records without exporting student data to another product.</sub></p>
-    </td>
-    <td width="50%">
-      <img alt="KoAkademy searchable digital library catalogue" src="docs/src/assets/screenshots/library.png">
-      <p align="center"><sub><b>Library</b> — catalogue physical holdings and publish rights-cleared digital editions through a controlled reader.</sub></p>
-    </td>
-  </tr>
+<tr>
+<td width="50%"><img src="docs/src/assets/screenshots/enrollments.png" alt="Enrollment management screen"><br><sub><b>Enrollment</b> — applicants, verification, and registrar workflows</sub></td>
+<td width="50%"><img src="docs/src/assets/screenshots/classes.png" alt="Class management screen"><br><sub><b>Academics</b> — classes, curricula, and schedules</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/src/assets/screenshots/finance.png" alt="Finance dashboard"><br><sub><b>Finance</b> — assessments, payments, and records</sub></td>
+<td width="50%"><img src="docs/src/assets/screenshots/library.png" alt="Library catalogue"><br><sub><b>Library</b> — cataloguing and digital reading workflows</sub></td>
+</tr>
 </table>
 
-## The Platform
+## Try KoAkademy locally
 
-KoAkademy is built around the daily work of a school, not a generic database with education fields added later.
+**Curious about the project? Start here.** Local development uses SQLite and does not require PostgreSQL, Redis, object storage, or third-party API keys for the basic setup.
 
-|                                 |                                                                                                                                                                                               |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Administration**              | Students, faculty, programs, courses, classrooms, terms, schedules, attendance, grading, reports, and institution branding.                                                                   |
-| **Enrollment**                  | A registrar-to-cashier workflow driven by versioned enrollment blueprints. Rules can be scoped, simulated, staged, and rolled back instead of being buried in code.                           |
-| **Three portals**               | Distinct administrator, faculty, and student experiences for the work each role actually needs: classes, attendance, submissions, grades, schedules, tuition, announcements, and digital IDs. |
-| **Finance**                     | Tuition assessment, payment posting, statements of account, receipts, public verification, and finance reporting.                                                                             |
-| **Optional modules**            | Library, inventory, cashier, student medical records, announcements, notification tools, and standalone workflows such as Forms can be enabled as the institution needs them.                                                     |
-| **Security and accountability** | Role-based permissions, multi-factor authentication, passkeys, audited impersonation, and an operator-controlled deployment boundary.                                                         |
+**You'll need:** PHP **8.5**, Composer **2**, Node.js **22**, npm, and SQLite support for PHP. See the [development guide](docs/src/content/docs/start-here/development.mdx) for system packages and advanced workflows.
 
-The public API is intentionally small while it is beta. Only the endpoints described in the [API documentation](docs/src/content/docs/api/api-overview.mdx) are part of its supported contract.
+```bash
+# Get the source
+git clone https://github.com/yukazakiri/koakademy.git
+cd koakademy
 
-### The enrollment engine
+# Install backend and frontend dependencies
+composer install
+npm ci
 
-Enrollment is where a school’s rules become visible: who can enrol, which documents they need, which checks must happen before payment, what tuition applies, and when an account becomes active. Those are institutional policies, not constants that should require a deployment to change.
+# Create a local environment
+cp .env.example .env
+php artisan key:generate
+touch database/database.sqlite
+php artisan migrate
 
-KoAkademy models them as versioned blueprints with inheritance, availability and eligibility checks, academic and billing gates, approvals, notifications, simulations, staged publication, and rollback. The result is a workflow a registrar can understand and an institution can adapt without losing its audit trail. Read the [blueprint overview](docs/src/content/docs/enrollment-policies/overview.mdx) for the model and the [quick start](docs/src/content/docs/enrollment-policies/quick-start.mdx) to configure one.
+# Build assets and start the application
+npm run build
+php artisan serve
+```
 
-## The Stack
+Open **http://127.0.0.1:8000/setup** to initialize a local institution and create its first administrator. Use fictitious data while exploring.
 
-A Laravel application with a React portal layer, packaged for self-hosting rather than split across vendor services.
+Working on the React interface? Run `npm run dev` in a second terminal for Vite hot reloading. If something doesn't work, check the [development guide](docs/src/content/docs/start-here/development.mdx), search [existing issues](https://github.com/yukazakiri/koakademy/issues), or open a reproducible bug report.
 
-|                   |                                                                                                                      |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------- |
-| **Application**   | [Laravel 13](https://laravel.com) · PHP 8.5 · [Filament 5](https://filamentphp.com)                                  |
-| **Portals**       | [Inertia v3](https://inertiajs.com) · [React 19](https://react.dev) · TypeScript · [Vite 8](https://vitejs.dev)                                 |
-| **Data and jobs** | PostgreSQL · Redis · Laravel queues, cache, sessions, and scheduled work                                             |
-| **Documents**     | [Gotenberg](https://gotenberg.dev) for PDFs · S3-compatible object storage for uploads                               |
-| **Runtime**       | nginx + PHP-FPM in a Docker image, with a FrankenPHP (Octane) variant · Docker Swarm installer or supported Docker Compose topology |
-| **Quality**       | [Pest 5](https://pestphp.com) · Laravel Pint · frontend and documentation builds · CI validation                                              |
+## Under the hood
 
-### Supported environments
+KoAkademy is a **modular Laravel monolith**, not a collection of separately hosted microservices. The administration panel, React portals, background jobs, and optional modules share an application and authorization model.
 
-| Area | Supported baseline |
+| Layer | Technology |
 | --- | --- |
-| Production host | Linux with Docker Engine and a public DNS name |
-| CPU architectures | AMD64 and ARM64 |
-| Application runtime | PHP 8.5, Laravel 13, Filament 5 |
-| Databases | PostgreSQL in production; SQLite for local development and tests |
-| Application services | Redis queues/cache/sessions and Gotenberg for production PDF rendering |
-| Alternative deployment | Docker Compose for operators managing their own reverse proxy |
+| Backend | PHP 8.5, Laravel 13, Filament 5 |
+| Frontend | React 19, TypeScript, Inertia v3, Vite 8 |
+| Production data | PostgreSQL, Redis |
+| Documents and storage | Gotenberg, local volumes or S3-compatible object storage |
+| Deployment | Docker, nginx/PHP-FPM or FrankenPHP; documented Docker Swarm and Compose configurations |
+| Testing and quality | Pest 5, Laravel Pint, frontend builds, GitHub Actions |
 
-## Public modules
-
-Optional domains are published as Composer packages from the signed
-[KoAkademy module registry](https://yukazakiri.github.io/koakademy-modules/):
-
-```sh
-composer config repositories.koakademy composer https://yukazakiri.github.io/koakademy-modules
-composer require koakademy/library-system:^1.0
+```text
+app/           Laravel services, models, policies, jobs, and controllers
+resources/js/  React/Inertia portals and shared UI
+Modules/       Optional school-operation modules
+database/      Migrations, factories, and seeders
+routes/        HTTP, API, and other route definitions
+tests/         Automated tests
+docker/        Container and runtime assets
+docs/          Guides for developers, operators, and school staff
 ```
 
-The core scans vendor-installed modules by default. The registry client is
-signature-checked and read-only; installations remain explicit Composer
-operations. The Marketplace can enable an installed module, but it does not
-install packages or update a running container. A container-hosted registry can
-generate its Ed25519 keypair on first deployment with its persistent key
-volume. Never commit the private key. See the [module registry deployment
-guide](docs/src/content/docs/maintainers/module-registry.mdx) for release and
-update procedures.
+To go deeper, read the [architecture guide](docs/src/content/docs/start-here/architecture.mdx), [enrollment blueprint overview](docs/src/content/docs/enrollment-policies/overview.mdx), and [documented API surface](docs/src/content/docs/api/api-overview.mdx).
 
-### Regulatory reporting providers
+## Self-hosting and operations
 
-Regulatory reports use an adapter contract and configuration registry so
-compatible providers can be added by contributors or modules. Only CHED
-E-Form B/C is built in and supported by this release; other jurisdictions
-require an explicit provider implementation and installation. See the
-[Regulatory Report Provider guide](docs/src/content/docs/development/regulatory-report-providers.mdx).
+KoAkademy aims to give institutions control of their deployment, database, backups, and upgrade schedule. **Self-hosted does not mean maintenance-free or cost-free**: hosting, storage, email, monitoring, recovery, and security remain the operator's responsibility.
 
-### Layout
+The documented Linux installer provisions a **single-node Docker Swarm** setup with Caddy HTTPS, a private application service, PostgreSQL, Redis, and Gotenberg. Manual Docker Compose deployment is also documented.
 
-| Path            |                                                                           |
-| --------------- | ------------------------------------------------------------------------- |
-| `app/`          | Laravel application services, models, policies, jobs, and HTTP boundaries |
-| `resources/js/` | Inertia React pages and shared portal components                          |
-| `Modules/`      | Optional domain modules                                                   |
-| `database/`     | Migrations, factories, and seeders                                        |
-| `docker/`       | Production image and runtime processes                                    |
-| `docs/`         | Operator, maintainer, API, and staff documentation                        |
-| `tests/`        | Pest feature and unit coverage                                            |
+**For now, use an isolated staging environment only.** Review [installation instructions](docs/src/content/docs/self-hosting/installation.mdx), [deployment and backup guidance](docs/src/content/docs/self-hosting/deployment.mdx), and the [latest release artifacts](https://github.com/yukazakiri/koakademy/releases) before attempting an installation. Installer scripts require elevated host privileges: inspect any downloaded script before running it.
 
-## Quick Start
+## Status and limitations
 
-The supported production installer is Linux-only. It installs Docker when needed, preserves or creates a single-node Swarm manager, creates an attachable overlay network, deploys Caddy HTTPS with PostgreSQL, Redis, Gotenberg, and a private FrankenPHP application, then opens the one-time `/setup` wizard.
+We would rather be transparent about what's unfinished than surprise a school or contributor later.
 
-**Linux**
+| Limitation | What it means today |
+| --- | --- |
+| **Beta quality and breaking changes** | Workflows, data models, and integrations can change. Upgrades require staging tests and backups; pre-v2 compatibility is not guaranteed. |
+| **Unresolved audit findings** | [Tracked security, database, and performance issues](https://github.com/yukazakiri/koakademy/issues/440) include potentially serious risks around access control, data exposure, financial records, and migrations. **Not suitable for real institutional data in its current state.** |
+| **Philippine-first workflows** | Enrollment, grading, finance, and registrar conventions were designed around Philippine institutions. Other countries and school systems will likely need changes. |
+| **Limited regulatory providers** | CHED E-Form B/C is the built-in reporting provider; other jurisdictions need their own adapters. |
+| **Small, evolving public API** | Only [documented endpoints](docs/src/content/docs/api/api-overview.mdx) are part of the beta contract. A general student CRUD API is not guaranteed. |
+| **Optional modules require installation** | Modules are distributed through Composer. The module catalogue and Marketplace do not automatically install packages into a running deployment. |
+| **No built-in high availability** | The default installer is single-node. It is not a multi-node failover solution, and recovery depends on tested backups and operator procedures. |
+| **Specific toolchain** | Development currently targets PHP 8.5 and Node.js 22. Earlier PHP versions are not supported by the declared dependency constraints. |
+| **Volunteer maintenance** | Support, issue response, and releases are best-effort, without guaranteed turnaround times or an SLA. |
 
-```sh
-curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh | bash
-```
+Check [open issues](https://github.com/yukazakiri/koakademy/issues) and [release notes](https://github.com/yukazakiri/koakademy/releases) for the latest state. If you find a vulnerability, **do not publish an exploit or sensitive data in an issue**; follow [SECURITY.md](SECURITY.md).
 
-The stable installer resolves the latest checksummed release by default.
-Provide the public hostname through `KOAKADEMY_DOMAIN` for a non-interactive
-install:
+## Join the community
 
-```sh
-curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh \
-  | env KOAKADEMY_DOMAIN=koakademy.koamishin.com bash
-```
+**You do not have to build a whole school feature to make a difference.** A clear bug report, a failing test, a corrected setup step, or a more accessible UI can help the next developer — and, eventually, the schools that depend on this kind of software.
 
-The installer requests root privileges only for Docker, Swarm, and
-`/opt/koakademy` operations, so the command can be run as your normal Linux
-user when `sudo` is available. It adds that user to Docker's `docker` group;
-log out and back in, or run `newgrp docker`, before using `docker` without
-`sudo`. Docker-group membership grants root-equivalent access to the host.
+Good places to start:
 
-Before using a public hostname, point its DNS `A` record to the VPS and allow
-inbound TCP ports 80 and 443. Caddy obtains and renews HTTPS certificates for
-that hostname. For the example domain, the application will be available at
-`https://koakademy.koamishin.com`, with administration at `/admin` and the
-one-time setup wizard at `/setup`.
+- **Try the local setup** and tell us what was confusing.
+- **Improve tests and fix bugs**, especially in authorization, data integrity, and enrollment workflows.
+- **Polish the interface**, documentation, accessibility, or developer experience.
+- **Help make the platform adaptable** to more schools, languages, and regulatory requirements.
 
-The `https://dokploy.com/install.sh` command installs Dokploy itself. It is not
-the KoAkademy installer and must not be used in place of the command above.
+Before a substantial change, read [CONTRIBUTING.md](CONTRIBUTING.md), check [issues](https://github.com/yukazakiri/koakademy/issues), and discuss your approach with the maintainers. Please use synthetic data in tests and bug reports.
 
-Visit `/setup` when the installer finishes to create the institution, the first academic period, and the first super administrator. The setup route closes after initialization.
+A useful local validation starting point:
 
-The installer runs privileged remote code. Inspect it first if that is not appropriate for your environment:
-
-```sh
-curl -fSLO https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh
-less install.sh
-env KOAKADEMY_DOMAIN=school.example bash install.sh
-```
-
-To evaluate the unreleased `master` build without a domain, use the edge
-channel. It resolves the current `master` commit, downloads the matching
-operator and Swarm assets, and publishes the app on port `8000` using the
-mutable `edge-frankenphp` image. Open `http://127.0.0.1:8000/setup` after it
-finishes, or choose another port with `--port`. This path is for staging and
-development only; it can change or break without a stable release:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.sh | bash -s -- edge
-```
-
-Stable releases publish the bootstrap, operator command, domain-backed and
-direct-port Swarm bundles, runtime configuration, image metadata, and
-`SHA256SUMS` together. The installer refuses
-to continue when the downloaded release assets do not verify as a complete
-bundle.
-
-For a manually managed deployment, use the [Installation guide](docs/src/content/docs/self-hosting/installation.mdx). It covers the supported Docker Compose topology, explicit migrations, S3-compatible storage, and the reverse-proxy requirements.
-
-For local development and verification, follow the [Development guide](docs/src/content/docs/start-here/development.mdx)
-and run the documented checks in [Contributing](CONTRIBUTING.md). The
-documentation and local-link check can be run independently with:
-
-```sh
+```bash
+vendor/bin/pint --test
+php artisan test --parallel --compact
+npm run build
 npm run docs:check
 ```
 
-## Operate It
+Thank you for considering a contribution. **One thoughtful improvement at a time is how this project gets better.** 💚
 
-Run a current stable release in production. Caddy owns ports 80/443; the application, PostgreSQL, Redis, and Gotenberg stay private. Use `koakademy update` for an explicit backed-up release update and `koakademy configure storage|mail|search` for Docker-Secret-backed provider changes. The operator self-elevates when it needs root-owned runtime files.
+## Documentation and help
 
-| Need                                               | Start here                                                                                              |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Install, configure, or upgrade a server            | [Installation](docs/src/content/docs/self-hosting/installation.mdx) · [Deployment](docs/src/content/docs/self-hosting/deployment.mdx) · [Configuration](docs/src/content/docs/self-hosting/configuration.mdx) |
-| Plan backups, HTTPS, storage, or recovery          | [Deployment runbook](docs/src/content/docs/self-hosting/deployment.mdx#backups) · [Self-hosting FAQ](docs/src/content/docs/self-hosting/faq.mdx)                                |
-| Understand the codebase and run it locally         | [Development](docs/src/content/docs/start-here/development.mdx) · [Architecture guide](docs/src/content/docs/start-here/architecture.mdx) |
-| Configure enrollment policies                      | [Enrollment blueprints](docs/src/content/docs/enrollment-policies/overview.mdx)                         |
-| Use the administrator, faculty, or student portals | [Staff user guide](docs/src/content/docs/user-guide/introduction.mdx)                                   |
-| Integrate with the supported API                   | [API overview](docs/src/content/docs/api/api-overview.mdx)                                              |
-
-The hosted documentation site, when enabled for the repository, is available at [yukazakiri.github.io/koakademy](https://yukazakiri.github.io/koakademy/).
-
-## Contributing and Security
-
-Contributions are welcome when they are focused, tested, and safe for self-hosting institutions. Start with [CONTRIBUTING.md](CONTRIBUTING.md). To report a vulnerability, use a private GitHub Security Advisory—not a public issue—and follow [SECURITY.md](SECURITY.md).
+| Looking for... | Start here |
+| --- | --- |
+| Local setup and code conventions | [Development guide](docs/src/content/docs/start-here/development.mdx) |
+| Contribution workflow and checks | [Contributing](CONTRIBUTING.md) |
+| Application architecture | [Architecture](docs/src/content/docs/start-here/architecture.mdx) |
+| Server setup, backups, and upgrades | [Installation](docs/src/content/docs/self-hosting/installation.mdx) · [Deployment](docs/src/content/docs/self-hosting/deployment.mdx) |
+| Enrollment rules | [Enrollment blueprints](docs/src/content/docs/enrollment-policies/overview.mdx) |
+| Supported integrations | [API overview](docs/src/content/docs/api/api-overview.mdx) |
+| Responsible vulnerability reports | [Security policy](SECURITY.md) |
 
 ## License
 
-KoAkademy is licensed under the [GNU AGPL-3.0-or-later](LICENSE.md). If people use a modified version over a network, they must be able to obtain that modified source. The code that handles a school’s records should remain available to the people who depend on it.
+KoAkademy is released under the **[GNU Affero General Public License v3.0 or later](LICENSE.md)** (AGPL-3.0-or-later).
+
+You may study, use, modify, and share the project under the license's terms. If you operate a modified version over a network, the AGPL includes obligations to offer the corresponding source code to its users. Read the [full license](LICENSE.md) for details.
+
+---
+
+<div align="center">
+
+**Built for schools. Open to developers. Better with a community.**
+
+If KoAkademy sparks an idea, try it locally, open an issue, or contribute a pull request. If you'd like to support its visibility, consider starring the repository. ⭐
+
+</div>

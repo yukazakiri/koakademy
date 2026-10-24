@@ -1,5 +1,44 @@
 # Changelog
 
+## [1.30.0](https://github.com/yukazakiri/koakademy/compare/v1.29.0...v1.30.0) (2026-10-24)
+
+
+### Features
+
+* **ai:** gate AI and MCP surfaces with managed flags ([#472](https://github.com/yukazakiri/koakademy/issues/472)) ([ce8502b](https://github.com/yukazakiri/koakademy/commit/ce8502b93753cbfed47fa6ba783f0ca806c0d64d))
+* **scheduling:** revamp class workspace and delivery modes ([#477](https://github.com/yukazakiri/koakademy/issues/477)) ([4f89838](https://github.com/yukazakiri/koakademy/commit/4f89838bc5df60d172992868cefeab61e9342c14))
+* **scheduling:** unify conflict engine, cohort offering generator, and schedule planner UX ([#473](https://github.com/yukazakiri/koakademy/issues/473)) ([5f7db97](https://github.com/yukazakiri/koakademy/commit/5f7db975da2855d3188004c01d0c6f7418d74ccc))
+* **themes:** adopt Shadebridge and system color defaults ([b884bd5](https://github.com/yukazakiri/koakademy/commit/b884bd5f5082f887b432e0c27358fb460adca1f7))
+* **themes:** adopt Shadebridge and system color defaults ([#466](https://github.com/yukazakiri/koakademy/issues/466)) ([2ff2603](https://github.com/yukazakiri/koakademy/commit/2ff2603497dcd9a46bd30c1efcaa34776ee5acf3))
+
+
+### Bug Fixes
+
+* **ai:** prevent replay duplicates and harden AI widget reliability ([#474](https://github.com/yukazakiri/koakademy/issues/474)) ([c556f15](https://github.com/yukazakiri/koakademy/commit/c556f15a05123e80f11684bde0bd3437aff85dc6))
+* **docs:** stop tracking stale Astro content cache ([c45ed32](https://github.com/yukazakiri/koakademy/commit/c45ed321268867a144a58fc97ac70003e1b5503c))
+* **modules:** recheck state table after a negative availability check ([#469](https://github.com/yukazakiri/koakademy/issues/469)) ([29ef13d](https://github.com/yukazakiri/koakademy/commit/29ef13d66cf5e555a6f107bd21aa1b639da73215))
+* **octane:** reset request-scoped state between requests ([#468](https://github.com/yukazakiri/koakademy/issues/468)) ([bec7253](https://github.com/yukazakiri/koakademy/commit/bec7253f7e40ba718a37bd586b191d4055a6f8e5))
+* **queue:** add supervisors for transfers and assessment exports, route PDF jobs to redis-pdf ([#471](https://github.com/yukazakiri/koakademy/issues/471)) ([88d2b96](https://github.com/yukazakiri/koakademy/commit/88d2b9610b3affe894c9a7761a5f17e3309ea7b7))
+* **scheduling:** support mixed delivery per class meeting ([#478](https://github.com/yukazakiri/koakademy/issues/478)) ([6db7d77](https://github.com/yukazakiri/koakademy/commit/6db7d77765598f9452449f4936666f4e8cf69d1c))
+* **search:** make search SQL portable across database drivers ([#465](https://github.com/yukazakiri/koakademy/issues/465)) ([4780a14](https://github.com/yukazakiri/koakademy/commit/4780a148ec8aaafe0bc882c52b02979314a67149))
+
+
+### Performance Improvements
+
+* **api:** cap per_page on API and admin endpoints ([#462](https://github.com/yukazakiri/koakademy/issues/462)) ([79bc6a5](https://github.com/yukazakiri/koakademy/commit/79bc6a5dce06e4dde8c8b1d446f33232cfbf979c))
+* **db:** drop redundant and low-cardinality indexes ([#467](https://github.com/yukazakiri/koakademy/issues/467)) ([a433ea6](https://github.com/yukazakiri/koakademy/commit/a433ea650b10b95af700f524d36be7151287a560))
+
+
+### Documentation
+
+* make KoAkademy README welcoming, scannable, and transparent ([#476](https://github.com/yukazakiri/koakademy/issues/476)) ([a0dd134](https://github.com/yukazakiri/koakademy/commit/a0dd134b2708dfd7349068b1af66afc8ae4a5ab5))
+* **themes:** add light and dark previews and fix overview slug ([6c841e0](https://github.com/yukazakiri/koakademy/commit/6c841e0f0317448ea863c8dbb033b174d6863aeb))
+
+
+### Tests
+
+* revamp curriculum workspace and add global subject search ([#470](https://github.com/yukazakiri/koakademy/issues/470)) ([a163826](https://github.com/yukazakiri/koakademy/commit/a1638262c4b017a6d19b96e40ef532884690deee))
+
 ## [1.29.0](https://github.com/yukazakiri/koakademy/compare/v1.28.0...v1.29.0) (2026-10-22)
 
 

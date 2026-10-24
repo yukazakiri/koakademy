@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests;
 
 use App\Models\Schedule;
+use App\Support\ScheduleDelivery;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -29,6 +30,7 @@ final class UpdateScheduleRequest extends FormRequest
             'day_of_week' => ['required', 'string', 'in:Monday,Tuesday,Wednesday,Thursday,Friday,Saturday'],
             'start_time' => ['required', 'date_format:H:i'],
             'end_time' => ['required', 'date_format:H:i', 'after:start_time'],
+            'delivery_mode' => ['sometimes', 'in:face_to_face,online'],
             'room_id' => ['nullable', 'integer', 'exists:rooms,id'],
             'component_type' => ['nullable', 'string', 'in:lecture,lab'],
             'status' => ['nullable', 'string', 'in:draft,published'],
@@ -52,8 +54,8 @@ final class UpdateScheduleRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $schedule = $this->route('schedule');
-        if ($schedule instanceof Schedule && $schedule->class?->isOnline()) {
-            $this->merge(['room_id' => null]);
+        if ($schedule instanceof Schedule) {
+            $this->merge(ScheduleDelivery::normalizeBlock($this->all(), $schedule->delivery_mode));
         }
     }
 }

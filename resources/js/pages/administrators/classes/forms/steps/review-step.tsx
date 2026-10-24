@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Pencil } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ClassFormData, ClassFormOptions, ClassSettings, SubjectOption } from "../../lib/class-defaults";
+import { deliveryModeLabel, meetingDeliverySummary } from "../../lib/class-defaults";
 import { FormSection } from "../form-section";
 
 type ReviewStepProps = {
@@ -91,8 +92,8 @@ export function ReviewStep({ data, options, collegeSubjects, onJumpToStep }: Rev
             >
                 <dl className="divide-y">
                     <ReviewRow label="Faculty">{optionLabel(options.faculties, data.faculty_id)}</ReviewRow>
-                    <ReviewRow label="Taught">{data.delivery_mode === "online" ? "Online" : "Face to face"}</ReviewRow>
-                    {data.delivery_mode === "online" ? null : <ReviewRow label="Primary room">{optionLabel(options.rooms, data.room_id)}</ReviewRow>}
+                    <ReviewRow label="Taught">{deliveryModeLabel(meetingDeliverySummary(data.schedules, data.delivery_mode))}</ReviewRow>
+                    {data.delivery_mode === "online" ? null : <ReviewRow label="Default room">{optionLabel(options.rooms, data.room_id)}</ReviewRow>}
                     <ReviewRow label="Weekly sessions">
                         {data.schedules.length === 0 ? (
                             <span className="text-muted-foreground font-normal">Unscheduled offering. Meeting times can be added later.</span>
@@ -104,7 +105,9 @@ export function ReviewStep({ data, options, collegeSubjects, onJumpToStep }: Rev
                                             {schedule.day_of_week} · {schedule.start_time}–{schedule.end_time}
                                         </p>
                                         <p className="text-muted-foreground font-normal">
-                                            {data.delivery_mode === "online" ? "Online" : optionLabel(options.rooms, schedule.room_id)}
+                                            {(schedule.delivery_mode ?? data.delivery_mode) === "online"
+                                                ? "Online · No room reserved"
+                                                : `Face to face · ${optionLabel(options.rooms, schedule.room_id)}`}
                                         </p>
                                     </li>
                                 ))}

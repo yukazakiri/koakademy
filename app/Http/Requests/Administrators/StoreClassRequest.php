@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Rules\NonOverlappingScheduleBlocksRule;
 use App\Rules\ScheduleOverlapRule;
 use App\Support\AdministratorPermissionChecker;
+use App\Support\ScheduleDelivery;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -61,6 +62,7 @@ final class StoreClassRequest extends FormRequest
             'schedules.*.day_of_week' => ['required', Rule::in(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])],
             'schedules.*.start_time' => ['required', 'date_format:H:i'],
             'schedules.*.end_time' => ['required', 'date_format:H:i'],
+            'schedules.*.delivery_mode' => ['sometimes', Rule::in(['face_to_face', 'online'])],
             'schedules.*.room_id' => ['nullable', 'integer', 'exists:rooms,id'],
             'schedules.*.component_type' => ['nullable', 'string', Rule::in(['lecture', 'lab'])],
             'schedules.*.pattern_group_id' => ['nullable', 'string', 'max:64'],
@@ -97,27 +99,17 @@ final class StoreClassRequest extends FormRequest
         ];
     }
 
-    /**
-     * An online class never occupies a room, so rooms are stripped before
-     * validation. This keeps room-conflict checks from firing on rooms that
-     * were left over from a face to face draft.
-     */
     protected function prepareForValidation(): void
     {
-        if ($this->input('delivery_mode') !== 'online') {
-            return;
+        if ($this->input('delivery_mode') === 'online') {
+            $this->merge(['room_id' => null]);
         }
 
-        $schedules = $this->input('schedules');
-
-        $this->merge([
-            'room_id' => null,
-            'schedules' => is_array($schedules)
-                ? array_map(
-                    static fn (mixed $schedule): mixed => is_array($schedule) ? [...$schedule, 'room_id' => null] : $schedule,
-                    $schedules,
-                )
-                : $schedules,
-        ]);
+        if ($this->exists('schedules')) {
+            $this->merge(['schedules' => ScheduleDelivery::normalizeSchedules(
+                $this->input('schedules'),
+                default: is_string($this->input('delivery_mode')) ? $this->input('delivery_mode') : null,
+            )]);
+        }
     }
 }

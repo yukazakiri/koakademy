@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Rules\NonOverlappingScheduleBlocksRule;
 use App\Rules\ScheduleOverlapRule;
 use App\Support\AdministratorPermissionChecker;
+use App\Support\ScheduleDelivery;
 use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Validator as ValidatorFacade;
@@ -75,6 +76,7 @@ final class UpdateClassRequest extends FormRequest
             'schedules.*.day_of_week' => ['required_with:schedules', Rule::in(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])],
             'schedules.*.start_time' => ['required_with:schedules', 'date_format:H:i'],
             'schedules.*.end_time' => ['required_with:schedules', 'date_format:H:i'],
+            'schedules.*.delivery_mode' => ['sometimes', Rule::in(['face_to_face', 'online'])],
             'schedules.*.room_id' => ['nullable', 'integer', 'exists:rooms,id'],
             'schedules.*.component_type' => ['nullable', 'string', Rule::in(['lecture', 'lab'])],
             'schedules.*.pattern_group_id' => ['nullable', 'string', 'max:64'],
@@ -124,6 +126,7 @@ final class UpdateClassRequest extends FormRequest
                 'start_time' => $schedule->start_time?->format('H:i:s'),
                 'end_time' => $schedule->end_time?->format('H:i:s'),
                 'room_id' => $schedule->room_id,
+                'delivery_mode' => $schedule->delivery_mode,
             ])->all();
 
             $overlapValidator = ValidatorFacade::make(
@@ -137,11 +140,6 @@ final class UpdateClassRequest extends FormRequest
         }];
     }
 
-    /**
-     * An online class never occupies a room, so rooms are stripped before
-     * validation. This keeps room-conflict checks from firing on rooms that
-     * were left over from a face to face draft.
-     */
     protected function prepareForValidation(): void
     {
         $class = $this->route('class');
@@ -149,18 +147,15 @@ final class UpdateClassRequest extends FormRequest
             $class = Classes::query()->find((int) $class);
         }
 
-        if ($this->input('delivery_mode', $class instanceof Classes ? $class->delivery_mode : null) !== Classes::DELIVERY_ONLINE) {
-            return;
+        if ($this->input('delivery_mode', $class?->delivery_mode) === Classes::DELIVERY_ONLINE) {
+            $this->merge(['room_id' => null]);
         }
 
-        $schedules = $this->input('schedules');
-        $this->merge(['room_id' => null]);
-
-        // Omitted schedules must stay omitted on a partial update.
-        if (is_array($schedules)) {
-            $this->merge(['schedules' => array_map(
-                static fn (mixed $schedule): mixed => is_array($schedule) ? [...$schedule, 'room_id' => null] : $schedule,
-                $schedules,
+        if ($this->exists('schedules')) {
+            $this->merge(['schedules' => ScheduleDelivery::normalizeSchedules(
+                $this->input('schedules'),
+                $class instanceof Classes ? $class : null,
+                is_string($this->input('delivery_mode')) ? $this->input('delivery_mode') : null,
             )]);
         }
     }

@@ -13,8 +13,8 @@ export function ScheduleOverview({ classItem, canUpdate, onManage }: { classItem
             start: entry.start_time,
             end: entry.end_time,
             title: "",
-            location: online ? undefined : entry.room?.name || "Room not assigned",
-            online,
+            location: (entry.delivery_mode ?? classItem.delivery_mode) === "online" ? undefined : entry.room?.name || "Room not assigned",
+            online: (entry.delivery_mode ?? classItem.delivery_mode) === "online",
             conflict: entry.has_conflict,
         })),
     );

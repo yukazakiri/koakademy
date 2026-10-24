@@ -32,7 +32,13 @@ export function RecordHeader({ classItem, capabilities }: { classItem: ClassShow
                             ·
                         </span>
                         <span className="text-muted-foreground">{classItem.classification === "shs" ? "Senior high school" : "College"}</span>
-                        <Badge variant="outline">{classItem.delivery_mode === "online" ? "Online" : "In person"}</Badge>
+                        <Badge variant="outline">
+                            {classItem.delivery_summary === "mixed"
+                                ? "Mixed"
+                                : (classItem.delivery_summary ?? classItem.delivery_mode) === "online"
+                                  ? "Online"
+                                  : "Face to face"}
+                        </Badge>
                         {classItem.is_archived && <Badge variant="outline">Archived</Badge>}
                     </div>
                     <h1 className="text-2xl font-semibold tracking-tight text-balance">{classItem.record_title}</h1>

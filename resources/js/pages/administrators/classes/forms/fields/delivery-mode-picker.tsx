@@ -21,7 +21,7 @@ const choices: Array<{ value: DeliveryMode; title: string; hint: string; icon: R
 export function DeliveryModePicker({ value, onChange }: DeliveryModePickerProps): ReactNode {
     return (
         <fieldset className="space-y-3">
-            <legend className="text-sm font-medium">How is this class taught?</legend>
+            <legend className="text-sm font-medium">Default for new meetings</legend>
             <div className="grid gap-3 sm:grid-cols-2">
                 {choices.map((choice) => {
                     const selected = value === choice.value;
@@ -51,6 +51,7 @@ export function DeliveryModePicker({ value, onChange }: DeliveryModePickerProps)
                     );
                 })}
             </div>
+            <p className="text-muted-foreground text-sm">Each meeting can be face to face or online. Change individual meetings in the schedule.</p>
         </fieldset>
     );
 }

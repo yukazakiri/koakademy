@@ -17,7 +17,7 @@ export function ScheduleStep({ data, options, onDataChange }: ScheduleStepProps)
                 rooms={options.rooms}
                 dayOptions={options.day_of_week}
                 primaryRoomId={data.room_id}
-                isOnline={data.delivery_mode === "online"}
+                defaultDeliveryMode={data.delivery_mode}
                 onSchedulesChange={(schedules) => onDataChange({ schedules })}
             />
         </FormSection>

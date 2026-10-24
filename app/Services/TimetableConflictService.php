@@ -59,7 +59,7 @@ final class TimetableConflictService
     {
         $conflicts = [];
         $grouped = $schedules
-            ->filter(fn ($schedule): bool => $schedule->room_id !== null && ! ($schedule->class?->isOnline() ?? false))
+            ->filter(fn ($schedule): bool => $schedule->room_id !== null && ! $schedule->isOnline())
             ->groupBy(fn ($schedule): string => $schedule->day_of_week.'_'.$schedule->room_id);
 
         foreach ($grouped as $dayRoom => $dayRoomSchedules) {

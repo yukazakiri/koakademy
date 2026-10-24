@@ -15,6 +15,7 @@ const apiTime = (time: string) => {
 };
 
 export type SessionValues = {
+    delivery_mode: "face_to_face" | "online";
     days: string[];
     start_time: string;
     end_time: string;
@@ -45,7 +46,8 @@ export default function SchedulingSessionDialog({
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
     const [confirmDelete, setConfirmDelete] = useState(false);
-    const online = classItem.delivery_mode === "online";
+    const [deliveryMode, setDeliveryMode] = useState<"face_to_face" | "online">(session?.delivery_mode ?? classItem.delivery_mode ?? "face_to_face");
+    const online = deliveryMode === "online";
     const valid = selectedDays.length > 0 && start && end && end > start;
 
     const perform = async (action: () => Promise<void>) => {
@@ -84,6 +86,7 @@ export default function SchedulingSessionDialog({
                         if (valid && !busy)
                             void perform(() =>
                                 onSave({
+                                    delivery_mode: deliveryMode,
                                     days: selectedDays,
                                     start_time: start,
                                     end_time: end,
@@ -135,10 +138,29 @@ export default function SchedulingSessionDialog({
                                 End time must be after start time.
                             </p>
                         )}
+                        <div className="space-y-2">
+                            <Label htmlFor="session-delivery">Meeting type</Label>
+                            <Select
+                                value={deliveryMode}
+                                onValueChange={(value) => {
+                                    setDeliveryMode(value as "face_to_face" | "online");
+                                    if (value === "online") setRoom(null);
+                                }}
+                            >
+                                <SelectTrigger id="session-delivery" className="w-full">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="face_to_face">Face to face</SelectItem>
+                                    <SelectItem value="online">Online</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <p className="text-muted-foreground text-sm">Other meetings can use a different type.</p>
+                        </div>
                         {online ? (
                             <p className="bg-muted/40 flex items-center gap-2 rounded-lg border p-4 text-sm">
                                 <Monitor className="size-4 shrink-0" aria-hidden="true" />
-                                Online class · No room reserved
+                                Online meeting · No room reserved
                             </p>
                         ) : (
                             <div className="space-y-2">

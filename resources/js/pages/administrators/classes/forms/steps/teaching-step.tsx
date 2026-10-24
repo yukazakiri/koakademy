@@ -18,7 +18,6 @@ export function TeachingStep({ data, options, onDataChange }: TeachingStepProps)
             onDataChange({
                 delivery_mode,
                 room_id: null,
-                schedules: data.schedules.map((schedule) => ({ ...schedule, room_id: null })),
             });
             return;
         }
@@ -27,7 +26,10 @@ export function TeachingStep({ data, options, onDataChange }: TeachingStepProps)
     };
 
     return (
-        <FormSection title="How and who teaches" description="Choose where the class meets and who teaches it.">
+        <FormSection
+            title="Teaching defaults"
+            description="Choose an instructor and the starting settings for new meetings. Existing meetings keep their settings."
+        >
             <div className="space-y-6">
                 <DeliveryModePicker value={data.delivery_mode} onChange={changeMode} />
                 <FacultyRoomPicker

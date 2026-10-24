@@ -8,6 +8,7 @@ use App\Filament\Resources\Classes\Api\Requests\UpdateClassesRequest;
 use App\Filament\Resources\Classes\ClassesResource;
 use App\Models\User;
 use App\Services\ClassScheduleChangeNotificationService;
+use App\Services\Scheduling\SchedulingService;
 use Override;
 use Rupadana\ApiService\Http\Handlers;
 
@@ -65,7 +66,7 @@ final class UpdateHandler extends Handlers
         ];
 
         $settingsData = [];
-        $requestData = $request->except('schedules');
+        $requestData = $request->safe()->except('schedules');
 
         // Extract settings from request
         foreach ($settingsFields as $field) {
@@ -87,29 +88,12 @@ final class UpdateHandler extends Handlers
 
         $model->save();
 
-        // Handle Schedule Updates
         if ($request->has('schedules')) {
-            $schedules = $request->input('schedules');
-
-            // Delete existing schedules
-            $model->schedules()->delete();
-
-            // Create new schedules
-            if (is_array($schedules)) {
-                foreach ($schedules as $scheduleData) {
-                    $model->schedules()->create([
-                        'day_of_week' => $scheduleData['day_of_week'],
-                        'start_time' => $scheduleData['start_time'],
-                        'end_time' => $scheduleData['end_time'],
-                        'room_id' => $scheduleData['room_id'],
-                    ]);
-                }
-            }
-
-            $scheduleChangeNotifications->notifyIfChanged(
+            app(SchedulingService::class)->syncClassSchedules(
                 $model,
-                $oldScheduleSnapshot ?? [],
-                $request->user() instanceof User ? $request->user() : null
+                $request->validated('schedules'),
+                $request->user() instanceof User ? $request->user() : null,
+                $oldScheduleSnapshot,
             );
         }
 

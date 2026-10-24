@@ -28,6 +28,7 @@ interface ClassInfo {
     subject_code: string;
     section: string;
     delivery_mode?: DeliveryMode;
+    delivery_summary?: "face_to_face" | "online" | "mixed";
     total_students: number;
 }
 
@@ -46,7 +47,7 @@ interface ComparisonData {
 interface ClassCompareDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    classes: Pick<ClassInfo, "id" | "record_title" | "subject_code" | "section" | "delivery_mode">[];
+    classes: Pick<ClassInfo, "id" | "record_title" | "subject_code" | "section" | "delivery_mode" | "delivery_summary">[];
     initialClassIds?: [number, number];
 }
 
@@ -125,7 +126,7 @@ export function ClassCompareDialog({ open, onOpenChange, classes, initialClassId
         () =>
             classes.map((c) => ({
                 value: String(c.id),
-                label: `${c.subject_code} · Sec ${c.section} · ${deliveryModeLabel(c.delivery_mode)}`,
+                label: `${c.subject_code} · Sec ${c.section} · ${deliveryModeLabel(c.delivery_summary ?? c.delivery_mode)}`,
             })),
         [classes],
     );
@@ -161,10 +162,12 @@ export function ClassCompareDialog({ open, onOpenChange, classes, initialClassId
                 class_a: {
                     ...json.class_a,
                     delivery_mode: json.class_a.delivery_mode ?? classes.find((item) => item.id === json.class_a.id)?.delivery_mode,
+                    delivery_summary: json.class_a.delivery_summary ?? classes.find((item) => item.id === json.class_a.id)?.delivery_summary,
                 },
                 class_b: {
                     ...json.class_b,
                     delivery_mode: json.class_b.delivery_mode ?? classes.find((item) => item.id === json.class_b.id)?.delivery_mode,
+                    delivery_summary: json.class_b.delivery_summary ?? classes.find((item) => item.id === json.class_b.id)?.delivery_summary,
                 },
                 comparison: {
                     in_both_ids: [...inBothIds],
@@ -325,7 +328,9 @@ export function ClassCompareDialog({ open, onOpenChange, classes, initialClassId
                                             <div className="text-sm font-semibold">
                                                 {data.class_a.subject_code} - Sec {data.class_a.section}
                                             </div>
-                                            <Badge variant="secondary">{deliveryModeLabel(data.class_a.delivery_mode)}</Badge>
+                                            <Badge variant="secondary">
+                                                {deliveryModeLabel(data.class_a.delivery_summary ?? data.class_a.delivery_mode)}
+                                            </Badge>
                                             <div className="text-muted-foreground text-[11px]">
                                                 {data.class_a.total_students} student
                                                 {data.class_a.total_students !== 1 ? "s" : ""}
@@ -374,7 +379,9 @@ export function ClassCompareDialog({ open, onOpenChange, classes, initialClassId
                                             <div className="text-sm font-semibold">
                                                 {data.class_b.subject_code} - Sec {data.class_b.section}
                                             </div>
-                                            <Badge variant="secondary">{deliveryModeLabel(data.class_b.delivery_mode)}</Badge>
+                                            <Badge variant="secondary">
+                                                {deliveryModeLabel(data.class_b.delivery_summary ?? data.class_b.delivery_mode)}
+                                            </Badge>
                                             <div className="text-muted-foreground text-[11px]">
                                                 {data.class_b.total_students} student
                                                 {data.class_b.total_students !== 1 ? "s" : ""}

@@ -5,7 +5,7 @@ export type ReadinessClass = {
     faculty_name: string | null;
     delivery_mode?: "face_to_face" | "online";
     required_hours?: number;
-    schedules: { start_time: string; end_time: string; room_id?: number | null; status?: string }[];
+    schedules: { start_time: string; end_time: string; room_id?: number | null; status?: string; delivery_mode?: "face_to_face" | "online" }[];
 };
 
 export function scheduleMinutes(value: string): number {
@@ -30,7 +30,7 @@ export function getSchedulingReadiness(classes: ReadinessClass[]) {
         if (item.schedules.length === 0) warnings.push("No sessions scheduled");
         else if (hours < required) warnings.push(`${Number(hours.toFixed(2))} of ${required} weekly hours`);
         if (!item.faculty_name) warnings.push("Instructor not assigned");
-        if (item.delivery_mode !== "online" && item.schedules.some((schedule) => !schedule.room_id))
+        if (item.schedules.some((schedule) => (schedule.delivery_mode ?? item.delivery_mode) !== "online" && !schedule.room_id))
             warnings.push("Room not assigned to every session");
         return { ...item, scheduled_hours: hours, warnings };
     });

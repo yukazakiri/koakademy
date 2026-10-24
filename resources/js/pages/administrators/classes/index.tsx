@@ -1,5 +1,4 @@
 import AdminLayout from "@/components/administrators/admin-layout";
-import { ClassScheduleVisualizer } from "@/components/administrators/classes/schedule-visualizer";
 import { type FilterFieldConfig, type Filter as FilterType } from "@/components/reui/filters";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -61,13 +60,7 @@ import { DataTable, type PaginationMeta } from "./data-table";
 import { DataTablePagination } from "./data-table-pagination";
 import { DeliveryModePicker } from "./forms/fields/delivery-mode-picker";
 import { ScheduleGrid } from "./forms/fields/schedule-grid";
-import {
-    createDefaultSchedule,
-    deliveryModeLabel,
-    normalizeClassDelivery,
-    type ClassSchedule as ClassFormSchedule,
-    type DeliveryMode,
-} from "./lib/class-defaults";
+import { deliveryModeLabel, normalizeClassDelivery, type ClassSchedule as ClassFormSchedule, type DeliveryMode } from "./lib/class-defaults";
 
 type SelectOption = { value: string; label: string };
 
@@ -96,6 +89,7 @@ type SelectedClass = {
     record_title: string;
     classification: "college" | "shs" | string;
     delivery_mode?: DeliveryMode;
+    delivery_summary?: "face_to_face" | "online" | "mixed";
     subject_code: string;
     subject_title: string;
     section: string;
@@ -375,125 +369,15 @@ function SchedulePlanner({
     classRoomId: number | null;
     deliveryMode: DeliveryMode;
 }) {
-    const selectedRoomId = classRoomId || null;
-    const selectedRoomLabel = rooms.find((room) => Number(room.id) === selectedRoomId)?.label ?? "unassigned room";
-
-    const updateScheduleAt = (index: number, patch: Partial<ClassSchedule>) => {
-        setSchedules(
-            schedules.map((schedule, scheduleIndex) =>
-                scheduleIndex === index
-                    ? {
-                          ...schedule,
-                          ...patch,
-                          room_id: patch.room_id === undefined ? schedule.room_id : patch.room_id || null,
-                      }
-                    : schedule,
-            ),
-        );
-    };
-
-    const applyClassRoomToAllSchedules = () => {
-        setSchedules(schedules.map((schedule) => ({ ...schedule, room: undefined, room_id: selectedRoomId })));
-    };
-
-    const addSchedule = () => {
-        const sourceSchedule = schedules[schedules.length - 1] ?? createDefaultSchedule(selectedRoomId);
-        const nextSchedule = {
-            ...createDefaultSchedule(selectedRoomId),
-            day_of_week: sourceSchedule.day_of_week,
-            start_time: sourceSchedule.start_time,
-            end_time: sourceSchedule.end_time,
-            room: undefined,
-            room_id: selectedRoomId,
-        };
-
-        setSchedules([...schedules, nextSchedule]);
-    };
-
-    const duplicateAt = (index: number) => {
-        const nextSchedule = {
-            ...schedules[index],
-            id: undefined,
-            room: undefined,
-        };
-        setSchedules([...schedules, nextSchedule]);
-    };
-
-    const removeSchedule = (index: number) => {
-        setSchedules(schedules.filter((_, scheduleIndex) => scheduleIndex !== index));
-    };
-
-    const activeDays = new Set(schedules.map((schedule) => schedule.day_of_week).filter(Boolean)).size;
-    const invalidBlocks = getInvalidScheduleIndexes(schedules).size;
-
-    if (deliveryMode === "online") {
-        return (
-            <section aria-label="Online schedule" className="space-y-4">
-                <p className="text-muted-foreground text-sm">Online meetings do not use a room.</p>
-                <ScheduleGrid
-                    schedules={schedules}
-                    rooms={[]}
-                    dayOptions={dayOptions}
-                    primaryRoomId={null}
-                    isOnline
-                    onSchedulesChange={setSchedules}
-                />
-            </section>
-        );
-    }
-
     return (
-        <div className="space-y-4">
-            <div className="bg-card/70 flex flex-col gap-3 rounded-xl border p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-                <div className="space-y-1">
-                    <h3 className="text-sm font-semibold">Weekly schedule</h3>
-                    <Badge variant="outline">Face to face</Badge>
-                    <p className="text-muted-foreground text-xs">Drag blocks on desktop, or right-click a block for quick edits.</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                    <Badge variant="secondary">
-                        {schedules.length} block{schedules.length === 1 ? "" : "s"}
-                    </Badge>
-                    <Badge variant="secondary">
-                        {activeDays} active day{activeDays === 1 ? "" : "s"}
-                    </Badge>
-                    {invalidBlocks > 0 ? <Badge variant="destructive">{invalidBlocks} invalid</Badge> : null}
-                    <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={applyClassRoomToAllSchedules}>
-                        <MapPin className="mr-1 h-3.5 w-3.5" />
-                        {selectedRoomId ? `Apply ${selectedRoomLabel} to all` : "Clear all room assignments"}
-                    </Button>
-                    <Button type="button" size="sm" className="h-8 text-xs" onClick={addSchedule}>
-                        <Plus className="mr-1 h-3.5 w-3.5" />
-                        Add block
-                    </Button>
-                </div>
-            </div>
-
-            {invalidBlocks > 0 ? (
-                <div className="border-destructive/40 bg-destructive/5 text-destructive rounded-md border px-3 py-2 text-sm">
-                    Schedule blocks on the same day cannot overlap. Adjust the invalid schedule before saving.
-                </div>
-            ) : null}
-
-            <div className="bg-card/50 rounded-xl border p-2 shadow-sm sm:p-3">
-                <div className="overflow-x-auto">
-                    <div className="h-[720px] min-w-[860px]">
-                        <ClassScheduleVisualizer
-                            className="h-full min-h-0"
-                            schedules={schedules.map((schedule) => ({ ...schedule, room_id: schedule.room_id ?? 0 }))}
-                            rooms={[{ id: 0, label: "Room unassigned" }, ...rooms]}
-                            dayOptions={dayOptions}
-                            onScheduleChange={(index, nextSchedule) => {
-                                updateScheduleAt(index, nextSchedule);
-                            }}
-                            onDuplicateSchedule={duplicateAt}
-                            onRemoveSchedule={removeSchedule}
-                            canRemoveSchedule
-                        />
-                    </div>
-                </div>
-            </div>
-        </div>
+        <ScheduleGrid
+            schedules={schedules}
+            rooms={rooms}
+            dayOptions={dayOptions}
+            primaryRoomId={classRoomId}
+            defaultDeliveryMode={deliveryMode}
+            onSchedulesChange={setSchedules}
+        />
     );
 }
 
@@ -2098,10 +1982,10 @@ export default function AdministratorClassesIndex({
                                                         </div>
 
                                                         {editForm.data.delivery_mode === "online" ? (
-                                                            <p className="text-muted-foreground text-sm">Online classes do not use a room.</p>
+                                                            <p className="text-muted-foreground text-sm">Online meetings do not reserve a room.</p>
                                                         ) : (
                                                             <div className="space-y-2">
-                                                                <Label htmlFor="edit-class-room">Primary room (optional)</Label>
+                                                                <Label htmlFor="edit-class-room">Default room (optional)</Label>
                                                                 <Select
                                                                     value={String(editForm.data.room_id ?? 0)}
                                                                     onValueChange={(val) => editForm.setData("room_id", Number(val) || null)}
@@ -2220,7 +2104,7 @@ export default function AdministratorClassesIndex({
                                 <Badge variant="outline" className="capitalize">
                                     {selected_class.classification}
                                 </Badge>
-                                <Badge variant="outline">{deliveryModeLabel(selected_class.delivery_mode)}</Badge>
+                                <Badge variant="outline">{deliveryModeLabel(selected_class.delivery_summary ?? selected_class.delivery_mode)}</Badge>
                                 <Badge variant="secondary">
                                     {selected_class.students_count} / {selected_class.maximum_slots || "—"} enrolled
                                 </Badge>
@@ -2252,10 +2136,10 @@ export default function AdministratorClassesIndex({
                                         </div>
 
                                         <div className="grid gap-2">
-                                            <div className="text-muted-foreground text-xs">Primary room</div>
+                                            <div className="text-muted-foreground text-xs">Default room</div>
                                             <div className="text-foreground font-medium">
                                                 {selected_class.delivery_mode === "online"
-                                                    ? "Online (no room needed)"
+                                                    ? "No default room"
                                                     : (selected_class.room?.label ?? "Unassigned")}
                                             </div>
                                         </div>
@@ -2304,8 +2188,8 @@ export default function AdministratorClassesIndex({
                                                         </div>
                                                     </div>
                                                     <div className="text-muted-foreground mt-2 text-sm">
-                                                        {selected_class.delivery_mode === "online"
-                                                            ? "Online (no room needed)"
+                                                        {(schedule.delivery_mode ?? selected_class.delivery_mode) === "online"
+                                                            ? "No default room"
                                                             : `Face to face · Room: ${schedule.room?.label ?? "Unassigned"}`}
                                                     </div>
                                                 </div>
@@ -2504,6 +2388,7 @@ export default function AdministratorClassesIndex({
                     subject_code: c.subject_code,
                     section: c.section,
                     delivery_mode: c.delivery_mode,
+                    delivery_summary: c.delivery_summary,
                 }))}
             />
         </AdminLayout>

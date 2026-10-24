@@ -7,6 +7,7 @@ namespace App\Http\Requests;
 use App\Models\Classes;
 use App\Rules\NonOverlappingScheduleBlocksRule;
 use App\Rules\ScheduleOverlapRule;
+use App\Support\ScheduleDelivery;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -39,6 +40,7 @@ final class UpdateClassSchedulesRequest extends FormRequest
             ],
             'schedules.*.start_time' => ['required', 'date_format:H:i'],
             'schedules.*.end_time' => ['required', 'date_format:H:i'],
+            'schedules.*.delivery_mode' => ['sometimes', Rule::in(['face_to_face', 'online'])],
             'schedules.*.room_id' => ['nullable', 'integer', 'exists:rooms,id'],
         ];
     }
@@ -46,13 +48,8 @@ final class UpdateClassSchedulesRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $class = $this->route('class');
-        $schedules = $this->input('schedules');
-
-        if ($class instanceof Classes && $class->isOnline() && is_array($schedules)) {
-            $this->merge(['schedules' => array_map(
-                static fn (mixed $schedule): mixed => is_array($schedule) ? [...$schedule, 'room_id' => null] : $schedule,
-                $schedules,
-            )]);
+        if ($class instanceof Classes) {
+            $this->merge(['schedules' => ScheduleDelivery::normalizeSchedules($this->input('schedules'), $class)]);
         }
     }
 }

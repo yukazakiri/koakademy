@@ -379,6 +379,7 @@ final class AdministratorSchedulingAnalyticsController extends Controller
                 'time_range' => $schedule->time_range,
                 'room' => $schedule->room?->name,
                 'room_id' => $schedule->room_id,
+                'delivery_mode' => $schedule->delivery_mode,
                 'component_type' => $schedule->component_type ?? 'lecture',
                 'pattern_group_id' => $schedule->pattern_group_id,
                 'status' => $schedule->status ?? 'published',
@@ -513,7 +514,7 @@ final class AdministratorSchedulingAnalyticsController extends Controller
     ): JsonResponse {
         abort_unless($request->user()?->isAdministrative() ?? false, 403);
 
-        if ($class->isOnline()) {
+        if ($request->input('delivery_mode', $class->delivery_mode) === Classes::DELIVERY_ONLINE) {
             $request->merge(['room_id' => null]);
         }
 
@@ -523,6 +524,7 @@ final class AdministratorSchedulingAnalyticsController extends Controller
             'start_time' => ['required', 'date_format:H:i'],
             'end_time' => ['required', 'date_format:H:i', 'after:start_time'],
             'room_id' => ['nullable', 'integer', 'exists:rooms,id'],
+            'delivery_mode' => ['sometimes', Rule::in([Classes::DELIVERY_FACE_TO_FACE, Classes::DELIVERY_ONLINE])],
             'component_type' => ['nullable', 'string', Rule::in(['lecture', 'lab'])],
             'status' => ['nullable', 'string', Rule::in(['draft', 'published'])],
         ]);
@@ -540,6 +542,7 @@ final class AdministratorSchedulingAnalyticsController extends Controller
             (string) ($validated['component_type'] ?? 'lecture'),
             (string) ($validated['status'] ?? 'published'),
             $actor,
+            $validated['delivery_mode'] ?? $class->delivery_mode,
         );
 
         $class->load(['Subject', 'subjects', 'Faculty', 'Room', 'Schedule.room']);
@@ -704,6 +707,7 @@ final class AdministratorSchedulingAnalyticsController extends Controller
             'course_year_levels' => $courseYearLevels,
             'classification' => $class->classification,
             'delivery_mode' => $class->delivery_mode,
+            'delivery_summary' => $class->deliverySummary(),
             'shs_strand_id' => $class->shs_strand_id,
             'faculty_id' => $class->faculty_id,
             'faculty_name' => $class->Faculty ? $class->Faculty->first_name.' '.$class->Faculty->last_name : null,
@@ -727,6 +731,7 @@ final class AdministratorSchedulingAnalyticsController extends Controller
                 'time_range' => $schedule->time_range,
                 'room' => $schedule->room?->name,
                 'room_id' => $schedule->room_id,
+                'delivery_mode' => $schedule->delivery_mode,
                 'component_type' => $schedule->component_type ?? 'lecture',
                 'pattern_group_id' => $schedule->pattern_group_id,
                 'status' => $schedule->status ?? 'published',

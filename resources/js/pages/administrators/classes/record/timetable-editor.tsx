@@ -54,7 +54,6 @@ function getGridPosition(startTime: string, endTime: string): { top: number; hei
 function DraggableBlock({
     entry,
     rooms,
-    online = false,
     onEdit,
     onRemove,
     onChangeRoom,
@@ -64,7 +63,6 @@ function DraggableBlock({
 }: {
     entry: RawScheduleEntry;
     rooms: RoomOption[];
-    online?: boolean;
     onEdit?: (entry: RawScheduleEntry) => void;
     onRemove?: (id: string) => void;
     onChangeRoom?: (id: string, roomId: number) => void;
@@ -78,6 +76,7 @@ function DraggableBlock({
         disabled: isOverlay,
     });
 
+    const online = entry.delivery_mode === "online";
     const { top, height } = getGridPosition(entry.start_time, entry.end_time);
     const roomName = online ? "Online" : rooms.find((r) => r.id === entry.room_id)?.label || "Room not assigned";
 
@@ -256,7 +255,6 @@ function DayColumn({
     day,
     entries,
     rooms,
-    online,
     roomSchedules,
     onEdit,
     onRemove,
@@ -267,7 +265,6 @@ function DayColumn({
     day: string;
     entries: RawScheduleEntry[];
     rooms: RoomOption[];
-    online: boolean;
     roomSchedules: Record<number, RoomScheduleEntry[]>;
     onEdit: (entry: RawScheduleEntry) => void;
     onRemove: (id: string) => void;
@@ -282,8 +279,7 @@ function DayColumn({
 
     const occupiedSlots = useMemo(() => {
         const slots: { top: number; height: number; title: string }[] = [];
-        if (online) return slots;
-        const roomIds = [...new Set(entries.map((entry) => entry.room_id))];
+        const roomIds = [...new Set(entries.filter((entry) => entry.delivery_mode !== "online").map((entry) => entry.room_id))];
         roomIds.forEach((roomId) => {
             if (roomId === null) return;
             const roomScheds = roomSchedules[roomId] || [];
@@ -295,7 +291,7 @@ function DayColumn({
             });
         });
         return slots;
-    }, [entries, day, roomSchedules, online]);
+    }, [entries, day, roomSchedules]);
 
     return (
         <div ref={setNodeRef} className={`relative min-w-[140px] flex-1 border-r border-dashed last:border-r-0 ${isOver ? "bg-muted/30" : ""}`}>
@@ -324,7 +320,6 @@ function DayColumn({
                     key={entry.temp_id || entry.id}
                     entry={entry}
                     rooms={rooms}
-                    online={online}
                     onEdit={onEdit}
                     onRemove={onRemove}
                     onChangeRoom={onChangeRoom}
@@ -355,7 +350,8 @@ export function TimetableEditor({
     const { data, setData, transform, patch, processing, errors } = useForm({
         schedules: initialSchedules.map((s, i) => ({
             ...s,
-            room_id: online ? null : s.room_id,
+            delivery_mode: s.delivery_mode ?? classItem.delivery_mode,
+            room_id: (s.delivery_mode ?? classItem.delivery_mode) === "online" ? null : s.room_id,
             temp_id: s.temp_id || `id-${i}-${Date.now()}`,
         })),
     });
@@ -448,6 +444,7 @@ export function TimetableEditor({
             day_of_week: "Monday",
             start_time: "08:00",
             end_time: "09:00",
+            delivery_mode: classItem.delivery_mode,
             room_id: online ? null : (rooms[0]?.id ?? null),
         };
         setData("schedules", [...data.schedules, newEntry]);
@@ -465,17 +462,18 @@ export function TimetableEditor({
         setData(
             "schedules",
             data.schedules.map((s) =>
-                s.temp_id === updated.temp_id ? ({ ...updated, room_id: online ? null : updated.room_id, temp_id: updated.temp_id! } as typeof s) : s,
+                s.temp_id === updated.temp_id
+                    ? ({ ...updated, room_id: updated.delivery_mode === "online" ? null : updated.room_id, temp_id: updated.temp_id! } as typeof s)
+                    : s,
             ),
         );
         setEditingEntry(null);
     };
 
     const handleChangeRoom = (id: string, roomId: number) => {
-        if (online) return;
         setData(
             "schedules",
-            data.schedules.map((s) => ((s.temp_id || String(s.id)) === id ? { ...s, room_id: roomId } : s)),
+            data.schedules.map((s) => ((s.temp_id || String(s.id)) === id && s.delivery_mode !== "online" ? { ...s, room_id: roomId } : s)),
         );
     };
 
@@ -489,7 +487,7 @@ export function TimetableEditor({
     const handleSubmit = () => {
         transform((payload) => ({
             ...payload,
-            schedules: payload.schedules.map((entry) => ({ ...entry, room_id: online ? null : entry.room_id })),
+            schedules: payload.schedules.map((entry) => ({ ...entry, room_id: entry.delivery_mode === "online" ? null : entry.room_id })),
         }));
         patch(update.url(classItem.id), {
             onSuccess: () => {
@@ -523,9 +521,7 @@ export function TimetableEditor({
                         <div>
                             <DialogTitle>Manage weekly schedule</DialogTitle>
                             <DialogDescription>
-                                {online
-                                    ? "Edit the day and time for each online session."
-                                    : "Edit each session below, or drag and resize blocks in the timetable."}
+                                Choose face to face or online for each meeting. You can also drag and resize its time in the timetable.
                             </DialogDescription>
                         </div>
                         <div className="flex items-center gap-2">
@@ -534,12 +530,12 @@ export function TimetableEditor({
                                     <div className="bg-primary/20 border-primary/30 h-3 w-3 rounded border" />
                                     <span>Scheduled</span>
                                 </div>
-                                {!online && (
+                                {
                                     <div className="flex items-center gap-1">
                                         <div className="border-destructive/25 bg-destructive/10 h-3 w-3 rounded border" />
                                         <span>Room occupied</span>
                                     </div>
-                                )}
+                                }
                             </div>
                             <Button variant="outline" className="h-9 px-3" onClick={handleAdd}>
                                 <Plus className="mr-2 h-4 w-4" />
@@ -565,9 +561,7 @@ export function TimetableEditor({
                             <h3 className="text-sm font-medium">Scheduled sessions</h3>
                             {data.schedules.length === 0 && (
                                 <p className="text-muted-foreground text-sm">
-                                    {online
-                                        ? "No sessions yet. Add an online session to set its day and time."
-                                        : "No sessions yet. Add a session to set its day, time, and room."}
+                                    No sessions yet. Add a session to set its day, time, and meeting type.
                                 </p>
                             )}
                             <div className="grid gap-3 md:grid-cols-2">
@@ -578,7 +572,9 @@ export function TimetableEditor({
                                                 {entry.day_of_week} · {entry.start_time}–{entry.end_time}
                                             </p>
                                             <p className="text-muted-foreground">
-                                                {online ? "Online" : rooms.find((room) => room.id === entry.room_id)?.label || "Room not assigned"}
+                                                {entry.delivery_mode === "online"
+                                                    ? "Online"
+                                                    : `Face to face · ${rooms.find((room) => room.id === entry.room_id)?.label || "Room not assigned"}`}
                                             </p>
                                             {conflicts.has(entry.temp_id) && <p className="text-destructive">Schedule conflict</p>}
                                         </div>
@@ -634,7 +630,6 @@ export function TimetableEditor({
                                                 day={day}
                                                 entries={data.schedules.filter((s) => s.day_of_week === day)}
                                                 rooms={rooms}
-                                                online={online}
                                                 roomSchedules={availableRoomSchedules}
                                                 onEdit={setEditingEntry}
                                                 onRemove={handleRemove}
@@ -648,7 +643,7 @@ export function TimetableEditor({
 
                                 {createPortal(
                                     <DragOverlay modifiers={[snapCenterToCursor]}>
-                                        {activeEntry ? <DraggableBlock entry={activeEntry} rooms={rooms} online={online} isOverlay /> : null}
+                                        {activeEntry ? <DraggableBlock entry={activeEntry} rooms={rooms} isOverlay /> : null}
                                     </DragOverlay>,
                                     document.body,
                                 )}
@@ -722,11 +717,31 @@ export function TimetableEditor({
                                         className="col-span-3"
                                     />
                                 </div>
-                                {online ? (
-                                    <div className="grid grid-cols-4 items-center gap-4 text-sm">
-                                        <span className="text-right">Delivery</span>
-                                        <span className="col-span-3 font-medium">Online</span>
-                                    </div>
+                                <div className="grid grid-cols-4 items-center gap-4">
+                                    <Label htmlFor="record-meeting-delivery" className="text-right">
+                                        Meeting type
+                                    </Label>
+                                    <Select
+                                        value={editingEntry.delivery_mode ?? classItem.delivery_mode}
+                                        onValueChange={(value) =>
+                                            setEditingEntry({
+                                                ...editingEntry,
+                                                delivery_mode: value as "face_to_face" | "online",
+                                                room_id: value === "online" ? null : editingEntry.room_id,
+                                            })
+                                        }
+                                    >
+                                        <SelectTrigger id="record-meeting-delivery" className="col-span-3">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="face_to_face">Face to face</SelectItem>
+                                            <SelectItem value="online">Online</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                {editingEntry.delivery_mode === "online" ? (
+                                    <p className="text-muted-foreground text-sm">No room reserved for this meeting.</p>
                                 ) : (
                                     <div className="grid grid-cols-4 items-center gap-4">
                                         <Label htmlFor="room" className="text-right">

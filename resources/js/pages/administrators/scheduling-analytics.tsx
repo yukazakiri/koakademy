@@ -17,6 +17,7 @@ import axios from "axios";
 import { ArrowLeft, MoreHorizontal, Plus, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { deliveryModeLabel, meetingDeliverySummary } from "./classes/lib/class-defaults";
 import GenerateOfferingsDialog, { type GenerateOfferingsPayload } from "./components/generate-offerings-dialog";
 import ScheduleExportDialog from "./components/schedule-export-dialog";
 import SchedulingFiltersBar, { emptyPlannerFilters, type PlannerFilters } from "./components/scheduling-filters-bar";
@@ -159,7 +160,7 @@ export default function SchedulingAnalytics({
                 end: session.end_time,
                 title: `${item.subject_code}${viewFilters.section === "all" ? ` · ${item.section}` : ""}`,
                 location: session.room ?? "Room to assign",
-                online: item.delivery_mode === "online",
+                online: (session.delivery_mode ?? item.delivery_mode) === "online",
                 conflict: session.id !== undefined && conflictIds.has(session.id),
             })),
     );
@@ -391,7 +392,7 @@ export default function SchedulingAnalytics({
                                         <p className="text-muted-foreground line-clamp-2 text-sm">{item.subject_title}</p>
                                     </div>
                                     <p className="text-muted-foreground text-xs">
-                                        {item.delivery_mode === "online" ? "Online" : "Face to face"} ·{" "}
+                                        {deliveryModeLabel(meetingDeliverySummary(item.schedules, item.delivery_mode))} ·{" "}
                                         {Number(scheduledHours(item.schedules).toFixed(2))}/{item.required_hours ?? 3} hours scheduled
                                     </p>
                                     <div className="flex flex-wrap items-center justify-between gap-2">

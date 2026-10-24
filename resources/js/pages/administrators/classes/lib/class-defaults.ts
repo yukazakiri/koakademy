@@ -1,5 +1,6 @@
 export type Classification = "college" | "shs";
 export type DeliveryMode = "face_to_face" | "online";
+export type DeliverySummary = DeliveryMode | "mixed";
 
 export type EntityOption = { id: number | string; label: string };
 export type ValueOption = { value: string; label: string };
@@ -30,6 +31,7 @@ export type ClassFormOptions = {
 };
 
 export type ClassSchedule = {
+    delivery_mode?: DeliveryMode;
     id?: number;
     day_of_week: string;
     start_time: string;
@@ -78,8 +80,16 @@ export type ClassFormData = {
 
 export type ClassDraft = Omit<ClassFormData, "delivery_mode"> & { delivery_mode?: DeliveryMode };
 
-export function deliveryModeLabel(mode?: DeliveryMode): string {
-    return mode === "online" ? "Online" : "Face to face";
+export function deliveryModeLabel(mode?: DeliverySummary): string {
+    return mode === "mixed" ? "Mixed" : mode === "online" ? "Online" : "Face to face";
+}
+
+export function meetingDeliverySummary(
+    schedules: Pick<ClassSchedule, "delivery_mode">[],
+    defaultMode: DeliveryMode = "face_to_face",
+): DeliverySummary {
+    const modes = new Set(schedules.map((schedule) => schedule.delivery_mode ?? defaultMode));
+    return modes.size > 1 ? "mixed" : ([...modes][0] ?? defaultMode);
 }
 
 export function normalizeClassDelivery<T extends { delivery_mode?: DeliveryMode; room_id: number | null; schedules: ClassSchedule[] }>(
@@ -93,7 +103,8 @@ export function normalizeClassDelivery<T extends { delivery_mode?: DeliveryMode;
         room_id: delivery_mode === "online" ? null : data.room_id || null,
         schedules: data.schedules.map((schedule) => ({
             ...schedule,
-            room_id: delivery_mode === "online" ? null : schedule.room_id || null,
+            delivery_mode: schedule.delivery_mode ?? delivery_mode,
+            room_id: (schedule.delivery_mode ?? delivery_mode) === "online" ? null : schedule.room_id || null,
         })),
     };
 }
@@ -134,12 +145,13 @@ export type ClassStorePayload = {
       }
 );
 
-export function createDefaultSchedule(defaultRoomId: number | null): ClassSchedule {
+export function createDefaultSchedule(defaultRoomId: number | null, delivery_mode: DeliveryMode = "face_to_face"): ClassSchedule {
     return {
         day_of_week: "Monday",
         start_time: "08:00",
         end_time: "09:00",
-        room_id: defaultRoomId || null,
+        delivery_mode,
+        room_id: delivery_mode === "online" ? null : defaultRoomId || null,
     };
 }
 
@@ -329,6 +341,7 @@ export function isClassDraft(value: unknown): value is ClassDraft {
                 typeof schedule.day_of_week === "string" &&
                 typeof schedule.start_time === "string" &&
                 typeof schedule.end_time === "string" &&
+                (schedule.delivery_mode === undefined || schedule.delivery_mode === "face_to_face" || schedule.delivery_mode === "online") &&
                 (typeof schedule.room_id === "number" || schedule.room_id === null),
         ) &&
         (draft.delivery_mode === undefined || draft.delivery_mode === "face_to_face" || draft.delivery_mode === "online") &&

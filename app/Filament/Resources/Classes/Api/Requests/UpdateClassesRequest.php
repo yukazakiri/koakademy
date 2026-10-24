@@ -7,7 +7,9 @@ namespace App\Filament\Resources\Classes\Api\Requests;
 use App\Models\Classes;
 use App\Rules\NonOverlappingScheduleBlocksRule;
 use App\Rules\ScheduleOverlapRule;
+use App\Support\ScheduleDelivery;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 final class UpdateClassesRequest extends FormRequest
 {
@@ -42,6 +44,7 @@ final class UpdateClassesRequest extends FormRequest
             'course_codes.*' => 'nullable|integer',
             'section' => 'sometimes|nullable|string',
             'room_id' => 'sometimes|nullable|integer',
+            'delivery_mode' => 'sometimes|in:face_to_face,online',
             'classification' => 'sometimes|nullable|string',
             'maximum_slots' => 'sometimes|nullable|integer',
             'shs_track_id' => 'sometimes|nullable|integer',
@@ -56,7 +59,9 @@ final class UpdateClassesRequest extends FormRequest
             'schedules.*.day_of_week' => 'required_with:schedules|string|in:Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday',
             'schedules.*.start_time' => 'required_with:schedules',
             'schedules.*.end_time' => 'required_with:schedules|after:schedules.*.start_time',
-            'schedules.*.room_id' => 'required_with:schedules|exists:rooms,id',
+            'schedules.*.delivery_mode' => 'sometimes|in:face_to_face,online',
+            'schedules.*.id' => ['sometimes', 'integer', 'distinct', Rule::exists('schedule', 'id')->where('class_id', $classId)],
+            'schedules.*.room_id' => 'nullable|exists:rooms,id',
 
             // Settings validation
             'settings' => 'nullable|array',
@@ -72,5 +77,14 @@ final class UpdateClassesRequest extends FormRequest
             'settings.notify_students_on_schedule_changes' => 'nullable|boolean',
             'settings.custom' => 'nullable|array',
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $record = $this->route('id');
+        $class = $record instanceof Classes ? $record : Classes::query()->find($record);
+        if ($this->has('schedules')) {
+            $this->merge(['schedules' => ScheduleDelivery::normalizeSchedules($this->input('schedules'), $class)]);
+        }
     }
 }

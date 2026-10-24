@@ -138,7 +138,7 @@ final class FacultyController extends Controller
                 'Subject:id,code,title',
                 'Room:id,name,class_code',
                 'schedules' => function ($q): void {
-                    $q->select('id', 'class_id', 'day_of_week', 'start_time', 'end_time', 'room_id')
+                    $q->select('id', 'class_id', 'day_of_week', 'start_time', 'end_time', 'room_id', 'delivery_mode')
                         ->with('room:id,name,class_code')
                         ->orderBy('day_of_week')
                         ->orderBy('start_time');
@@ -176,6 +176,7 @@ final class FacultyController extends Controller
                 ] : null,
                 'schedules' => $class->schedules->map(fn ($schedule): array => [
                     'id' => $schedule->id,
+                    'delivery_mode' => $schedule->delivery_mode,
                     'day_of_week' => $schedule->day_of_week,
                     'start_time' => $schedule->start_time?->format('H:i'),
                     'end_time' => $schedule->end_time?->format('H:i'),
@@ -256,6 +257,7 @@ final class FacultyController extends Controller
                 ] : null,
                 'schedules' => $class->schedules->map(fn ($schedule): array => [
                     'id' => $schedule->id,
+                    'delivery_mode' => $schedule->delivery_mode,
                     'day_of_week' => $schedule->day_of_week,
                     'start_time' => $schedule->start_time?->format('H:i'),
                     'end_time' => $schedule->end_time?->format('H:i'),
@@ -312,7 +314,7 @@ final class FacultyController extends Controller
                 'Subject:id,code,title',
                 'Room:id,name,class_code',
                 'schedules' => function ($q): void {
-                    $q->select('id', 'class_id', 'day_of_week', 'start_time', 'end_time', 'room_id')
+                    $q->select('id', 'class_id', 'day_of_week', 'start_time', 'end_time', 'room_id', 'delivery_mode')
                         ->with('room:id,name,class_code')
                         ->orderBy('day_of_week')
                         ->orderBy('start_time');
@@ -349,6 +351,7 @@ final class FacultyController extends Controller
                         'semester' => $class->semester,
                         'schedule' => [
                             'id' => $schedule->id,
+                            'delivery_mode' => $schedule->delivery_mode,
                             'start_time' => $schedule->start_time?->format('H:i'),
                             'end_time' => $schedule->end_time?->format('H:i'),
                             'time_range' => $schedule->start_time && $schedule->end_time

@@ -3,15 +3,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { CalendarDays, Plus, Trash2 } from "lucide-react";
-import { useState, type ReactNode } from "react";
-import { type ClassSchedule, type EntityOption, type ValueOption } from "../../lib/class-defaults";
+import { useEffect, useState, type ReactNode } from "react";
+import { type ClassSchedule, type DeliveryMode, type EntityOption, type ValueOption } from "../../lib/class-defaults";
 
 type ScheduleGridProps = {
     schedules: ClassSchedule[];
     rooms: EntityOption[];
     dayOptions: ValueOption[];
     primaryRoomId: number | null;
-    isOnline: boolean;
+    defaultDeliveryMode: DeliveryMode;
     onSchedulesChange: (schedules: ClassSchedule[]) => void;
 };
 
@@ -40,11 +40,13 @@ function sessionIssue(schedule: ClassSchedule, others: ClassSchedule[]): string 
     return overlaps ? "This overlaps another meeting on the same day." : null;
 }
 
-export function ScheduleGrid({ schedules, rooms, dayOptions, primaryRoomId, isOnline, onSchedulesChange }: ScheduleGridProps): ReactNode {
+export function ScheduleGrid({ schedules, rooms, dayOptions, primaryRoomId, defaultDeliveryMode, onSchedulesChange }: ScheduleGridProps): ReactNode {
     const [days, setDays] = useState<string[]>(["Monday", "Wednesday", "Friday"]);
     const [start, setStart] = useState("08:00");
     const [end, setEnd] = useState("09:00");
     const [error, setError] = useState<string | null>(null);
+    const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>(defaultDeliveryMode);
+    useEffect(() => setDeliveryMode(defaultDeliveryMode), [defaultDeliveryMode]);
 
     const weeklyHours = schedules.reduce((total, item) => total + Math.max(0, toMinutes(item.end_time) - toMinutes(item.start_time)), 0) / 60;
 
@@ -66,7 +68,8 @@ export function ScheduleGrid({ schedules, rooms, dayOptions, primaryRoomId, isOn
                 day_of_week: day.value,
                 start_time: start,
                 end_time: end,
-                room_id: isOnline ? null : primaryRoomId,
+                delivery_mode: deliveryMode,
+                room_id: deliveryMode === "online" ? null : primaryRoomId,
                 component_type: "lecture",
                 pattern_group_id: groupId,
             }));
@@ -123,6 +126,18 @@ export function ScheduleGrid({ schedules, rooms, dayOptions, primaryRoomId, isOn
 
                 <div className="flex flex-wrap items-end gap-4">
                     <div className="space-y-2">
+                        <Label htmlFor="meeting-delivery">Meeting type</Label>
+                        <select
+                            id="meeting-delivery"
+                            className={selectClassName}
+                            value={deliveryMode}
+                            onChange={(event) => setDeliveryMode(event.target.value as DeliveryMode)}
+                        >
+                            <option value="face_to_face">Face to face</option>
+                            <option value="online">Online</option>
+                        </select>
+                    </div>
+                    <div className="space-y-2">
                         <Label htmlFor="meeting-start">Starts</Label>
                         <Input
                             id="meeting-start"
@@ -173,7 +188,7 @@ export function ScheduleGrid({ schedules, rooms, dayOptions, primaryRoomId, isOn
 
                             return (
                                 <li key={schedule.id ?? `meeting-${index}`} className={cn("space-y-3 p-4", issue && "bg-destructive/5")}>
-                                    <div className={cn("grid gap-3", isOnline ? "sm:grid-cols-3" : "sm:grid-cols-4")}>
+                                    <div className="grid gap-3 sm:grid-cols-3">
                                         <div className="space-y-1.5">
                                             <Label htmlFor={`meeting-${index}-day`}>Day</Label>
                                             <select
@@ -211,7 +226,26 @@ export function ScheduleGrid({ schedules, rooms, dayOptions, primaryRoomId, isOn
                                                 onChange={(event) => update(index, { end_time: event.target.value })}
                                             />
                                         </div>
-                                        {isOnline ? null : (
+                                        <div className="space-y-1.5">
+                                            <Label htmlFor={`meeting-${index}-delivery`}>Meeting type</Label>
+                                            <select
+                                                id={`meeting-${index}-delivery`}
+                                                className={selectClassName}
+                                                value={schedule.delivery_mode ?? defaultDeliveryMode}
+                                                onChange={(event) =>
+                                                    update(index, {
+                                                        delivery_mode: event.target.value as DeliveryMode,
+                                                        room_id: event.target.value === "online" ? null : schedule.room_id,
+                                                    })
+                                                }
+                                            >
+                                                <option value="face_to_face">Face to face</option>
+                                                <option value="online">Online</option>
+                                            </select>
+                                        </div>
+                                        {(schedule.delivery_mode ?? defaultDeliveryMode) === "online" ? (
+                                            <p className="text-muted-foreground self-end py-3 text-sm">Online · No room reserved</p>
+                                        ) : (
                                             <div className="space-y-1.5">
                                                 <Label htmlFor={`meeting-${index}-room`}>Room</Label>
                                                 <select

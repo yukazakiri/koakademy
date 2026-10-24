@@ -43,7 +43,7 @@ export function ClassCard({
             </div>
             <div className="flex flex-wrap gap-2">
                 <Badge variant="secondary">{classRow.classification === "shs" ? "Senior high" : "College"}</Badge>
-                <Badge variant="outline">{deliveryModeLabel(classRow.delivery_mode)}</Badge>
+                <Badge variant="outline">{deliveryModeLabel(classRow.delivery_summary ?? classRow.delivery_mode)}</Badge>
                 {classRow.deleted_at ? <Badge variant="outline">Archived</Badge> : null}
                 <span className="text-muted-foreground text-sm">{classProgramLabel(classRow)}</span>
             </div>

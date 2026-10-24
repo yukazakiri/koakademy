@@ -76,7 +76,7 @@ final class StudentScheduleService
             ?? $class->shsSubject;
 
         $schedules = $class->schedules
-            ->map(function ($schedule) use ($class): array {
+            ->map(function ($schedule): array {
                 $startTime = $schedule->start_time?->format('H:i');
                 $endTime = $schedule->end_time?->format('H:i');
 
@@ -86,7 +86,8 @@ final class StudentScheduleService
                     'start_time' => $startTime,
                     'end_time' => $endTime,
                     'room_id' => $schedule->room_id,
-                    'room' => $class->isOnline() ? 'Online' : ($schedule->room?->name ?? 'Room TBA'),
+                    'room' => $schedule->isOnline() ? 'Online' : ($schedule->room?->name ?? 'Room TBA'),
+                    'delivery_mode' => $schedule->delivery_mode,
                 ];
             })
             ->filter(fn (array $schedule): bool => $schedule['day_of_week'] !== '' && $schedule['start_time'] !== null && $schedule['end_time'] !== null)
@@ -115,6 +116,7 @@ final class StudentScheduleService
             'students_count' => $class->class_enrollments_count ?? 0,
             'classification' => $class->classification,
             'delivery_mode' => $class->delivery_mode,
+            'delivery_summary' => $class->deliverySummary(),
             'strand_id' => $class->shs_strand_id,
             'subject_id' => $class->subject_id,
             'semester' => $class->semester,

@@ -29,7 +29,6 @@ final class ClassScheduleChangeNotificationService
             $class->schedules()
                 ->with('room:id,name')
                 ->get(),
-            $class->delivery_mode ?? Classes::DELIVERY_FACE_TO_FACE,
         );
     }
 
@@ -193,16 +192,16 @@ final class ClassScheduleChangeNotificationService
      * @param  iterable<int, mixed>  $schedules
      * @return array<int, array{day_of_week: string, start_time: string, end_time: string, room_id: int|null, room_name: string|null, delivery_mode?: string}>
      */
-    private function formatScheduleSnapshot(iterable $schedules, string $deliveryMode): array
+    private function formatScheduleSnapshot(iterable $schedules): array
     {
         return collect($schedules)
             ->map(fn ($schedule): array => [
                 'day_of_week' => (string) $schedule->day_of_week,
                 'start_time' => $this->formatTime($schedule->start_time),
                 'end_time' => $this->formatTime($schedule->end_time),
-                'room_id' => $deliveryMode !== Classes::DELIVERY_ONLINE && $schedule->room_id !== null ? (int) $schedule->room_id : null,
-                'room_name' => $deliveryMode === Classes::DELIVERY_ONLINE ? 'Online' : $schedule->room?->name,
-                'delivery_mode' => $deliveryMode,
+                'room_id' => ! $schedule->isOnline() && $schedule->room_id !== null ? (int) $schedule->room_id : null,
+                'room_name' => $schedule->isOnline() ? 'Online' : $schedule->room?->name,
+                'delivery_mode' => $schedule->delivery_mode,
             ])
             ->sortBy(fn (array $schedule): string => sprintf(
                 '%d|%s|%s|%s',

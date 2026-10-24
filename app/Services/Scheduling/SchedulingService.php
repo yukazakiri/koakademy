@@ -8,6 +8,7 @@ use App\Models\Classes;
 use App\Models\Schedule;
 use App\Models\User;
 use App\Services\ClassScheduleChangeNotificationService;
+use App\Support\ScheduleDelivery;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -32,6 +33,7 @@ final readonly class SchedulingService
         ?array $oldSnapshot = null,
     ): Collection {
         $oldSnapshot ??= $this->notificationService->snapshot($class);
+        $incomingSchedules = ScheduleDelivery::normalizeSchedules($incomingSchedules, $class);
 
         $synced = DB::transaction(function () use ($class, $incomingSchedules): Collection {
             $existingSchedules = $class->schedules()->withTrashed()->get();
@@ -65,11 +67,13 @@ final readonly class SchedulingService
                     );
                 }
 
+                $scheduleData = ScheduleDelivery::normalizeBlock($scheduleData, $target?->delivery_mode ?? $class->delivery_mode);
                 $attributes = [
                     'day_of_week' => (string) $scheduleData['day_of_week'],
                     'start_time' => $this->normalizeTimeString((string) $scheduleData['start_time']),
                     'end_time' => $this->normalizeTimeString((string) $scheduleData['end_time']),
-                    'room_id' => ! $class->isOnline() && isset($scheduleData['room_id']) && $scheduleData['room_id'] !== ''
+                    'delivery_mode' => $scheduleData['delivery_mode'],
+                    'room_id' => isset($scheduleData['room_id']) && $scheduleData['room_id'] !== ''
                         ? (int) $scheduleData['room_id']
                         : null,
                     'component_type' => isset($scheduleData['component_type']) && is_string($scheduleData['component_type'])
@@ -130,13 +134,12 @@ final readonly class SchedulingService
         bool $applyToPatternGroup = false,
     ): Schedule {
         $class = $schedule->class?->fresh();
-        if ($class?->isOnline()) {
-            $attributes['room_id'] = null;
-        }
+        $attributes = ScheduleDelivery::normalizeBlock($attributes, $schedule->delivery_mode);
         $oldSnapshot = $class ? $this->notificationService->snapshot($class) : [];
 
         DB::transaction(function () use ($schedule, $attributes, $applyToPatternGroup): void {
             $updateData = [
+                'delivery_mode' => $attributes['delivery_mode'],
                 'day_of_week' => (string) ($attributes['day_of_week'] ?? $schedule->day_of_week),
                 'start_time' => $this->normalizeTimeString((string) ($attributes['start_time'] ?? $schedule->start_time?->format('H:i'))),
                 'end_time' => $this->normalizeTimeString((string) ($attributes['end_time'] ?? $schedule->end_time?->format('H:i'))),
@@ -164,14 +167,12 @@ final readonly class SchedulingService
                     'end_time' => $updateData['end_time'],
                 ];
 
-                if (array_key_exists('room_id', $updateData)) {
-                    $sharedUpdates['room_id'] = $updateData['room_id'];
-                }
-
                 if (array_key_exists('component_type', $updateData)) {
                     $sharedUpdates['component_type'] = $updateData['component_type'];
                 }
 
+                // A recurring time pattern can contain both online and campus meetings.
+                // Only the selected meeting changes its delivery mode and location.
                 Schedule::query()
                     ->where('class_id', $schedule->class_id)
                     ->where('pattern_group_id', $schedule->pattern_group_id)
@@ -207,14 +208,16 @@ final readonly class SchedulingService
         string $componentType = 'lecture',
         string $status = 'published',
         ?User $actor = null,
+        ?string $deliveryMode = null,
     ): Collection {
         $oldSnapshot = $this->notificationService->snapshot($class);
         $uniqueDays = array_values(array_unique(array_filter($days)));
         $patternGroupId = count($uniqueDays) > 1 ? (string) Str::uuid() : null;
 
-        $created = DB::transaction(function () use ($class, $uniqueDays, $startTime, $endTime, $roomId, $componentType, $status, $patternGroupId): Collection {
+        $deliveryMode ??= $class->delivery_mode;
+        $created = DB::transaction(function () use ($class, $uniqueDays, $startTime, $endTime, $roomId, $componentType, $status, $patternGroupId, $deliveryMode): Collection {
             $blocks = collect();
-            $effectiveRoomId = $class->isOnline() ? null : $roomId;
+            $effectiveRoomId = $deliveryMode === Classes::DELIVERY_ONLINE ? null : $roomId;
 
             foreach ($uniqueDays as $day) {
                 /** @var Schedule $schedule */
@@ -223,6 +226,7 @@ final readonly class SchedulingService
                     'start_time' => $this->normalizeTimeString($startTime),
                     'end_time' => $this->normalizeTimeString($endTime),
                     'room_id' => $effectiveRoomId,
+                    'delivery_mode' => $deliveryMode,
                     'subject_id' => $class->subject_id ? (int) $class->subject_id : null,
                     'component_type' => $componentType,
                     'pattern_group_id' => $patternGroupId,
@@ -303,7 +307,8 @@ final readonly class SchedulingService
                     'day_of_week' => $schedule->day_of_week,
                     'start_time' => $schedule->start_time?->format('H:i:s'),
                     'end_time' => $schedule->end_time?->format('H:i:s'),
-                    'room_id' => $target->isOnline() ? null : $schedule->room_id,
+                    'room_id' => $schedule->room_id,
+                    'delivery_mode' => $schedule->delivery_mode,
                     'subject_id' => $schedule->subject_id ?? $target->subject_id,
                     'component_type' => $schedule->component_type ?? 'lecture',
                     'pattern_group_id' => $newPatternGroupId,

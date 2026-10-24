@@ -10,7 +10,9 @@ import {
     buildClassDefaults,
     buildClassStorePayload,
     buildSubjectCodeFromSubjectOptions,
+    deliveryModeLabel,
     isClassDraft,
+    meetingDeliverySummary,
     normalizeClassDelivery,
     type ClassDefaultsInput,
     type ClassDraft,
@@ -314,12 +316,12 @@ export function ClassWizard({ semester, school_year, options, mode = "create", c
                             </div>
                             <div>
                                 <dt className="text-muted-foreground">Delivery mode</dt>
-                                <dd className="mt-1">{form.data.delivery_mode === "online" ? "Online" : "Face to face"}</dd>
+                                <dd className="mt-1">{deliveryModeLabel(meetingDeliverySummary(form.data.schedules, form.data.delivery_mode))}</dd>
                             </div>
                             <div>
-                                <dt className="text-muted-foreground">Primary room</dt>
+                                <dt className="text-muted-foreground">Default room</dt>
                                 <dd className="mt-1">
-                                    {form.data.delivery_mode === "online" ? "No room needed" : (selectedRoom?.label ?? "Unassigned")}
+                                    {form.data.delivery_mode === "online" ? "No default room" : (selectedRoom?.label ?? "Unassigned")}
                                 </dd>
                             </div>
                             <div>

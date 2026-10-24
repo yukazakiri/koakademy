@@ -47,11 +47,13 @@ export function FacultyRoomPicker({
             {isOnline ? (
                 <div className="space-y-2">
                     <p className="text-sm font-medium">Room</p>
-                    <p className="text-muted-foreground bg-muted/40 rounded-lg border border-dashed p-3 text-sm">Online classes do not use a room.</p>
+                    <p className="text-muted-foreground bg-muted/40 rounded-lg border border-dashed p-3 text-sm">
+                        Online meetings do not reserve a room.
+                    </p>
                 </div>
             ) : (
                 <Combobox
-                    label="Primary room (optional)"
+                    label="Default room (optional)"
                     options={[{ value: "0", label: "Assign a room later" }, ...toComboboxOptions(rooms)]}
                     value={String(roomId || 0)}
                     onValueChange={(value) => onRoomChange(Number(value) || null)}

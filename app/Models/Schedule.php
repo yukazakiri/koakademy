@@ -46,6 +46,7 @@ final class Schedule extends Model
         'start_time',
         'end_time',
         'room_id',
+        'delivery_mode',
         'class_id',
         'subject_id',
         'component_type',
@@ -73,11 +74,17 @@ final class Schedule extends Model
         return $this->where('class_id', $classId)->get();
     }
 
+    public function isOnline(): bool
+    {
+        return $this->delivery_mode === Classes::DELIVERY_ONLINE;
+    }
+
     protected static function booted(): void
     {
-        // Sessions of an online class are never given a room.
         self::saving(function (Schedule $schedule): void {
-            if ($schedule->room_id !== null && Classes::withTrashed()->whereKey($schedule->class_id)->value('delivery_mode') === Classes::DELIVERY_ONLINE) {
+            // A class mode is only the default for new meetings.
+            $schedule->delivery_mode ??= Classes::withTrashed()->whereKey($schedule->class_id)->value('delivery_mode') ?? Classes::DELIVERY_FACE_TO_FACE;
+            if ($schedule->isOnline()) {
                 $schedule->room_id = null;
                 $schedule->unsetRelation('room');
             }

@@ -9,6 +9,7 @@ use App\Models\Schedule;
 use App\Services\ClassCurriculumPlacementService;
 use App\Services\GeneralSettingsService;
 use App\Services\Scheduling\ScheduleConflictService;
+use App\Support\ScheduleDelivery;
 use Closure;
 use Illuminate\Contracts\Validation\DataAwareRule;
 use Illuminate\Contracts\Validation\ValidationRule;
@@ -69,6 +70,7 @@ final class ScheduleOverlapRule implements DataAwareRule, ValidationRule
             ? mb_trim($class->faculty_id)
             : null;
 
+        $value = ScheduleDelivery::normalizeSchedules($value, $existingClass, $class->delivery_mode);
         foreach ($value as $schedule) {
             if (! is_array($schedule) || empty($schedule['day_of_week']) || empty($schedule['start_time']) || empty($schedule['end_time'])) {
                 continue;
@@ -76,8 +78,9 @@ final class ScheduleOverlapRule implements DataAwareRule, ValidationRule
 
             $scheduleIdForExclusion = $this->resolveScheduleIdForExclusion($schedule['id'] ?? null);
 
-            if (! $class->isOnline() && ! empty($schedule['room_id'])) {
+            if ($schedule['delivery_mode'] !== Classes::DELIVERY_ONLINE && ! empty($schedule['room_id'])) {
                 $roomConflict = $this->buildOverlapBaseQuery($schedule, $schoolYearVariants, $semester, $scheduleIdForExclusion)
+                    ->where('delivery_mode', '!=', Classes::DELIVERY_ONLINE)
                     ->where('room_id', $schedule['room_id'])
                     ->first();
 

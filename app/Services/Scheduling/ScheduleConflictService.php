@@ -60,8 +60,8 @@ final class ScheduleConflictService
                     continue;
                 }
 
-                $roomConflict = ! $a['class']->isOnline()
-                    && ! $b['class']->isOnline()
+                $roomConflict = ! $a['schedule']->isOnline()
+                    && ! $b['schedule']->isOnline()
                     && $a['schedule']->room_id
                     && $b['schedule']->room_id
                     && (int) $a['schedule']->room_id === (int) $b['schedule']->room_id;

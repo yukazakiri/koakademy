@@ -64,6 +64,144 @@ function deliveryModePayload(array $attributes = []): array
     ];
 }
 
+it('creates a mixed Monday Wednesday Friday class and only reserves campus meeting rooms', function (string $endpoint): void {
+    $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
+    $room = Room::factory()->create();
+    $other = deliveryModeClass(['section' => 'B']);
+    deliveryModeBlock($other, ['day_of_week' => 'Friday', 'room_id' => $room->id]);
+
+    $payload = deliveryModePayload(['schedules' => collect(['Monday', 'Wednesday', 'Friday'])->map(fn (string $day): array => [
+        'day_of_week' => $day, 'start_time' => '08:00', 'end_time' => '09:00',
+        'delivery_mode' => $day === 'Friday' ? 'online' : 'face_to_face', 'room_id' => $room->id,
+    ])->all()]);
+    $response = $this->postJson(route($endpoint), $payload);
+    $endpoint === 'administrators.classes.store' ? $response->assertRedirect() : $response->assertOk();
+
+    $class = Classes::query()->latest('id')->firstOrFail();
+    expect($class->deliverySummary())->toBe('mixed');
+    foreach (['Monday', 'Wednesday'] as $day) {
+        $this->assertDatabaseHas('schedule', ['class_id' => $class->id, 'day_of_week' => $day, 'delivery_mode' => 'face_to_face', 'room_id' => $room->id]);
+    }
+    $this->assertDatabaseHas('schedule', ['class_id' => $class->id, 'day_of_week' => 'Friday', 'delivery_mode' => 'online', 'room_id' => null]);
+})->with(['administrators.scheduling-analytics.classes.store', 'administrators.classes.store']);
+
+it('changes one meeting online without changing other days in its recurring pattern', function (): void {
+    Notification::fake();
+    $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
+    $room = Room::factory()->create();
+    $class = deliveryModeClass(['room_id' => $room->id]);
+    $blocks = collect(['Monday', 'Wednesday', 'Friday'])->map(fn (string $day): Schedule => deliveryModeBlock($class, [
+        'day_of_week' => $day, 'room_id' => $room->id, 'pattern_group_id' => 'mwf',
+    ]));
+
+    $this->patchJson(route('administrators.scheduling-analytics.schedules.update', $blocks->last()), [
+        'day_of_week' => 'Friday', 'start_time' => '08:00', 'end_time' => '09:00',
+        'delivery_mode' => 'online', 'room_id' => 999999, 'apply_to_pattern_group' => true,
+    ])->assertOk()->assertJsonPath('schedule.delivery_mode', 'online')->assertJsonPath('schedule.room_id', null);
+
+    foreach ($blocks->take(2) as $block) {
+        expect($block->fresh()->delivery_mode)->toBe('face_to_face')->and($block->fresh()->room_id)->toBe($room->id);
+    }
+    expect($class->fresh()->room_id)->toBe($room->id);
+    $change = $class->scheduleChanges()->sole();
+    expect(collect($change->new_schedule)->where('delivery_mode', 'online')->pluck('day_of_week')->all())->toBe(['Friday']);
+});
+
+it('checks conflicts using the meeting mode even when the class default is different', function (string $conflict): void {
+    $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
+    $faculty = Faculty::factory()->create();
+    $room = Room::factory()->create();
+    $payload = deliveryModePayload([
+        'delivery_mode' => $conflict === 'room' ? 'online' : 'face_to_face',
+        'faculty_id' => $faculty->id,
+        'schedules' => [[
+            'day_of_week' => 'Monday', 'start_time' => '08:00', 'end_time' => '09:00',
+            'delivery_mode' => $conflict === 'room' ? 'face_to_face' : 'online', 'room_id' => $room->id,
+        ]],
+    ]);
+    $other = deliveryModeClass([
+        'section' => $conflict === 'cohort' ? 'A' : 'B',
+        'course_codes' => $conflict === 'cohort' ? $payload['course_codes'] : [],
+        'faculty_id' => $conflict === 'faculty' ? $faculty->id : null,
+    ]);
+    deliveryModeBlock($other, ['room_id' => $room->id]);
+
+    $this->postJson(route('administrators.scheduling-analytics.classes.store'), $payload)
+        ->assertUnprocessable()->assertJsonValidationErrors('schedules');
+})->with(['room', 'faculty', 'cohort']);
+
+it('copies a mixed schedule without replacing its meeting types with the target default', function (): void {
+    $room = Room::factory()->create();
+    $source = deliveryModeClass();
+    deliveryModeBlock($source, ['room_id' => $room->id]);
+    deliveryModeBlock($source, ['day_of_week' => 'Friday', 'delivery_mode' => 'online']);
+    $target = deliveryModeClass(['section' => 'B', 'delivery_mode' => 'online']);
+
+    app(SchedulingService::class)->copyClassSchedules($source, $target);
+
+    $this->assertDatabaseHas('schedule', ['class_id' => $target->id, 'day_of_week' => 'Monday', 'delivery_mode' => 'face_to_face', 'room_id' => $room->id]);
+    $this->assertDatabaseHas('schedule', ['class_id' => $target->id, 'day_of_week' => 'Friday', 'delivery_mode' => 'online', 'room_id' => null]);
+});
+
+it('retains mixed meeting modes when older clients omit mode from an update', function (bool $includeIds): void {
+    $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
+    $room = Room::factory()->create();
+    $class = deliveryModeClass(['room_id' => $room->id]);
+    $campus = deliveryModeBlock($class, ['room_id' => $room->id]);
+    $online = deliveryModeBlock($class, ['day_of_week' => 'Friday', 'delivery_mode' => 'online']);
+
+    $schedules = [
+        ['id' => $campus->id, 'day_of_week' => 'Monday', 'start_time' => '10:00', 'end_time' => '11:00', 'room_id' => $room->id],
+        ['id' => $online->id, 'day_of_week' => 'Friday', 'start_time' => '10:00', 'end_time' => '11:00', 'room_id' => 999999],
+    ];
+    if (! $includeIds) {
+        $schedules = array_map(fn (array $schedule): array => Arr::except($schedule, 'id'), $schedules);
+    }
+    $this->patchJson(route('administrators.classes.update', $class), ['schedules' => $schedules])->assertRedirect()->assertSessionHasNoErrors();
+
+    expect($campus->fresh()->delivery_mode)->toBe('face_to_face')->and($campus->fresh()->room_id)->toBe($room->id);
+    expect($online->fresh()->delivery_mode)->toBe('online')->and($online->fresh()->room_id)->toBeNull();
+})->with(['identified meetings' => true, 'legacy meetings without IDs' => false]);
+
+it('places both online and campus patterns in one class regardless of its default', function (): void {
+    $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
+    $room = Room::factory()->create();
+    $class = deliveryModeClass(['delivery_mode' => 'online']);
+
+    $this->postJson(route('administrators.scheduling-analytics.classes.schedules.store', $class), [
+        'days' => ['Monday', 'Wednesday'], 'start_time' => '08:00', 'end_time' => '09:00',
+        'delivery_mode' => 'face_to_face', 'room_id' => $room->id,
+    ])->assertOk();
+    $this->postJson(route('administrators.scheduling-analytics.classes.schedules.store', $class), [
+        'days' => ['Friday'], 'start_time' => '08:00', 'end_time' => '09:00',
+        'delivery_mode' => 'online', 'room_id' => 999999,
+    ])->assertOk()->assertJsonPath('class.delivery_summary', 'mixed');
+
+    expect($class->schedules()->where('delivery_mode', 'face_to_face')->where('room_id', $room->id)->count())->toBe(2);
+    expect($class->schedules()->where('delivery_mode', 'online')->whereNull('room_id')->count())->toBe(1);
+});
+
+it('labels mixed meetings individually for enrolled students and separates them in exports', function (): void {
+    GeneralSetting::factory()->create(['school_starting_date' => '2031-06-01', 'school_ending_date' => '2032-03-31', 'semester' => 2]);
+    $course = Course::factory()->create();
+    $subject = Subject::factory()->create(['course_id' => $course->id, 'academic_year' => 1]);
+    $room = Room::factory()->create(['name' => 'Room 204']);
+    $class = deliveryModeClass(['course_codes' => [$course->id], 'subject_id' => $subject->id, 'subject_ids' => [$subject->id]]);
+    deliveryModeBlock($class, ['room_id' => $room->id]);
+    deliveryModeBlock($class, ['day_of_week' => 'Wednesday', 'room_id' => $room->id]);
+    deliveryModeBlock($class, ['day_of_week' => 'Friday', 'delivery_mode' => 'online']);
+    $student = Student::factory()->create();
+    ClassEnrollment::factory()->create(['class_id' => $class->id, 'student_id' => $student->id, 'status' => true]);
+
+    $result = app(StudentScheduleService::class)->build($student, '2031 - 2032', 2);
+    $meetings = collect($result['classes'][0]['schedules'])->keyBy('day_of_week');
+    expect($meetings['Monday']['room'])->toBe('Room 204');
+    expect($meetings['Friday'])->toMatchArray(['delivery_mode' => 'online', 'room_id' => null, 'room' => 'Online']);
+
+    $rows = app(CourseScheduleExportService::class)->build($course)['year_groups'][0]['section_groups'][0]['rows'];
+    expect(collect($rows)->pluck('delivery_mode')->sort()->values()->all())->toBe(['face_to_face', 'online']);
+});
+
 it('creates an online planner offering despite a stale occupied room', function (): void {
     $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
     $room = Room::factory()->create();
@@ -109,7 +247,7 @@ it('rejects faculty and cohort clashes when creating online classes with stale r
     $this->assertDatabaseCount('schedule', 1);
 })->with(['faculty', 'cohort']);
 
-it('changes to online without requiring or replacing schedules and clears archived rooms', function (): void {
+it('changes the default to online while preserving active and archived meeting modes', function (): void {
     $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
     $room = Room::factory()->create();
     $class = deliveryModeClass(['room_id' => $room->id]);
@@ -121,10 +259,10 @@ it('changes to online without requiring or replacing schedules and clears archiv
         ->assertRedirect(route('administrators.classes.index'))->assertSessionHasNoErrors();
 
     $this->assertDatabaseHas('classes', ['id' => $class->id, 'delivery_mode' => 'online', 'room_id' => null]);
-    $this->assertDatabaseHas('schedule', ['id' => $active->id, 'room_id' => null, 'deleted_at' => null]);
+    $this->assertDatabaseHas('schedule', ['id' => $active->id, 'room_id' => $room->id, 'delivery_mode' => 'face_to_face', 'deleted_at' => null]);
     $this->assertSoftDeleted($archived);
     expect($class->schedules()->withTrashed()->count())->toBe(2);
-    expect($archived->fresh()->room_id)->toBeNull();
+    expect($archived->fresh()->room_id)->toBe($room->id);
 });
 
 it('preserves online schedules during unrelated partial updates', function (): void {
@@ -291,10 +429,10 @@ it('normalizes direct linked pattern updates with a stale loaded parent', functi
     $first->load('class');
     $class->update(['delivery_mode' => 'online']);
 
-    app(SchedulingService::class)->updateScheduleBlock($first, ['room_id' => $room->id], null, true);
+    app(SchedulingService::class)->updateScheduleBlock($first, ['delivery_mode' => 'online', 'room_id' => $room->id], null, true);
 
     $this->assertDatabaseHas('schedule', ['id' => $first->id, 'room_id' => null]);
-    $this->assertDatabaseHas('schedule', ['id' => $second->id, 'room_id' => null]);
+    $this->assertDatabaseHas('schedule', ['id' => $second->id, 'room_id' => $room->id, 'delivery_mode' => 'face_to_face']);
 });
 
 it('allows faculty to retain roomless sessions without reassigning rooms', function (string $mode): void {
@@ -323,11 +461,11 @@ it('strips rooms on model saves even when the loaded parent and room are stale',
     $class->load(['Room', 'schedules.room']);
     $class->update(['delivery_mode' => 'online']);
 
-    $first->update(['room_id' => $room->id]);
+    $first->update(['delivery_mode' => 'online', 'room_id' => $room->id]);
 
     expect($first->room)->toBeNull();
     expect($class->Room)->toBeNull();
-    expect($class->schedules->pluck('room_id')->all())->toBe([null]);
+    expect($class->fresh()->schedules->pluck('room_id')->all())->toBe([null]);
     $this->assertDatabaseHas('schedule', ['id' => $first->id, 'room_id' => null]);
 });
 
@@ -349,7 +487,7 @@ it('copies online schedules without rooms and preserves pattern metadata', funct
     $this->assertDatabaseHas('schedule', ['class_id' => $copy->id, 'component_type' => 'lab', 'status' => 'draft']);
 });
 
-it('clears source rooms when schedules are copied to an online target', function (): void {
+it('preserves meeting modes and campus rooms when copied to a class with an online default', function (): void {
     $room = Room::factory()->create();
     $source = deliveryModeClass(['room_id' => $room->id]);
     deliveryModeBlock($source, ['room_id' => $room->id]);
@@ -358,7 +496,7 @@ it('clears source rooms when schedules are copied to an online target', function
     app(SchedulingService::class)->copyClassSchedules($source, $target);
 
     $this->assertDatabaseHas('schedule', ['class_id' => $source->id, 'room_id' => $room->id]);
-    $this->assertDatabaseHas('schedule', ['class_id' => $target->id, 'room_id' => null]);
+    $this->assertDatabaseHas('schedule', ['class_id' => $target->id, 'room_id' => $room->id, 'delivery_mode' => 'face_to_face']);
 });
 
 it('preserves delivery mode when cloning offerings into another term', function (): void {
@@ -633,7 +771,7 @@ it('review preserves an explicitly unassigned student session despite the primar
     expect($schedule['classes'][0]['schedules'][0])->toMatchArray(['room_id' => null, 'room' => 'Room TBA']);
 });
 
-it('review notifies once when converting assigned or roomless sessions online with supplied or omitted schedules', function (bool $assignedRoom, bool $supplySchedules): void {
+it('notifies for explicit meeting conversion and keeps meetings when only the default changes', function (bool $assignedRoom, bool $supplySchedules): void {
     Notification::fake();
     $admin = User::factory()->create(['role' => UserRole::Admin]);
     $this->actingAs($admin);
@@ -646,12 +784,21 @@ it('review notifies once when converting assigned or roomless sessions online wi
     $payload = ['delivery_mode' => 'online'];
     if ($supplySchedules) {
         $payload['schedules'] = [[
-            'id' => $schedule->id, 'day_of_week' => 'Monday', 'start_time' => '08:00', 'end_time' => '09:00', 'room_id' => $room?->id,
+            'id' => $schedule->id, 'day_of_week' => 'Monday', 'start_time' => '08:00', 'end_time' => '09:00', 'room_id' => $room?->id, 'delivery_mode' => 'online',
         ]];
     }
 
     $this->patch(route('administrators.classes.update', $class), $payload)
         ->assertRedirect(route('administrators.classes.index'))->assertSessionHasNoErrors();
+
+    if (! $supplySchedules) {
+        expect($class->scheduleChanges()->count())->toBe(0);
+        expect($schedule->fresh()->delivery_mode)->toBe('face_to_face');
+        expect($schedule->fresh()->room_id)->toBe($room?->id);
+        Notification::assertNothingSent();
+
+        return;
+    }
 
     $change = ClassScheduleChange::query()->where('class_id', $class->id)->sole();
     expect($change->changed_by_user_id)->toBe($admin->id);
@@ -686,7 +833,7 @@ it('review sends one final notification for a combined delivery and time change'
 
     $this->patch(route('administrators.classes.update', $class), [
         'delivery_mode' => 'online',
-        'schedules' => [['id' => $schedule->id, 'day_of_week' => 'Tuesday', 'start_time' => '10:00', 'end_time' => '11:00', 'room_id' => $room->id]],
+        'schedules' => [['id' => $schedule->id, 'day_of_week' => 'Tuesday', 'start_time' => '10:00', 'end_time' => '11:00', 'room_id' => $room->id, 'delivery_mode' => 'online']],
     ])->assertRedirect(route('administrators.classes.index'))->assertSessionHasNoErrors();
 
     expect($class->scheduleChanges()->count())->toBe(1);
@@ -706,7 +853,7 @@ it('review treats old snapshots without a delivery mode as face to face', functi
     expect($service->notifyIfChanged($class, $legacySnapshot))->toBe(0);
     expect($class->scheduleChanges()->count())->toBe(0);
 
-    $class->update(['delivery_mode' => 'online']);
+    $class->schedules()->first()->update(['delivery_mode' => 'online']);
     $service->notifyIfChanged($class, $legacySnapshot);
 
     $change = $class->scheduleChanges()->sole();

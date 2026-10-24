@@ -634,7 +634,7 @@ it('stores an online class without a room and strips rooms from its sessions', f
         ->and(Schedule::query()->where('class_id', $class->id)->value('room_id'))->toBeNull();
 });
 
-it('defaults to face to face and frees rooms when a class is switched to online', function () {
+it('defaults to face to face and keeps campus meetings when the new meeting default becomes online', function () {
     $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
 
     $room = Room::factory()->create(['is_active' => true]);
@@ -652,7 +652,7 @@ it('defaults to face to face and frees rooms when a class is switched to online'
     $class->update(['delivery_mode' => 'online']);
 
     expect($class->fresh()->room_id)->toBeNull()
-        ->and(Schedule::query()->where('class_id', $class->id)->value('room_id'))->toBeNull();
+        ->and(Schedule::query()->where('class_id', $class->id)->value('room_id'))->toBe($room->id);
 });
 
 it('does not report a room clash between two online classes in the same slot', function () {

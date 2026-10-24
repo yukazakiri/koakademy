@@ -403,6 +403,14 @@ final class Classes extends Model
         return $this->delivery_mode === self::DELIVERY_ONLINE;
     }
 
+    public function deliverySummary(): string
+    {
+        $schedules = $this->relationLoaded('Schedule') ? $this->Schedule : $this->schedules;
+        $modes = $schedules->pluck('delivery_mode')->filter()->unique()->values();
+
+        return $modes->count() > 1 ? 'mixed' : ($modes->first() ?? $this->delivery_mode ?? self::DELIVERY_FACE_TO_FACE);
+    }
+
     protected static function boot(): void
     {
         parent::boot();
@@ -413,21 +421,11 @@ final class Classes extends Model
                 $model->subject_code = $model->getSubjectCodeFromRelationships();
             }
 
-            // An online class never occupies a room.
+            // This is the default room for new meetings; existing meetings keep their own mode and room.
             if ($model->isOnline()) {
                 $model->room_id = null;
                 $model->unsetRelation('Room');
                 $model->unsetRelation('room');
-            }
-        });
-
-        // Switching a class to online frees every room its sessions held.
-        self::saved(function ($model): void {
-            if ($model->isOnline()) {
-                // Include archived blocks so restoring them cannot reclaim a room.
-                $model->Schedule()->withTrashed()->whereNotNull('room_id')->update(['room_id' => null]);
-                $model->unsetRelation('Schedule');
-                $model->unsetRelation('schedules');
             }
         });
 

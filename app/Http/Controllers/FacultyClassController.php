@@ -73,14 +73,15 @@ final class FacultyClassController extends Controller
 
         $schedule = $class->schedules
             ->sortBy(fn ($schedule) => $schedule->start_time?->format('H:i') ?? '00:00')
-            ->map(function ($schedule) use ($class): array {
+            ->map(function ($schedule): array {
                 $start = $schedule->formatted_start_time ?? $schedule->start_time?->format('g:i A');
                 $end = $schedule->formatted_end_time ?? $schedule->end_time?->format('g:i A');
 
                 return [
                     'id' => $schedule->id,
                     'day' => ucfirst(mb_strtolower((string) $schedule->day_of_week ?? '')),
-                    'room' => $schedule->room?->name ?? $class->Room?->name ?? 'TBA',
+                    'room' => $schedule->isOnline() ? 'Online' : ($schedule->room?->name ?? 'TBA'),
+                    'delivery_mode' => $schedule->delivery_mode,
                     'start' => $start,
                     'end' => $end,
                     'start_24h' => $schedule->start_time?->format('H:i'),
@@ -146,6 +147,7 @@ final class FacultyClassController extends Controller
                 'start_time' => $schedule->start_time?->format('H:i'),
                 'end_time' => $schedule->end_time?->format('H:i'),
                 'room_id' => $schedule->room_id,
+                'delivery_mode' => $schedule->delivery_mode,
             ]),
             'settings' => $class->settings ?? Classes::getDefaultSettings(),
         ];
@@ -323,7 +325,8 @@ final class FacultyClassController extends Controller
             'day_of_week' => $schedule->day_of_week,
             'start_time' => $schedule->start_time?->format('H:i'),
             'end_time' => $schedule->end_time?->format('H:i'),
-            'room' => $schedule->room?->name ?? 'TBA',
+            'room' => $schedule->isOnline() ? 'Online' : ($schedule->room?->name ?? 'TBA'),
+            'delivery_mode' => $schedule->delivery_mode,
         ]);
 
         return response()->json([
@@ -988,6 +991,7 @@ final class FacultyClassController extends Controller
                     'start_time' => $scheduleData['start_time'],
                     'end_time' => $scheduleData['end_time'],
                     'room_id' => isset($scheduleData['room_id']) ? (int) $scheduleData['room_id'] : null,
+                    'delivery_mode' => $scheduleData['delivery_mode'],
                 ]);
 
                 if (method_exists($schedule, 'restore') && method_exists($schedule, 'trashed') && $schedule->trashed()) {
@@ -1005,6 +1009,7 @@ final class FacultyClassController extends Controller
                 'start_time' => $scheduleData['start_time'],
                 'end_time' => $scheduleData['end_time'],
                 'room_id' => isset($scheduleData['room_id']) ? (int) $scheduleData['room_id'] : null,
+                'delivery_mode' => $scheduleData['delivery_mode'],
             ]);
 
             $keptIds[] = $newSchedule->id;

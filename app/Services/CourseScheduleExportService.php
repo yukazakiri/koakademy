@@ -79,7 +79,7 @@ final readonly class CourseScheduleExportService
                 'subjects:id,code,title,units,academic_year,course_id',
                 'subjects.course:id,code,title',
                 'Schedule' => fn ($query) => $query
-                    ->select(['id', 'class_id', 'day_of_week', 'start_time', 'end_time', 'room_id'])
+                    ->select(['id', 'class_id', 'day_of_week', 'start_time', 'end_time', 'room_id', 'delivery_mode'])
                     ->with('room:id,name'),
             ])
             ->get([
@@ -219,6 +219,7 @@ final readonly class CourseScheduleExportService
                 $schedule->start_time->format('H:i'),
                 $schedule->end_time->format('H:i'),
                 (string) ($schedule->room_id ?? 'none'),
+                (string) $schedule->delivery_mode,
             ]))
             ->map(function (Collection $meetings) use ($class, $subject, $year): array {
                 /** @var Schedule $firstMeeting */
@@ -236,9 +237,9 @@ final readonly class CourseScheduleExportService
                     'section' => $class->section ?: '—',
                     'units' => $subject instanceof Subject ? $subject->units : null,
                     'schedule' => $firstMeeting->start_time->format('g:i A').' – '.$firstMeeting->end_time->format('g:i A').' '.$days->map(fn (string $day): string => self::DAY_ABBREVIATIONS[$day] ?? Str::upper($day))->implode(''),
-                    'room' => $class->isOnline() ? 'Online' : ($firstMeeting->room?->name ?: '—'),
-                    'delivery_mode' => $class->delivery_mode,
-                    'face_to_face' => $class->isOnline() ? 'Online' : $days->map(fn (string $day): string => Str::upper($day))->implode(', '),
+                    'room' => $firstMeeting->isOnline() ? 'Online' : ($firstMeeting->room?->name ?: '—'),
+                    'delivery_mode' => $firstMeeting->delivery_mode,
+                    'face_to_face' => $firstMeeting->isOnline() ? 'Online' : $days->map(fn (string $day): string => Str::upper($day))->implode(', '),
                     '_year' => $year,
                     '_day_order' => $days->map(fn (string $day): int => self::DAY_ORDER[$day] ?? 99)->min() ?? 99,
                     '_start_minutes' => ((int) $firstMeeting->start_time->format('H') * 60) + (int) $firstMeeting->start_time->format('i'),

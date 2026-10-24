@@ -178,6 +178,7 @@ final class AdministratorClassManagementController extends Controller
                             'semester' => $class->semester ?? 'N/A',
                             'classification' => $class->classification ?? 'college',
                             'delivery_mode' => $class->delivery_mode ?? Classes::DELIVERY_FACE_TO_FACE,
+                            'delivery_summary' => $class->deliverySummary(),
                             'academic_year' => $class->academic_year,
                             'grade_level' => $class->grade_level,
                             'course_abbreviations' => $courseAbbreviations === [] ? null : $courseAbbreviations,
@@ -756,8 +757,9 @@ final class AdministratorClassManagementController extends Controller
             'time_range' => ($s->start_time?->format('h:i A') ?? 'N/A').' - '.($s->end_time?->format('h:i A') ?? 'N/A'),
             'room' => [
                 'id' => $s->room_id,
-                'name' => $s->room?->name ?? ($class->isOnline() ? 'Online' : 'TBA'),
+                'name' => $s->isOnline() ? 'Online' : ($s->room?->name ?? 'TBA'),
             ],
+            'delivery_mode' => $s->delivery_mode,
             'has_conflict' => false, // Conflict calculation is done in frontend or separate prop
         ]));
 
@@ -812,6 +814,7 @@ final class AdministratorClassManagementController extends Controller
                 ],
                 'deleted_at' => $class->deleted_at?->toIso8601String(),
                 'delivery_mode' => $class->delivery_mode ?? Classes::DELIVERY_FACE_TO_FACE,
+                'delivery_summary' => $class->deliverySummary(),
                 'is_archived' => $class->trashed(),
             ],
             'capabilities' => [
@@ -833,6 +836,7 @@ final class AdministratorClassManagementController extends Controller
                     'start_time' => $schedule->start_time?->format('H:i'),
                     'end_time' => $schedule->end_time?->format('H:i'),
                     'room_id' => $schedule->room_id,
+                    'delivery_mode' => $schedule->delivery_mode,
                     'temp_id' => (string) $schedule->id, // Ensure temp_id exists for keying
                 ]),
             'room_schedules' => $roomSchedules,
@@ -1168,6 +1172,7 @@ final class AdministratorClassManagementController extends Controller
                 'ShsSubject:id,code,title',
                 'subjects:id,code,title',
                 'faculty:id,first_name,last_name,middle_name',
+                'schedules:id,class_id,delivery_mode',
                 'shsTrack:id,track_name',
                 'shsStrand:id,strand_name',
             ])
@@ -1591,6 +1596,7 @@ final class AdministratorClassManagementController extends Controller
             'school_year' => (string) ($class->school_year ?? ''),
             'section' => (string) ($class->section ?? 'A'),
             'delivery_mode' => $class->delivery_mode ?? Classes::DELIVERY_FACE_TO_FACE,
+            'delivery_summary' => $class->deliverySummary(),
             'room_id' => $class->room_id !== null ? (int) $class->room_id : null,
             'maximum_slots' => (int) ($class->maximum_slots ?? 40),
             'schedules' => $class->schedules
@@ -1605,6 +1611,7 @@ final class AdministratorClassManagementController extends Controller
                     'start_time' => $schedule->start_time?->format('H:i') ?? '08:00',
                     'end_time' => $schedule->end_time?->format('H:i') ?? '09:00',
                     'room_id' => $schedule->room_id,
+                    'delivery_mode' => $schedule->delivery_mode,
                     'component_type' => $schedule->component_type,
                     'pattern_group_id' => $schedule->pattern_group_id,
                     'status' => $schedule->status,
@@ -1790,6 +1797,7 @@ final class AdministratorClassManagementController extends Controller
                 'email' => $class->faculty->email,
             ] : null,
             'delivery_mode' => $class->delivery_mode ?? Classes::DELIVERY_FACE_TO_FACE,
+            'delivery_summary' => $class->deliverySummary(),
             'room' => $class->Room ? [
                 'id' => $class->Room->id,
                 'label' => $class->Room->name,
@@ -1818,6 +1826,7 @@ final class AdministratorClassManagementController extends Controller
                     'start_time' => $schedule->start_time?->format('H:i'),
                     'end_time' => $schedule->end_time?->format('H:i'),
                     'room_id' => $schedule->room_id,
+                    'delivery_mode' => $schedule->delivery_mode,
                     'room' => $schedule->room ? [
                         'id' => $schedule->room->id,
                         'label' => $schedule->room->name,

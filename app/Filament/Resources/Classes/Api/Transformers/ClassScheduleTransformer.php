@@ -68,6 +68,7 @@ final class ClassScheduleTransformer extends JsonResource
             'schedules' => $this->when($this->resource->Schedule, fn () => $this->resource->Schedule->map(fn ($schedule): array => [
                 'id' => $schedule->id,
                 'day_of_week' => $schedule->day_of_week,
+                'delivery_mode' => $schedule->delivery_mode,
                 'start_time' => $schedule->start_time?->format('H:i'),
                 'end_time' => $schedule->end_time?->format('H:i'),
                 'time_range' => $schedule->start_time && $schedule->end_time
@@ -75,7 +76,7 @@ final class ClassScheduleTransformer extends JsonResource
                     : null,
                 'room' => [
                     'id' => $schedule->Room?->id,
-                    'name' => $schedule->Room?->name,
+                    'name' => $schedule->isOnline() ? 'Online' : $schedule->Room?->name,
                     'code' => $schedule->Room?->class_code,
                 ],
                 'formatted_schedule' => $schedule->day_of_week && $schedule->start_time && $schedule->end_time
@@ -84,7 +85,7 @@ final class ClassScheduleTransformer extends JsonResource
                         $schedule->day_of_week,
                         $schedule->start_time->format('H:i'),
                         $schedule->end_time->format('H:i'),
-                        $schedule->Room?->name ?? 'TBA'
+                        $schedule->isOnline() ? 'Online' : ($schedule->Room?->name ?? 'TBA')
                     )
                     : null,
             ])->values() ?? []),
@@ -121,13 +122,14 @@ final class ClassScheduleTransformer extends JsonResource
 
             $formattedSchedule[mb_strtolower($day)] = $daySchedules->map(fn ($schedule): array => [
                 'start_time' => $schedule->start_time?->format('H:i'),
+                'delivery_mode' => $schedule->delivery_mode,
                 'end_time' => $schedule->end_time?->format('H:i'),
                 'time_range' => $schedule->start_time && $schedule->end_time
                     ? $schedule->start_time->format('H:i').' - '.$schedule->end_time->format('H:i')
                     : null,
                 'room' => [
                     'id' => $schedule->Room?->id,
-                    'name' => $schedule->Room?->name,
+                    'name' => $schedule->isOnline() ? 'Online' : $schedule->Room?->name,
                 ],
             ])->toArray();
         }

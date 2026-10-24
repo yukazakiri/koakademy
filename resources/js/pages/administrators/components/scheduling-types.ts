@@ -2,6 +2,7 @@ import type { User } from "@/types/user";
 // ── Types ──────────────────────────────────────────────────────────
 
 export type ScheduleEntry = {
+    delivery_mode?: "face_to_face" | "online";
     id?: number;
     day_of_week: string;
     start_time: string;
@@ -17,6 +18,7 @@ export type ScheduleEntry = {
 export type ClassScheduleData = {
     id: number;
     delivery_mode?: "face_to_face" | "online";
+    delivery_summary?: "face_to_face" | "online" | "mixed";
     subject_code: string;
     subject_title: string;
     section: string;
@@ -58,6 +60,7 @@ export type ScheduleConflict = {
 
 export type ScheduleUpdateResponse = {
     schedule: {
+        delivery_mode?: "face_to_face" | "online";
         id?: number;
         day_of_week: string;
         start_time: string;

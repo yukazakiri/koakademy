@@ -1,6 +1,7 @@
 import type { User } from "@/types/user";
 
 export type WeeklyScheduleEntry = {
+    delivery_mode?: "face_to_face" | "online";
     start_time: string;
     end_time: string;
     time_range: string;
@@ -12,6 +13,7 @@ export type WeeklyScheduleEntry = {
 };
 
 export type RawScheduleEntry = {
+    delivery_mode?: "face_to_face" | "online";
     id?: number;
     day_of_week: string;
     start_time: string;
@@ -34,6 +36,7 @@ export type ClassShowData = {
     record_title: string;
     classification: string;
     delivery_mode: "face_to_face" | "online";
+    delivery_summary?: "face_to_face" | "online" | "mixed";
 
     subjects: string[];
     associated_courses: string | null;

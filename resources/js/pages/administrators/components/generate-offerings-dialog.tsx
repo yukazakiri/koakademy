@@ -228,7 +228,7 @@ export default function GenerateOfferingsDialog({
                     </div>
 
                     <div className="space-y-2">
-                        <Label htmlFor="offerings-delivery-mode">How are these classes taught?</Label>
+                        <Label htmlFor="offerings-delivery-mode">Default for new meetings</Label>
                         <Select value={deliveryMode} onValueChange={(value) => setDeliveryMode(value as "face_to_face" | "online")}>
                             <SelectTrigger id="offerings-delivery-mode" className="w-full">
                                 <SelectValue />
@@ -239,6 +239,7 @@ export default function GenerateOfferingsDialog({
                             </SelectContent>
                         </Select>
                     </div>
+                    <p className="text-muted-foreground text-sm">Choose face to face or online for each meeting when adding times.</p>
                     <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1.5">
                             <Label className="text-xs">Students per class</Label>
@@ -251,7 +252,7 @@ export default function GenerateOfferingsDialog({
                             />
                         </div>
                         {deliveryMode === "online" ? (
-                            <p className="text-muted-foreground self-end py-2 text-sm">No room reserved for online classes.</p>
+                            <p className="text-muted-foreground self-end py-2 text-sm">Online meetings do not reserve a room.</p>
                         ) : (
                             <div className="space-y-1.5">
                                 <Label className="text-xs">Default Room (Optional)</Label>

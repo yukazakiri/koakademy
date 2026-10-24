@@ -18,6 +18,7 @@ export type ClassRow = {
     semester: string | number;
     classification: "college" | "shs" | string;
     delivery_mode?: DeliveryMode;
+    delivery_summary?: "face_to_face" | "online" | "mixed";
     academic_year: number | null;
     grade_level: string | null;
     course_abbreviations: string[] | null;
@@ -80,7 +81,7 @@ export const getColumns = (actions: ClassActionHandlers): ColumnDef<ClassRow>[] 
                         {row.record_title}
                     </Link>
                     {row.deleted_at ? <Badge variant="outline">Archived</Badge> : null}
-                    <Badge variant="secondary">{deliveryModeLabel(row.delivery_mode)}</Badge>
+                    <Badge variant="secondary">{deliveryModeLabel(row.delivery_summary ?? row.delivery_mode)}</Badge>
                 </div>
                 <p className="text-muted-foreground text-sm">{row.subject_title}</p>
                 <p className="text-muted-foreground text-sm">

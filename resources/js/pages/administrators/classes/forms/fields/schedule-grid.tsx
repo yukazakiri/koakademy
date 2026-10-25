@@ -1,8 +1,9 @@
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { CalendarDays, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, CalendarDays, Clock, Monitor, Plus, School, Trash2 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { type ClassSchedule, type DeliveryMode, type EntityOption, type ValueOption } from "../../lib/class-defaults";
 
@@ -16,16 +17,26 @@ type ScheduleGridProps = {
 };
 
 const selectClassName =
-    "h-11 w-full min-w-0 rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+    "h-10 w-full min-w-0 rounded-xl border border-input bg-background px-3 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 const presets = [
     { label: "Mon / Wed / Fri", days: ["Monday", "Wednesday", "Friday"], start: "08:00", end: "09:00" },
     { label: "Tue / Thu", days: ["Tuesday", "Thursday"], start: "08:00", end: "09:30" },
-    { label: "One long meeting", days: ["Monday"], start: "08:00", end: "11:00" },
+    { label: "Single session", days: ["Monday"], start: "08:00", end: "11:00" },
 ];
 
 function toMinutes(time: string): number {
     return Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
+}
+
+function formatDuration(start: string, end: string): string {
+    const diff = toMinutes(end) - toMinutes(start);
+    if (diff <= 0) return "0m";
+    const hrs = Math.floor(diff / 60);
+    const mins = diff % 60;
+    if (hrs > 0 && mins > 0) return `${hrs}h ${mins}m`;
+    if (hrs > 0) return `${hrs}h`;
+    return `${mins}m`;
 }
 
 function sessionIssue(schedule: ClassSchedule, others: ClassSchedule[]): string | null {
@@ -46,6 +57,7 @@ export function ScheduleGrid({ schedules, rooms, dayOptions, primaryRoomId, defa
     const [end, setEnd] = useState("09:00");
     const [error, setError] = useState<string | null>(null);
     const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>(defaultDeliveryMode);
+
     useEffect(() => setDeliveryMode(defaultDeliveryMode), [defaultDeliveryMode]);
 
     const weeklyHours = schedules.reduce((total, item) => total + Math.max(0, toMinutes(item.end_time) - toMinutes(item.start_time)), 0) / 60;
@@ -56,8 +68,7 @@ export function ScheduleGrid({ schedules, rooms, dayOptions, primaryRoomId, defa
 
     const addMeetings = (): void => {
         if (days.length === 0 || !start || !end || end <= start) {
-            setError("Pick at least one day, and an end time after the start time.");
-
+            setError("Pick at least one day and set an end time after the start time.");
             return;
         }
 
@@ -80,212 +91,223 @@ export function ScheduleGrid({ schedules, rooms, dayOptions, primaryRoomId, defa
 
     return (
         <div className="space-y-6">
-            <section aria-label="Add meetings" className="bg-muted/30 space-y-4 rounded-lg border p-4 sm:p-5">
-                <div className="space-y-1">
-                    <h4 className="text-sm font-semibold">Add meeting times</h4>
-                    <p className="text-muted-foreground text-sm">Pick the days and the time. The class repeats on those days every week.</p>
-                </div>
+            {/* Schedule Builder Card */}
+            <div className="bg-muted/20 space-y-4 rounded-xl border p-4 sm:p-5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="space-y-0.5">
+                        <h4 className="text-foreground flex items-center gap-1.5 text-sm font-semibold">
+                            <Clock className="text-primary size-4" />
+                            Add weekly meeting sessions
+                        </h4>
+                        <p className="text-muted-foreground text-xs">Select days and meeting window. The class recurs on these days each week.</p>
+                    </div>
 
-                <div className="flex flex-wrap gap-2">
-                    {presets.map((preset) => (
-                        <Button
-                            key={preset.label}
-                            type="button"
-                            variant="outline"
-                            className="h-10 px-3"
-                            onClick={() => {
-                                setDays(preset.days);
-                                setStart(preset.start);
-                                setEnd(preset.end);
-                            }}
-                        >
-                            {preset.label}
-                        </Button>
-                    ))}
-                </div>
-
-                <div className="flex flex-wrap gap-2" role="group" aria-label="Meeting days">
-                    {dayOptions.map((day) => {
-                        const selected = days.includes(day.value);
-
-                        return (
+                    {/* Presets */}
+                    <div className="flex flex-wrap gap-1.5">
+                        {presets.map((preset) => (
                             <Button
-                                key={day.value}
+                                key={preset.label}
                                 type="button"
                                 variant="outline"
-                                aria-pressed={selected}
-                                aria-label={day.label}
-                                className={cn("h-10 min-w-12 px-3", selected && "border-primary bg-primary/10 text-primary")}
-                                onClick={() => setDays(selected ? days.filter((value) => value !== day.value) : [...days, day.value])}
+                                size="sm"
+                                className="h-8 rounded-lg px-2.5 text-xs font-medium"
+                                onClick={() => {
+                                    setDays(preset.days);
+                                    setStart(preset.start);
+                                    setEnd(preset.end);
+                                }}
                             >
-                                {day.label.slice(0, 3)}
+                                {preset.label}
                             </Button>
-                        );
-                    })}
+                        ))}
+                    </div>
                 </div>
 
-                <div className="flex flex-wrap items-end gap-4">
-                    <div className="space-y-2">
-                        <Label htmlFor="meeting-delivery">Meeting type</Label>
+                {/* Day selector buttons */}
+                <div className="space-y-1.5">
+                    <span className="text-foreground text-xs font-semibold">Select days</span>
+                    <div className="flex flex-wrap gap-1.5" role="group" aria-label="Meeting days">
+                        {dayOptions.map((day) => {
+                            const selected = days.includes(day.value);
+                            return (
+                                <button
+                                    key={day.value}
+                                    type="button"
+                                    aria-pressed={selected}
+                                    className={cn(
+                                        "h-9 min-w-11 rounded-lg border px-3 text-xs font-semibold transition-all",
+                                        selected
+                                            ? "border-primary bg-primary text-primary-foreground shadow-2xs"
+                                            : "border-border bg-card text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                                    )}
+                                    onClick={() => setDays(selected ? days.filter((v) => v !== day.value) : [...days, day.value])}
+                                >
+                                    {day.label.slice(0, 3)}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* Meeting configurations */}
+                <div className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="space-y-1">
+                        <Label htmlFor="meeting-delivery" className="text-muted-foreground text-xs font-medium">
+                            Meeting format
+                        </Label>
                         <select
                             id="meeting-delivery"
                             className={selectClassName}
                             value={deliveryMode}
                             onChange={(event) => setDeliveryMode(event.target.value as DeliveryMode)}
                         >
-                            <option value="face_to_face">Face to face</option>
-                            <option value="online">Online</option>
+                            <option value="face_to_face">Face to face (Campus)</option>
+                            <option value="online">Online (Virtual)</option>
                         </select>
                     </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="meeting-start">Starts</Label>
+
+                    <div className="space-y-1">
+                        <Label htmlFor="meeting-start" className="text-muted-foreground text-xs font-medium">
+                            Start time
+                        </Label>
                         <Input
                             id="meeting-start"
                             type="time"
-                            className="h-11 w-36"
+                            className="h-10 rounded-xl font-mono text-xs"
                             value={start}
                             onChange={(event) => setStart(event.target.value)}
                         />
                     </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="meeting-end">Ends</Label>
-                        <Input id="meeting-end" type="time" className="h-11 w-36" value={end} onChange={(event) => setEnd(event.target.value)} />
+
+                    <div className="space-y-1">
+                        <Label htmlFor="meeting-end" className="text-muted-foreground text-xs font-medium">
+                            End time {start && end && end > start ? `(${formatDuration(start, end)})` : ""}
+                        </Label>
+                        <Input
+                            id="meeting-end"
+                            type="time"
+                            className="h-10 rounded-xl font-mono text-xs"
+                            value={end}
+                            onChange={(event) => setEnd(event.target.value)}
+                        />
                     </div>
-                    <Button type="button" className="h-11 px-4" onClick={addMeetings}>
-                        <Plus className="size-4" aria-hidden="true" />
+
+                    <Button type="button" className="h-10 gap-1.5 rounded-xl text-xs font-semibold" onClick={addMeetings}>
+                        <Plus className="size-3.5" aria-hidden="true" />
                         Add {days.length} {days.length === 1 ? "meeting" : "meetings"}
                     </Button>
                 </div>
 
                 {error ? (
-                    <p role="alert" className="text-destructive text-sm">
+                    <p role="alert" className="text-destructive text-xs font-medium">
                         {error}
                     </p>
                 ) : null}
-            </section>
+            </div>
 
+            {/* Existing Scheduled Meetings List */}
             {schedules.length === 0 ? (
-                <div className="flex items-start gap-4 rounded-lg border border-dashed p-5">
-                    <CalendarDays className="text-muted-foreground mt-0.5 size-5 shrink-0" aria-hidden="true" />
-                    <p className="text-muted-foreground max-w-xl text-sm">
-                        No meetings yet. You can save the class now and set its times later from the schedule planner.
+                <div className="text-muted-foreground flex items-center gap-3.5 rounded-xl border border-dashed p-4">
+                    <CalendarDays className="text-muted-foreground size-5 shrink-0" aria-hidden="true" />
+                    <p className="text-xs text-pretty">
+                        No recurring sessions added yet. You can create this class now as an unscheduled offering and configure weekly meeting times
+                        later.
                     </p>
                 </div>
             ) : (
                 <div className="space-y-3">
-                    <p className="text-muted-foreground text-sm" aria-live="polite">
-                        <span className="text-foreground font-medium">
-                            {schedules.length} {schedules.length === 1 ? "meeting" : "meetings"}
-                        </span>{" "}
-                        · {Number(weeklyHours.toFixed(1))} hours per week
-                    </p>
-                    <ul className="divide-y rounded-lg border">
+                    <div className="flex items-center justify-between">
+                        <span className="text-foreground text-xs font-semibold">Scheduled meetings ({schedules.length})</span>
+                        <Badge variant="secondary" className="font-mono text-xs tabular-nums">
+                            {Number(weeklyHours.toFixed(1))} total hrs/week
+                        </Badge>
+                    </div>
+
+                    <div className="grid gap-2.5">
                         {schedules.map((schedule, index) => {
                             const issue = sessionIssue(
                                 schedule,
                                 schedules.filter((_, otherIndex) => otherIndex !== index),
                             );
+                            const isOnline = (schedule.delivery_mode ?? defaultDeliveryMode) === "online";
 
                             return (
-                                <li key={schedule.id ?? `meeting-${index}`} className={cn("space-y-3 p-4", issue && "bg-destructive/5")}>
-                                    <div className="grid gap-3 sm:grid-cols-3">
-                                        <div className="space-y-1.5">
-                                            <Label htmlFor={`meeting-${index}-day`}>Day</Label>
+                                <div
+                                    key={schedule.id ?? `meeting-row-${index}`}
+                                    className={cn(
+                                        "bg-card flex flex-col gap-3 rounded-xl border p-3.5 shadow-2xs transition-all sm:flex-row sm:items-center sm:justify-between",
+                                        issue && "border-destructive/40 bg-destructive/[0.03]",
+                                    )}
+                                >
+                                    <div className="flex min-w-0 flex-wrap items-center gap-2.5">
+                                        <Badge variant="outline" className="px-2.5 py-0.5 text-xs font-semibold">
+                                            {schedule.day_of_week}
+                                        </Badge>
+
+                                        <span className="text-foreground inline-flex items-center gap-1 font-mono text-xs font-medium">
+                                            <Clock className="text-muted-foreground size-3" />
+                                            {schedule.start_time} – {schedule.end_time}
+                                        </span>
+
+                                        <Badge variant="secondary" className="px-1.5 py-0 font-mono text-[11px]">
+                                            {formatDuration(schedule.start_time, schedule.end_time)}
+                                        </Badge>
+
+                                        <Badge
+                                            variant="outline"
+                                            className={cn(
+                                                "gap-1 text-[11px]",
+                                                isOnline
+                                                    ? "border-indigo-500/30 text-indigo-600 dark:text-indigo-400"
+                                                    : "border-blue-500/30 text-blue-600 dark:text-blue-400",
+                                            )}
+                                        >
+                                            {isOnline ? <Monitor className="size-3" /> : <School className="size-3" />}
+                                            {isOnline ? "Online" : "Campus"}
+                                        </Badge>
+                                    </div>
+
+                                    <div className="flex items-center justify-between gap-2 sm:justify-end">
+                                        {!isOnline ? (
                                             <select
-                                                id={`meeting-${index}-day`}
-                                                className={selectClassName}
-                                                value={schedule.day_of_week}
-                                                onChange={(event) => update(index, { day_of_week: event.target.value })}
+                                                aria-label={`Room for ${schedule.day_of_week}`}
+                                                className="border-input bg-background text-foreground h-8 max-w-40 rounded-lg border px-2 text-xs outline-none"
+                                                value={schedule.room_id ?? 0}
+                                                onChange={(event) => update(index, { room_id: Number(event.target.value) || null })}
                                             >
-                                                {dayOptions.map((day) => (
-                                                    <option key={day.value} value={day.value}>
-                                                        {day.label}
+                                                <option value={0}>Assign room later</option>
+                                                {rooms.map((room) => (
+                                                    <option key={room.id} value={room.id}>
+                                                        {room.label}
                                                     </option>
                                                 ))}
                                             </select>
-                                        </div>
-                                        <div className="space-y-1.5">
-                                            <Label htmlFor={`meeting-${index}-start`}>Starts</Label>
-                                            <Input
-                                                id={`meeting-${index}-start`}
-                                                type="time"
-                                                className="h-11"
-                                                value={schedule.start_time}
-                                                aria-invalid={Boolean(issue)}
-                                                onChange={(event) => update(index, { start_time: event.target.value })}
-                                            />
-                                        </div>
-                                        <div className="space-y-1.5">
-                                            <Label htmlFor={`meeting-${index}-end`}>Ends</Label>
-                                            <Input
-                                                id={`meeting-${index}-end`}
-                                                type="time"
-                                                className="h-11"
-                                                value={schedule.end_time}
-                                                aria-invalid={Boolean(issue)}
-                                                onChange={(event) => update(index, { end_time: event.target.value })}
-                                            />
-                                        </div>
-                                        <div className="space-y-1.5">
-                                            <Label htmlFor={`meeting-${index}-delivery`}>Meeting type</Label>
-                                            <select
-                                                id={`meeting-${index}-delivery`}
-                                                className={selectClassName}
-                                                value={schedule.delivery_mode ?? defaultDeliveryMode}
-                                                onChange={(event) =>
-                                                    update(index, {
-                                                        delivery_mode: event.target.value as DeliveryMode,
-                                                        room_id: event.target.value === "online" ? null : schedule.room_id,
-                                                    })
-                                                }
-                                            >
-                                                <option value="face_to_face">Face to face</option>
-                                                <option value="online">Online</option>
-                                            </select>
-                                        </div>
-                                        {(schedule.delivery_mode ?? defaultDeliveryMode) === "online" ? (
-                                            <p className="text-muted-foreground self-end py-3 text-sm">Online · No room reserved</p>
                                         ) : (
-                                            <div className="space-y-1.5">
-                                                <Label htmlFor={`meeting-${index}-room`}>Room</Label>
-                                                <select
-                                                    id={`meeting-${index}-room`}
-                                                    className={selectClassName}
-                                                    value={schedule.room_id ?? 0}
-                                                    onChange={(event) => update(index, { room_id: Number(event.target.value) || null })}
-                                                >
-                                                    <option value={0}>Assign later</option>
-                                                    {rooms.map((room) => (
-                                                        <option key={room.id} value={room.id}>
-                                                            {room.label}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </div>
+                                            <span className="text-muted-foreground text-[11px] italic">No room needed</span>
                                         )}
-                                    </div>
-                                    <div className="flex items-center justify-between gap-2">
-                                        <p
-                                            className={cn("text-sm", issue ? "text-destructive" : "text-muted-foreground")}
-                                            role={issue ? "alert" : undefined}
-                                        >
-                                            {issue ?? `Every ${schedule.day_of_week}`}
-                                        </p>
+
                                         <Button
                                             type="button"
                                             variant="ghost"
-                                            className="text-muted-foreground hover:text-destructive h-10 px-3"
+                                            size="sm"
+                                            className="text-muted-foreground hover:text-destructive h-8 px-2 text-xs"
                                             aria-label={`Remove meeting ${index + 1}`}
                                             onClick={() => onSchedulesChange(schedules.filter((_, itemIndex) => itemIndex !== index))}
                                         >
-                                            <Trash2 className="size-4" aria-hidden="true" />
-                                            Remove
+                                            <Trash2 className="size-3.5" aria-hidden="true" />
                                         </Button>
                                     </div>
-                                </li>
+
+                                    {issue ? (
+                                        <div className="text-destructive flex items-center gap-1.5 text-xs font-medium sm:col-span-full">
+                                            <AlertTriangle className="size-3.5 shrink-0" />
+                                            <span>{issue}</span>
+                                        </div>
+                                    ) : null}
+                                </div>
                             );
                         })}
-                    </ul>
+                    </div>
                 </div>
             )}
         </div>

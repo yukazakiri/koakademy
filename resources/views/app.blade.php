@@ -157,7 +157,7 @@
             } catch (e) {}
         })();
     </script>
-    @include('theme-tools::initialize', ['storageKey' => 'ui-color-theme'])
+    @includeIf('theme-tools::initialize', ['storageKey' => 'ui-color-theme'])
     {{-- Expose appName to window for Inertia --}}
     <script>
         window.appName = @json($resolvedAppName);

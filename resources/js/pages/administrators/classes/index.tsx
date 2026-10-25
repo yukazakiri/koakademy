@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 import {
     index as classIndex,
     copy as copyClass,
@@ -21,7 +22,23 @@ import { index as schedulePlanner } from "@/routes/administrators/scheduling-ana
 import type { User } from "@/types/user";
 import { Head, Link, router, useRemember } from "@inertiajs/react";
 import type { RowSelectionState } from "@tanstack/react-table";
-import { BookOpen, CalendarIcon, GitCompare, GraduationCap, Layers, LayoutGrid, List, MapPin, Pencil, Plus, Trash2, Users } from "lucide-react";
+import {
+    BookOpen,
+    Calendar,
+    CalendarDays,
+    CalendarIcon,
+    GitCompare,
+    GraduationCap,
+    Layers,
+    LayoutGrid,
+    List,
+    MapPin,
+    Pencil,
+    Plus,
+    Trash2,
+    UserCheck,
+    Users,
+} from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 import { ClassRow, getColumns, type ClassCapabilities } from "./columns";
@@ -765,39 +782,160 @@ export default function AdministratorClassesIndex({
         <AdminLayout user={user} title="Classes">
             <Head title="Administrators • Classes" />
 
-            <div className="flex min-w-0 flex-col gap-8">
-                <header className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="space-y-2">
-                        <p className="text-muted-foreground text-sm">Academic operations</p>
-                        <h1 className="text-2xl font-semibold tracking-tight">Classes</h1>
-                        <p className="text-muted-foreground max-w-xl text-base">
-                            Organize class sections, faculty assignments, and weekly schedules.
-                        </p>
-                    </div>
-                    <div className="flex flex-wrap gap-3">
-                        <Link href={schedulePlanner.url()} className={buttonVariants({ variant: "outline", className: "h-10 gap-2 px-4 text-sm" })}>
-                            <CalendarIcon className="size-4" aria-hidden="true" />
-                            Schedule planner
-                        </Link>
-                        {capabilities.create ? (
-                            <Link href={createClass.url()} className={buttonVariants({ className: "h-10 gap-2 px-4 text-sm" })}>
-                                <Plus className="size-4" aria-hidden="true" /> Create class
+            <div className="flex min-w-0 flex-col gap-6 pb-12">
+                {/* Visual Top Header Banner */}
+                <header className="bg-card relative overflow-hidden rounded-2xl border p-6 shadow-xs sm:p-7">
+                    <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0 space-y-1">
+                            <div className="flex items-center gap-2">
+                                <span className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Academic Operations</span>
+                                <span className="text-muted-foreground/60 text-xs">/</span>
+                                <span className="text-muted-foreground text-xs font-medium">Class Management</span>
+                            </div>
+
+                            <div className="flex items-center gap-3 pt-1">
+                                <div className="bg-primary/10 text-primary flex size-10 shrink-0 items-center justify-center rounded-xl">
+                                    <BookOpen className="size-5" />
+                                </div>
+                                <div className="min-w-0">
+                                    <h1 className="text-foreground text-2xl font-bold tracking-tight sm:text-3xl">Classes</h1>
+                                    <p className="text-muted-foreground text-xs text-pretty sm:text-sm">
+                                        Organize class offerings, faculty teaching assignments, room allocations, and weekly timetables.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
+                            <Badge
+                                variant="outline"
+                                className="border-border/80 bg-muted/40 text-foreground gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold backdrop-blur"
+                            >
+                                <Calendar className="text-primary size-3.5" />
+                                {defaults.school_year || "Current Year"} · {semesterLabel(defaults.semester)}
+                            </Badge>
+
+                            <Link
+                                href={schedulePlanner.url()}
+                                className={buttonVariants({
+                                    variant: "outline",
+                                    className: "h-9 gap-1.5 rounded-lg px-3 text-xs font-semibold shadow-2xs",
+                                })}
+                            >
+                                <CalendarDays className="size-3.5" aria-hidden="true" />
+                                Schedule planner
                             </Link>
-                        ) : null}
+
+                            {capabilities.create ? (
+                                <Link
+                                    href={createClass.url()}
+                                    className={buttonVariants({ className: "h-9 gap-1.5 rounded-lg px-3.5 text-xs font-semibold shadow-xs" })}
+                                >
+                                    <Plus className="size-3.5" aria-hidden="true" />
+                                    New class
+                                </Link>
+                            ) : null}
+                        </div>
                     </div>
                 </header>
 
-                <div className="flex flex-wrap items-center gap-x-8 gap-y-3 text-sm" aria-label="Current academic term">
-                    <div className="flex flex-wrap items-center gap-3">
-                        <CalendarIcon className="text-muted-foreground size-4" aria-hidden="true" />
-                        <span className="text-muted-foreground">Current term</span>
-                        <span className="font-medium">{defaults.school_year || "School year not set"}</span>
-                        <span className="text-muted-foreground">{semesterLabel(defaults.semester)}</span>
+                {/* KPI & Attention Queue Visualizer Strip */}
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    {/* Total Classes */}
+                    <div className="bg-card space-y-2 rounded-2xl border p-4 shadow-2xs">
+                        <div className="text-muted-foreground flex items-center justify-between text-xs font-medium">
+                            <span>Total Offerings</span>
+                            <BookOpen className="text-primary size-4" />
+                        </div>
+                        <div className="flex items-baseline justify-between gap-2">
+                            <span className="text-foreground text-2xl font-bold tracking-tight tabular-nums">{classMeta.total.toLocaleString()}</span>
+                            <div className="flex items-center gap-1.5">
+                                <Badge variant="secondary" className="text-[11px] font-medium">
+                                    {classMeta.classification_counts.college} College
+                                </Badge>
+                                <Badge variant="outline" className="text-[11px] font-medium">
+                                    {classMeta.classification_counts.shs} SHS
+                                </Badge>
+                            </div>
+                        </div>
                     </div>
-                    <p className="text-muted-foreground">Class records are scoped to the current academic term.</p>
+
+                    {/* Total Enrollment */}
+                    <div className="bg-card space-y-2 rounded-2xl border p-4 shadow-2xs">
+                        <div className="text-muted-foreground flex items-center justify-between text-xs font-medium">
+                            <span>Enrollment & Capacity</span>
+                            <Users className="text-primary size-4" />
+                        </div>
+                        <div className="flex items-baseline justify-between gap-2">
+                            <span className="text-foreground text-2xl font-bold tracking-tight tabular-nums">
+                                {classMeta.total_students.toLocaleString()}
+                            </span>
+                            <span className="text-muted-foreground text-xs tabular-nums">of {classMeta.total_capacity.toLocaleString()} seats</span>
+                        </div>
+                        <div className="bg-muted/60 h-1.5 w-full overflow-hidden rounded-full">
+                            <div
+                                className="bg-primary h-full rounded-full transition-all duration-300"
+                                style={{
+                                    width: `${classMeta.total_capacity > 0 ? Math.min((classMeta.total_students / classMeta.total_capacity) * 100, 100) : 0}%`,
+                                }}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Operational Queues: Needs Faculty */}
+                    <button
+                        type="button"
+                        onClick={() => handleWorkspaceFilterChange({ ...filters, needs_faculty: filters.needs_faculty ? null : true })}
+                        className={cn(
+                            "flex cursor-pointer flex-col justify-between rounded-2xl border p-4 text-left shadow-2xs transition-all outline-none",
+                            filters.needs_faculty
+                                ? "border-amber-500/50 bg-amber-500/10 ring-1 ring-amber-500/30"
+                                : "bg-card hover:border-border/80 hover:bg-muted/30",
+                        )}
+                    >
+                        <div className="text-muted-foreground flex items-center justify-between text-xs font-medium">
+                            <span>Unassigned Faculty</span>
+                            <UserCheck
+                                className={cn("size-4", classMeta.queues.unassigned_faculty > 0 ? "text-amber-500" : "text-muted-foreground")}
+                            />
+                        </div>
+                        <div className="flex items-baseline justify-between gap-2 pt-1">
+                            <span className="text-foreground text-2xl font-bold tracking-tight tabular-nums">
+                                {classMeta.queues.unassigned_faculty.toLocaleString()}
+                            </span>
+                            <Badge variant={classMeta.queues.unassigned_faculty > 0 ? "outline" : "secondary"} className="text-[11px]">
+                                {classMeta.queues.unassigned_faculty > 0 ? "Needs assignment" : "All staffed"}
+                            </Badge>
+                        </div>
+                    </button>
+
+                    {/* Operational Queues: Needs Schedule */}
+                    <button
+                        type="button"
+                        onClick={() => handleWorkspaceFilterChange({ ...filters, needs_schedule: filters.needs_schedule ? null : true })}
+                        className={cn(
+                            "flex cursor-pointer flex-col justify-between rounded-2xl border p-4 text-left shadow-2xs transition-all outline-none",
+                            filters.needs_schedule
+                                ? "border-indigo-500/50 bg-indigo-500/10 ring-1 ring-indigo-500/30"
+                                : "bg-card hover:border-border/80 hover:bg-muted/30",
+                        )}
+                    >
+                        <div className="text-muted-foreground flex items-center justify-between text-xs font-medium">
+                            <span>Unscheduled Sessions</span>
+                            <CalendarDays className={cn("size-4", classMeta.queues.no_schedule > 0 ? "text-indigo-500" : "text-muted-foreground")} />
+                        </div>
+                        <div className="flex items-baseline justify-between gap-2 pt-1">
+                            <span className="text-foreground text-2xl font-bold tracking-tight tabular-nums">
+                                {classMeta.queues.no_schedule.toLocaleString()}
+                            </span>
+                            <Badge variant={classMeta.queues.no_schedule > 0 ? "outline" : "secondary"} className="text-[11px]">
+                                {classMeta.queues.no_schedule > 0 ? "To schedule" : "All scheduled"}
+                            </Badge>
+                        </div>
+                    </button>
                 </div>
 
-                <section className="bg-card min-w-0 overflow-hidden rounded-xl border" aria-labelledby="class-sections-heading">
+                <section className="bg-card min-w-0 overflow-hidden rounded-2xl border shadow-xs" aria-labelledby="class-sections-heading">
                     <div className="flex flex-col gap-4 border-b p-4 sm:p-6 lg:flex-row lg:items-center lg:justify-between">
                         <div className="space-y-1">
                             <h2 id="class-sections-heading" className="text-base font-semibold">

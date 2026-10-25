@@ -1,6 +1,5 @@
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@/components/reui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Check, ShieldAlert, X } from "lucide-react";
 import * as React from "react";
@@ -29,27 +28,29 @@ export function ApprovalCard({ approval, onDecision, onApproveAll, disabled = fa
     };
 
     return (
-        <Card className="border-amber-500/30 bg-amber-500/5 dark:bg-amber-500/10 shadow-sm overflow-hidden my-3">
-            <CardHeader className="py-3 px-4 bg-amber-500/10 dark:bg-amber-500/15 border-b border-amber-500/20">
-                <div className="flex items-center justify-between">
-                    <CardTitle className="text-xs font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
-                        <ShieldAlert className="size-4" />
-                        Confirmation Required: {formatToolName(approval.tool)}
-                    </CardTitle>
-                    <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/30">
-                        Approval Gate
-                    </Badge>
+        <div className="my-3 overflow-hidden rounded-xl border border-warning/30 bg-warning/5 dark:bg-warning/10 shadow-xs">
+            <div className="flex items-center justify-between border-b border-warning/20 bg-warning/10 dark:bg-warning/15 px-3.5 py-2.5">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-warning-foreground">
+                    <ShieldAlert className="size-4 text-warning" />
+                    <span>Confirmation Required: {formatToolName(approval.tool)}</span>
                 </div>
-            </CardHeader>
+                <Badge variant="warning-light" size="xs" radius="full">
+                    Approval Gate
+                </Badge>
+            </div>
 
-            <CardContent className="p-4 space-y-3">
-                {decision && <p role="status" className="text-xs text-muted-foreground">{decision === "approve" ? "Approval" : "Rejection"} selected. Choose an option for each remaining action to send all decisions together.</p>}
-                <p className="text-xs text-foreground/90 font-medium">
+            <div className="p-3.5 space-y-2.5">
+                {decision && (
+                    <p role="status" className="text-xs text-muted-foreground">
+                        {decision === "approve" ? "Approval" : "Rejection"} selected. Choose an option for each remaining action to send all decisions together.
+                    </p>
+                )}
+                <p className="text-xs text-foreground/90 font-medium leading-relaxed">
                     {approval.reason || "This operation alters official records and requires confirmation."}
                 </p>
 
                 {approval.arguments && Object.keys(approval.arguments).length > 0 && (
-                    <div className="rounded-md border bg-background/80 p-2.5 space-y-1 font-mono text-[11px] overflow-x-auto max-h-36">
+                    <div className="rounded-lg border border-border bg-background/80 p-2.5 space-y-1 font-mono text-[11px] overflow-x-auto max-h-36">
                         {Object.entries(approval.arguments).map(([key, val]) => (
                             <div key={key} className="flex gap-2">
                                 <span className="text-muted-foreground">{key}:</span>
@@ -71,16 +72,16 @@ export function ApprovalCard({ approval, onDecision, onApproveAll, disabled = fa
                         />
                     </div>
                 )}
-            </CardContent>
+            </div>
 
-            <CardFooter className="py-2.5 px-4 bg-muted/20 border-t flex items-center justify-end gap-2">
+            <div className="flex items-center justify-end gap-2 border-t border-warning/15 bg-muted/30 px-3.5 py-2">
                 {rejecting ? (
                     <>
                         <Button
                             type="button"
                             variant="ghost"
                             size="sm"
-                            className="text-xs h-8"
+                            className="text-xs h-7.5"
                             onClick={() => setRejecting(false)}
                             disabled={disabled}
                         >
@@ -90,7 +91,7 @@ export function ApprovalCard({ approval, onDecision, onApproveAll, disabled = fa
                             type="button"
                             variant="destructive"
                             size="sm"
-                            className="text-xs h-8 gap-1.5"
+                            className="text-xs h-7.5 gap-1.5"
                             onClick={() => onDecision(approval.id, "reject", rejectReason.trim() || undefined)}
                             disabled={disabled}
                         >
@@ -104,7 +105,7 @@ export function ApprovalCard({ approval, onDecision, onApproveAll, disabled = fa
                             type="button"
                             variant="outline"
                             size="sm"
-                            className="text-xs h-8 text-destructive hover:bg-destructive/10 gap-1.5"
+                            className="text-xs h-7.5 text-destructive hover:bg-destructive/10 gap-1.5"
                             onClick={() => setRejecting(true)}
                             disabled={disabled}
                         >
@@ -116,7 +117,7 @@ export function ApprovalCard({ approval, onDecision, onApproveAll, disabled = fa
                                 type="button"
                                 size="sm"
                                 variant="outline"
-                                className="text-xs h-8 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 gap-1.5"
+                                className="text-xs h-7.5 border-success/40 text-success hover:bg-success/10 gap-1.5"
                                 onClick={onApproveAll}
                                 disabled={disabled}
                                 title="Approve all pending sensitive actions"
@@ -128,7 +129,7 @@ export function ApprovalCard({ approval, onDecision, onApproveAll, disabled = fa
                         <Button
                             type="button"
                             size="sm"
-                            className="text-xs h-8 bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
+                            className="text-xs h-7.5 bg-success hover:bg-success/90 text-white gap-1.5"
                             onClick={() => onDecision(approval.id, "approve")}
                             disabled={disabled}
                         >
@@ -137,7 +138,7 @@ export function ApprovalCard({ approval, onDecision, onApproveAll, disabled = fa
                         </Button>
                     </>
                 )}
-            </CardFooter>
-        </Card>
+            </div>
+        </div>
     );
 }

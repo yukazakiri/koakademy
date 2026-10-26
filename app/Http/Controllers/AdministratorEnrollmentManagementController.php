@@ -56,12 +56,10 @@ use App\Services\StudentDirectoryQuery;
 use App\Services\TenantContext;
 use App\Services\TuitionAdjustmentRecalculationService;
 use App\Settings\SiteSettings;
-use App\Support\Database\SqlDialect;
 use Closure;
 use Exception;
 use FPDF;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -225,7 +223,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 ->where('student_enrollment.status', '!=', $pendingStatus);
 
             return $excludingAbandoned($query)
-                ->join('courses', DB::raw($this->courseIdCast($query)), '=', 'courses.id')
+                ->join('courses', 'student_enrollment.course_id', '=', 'courses.id')
                 ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
                 ->selectRaw('TRIM(departments.code) as department, count(*) as count')
                 ->groupByRaw('TRIM(departments.code)')
@@ -2286,7 +2284,7 @@ final class AdministratorEnrollmentManagementController extends Controller
             ->where('student_enrollment.status', '!=', $this->enrollmentPipelineService->getPendingStatus());
 
         if ($department !== 'all') {
-            $query->join('courses', DB::raw($this->courseIdCast($query)), '=', 'courses.id')
+            $query->join('courses', 'student_enrollment.course_id', '=', 'courses.id')
                 ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
                 ->whereRaw('TRIM(departments.code) = ?', [mb_trim($department)]);
         }
@@ -2318,7 +2316,7 @@ final class AdministratorEnrollmentManagementController extends Controller
             ->where('student_enrollment.semester', $currentSemester)
             ->where('student_enrollment.status', '!=', $this->enrollmentPipelineService->getPendingStatus());
 
-        $query->join('courses', DB::raw($this->courseIdCast($query)), '=', 'courses.id')
+        $query->join('courses', 'student_enrollment.course_id', '=', 'courses.id')
             ->leftJoin('departments', 'courses.department_id', '=', 'departments.id');
 
         if ($yearLevel !== 'all') {
@@ -3202,20 +3200,6 @@ final class AdministratorEnrollmentManagementController extends Controller
     }
 
     /**
-     * Render the enrollment course reference as an integer for joins against courses.id.
-     *
-     * student_enrollment.course_id is stored as text on SQLite and MySQL, while
-     * courses.id is an integer, so the comparison needs a driver-aware cast.
-     */
-    private function courseIdCast(Builder|QueryBuilder $query): string
-    {
-        return SqlDialect::integerCast(
-            $query,
-            sprintf('NULLIF(%s, %s)', SqlDialect::textCast($query, 'student_enrollment.course_id'), "''"),
-        );
-    }
-
-    /**
      * Get list of students enrolled in a specific course/program.
      *
      * @param  Builder<StudentEnrollment>  $baseQuery
@@ -3229,7 +3213,7 @@ final class AdministratorEnrollmentManagementController extends Controller
             $query->whereExists(function ($subquery) use ($filters): void {
                 $subquery->select(DB::raw(1))
                     ->from('courses')
-                    ->whereRaw(sprintf('%s = courses.id', $this->courseIdCast($subquery)))
+                    ->whereColumn('student_enrollment.course_id', 'courses.id')
                     ->where('code', (string) $filters['course_filter']);
             });
         }
@@ -3239,7 +3223,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 $subquery->select(DB::raw(1))
                     ->from('courses')
                     ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
-                    ->whereRaw(sprintf('%s = courses.id', $this->courseIdCast($subquery)))
+                    ->whereColumn('student_enrollment.course_id', 'courses.id')
                     ->whereRaw('TRIM(departments.code) = ?', [mb_trim((string) $filters['department_filter'])]);
             });
         }
@@ -3365,7 +3349,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 $subquery->select(DB::raw(1))
                     ->from('courses')
                     ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
-                    ->whereRaw(sprintf('%s = courses.id', $this->courseIdCast($subquery)))
+                    ->whereColumn('student_enrollment.course_id', 'courses.id')
                     ->whereRaw('TRIM(departments.code) = ?', [mb_trim((string) $filters['department_filter'])]);
             });
         }

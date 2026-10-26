@@ -13,7 +13,6 @@ use App\Filament\Widgets\StudentEnrollmentStatsOverview;
 use App\Filament\Widgets\StudentEnrollmentTrendsChart;
 use App\Models\StudentEnrollment;
 use App\Services\EnrollmentPipelineService;
-use App\Support\Database\SqlDialect;
 use Filament\Actions\CreateAction;
 use Filament\Pages\Concerns\ExposesTableToWidgets;
 use Filament\Resources\Pages\ListRecords;
@@ -37,10 +36,8 @@ final class ListStudentEnrollments extends ListRecords
         $labels = $pipeline->getStatusLabels();
         $steps = $pipeline->getSteps();
 
-        $studentIdCast = SqlDialect::integerCast(StudentEnrollment::query(), 'student_enrollment.student_id');
         $courseExists = static fn (string $code): string => sprintf(
-            "EXISTS (SELECT * FROM students WHERE %s = students.id AND EXISTS (SELECT * FROM courses WHERE students.course_id = courses.id AND code LIKE '%s%%'))",
-            $studentIdCast,
+            "EXISTS (SELECT * FROM students WHERE student_enrollment.student_id = students.id AND EXISTS (SELECT * FROM courses WHERE students.course_id = courses.id AND code LIKE '%s%%'))",
             $code,
         );
 

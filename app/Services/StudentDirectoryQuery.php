@@ -10,7 +10,6 @@ use App\Enums\StudentType;
 use App\Models\ClassEnrollment;
 use App\Models\Course;
 use App\Models\Student;
-use App\Support\Database\SqlDialect;
 use BackedEnum;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -665,10 +664,7 @@ final class StudentDirectoryQuery
                 // extra school predicate is needed here. Requiring the enrollment's
                 // own school_id to match would silently drop legitimate rows whose
                 // enrollment record predates tenant backfilling.
-                ->whereRaw(sprintf(
-                    '%s = students.id',
-                    SqlDialect::integerCast($sub, 'student_enrollment.student_id'),
-                ));
+                ->whereColumn('student_enrollment.student_id', 'students.id');
         });
     }
 

@@ -12,7 +12,8 @@ use Modules\Inventory\Models\InventoryProduct;
 
 it('ensures every Eloquent model has a corresponding database table in the schema', function (): void {
     $models = [];
-    $collectModels = function (string $dir, string $prefix) use (&$models): void {
+    $unresolved = [];
+    $collectModels = function (string $dir, string $prefix) use (&$models, &$unresolved): void {
         if (! is_dir($dir)) {
             return;
         }
@@ -27,8 +28,12 @@ it('ensures every Eloquent model has a corresponding database table in the schem
             $class = $prefix.'\\'.str_replace(['/', '.php'], ['\\', ''], $rel);
 
             if (! class_exists($class)) {
+                $unresolved[$file->getPathname()] = $class;
+
                 continue;
             }
+
+            unset($unresolved[$file->getPathname()]);
 
             $ref = new ReflectionClass($class);
             if ($ref->isAbstract() || ! $ref->isSubclassOf(Model::class)) {
@@ -44,11 +49,39 @@ it('ensures every Eloquent model has a corresponding database table in the schem
     foreach (glob(base_path('Modules/*/app/Models')) as $modDir) {
         $modName = basename(dirname(dirname($modDir)));
         $collectModels($modDir, "Modules\\{$modName}\\Models");
-        $collectModels($modDir, "Modules\\{$modName}\\app\\Models");
+    }
+
+    // A wrongly-namespaced model file must not silently disappear from this scan.
+    // Resolve it from its declared namespace, or fail with the offending file.
+    foreach ($unresolved as $path => $class) {
+        $contents = (string) file_get_contents($path);
+
+        if (preg_match('/\b(?:abstract\s+class|interface|trait|enum)\s+[A-Za-z_]\w*/', $contents) === 1) {
+            unset($unresolved[$path]);
+
+            continue;
+        }
+
+        if (preg_match('/\bnamespace\s+([\w\\\\]+);/', $contents, $namespaceMatch) === 1) {
+            $declared = $namespaceMatch[1].'\\'.basename($path, '.php');
+
+            if (class_exists($declared)) {
+                unset($unresolved[$path]);
+
+                $ref = new ReflectionClass($declared);
+                if (! $ref->isAbstract() && $ref->isSubclassOf(Model::class)) {
+                    $models[] = $declared;
+                }
+            }
+        }
     }
 
     $models = array_values(array_unique($models));
     expect($models)->not()->toBeEmpty();
+
+    expect($unresolved)->toBeEmpty(
+        'The following model files did not resolve to a concrete Eloquent model class: '.json_encode($unresolved, JSON_PRETTY_PRINT)
+    );
 
     $missingTables = [];
     foreach ($models as $modelClass) {

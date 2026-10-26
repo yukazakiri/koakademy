@@ -350,7 +350,7 @@ final class AuthController extends Controller
      */
     private function getRedirectForUser(User $user): string
     {
-        if ($user->isAdministrative()) {
+        if ($user->isAdministrative() || $user->role?->canAccessAdminPortal()) {
             return '/administrators';
         }
 

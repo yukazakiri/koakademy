@@ -7,6 +7,7 @@ use App\Http\Controllers\ApiKeyController;
 use App\Http\Controllers\ClassesController;
 use App\Http\Controllers\DigitalIdCardController;
 use App\Http\Controllers\FacultyClassController;
+use App\Http\Controllers\FacultyToolkitController;
 use App\Http\Controllers\FacultyClassShsStudentController;
 use App\Http\Controllers\FacultyClassStudentSearchController;
 use App\Http\Controllers\FacultyGlobalSearchController;
@@ -239,109 +240,38 @@ Route::middleware(['auth', 'faculty.verified', 'faculty.only', 'ensure.feature']
         })->name('grades');
 
         // Resources
-        Route::get('/resources', function () {
-            $user = Auth::user();
-
-            if (! $user) {
-                abort(403);
-            }
-
-            return Inertia::render('faculty/resources/index', [
-                'user' => [
-                    'name' => $user->name,
-                    'email' => $user->email,
-                    'avatar' => $user->avatar_url ?? null,
-                    'role' => $user->role?->getLabel() ?? 'User',
-                ],
-                'flash' => session('flash'),
-            ]);
-        })->name('resources');
+        Route::get('/resources', [FacultyToolkitController::class, 'resources'])->name('resources');
+        Route::post('/resources', [FacultyToolkitController::class, 'storeResource'])->name('resources.store');
+        Route::delete('/resources/{resource}', [FacultyToolkitController::class, 'destroyResource'])->name('resources.destroy')->scopeBindings();
 
         // Faculty Forms
-        Route::get('/forms', function () {
-            $user = Auth::user();
-
-            if (! $user) {
-                abort(403);
-            }
-
-            return Inertia::render('faculty/forms/index', [
-                'user' => [
-                    'name' => $user->name,
-                    'email' => $user->email,
-                    'avatar' => $user->avatar_url ?? null,
-                    'role' => $user->role?->getLabel() ?? 'User',
-                ],
-                'flash' => session('flash'),
-            ]);
-        })->name('forms');
-
-        $renderToolkitPage = function (string $title, string $summary, array $highlights, string $accent) {
-            $user = Auth::user();
-
-            if (! $user) {
-                abort(403);
-            }
-
-            return Inertia::render('faculty/toolkit/show', [
-                'user' => [
-                    'name' => $user->name,
-                    'email' => $user->email,
-                    'avatar' => $user->avatar_url ?? null,
-                    'role' => $user->role?->getLabel() ?? 'User',
-                ],
-                'toolkit' => [
-                    'title' => $title,
-                    'summary' => $summary,
-                    'highlights' => $highlights,
-                    'accent' => $accent,
-                ],
-                'flash' => session('flash'),
-            ]);
-        };
+        Route::get('/forms', [FacultyToolkitController::class, 'forms'])->name('forms');
 
         // Faculty Toolkit
-        Route::get('/at-risk-alerts', fn () => $renderToolkitPage(
-            'At-Risk Alerts',
-            'Monitor students who may need extra support before small issues become larger academic problems.',
-            ['Early warning signals', 'Actionable outreach', 'Student support notes'],
-            'rose',
-        ))->name('at-risk-alerts');
+        Route::get('/at-risk-alerts', [FacultyToolkitController::class, 'atRisk'])->name('at-risk-alerts');
+        Route::post('/at-risk-alerts/actions', [FacultyToolkitController::class, 'logAlertAction'])->name('at-risk-alerts.actions.store');
 
-        Route::get('/assessments', fn () => $renderToolkitPage(
-            'Assessments',
-            'Organize quizzes, rubrics, and grading queues from one faculty workspace.',
-            ['Quizzes and rubrics', 'Grading queue overview', 'Assessment templates'],
-            'emerald',
-        ))->name('assessments');
+        Route::get('/assessments', [FacultyToolkitController::class, 'assessments'])->name('assessments');
+        Route::post('/assessments/rubrics', [FacultyToolkitController::class, 'storeRubric'])->name('assessments.rubrics.store');
+        Route::delete('/assessments/rubrics/{rubric}', [FacultyToolkitController::class, 'destroyRubric'])->name('assessments.rubrics.destroy');
 
-        Route::get('/inbox', fn () => $renderToolkitPage(
-            'Inbox',
-            'Keep student communication and reusable response templates close to your teaching workflow.',
-            ['Messaging workflows', 'Reusable templates', 'Class communication'],
-            'sky',
-        ))->name('inbox');
+        Route::get('/inbox', [FacultyToolkitController::class, 'inbox'])->name('inbox');
+        Route::post('/inbox/messages', [FacultyToolkitController::class, 'sendInboxMessage'])->name('inbox.messages.send');
+        Route::post('/inbox/threads/{thread}/read', [FacultyToolkitController::class, 'markThreadRead'])->name('inbox.threads.read');
+        Route::post('/inbox/templates', [FacultyToolkitController::class, 'storeTemplate'])->name('inbox.templates.store');
+        Route::delete('/inbox/templates/{template}', [FacultyToolkitController::class, 'destroyTemplate'])->name('inbox.templates.destroy');
 
-        Route::get('/office-hours', fn () => $renderToolkitPage(
-            'Office Hours',
-            'Plan office hours and prepare student appointment booking tools.',
-            ['Booking preferences', 'Appointment visibility', 'Consultation schedule'],
-            'indigo',
-        ))->name('office-hours');
+        Route::get('/office-hours', [FacultyToolkitController::class, 'officeHours'])->name('office-hours');
+        Route::post('/office-hours/slots', [FacultyToolkitController::class, 'storeSlot'])->name('office-hours.slots.store');
+        Route::post('/office-hours/slots/{slot}/toggle', [FacultyToolkitController::class, 'toggleSlot'])->name('office-hours.slots.toggle');
+        Route::delete('/office-hours/slots/{slot}', [FacultyToolkitController::class, 'destroySlot'])->name('office-hours.slots.destroy');
+        Route::patch('/office-hours/bookings/{booking}', [FacultyToolkitController::class, 'updateBooking'])->name('office-hours.bookings.update');
 
-        Route::get('/requests', fn () => $renderToolkitPage(
-            'Requests & Approvals',
-            'Handle excusals, make-up requests, and approval tracking in one workflow.',
-            ['Excusals and make-up requests', 'Approval tracking', 'Request history'],
-            'amber',
-        ))->name('requests');
+        Route::get('/requests', [FacultyToolkitController::class, 'requests'])->name('requests');
+        Route::post('/requests', [FacultyToolkitController::class, 'storeRequest'])->name('requests.store');
+        Route::post('/requests/{request}/withdraw', [FacultyToolkitController::class, 'withdrawRequest'])->name('requests.withdraw');
 
-        Route::get('/insights', fn () => $renderToolkitPage(
-            'Insights',
-            'Review class analytics, progress summaries, and performance trends at a glance.',
-            ['Class analytics', 'Progress trends', 'Performance summaries'],
-            'violet',
-        ))->name('insights');
+        Route::get('/insights', [FacultyToolkitController::class, 'insights'])->name('insights');
 
         // Classes
         Route::get('/classes', [ClassesController::class, 'index'])->name('classes.index');

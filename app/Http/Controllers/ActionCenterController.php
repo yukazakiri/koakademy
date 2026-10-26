@@ -88,7 +88,7 @@ final class ActionCenterController extends Controller
                 $assignee = $post->assignedFaculty ?? $class?->Faculty;
                 $assigneeName = $assignee?->full_name ?? $assignee?->name ?? 'Unassigned';
                 $isSelf = $assignee?->email && $user?->email && $assignee->email === $user->email;
-                $primaryHref = $class?->id ? "/classes/{$class->id}" : '#';
+                $primaryHref = $class?->id ? "/faculty/classes/{$class->id}" : '#';
 
                 return [
                     'id' => "post-{$post->id}",

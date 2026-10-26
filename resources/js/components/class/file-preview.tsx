@@ -27,7 +27,7 @@ interface FilePreviewProps {
 }
 
 const getFileIcon = (name: string) => {
-    const lower = name.toLowerCase();
+    const lower = (name ?? "").toLowerCase();
     if (/\.(jpg|jpeg|png|gif|svg|webp|bmp|ico)$/i.test(lower)) return IconPhoto;
     if (/\.pdf$/i.test(lower)) return IconFileTypePdf;
     if (/\.(doc|docx|odt)$/i.test(lower)) return IconFileTypeDoc;
@@ -125,7 +125,7 @@ export function FilePreview({ name, url, size, kind, file, onRemove }: FilePrevi
             {/* File info */}
             <div className="min-w-0 flex-1 overflow-hidden pt-0.5">
                 <p className="truncate text-sm font-medium" title={name}>
-                    {name.length > 40 ? `${name.slice(0, 37)}...${name.split(".").pop() || ""}` : name}
+                    {(name ?? "").length > 40 ? `${name.slice(0, 37)}...${name.split(".").pop() || ""}` : name}
                 </p>
                 <p className="text-muted-foreground text-xs">
                     {kind === "link" ? "Link" : formattedSize || getFileTypeLabel(name)}

@@ -16,7 +16,7 @@ return new class extends Migration
         if (! Schema::hasTable('additional_fees')) {
             Schema::create('additional_fees', function (Blueprint $blueprint): void {
                 $blueprint->id();
-                $blueprint->foreignId('enrollment_id')->constrained('student_enrollment')->onDelete('cascade');
+                $blueprint->foreignId('enrollment_id')->constrained('student_enrollment')->restrictOnDelete();
                 $blueprint->string('fee_name');
                 $blueprint->decimal('amount', 10, 2);
                 $blueprint->boolean('is_separate_transaction')->default(false);

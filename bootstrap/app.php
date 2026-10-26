@@ -2,6 +2,20 @@
 
 declare(strict_types=1);
 
+spl_autoload_register(function (string $class): bool {
+    if (str_starts_with($class, 'App\\')) {
+        $sub = str_replace('\\', '/', substr($class, 4));
+        $file = __DIR__."/../app/{$sub}.php";
+        if (is_file($file)) {
+            require_once $file;
+
+            return true;
+        }
+    }
+
+    return false;
+}, true, true);
+
 use App\Http\Middleware\EnsureAdministrativePortalAccess;
 use App\Http\Middleware\EnsureApiEnabled;
 use App\Http\Middleware\EnsureMcpEnabled;

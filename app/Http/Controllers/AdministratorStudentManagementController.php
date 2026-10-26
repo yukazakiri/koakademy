@@ -2552,9 +2552,23 @@ final class AdministratorStudentManagementController extends Controller
                 continue;
             }
 
+            $eligibleStudents = $students->reject(function (Student $student) use (&$failures): bool {
+                if ($student->hasFinancialRecords()) {
+                    $failures[] = $student->full_name.' (immutable financial records exist)';
+
+                    return true;
+                }
+
+                return false;
+            });
+
+            if ($eligibleStudents->isEmpty()) {
+                continue;
+            }
+
             try {
-                DB::transaction(function () use ($students): void {
-                    $chunkStudentIds = $students->pluck('id')->all();
+                DB::transaction(function () use ($eligibleStudents): void {
+                    $chunkStudentIds = $eligibleStudents->pluck('id')->all();
 
                     // The related rows are removed with one statement per
                     // table instead of one per student.
@@ -2571,7 +2585,7 @@ final class AdministratorStudentManagementController extends Controller
                         ClassAttendanceRecord::whereIn('student_id', $chunkStudentIds)->delete();
                     }
 
-                    $learnersNumbers = $students->pluck('lrn')->filter()->unique()->values();
+                    $learnersNumbers = $eligibleStudents->pluck('lrn')->filter()->unique()->values();
 
                     if ($learnersNumbers->isNotEmpty() && Schema::hasTable('shs_students')) {
                         ShsStudent::whereIn('student_lrn', $learnersNumbers)->forceDelete();
@@ -2580,9 +2594,9 @@ final class AdministratorStudentManagementController extends Controller
                     Student::withTrashed()->whereIn('id', $chunkStudentIds)->forceDelete();
                 });
 
-                $deletedCount += $students->count();
+                $deletedCount += $eligibleStudents->count();
             } catch (Exception $e) {
-                foreach ($students as $student) {
+                foreach ($eligibleStudents as $student) {
                     $failures[] = $student->full_name.' ('.$e->getMessage().')';
                 }
             }
@@ -2650,6 +2664,10 @@ final class AdministratorStudentManagementController extends Controller
         $studentModel = Student::withTrashed()->findOrFail($student);
 
         $studentName = $studentModel->full_name;
+
+        if ($studentModel->hasFinancialRecords()) {
+            return back()->with('error', "Student \"{$studentName}\" cannot be permanently deleted because financial ledgers, transactions, or signed documents exist. Retain financial records for audit compliance.");
+        }
 
         try {
             DB::transaction(function () use ($studentModel): void {

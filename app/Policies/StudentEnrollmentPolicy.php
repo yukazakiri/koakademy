@@ -46,8 +46,12 @@ final class StudentEnrollmentPolicy
         return $authUser->can('Restore:StudentEnrollment');
     }
 
-    public function forceDelete(AuthUser $authUser): bool
+    public function forceDelete(AuthUser $authUser, ?\App\Models\StudentEnrollment $enrollment = null): bool
     {
+        if ($enrollment?->hasFinancialRecords()) {
+            return false;
+        }
+
         return $authUser->can('ForceDelete:StudentEnrollment');
     }
 

@@ -12,8 +12,8 @@ return new class extends Migration
     {
         Schema::create('student_tuition_update_requests', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('submitted_by_user_id')->constrained('users')->cascadeOnDelete();
-            $table->foreignId('student_id')->constrained('students')->cascadeOnDelete();
+            $table->foreignId('submitted_by_user_id')->constrained('users')->restrictOnDelete();
+            $table->foreignId('student_id')->constrained('students')->restrictOnDelete();
             $table->foreignId('student_enrollment_id')->nullable()->constrained('student_enrollment')->nullOnDelete();
             $table->foreignId('student_tuition_id')->nullable()->constrained('student_tuition')->nullOnDelete();
             $table->string('school_year', 30);

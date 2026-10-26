@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Exceptions\FinancialAuditLockException;
 use App\Models\Concerns\BelongsToSchool;
 use App\Models\Concerns\HasAcademicPeriodScope;
 use App\Services\EnrollmentPipelineService;
@@ -191,6 +192,30 @@ final class StudentEnrollment extends Model
     public function requirements(): HasMany
     {
         return $this->hasMany(EnrollmentRequirement::class, 'student_enrollment_id');
+    }
+
+    public function assessmentRevisions(): HasMany
+    {
+        return $this->hasMany(AssessmentRevision::class, 'student_enrollment_id');
+    }
+
+    public function paymentAllocations(): HasMany
+    {
+        return $this->hasMany(PaymentAllocation::class, 'student_enrollment_id');
+    }
+
+    public function hasFinancialRecords(): bool
+    {
+        return $this->studentTuition()->where(function ($query): void {
+            $query->where('overall_tuition', '>', 0)
+                ->orWhere('paid', '>', 0)
+                ->orWhere('total_balance', '>', 0);
+        })->exists()
+            || $this->additionalFees()->exists()
+            || $this->financialDocuments()->exists()
+            || $this->studentTransactions()->exists()
+            || $this->assessmentRevisions()->exists()
+            || $this->paymentAllocations()->exists();
     }
 
     public function allowsConfiguredNoReceiptTransition(): bool
@@ -489,6 +514,12 @@ final class StudentEnrollment extends Model
         });
 
         // delete also the subjects enrolled
+        self::forceDeleting(function (self $model): void {
+            if ($model->hasFinancialRecords()) {
+                throw FinancialAuditLockException::enrollmentHasFinancialRecords($model->id);
+            }
+        });
+
         self::forceDeleted(function (self $model): void {
             $model->subjectsEnrolled()->forceDelete();
             $model->studentTuition()->forceDelete();

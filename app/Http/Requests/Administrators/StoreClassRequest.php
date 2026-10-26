@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Rules\NonOverlappingScheduleBlocksRule;
 use App\Rules\ScheduleOverlapRule;
 use App\Support\AdministratorPermissionChecker;
+use App\Support\ScheduleDelivery;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -51,15 +52,22 @@ final class StoreClassRequest extends FormRequest
             'semester' => ['required', Rule::in(['1', '2', 1, 2, 'summer'])],
             'school_year' => ['required', 'string', 'max:50'],
             'section' => ['required', Rule::in(['A', 'B', 'C', 'D'])],
-            'room_id' => ['required', 'integer', 'exists:rooms,id'],
+            'delivery_mode' => ['sometimes', Rule::in(['face_to_face', 'online'])],
+            'room_id' => ['nullable', 'integer', 'exists:rooms,id'],
             'maximum_slots' => ['required', 'integer', 'min:1'],
 
-            // Schedule
-            'schedules' => ['required', 'array', new NonOverlappingScheduleBlocksRule, new ScheduleOverlapRule],
+            // Schedule (optional so classes can be created as unscheduled offerings first)
+            'schedules' => ['nullable', 'array', new NonOverlappingScheduleBlocksRule, new ScheduleOverlapRule],
+            'schedules.*.id' => ['prohibited'],
             'schedules.*.day_of_week' => ['required', Rule::in(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])],
             'schedules.*.start_time' => ['required', 'date_format:H:i'],
             'schedules.*.end_time' => ['required', 'date_format:H:i'],
-            'schedules.*.room_id' => ['required', 'integer', 'exists:rooms,id'],
+            'schedules.*.delivery_mode' => ['sometimes', Rule::in(['face_to_face', 'online'])],
+            'schedules.*.room_id' => ['nullable', 'integer', 'exists:rooms,id'],
+            'schedules.*.component_type' => ['nullable', 'string', Rule::in(['lecture', 'lab'])],
+            'schedules.*.pattern_group_id' => ['nullable', 'string', 'max:64'],
+            'schedules.*.status' => ['nullable', 'string', Rule::in(['draft', 'published'])],
+            'schedules.*.subject_id' => ['nullable', 'integer', 'exists:subject,id'],
 
             // Settings
             'settings' => ['nullable', 'array'],
@@ -89,5 +97,19 @@ final class StoreClassRequest extends FormRequest
             'subject_code_shs.required_if' => 'Please select an SHS subject.',
             'schedules.required' => 'Please add at least one schedule entry.',
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        if ($this->input('delivery_mode') === 'online') {
+            $this->merge(['room_id' => null]);
+        }
+
+        if ($this->exists('schedules')) {
+            $this->merge(['schedules' => ScheduleDelivery::normalizeSchedules(
+                $this->input('schedules'),
+                default: is_string($this->input('delivery_mode')) ? $this->input('delivery_mode') : null,
+            )]);
+        }
     }
 }

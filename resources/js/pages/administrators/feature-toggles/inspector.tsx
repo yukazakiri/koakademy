@@ -53,12 +53,12 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { FeaturePageProps } from "./index";
-import type { Assignment, FeatureImpact, FeatureUser, ManagedFeature } from "./types";
+import type { Assignment, FeatureImpact, FeatureUser, ManagedFeatureWithPolicy } from "./types";
 import { portalFeatureUrl } from "./types";
 import { UserPicker } from "./user-picker";
 
 type InspectorProps = Pick<FeaturePageProps, "roles" | "schools" | "groups"> & {
-    feature: ManagedFeature;
+    feature: ManagedFeatureWithPolicy;
     onFeatureUpdated?: () => void;
 };
 

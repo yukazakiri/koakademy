@@ -1,5 +1,7 @@
 import {
     ColumnDef,
+    OnChangeFn,
+    RowSelectionState,
     SortingState,
     VisibilityState,
     flexRender,
@@ -13,6 +15,7 @@ import { cn } from "@/lib/utils";
 
 import type { ReactNode } from "react";
 import { DataTablePagination } from "./data-table-pagination";
+import { DataTableViewOptions } from "./data-table-view-options";
 
 export type PaginationMeta = {
     current_page: number;
@@ -33,8 +36,11 @@ interface DataTableProps<TData, TValue> {
     onSortChange?: (sort: string, direction: "asc" | "desc") => void;
     onPageChange?: (page: number, perPage: number) => void;
     isLoading?: boolean;
-    toolbar?: ReactNode;
     onRowClick?: (row: TData) => void;
+    getRowId: (row: TData) => string;
+    rowSelection: RowSelectionState;
+    onRowSelectionChange: OnChangeFn<RowSelectionState>;
+    emptyState?: ReactNode;
 }
 
 export function DataTable<TData, TValue>({
@@ -46,22 +52,22 @@ export function DataTable<TData, TValue>({
     onSortChange,
     onPageChange,
     isLoading = false,
-    toolbar,
     onRowClick,
+    getRowId,
+    rowSelection,
+    onRowSelectionChange,
+    emptyState,
 }: DataTableProps<TData, TValue>) {
-    const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
-    const [rowSelection, setRowSelection] = React.useState({});
+    const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({ period: false });
 
     // Sorting and pagination belong to the server: the table renders the page
     // it was given and asks for a different one when a header is clicked.
-    const sorting = React.useMemo<SortingState>(
-        () => (sort ? [{ id: sort, desc: direction === "desc" }] : []),
-        [sort, direction],
-    );
+    const sorting = React.useMemo<SortingState>(() => (sort ? [{ id: sort, desc: direction === "desc" }] : []), [sort, direction]);
 
     const table = useReactTable({
         data,
         columns,
+        getRowId,
         getCoreRowModel: getCoreRowModel(),
         manualPagination: true,
         manualSorting: true,
@@ -79,7 +85,7 @@ export function DataTable<TData, TValue>({
             onSortChange?.(next.id, next.desc ? "desc" : "asc");
         },
         onColumnVisibilityChange: setColumnVisibility,
-        onRowSelectionChange: setRowSelection,
+        onRowSelectionChange,
         state: {
             sorting,
             columnVisibility,
@@ -92,17 +98,17 @@ export function DataTable<TData, TValue>({
     });
 
     return (
-        <div className="space-y-4">
-            <div className="relative overflow-hidden rounded-lg border">
-                {toolbar ? (
-                    <div className="flex flex-col gap-3 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">{toolbar}</div>
-                ) : null}
-                <Table>
-                    <TableHeader>
+        <div aria-busy={isLoading}>
+            <div className="relative overflow-hidden">
+                <Table aria-label="Class sections">
+                    <TableHeader className="bg-muted/40">
                         {table.getHeaderGroups().map((headerGroup) => (
                             <TableRow key={headerGroup.id}>
                                 {headerGroup.headers.map((header) => (
-                                    <TableHead key={header.id}>
+                                    <TableHead
+                                        key={header.id}
+                                        className={cn("text-muted-foreground h-12 px-4 text-sm", header.column.id === "select" && "w-12 px-3")}
+                                    >
                                         {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
                                     </TableHead>
                                 ))}
@@ -124,6 +130,7 @@ export function DataTable<TData, TValue>({
                                         const target = event.target as HTMLElement;
                                         if (
                                             target.closest("button") ||
+                                            target.closest("label") ||
                                             target.closest('[role="checkbox"]') ||
                                             target.closest("a") ||
                                             target.closest('[role="menu"]')
@@ -135,27 +142,24 @@ export function DataTable<TData, TValue>({
                                     }}
                                 >
                                     {row.getVisibleCells().map((cell) => (
-                                        <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
+                                        <TableCell key={cell.id} className={cn("px-4 py-4", cell.column.id === "select" && "w-12 px-3")}>
+                                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                        </TableCell>
                                     ))}
                                 </TableRow>
                             ))
                         ) : (
                             <TableRow>
-                                <TableCell colSpan={columns.length} className="h-32 text-center">
-                                    <p className="font-medium">No classes found</p>
-                                    <p className="text-muted-foreground text-sm">Try adjusting your search or filters.</p>
+                                <TableCell colSpan={table.getVisibleLeafColumns().length} className="whitespace-normal">
+                                    {emptyState ?? <p className="text-muted-foreground p-8 text-center">No classes found.</p>}
                                 </TableCell>
                             </TableRow>
                         )}
                     </TableBody>
                 </Table>
-                {isLoading && (
-                    <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center pt-3">
-                        <span className="bg-background/90 text-muted-foreground rounded-full border px-3 py-1 text-xs shadow-sm">Updating…</span>
-                    </div>
-                )}
             </div>
             <DataTablePagination
+                viewOptions={<DataTableViewOptions table={table} />}
                 page={pagination.current_page}
                 lastPage={pagination.last_page}
                 perPage={pagination.per_page}

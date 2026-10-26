@@ -6,10 +6,12 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { compare } from "@/routes/administrators/classes";
 import { Link } from "@inertiajs/react";
 import { ArrowLeftRight, ExternalLink, Loader2, Search, Users } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { route } from "ziggy-js";
+import { deliveryModeLabel, type DeliveryMode } from "../lib/class-defaults";
 
 interface StudentEntry {
     id: number;
@@ -25,6 +27,8 @@ interface ClassInfo {
     record_title: string;
     subject_code: string;
     section: string;
+    delivery_mode?: DeliveryMode;
+    delivery_summary?: "face_to_face" | "online" | "mixed";
     total_students: number;
 }
 
@@ -43,7 +47,8 @@ interface ComparisonData {
 interface ClassCompareDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    classes: { id: number; record_title: string; subject_code: string; section: string }[];
+    classes: Pick<ClassInfo, "id" | "record_title" | "subject_code" | "section" | "delivery_mode" | "delivery_summary">[];
+    initialClassIds?: [number, number];
 }
 
 function StudentRow({ student, isShared, searchTerm }: { student: StudentEntry; isShared: boolean; searchTerm: string }) {
@@ -92,9 +97,7 @@ function StudentRow({ student, isShared, searchTerm }: { student: StudentEntry; 
                                     variant="ghost"
                                     size="icon"
                                     nativeButton={false}
-                                    render={
-                                        <Link href={route("administrators.enrollments.show", student.student_enrollment_id)} />
-                                    }
+                                    render={<Link href={route("administrators.enrollments.show", student.student_enrollment_id)} />}
                                     className="h-6 w-6"
                                 />
                             }
@@ -110,7 +113,7 @@ function StudentRow({ student, isShared, searchTerm }: { student: StudentEntry; 
     );
 }
 
-export function ClassCompareDialog({ open, onOpenChange, classes }: ClassCompareDialogProps) {
+export function ClassCompareDialog({ open, onOpenChange, classes, initialClassIds }: ClassCompareDialogProps) {
     const [classAId, setClassAId] = useState<string>("");
     const [classBId, setClassBId] = useState<string>("");
     const [loading, setLoading] = useState(false);
@@ -123,7 +126,7 @@ export function ClassCompareDialog({ open, onOpenChange, classes }: ClassCompare
         () =>
             classes.map((c) => ({
                 value: String(c.id),
-                label: `${c.subject_code} - Sec ${c.section}`,
+                label: `${c.subject_code} · Sec ${c.section} · ${deliveryModeLabel(c.delivery_summary ?? c.delivery_mode)}`,
             })),
         [classes],
     );
@@ -140,10 +143,7 @@ export function ClassCompareDialog({ open, onOpenChange, classes }: ClassCompare
         setSearchB("");
 
         try {
-            const url = `${route("administrators.classes.compare", {
-                class_a: aId,
-                class_b: bId,
-            })}`;
+            const url = compare.url({ query: { class_a: aId, class_b: bId } });
             const response = await fetch(url, {
                 headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
             });
@@ -159,6 +159,16 @@ export function ClassCompareDialog({ open, onOpenChange, classes }: ClassCompare
             const inBothIds = new Set(json.comparison.in_both.map((s: StudentEntry) => s.id));
             const enriched: ComparisonData = {
                 ...json,
+                class_a: {
+                    ...json.class_a,
+                    delivery_mode: json.class_a.delivery_mode ?? classes.find((item) => item.id === json.class_a.id)?.delivery_mode,
+                    delivery_summary: json.class_a.delivery_summary ?? classes.find((item) => item.id === json.class_a.id)?.delivery_summary,
+                },
+                class_b: {
+                    ...json.class_b,
+                    delivery_mode: json.class_b.delivery_mode ?? classes.find((item) => item.id === json.class_b.id)?.delivery_mode,
+                    delivery_summary: json.class_b.delivery_summary ?? classes.find((item) => item.id === json.class_b.id)?.delivery_summary,
+                },
                 comparison: {
                     in_both_ids: [...inBothIds],
                     only_in_a: json.comparison.only_in_a,
@@ -184,6 +194,17 @@ export function ClassCompareDialog({ open, onOpenChange, classes }: ClassCompare
             setData(null);
         }
     };
+
+    useEffect(() => {
+        if (!open) return;
+
+        const [first, second] = initialClassIds?.map(String) ?? ["", ""];
+        setClassAId(first);
+        setClassBId(second);
+        setData(null);
+        setError(null);
+        if (first && second) void fetchComparison(first, second);
+    }, [open, initialClassIds]);
 
     const handleClassBChange = (val: string) => {
         setClassBId(val);
@@ -307,6 +328,9 @@ export function ClassCompareDialog({ open, onOpenChange, classes }: ClassCompare
                                             <div className="text-sm font-semibold">
                                                 {data.class_a.subject_code} - Sec {data.class_a.section}
                                             </div>
+                                            <Badge variant="secondary">
+                                                {deliveryModeLabel(data.class_a.delivery_summary ?? data.class_a.delivery_mode)}
+                                            </Badge>
                                             <div className="text-muted-foreground text-[11px]">
                                                 {data.class_a.total_students} student
                                                 {data.class_a.total_students !== 1 ? "s" : ""}
@@ -355,6 +379,9 @@ export function ClassCompareDialog({ open, onOpenChange, classes }: ClassCompare
                                             <div className="text-sm font-semibold">
                                                 {data.class_b.subject_code} - Sec {data.class_b.section}
                                             </div>
+                                            <Badge variant="secondary">
+                                                {deliveryModeLabel(data.class_b.delivery_summary ?? data.class_b.delivery_mode)}
+                                            </Badge>
                                             <div className="text-muted-foreground text-[11px]">
                                                 {data.class_b.total_students} student
                                                 {data.class_b.total_students !== 1 ? "s" : ""}

@@ -1,8 +1,6 @@
 import * as React from "react"
 import { Check, ChevronsUpDown, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { buttonVariants } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Command,
   CommandEmpty,
@@ -119,6 +117,7 @@ export function MultiSelect({
       <PopoverTrigger asChild>
         <div
           role="combobox"
+          aria-label={placeholder}
           aria-expanded={open}
           aria-controls={popoverId}
           aria-haspopup="listbox"

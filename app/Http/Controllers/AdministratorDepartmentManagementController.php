@@ -25,10 +25,10 @@ final class AdministratorDepartmentManagementController extends Controller
             ->when(is_string($search) && mb_trim($search) !== '', function ($query) use ($search): void {
                 $term = mb_trim($search);
                 $query->where(function ($nested) use ($term): void {
-                    $nested->where('name', 'ilike', "%{$term}%")
-                        ->orWhere('code', 'ilike', "%{$term}%")
-                        ->orWhere('head_name', 'ilike', "%{$term}%")
-                        ->orWhere('head_email', 'ilike', "%{$term}%");
+                    $nested->whereLike('name', "%{$term}%")
+                        ->orWhereLike('code', "%{$term}%")
+                        ->orWhereLike('head_name', "%{$term}%")
+                        ->orWhereLike('head_email', "%{$term}%");
                 });
             })
             ->when(is_string($status) && $status !== '' && $status !== 'all', function ($query) use ($status): void {

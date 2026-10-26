@@ -72,19 +72,56 @@ it('audits student profile import spreadsheet and flags invalid LRNs', function 
         ->and($data['anomalies'][0]['issue'])->toContain('12 numeric digits');
 });
 
-it('calculates degree progress and remaining units for student advisor', function (): void {
-    $student = Student::factory()->create();
+it('calculates degree progress and remaining units for student advisor and reports unavailable when uncatalogued', function (): void {
+    $school = App\Models\School::factory()->create();
+    app(App\Services\TenantContext::class)->setCurrentSchool($school);
+    $admin = User::factory()->create(['role' => App\Enums\UserRole::Admin, 'school_id' => $school->id]);
+    $this->actingAs($admin);
+
+    $uncatalogued = Student::factory()->create(['school_id' => $school->id, 'course_id' => null]);
 
     $tool = new GetCurriculumProgressTool;
+    $unconfigured = json_decode((string) $tool->handle(new Request([
+        'student_id' => $uncatalogued->id,
+    ])), true);
+
+    expect($unconfigured['available'])->toBeFalse()
+        ->and($unconfigured['status'])->toBe('unavailable')
+        ->and($unconfigured['total_units_required'])->toBeNull()
+        ->and($unconfigured['deficiencies'])->toBe([]);
+
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id, 'title' => 'BS Information Technology']);
+    $sub1 = App\Models\Subject::factory()->create(['course_id' => $course->id, 'code' => 'IT101', 'title' => 'Intro to IT', 'units' => 3, 'academic_year' => 1, 'semester' => 1]);
+    $sub2 = App\Models\Subject::factory()->create(['course_id' => $course->id, 'code' => 'IT102', 'title' => 'Programming 1', 'units' => 3, 'academic_year' => 1, 'semester' => 1]);
+
+    $student = Student::factory()->create(['school_id' => $school->id, 'course_id' => $course->id]);
+    $enrollment = App\Models\StudentEnrollment::factory()->create([
+        'student_id' => (string) $student->id,
+        'school_id' => $school->id,
+        'course_id' => $course->id,
+    ]);
+    App\Models\SubjectEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'enrollment_id' => $enrollment->id,
+        'subject_id' => $sub1->id,
+        'grade' => 90,
+        'grade_outcome' => 'pass',
+        'school_id' => $school->id,
+    ]);
+
     $result = $tool->handle(new Request([
         'student_id' => $student->id,
     ]));
 
     $data = json_decode((string) $result, true);
 
-    expect($data['student_id'])->toBe($student->id)
-        ->and($data['progress_percentage'])->toBeGreaterThan(0)
-        ->and($data['total_units_required'])->toBe(142);
+    expect($data['available'])->toBeTrue()
+        ->and($data['student_id'])->toBe($student->id)
+        ->and($data['completed_units'])->toBe(3)
+        ->and($data['remaining_units'])->toBe(3)
+        ->and($data['total_units_required'])->toBe(6)
+        ->and($data['progress_percentage'])->toEqual(50.0)
+        ->and($data['deficiencies'])->toBe(['Programming 1']);
 });
 
 it('stages enrollment courses in student cart prior to submission', function (): void {
@@ -361,14 +398,16 @@ it('requires human approval before applying financial adjustments to ledgers', f
         ->and($approval->reason)->toContain('financial adjustments');
 });
 
-it('searches campus knowledge base for policies', function (): void {
+it('reports recorded academic period and marks unstored handbook topics as unavailable in CampusKnowledgeSearchTool', function (): void {
     $tool = new CampusKnowledgeSearchTool;
-    $result = $tool->handle(new Request([
+    $result = json_decode((string) $tool->handle(new Request([
         'query' => 'What is the attendance and clearance policy?',
-    ]));
+    ])), true);
 
-    expect((string) $result)->toContain('Attendance Policy')
-        ->and((string) $result)->toContain('Clearance Policy');
+    expect($result['available'])->toBeFalse()
+        ->and($result['status'])->toBe('unavailable')
+        ->and($result['unavailable_topics'])->toContain('attendance', 'clearance')
+        ->and($result)->toHaveKey('academic_period');
 });
 
 /**

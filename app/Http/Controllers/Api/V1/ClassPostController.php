@@ -44,14 +44,13 @@ final class ClassPostController extends Controller
         if ($request->has('search')) {
             $search = $request->input('search');
             $query->where(function ($q) use ($search): void {
-                $q->where('title', 'ilike', "%{$search}%")
-                    ->orWhere('content', 'ilike', "%{$search}%");
+                $q->whereLike('title', "%{$search}%")
+                    ->orWhereLike('content', "%{$search}%");
             });
         }
 
         // Paginate results
-        $perPage = (int) $request->input('per_page', 15);
-        $perPage = min(max($perPage, 1), 100); // Limit between 1 and 100
+        $perPage = ApiPagination::perPage($request->input('per_page'));
 
         $posts = $query->paginate($perPage);
 
@@ -282,8 +281,7 @@ final class ClassPostController extends Controller
         }
 
         // Paginate results
-        $perPage = (int) $request->input('per_page', 15);
-        $perPage = min(max($perPage, 1), 100);
+        $perPage = ApiPagination::perPage($request->input('per_page'));
 
         $posts = $query->paginate($perPage);
 

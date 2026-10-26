@@ -56,10 +56,11 @@ final class ClassesTransformer extends JsonResource
             'schedules' => $this->resource->schedules->map(fn ($schedule): array => [
                 'id' => $schedule->id,
                 'day_of_week' => $schedule->day_of_week,
+                'delivery_mode' => $schedule->delivery_mode,
                 'start_time' => $schedule->start_time,
                 'end_time' => $schedule->end_time,
                 'room_id' => $schedule->room_id,
-                'room_name' => $schedule->room?->name,
+                'room_name' => $schedule->isOnline() ? 'Online' : $schedule->room?->name,
                 'formatted_time' => $schedule->formatted_time,
             ]),
 

@@ -38,7 +38,7 @@ final class QueryTimetableScheduleTool implements Tool
         ]);
 
         $classId = isset($validated['class_id']) ? (int) $validated['class_id'] : null;
-        if (! $classId && is_numeric($validated['identifier'] ?? null)) {
+        if (! $classId && in_array($validated['target_type'] ?? 'auto', ['auto', 'class'], true) && is_numeric($validated['identifier'] ?? null)) {
             $classId = (int) $validated['identifier'];
         }
 

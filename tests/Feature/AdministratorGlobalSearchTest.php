@@ -33,6 +33,46 @@ beforeEach(function (): void {
     ]);
 });
 
+it('searches curriculum subjects by code and title in preview and paginated results', function (): void {
+    withoutVite();
+    actingAs(User::factory()->create(['role' => UserRole::Admin]));
+
+    $course = Course::factory()->create(['code' => 'BSCUR']);
+    $subject = Subject::factory()->create([
+        'course_id' => $course->id,
+        'code' => 'CURSUB101',
+        'title' => 'Distinctive Curriculum Topic',
+    ]);
+    $destination = route('administrators.curriculum.programs.show', [
+        'course' => $course->id,
+        'search' => $subject->code,
+    ]);
+
+    foreach (['CURSUB101', 'Distinctive'] as $query) {
+        foreach (['all', 'subjects'] as $type) {
+            getJson(portalUrlForAdministrators("/administrators/search?q={$query}&type={$type}"))
+                ->assertOk()
+                ->assertJsonPath('subjects.0.id', $subject->id)
+                ->assertJsonPath('subjects.0.course_code', 'BSCUR')
+                ->assertJsonPath('subjects.0.url', $destination);
+        }
+    }
+
+    get(portalUrlForAdministrators('/administrators/search/results?q=Distinctive&type=subjects'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page): Assert => $page
+            ->component('administrators/search/results')
+            ->where('group', 'subjects')
+            ->has('results.data', 1)
+            ->where('results.data.0.id', $subject->id)
+            ->where('results.data.0.url', $destination));
+
+    getJson(portalUrlForAdministrators('/administrators/search?q=NoMatchingCurriculumSubject&type=subjects'))
+        ->assertOk()->assertJsonCount(0, 'subjects');
+    getJson(portalUrlForAdministrators('/administrators/search?q=C&type=subjects'))
+        ->assertOk()->assertJsonCount(0, 'subjects');
+});
+
 it('returns current students, classes, and enrollments from the administrator global search', function (): void {
     $admin = User::factory()->create([
         'role' => UserRole::Admin,

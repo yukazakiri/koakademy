@@ -80,6 +80,10 @@ final class Classes extends Model
     use Searchable;
     use SoftDeletes;
 
+    public const DELIVERY_FACE_TO_FACE = 'face_to_face';
+
+    public const DELIVERY_ONLINE = 'online';
+
     #[Override]
     protected $table = 'classes';
 
@@ -97,6 +101,7 @@ final class Classes extends Model
         'course_codes',
         'section',
         'room_id',
+        'delivery_mode',
         'classification',
         'maximum_slots',
         'shs_track_id',
@@ -104,6 +109,11 @@ final class Classes extends Model
         'grade_level',
         'settings',
         'school_id',
+    ];
+
+    #[Override]
+    protected $attributes = [
+        'delivery_mode' => self::DELIVERY_FACE_TO_FACE,
     ];
 
     /**
@@ -388,6 +398,19 @@ final class Classes extends Model
         return data_get($this->settings, $key, $default);
     }
 
+    public function isOnline(): bool
+    {
+        return $this->delivery_mode === self::DELIVERY_ONLINE;
+    }
+
+    public function deliverySummary(): string
+    {
+        $schedules = $this->relationLoaded('Schedule') ? $this->Schedule : $this->schedules;
+        $modes = $schedules->pluck('delivery_mode')->filter()->unique()->values();
+
+        return $modes->count() > 1 ? 'mixed' : ($modes->first() ?? $this->delivery_mode ?? self::DELIVERY_FACE_TO_FACE);
+    }
+
     protected static function boot(): void
     {
         parent::boot();
@@ -396,6 +419,13 @@ final class Classes extends Model
         self::saving(function ($model): void {
             if (empty($model->subject_code)) {
                 $model->subject_code = $model->getSubjectCodeFromRelationships();
+            }
+
+            // This is the default room for new meetings; existing meetings keep their own mode and room.
+            if ($model->isOnline()) {
+                $model->room_id = null;
+                $model->unsetRelation('Room');
+                $model->unsetRelation('room');
             }
         });
 

@@ -45,9 +45,9 @@
                         wire:model.live="selectedAgent"
                         class="w-full text-sm rounded-lg border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white shadow-xs focus:border-primary-500 focus:ring-primary-500"
                     >
-                        <option value="registrar_auditor">Registrar Compliance & Records Auditor</option>
-                        <option value="bursar_finance">Bursar & Tuition Intelligence</option>
-                        <option value="campus_support">Campus 24/7 Support & Policies</option>
+                        @foreach ($this->getAvailableAgents() as $agentKey => $agentLabel)
+                            <option value="{{ $agentKey }}">{{ $agentLabel }}</option>
+                        @endforeach
                     </select>
                     <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
                         Select which specialist agent receives your prompt.

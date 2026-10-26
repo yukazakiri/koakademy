@@ -124,6 +124,17 @@ it('gives horizon a worker on the search index queue', function (): void {
     expect(config('horizon.defaults.supervisor-1.queue'))->toContain('scout');
 });
 
+it('gives horizon supervisors for student transfers and assessment exports', function (): void {
+    $defaults = config('horizon.defaults');
+
+    expect($defaults)->toHaveKey('supervisor-transfers')
+        ->and($defaults['supervisor-transfers']['connection'])->toBe('redis')
+        ->and($defaults['supervisor-transfers']['queue'])->toBe(['student-transfers', 'bulk-student-transfers'])
+        ->and($defaults)->toHaveKey('supervisor-assessment')
+        ->and($defaults['supervisor-assessment']['connection'])->toBe('assessment-pdf')
+        ->and($defaults['supervisor-assessment']['queue'])->toBe(['assessment-pdf', 'assessment-events']);
+});
+
 /**
  * Pulse and Telescope record into the database during the request they
  * observe, so an installation that never asked for them must not pay for

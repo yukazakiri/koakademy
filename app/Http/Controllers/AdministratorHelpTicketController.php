@@ -22,11 +22,11 @@ final class AdministratorHelpTicketController extends Controller
         if ($request->filled('search')) {
             $search = $request->input('search');
             $query->where(function ($q) use ($search): void {
-                $q->where('subject', 'ilike', "%{$search}%")
-                    ->orWhere('message', 'ilike', "%{$search}%")
+                $q->whereLike('subject', "%{$search}%")
+                    ->orWhereLike('message', "%{$search}%")
                     ->orWhereHas('user', function ($q) use ($search): void {
-                        $q->where('name', 'ilike', "%{$search}%")
-                            ->orWhere('email', 'ilike', "%{$search}%");
+                        $q->whereLike('name', "%{$search}%")
+                            ->orWhereLike('email', "%{$search}%");
                     });
             });
         }

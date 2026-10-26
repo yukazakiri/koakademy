@@ -11,6 +11,7 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { getRoutesForRoleWithModules, type ModuleAdminRoute } from "@/config/admin-routes";
 import { adminVisit } from "@/lib/admin-navigation";
+import type { FeatureFlags } from "@/types/feature-flags";
 import type { User } from "@/types/user";
 import { router, usePage } from "@inertiajs/react";
 import { route } from "ziggy-js";
@@ -84,6 +85,7 @@ type PageProps = {
     moduleAdminRoutes?: ModuleAdminRoute[];
     /** Role-scoped dashboard desks, already filtered by DashboardRegistry::navigationFor(). */
     deskRoutes?: ModuleAdminRoute[];
+    featureFlags?: FeatureFlags;
 };
 
 type StudentPublicInfo = {
@@ -259,9 +261,13 @@ export function GlobalCommandContent({
         query: searchText,
         enabled: isOpen,
     });
+    const aiEnabled = props.featureFlags?.ai?.any === true;
     const allowedAdminRoutes = useMemo(
-        () => getRoutesForRoleWithModules(resolvedUserRole, resolvedUserPermissions, moduleAdminRoutes, deskRoutes),
-        [deskRoutes, moduleAdminRoutes, resolvedUserPermissions, resolvedUserRole],
+        () =>
+            getRoutesForRoleWithModules(resolvedUserRole, resolvedUserPermissions, moduleAdminRoutes, deskRoutes).filter(
+                (route) => route.id !== "admin-ai-chat" || aiEnabled,
+            ),
+        [aiEnabled, deskRoutes, moduleAdminRoutes, resolvedUserPermissions, resolvedUserRole],
     );
     const allowedAdminRouteIds = useMemo(() => new Set(allowedAdminRoutes.map((route) => route.id)), [allowedAdminRoutes]);
 
@@ -956,7 +962,7 @@ export function GlobalCommandContent({
                                 <div className="flex flex-col gap-0.5">
                                     <div className="font-medium">{highlightSearchTerms(result.title, searchText)}</div>
                                     <div className="text-muted-foreground text-xs">
-                                        {result.code} · {result.units} Units
+                                        {result.code} · {result.units} Units{result.course_code ? ` · ${result.course_code}` : ""}
                                     </div>
                                 </div>
                             </CommandItem>

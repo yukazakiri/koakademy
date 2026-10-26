@@ -71,12 +71,14 @@ export function CollegeCourseSubject({
     };
 
     return (
-        <div className="grid gap-5 lg:grid-cols-2">
-            <div className="space-y-2">
-                <Label>
-                    Courses <span className="text-muted-foreground text-xs font-normal">(pick one or more)</span>
-                </Label>
+        <div className="grid gap-6 lg:grid-cols-2">
+            <fieldset className="min-w-0 space-y-2">
+                <legend className="mb-2 text-sm font-medium">
+                    Programs <span className="text-muted-foreground text-sm font-normal">(pick one or more)</span>
+                </legend>
                 <SearchableMultiSelect
+                    className="min-h-11 text-sm [&_span]:text-sm"
+                    badgeClassName="text-sm"
                     options={courseOptions}
                     selected={selectedCourseIds.map(String)}
                     onChange={(values) => onCoursesChange(toNumbers(values))}
@@ -87,13 +89,15 @@ export function CollegeCourseSubject({
                 <p className="text-muted-foreground text-sm">
                     Pick every course program that will share this class. Subjects will load for the combined list.
                 </p>
-            </div>
+            </fieldset>
 
-            <div className="space-y-2">
-                <Label>
-                    Subjects <span className="text-muted-foreground text-xs font-normal">(pick one or more)</span>
-                </Label>
+            <fieldset className="min-w-0 space-y-2">
+                <legend className="mb-2 text-sm font-medium">
+                    Subjects <span className="text-muted-foreground text-sm font-normal">(pick one or more)</span>
+                </legend>
                 <SearchableMultiSelect
+                    className="min-h-11 text-sm [&_span]:text-sm"
+                    badgeClassName="text-sm"
                     options={subjectOptions}
                     selected={selectedSubjectIds.map(String)}
                     onChange={handleSubjectChange}
@@ -105,7 +109,7 @@ export function CollegeCourseSubject({
                 <p className="text-muted-foreground text-sm">
                     Subjects are pooled from every selected course. Pick as many as this class will teach.
                 </p>
-            </div>
+            </fieldset>
 
             <div className="space-y-2">
                 <Label htmlFor="subject_code">Subject code</Label>
@@ -122,9 +126,9 @@ export function CollegeCourseSubject({
             </div>
 
             <div className="space-y-2">
-                <Label>Academic year</Label>
+                <Label htmlFor="academic-year">Academic year</Label>
                 <Select value={String(academicYear)} onValueChange={(value) => onAcademicYearChange(Number(value))} disabled={unanimousYear !== null}>
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger id="academic-year" className="w-full">
                         <SelectValue placeholder="Choose academic year" />
                     </SelectTrigger>
                     <SelectContent>

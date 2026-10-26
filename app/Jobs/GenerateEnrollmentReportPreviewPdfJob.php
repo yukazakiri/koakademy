@@ -37,6 +37,7 @@ final class GenerateEnrollmentReportPreviewPdfJob implements ShouldQueue
         public string $downloadName,
         public int $userId,
     ) {
+        $this->onConnection((string) config('queue.assessment_notification_connection', config('queue.default')));
         $this->onQueue('pdf-generation');
     }
 

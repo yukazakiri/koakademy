@@ -110,3 +110,49 @@ it('does not flag a conflict against schedules from a different school year', fu
 
     expect($validator->passes())->toBeTrue();
 });
+
+it('flags a faculty overlap when the same instructor is scheduled in another room at the same time', function (): void {
+    $roomA = Room::factory()->createOne();
+    $roomB = Room::factory()->createOne();
+    $faculty = App\Models\Faculty::factory()->createOne();
+
+    $existingClass = Classes::factory()->createOne([
+        'school_year' => '2026 - 2027',
+        'semester' => 1,
+        'faculty_id' => $faculty->id,
+        'subject_code' => 'CS 101',
+    ]);
+
+    Schedule::factory()->createOne([
+        'class_id' => $existingClass->id,
+        'room_id' => $roomA->id,
+        'day_of_week' => 'Monday',
+        'start_time' => '08:00',
+        'end_time' => '10:00',
+    ]);
+
+    $validator = Validator::make(
+        [
+            'school_year' => '2026 - 2027',
+            'semester' => 1,
+            'faculty_id' => $faculty->id,
+            'schedules' => [
+                [
+                    'day_of_week' => 'Monday',
+                    'start_time' => '09:00',
+                    'end_time' => '11:00',
+                    'room_id' => $roomB->id,
+                ],
+            ],
+        ],
+        [
+            'school_year' => ['required', 'string'],
+            'semester' => ['required'],
+            'faculty_id' => ['nullable', 'string'],
+            'schedules' => ['required', 'array', new ScheduleOverlapRule],
+        ]
+    );
+
+    expect($validator->passes())->toBeFalse()
+        ->and($validator->errors()->first('schedules'))->toContain("The assigned faculty member is already scheduled for 'CS 101'");
+});

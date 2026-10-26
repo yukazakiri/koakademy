@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 
-import { themes, type ColorTheme } from "@/conf/themes";
+import { defaultColorTheme as systemColorTheme, themes, type ColorTheme } from "@/conf/themes";
+
+const isColorTheme = (value: string | null): value is ColorTheme => themes.some((theme) => theme.id === value);
 
 export type { ColorTheme };
 
@@ -38,7 +40,7 @@ const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
 export function ThemeProvider({
     children,
     defaultTheme = "system",
-    defaultColorTheme = "default",
+    defaultColorTheme = systemColorTheme,
     storageKey = "ui-theme",
     colorStorageKey = "ui-color-theme",
     ...props
@@ -46,9 +48,18 @@ export function ThemeProvider({
     const [theme, setTheme] = useState<Theme>(
         () => (typeof window !== "undefined" ? (localStorage.getItem(storageKey) as Theme) : null) || defaultTheme
     );
-    const [colorTheme, setColorTheme] = useState<ColorTheme>(
-        () => (typeof window !== "undefined" ? (localStorage.getItem(colorStorageKey) as ColorTheme) : null) || defaultColorTheme
-    );
+    const [colorTheme, setColorTheme] = useState<ColorTheme>(() => {
+        if (typeof window !== "undefined") {
+            try {
+                const stored = localStorage.getItem(colorStorageKey);
+                if (isColorTheme(stored)) return stored;
+                localStorage.removeItem(colorStorageKey);
+            } catch {
+                // Browser storage may be unavailable; system default still works.
+            }
+        }
+        return defaultColorTheme;
+    });
 
     const [actualTheme, setActualTheme] = useState<"dark" | "light">("light");
 
@@ -75,9 +86,9 @@ export function ThemeProvider({
     useEffect(() => {
         const root = window.document.documentElement;
 
-        // Dynamically remove all theme classes defined in config
-        themes.forEach((t) => {
-            root.classList.remove(`theme-${t.id}`);
+        // Removed themes may still be present from pre-hydration or a prior release.
+        Array.from(root.classList).forEach((name) => {
+            if (name.startsWith("theme-")) root.classList.remove(name);
         });
 
         root.classList.add(`theme-${colorTheme}`);
@@ -160,10 +171,13 @@ export function ThemeProvider({
         setThemeWithViewTransition,
         colorTheme,
         setColorTheme: (theme: ColorTheme) => {
-            if (typeof window !== "undefined") {
-                localStorage.setItem(colorStorageKey, theme);
+            const selected = isColorTheme(theme) ? theme : defaultColorTheme;
+            try {
+                localStorage.setItem(colorStorageKey, selected);
+            } catch {
+                // Keep selection usable when storage is blocked.
             }
-            setColorTheme(theme);
+            setColorTheme(selected);
         },
         actualTheme,
     };

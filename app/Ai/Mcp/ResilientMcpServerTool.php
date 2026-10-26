@@ -54,6 +54,22 @@ final class ResilientMcpServerTool extends McpServerTool
 
         $toolClass = get_class($this->tool);
         $toolName = class_basename($toolClass);
+        $action = mb_strtolower((string) ($request['action'] ?? ''));
+
+        if ($action === 'get' && in_array($toolName, [
+            'ManageStudentTool',
+            'ManageEnrollmentTool',
+            'ManageSubjectEnrollmentTool',
+            'ManageClassScheduleTool',
+            'ManageCurriculumSubjectTool',
+            'ManageRoomTool',
+        ], true)) {
+            return false;
+        }
+
+        if ($action === 'preview' && $toolName === 'ManageClassEnrollmentTool') {
+            return false;
+        }
 
         return match ($toolName) {
             'EnrollStudentSubjectTool' => Approval::required(

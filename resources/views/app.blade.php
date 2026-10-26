@@ -146,7 +146,6 @@
         (function() {
             try {
                 var theme = localStorage.getItem('ui-theme') || 'system';
-                var colorTheme = localStorage.getItem('ui-color-theme') || 'default';
                 var root = document.documentElement;
                 if (theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
                     root.classList.add('dark');
@@ -155,12 +154,10 @@
                     root.classList.add('light');
                     root.classList.remove('dark');
                 }
-                if (colorTheme) {
-                    root.classList.add('theme-' + colorTheme);
-                }
             } catch (e) {}
         })();
     </script>
+    @includeIf('theme-tools::initialize', ['storageKey' => 'ui-color-theme'])
     {{-- Expose appName to window for Inertia --}}
     <script>
         window.appName = @json($resolvedAppName);

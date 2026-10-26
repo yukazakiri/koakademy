@@ -187,6 +187,8 @@ jobs:
           npm run test:email-canvas
           npm run test:enrollment-workflow
           npm run test:grade-status-labels
+          node --test tests/Unit/scheduling-readiness.test.mjs
+          node --test tests/Unit/weekly-schedule.test.mjs
 
       - name: Exercise stable and edge installer fixtures
         run: |
@@ -195,6 +197,9 @@ jobs:
 
       - name: Build application frontend
         run: npm run build
+
+      - name: Verify model table schema integrity
+        run: php artisan test --compact tests/Feature/Database/ModelTableSchemaIntegrityTest.php
 
       - name: Run Pest suite
         run: php artisan test --parallel --compact

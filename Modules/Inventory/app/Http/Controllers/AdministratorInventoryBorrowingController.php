@@ -32,9 +32,9 @@ final class AdministratorInventoryBorrowingController extends Controller
             ->when(is_string($search) && mb_trim($search) !== '', function ($query) use ($search): void {
                 $term = mb_trim($search);
                 $query->where(function ($nested) use ($term): void {
-                    $nested->whereHas('product', fn ($productQuery) => $productQuery->where('name', 'ilike', "%{$term}%"))
-                        ->orWhere('borrower_name', 'ilike', "%{$term}%")
-                        ->orWhere('borrower_email', 'ilike', "%{$term}%");
+                    $nested->whereHas('product', fn ($productQuery) => $productQuery->whereLike('name', "%{$term}%"))
+                        ->orWhereLike('borrower_name', "%{$term}%")
+                        ->orWhereLike('borrower_email', "%{$term}%");
                 });
             })
             ->when(is_string($status) && $status !== '' && $status !== 'all', function ($query) use ($status): void {

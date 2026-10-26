@@ -17,11 +17,12 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Laravel\Ai\Approvals\Approval;
 use Laravel\Ai\Concerns\InteractsWithApprovals;
+use Laravel\Ai\Contracts\Approvable;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
 
-final class ManageSubjectEnrollmentTool implements Tool
+final class ManageSubjectEnrollmentTool implements Approvable, Tool
 {
     use InteractsWithApprovals;
 

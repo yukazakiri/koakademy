@@ -17,12 +17,36 @@ export interface DocumentArtifact {
     document_id: string;
     title: string;
     filename: string;
-    format: "pdf" | "csv" | "markdown" | string;
+    format: "pdf" | "csv" | "markdown";
     category?: string;
     download_url?: string;
     summary?: string;
     file_size?: string;
     content?: string;
+}
+
+export function parseDocumentArtifact(value: unknown): DocumentArtifact | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const document = value as Record<string, unknown>;
+    for (const key of ["document_id", "title", "filename", "format"]) {
+        if (typeof document[key] !== "string" || !document[key].trim()) return null;
+    }
+    const format = (document.format as string).toLowerCase();
+    if (format !== "pdf" && format !== "csv" && format !== "markdown") return null;
+    for (const key of ["category", "download_url", "summary", "file_size", "content"]) {
+        if (document[key] != null && typeof document[key] !== "string") return null;
+    }
+
+    return { ...document, format } as unknown as DocumentArtifact;
+}
+
+export async function readArtifactBlob(response: Response, format: DocumentArtifact["format"]): Promise<Blob> {
+    if (!response.ok) throw new Error("Unable to download document.");
+    const blob = await response.blob();
+    if (format === "pdf" && await blob.slice(0, 5).text() !== "%PDF-") {
+        throw new Error("PDF generation failed. Please try again or copy the document text.");
+    }
+    return blob;
 }
 
 interface DocumentDownloadCardProps {
@@ -31,11 +55,14 @@ interface DocumentDownloadCardProps {
 }
 
 export function DocumentDownloadCard({
-    document,
+    document: candidate,
     downloadEndpoint = "/administrators/ai/download-document",
 }: DocumentDownloadCardProps) {
     const [downloading, setDownloading] = React.useState(false);
     const [copied, setCopied] = React.useState(false);
+    const document = React.useMemo(() => parseDocumentArtifact(candidate), [candidate]);
+
+    if (!document) return null;
 
     const getIcon = () => {
         switch (document.format?.toLowerCase()) {
@@ -52,82 +79,62 @@ export function DocumentDownloadCard({
         setDownloading(true);
 
         try {
-            // First try direct server download URL
             const targetUrl = document.download_url || `${downloadEndpoint}/${document.document_id}`;
+            let blob: Blob | undefined;
+            try {
+                blob = await readArtifactBlob(await fetch(targetUrl, {
+                    method: "GET",
+                    headers: { "X-Requested-With": "XMLHttpRequest" },
+                }), document.format);
+            } catch {
+                // Expired, unavailable, or invalid downloads can be regenerated from content.
+            }
 
-            // Check if direct server route responds
-            const response = await fetch(targetUrl, {
-                method: "GET",
-                headers: {
-                    "X-Requested-With": "XMLHttpRequest",
-                },
-            });
-
-            if (response.ok) {
-                const blob = await response.blob();
-                const blobUrl = window.URL.createObjectURL(blob);
-                const a = window.document.createElement("a");
-                a.href = blobUrl;
-                a.download = document.filename || `${document.title}.${document.format || "pdf"}`;
-                window.document.body.appendChild(a);
-                a.click();
-                window.document.body.removeChild(a);
-                window.URL.revokeObjectURL(blobUrl);
-
-                toast.success(`Downloaded "${document.filename || document.title}"`);
-            } else if (document.content) {
-                // If direct cache expired, fallback to instant export endpoint
+            if (!blob && document.content) {
                 const exportUrl = downloadEndpoint.includes("/administrators")
                     ? "/administrators/ai/export-document"
                     : "/ai/export-document";
 
-                const exportResponse = await fetch(exportUrl, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "X-Requested-With": "XMLHttpRequest",
-                        "X-CSRF-TOKEN":
-                            (window.document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || "",
-                    },
-                    body: JSON.stringify({
-                        title: document.title || "Administrative_Report",
-                        format: document.format || "pdf",
-                        content: document.content,
-                    }),
-                });
-
-                if (exportResponse.ok) {
-                    const blob = await exportResponse.blob();
-                    const blobUrl = window.URL.createObjectURL(blob);
-                    const a = window.document.createElement("a");
-                    a.href = blobUrl;
-                    a.download = document.filename || `${document.title}.${document.format || "pdf"}`;
-                    window.document.body.appendChild(a);
-                    a.click();
-                    window.document.body.removeChild(a);
-                    window.URL.revokeObjectURL(blobUrl);
-
-                    toast.success(`Downloaded "${document.filename || document.title}"`);
-                } else {
-                    // Fallback to text file for csv/markdown if server export fails
-                    const mimeType = document.format === "csv" ? "text/csv;charset=utf-8;" : "text/markdown;charset=utf-8;";
-                    const blob = new Blob([document.content], { type: mimeType });
-                    const blobUrl = URL.createObjectURL(blob);
-                    const a = window.document.createElement("a");
-                    a.href = blobUrl;
-                    a.download = document.filename || `${document.title}.txt`;
-                    window.document.body.appendChild(a);
-                    a.click();
-                    window.document.body.removeChild(a);
-                    URL.revokeObjectURL(blobUrl);
-
-                    toast.success(`Exported "${document.filename || document.title}"`);
+                try {
+                    blob = await readArtifactBlob(await fetch(exportUrl, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "X-Requested-With": "XMLHttpRequest",
+                            "X-CSRF-TOKEN":
+                                (window.document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || "",
+                        },
+                        body: JSON.stringify({ title: document.title, format: document.format, content: document.content }),
+                    }), document.format);
+                } catch {
+                    // Only text formats have a faithful browser-side fallback.
                 }
-            } else {
-                throw new Error("Unable to download document.");
             }
-        } catch (error: any) {
-            toast.error(error.message || "Download failed. Please try again.");
+
+            if (!blob && document.content && document.format !== "pdf") {
+                const mimeType = document.format === "csv" ? "text/csv;charset=utf-8;" : "text/markdown;charset=utf-8;";
+                blob = new Blob([document.content], { type: mimeType });
+            }
+            if (!blob) {
+                throw new Error(document.format === "pdf"
+                    ? "PDF generation failed. Please try again or copy the document text."
+                    : "Unable to download document. Please try again.");
+            }
+
+            const extension = document.format === "markdown" ? "md" : document.format;
+            const basename = document.filename.replace(/\.[^.]+$/, "") || document.title;
+            const filename = `${basename}.${extension}`;
+            const blobUrl = window.URL.createObjectURL(blob);
+            const a = window.document.createElement("a");
+            a.href = blobUrl;
+            a.download = filename;
+            window.document.body.appendChild(a);
+            a.click();
+            window.document.body.removeChild(a);
+            window.URL.revokeObjectURL(blobUrl);
+            toast.success(`Downloaded "${filename}"`);
+        } catch (error: unknown) {
+            toast.error(error instanceof Error ? error.message : "Download failed. Please try again.");
         } finally {
             setDownloading(false);
         }

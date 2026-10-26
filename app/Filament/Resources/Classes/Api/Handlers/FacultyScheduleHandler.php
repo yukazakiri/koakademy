@@ -91,7 +91,7 @@ final class FacultyScheduleHandler extends Handlers
                     $query->select('id', 'name', 'class_code');
                 },
                 'schedules' => function ($query): void {
-                    $query->select('id', 'class_id', 'day_of_week', 'start_time', 'end_time', 'room_id')
+                    $query->select('id', 'class_id', 'day_of_week', 'start_time', 'end_time', 'room_id', 'delivery_mode')
                         ->with('room:id,name,class_code')
                         ->orderBy('day_of_week')
                         ->orderBy('start_time');

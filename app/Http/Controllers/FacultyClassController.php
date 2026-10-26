@@ -25,6 +25,7 @@ use App\Models\User;
 use App\Services\ClassPostPayloadService;
 use App\Services\GradeEvaluationService;
 use App\Services\GradingSystemService;
+use App\Services\TenantContext;
 use Carbon\Carbon;
 use Exception;
 use Filament\Actions\Action;
@@ -73,14 +74,15 @@ final class FacultyClassController extends Controller
 
         $schedule = $class->schedules
             ->sortBy(fn ($schedule) => $schedule->start_time?->format('H:i') ?? '00:00')
-            ->map(function ($schedule) use ($class): array {
+            ->map(function ($schedule): array {
                 $start = $schedule->formatted_start_time ?? $schedule->start_time?->format('g:i A');
                 $end = $schedule->formatted_end_time ?? $schedule->end_time?->format('g:i A');
 
                 return [
                     'id' => $schedule->id,
                     'day' => ucfirst(mb_strtolower((string) $schedule->day_of_week ?? '')),
-                    'room' => $schedule->room?->name ?? $class->Room?->name ?? 'TBA',
+                    'room' => $schedule->isOnline() ? 'Online' : ($schedule->room?->name ?? 'TBA'),
+                    'delivery_mode' => $schedule->delivery_mode,
                     'start' => $start,
                     'end' => $end,
                     'start_24h' => $schedule->start_time?->format('H:i'),
@@ -146,6 +148,7 @@ final class FacultyClassController extends Controller
                 'start_time' => $schedule->start_time?->format('H:i'),
                 'end_time' => $schedule->end_time?->format('H:i'),
                 'room_id' => $schedule->room_id,
+                'delivery_mode' => $schedule->delivery_mode,
             ]),
             'settings' => $class->settings ?? Classes::getDefaultSettings(),
         ];
@@ -226,7 +229,8 @@ final class FacultyClassController extends Controller
         $attendance = $this->buildAttendancePayload($class);
 
         // Cache rooms list since it rarely changes
-        $rooms = cache()->remember('rooms_list', 300, fn () => Room::query()
+        $schoolId = app(TenantContext::class)->getCurrentSchoolId() ?? 0;
+        $rooms = cache()->remember("rooms_list:{$schoolId}", 300, fn () => Room::query()
             ->select(['id', 'name'])
             ->orderBy('name')
             ->get()
@@ -323,7 +327,8 @@ final class FacultyClassController extends Controller
             'day_of_week' => $schedule->day_of_week,
             'start_time' => $schedule->start_time?->format('H:i'),
             'end_time' => $schedule->end_time?->format('H:i'),
-            'room' => $schedule->room?->name ?? 'TBA',
+            'room' => $schedule->isOnline() ? 'Online' : ($schedule->room?->name ?? 'TBA'),
+            'delivery_mode' => $schedule->delivery_mode,
         ]);
 
         return response()->json([
@@ -965,6 +970,9 @@ final class FacultyClassController extends Controller
         /** @var array<int, array<string, mixed>> $incoming */
         $incoming = $validated['schedules'] ?? [];
 
+        $notificationService = app(\App\Services\ClassScheduleChangeNotificationService::class);
+        $oldSnapshot = $notificationService->snapshot($class);
+
         $existingSchedules = $class->schedules()->withTrashed()->get()->keyBy('id');
         $keptIds = [];
 
@@ -984,7 +992,8 @@ final class FacultyClassController extends Controller
                     'day_of_week' => $scheduleData['day_of_week'],
                     'start_time' => $scheduleData['start_time'],
                     'end_time' => $scheduleData['end_time'],
-                    'room_id' => (int) $scheduleData['room_id'],
+                    'room_id' => isset($scheduleData['room_id']) ? (int) $scheduleData['room_id'] : null,
+                    'delivery_mode' => $scheduleData['delivery_mode'],
                 ]);
 
                 if (method_exists($schedule, 'restore') && method_exists($schedule, 'trashed') && $schedule->trashed()) {
@@ -1001,7 +1010,8 @@ final class FacultyClassController extends Controller
                 'day_of_week' => $scheduleData['day_of_week'],
                 'start_time' => $scheduleData['start_time'],
                 'end_time' => $scheduleData['end_time'],
-                'room_id' => (int) $scheduleData['room_id'],
+                'room_id' => isset($scheduleData['room_id']) ? (int) $scheduleData['room_id'] : null,
+                'delivery_mode' => $scheduleData['delivery_mode'],
             ]);
 
             $keptIds[] = $newSchedule->id;
@@ -1010,6 +1020,14 @@ final class FacultyClassController extends Controller
         $class->schedules()
             ->whereNotIn('id', $keptIds)
             ->delete();
+
+        $class->unsetRelation('schedules');
+        $class->unsetRelation('Schedule');
+        $notificationService->notifyIfChanged(
+            $class,
+            $oldSnapshot,
+            Auth::user() instanceof User ? Auth::user() : null
+        );
 
         return redirect()
             ->back()
@@ -1779,7 +1797,8 @@ final class FacultyClassController extends Controller
         }
 
         // Cache faculty lookup per request to avoid duplicate queries
-        $cacheKey = "faculty_resolved_{$user->email}";
+        $schoolId = app(TenantContext::class)->getCurrentSchoolId() ?? $user->school_id ?? 0;
+        $cacheKey = "faculty_resolved:{$schoolId}:".hash('sha256', mb_strtolower($user->email));
 
         /** @var Faculty|null $faculty */
         $faculty = cache()->remember($cacheKey, 60, fn () => Faculty::where('email', $user->email)->first());

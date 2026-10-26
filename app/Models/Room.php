@@ -41,6 +41,9 @@ final class Room extends Model
     protected $fillable = [
         'name',
         'class_code',
+        'capacity',
+        'type',
+        'building',
         'is_active',
         'school_id',
     ];
@@ -71,6 +74,7 @@ final class Room extends Model
     protected function casts(): array
     {
         return [
+            'capacity' => 'integer',
             'is_active' => 'boolean',
         ];
     }

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Modules\Announcement\Providers;
 
+use Illuminate\Database\Events\MigrationsEnded;
 use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Modules\Announcement\Models\Announcement;
@@ -33,6 +35,10 @@ final class AnnouncementServiceProvider extends ServiceProvider
         $this->registerViews();
         $this->loadMigrationsFrom(module_path($this->name, 'database/migrations'));
         Gate::policy(Announcement::class, AnnouncementPolicy::class);
+
+        Event::listen(MigrationsEnded::class, static function (): void {
+            Announcement::flushSchemaColumnCache();
+        });
     }
 
     /**

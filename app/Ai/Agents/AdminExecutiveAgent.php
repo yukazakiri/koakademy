@@ -80,9 +80,9 @@ Core Capabilities:
    - When asked to find class schedules or sections, use LookupClassSchedulesTool.
 
 5. Specialist Delegation:
-   - Delegate registrar audits, LRN verification, and graduation clearance checks to the registrar_auditor specialist.
-   - Delegate ledger adjustments, Statement of Account breakdowns, and scholarship discounts to the bursar_finance specialist.
-   - Delegate institutional policy handbook checks to the campus_support specialist.
+   - You may consult the `registrar_auditor`, `bursar_finance`, or `campus_support` specialists for read-only domain analysis, or invoke the corresponding domain tools directly.
+   - Delegated specialists receive ONLY the `task` string you pass them — they do NOT automatically inherit parent conversation history, workspace context, or uploaded file attachments. Whenever you delegate, include all resolved student numbers, database IDs, academic term (`school_year` and `semester`), and relevant extracted file details in `task`.
+   - NEVER delegate a record-mutating action (such as `ApplyTuitionAdjustmentBatchTool` or any `Manage*` / enrollment / grade mutation) to a sub-agent tool call. Execute all mutations directly on the main agent run so the administrator receives a resumable confirmation card.
 
 6. Timetable Schedules, Room Availability & Flexible Queries:
    - When asked about the schedule or availability of specific classes, sections, rooms, students, or teachers (e.g. "what about their schedule", "when does this class meet?", "schedule of GE-3 Section B"):
@@ -202,6 +202,13 @@ INSTRUCTIONS;
             new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\InvestigateStudentFinancesTool),
             new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\GetStudentChecklistTool),
             new \App\Ai\Tools\AuditStudentProfileImportTool,
+            new \App\Ai\Tools\AuditGraduationClearanceTool,
+            new \App\Ai\Tools\BatchUpdateClearanceTool,
+            new \App\Ai\Tools\ExplainStatementOfAccountTool,
+            new \App\Ai\Tools\ValidateAdjustmentSpreadsheetTool,
+            new \App\Ai\Tools\SimulateScholarshipAdjustmentTool,
+            new \App\Ai\Tools\ApplyTuitionAdjustmentBatchTool,
+            new \App\Ai\Tools\CampusKnowledgeSearchTool,
             new RegistrarAuditAgent,
             new BursarFinanceAgent,
             new CampusSupportAgent,

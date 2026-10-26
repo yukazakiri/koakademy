@@ -61,7 +61,10 @@ final class FacultyClassShareService
 
     private function getFacultyForUser(User $user): ?Faculty
     {
-        return Cache::remember("faculty_for_user_{$user->email}", 60, fn () => Faculty::where('email', $user->email)->first());
+        $schoolId = app(TenantContext::class)->getCurrentSchoolId() ?? $user->school_id ?? 0;
+        $key = "faculty_for_user:{$schoolId}:".hash('sha256', mb_strtolower($user->email));
+
+        return Cache::remember($key, 60, fn () => Faculty::where('email', $user->email)->first());
     }
 
     /**

@@ -58,7 +58,9 @@ final class TimetableConflictService
     public function detectTimeRoomConflicts(Collection $schedules): array
     {
         $conflicts = [];
-        $grouped = $schedules->groupBy(fn ($schedule): string => $schedule->day_of_week.'_'.$schedule->room_id);
+        $grouped = $schedules
+            ->filter(fn ($schedule): bool => $schedule->room_id !== null && ! $schedule->isOnline())
+            ->groupBy(fn ($schedule): string => $schedule->day_of_week.'_'.$schedule->room_id);
 
         foreach ($grouped as $dayRoom => $dayRoomSchedules) {
             if ($dayRoomSchedules->count() > 1) {
@@ -299,6 +301,14 @@ final class TimetableConflictService
 
             throw $exception;
         }
+    }
+
+    /**
+     * Check if two classes have overlapping schedules on the same day.
+     */
+    public function hasScheduleConflict(\App\Models\Classes $classA, \App\Models\Classes $classB): bool
+    {
+        return app(Scheduling\ScheduleConflictService::class)->hasScheduleConflict($classA, $classB);
     }
 
     /**

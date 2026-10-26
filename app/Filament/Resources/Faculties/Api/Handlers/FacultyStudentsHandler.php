@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Faculties\Api\Handlers;
 
 use App\Filament\Resources\Faculties\FacultyResource;
+use App\Http\Controllers\Api\V1\ApiPagination;
 use App\Models\Classes;
 use App\Models\Faculty;
 use App\Models\Student;
@@ -121,10 +122,10 @@ final class FacultyStudentsHandler extends Handlers
                 AllowedFilter::partial('student_id'),
                 AllowedFilter::callback('search', function ($query, $value): void {
                     $query->where(function ($q) use ($value): void {
-                        $q->where('first_name', 'ilike', "%{$value}%")
-                            ->orWhere('last_name', 'ilike', "%{$value}%")
-                            ->orWhere('student_id', 'ilike', "%{$value}%")
-                            ->orWhere('email', 'ilike', "%{$value}%");
+                        $q->whereLike('first_name', "%{$value}%")
+                            ->orWhereLike('last_name', "%{$value}%")
+                            ->orWhereLike('student_id', "%{$value}%")
+                            ->orWhereLike('email', "%{$value}%");
                     });
                 }),
                 AllowedFilter::callback('class_id', function ($query, $value) use ($classIds): void {
@@ -145,7 +146,7 @@ final class FacultyStudentsHandler extends Handlers
             ->defaultSort('last_name');
 
         // Paginate results
-        $perPage = min((int) $request->input('per_page', 15), 100);
+        $perPage = ApiPagination::perPage($request->input('per_page'));
         $students = $studentsQuery->paginate($perPage);
 
         // Get class summary for this faculty

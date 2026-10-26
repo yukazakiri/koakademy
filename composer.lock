@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "a6423a1bfb7536d152ad0ef4ec6d1979",
+    "content-hash": "f301c9277ea60b9c1a3f49f125a83dc7",
     "packages": [
         {
             "name": "achyutn/filament-log-viewer",
@@ -8404,16 +8404,16 @@
         },
         {
             "name": "livewire/livewire",
-            "version": "v4.4.7",
+            "version": "v4.4.8",
             "source": {
                 "type": "git",
                 "url": "https://github.com/livewire/livewire.git",
-                "reference": "5976d18b1c808287017a17337d9e68dc1ca64ca2"
+                "reference": "8d7f8fc6138274a2f3384c9db354ca012215a259"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/livewire/livewire/zipball/5976d18b1c808287017a17337d9e68dc1ca64ca2",
-                "reference": "5976d18b1c808287017a17337d9e68dc1ca64ca2",
+                "url": "https://api.github.com/repos/livewire/livewire/zipball/8d7f8fc6138274a2f3384c9db354ca012215a259",
+                "reference": "8d7f8fc6138274a2f3384c9db354ca012215a259",
                 "shasum": ""
             },
             "require": {
@@ -8468,7 +8468,7 @@
             "description": "A front-end framework for Laravel.",
             "support": {
                 "issues": "https://github.com/livewire/livewire/issues",
-                "source": "https://github.com/livewire/livewire/tree/v4.4.7"
+                "source": "https://github.com/livewire/livewire/tree/v4.4.8"
             },
             "funding": [
                 {
@@ -8476,7 +8476,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-09-28T18:12:51+00:00"
+            "time": "2026-10-21T12:53:46+00:00"
         },
         {
             "name": "maatwebsite/excel",
@@ -19618,6 +19618,91 @@
                 "source": "https://github.com/ysfkaya/filament-phone-input/tree/v4.2.5"
             },
             "time": "2026-09-01T18:46:12+00:00"
+        },
+        {
+            "name": "yukazakiri/laravel-shadebridge",
+            "version": "0.2.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/yukazakiri/laravel-shadebridge.git",
+                "reference": "2ec43be9aff0d8c97e6bbbde1b823fd6ecbfa9a6"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/yukazakiri/laravel-shadebridge/zipball/2ec43be9aff0d8c97e6bbbde1b823fd6ecbfa9a6",
+                "reference": "2ec43be9aff0d8c97e6bbbde1b823fd6ecbfa9a6",
+                "shasum": ""
+            },
+            "require": {
+                "ext-mbstring": "*",
+                "illuminate/console": "^12.0 || ^13.0",
+                "illuminate/http": "^12.0 || ^13.0",
+                "illuminate/support": "^12.0 || ^13.0",
+                "laravel/prompts": "^0.3.0",
+                "php": "^8.2"
+            },
+            "require-dev": {
+                "laravel/pint": "*",
+                "orchestra/testbench": "^10.0 || ^11.0",
+                "pestphp/pest": "*",
+                "phpstan/phpstan": "*",
+                "rector/rector": "*"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Yukazakiri\\Shadebridge\\ShadebridgeServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Yukazakiri\\Shadebridge\\": "src/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "vendor/bin/pest"
+                ],
+                "lint": [
+                    "vendor/bin/pint"
+                ],
+                "refactor": [
+                    "vendor/bin/rector process"
+                ],
+                "analyse": [
+                    "php -d memory_limit=512M vendor/bin/phpstan analyse"
+                ]
+            },
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Yukzakiri"
+                }
+            ],
+            "description": "Import and manage shadcn themes in Laravel with Shadebridge.",
+            "homepage": "https://github.com/yukazakiri/laravel-shadebridge",
+            "keywords": [
+                "inertia",
+                "laravel",
+                "shadcn",
+                "tailwindcss",
+                "themes",
+                "tweakcn"
+            ],
+            "support": {
+                "issues": "https://github.com/yukazakiri/laravel-shadebridge/issues",
+                "source": "https://github.com/yukazakiri/laravel-shadebridge"
+            },
+            "time": "2026-10-23T03:22:44+00:00"
         }
     ],
     "packages-dev": [

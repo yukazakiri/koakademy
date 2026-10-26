@@ -25,12 +25,12 @@ final class AdministratorInventoryLedgerController extends Controller
                 $term = mb_trim($search);
                 $query->where(function ($nested) use ($term): void {
                     $nested
-                        ->where('event_type', 'ilike', "%{$term}%")
-                        ->orWhere('notes', 'ilike', "%{$term}%")
+                        ->whereLike('event_type', "%{$term}%")
+                        ->orWhereLike('notes', "%{$term}%")
                         ->orWhereHas('product', function ($productQuery) use ($term): void {
                             $productQuery
-                                ->where('name', 'ilike', "%{$term}%")
-                                ->orWhere('sku', 'ilike', "%{$term}%");
+                                ->whereLike('name', "%{$term}%")
+                                ->orWhereLike('sku', "%{$term}%");
                         });
                 });
             })

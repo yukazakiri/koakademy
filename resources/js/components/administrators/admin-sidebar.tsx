@@ -49,6 +49,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { AdminLink } from "@/lib/admin-navigation";
 import { resolveBranding, type Branding } from "@/lib/branding";
 import { cn } from "@/lib/utils";
+import type { FeatureFlags } from "@/types/feature-flags";
 import type { User } from "@/types/user";
 import { USER_ROLE_LABELS, UserRole } from "@/types/user-role";
 import { usePage } from "@inertiajs/react";
@@ -64,9 +65,7 @@ interface PageProps {
     moduleAdminRoutes?: ModuleAdminRoute[];
     /** Role-scoped dashboard desks, already filtered by DashboardRegistry::navigationFor(). */
     deskRoutes?: ModuleAdminRoute[];
-    featureFlags?: {
-        library?: boolean;
-    };
+    featureFlags?: FeatureFlags;
     [key: string]: unknown;
 }
 
@@ -127,11 +126,14 @@ function useOrganizedRoutes(
     moduleRoutes: ModuleAdminRoute[] = [],
     deskRoutes: ModuleAdminRoute[] = [],
     libraryEnabled = false,
+    aiEnabled = true,
 ) {
     return React.useMemo(() => {
         const normalizedRole = normalizeRole(userRole);
         const allowedRoutes = getRoutesForRoleWithModules(normalizedRole, userPermissions, moduleRoutes, deskRoutes).filter(
-            (route) => route.id !== "admin-digital-library" || libraryEnabled,
+            (route) =>
+                (route.id !== "admin-digital-library" || libraryEnabled) &&
+                (route.id !== "admin-ai-chat" || aiEnabled),
         );
 
         // Group routes by section
@@ -184,7 +186,7 @@ function useOrganizedRoutes(
         });
 
         return { groupedRoutes, sectionsWithRoutes, allSearchableRoutes, normalizedRole };
-    }, [deskRoutes, libraryEnabled, moduleRoutes, userPermissions, userRole]);
+    }, [aiEnabled, deskRoutes, libraryEnabled, moduleRoutes, userPermissions, userRole]);
 }
 
 function isParentRouteActive(currentUrl: string, routeLink: string, subs?: { link: string; exact?: boolean }[], exact = false): boolean {
@@ -290,6 +292,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
     const moduleAdminRoutes = props.moduleAdminRoutes ?? [];
     const deskRoutes = props.deskRoutes ?? [];
     const libraryEnabled = props.featureFlags?.library === true;
+    const aiEnabled = props.featureFlags?.ai?.any === true;
     const appName = branding.appName;
     const organizationShortName = branding.organizationShortName;
     const sharedAuthUser = props.auth?.user;
@@ -305,6 +308,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
         moduleAdminRoutes,
         deskRoutes,
         libraryEnabled,
+        aiEnabled,
     );
 
     // Derive active section from current URL

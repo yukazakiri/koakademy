@@ -6,6 +6,7 @@ namespace App\Filament\Widgets;
 
 use App\Models\Course;
 use App\Models\StudentEnrollment;
+use App\Support\Database\SqlDialect;
 use Filament\Widgets\ChartWidget;
 use Illuminate\Support\Facades\DB;
 use Override;
@@ -30,8 +31,10 @@ final class EnrollmentByCourseStatsWidget extends ChartWidget
 
         // Query to count students per course group (BSIT, BSHM, BSBA, Others)
         // If filter is set, use it. Otherwise default to current school year via scope or just latest
-        $query = StudentEnrollment::query()
-            ->join('courses', DB::raw('CAST(student_enrollment.course_id AS BIGINT)'), '=', 'courses.id')
+        $query = StudentEnrollment::query();
+
+        $query
+            ->join('courses', DB::raw(SqlDialect::integerCast($query, 'student_enrollment.course_id')), '=', 'courses.id')
             ->select(
                 DB::raw("
                     CASE 

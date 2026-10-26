@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Faculties\Schemas;
 
+use App\Support\Database\SqlDialect;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
@@ -140,8 +141,10 @@ final class FacultyForm
 
     private static function generateNextFacultyId(): string
     {
-        $latestFaculty = \App\Models\Faculty::query()
-            ->orderByRaw('CAST(faculty_id_number AS INTEGER) DESC')
+        $query = \App\Models\Faculty::query();
+
+        $latestFaculty = $query
+            ->orderByRaw(SqlDialect::integerCast($query, 'faculty_id_number').' DESC')
             ->first();
 
         if (! $latestFaculty || ! $latestFaculty->faculty_id_number) {

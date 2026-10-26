@@ -10,6 +10,7 @@ use App\Models\Course;
 use App\Models\Department;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
+use App\Support\Database\SqlDialect;
 use App\Support\RegistrarStudentProfileWorkbook;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -173,14 +174,21 @@ final class RegistrarAnalyticsService
     /** @param array<string, int|string|null> $filters */
     private function enrollmentQuery(array $filters): Builder
     {
-        $query = StudentEnrollment::query()->withTrashed()
+        $query = StudentEnrollment::query()->withTrashed();
+        $studentIdCast = SqlDialect::integerCast($query, 'student_enrollment.student_id');
+        $courseIdCast = SqlDialect::integerCast(
+            $query,
+            sprintf('NULLIF(%s, %s)', SqlDialect::textCast($query, 'student_enrollment.course_id'), "''"),
+        );
+
+        $query
             ->where('student_enrollment.school_year', $filters['school_year'])
-            ->leftJoin('students', function ($join): void {
-                $join->whereRaw('CAST(student_enrollment.student_id AS BIGINT) = students.id')
+            ->leftJoin('students', function ($join) use ($studentIdCast): void {
+                $join->whereRaw(sprintf('%s = students.id', $studentIdCast))
                     ->whereRaw('(students.school_id = student_enrollment.school_id OR (students.school_id IS NULL AND student_enrollment.school_id IS NULL))');
             })
-            ->leftJoin('courses', function ($join): void {
-                $join->whereRaw("CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), '') AS BIGINT) = courses.id")
+            ->leftJoin('courses', function ($join) use ($courseIdCast): void {
+                $join->whereRaw(sprintf('%s = courses.id', $courseIdCast))
                     ->whereRaw('(courses.school_id = student_enrollment.school_id OR (courses.school_id IS NULL AND student_enrollment.school_id IS NULL))');
             })
             ->leftJoin('departments', function ($join): void {
@@ -337,7 +345,7 @@ final class RegistrarAnalyticsService
     {
         $monthExpression = match ($query->getModel()->getConnection()->getDriverName()) {
             'sqlite' => "strftime('%Y-%m', student_enrollment.created_at)",
-            'mysql' => "DATE_FORMAT(student_enrollment.created_at, '%Y-%m')",
+            'mysql', 'mariadb' => "DATE_FORMAT(student_enrollment.created_at, '%Y-%m')",
             default => "TO_CHAR(DATE_TRUNC('month', student_enrollment.created_at), 'YYYY-MM')",
         };
 
@@ -350,7 +358,9 @@ final class RegistrarAnalyticsService
 
     private function groupStudentField(Builder $query, string $field, string $alias): mixed
     {
-        return (clone $query)->selectRaw("COALESCE(NULLIF(TRIM(CAST({$field} AS TEXT)), ''), 'Unspecified') as {$alias}, count(*) as count")->groupByRaw("COALESCE(NULLIF(TRIM(CAST({$field} AS TEXT)), ''), 'Unspecified')")->orderByDesc('count')->get();
+        $textCast = SqlDialect::textCast($query, $field);
+
+        return (clone $query)->selectRaw("COALESCE(NULLIF(TRIM({$textCast}), ''), 'Unspecified') as {$alias}, count(*) as count")->groupByRaw("COALESCE(NULLIF(TRIM({$textCast}), ''), 'Unspecified')")->orderByDesc('count')->get();
     }
 
     private function equityGroups(Builder $query): array

@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Enums\ScholarshipType;
 use App\Enums\StudentStatus;
 use App\Enums\StudentType;
+use App\Http\Controllers\Api\V1\ApiPagination;
 use App\Models\ApplicantCancellation;
 use App\Models\Course;
 use App\Models\Department;
@@ -91,15 +92,7 @@ final class ApplicantDirectoryService
      */
     public function normalizeFilters(array $input): array
     {
-        $perPage = (int) ($input['per_page'] ?? 10);
-        if (($input['per_page'] ?? null) === 'all') {
-            $perPage = 100000;
-        }
-        if ($perPage <= 0) {
-            $perPage = 10;
-        }
-
-        $perPage = min($perPage, 150);
+        $perPage = ApiPagination::perPage($input['per_page'] ?? 10);
 
         $direction = mb_strtolower((string) ($input['direction'] ?? 'desc')) === 'asc' ? 'asc' : 'desc';
 

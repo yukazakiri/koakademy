@@ -29,7 +29,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type { User } from "@/types/user";
 import { Head, Link, router, useForm } from "@inertiajs/react";
@@ -68,11 +67,12 @@ import {
     ShieldCheck,
     Sparkles,
     Trash2,
-    Waypoints,
     X,
 } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { AuthorityCodeImportDialog, type AuthoritySummary } from "./authority-code-import-dialog";
+import { Tabs, TabsContent, TabsList, TabsTab } from "./curriculum-tabs";
+import { FormSection, Workspace, WorkspaceMetric } from "./curriculum-workspace";
 
 interface DepartmentOption {
     id: number;
@@ -696,7 +696,7 @@ export default function CurriculumPrograms({
                                             : "bg-amber-500/10 text-amber-700 dark:text-amber-300"
                                     }`}
                                 >
-                                    {program.is_active ? "Active" : "Needs review"}
+                                    {program.is_active ? "Active" : "Inactive"}
                                 </Badge>
                             </div>
                             <Link
@@ -771,10 +771,13 @@ export default function CurriculumPrograms({
                                 <Pencil className="size-4" />
                                 <span className="sr-only">Edit {program.code}</span>
                             </Button>
-                            <Button asChild variant="secondary" size="sm" className="hidden rounded-lg px-3 xl:inline-flex">
-                                <Link href={showProgram(program.id).url}>
-                                    Manage <ArrowUpRight className="size-3.5" />
-                                </Link>
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                className="hidden rounded-lg px-3 xl:inline-flex"
+                                render={<Link href={showProgram(program.id).url} />}
+                            >
+                                Manage <ArrowUpRight className="size-3.5" />
                             </Button>
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
@@ -839,9 +842,7 @@ export default function CurriculumPrograms({
     return (
         <AdminLayout user={user} title={isCurriculumRoot ? "Curriculum" : "Programs"}>
             <Head title={isCurriculumRoot ? "Curriculum · Programs" : "Programs · Curriculum"} />
-            <div className="relative isolate flex flex-col gap-6 pb-4">
-                <div className="pointer-events-none absolute -top-28 right-[-11rem] -z-10 size-[27rem] rounded-full bg-sky-400/10 blur-3xl dark:bg-sky-300/5" />
-
+            <Workspace>
                 <header className="border-border/70 relative flex flex-col gap-6 border-b pb-7 lg:flex-row lg:items-end lg:justify-between">
                     <div className="min-w-0 space-y-4">
                         <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs font-medium">
@@ -874,10 +875,8 @@ export default function CurriculumPrograms({
                     </div>
                     <div className="flex shrink-0 flex-wrap items-center gap-2">
                         {!isCurriculumRoot && (
-                            <Button asChild variant="ghost" className="rounded-lg">
-                                <Link href={curriculumIndex().url}>
-                                    <ChevronLeft className="size-4" /> Curriculum workspace
-                                </Link>
+                            <Button variant="ghost" className="rounded-lg" render={<Link href={curriculumIndex().url} />}>
+                                <ChevronLeft className="size-4" /> Curriculum workspace
                             </Button>
                         )}
                         <AuthorityCodeImportDialog authorities={authority_codes.authorities} isChedAccredited={authority_codes.is_ched_accredited} />
@@ -887,62 +886,34 @@ export default function CurriculumPrograms({
                     </div>
                 </header>
 
-                <section className="border-border/80 bg-card overflow-hidden rounded-2xl border shadow-sm" aria-label="Catalog overview">
-                    <div className="grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
-                        <div className="flex items-center justify-between gap-4 px-5 py-4 sm:p-5">
-                            <div>
-                                <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.12em] uppercase">Programs in view</p>
-                                <p className="mt-2 text-2xl font-semibold tracking-[-0.03em]">{filteredStats.programs}</p>
-                            </div>
-                            <div className="bg-primary/8 text-primary flex size-9 items-center justify-center rounded-xl">
-                                <Waypoints className="size-4" />
-                            </div>
-                        </div>
-                        <div className="flex items-center justify-between gap-4 px-5 py-4 sm:p-5">
-                            <div>
-                                <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.12em] uppercase">Active pathways</p>
-                                <p className="mt-2 text-2xl font-semibold tracking-[-0.03em]">{filteredStats.active_programs}</p>
-                            </div>
-                            <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400" />
-                        </div>
-                        <div className="flex items-center justify-between gap-4 px-5 py-4 sm:p-5">
-                            <div>
-                                <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.12em] uppercase">Subjects mapped</p>
-                                <p className="mt-2 text-2xl font-semibold tracking-[-0.03em]">{filteredStats.subjects}</p>
-                            </div>
-                            <div className="text-muted-foreground flex items-center gap-1.5 text-xs">
-                                <BookOpen className="size-4" />
-                                <span>{filteredStats.subjects_with_requisites} prereq-aware</span>
-                            </div>
-                        </div>
-                        <div className="px-5 py-4 sm:p-5">
-                            <div className="flex items-center justify-between gap-4">
-                                <div>
-                                    <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.12em] uppercase">Catalog readiness</p>
-                                    <p className="mt-2 text-2xl font-semibold tracking-[-0.03em]">{readiness}%</p>
-                                </div>
-                                <span className="text-muted-foreground text-xs">
-                                    {filteredStats.programs - filteredStats.active_programs} to review
-                                </span>
-                            </div>
-                            <div
-                                className="bg-muted mt-3 h-1.5 overflow-hidden rounded-full"
-                                role="progressbar"
-                                aria-label="Catalog readiness"
-                                aria-valuemin={0}
-                                aria-valuemax={100}
-                                aria-valuenow={readiness}
-                            >
-                                <div
-                                    className="h-full rounded-full bg-emerald-500 transition-[width] duration-500 ease-out"
-                                    style={{ width: `${readiness}%` }}
-                                />
-                            </div>
-                        </div>
-                    </div>
+                <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Catalog overview">
+                    <WorkspaceMetric
+                        icon={GraduationCap}
+                        label="Programs in view"
+                        value={filteredStats.programs}
+                        detail="Filtered curriculum pathways"
+                    />
+                    <WorkspaceMetric
+                        icon={CheckCircle2}
+                        label="Active programs"
+                        value={filteredStats.active_programs}
+                        detail="Available for curriculum planning"
+                    />
+                    <WorkspaceMetric
+                        icon={BookOpen}
+                        label="Subjects mapped"
+                        value={filteredStats.subjects}
+                        detail={`${filteredStats.subjects_with_requisites} with prerequisites`}
+                    />
+                    <WorkspaceMetric
+                        icon={Layers3}
+                        label="Active share"
+                        value={`${readiness}%`}
+                        detail="Active status does not imply curriculum completeness"
+                    />
                 </section>
 
-                <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_290px]">
+                <div className="grid items-start gap-6">
                     <section
                         className="border-border/80 bg-card min-w-0 overflow-hidden rounded-2xl border shadow-sm"
                         aria-labelledby="program-catalog-heading"
@@ -1049,7 +1020,7 @@ export default function CurriculumPrograms({
                                         aria-label="Filter by program status"
                                     >
                                         {(["all", "active", "inactive"] as StatusFilter[]).map((status) => {
-                                            const label = status === "all" ? "All" : status === "active" ? "Active" : "Needs review";
+                                            const label = status === "all" ? "All" : status === "active" ? "Active" : "Inactive";
                                             const count =
                                                 status === "all"
                                                     ? programs.length
@@ -1253,7 +1224,7 @@ export default function CurriculumPrograms({
                         </div>
                     </section>
 
-                    <aside className="grid gap-4">
+                    <aside className="grid gap-4 lg:grid-cols-2">
                         <section
                             className="border-border/80 bg-card overflow-hidden rounded-2xl border shadow-sm"
                             aria-labelledby="curriculum-versions-heading"
@@ -1335,7 +1306,7 @@ export default function CurriculumPrograms({
                         </section>
                     </aside>
                 </div>
-            </div>
+            </Workspace>
 
             <Dialog
                 open={isCreateOpen}
@@ -1344,7 +1315,7 @@ export default function CurriculumPrograms({
                     if (!open) resetCreateDialog();
                 }}
             >
-                <DialogContent className="border-border/80 bg-card/95 max-h-[min(880px,calc(100vh-2rem))] overflow-y-auto rounded-[26px] p-0 shadow-2xl backdrop-blur-2xl sm:max-w-3xl">
+                <DialogContent className="border-border/80 bg-card/95 max-h-[min(880px,calc(100vh-2rem))] overflow-y-auto rounded-[26px] p-0 shadow-2xl backdrop-blur-2xl motion-reduce:animate-none sm:max-w-3xl">
                     <div className="border-border/70 bg-muted/25 border-b px-6 py-6 sm:px-8">
                         <DialogHeader className="gap-3 pr-8 text-left">
                             <div className="flex size-11 items-center justify-center rounded-2xl bg-sky-500/10 text-sky-700 dark:text-sky-300">
@@ -1379,379 +1350,388 @@ export default function CurriculumPrograms({
                             </TabsList>
 
                             <TabsContent value="identity" className="grid gap-5 pt-4">
-                                <div className="rounded-2xl border border-sky-500/15 bg-sky-500/[0.04] p-4">
-                                    <div className="flex items-start gap-3">
-                                        <Sparkles className="mt-0.5 size-4 shrink-0 text-sky-600 dark:text-sky-300" />
-                                        <div>
-                                            <p className="text-sm font-semibold">Choose the right starting point</p>
-                                            <p className="text-muted-foreground mt-1 text-xs leading-5">
-                                                A framework keeps program metadata consistent. Use a catalog starter when one is available, or
-                                                continue with a custom pathway.
-                                            </p>
+                                <FormSection title="Program identity" description="Choose a framework, then define the program staff will recognize.">
+                                    <div className="rounded-2xl border border-sky-500/15 bg-sky-500/[0.04] p-4">
+                                        <div className="flex items-start gap-3">
+                                            <Sparkles className="mt-0.5 size-4 shrink-0 text-sky-600 dark:text-sky-300" />
+                                            <div>
+                                                <p className="text-sm font-semibold">Choose the right starting point</p>
+                                                <p className="text-muted-foreground mt-1 text-xs leading-5">
+                                                    A framework keeps program metadata consistent. Use a catalog starter when one is available, or
+                                                    continue with a custom pathway.
+                                                </p>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
 
-                                <div className="grid gap-4 md:grid-cols-2">
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="create-capability">School capability</Label>
-                                        <Select value={createForm.data.capability_id} onValueChange={selectCapability}>
-                                            <SelectTrigger id="create-capability" className="rounded-xl">
-                                                <SelectValue placeholder="Choose a supported pathway" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {capabilities.map((capability) => (
-                                                    <SelectItem key={capability.id} value={capability.id}>
-                                                        {capability.school_level_label} · {capability.framework_label}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                        {!capabilities.length && (
-                                            <p className="text-muted-foreground text-xs">
-                                                No framework is configured yet. You can still create a custom pathway.
-                                            </p>
-                                        )}
-                                        <FieldError message={createForm.errors.capability_id} />
-                                    </div>
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="create-template">
-                                            Catalog starter <span className="text-muted-foreground font-normal">(optional)</span>
-                                        </Label>
-                                        <Select onValueChange={applyTemplate} disabled={!selectedCapability || compatibleTemplates.length === 0}>
-                                            <SelectTrigger id="create-template" className="rounded-xl">
-                                                <SelectValue placeholder={selectedCapability ? "Choose a template" : "Choose a capability first"} />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {compatibleTemplates.map((template) => (
-                                                    <SelectItem key={template.code} value={template.code}>
-                                                        {template.label}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                </div>
-
-                                {selectedCapability && (
-                                    <div className="flex flex-wrap items-center gap-2 text-xs">
-                                        <Badge variant="secondary" className="rounded-full">
-                                            {selectedCapability.school_level_label}
-                                        </Badge>
-                                        <Badge variant="outline" className="rounded-full">
-                                            {selectedCapability.framework_label}
-                                        </Badge>
-                                        {school && <span className="text-muted-foreground">Adding to {school.name}</span>}
-                                    </div>
-                                )}
-
-                                <div className="grid gap-4 md:grid-cols-[0.65fr_1.35fr]">
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="create-code">Program code</Label>
-                                        <Input
-                                            id="create-code"
-                                            className="rounded-xl uppercase"
-                                            placeholder="e.g. BSIT"
-                                            value={createForm.data.code}
-                                            onChange={(event) => createForm.setData("code", event.target.value.toUpperCase())}
-                                        />
-                                        <FieldError message={createForm.errors.code} />
-                                    </div>
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="create-title">Program title</Label>
-                                        <Input
-                                            id="create-title"
-                                            className="rounded-xl"
-                                            placeholder="e.g. Bachelor of Science in Information Technology"
-                                            value={createForm.data.title}
-                                            onChange={(event) => createForm.setData("title", event.target.value)}
-                                        />
-                                        <FieldError message={createForm.errors.title} />
-                                    </div>
-                                </div>
-
-                                {authority_codes.authorities.length > 0 && (
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="create-authority-code">
-                                            Official authority code{" "}
-                                            <span className="text-muted-foreground font-normal">
-                                                (optional{authority_codes.is_ched_accredited ? " · CHED-accredited" : ""})
-                                            </span>
-                                        </Label>
-                                        <AuthorityCodePicker
-                                            id="create-authority-code"
-                                            value={createForm.data.industry_course_code_id}
-                                            initialLabel={createForm.data.industry_course_code_label}
-                                            onSelect={(option: AuthorityCodeOption | null) => {
-                                                createForm.setData("industry_course_code_id", option ? String(option.id) : "");
-                                                createForm.setData("industry_course_code_label", option ? option.label : "");
-                                                if (option && !createForm.data.title.trim()) {
-                                                    createForm.setData("title", option.title);
-                                                }
-                                            }}
-                                            error={createForm.errors.industry_course_code_id}
-                                        />
-                                        <p className="text-muted-foreground text-xs">
-                                            Links this program to an imported regulator list. Picking a code suggests the official title when yours is
-                                            empty.
-                                        </p>
-                                        <FieldError message={createForm.errors.industry_course_code_id} />
-                                    </div>
-                                )}
-
-                                <div className="grid gap-4 md:grid-cols-2">
-                                    {createForm.data.curriculum_kind === "program" && (
+                                    <div className="grid gap-4 md:grid-cols-2">
                                         <div className="grid gap-2">
-                                            <Label htmlFor="create-department">Department</Label>
-                                            <Select
-                                                value={createForm.data.department_id}
-                                                onValueChange={(value) => createForm.setData("department_id", value)}
-                                            >
-                                                <SelectTrigger id="create-department" className="rounded-xl">
-                                                    <SelectValue placeholder="Select department" />
+                                            <Label htmlFor="create-capability">School capability</Label>
+                                            <Select value={createForm.data.capability_id} onValueChange={selectCapability}>
+                                                <SelectTrigger id="create-capability" className="rounded-xl">
+                                                    <SelectValue placeholder="Choose a supported pathway" />
                                                 </SelectTrigger>
                                                 <SelectContent>
-                                                    {departments.map((department) => (
-                                                        <SelectItem key={department.id} value={String(department.id)}>
-                                                            {department.code} · {department.name}
+                                                    {capabilities.map((capability) => (
+                                                        <SelectItem key={capability.id} value={capability.id}>
+                                                            {capability.school_level_label} · {capability.framework_label}
                                                         </SelectItem>
                                                     ))}
                                                 </SelectContent>
                                             </Select>
-                                            <FieldError message={createForm.errors.department_id} />
+                                            {!capabilities.length && (
+                                                <p className="text-muted-foreground text-xs">
+                                                    No framework is configured yet. You can still create a custom pathway.
+                                                </p>
+                                            )}
+                                            <FieldError message={createForm.errors.capability_id} />
                                         </div>
-                                    )}
-                                    {createForm.data.curriculum_kind === "program" && (
                                         <div className="grid gap-2">
-                                            <Label htmlFor="create-course-type">Program type</Label>
-                                            <Select
-                                                value={createForm.data.course_type_id}
-                                                onValueChange={(value) => createForm.setData("course_type_id", value)}
-                                            >
-                                                <SelectTrigger id="create-course-type" className="rounded-xl">
-                                                    <SelectValue placeholder="Select program type" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {course_types.map((type) => (
-                                                        <SelectItem key={type.id} value={String(type.id)}>
-                                                            {type.name}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                            <FieldError message={createForm.errors.course_type_id} />
-                                        </div>
-                                    )}
-                                </div>
-
-                                {(createForm.data.curriculum_kind === "grade_pathway" ||
-                                    createForm.data.curriculum_kind === "senior_high_pathway") && (
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="create-stage">Grade level / stage</Label>
-                                        <Input
-                                            id="create-stage"
-                                            className="rounded-xl"
-                                            placeholder="e.g. Grade 1, Grade 7, Grade 11"
-                                            value={createForm.data.curriculum_stage}
-                                            onChange={(event) => createForm.setData("curriculum_stage", event.target.value)}
-                                        />
-                                        <FieldError message={createForm.errors.curriculum_stage} />
-                                    </div>
-                                )}
-
-                                <div className="grid gap-4 md:grid-cols-2">
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="create-year">Curriculum year</Label>
-                                        <Input
-                                            id="create-year"
-                                            className="rounded-xl"
-                                            placeholder="e.g. 2024-2025"
-                                            value={createForm.data.curriculum_year}
-                                            onChange={(event) => createForm.setData("curriculum_year", event.target.value)}
-                                        />
-                                        <FieldError message={createForm.errors.curriculum_year} />
-                                    </div>
-                                    {createForm.data.curriculum_kind === "program" && (
-                                        <div className="grid gap-2">
-                                            <Label htmlFor="create-misc">
-                                                Miscellaneous fee <span className="text-muted-foreground font-normal">(₱)</span>
+                                            <Label htmlFor="create-template">
+                                                Catalog starter <span className="text-muted-foreground font-normal">(optional)</span>
                                             </Label>
-                                            <Input
-                                                id="create-misc"
-                                                type="number"
-                                                min="0"
-                                                className="rounded-xl"
-                                                placeholder="e.g. 3500"
-                                                value={createForm.data.miscelaneous}
-                                                onChange={(event) => createForm.setData("miscelaneous", event.target.value)}
-                                            />
-                                            <FieldError message={createForm.errors.miscelaneous} />
+                                            <Select onValueChange={applyTemplate} disabled={!selectedCapability || compatibleTemplates.length === 0}>
+                                                <SelectTrigger id="create-template" className="rounded-xl">
+                                                    <SelectValue
+                                                        placeholder={selectedCapability ? "Choose a template" : "Choose a capability first"}
+                                                    />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {compatibleTemplates.map((template) => (
+                                                        <SelectItem key={template.code} value={template.code}>
+                                                            {template.label}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                    </div>
+
+                                    {selectedCapability && (
+                                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                                            <Badge variant="secondary" className="rounded-full">
+                                                {selectedCapability.school_level_label}
+                                            </Badge>
+                                            <Badge variant="outline" className="rounded-full">
+                                                {selectedCapability.framework_label}
+                                            </Badge>
+                                            {school && <span className="text-muted-foreground">Adding to {school.name}</span>}
                                         </div>
                                     )}
-                                </div>
+
+                                    <div className="grid gap-4 md:grid-cols-[0.65fr_1.35fr]">
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="create-code">Program code</Label>
+                                            <Input
+                                                id="create-code"
+                                                className="rounded-xl uppercase"
+                                                placeholder="e.g. BSIT"
+                                                value={createForm.data.code}
+                                                onChange={(event) => createForm.setData("code", event.target.value.toUpperCase())}
+                                            />
+                                            <FieldError message={createForm.errors.code} />
+                                        </div>
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="create-title">Program title</Label>
+                                            <Input
+                                                id="create-title"
+                                                className="rounded-xl"
+                                                placeholder="e.g. Bachelor of Science in Information Technology"
+                                                value={createForm.data.title}
+                                                onChange={(event) => createForm.setData("title", event.target.value)}
+                                            />
+                                            <FieldError message={createForm.errors.title} />
+                                        </div>
+                                    </div>
+
+                                    {authority_codes.authorities.length > 0 && (
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="create-authority-code">
+                                                Official authority code{" "}
+                                                <span className="text-muted-foreground font-normal">
+                                                    (optional{authority_codes.is_ched_accredited ? " · CHED-accredited" : ""})
+                                                </span>
+                                            </Label>
+                                            <AuthorityCodePicker
+                                                id="create-authority-code"
+                                                value={createForm.data.industry_course_code_id}
+                                                initialLabel={createForm.data.industry_course_code_label}
+                                                onSelect={(option: AuthorityCodeOption | null) => {
+                                                    createForm.setData("industry_course_code_id", option ? String(option.id) : "");
+                                                    createForm.setData("industry_course_code_label", option ? option.label : "");
+                                                    if (option && !createForm.data.title.trim()) {
+                                                        createForm.setData("title", option.title);
+                                                    }
+                                                }}
+                                                error={createForm.errors.industry_course_code_id}
+                                            />
+                                            <p className="text-muted-foreground text-xs">
+                                                Links this program to an imported regulator list. Picking a code suggests the official title when
+                                                yours is empty.
+                                            </p>
+                                            <FieldError message={createForm.errors.industry_course_code_id} />
+                                        </div>
+                                    )}
+
+                                    <div className="grid gap-4 md:grid-cols-2">
+                                        {createForm.data.curriculum_kind === "program" && (
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="create-department">Department</Label>
+                                                <Select
+                                                    value={createForm.data.department_id}
+                                                    onValueChange={(value) => createForm.setData("department_id", value)}
+                                                >
+                                                    <SelectTrigger id="create-department" className="rounded-xl">
+                                                        <SelectValue placeholder="Select department" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {departments.map((department) => (
+                                                            <SelectItem key={department.id} value={String(department.id)}>
+                                                                {department.code} · {department.name}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                <FieldError message={createForm.errors.department_id} />
+                                            </div>
+                                        )}
+                                        {createForm.data.curriculum_kind === "program" && (
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="create-course-type">Program type</Label>
+                                                <Select
+                                                    value={createForm.data.course_type_id}
+                                                    onValueChange={(value) => createForm.setData("course_type_id", value)}
+                                                >
+                                                    <SelectTrigger id="create-course-type" className="rounded-xl">
+                                                        <SelectValue placeholder="Select program type" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {course_types.map((type) => (
+                                                            <SelectItem key={type.id} value={String(type.id)}>
+                                                                {type.name}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                <FieldError message={createForm.errors.course_type_id} />
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {(createForm.data.curriculum_kind === "grade_pathway" ||
+                                        createForm.data.curriculum_kind === "senior_high_pathway") && (
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="create-stage">Grade level / stage</Label>
+                                            <Input
+                                                id="create-stage"
+                                                className="rounded-xl"
+                                                placeholder="e.g. Grade 1, Grade 7, Grade 11"
+                                                value={createForm.data.curriculum_stage}
+                                                onChange={(event) => createForm.setData("curriculum_stage", event.target.value)}
+                                            />
+                                            <FieldError message={createForm.errors.curriculum_stage} />
+                                        </div>
+                                    )}
+
+                                    <div className="grid gap-4 md:grid-cols-2">
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="create-year">Curriculum year</Label>
+                                            <Input
+                                                id="create-year"
+                                                className="rounded-xl"
+                                                placeholder="e.g. 2024-2025"
+                                                value={createForm.data.curriculum_year}
+                                                onChange={(event) => createForm.setData("curriculum_year", event.target.value)}
+                                            />
+                                            <FieldError message={createForm.errors.curriculum_year} />
+                                        </div>
+                                        {createForm.data.curriculum_kind === "program" && (
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="create-misc">
+                                                    Miscellaneous fee <span className="text-muted-foreground font-normal">(₱)</span>
+                                                </Label>
+                                                <Input
+                                                    id="create-misc"
+                                                    type="number"
+                                                    min="0"
+                                                    className="rounded-xl"
+                                                    placeholder="e.g. 3500"
+                                                    value={createForm.data.miscelaneous}
+                                                    onChange={(event) => createForm.setData("miscelaneous", event.target.value)}
+                                                />
+                                                <FieldError message={createForm.errors.miscelaneous} />
+                                            </div>
+                                        )}
+                                    </div>
+                                </FormSection>
                             </TabsContent>
 
                             <TabsContent value="details" className="grid gap-5 pt-4">
-                                {createForm.data.curriculum_kind === "tesda_qualification" && (
-                                    <div className="grid gap-4 rounded-2xl border border-amber-500/20 bg-amber-500/[0.04] p-4 md:grid-cols-2">
-                                        <div className="grid gap-2">
-                                            <Label htmlFor="create-tesda-type">TESDA program type</Label>
-                                            <Select
-                                                value={createForm.data.tesda_program_type}
-                                                onValueChange={(value) => createForm.setData("tesda_program_type", value)}
-                                            >
-                                                <SelectTrigger id="create-tesda-type" className="rounded-xl">
-                                                    <SelectValue placeholder="Select program type" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="national_certificate">National Certificate (NC)</SelectItem>
-                                                    <SelectItem value="diploma">Institutional Diploma</SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                            <FieldError message={createForm.errors.tesda_program_type} />
+                                <FormSection
+                                    title="Standards & operational details"
+                                    description="Complete applicable qualification details, rates, and internal notes."
+                                >
+                                    {createForm.data.curriculum_kind === "tesda_qualification" && (
+                                        <div className="grid gap-4 rounded-2xl border border-amber-500/20 bg-amber-500/[0.04] p-4 md:grid-cols-2">
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="create-tesda-type">TESDA program type</Label>
+                                                <Select
+                                                    value={createForm.data.tesda_program_type}
+                                                    onValueChange={(value) => createForm.setData("tesda_program_type", value)}
+                                                >
+                                                    <SelectTrigger id="create-tesda-type" className="rounded-xl">
+                                                        <SelectValue placeholder="Select program type" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="national_certificate">National Certificate (NC)</SelectItem>
+                                                        <SelectItem value="diploma">Institutional Diploma</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                                <FieldError message={createForm.errors.tesda_program_type} />
+                                            </div>
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="create-qualification">Qualification level</Label>
+                                                <Input
+                                                    id="create-qualification"
+                                                    className="rounded-xl"
+                                                    placeholder="e.g. NC II or Diploma"
+                                                    value={createForm.data.qualification_level}
+                                                    onChange={(event) => createForm.setData("qualification_level", event.target.value)}
+                                                />
+                                                <FieldError message={createForm.errors.qualification_level} />
+                                            </div>
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="create-hours">Total program hours</Label>
+                                                <Input
+                                                    id="create-hours"
+                                                    type="number"
+                                                    min="1"
+                                                    className="rounded-xl"
+                                                    value={createForm.data.duration_hours}
+                                                    onChange={(event) => createForm.setData("duration_hours", event.target.value)}
+                                                />
+                                                <FieldError message={createForm.errors.duration_hours} />
+                                            </div>
+                                            {createForm.data.tesda_program_type === "diploma" && (
+                                                <>
+                                                    <div className="grid gap-2">
+                                                        <Label htmlFor="create-duration-years">
+                                                            Typical duration <span className="text-muted-foreground font-normal">(years)</span>
+                                                        </Label>
+                                                        <Input
+                                                            id="create-duration-years"
+                                                            type="number"
+                                                            min="0.5"
+                                                            max="10"
+                                                            step="0.5"
+                                                            className="rounded-xl"
+                                                            placeholder="e.g. 1.5"
+                                                            value={createForm.data.duration_years}
+                                                            onChange={(event) => createForm.setData("duration_years", event.target.value)}
+                                                        />
+                                                        <FieldError message={createForm.errors.duration_years} />
+                                                    </div>
+                                                    <div className="grid gap-2">
+                                                        <Label htmlFor="create-internship-hours">OJT / internship hours</Label>
+                                                        <Input
+                                                            id="create-internship-hours"
+                                                            type="number"
+                                                            min="0"
+                                                            max="65535"
+                                                            className="rounded-xl"
+                                                            placeholder="e.g. 600"
+                                                            value={createForm.data.internship_hours}
+                                                            onChange={(event) => createForm.setData("internship_hours", event.target.value)}
+                                                        />
+                                                        <FieldError message={createForm.errors.internship_hours} />
+                                                    </div>
+                                                    <div className="grid gap-2 md:col-span-2">
+                                                        <Label htmlFor="create-bundled">Bundled qualifications</Label>
+                                                        <Input
+                                                            id="create-bundled"
+                                                            className="rounded-xl"
+                                                            placeholder="Separate each qualification with a comma"
+                                                            value={createForm.data.bundled_qualifications}
+                                                            onChange={(event) => createForm.setData("bundled_qualifications", event.target.value)}
+                                                        />
+                                                        <FieldError message={createForm.errors.bundled_qualifications} />
+                                                    </div>
+                                                    <div className="grid gap-2 md:col-span-2">
+                                                        <Label htmlFor="create-advanced">Advanced topics and internship context</Label>
+                                                        <Textarea
+                                                            id="create-advanced"
+                                                            className="min-h-20 resize-none rounded-xl"
+                                                            placeholder="Describe the advanced topics, operations, or internship context."
+                                                            value={createForm.data.advanced_topics}
+                                                            onChange={(event) => createForm.setData("advanced_topics", event.target.value)}
+                                                        />
+                                                        <FieldError message={createForm.errors.advanced_topics} />
+                                                    </div>
+                                                </>
+                                            )}
                                         </div>
-                                        <div className="grid gap-2">
-                                            <Label htmlFor="create-qualification">Qualification level</Label>
-                                            <Input
-                                                id="create-qualification"
-                                                className="rounded-xl"
-                                                placeholder="e.g. NC II or Diploma"
-                                                value={createForm.data.qualification_level}
-                                                onChange={(event) => createForm.setData("qualification_level", event.target.value)}
-                                            />
-                                            <FieldError message={createForm.errors.qualification_level} />
-                                        </div>
-                                        <div className="grid gap-2">
-                                            <Label htmlFor="create-hours">Total program hours</Label>
-                                            <Input
-                                                id="create-hours"
-                                                type="number"
-                                                min="1"
-                                                className="rounded-xl"
-                                                value={createForm.data.duration_hours}
-                                                onChange={(event) => createForm.setData("duration_hours", event.target.value)}
-                                            />
-                                            <FieldError message={createForm.errors.duration_hours} />
-                                        </div>
-                                        {createForm.data.tesda_program_type === "diploma" && (
-                                            <>
-                                                <div className="grid gap-2">
-                                                    <Label htmlFor="create-duration-years">
-                                                        Typical duration <span className="text-muted-foreground font-normal">(years)</span>
-                                                    </Label>
-                                                    <Input
-                                                        id="create-duration-years"
-                                                        type="number"
-                                                        min="0.5"
-                                                        max="10"
-                                                        step="0.5"
-                                                        className="rounded-xl"
-                                                        placeholder="e.g. 1.5"
-                                                        value={createForm.data.duration_years}
-                                                        onChange={(event) => createForm.setData("duration_years", event.target.value)}
-                                                    />
-                                                    <FieldError message={createForm.errors.duration_years} />
-                                                </div>
-                                                <div className="grid gap-2">
-                                                    <Label htmlFor="create-internship-hours">OJT / internship hours</Label>
-                                                    <Input
-                                                        id="create-internship-hours"
-                                                        type="number"
-                                                        min="0"
-                                                        max="65535"
-                                                        className="rounded-xl"
-                                                        placeholder="e.g. 600"
-                                                        value={createForm.data.internship_hours}
-                                                        onChange={(event) => createForm.setData("internship_hours", event.target.value)}
-                                                    />
-                                                    <FieldError message={createForm.errors.internship_hours} />
-                                                </div>
-                                                <div className="grid gap-2 md:col-span-2">
-                                                    <Label htmlFor="create-bundled">Bundled qualifications</Label>
-                                                    <Input
-                                                        id="create-bundled"
-                                                        className="rounded-xl"
-                                                        placeholder="Separate each qualification with a comma"
-                                                        value={createForm.data.bundled_qualifications}
-                                                        onChange={(event) => createForm.setData("bundled_qualifications", event.target.value)}
-                                                    />
-                                                    <FieldError message={createForm.errors.bundled_qualifications} />
-                                                </div>
-                                                <div className="grid gap-2 md:col-span-2">
-                                                    <Label htmlFor="create-advanced">Advanced topics and internship context</Label>
-                                                    <Textarea
-                                                        id="create-advanced"
-                                                        className="min-h-20 resize-none rounded-xl"
-                                                        placeholder="Describe the advanced topics, operations, or internship context."
-                                                        value={createForm.data.advanced_topics}
-                                                        onChange={(event) => createForm.setData("advanced_topics", event.target.value)}
-                                                    />
-                                                    <FieldError message={createForm.errors.advanced_topics} />
-                                                </div>
-                                            </>
-                                        )}
-                                    </div>
-                                )}
+                                    )}
 
-                                {createForm.data.curriculum_kind === "program" && (
-                                    <div className="border-border/70 bg-muted/20 grid gap-4 rounded-2xl border p-4 md:grid-cols-2">
-                                        <div className="grid gap-2">
-                                            <Label htmlFor="create-lec">Lecture rate / unit</Label>
-                                            <Input
-                                                id="create-lec"
-                                                type="number"
-                                                min="0"
-                                                className="rounded-xl"
-                                                value={createForm.data.lec_per_unit}
-                                                onChange={(event) => createForm.setData("lec_per_unit", event.target.value)}
-                                            />
-                                            <FieldError message={createForm.errors.lec_per_unit} />
+                                    {createForm.data.curriculum_kind === "program" && (
+                                        <div className="border-border/70 bg-muted/20 grid gap-4 rounded-2xl border p-4 md:grid-cols-2">
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="create-lec">Lecture rate / unit</Label>
+                                                <Input
+                                                    id="create-lec"
+                                                    type="number"
+                                                    min="0"
+                                                    className="rounded-xl"
+                                                    value={createForm.data.lec_per_unit}
+                                                    onChange={(event) => createForm.setData("lec_per_unit", event.target.value)}
+                                                />
+                                                <FieldError message={createForm.errors.lec_per_unit} />
+                                            </div>
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="create-lab">Lab rate / unit</Label>
+                                                <Input
+                                                    id="create-lab"
+                                                    type="number"
+                                                    min="0"
+                                                    className="rounded-xl"
+                                                    value={createForm.data.lab_per_unit}
+                                                    onChange={(event) => createForm.setData("lab_per_unit", event.target.value)}
+                                                />
+                                                <FieldError message={createForm.errors.lab_per_unit} />
+                                            </div>
                                         </div>
-                                        <div className="grid gap-2">
-                                            <Label htmlFor="create-lab">Lab rate / unit</Label>
-                                            <Input
-                                                id="create-lab"
-                                                type="number"
-                                                min="0"
-                                                className="rounded-xl"
-                                                value={createForm.data.lab_per_unit}
-                                                onChange={(event) => createForm.setData("lab_per_unit", event.target.value)}
-                                            />
-                                            <FieldError message={createForm.errors.lab_per_unit} />
-                                        </div>
-                                    </div>
-                                )}
+                                    )}
 
-                                <div className="grid gap-4 md:grid-cols-2">
-                                    <div className="grid gap-2 md:col-span-2">
-                                        <Label htmlFor="create-description">Description</Label>
-                                        <Textarea
-                                            id="create-description"
-                                            className="min-h-24 resize-none rounded-xl"
-                                            placeholder="Give staff a concise description of this program and its intended outcome."
-                                            value={createForm.data.description}
-                                            onChange={(event) => createForm.setData("description", event.target.value)}
-                                        />
-                                        <FieldError message={createForm.errors.description} />
+                                    <div className="grid gap-4 md:grid-cols-2">
+                                        <div className="grid gap-2 md:col-span-2">
+                                            <Label htmlFor="create-description">Description</Label>
+                                            <Textarea
+                                                id="create-description"
+                                                className="min-h-24 resize-none rounded-xl"
+                                                placeholder="Give staff a concise description of this program and its intended outcome."
+                                                value={createForm.data.description}
+                                                onChange={(event) => createForm.setData("description", event.target.value)}
+                                            />
+                                            <FieldError message={createForm.errors.description} />
+                                        </div>
+                                        <div className="grid gap-2 md:col-span-2">
+                                            <Label htmlFor="create-remarks">
+                                                Internal remarks <span className="text-muted-foreground font-normal">(optional)</span>
+                                            </Label>
+                                            <Textarea
+                                                id="create-remarks"
+                                                className="min-h-20 resize-none rounded-xl"
+                                                placeholder="Add internal notes for curriculum administrators."
+                                                value={createForm.data.remarks}
+                                                onChange={(event) => createForm.setData("remarks", event.target.value)}
+                                            />
+                                            <FieldError message={createForm.errors.remarks} />
+                                        </div>
                                     </div>
-                                    <div className="grid gap-2 md:col-span-2">
-                                        <Label htmlFor="create-remarks">
-                                            Internal remarks <span className="text-muted-foreground font-normal">(optional)</span>
-                                        </Label>
-                                        <Textarea
-                                            id="create-remarks"
-                                            className="min-h-20 resize-none rounded-xl"
-                                            placeholder="Add internal notes for curriculum administrators."
-                                            value={createForm.data.remarks}
-                                            onChange={(event) => createForm.setData("remarks", event.target.value)}
-                                        />
-                                        <FieldError message={createForm.errors.remarks} />
-                                    </div>
-                                </div>
+                                </FormSection>
                             </TabsContent>
                         </Tabs>
 
-                        <DialogFooter className="border-border/70 border-t pt-5 sm:justify-between">
+                        <DialogFooter className="bg-card sticky bottom-0 z-10 -mx-6 border-t px-6 py-4 sm:-mx-8 sm:justify-between sm:px-8">
                             <div className="text-muted-foreground flex items-center gap-2 text-xs">
                                 <span className="flex size-5 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-300">
                                     <Check className="size-3" />
@@ -1788,7 +1768,7 @@ export default function CurriculumPrograms({
                     }
                 }}
             >
-                <DialogContent className="border-border/80 bg-card/95 max-h-[min(720px,calc(100vh-2rem))] overflow-y-auto rounded-[26px] p-0 shadow-2xl backdrop-blur-2xl sm:max-w-2xl">
+                <DialogContent className="border-border/80 bg-card/95 max-h-[min(720px,calc(100vh-2rem))] overflow-y-auto rounded-[26px] p-0 shadow-2xl backdrop-blur-2xl motion-reduce:animate-none sm:max-w-2xl">
                     <div className="border-border/70 bg-muted/25 border-b px-6 py-6 sm:px-8">
                         <DialogHeader className="gap-3 pr-8 text-left">
                             <div className="bg-primary/10 text-primary flex size-11 items-center justify-center rounded-2xl">
@@ -1916,7 +1896,7 @@ export default function CurriculumPrograms({
                             </div>
                         )}
 
-                        <DialogFooter className="border-border/70 border-t pt-5 sm:justify-between">
+                        <DialogFooter className="bg-card sticky bottom-0 z-10 -mx-6 border-t px-6 py-4 sm:-mx-8 sm:justify-between sm:px-8">
                             <Button type="button" variant="ghost" className="rounded-full" onClick={() => setEditingProgram(null)}>
                                 Cancel
                             </Button>

@@ -14,6 +14,7 @@ use App\Filament\Resources\StudentEnrollments\Tables\StudentEnrollmentsTable;
 use App\Models\StudentEnrollment;
 use App\Services\EnrollmentPipelineService;
 use App\Services\GeneralSettingsService;
+use App\Support\Database\SqlDialect;
 use Filament\Actions\Action;
 use Filament\GlobalSearch\GlobalSearchResult;
 use Filament\Resources\Resource;
@@ -71,21 +72,14 @@ final class StudentEnrollmentResource extends Resource
                         $subQuery
                             ->select(DB::raw(1))
                             ->from('students')
-                            ->whereRaw(
-                                'CAST(student_enrollment.student_id AS BIGINT) = students.id'
-                            )
+                            ->whereRaw(sprintf(
+                                '%s = students.id',
+                                SqlDialect::integerCast($subQuery, 'student_enrollment.student_id'),
+                            ))
                             ->where(function ($nameQuery) use ($search): void {
                                 $nameQuery
-                                    ->where(
-                                        'students.first_name',
-                                        'ilike',
-                                        "%{$search}%"
-                                    )
-                                    ->orWhere(
-                                        'students.last_name',
-                                        'ilike',
-                                        "%{$search}%"
-                                    );
+                                    ->whereLike('students.first_name', "%{$search}%")
+                                    ->orWhereLike('students.last_name', "%{$search}%");
                             })
                             ->whereNull('students.deleted_at');
                     })
@@ -93,21 +87,14 @@ final class StudentEnrollmentResource extends Resource
                         $subQuery
                             ->select(DB::raw(1))
                             ->from('courses')
-                            ->whereRaw(
-                                'CAST(student_enrollment.course_id AS BIGINT) = courses.id'
-                            )
+                            ->whereRaw(sprintf(
+                                '%s = courses.id',
+                                SqlDialect::integerCast($subQuery, 'student_enrollment.course_id'),
+                            ))
                             ->where(function ($courseQuery) use ($search): void {
                                 $courseQuery
-                                    ->where(
-                                        'courses.code',
-                                        'ilike',
-                                        "%{$search}%"
-                                    )
-                                    ->orWhere(
-                                        'courses.title',
-                                        'ilike',
-                                        "%{$search}%"
-                                    );
+                                    ->whereLike('courses.code', "%{$search}%")
+                                    ->orWhereLike('courses.title', "%{$search}%");
                             });
                     });
             })

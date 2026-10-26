@@ -13,6 +13,7 @@ use App\Filament\Widgets\StudentEnrollmentStatsOverview;
 use App\Filament\Widgets\StudentEnrollmentTrendsChart;
 use App\Models\StudentEnrollment;
 use App\Services\EnrollmentPipelineService;
+use App\Support\Database\SqlDialect;
 use Filament\Actions\CreateAction;
 use Filament\Pages\Concerns\ExposesTableToWidgets;
 use Filament\Resources\Pages\ListRecords;
@@ -36,6 +37,13 @@ final class ListStudentEnrollments extends ListRecords
         $labels = $pipeline->getStatusLabels();
         $steps = $pipeline->getSteps();
 
+        $studentIdCast = SqlDialect::integerCast(StudentEnrollment::query(), 'student_enrollment.student_id');
+        $courseExists = static fn (string $code): string => sprintf(
+            "EXISTS (SELECT * FROM students WHERE %s = students.id AND EXISTS (SELECT * FROM courses WHERE students.course_id = courses.id AND code LIKE '%s%%'))",
+            $studentIdCast,
+            $code,
+        );
+
         $tabs = [
             'all' => Tab::make('All Enrollments')
                 ->icon('heroicon-m-academic-cap')
@@ -46,37 +54,37 @@ final class ListStudentEnrollments extends ListRecords
                 ->icon('heroicon-m-computer-desktop')
                 ->badge(fn () => StudentEnrollment::currentAcademicPeriod()
                     ->withTrashed()
-                    ->whereRaw("EXISTS (SELECT * FROM students WHERE CAST(student_enrollment.student_id AS BIGINT) = students.id AND EXISTS (SELECT * FROM courses WHERE students.course_id = courses.id AND code LIKE 'BSIT%'))")
+                    ->whereRaw($courseExists('BSIT'))
                     ->count())
                 ->badgeColor('info')
                 ->modifyQueryUsing(fn (Builder $query) => $query
                     ->currentAcademicPeriod()
                     ->withTrashed()
-                    ->whereRaw("EXISTS (SELECT * FROM students WHERE CAST(student_enrollment.student_id AS BIGINT) = students.id AND EXISTS (SELECT * FROM courses WHERE students.course_id = courses.id AND code LIKE 'BSIT%'))")
+                    ->whereRaw($courseExists('BSIT'))
                 ),
             'bshm' => Tab::make('BSHM')
                 ->icon('heroicon-m-building-storefront')
                 ->badge(fn () => StudentEnrollment::currentAcademicPeriod()
                     ->withTrashed()
-                    ->whereRaw("EXISTS (SELECT * FROM students WHERE CAST(student_enrollment.student_id AS BIGINT) = students.id AND EXISTS (SELECT * FROM courses WHERE students.course_id = courses.id AND code LIKE 'BSHM%'))")
+                    ->whereRaw($courseExists('BSHM'))
                     ->count())
                 ->badgeColor('success')
                 ->modifyQueryUsing(fn (Builder $query) => $query
                     ->currentAcademicPeriod()
                     ->withTrashed()
-                    ->whereRaw("EXISTS (SELECT * FROM students WHERE CAST(student_enrollment.student_id AS BIGINT) = students.id AND EXISTS (SELECT * FROM courses WHERE students.course_id = courses.id AND code LIKE 'BSHM%'))")
+                    ->whereRaw($courseExists('BSHM'))
                 ),
             'bsba' => Tab::make('BSBA')
                 ->icon('heroicon-m-briefcase')
                 ->badge(fn () => StudentEnrollment::currentAcademicPeriod()
                     ->withTrashed()
-                    ->whereRaw("EXISTS (SELECT * FROM students WHERE CAST(student_enrollment.student_id AS BIGINT) = students.id AND EXISTS (SELECT * FROM courses WHERE students.course_id = courses.id AND code LIKE 'BSBA%'))")
+                    ->whereRaw($courseExists('BSBA'))
                     ->count())
                 ->badgeColor('warning')
                 ->modifyQueryUsing(fn (Builder $query) => $query
                     ->currentAcademicPeriod()
                     ->withTrashed()
-                    ->whereRaw("EXISTS (SELECT * FROM students WHERE CAST(student_enrollment.student_id AS BIGINT) = students.id AND EXISTS (SELECT * FROM courses WHERE students.course_id = courses.id AND code LIKE 'BSBA%'))")
+                    ->whereRaw($courseExists('BSBA'))
                 ),
             'pending' => Tab::make('Pending')
                 ->icon('heroicon-m-clock')

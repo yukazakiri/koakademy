@@ -1,7 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
 import {
     Activity,
     BarChart3,
@@ -29,6 +28,7 @@ import {
     YAxis,
 } from "recharts";
 import { toast } from "sonner";
+import { serializeCsv } from "./interactive-table";
 
 export interface ChartDataItem {
     label: string;
@@ -42,6 +42,45 @@ export interface ChartArtifact {
     description?: string;
     data: ChartDataItem[];
     metric_unit?: string;
+}
+
+export function parseChartArtifact(value: unknown): ChartArtifact | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const chart = value as Record<string, unknown>;
+    if (
+        typeof chart.title !== "string" || !chart.title.trim() ||
+        !["bar", "area", "ring", "line", "gauge"].includes(chart.chart_type as string) ||
+        !Array.isArray(chart.data) ||
+        (chart.description != null && typeof chart.description !== "string") ||
+        (chart.metric_unit != null && typeof chart.metric_unit !== "string")
+    ) return null;
+
+    const data: ChartDataItem[] = [];
+    for (const item of chart.data) {
+        if (!item || typeof item !== "object" || Array.isArray(item) ||
+            typeof item.label !== "string" ||
+            (item.color != null && typeof item.color !== "string") ||
+            (typeof item.value !== "number" &&
+                (typeof item.value !== "string" || !item.value.trim())) ||
+            !Number.isFinite(Number(item.value))) return null;
+
+        data.push({ label: item.label, value: Number(item.value), color: item.color ?? undefined });
+    }
+
+    return {
+        chart_type: chart.chart_type as ChartArtifact["chart_type"],
+        title: chart.title,
+        description: chart.description as string | undefined,
+        metric_unit: chart.metric_unit as string | undefined,
+        data,
+    };
+}
+
+export function chartArtifactKey(chart: ChartArtifact): string {
+    return JSON.stringify([
+        chart.chart_type, chart.title, chart.description ?? "", chart.metric_unit ?? "",
+        chart.data.map(({ label, value, color }) => [label, value, color ?? ""]),
+    ]);
 }
 
 interface AnalyticsChartRendererProps {
@@ -60,7 +99,7 @@ const DEFAULT_PALETTE = [
 ];
 
 // Interactive active shape renderer for Pie/Ring chart
-const renderActiveShape = (props: any) => {
+const renderActiveShape = (props: unknown) => {
     const {
         cx,
         cy,
@@ -69,10 +108,15 @@ const renderActiveShape = (props: any) => {
         startAngle,
         endAngle,
         fill,
-        payload,
-        value,
-        percent,
-    } = props;
+    } = props as {
+        cx: number;
+        cy: number;
+        innerRadius: number;
+        outerRadius: number;
+        startAngle: number;
+        endAngle: number;
+        fill: string;
+    };
 
     return (
         <g>
@@ -100,7 +144,20 @@ const renderActiveShape = (props: any) => {
 };
 
 // Custom Tooltip component for Recharts
-function CustomChartTooltip({ active, payload, metricUnit, totalSum }: any) {
+interface CustomChartTooltipProps {
+    active?: boolean;
+    payload?: {
+        value?: number | string;
+        color?: string;
+        fill?: string;
+        name?: string;
+        payload?: { label?: string; fill?: string };
+    }[];
+    metricUnit?: string;
+    totalSum?: number;
+}
+
+function CustomChartTooltip({ active, payload, metricUnit, totalSum = 0 }: CustomChartTooltipProps) {
     if (!active || !payload || !payload.length) {
         return null;
     }
@@ -132,15 +189,16 @@ function CustomChartTooltip({ active, payload, metricUnit, totalSum }: any) {
     );
 }
 
-export function AnalyticsChartRenderer({ chart }: AnalyticsChartRendererProps) {
-    const [activeIndex, setActiveIndex] = React.useState<number | null>(null);
+export function AnalyticsChartRenderer({ chart: candidate }: AnalyticsChartRendererProps) {
+    const chart = React.useMemo(() => parseChartArtifact(candidate), [candidate]);
+    const [, setActiveIndex] = React.useState<number | null>(null);
 
-    const rawData = chart.data || [];
-    const chartType = chart.chart_type || "bar";
-    const metricUnit = chart.metric_unit || "";
+    const rawData = chart?.data;
+    const chartType = chart?.chart_type;
+    const metricUnit = chart?.metric_unit || "";
 
     const formattedData = React.useMemo(() => {
-        return rawData.map((item, idx) => ({
+        return (rawData ?? []).map((item, idx) => ({
             ...item,
             value: Number(item.value) || 0,
             fill: item.color || DEFAULT_PALETTE[idx % DEFAULT_PALETTE.length],
@@ -151,15 +209,15 @@ export function AnalyticsChartRenderer({ chart }: AnalyticsChartRendererProps) {
         return formattedData.reduce((acc, curr) => acc + curr.value, 0);
     }, [formattedData]);
 
+    if (!chart) return null;
+
     const exportCsv = () => {
-        const header = "Label,Value,Percentage\n";
         const rows = formattedData
             .map((d) => {
                 const pct = totalSum > 0 ? ((d.value / totalSum) * 100).toFixed(2) + "%" : "0%";
-                return `"${d.label}",${d.value},${pct}`;
-            })
-            .join("\n");
-        const blob = new Blob([header + rows], { type: "text/csv;charset=utf-8;" });
+                return [d.label, d.value, pct];
+            });
+        const blob = new Blob([serializeCsv([["Label", "Value", "Percentage"], ...rows])], { type: "text/csv;charset=utf-8;" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
@@ -171,7 +229,7 @@ export function AnalyticsChartRenderer({ chart }: AnalyticsChartRendererProps) {
         toast.success(`Exported "${chart.title}" as CSV.`);
     };
 
-    const onPieEnter = (_: any, index: number) => {
+    const onPieEnter = (_: unknown, index: number) => {
         setActiveIndex(index);
     };
 
@@ -266,7 +324,7 @@ export function AnalyticsChartRenderer({ chart }: AnalyticsChartRendererProps) {
                                     verticalAlign="bottom"
                                     iconType="circle"
                                     iconSize={8}
-                                    formatter={(value: string, entry: any) => {
+                                    formatter={(value: string) => {
                                         const item = formattedData.find((d) => d.label === value);
                                         const pct = item && totalSum > 0 ? ` (${((item.value / totalSum) * 100).toFixed(0)}%)` : "";
                                         return (

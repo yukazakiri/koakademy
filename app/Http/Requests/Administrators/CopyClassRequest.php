@@ -28,6 +28,7 @@ final class CopyClassRequest extends FormRequest
     {
         return [
             'section' => ['required', Rule::in(['A', 'B', 'C', 'D'])],
+            'copy_schedules' => ['nullable', 'boolean'],
         ];
     }
 }

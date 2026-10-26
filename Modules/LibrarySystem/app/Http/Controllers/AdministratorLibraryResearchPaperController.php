@@ -32,18 +32,18 @@ final class AdministratorLibraryResearchPaperController extends Controller
             ->when(is_string($search) && mb_trim($search) !== '', function ($query) use ($search): void {
                 $term = mb_trim($search);
                 $query->where(function ($nested) use ($term): void {
-                    $nested->where('title', 'ilike', "%{$term}%")
-                        ->orWhere('advisor_name', 'ilike', "%{$term}%")
-                        ->orWhere('contributors', 'ilike', "%{$term}%")
+                    $nested->whereLike('title', "%{$term}%")
+                        ->orWhereLike('advisor_name', "%{$term}%")
+                        ->orWhereLike('contributors', "%{$term}%")
                         ->orWhereHas('student', fn ($studentQuery) => $studentQuery
-                            ->where('first_name', 'ilike', "%{$term}%")
-                            ->orWhere('last_name', 'ilike', "%{$term}%"))
+                            ->whereLike('first_name', "%{$term}%")
+                            ->orWhereLike('last_name', "%{$term}%"))
                         ->orWhereHas('students', fn ($studentQuery) => $studentQuery
-                            ->where('first_name', 'ilike', "%{$term}%")
-                            ->orWhere('last_name', 'ilike', "%{$term}%"))
+                            ->whereLike('first_name', "%{$term}%")
+                            ->orWhereLike('last_name', "%{$term}%"))
                         ->orWhereHas('course', fn ($courseQuery) => $courseQuery
-                            ->where('code', 'ilike', "%{$term}%")
-                            ->orWhere('title', 'ilike', "%{$term}%"));
+                            ->whereLike('code', "%{$term}%")
+                            ->orWhereLike('title', "%{$term}%"));
                 });
             })
             ->when(is_string($type) && $type !== '' && $type !== 'all', fn ($query) => $query->where('type', $type))

@@ -1,0 +1,17 @@
+{
+  "viewport": {
+    "width": 1120,
+    "height": 720
+  },
+  "sourceFiles": {
+    "resources/css/app.css": "649c2430daa4d1a2402bd0f06f6b20e24f8b9db6fa54692c0154a7e12b0f024d",
+    "resources/css/themes/tangerine.css": "387d351366ed0dca246ed92437c73c0bf54abc186253f07a63e9a002efc27ff3",
+    "resources/css/themes/zen-inspired-theme.css": "959aad26a6cf0e9830e1cd8555c7e0e7c95d112ebee1ccaef090e5f98fa6b0ee",
+    "resources/css/themes/claude-blu2.css": "f1339570d9a5f9bacca2eb9d569dee92704385b69444505d741156b9ce735618",
+    "resources/css/themes/meridian.css": "9c37762dd9b3cc9895c55b7fd778751bd3e9e819877f9bf7dc77f7d482e84c5a",
+    "resources/css/themes/bamboo-breeze.css": "404e3d8faf8fd4001d11a9745e7f9d197f2740e664eb24d830876593251ef3a9",
+    "resources/css/themes/kodama-grove.css": "220c7a150d92b46cf0e47f1add659f94df039f3e74885ea54abf826e1e5d32d7",
+    "resources/css/themes/caffeine.css": "2223b39d2ea1713a58a848adf60259f9c48347468cc3eac18f8bcd5c47db43da",
+    "resources/css/themes/claude.css": "239df074836d02b710c0947cf749ad0ecfb328c510f2b4e54da961605b5f8720"
+  }
+}

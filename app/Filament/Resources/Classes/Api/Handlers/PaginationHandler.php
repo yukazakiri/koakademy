@@ -6,6 +6,7 @@ namespace App\Filament\Resources\Classes\Api\Handlers;
 
 use App\Filament\Resources\Classes\Api\Transformers\ClassesTransformer;
 use App\Filament\Resources\Classes\ClassesResource;
+use App\Http\Controllers\Api\V1\ApiPagination;
 use Illuminate\Http\Request;
 use Override;
 use Rupadana\ApiService\Http\Handlers;
@@ -36,7 +37,7 @@ final class PaginationHandler extends Handlers
             ->allowedSorts($this->getAllowedSorts() ?? [])
             ->allowedFilters($this->getAllowedFilters() ?? [])
             ->allowedIncludes($this->getAllowedIncludes() ?? [])
-            ->paginate(request()->query('per_page'))
+            ->paginate(ApiPagination::perPage(request()->query('per_page')))
             ->appends(request()->query());
 
         return ClassesTransformer::collection($query);

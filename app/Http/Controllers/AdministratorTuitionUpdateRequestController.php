@@ -16,6 +16,7 @@ use App\Models\Transaction;
 use App\Models\TuitionAdjustment;
 use App\Models\User;
 use App\Services\StudentTuitionUpdateRequestService;
+use App\Support\Database\SqlDialect;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -38,7 +39,7 @@ final class AdministratorTuitionUpdateRequestController extends Controller
                 $builder->where(function ($nested) use ($like): void {
                     $nested->whereRaw('lower(receipt_number) like ?', [$like])
                         ->orWhereHas('student', function ($students) use ($like): void {
-                            $students->whereRaw('cast(student_id as text) like ?', [$like])
+                            $students->whereRaw(sprintf('%s like ?', SqlDialect::textCast($students, 'student_id')), [$like])
                                 ->orWhereRaw('lower(first_name) like ?', [$like])
                                 ->orWhereRaw('lower(last_name) like ?', [$like]);
                         });

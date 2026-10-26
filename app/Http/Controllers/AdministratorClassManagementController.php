@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\UserRole;
 use App\Exports\StudentListExport;
+use App\Http\Controllers\Api\V1\ApiPagination;
 use App\Http\Requests\Administrators\CopyClassRequest;
 use App\Http\Requests\Administrators\StoreClassRequest;
 use App\Http\Requests\Administrators\UpdateClassRequest;
@@ -25,9 +26,9 @@ use App\Services\ClassCurriculumPlacementService;
 use App\Services\ClassScheduleChangeNotificationService;
 use App\Services\GeneralSettingsService;
 use App\Support\Database\JsonArrayQuery;
+use App\Support\Database\SqlDialect;
 use Exception;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Query\Expression;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -176,6 +177,8 @@ final class AdministratorClassManagementController extends Controller
                             'school_year' => $class->school_year ?? 'N/A',
                             'semester' => $class->semester ?? 'N/A',
                             'classification' => $class->classification ?? 'college',
+                            'delivery_mode' => $class->delivery_mode ?? Classes::DELIVERY_FACE_TO_FACE,
+                            'delivery_summary' => $class->deliverySummary(),
                             'academic_year' => $class->academic_year,
                             'grade_level' => $class->grade_level,
                             'course_abbreviations' => $courseAbbreviations === [] ? null : $courseAbbreviations,
@@ -311,6 +314,7 @@ final class AdministratorClassManagementController extends Controller
             'defaults' => [
                 'semester' => (string) $generalSettingsService->getCurrentSemester(),
                 'school_year' => $generalSettingsService->getCurrentSchoolYearString(),
+                'delivery_mode' => Classes::DELIVERY_FACE_TO_FACE,
             ],
             'flash' => session('flash'),
         ]);
@@ -388,16 +392,17 @@ final class AdministratorClassManagementController extends Controller
         $schedules = Arr::wrap($validated['schedules'] ?? []);
         unset($validated['schedules']);
 
-        $class = Classes::query()->create($validated);
+        $class = DB::transaction(function () use ($validated, $schedules): Classes {
+            $class = Classes::query()->create($validated);
 
-        foreach ($schedules as $scheduleData) {
-            $class->schedules()->create([
-                'day_of_week' => $scheduleData['day_of_week'],
-                'start_time' => $scheduleData['start_time'],
-                'end_time' => $scheduleData['end_time'],
-                'room_id' => $scheduleData['room_id'],
-            ]);
-        }
+            app(\App\Services\Scheduling\SchedulingService::class)->syncClassSchedules(
+                $class,
+                $schedules,
+                Auth::user() instanceof User ? Auth::user() : null,
+            );
+
+            return $class;
+        });
 
         return redirect()->route('administrators.classes.index')->with('flash', [
             'type' => 'success',
@@ -410,13 +415,11 @@ final class AdministratorClassManagementController extends Controller
         UpdateClassRequest $request,
         Classes $class,
         ClassCurriculumPlacementService $curriculumPlacement,
+        ClassScheduleChangeNotificationService $scheduleNotifications,
     ): \Illuminate\Http\RedirectResponse {
         $this->authorizeClassAction('Update:Classes');
 
         $validated = $request->validated();
-        $scheduleChangeNotifications = app(ClassScheduleChangeNotificationService::class);
-        $oldScheduleSnapshot = null;
-
         $classification = $validated['classification'] ?? $class->classification ?? 'college';
 
         /** @var array<string, mixed> $settings */
@@ -468,32 +471,29 @@ final class AdministratorClassManagementController extends Controller
 
         $schedules = null;
         if (array_key_exists('schedules', $validated)) {
-            $oldScheduleSnapshot = $scheduleChangeNotifications->snapshot($class);
             $schedules = Arr::wrap($validated['schedules']);
             unset($validated['schedules']);
         }
 
-        $class->fill($validated);
-        $class->save();
+        $actor = Auth::user() instanceof User ? Auth::user() : null;
 
-        if (is_array($schedules)) {
-            $class->schedules()->delete();
+        DB::transaction(function () use ($class, $validated, $schedules, $scheduleNotifications, $actor): void {
+            // Saving an online class clears session rooms through the model hook.
+            $oldSnapshot = $scheduleNotifications->snapshot($class);
+            $class->fill($validated);
+            $class->save();
 
-            foreach ($schedules as $scheduleData) {
-                $class->schedules()->create([
-                    'day_of_week' => $scheduleData['day_of_week'],
-                    'start_time' => $scheduleData['start_time'],
-                    'end_time' => $scheduleData['end_time'],
-                    'room_id' => $scheduleData['room_id'],
-                ]);
+            if (is_array($schedules)) {
+                app(\App\Services\Scheduling\SchedulingService::class)->syncClassSchedules(
+                    $class,
+                    $schedules,
+                    $actor,
+                    $oldSnapshot,
+                );
+            } else {
+                $scheduleNotifications->notifyIfChanged($class, $oldSnapshot, $actor);
             }
-
-            $scheduleChangeNotifications->notifyIfChanged(
-                $class,
-                $oldScheduleSnapshot ?? [],
-                Auth::user() instanceof User ? Auth::user() : null
-            );
-        }
+        });
 
         return redirect()->route('administrators.classes.index')->with('flash', [
             'type' => 'success',
@@ -568,20 +568,31 @@ final class AdministratorClassManagementController extends Controller
 
         $section = $request->validated()['section'];
 
-        $newClass = $class->replicate(['section']);
-        $newClass->section = $section;
+        $copySchedules = $request->boolean('copy_schedules', true);
+        $newClass = DB::transaction(function () use ($class, $section, $copySchedules): Classes {
+            $newClass = $class->replicate(['section'])->unsetRelations();
+            $newClass->section = $section;
 
-        foreach ($newClass->getAttributes() as $key => $value) {
-            if (str_ends_with((string) $key, '_count')) {
-                unset($newClass->{$key});
+            foreach ($newClass->getAttributes() as $key => $value) {
+                if (str_ends_with((string) $key, '_count')) {
+                    unset($newClass->{$key});
+                }
             }
-        }
 
-        $newClass->push();
+            $newClass->save();
+
+            if ($copySchedules) {
+                app(\App\Services\Scheduling\SchedulingService::class)->copyClassSchedules($class, $newClass);
+            }
+
+            return $newClass;
+        });
 
         return redirect()->route('administrators.classes.index')->with('flash', [
             'type' => 'success',
-            'message' => 'Class copied successfully (schedules not copied).',
+            'message' => $copySchedules
+                ? 'Class and schedules copied successfully.'
+                : 'Class copied successfully (schedules not copied).',
             'class_id' => $newClass->id,
         ]);
     }
@@ -746,8 +757,9 @@ final class AdministratorClassManagementController extends Controller
             'time_range' => ($s->start_time?->format('h:i A') ?? 'N/A').' - '.($s->end_time?->format('h:i A') ?? 'N/A'),
             'room' => [
                 'id' => $s->room_id,
-                'name' => $s->room?->name ?? 'TBA',
+                'name' => $s->isOnline() ? 'Online' : ($s->room?->name ?? 'TBA'),
             ],
+            'delivery_mode' => $s->delivery_mode,
             'has_conflict' => false, // Conflict calculation is done in frontend or separate prop
         ]));
 
@@ -801,6 +813,8 @@ final class AdministratorClassManagementController extends Controller
                     'edit_url' => route('filament.admin.resources.classes.edit', $class),
                 ],
                 'deleted_at' => $class->deleted_at?->toIso8601String(),
+                'delivery_mode' => $class->delivery_mode ?? Classes::DELIVERY_FACE_TO_FACE,
+                'delivery_summary' => $class->deliverySummary(),
                 'is_archived' => $class->trashed(),
             ],
             'capabilities' => [
@@ -822,6 +836,7 @@ final class AdministratorClassManagementController extends Controller
                     'start_time' => $schedule->start_time?->format('H:i'),
                     'end_time' => $schedule->end_time?->format('H:i'),
                     'room_id' => $schedule->room_id,
+                    'delivery_mode' => $schedule->delivery_mode,
                     'temp_id' => (string) $schedule->id, // Ensure temp_id exists for keying
                 ]),
             'room_schedules' => $roomSchedules,
@@ -1157,6 +1172,7 @@ final class AdministratorClassManagementController extends Controller
                 'ShsSubject:id,code,title',
                 'subjects:id,code,title',
                 'faculty:id,first_name,last_name,middle_name',
+                'schedules:id,class_id,delivery_mode',
                 'shsTrack:id,track_name',
                 'shsStrand:id,strand_name',
             ])
@@ -1337,7 +1353,7 @@ final class AdministratorClassManagementController extends Controller
     private function applySubjectCodeFilter(Builder $query, string $subjectCode): void
     {
         $like = '%'.$subjectCode.'%';
-        $operator = $this->caseInsensitiveLikeOperator($query);
+        $operator = SqlDialect::likeOperator($query);
 
         $query->where(function (Builder $codeQuery) use ($like, $operator): void {
             $codeQuery->where('classes.subject_code', $operator, $like);
@@ -1397,7 +1413,7 @@ final class AdministratorClassManagementController extends Controller
         }
 
         $like = '%'.$term.'%';
-        $operator = $this->caseInsensitiveLikeOperator($query);
+        $operator = SqlDialect::likeOperator($query);
 
         $query->where(function (Builder $searchQuery) use ($query, $like, $operator): void {
             $searchQuery
@@ -1405,7 +1421,7 @@ final class AdministratorClassManagementController extends Controller
                 ->orWhere('classes.section', $operator, $like)
                 ->orWhere('classes.school_year', $operator, $like)
                 ->orWhere('classes.classification', $operator, $like)
-                ->orWhere($this->textCast($query, 'classes.semester'), $operator, $like)
+                ->orWhere(DB::raw(SqlDialect::textCast($query, 'classes.semester')), $operator, $like)
                 // The record title a user sees is "<subject codes> - <section>",
                 // so that exact shape has to match as well.
                 ->orWhereRaw(
@@ -1519,26 +1535,6 @@ final class AdministratorClassManagementController extends Controller
     }
 
     /**
-     * The LIKE operator that ignores case on the current driver.
-     */
-    private function caseInsensitiveLikeOperator(Builder $query): string
-    {
-        return $query->getConnection()->getDriverName() === 'pgsql' ? 'ilike' : 'like';
-    }
-
-    /**
-     * Render a column as text so it can be compared against a string.
-     */
-    private function textCast(Builder $query, string $column): Expression
-    {
-        return DB::raw(
-            $query->getConnection()->getDriverName() === 'pgsql'
-                ? sprintf('%s::text', $column)
-                : sprintf('CAST(%s AS TEXT)', $column)
-        );
-    }
-
-    /**
      * Authorise a class management action.
      *
      * Every mutating action on a class needs the matching Shield permission —
@@ -1570,8 +1566,9 @@ final class AdministratorClassManagementController extends Controller
     private function resolveClassPerPage(mixed $perPage): int
     {
         $perPage = (int) $perPage;
+        $perPage = in_array($perPage, self::CLASS_PAGE_SIZES, true) ? $perPage : 20;
 
-        return in_array($perPage, self::CLASS_PAGE_SIZES, true) ? $perPage : 20;
+        return ApiPagination::perPage($perPage);
     }
 
     /**
@@ -1581,7 +1578,6 @@ final class AdministratorClassManagementController extends Controller
     {
         $settings = array_merge(Classes::getDefaultSettings(), (array) ($class->settings ?? []));
         $classification = $class->classification === 'shs' ? 'shs' : 'college';
-        $defaultRoomId = (int) ($class->room_id ?? Room::query()->where('is_active', true)->value('id') ?? 0);
 
         $subjectIds = Arr::wrap($class->subject_ids ?: ($class->subject_id ? [$class->subject_id] : []));
 
@@ -1599,7 +1595,9 @@ final class AdministratorClassManagementController extends Controller
             'semester' => (string) ($class->semester ?? '1'),
             'school_year' => (string) ($class->school_year ?? ''),
             'section' => (string) ($class->section ?? 'A'),
-            'room_id' => $defaultRoomId,
+            'delivery_mode' => $class->delivery_mode ?? Classes::DELIVERY_FACE_TO_FACE,
+            'delivery_summary' => $class->deliverySummary(),
+            'room_id' => $class->room_id !== null ? (int) $class->room_id : null,
             'maximum_slots' => (int) ($class->maximum_slots ?? 40),
             'schedules' => $class->schedules
                 ->sortBy([
@@ -1608,10 +1606,16 @@ final class AdministratorClassManagementController extends Controller
                 ])
                 ->values()
                 ->map(fn (Schedule $schedule): array => [
+                    'id' => $schedule->id,
                     'day_of_week' => $schedule->day_of_week,
                     'start_time' => $schedule->start_time?->format('H:i') ?? '08:00',
                     'end_time' => $schedule->end_time?->format('H:i') ?? '09:00',
-                    'room_id' => (int) ($schedule->room_id ?? $defaultRoomId),
+                    'room_id' => $schedule->room_id,
+                    'delivery_mode' => $schedule->delivery_mode,
+                    'component_type' => $schedule->component_type,
+                    'pattern_group_id' => $schedule->pattern_group_id,
+                    'status' => $schedule->status,
+                    'subject_id' => $schedule->subject_id,
                 ])
                 ->all(),
             'settings' => [
@@ -1653,6 +1657,10 @@ final class AdministratorClassManagementController extends Controller
             'classifications' => [
                 ['value' => 'college', 'label' => 'College'],
                 ['value' => 'shs', 'label' => 'Senior High School (SHS)'],
+            ],
+            'delivery_modes' => [
+                ['value' => 'face_to_face', 'label' => 'Face to face'],
+                ['value' => 'online', 'label' => 'Online'],
             ],
             'sections' => [
                 ['value' => 'A', 'label' => 'Section A'],
@@ -1788,6 +1796,8 @@ final class AdministratorClassManagementController extends Controller
                 'label' => $class->faculty->full_name,
                 'email' => $class->faculty->email,
             ] : null,
+            'delivery_mode' => $class->delivery_mode ?? Classes::DELIVERY_FACE_TO_FACE,
+            'delivery_summary' => $class->deliverySummary(),
             'room' => $class->Room ? [
                 'id' => $class->Room->id,
                 'label' => $class->Room->name,
@@ -1816,6 +1826,7 @@ final class AdministratorClassManagementController extends Controller
                     'start_time' => $schedule->start_time?->format('H:i'),
                     'end_time' => $schedule->end_time?->format('H:i'),
                     'room_id' => $schedule->room_id,
+                    'delivery_mode' => $schedule->delivery_mode,
                     'room' => $schedule->room ? [
                         'id' => $schedule->room->id,
                         'label' => $schedule->room->name,

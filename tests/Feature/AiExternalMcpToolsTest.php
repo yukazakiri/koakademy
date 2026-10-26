@@ -198,10 +198,12 @@ it('lets a server-declared read-only tool run without approval', function (): vo
  * nothing else about the tool is trusted: the name is server-qualified and the
  * description states the provenance so the model treats the answer as external.
  */
-it('marks external results as untrusted and qualifies the tool name', function (): void {
+it('marks external results as untrusted and qualifies the tool name without colliding on punctuation', function (): void {
     $tool = new ExternalMcpTool(clientTool(name: 'list-issues'), 'My Tracker', readOnly: true);
+    $underscoreTool = new ExternalMcpTool(clientTool(name: 'list_issues'), 'My Tracker', readOnly: true);
 
-    expect($tool->name())->toBe('mcp_my-tracker_list-issues')
+    expect($tool->name())->toStartWith('mcp_my-tracker_list-issues_')
+        ->and($tool->name())->not->toBe($underscoreTool->name())
         ->and((string) $tool->description())
         ->toContain('My Tracker')
         ->toContain('untrusted');

@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace App\Ai\Tools;
 
 use App\Models\Student;
-use App\Models\SubjectEnrollment;
 use App\Models\User;
+use App\Services\ApiIdentityService;
 use App\Services\StudentChecklistService;
+use App\Services\TenantContext;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Facades\Auth;
 use Laravel\Ai\Contracts\Tool;
@@ -30,16 +31,32 @@ final class GetCurriculumProgressTool implements Tool
     public function handle(Request $request): Stringable|string
     {
         $user = Auth::user();
-        if ($user instanceof User && ! $user->hasRole('super_admin') && ! $user->can('View:Student') && ! $user->isStudentRole()) {
+        if (! $user instanceof User) {
+            return json_encode(['error' => true, 'message' => 'Authentication is required to view curriculum progress.']);
+        }
+
+        if (! $user->hasRole('super_admin') && ! $user->hasRole('developer') && ! $user->isAdministrative() && ! $user->can('View:Student') && ! $user->isStudentRole()) {
             return json_encode(['error' => true, 'message' => 'You are not permitted to view curriculum progress.']);
         }
 
         $studentId = $request['student_id'] ?? null;
-        if (! $studentId) {
+        if (! $studentId && ! $user->isStudentRole()) {
             return json_encode(['error' => true, 'message' => 'student_id is required.']);
         }
 
-        $student = $this->resolveStudent((string) $studentId);
+        if ($user->isStudentRole()) {
+            $ownStudent = app(ApiIdentityService::class)->studentFor($user);
+            if (! $ownStudent instanceof Student) {
+                return json_encode(['error' => true, 'message' => 'No student profile is associated with your account.']);
+            }
+            if ($studentId !== null && (string) $ownStudent->id !== (string) $studentId && (string) $ownStudent->student_id !== (string) $studentId) {
+                return json_encode(['error' => true, 'message' => 'Students can only access their own curriculum progress.']);
+            }
+            $student = $ownStudent;
+        } else {
+            $student = $this->resolveStudent((string) $studentId);
+        }
+
         if (! $student instanceof Student) {
             return json_encode(['error' => true, 'message' => "Student '{$studentId}' not found."]);
         }
@@ -51,46 +68,58 @@ final class GetCurriculumProgressTool implements Tool
         ];
 
         $analysis = $this->checklistService->analyze($student, $options);
+        $summary = is_array($analysis['academic_summary'] ?? null) ? $analysis['academic_summary'] : null;
+        $totalCurriculumSubjects = (int) ($summary['total_curriculum_subjects'] ?? 0);
 
-        // Fallback or derive baseline metrics for uncatalogued students and backward compatibility
-        $totalRequiredUnits = (int) ($analysis['academic_summary']['total_curriculum_units'] ?? 0);
-        if ($totalRequiredUnits <= 0) {
-            $totalRequiredUnits = 142;
+        if (($analysis['error'] ?? false) === true || $summary === null || $totalCurriculumSubjects === 0) {
+            $reason = ($analysis['error'] ?? false) === true
+                ? 'no_program_assigned'
+                : 'curriculum_subjects_not_configured';
+            $message = ($analysis['error'] ?? false) === true
+                ? (string) ($analysis['message'] ?? 'Student has no degree program assigned.')
+                : 'No curriculum subjects are configured for the student\'s assigned degree program.';
+
+            return json_encode([
+                'status' => 'unavailable',
+                'available' => false,
+                'reason' => $reason,
+                'message' => $message,
+                'student_id' => $student->id,
+                'student_name' => $student->full_name,
+                'program_track' => $student->Course?->title,
+                'progress_percentage' => null,
+                'completed_units' => null,
+                'remaining_units' => null,
+                'total_units_required' => null,
+                'cumulative_gwa' => null,
+                'deficiencies' => [],
+                'academic_summary' => $summary,
+                'checklist' => [],
+                'failed_retakes_needed' => [],
+                'prerequisite_blockers' => [],
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
         }
 
-        $completedUnits = (int) ($analysis['academic_summary']['completed_units'] ?? 0);
-        if ($completedUnits <= 0 && (! isset($analysis['academic_summary']) || $analysis['academic_summary']['total_curriculum_subjects'] === 0)) {
-            $completedCount = SubjectEnrollment::query()
-                ->where('student_id', $student->id)
-                ->where(fn ($q) => $q->where('grade_outcome', 'pass')->orWhere('grade_outcome', 'passed'))
-                ->count();
-            $completedUnits = max(24, $completedCount * 3);
-        }
-
-        $remainingUnits = (int) ($analysis['academic_summary']['remaining_units'] ?? max(0, $totalRequiredUnits - $completedUnits));
-        $progressPercent = (float) ($analysis['academic_summary']['progress_percentage'] ?? round(($completedUnits / $totalRequiredUnits) * 100, 1));
-        if ($progressPercent <= 0.0 && $completedUnits > 0) {
-            $progressPercent = round(($completedUnits / $totalRequiredUnits) * 100, 1);
-        }
+        $totalRequiredUnits = (int) ($summary['total_curriculum_units'] ?? 0);
+        $completedUnits = (int) ($summary['completed_units'] ?? 0);
+        $remainingUnits = (int) ($summary['remaining_units'] ?? max(0, $totalRequiredUnits - $completedUnits));
+        $progressPercent = (float) ($summary['progress_percentage'] ?? 0.0);
 
         $payload = [
+            'status' => 'analyzed',
+            'available' => true,
             'student_id' => $student->id,
             'student_name' => $student->full_name,
-            'program_track' => $student->Course?->title ?? ($student->student_type ?? 'Bachelor of Science in Information Technology'),
+            'program_track' => $student->Course?->title,
             'progress_percentage' => $progressPercent,
             'completed_units' => $completedUnits,
             'remaining_units' => $remainingUnits,
             'total_units_required' => $totalRequiredUnits,
-            'cumulative_gwa' => $analysis['academic_summary']['cumulative_gwa'] ?? null,
+            'cumulative_gwa' => $summary['cumulative_gwa'] ?? null,
             'deficiencies' => ! empty($analysis['deficiencies'])
-                ? array_column($analysis['deficiencies'], 'title')
-                : ($remainingUnits > 0 ? ['Capstone Project 1', 'Internship / Practicum'] : []),
-            'academic_summary' => $analysis['academic_summary'] ?? [
-                'progress_percentage' => $progressPercent,
-                'total_curriculum_units' => $totalRequiredUnits,
-                'completed_units' => $completedUnits,
-                'remaining_units' => $remainingUnits,
-            ],
+                ? array_values(array_column($analysis['deficiencies'], 'title'))
+                : [],
+            'academic_summary' => $summary,
             'checklist' => $analysis['checklist'] ?? [],
             'failed_retakes_needed' => $analysis['failed_retakes_needed'] ?? [],
             'prerequisite_blockers' => $analysis['prerequisite_blockers'] ?? [],
@@ -99,6 +128,8 @@ final class GetCurriculumProgressTool implements Tool
         // If summary mode requested, return academic summary only to save tokens
         if ($request['summary_only'] ?? false) {
             return json_encode([
+                'status' => 'analyzed',
+                'available' => true,
                 'student_id' => $student->id,
                 'student_name' => $student->full_name,
                 'program_track' => $payload['program_track'],
@@ -125,16 +156,24 @@ final class GetCurriculumProgressTool implements Tool
 
     private function resolveStudent(string $identifier): ?Student
     {
+        $schoolId = app(TenantContext::class)->getCurrentSchoolId();
+        $query = Student::query();
+        if ($schoolId !== null) {
+            $query->where('school_id', $schoolId);
+        }
+
         if (is_numeric($identifier)) {
-            $found = Student::query()->find((int) $identifier);
-            if ($found) {
+            $found = (clone $query)->find((int) $identifier);
+            if ($found instanceof Student) {
                 return $found;
             }
         }
 
-        return Student::query()
-            ->where('student_id', $identifier)
-            ->orWhere('email', $identifier)
+        return $query
+            ->where(function ($q) use ($identifier): void {
+                $q->where('student_id', $identifier)
+                    ->orWhere('email', $identifier);
+            })
             ->first();
     }
 }

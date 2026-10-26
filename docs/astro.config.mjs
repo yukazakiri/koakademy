@@ -47,6 +47,7 @@ export default defineConfig({
                         { slug: "features/grading-transcripts", label: "Grading & Transcripts" },
                         { slug: "features/finance-cashiering", label: "Financials & Cashiering" },
                         { slug: "features/portals-workspaces", label: "Portals & Workspaces" },
+                        { slug: "user-guide/color-themes", label: "Color Themes & Appearance" },
                         { slug: "features/bundled-modules", label: "Bundled Modules" },
                         { slug: "features/ai-mcp", label: "AI & MCP Server" },
                     ],

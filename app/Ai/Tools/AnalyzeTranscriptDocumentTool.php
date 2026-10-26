@@ -13,27 +13,26 @@ final class AnalyzeTranscriptDocumentTool implements Tool
 {
     public function description(): Stringable|string
     {
-        return 'Analyze an attached Official Transcript of Records (TOR) or academic certificate to extract previous institution names, completed course codes, earned credits, and grade marks.';
+        return 'Report transcript-analysis availability. A document name alone does not provide transcript contents; extraction and credit equivalency are unavailable until an authorized document-content source is connected.';
     }
 
     public function handle(Request $request): Stringable|string
     {
         $validated = $request->validate([
-            'document_name' => 'required|string',
-            'applicant_name' => 'sometimes|string',
+            'document_name' => 'required|string|max:255',
+            'applicant_name' => 'sometimes|string|max:255',
         ]);
 
         return json_encode([
             'document' => $validated['document_name'],
-            'status' => 'analyzed',
-            'extracted_institution' => 'University of Science and Technology',
-            'total_credited_units' => 24,
-            'subjects_detected' => [
-                ['code' => 'MATH101', 'title' => 'College Algebra', 'units' => 3, 'grade' => '1.5', 'equivalent_in_curriculum' => 'GE-MATH'],
-                ['code' => 'ENG101', 'title' => 'Purposive Communication', 'units' => 3, 'grade' => '1.75', 'equivalent_in_curriculum' => 'GE-ENG'],
-                ['code' => 'CS111', 'title' => 'Introduction to Computing', 'units' => 3, 'grade' => '1.25', 'equivalent_in_curriculum' => 'CC-101'],
-            ],
-            'compliance_note' => 'Grading system verified on standard 1.0 - 5.0 Philippine collegiate scale. All courses meet 85%+ credit equivalency.',
+            'status' => 'unavailable',
+            'available' => false,
+            'reason' => 'document_content_unavailable',
+            'message' => 'This tool receives a document name, not authorized document contents. No transcript extraction or credit-equivalency assessment was performed.',
+            'extracted_institution' => null,
+            'total_credited_units' => null,
+            'subjects_detected' => [],
+            'compliance_note' => 'Institution, grades, units, grading scale, and curriculum equivalencies have not been verified.',
         ], JSON_PRETTY_PRINT);
     }
 

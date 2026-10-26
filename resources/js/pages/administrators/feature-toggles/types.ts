@@ -34,9 +34,25 @@ export interface ManagedFeature {
     category: string;
     class: string;
     catalog: { roles: string[]; default_enabled: boolean; tier: "built_in" | "beta" | "restricted"; opt_in: boolean; public: boolean };
-    policy: FeaturePolicy;
+    policy: FeaturePolicy | null;
     assignment_count: number;
     release_status: "legacy" | "disabled" | "scheduled" | "retired" | "released" | "uninitialized";
+}
+
+export type ManagedFeatureWithPolicy = ManagedFeature & { policy: FeaturePolicy };
+
+export function fallbackPolicy(feature: ManagedFeature): FeaturePolicy {
+    return {
+        enabled: feature.catalog.default_enabled,
+        mode: "legacy",
+        release_audience: null,
+        strategy: "defaults",
+        percentage: 0,
+        allow_opt_in: false,
+        activate_at: null,
+        retire_at: null,
+        revision: 0,
+    };
 }
 
 export interface FeatureUser {

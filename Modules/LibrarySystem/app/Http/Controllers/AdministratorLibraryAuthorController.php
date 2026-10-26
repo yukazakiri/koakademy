@@ -23,7 +23,7 @@ final class AdministratorLibraryAuthorController extends Controller
             ->withCount('books')
             ->when(is_string($search) && mb_trim($search) !== '', function ($query) use ($search): void {
                 $term = mb_trim($search);
-                $query->where('name', 'ilike', "%{$term}%");
+                $query->whereLike('name', "%{$term}%");
             })
             ->orderBy('name')
             ->limit(50)

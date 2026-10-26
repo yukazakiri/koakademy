@@ -1,7 +1,5 @@
 export type ColorTheme =
     | "default"
-    | "amber"
-    | "amethyst"
     | "resolve-a-i-app"
     | "notebook"
     | "offworld"
@@ -12,6 +10,8 @@ export type ColorTheme =
     | "claude"
     | "japan-blues"
     | "bain-design-system";
+
+export const defaultColorTheme: ColorTheme = "default";
 
 export interface ThemeConfig {
     id: ColorTheme;

@@ -13,6 +13,8 @@ use App\Filament\Resources\Classes\Schemas\ClassesForm;
 use App\Filament\Resources\Classes\Schemas\ClassesInfolist;
 use App\Filament\Resources\Classes\Tables\ClassesTable;
 use App\Models\Classes;
+use App\Support\Database\JsonArrayQuery;
+use App\Support\Database\SqlDialect;
 use Filament\Actions\Action;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
@@ -55,41 +57,32 @@ final class ClassesResource extends Resource
         $search = request()->input('search');
 
         if ($search) {
-            $query->where(function ($q) use ($search): void {
-                $searchPattern = preg_quote((string) $search, '/');
+            $query->where(function (Builder $q) use ($search): void {
+                $like = "%{$search}%";
+                $operator = SqlDialect::likeOperator($q);
 
-                // Search in subject_code field (when not null)
-                $q->where(function ($subQ) use ($search, $searchPattern): void {
-                    $subQ->whereNotNull('subject_code')
-                        ->where(function ($codeQ) use ($search, $searchPattern): void {
-                            $codeQ->whereRaw('subject_code ~* ?', ["\\y{$searchPattern}\\y"])
-                                ->orWhere('subject_code', 'ilike', "%{$search}%");
-                        });
-                })
-                    // Search in section
-                    ->orWhere('section', 'ilike', "%{$search}%")
+                $q->where('subject_code', $operator, $like)
+                    ->orWhere('section', $operator, $like)
                     // Search via Subject relationship (subject_id) - code and title
-                    ->orWhereHas('Subject', function ($subQuery) use ($search, $searchPattern): void {
-                        $subQuery->where(function ($codeQ) use ($search, $searchPattern): void {
-                            $codeQ->whereRaw('code ~* ?', ["\\y{$searchPattern}\\y"])
-                                ->orWhere('code', 'ilike', "%{$search}%");
-                        })->orWhere('title', 'ilike', "%{$search}%");
+                    ->orWhereHas('Subject', function (Builder $subQuery) use ($like, $operator): void {
+                        $subQuery->where('code', $operator, $like)
+                            ->orWhere('title', $operator, $like);
                     })
                     // Search via SHS subject - code and title
-                    ->orWhereHas('ShsSubject', function ($subQuery) use ($search, $searchPattern): void {
-                        $subQuery->where(function ($codeQ) use ($search, $searchPattern): void {
-                            $codeQ->whereRaw('code ~* ?', ["\\y{$searchPattern}\\y"])
-                                ->orWhere('code', 'ilike', "%{$search}%");
-                        })->orWhere('title', 'ilike', "%{$search}%");
-                    })
-                    // Search via multiple subjects (subject_ids JSON array)
-                    ->orWhereRaw('
-                        subject_ids IS NOT NULL
-                        AND EXISTS (
-                            SELECT 1 FROM subject, jsonb_array_elements_text(classes.subject_ids::jsonb) AS subject_id
-                            WHERE subject.id = subject_id::bigint
-                            AND (subject.code ~* ? OR subject.code ILIKE ? OR subject.title ILIKE ?)
-                        )', ["\\y{$searchPattern}\\y", "%{$search}%", "%{$search}%"]);
+                    ->orWhereHas('ShsSubject', function (Builder $subQuery) use ($like, $operator): void {
+                        $subQuery->where('code', $operator, $like)
+                            ->orWhere('title', $operator, $like);
+                    });
+
+                // Search via multiple subjects (subject_ids JSON array)
+                JsonArrayQuery::whereElementMatches(
+                    $q,
+                    'classes.subject_ids',
+                    sprintf('subject.code %1$s ? OR subject.title %1$s ?', $operator),
+                    [$like, $like],
+                    'or',
+                    'JOIN subject ON subject.id = {element}',
+                );
             });
         }
 

@@ -6,10 +6,13 @@ namespace App\Ai\Mcp;
 
 use App\Models\McpServer;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Laravel\Mcp\Client;
+use Laravel\Mcp\Client\Primitives\Tool as ClientTool;
 use Laravel\Mcp\Facades\Mcp;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -71,6 +74,44 @@ final class McpClientRegistry
     }
 
     /**
+     * Cache plain discovery metadata, never connected clients or credentials.
+     * Rebind cached tools to the current tenant's freshly configured client.
+     *
+     * @return Collection<int, ClientTool>
+     */
+    public function tools(McpServer $server): Collection
+    {
+        $client = $this->client($server->name);
+
+        if ($client === null) {
+            throw new RuntimeException('The MCP client could not be configured. Check the server transport and authentication settings.');
+        }
+
+        $fetch = fn (): array => $client->tools()->map(fn (ClientTool $tool): array => [
+            'name' => $tool->name,
+            'title' => $tool->title,
+            'description' => $tool->description,
+            'inputSchema' => $tool->inputSchema,
+            'outputSchema' => $tool->outputSchema,
+            'annotations' => $tool->annotations,
+            '_meta' => $tool->meta,
+        ])->values()->all();
+
+        $ttl = max(0, (int) $server->cache_ttl_seconds);
+        // Connection edits, credential rotation and TTL changes invalidate the
+        // catalog immediately, without putting secrets into a cache key.
+        $key = 'mcp-tools:'.$server->school_id.':'.hash('sha256', serialize([
+            $server->getKey(), $server->name, $server->transport, $server->url,
+            $server->command, $server->command_arguments, $server->auth_type,
+            $server->getRawOriginal('credentials'), $server->timeout_seconds, $ttl,
+        ]));
+
+        $payloads = $ttl > 0 ? Cache::remember($key, $ttl, $fetch) : $fetch();
+
+        return collect($payloads)->map(fn (array $payload): ClientTool => ClientTool::from($client, $payload));
+    }
+
+    /**
      * Discover every tool a server advertises, for the administration screen.
      *
      * Deliberately not filtered by the allowlist: an administrator has to see
@@ -85,7 +126,7 @@ final class McpClientRegistry
         }
 
         try {
-            $tools = $this->factory->make($server)->tools();
+            $tools = $this->tools($server);
         } catch (Throwable $e) {
             $server->forceFill(['last_error' => Str::limit($e->getMessage(), 500)])->save();
 

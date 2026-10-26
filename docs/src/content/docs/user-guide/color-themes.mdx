@@ -1,0 +1,171 @@
+---
+title: Color themes and appearance
+description: Compare light and dark palette previews and learn how profile choices and Shadebridge system defaults work.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+# Color themes and appearance
+
+Open **Profile → Personalization → Color Theme** to select an available palette. The selection applies immediately in the React portal and is saved in this browser. Light, dark, and system appearance are separate from the color palette; choose your appearance mode in the same personalization area.
+
+These settings describe the React portal theme provider, not Filament's separate administrative panel styling. Browser preferences do not synchronize between devices or accounts.
+
+## Preview scope
+
+The gallery below documents **pending local theme changes**: six new palettes, updated Caffeine and Claude files, and revised base colors. Those source changes were present in the maintainer's primary checkout when these images were captured, but are not included in this documentation change. Availability in a deployed release depends on its theme catalog and rebuilt assets.
+
+Each image is a Chromium screenshot of an **isolated component preview using the actual CSS variables**, not a screenshot of an authenticated profile or dashboard. The same controls, surfaces, and illustrative chart appear in both modes. Remote fonts are blocked for reproducibility, so typography uses system fallbacks. No student data is shown.
+
+## Default palette
+
+The pending base palette uses muted green accents, pale neutral surfaces in light mode, and near-black surfaces in dark mode. This original `default` palette is distinct from the configurable **system default**, which can point to any installed theme.
+
+<Tabs>
+<TabItem label="Light">
+![Default light palette with pale surfaces and muted green controls](/koakademy/images/themes/default-light.png)
+</TabItem>
+<TabItem label="Dark">
+![Default dark palette with near-black surfaces and muted green controls](/koakademy/images/themes/default-dark.png)
+</TabItem>
+</Tabs>
+
+## New palettes
+
+### Tangerine
+
+Warm orange primary controls with cool neutral supporting surfaces. Theme ID: `tangerine`.
+
+<Tabs>
+<TabItem label="Light">
+![Tangerine light palette component preview](/koakademy/images/themes/tangerine-light.png)
+</TabItem>
+<TabItem label="Dark">
+![Tangerine dark palette component preview](/koakademy/images/themes/tangerine-dark.png)
+</TabItem>
+</Tabs>
+
+### Zen Inspired Theme
+
+Restrained neutral controls with warm, paper-like surfaces. Theme ID: `zen-inspired-theme`.
+
+<Tabs>
+<TabItem label="Light">
+![Zen Inspired Theme light palette component preview](/koakademy/images/themes/zen-inspired-theme-light.png)
+</TabItem>
+<TabItem label="Dark">
+![Zen Inspired Theme dark palette component preview](/koakademy/images/themes/zen-inspired-theme-dark.png)
+</TabItem>
+</Tabs>
+
+### Claude Blu 2
+
+Blue primary controls and coordinated cool supporting colors. Theme ID: `claude-blu2`.
+
+<Tabs>
+<TabItem label="Light">
+![Claude Blu 2 light palette component preview](/koakademy/images/themes/claude-blu2-light.png)
+</TabItem>
+<TabItem label="Dark">
+![Claude Blu 2 dark palette component preview](/koakademy/images/themes/claude-blu2-dark.png)
+</TabItem>
+</Tabs>
+
+### Meridian
+
+Blue primary controls paired with warm secondary accents. Theme ID: `meridian`.
+
+<Tabs>
+<TabItem label="Light">
+![Meridian light palette component preview](/koakademy/images/themes/meridian-light.png)
+</TabItem>
+<TabItem label="Dark">
+![Meridian dark palette component preview](/koakademy/images/themes/meridian-dark.png)
+</TabItem>
+</Tabs>
+
+### Bamboo Breeze
+
+Muted teal controls and soft natural supporting surfaces. Theme ID: `bamboo-breeze`.
+
+<Tabs>
+<TabItem label="Light">
+![Bamboo Breeze light palette component preview](/koakademy/images/themes/bamboo-breeze-light.png)
+</TabItem>
+<TabItem label="Dark">
+![Bamboo Breeze dark palette component preview](/koakademy/images/themes/bamboo-breeze-dark.png)
+</TabItem>
+</Tabs>
+
+### Kodama Grove
+
+Earthy green accents with warm cream and olive surfaces. Theme ID: `kodama-grove`.
+
+<Tabs>
+<TabItem label="Light">
+![Kodama Grove light palette component preview](/koakademy/images/themes/kodama-grove-light.png)
+</TabItem>
+<TabItem label="Dark">
+![Kodama Grove dark palette component preview](/koakademy/images/themes/kodama-grove-dark.png)
+</TabItem>
+</Tabs>
+
+## Refreshed palettes
+
+### Caffeine
+
+The gallery reflects the updated local Caffeine CSS, including both mode definitions. Theme ID: `caffeine`.
+
+<Tabs>
+<TabItem label="Light">
+![Updated Caffeine light palette component preview](/koakademy/images/themes/caffeine-light.png)
+</TabItem>
+<TabItem label="Dark">
+![Updated Caffeine dark palette component preview](/koakademy/images/themes/caffeine-dark.png)
+</TabItem>
+</Tabs>
+
+### Claude
+
+The gallery reflects the current local Claude CSS. Theme ID: `claude`.
+
+<Tabs>
+<TabItem label="Light">
+![Updated Claude light palette component preview](/koakademy/images/themes/claude-light.png)
+</TabItem>
+<TabItem label="Dark">
+![Updated Claude dark palette component preview](/koakademy/images/themes/claude-dark.png)
+</TabItem>
+</Tabs>
+
+## System defaults and removed themes
+
+A valid saved browser choice takes precedence over the system default. Without a valid choice, the portal uses `defaultColorTheme` from `resources/js/conf/themes.ts`. A removed selection falls back to that system default without saving the fallback as a new personal preference.
+
+Maintainers manage the build-time catalog through [Shadebridge for Laravel](https://github.com/yukazakiri/laravel-shadebridge):
+
+```sh
+php artisan theme:import https://tweakcn.com/r/themes/kodama-grove.json
+php artisan theme:default kodama-grove
+php artisan theme:remove obsolete-theme
+npm run build
+```
+
+Use `php artisan theme:default --reset` to select the original `default` palette again. Imports and removals change source files; they require a frontend rebuild and deployment, not a browser refresh alone. Never remove an installed theme by deleting only its CSS import.
+
+## Reproduce the screenshots
+
+From the repository root, with Puppeteer and its browser installed:
+
+```sh
+node scripts/capture-theme-previews.mjs
+```
+
+To capture pending theme files from another checkout without modifying it:
+
+```sh
+PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
+  node scripts/capture-theme-previews.mjs /path/to/source-checkout
+```
+
+The script writes 18 PNGs at 1120 × 720 and `docs/public/images/themes/sources.json`, which records SHA-256 hashes of the exact CSS inputs. The source checkout needs all nine documented palettes and Puppeteer installed. Re-run after changing palette CSS; inspect both modes before committing screenshots.

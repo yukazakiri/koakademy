@@ -26,11 +26,13 @@ import * as React from "react";
 import { toast } from "sonner";
 import {
     AnalyticsChartRenderer,
-    type ChartArtifact,
+    chartArtifactKey,
+    parseChartArtifact,
 } from "./analytics-chart-renderer";
 import {
-    type DocumentArtifact,
     DocumentDownloadCard,
+    parseDocumentArtifact,
+    readArtifactBlob,
 } from "./document-download-card";
 import type { CitationSource, ToolInvocation } from "./use-ai-chat";
 
@@ -380,7 +382,7 @@ export function ChatMessageFormatter({
     const trimmedContent = (content || "").trim();
     const [exportingPdf, setExportingPdf] = React.useState(false);
 
-    // Parse Markdown text chunks, code blocks, and embedded JSON artifacts
+    // Parsing owns its sets; consumers only read them and deduplicate in fresh local sets.
     const {
         blocks: parsedBlocks,
         renderedDocIds,
@@ -388,16 +390,33 @@ export function ChatMessageFormatter({
     } = React.useMemo(() => {
         const docIds = new Set<string>();
         const chartKeys = new Set<string>();
+        const blocks: React.ReactNode[] = [];
+
+        const appendArtifact = (value: unknown, key: string, explicitType?: string): boolean => {
+            const chart = explicitType !== "document" ? parseChartArtifact(value) : null;
+            if (chart) {
+                const artifactKey = chartArtifactKey(chart);
+                if (!chartKeys.has(artifactKey)) {
+                    chartKeys.add(artifactKey);
+                    blocks.push(<AnalyticsChartRenderer key={key} chart={chart} />);
+                }
+                return true;
+            }
+            const document = explicitType !== "chart" ? parseDocumentArtifact(value) : null;
+            if (document) {
+                if (!docIds.has(document.document_id)) {
+                    docIds.add(document.document_id);
+                    blocks.push(<DocumentDownloadCard key={key} document={document} />);
+                }
+                return true;
+            }
+            return false;
+        };
 
         if (!trimmedContent) {
-            return {
-                blocks: [],
-                renderedDocIds: docIds,
-                renderedChartKeys: chartKeys,
-            };
+            return { blocks, renderedDocIds: docIds, renderedChartKeys: chartKeys };
         }
 
-        const blocks: React.ReactNode[] = [];
         const codeBlockRegex =
             /```(?:json:(chart|document)|(chart|document)|json)?\s*([\s\S]*?)```/g;
         let lastIndex = 0;
@@ -405,85 +424,28 @@ export function ChatMessageFormatter({
 
         while ((match = codeBlockRegex.exec(content)) !== null) {
             const blockStart = match.index;
-            const blockEnd = codeBlockRegex.lastIndex;
-
             if (blockStart > lastIndex) {
-                const textChunk = content
-                    .substring(lastIndex, blockStart)
-                    .trim();
+                const textChunk = content.substring(lastIndex, blockStart).trim();
                 if (textChunk) {
-                    blocks.push(
-                        <Response
-                            key={`text_${lastIndex}`}
-                            className="text-sm leading-relaxed"
-                        >
-                            {textChunk}
-                        </Response>
-                    );
+                    blocks.push(<Response key={`text_${lastIndex}`} className="text-sm leading-relaxed">{textChunk}</Response>);
                 }
             }
 
             const explicitType = match[1] || match[2];
             const body = match[3].trim();
             let handled = false;
-
             try {
-                const parsed = JSON.parse(body);
-
-                if (
-                    explicitType === "chart" ||
-                    parsed._type === "chart_artifact" ||
-                    parsed.chart_type
-                ) {
-                    const key =
-                        parsed.title ||
-                        parsed.chart_type ||
-                        `chart_${blockStart}`;
-                    chartKeys.add(key);
-                    blocks.push(
-                        <AnalyticsChartRenderer
-                            key={`chart_${blockStart}`}
-                            chart={parsed as ChartArtifact}
-                        />
-                    );
-                    handled = true;
-                } else if (
-                    explicitType === "document" ||
-                    parsed._type === "document_artifact" ||
-                    parsed.document_id
-                ) {
-                    if (parsed.document_id) {
-                        docIds.add(parsed.document_id);
-                    }
-                    blocks.push(
-                        <DocumentDownloadCard
-                            key={`doc_${blockStart}`}
-                            document={parsed as DocumentArtifact}
-                        />
-                    );
-                    handled = true;
-                }
+                handled = appendArtifact(JSON.parse(body), `artifact_${blockStart}`, explicitType);
             } catch {
-                // Not valid JSON, keep as standard code block
+                // Invalid JSON remains visible as a standard code block.
             }
 
             if (!handled) {
-                const rawLang =
-                    explicitType ||
-                    match[0].match(/^```(\w+)/)?.[1] ||
-                    "typescript";
+                const rawLang = explicitType || match[0].match(/^```(\w+)/)?.[1] || "typescript";
                 const codeLang = normalizeCodeLang(rawLang);
-                const codeTitle = body
-                    .match(
-                        /^(?:\/\/\s*|#\s*)?(?:filename|file|title):\s*([^\n]+)/i
-                    )?.[1]
-                    ?.trim();
-
+                const codeTitle = body.match(/^(?:\/\/\s*|#\s*)?(?:filename|file|title):\s*([^\n]+)/i)?.[1]?.trim();
                 blocks.push(
-                    <div
-                        key={`code_${blockStart}`}
-                        className="not-prose my-2.5 w-full"
-                    >
+                    <div key={`code_${blockStart}`} className="not-prose my-2.5 w-full">
                         <CodeBlock
                             code={body}
                             language={codeLang}
@@ -494,190 +456,55 @@ export function ChatMessageFormatter({
                     </div>
                 );
             }
-
-            lastIndex = blockEnd;
+            lastIndex = codeBlockRegex.lastIndex;
         }
 
-        if (lastIndex < content.length) {
-            const tail = content.substring(lastIndex).trim();
-            if (tail) {
-                if (tail.startsWith("{") && tail.endsWith("}")) {
-                    try {
-                        const parsed = JSON.parse(tail);
-                        if (
-                            parsed._type === "chart_artifact" ||
-                            parsed.chart_type
-                        ) {
-                            const key =
-                                parsed.title ||
-                                parsed.chart_type ||
-                                `chart_tail_${lastIndex}`;
-                            chartKeys.add(key);
-                            blocks.push(
-                                <AnalyticsChartRenderer
-                                    key={`chart_tail_${lastIndex}`}
-                                    chart={parsed}
-                                />
-                            );
-                            return {
-                                blocks,
-                                renderedDocIds: docIds,
-                                renderedChartKeys: chartKeys,
-                            };
-                        }
-                        if (
-                            parsed._type === "document_artifact" ||
-                            parsed.document_id
-                        ) {
-                            if (parsed.document_id) {
-                                docIds.add(parsed.document_id);
-                            }
-                            blocks.push(
-                                <DocumentDownloadCard
-                                    key={`doc_tail_${lastIndex}`}
-                                    document={parsed}
-                                />
-                            );
-                            return {
-                                blocks,
-                                renderedDocIds: docIds,
-                                renderedChartKeys: chartKeys,
-                            };
-                        }
-                    } catch {
-                        // Plain text fallback
-                    }
-                }
-
-                blocks.push(
-                    <Response
-                        key={`tail_${lastIndex}`}
-                        className="text-sm leading-relaxed"
-                    >
-                        {tail}
-                    </Response>
-                );
-            }
-        }
-
-        if (
-            blocks.length === 0 &&
-            trimmedContent.startsWith("{") &&
-            trimmedContent.endsWith("}")
-        ) {
+        const tail = content.substring(lastIndex).trim();
+        if (tail) {
+            let handled = false;
             try {
-                const parsed = JSON.parse(trimmedContent);
-                if (parsed._type === "chart_artifact" || parsed.chart_type) {
-                    const key =
-                        parsed.title || parsed.chart_type || "single_chart";
-                    chartKeys.add(key);
-                    return {
-                        blocks: [
-                            <AnalyticsChartRenderer
-                                key="single_chart"
-                                chart={parsed}
-                            />,
-                        ],
-                        renderedDocIds: docIds,
-                        renderedChartKeys: chartKeys,
-                    };
-                }
-                if (
-                    parsed._type === "document_artifact" ||
-                    parsed.document_id
-                ) {
-                    if (parsed.document_id) {
-                        docIds.add(parsed.document_id);
-                    }
-                    return {
-                        blocks: [
-                            <DocumentDownloadCard
-                                key="single_doc"
-                                document={parsed}
-                            />,
-                        ],
-                        renderedDocIds: docIds,
-                        renderedChartKeys: chartKeys,
-                    };
-                }
+                handled = appendArtifact(JSON.parse(tail), `artifact_tail_${lastIndex}`);
             } catch {
-                // Plain text fallback
+                // Plain text and malformed artifacts remain visible as prose.
+            }
+            if (!handled) {
+                blocks.push(<Response key={`tail_${lastIndex}`} className="text-sm leading-relaxed">{tail}</Response>);
             }
         }
 
-        const finalBlocks =
-            blocks.length > 0
-                ? blocks
-                : [
-                      <Response
-                          key="root_content"
-                          className="text-sm leading-relaxed"
-                      >
-                          {content}
-                      </Response>,
-                  ];
-
-        return {
-            blocks: finalBlocks,
-            renderedDocIds: docIds,
-            renderedChartKeys: chartKeys,
-        };
+        return { blocks, renderedDocIds: docIds, renderedChartKeys: chartKeys };
     }, [content, trimmedContent, isStreaming]);
 
-    // Extract tool visual artifacts (e.g. generated charts or documents from tools)
     const toolArtifacts = React.useMemo(() => {
-        if (!toolCalls || toolCalls.length === 0) return [];
         const items: React.ReactNode[] = [];
+        const docIds = new Set(renderedDocIds);
+        const chartKeys = new Set(renderedChartKeys);
 
-        for (const tool of toolCalls) {
+        for (const tool of toolCalls ?? []) {
             if (tool.state !== "output-available" || !tool.output) continue;
-
-            let outputObj = tool.output;
-            if (typeof outputObj === "string") {
+            let output: unknown = tool.output;
+            if (typeof output === "string") {
                 try {
-                    outputObj = JSON.parse(outputObj);
+                    output = JSON.parse(output);
                 } catch {
                     continue;
                 }
             }
 
-            if (!outputObj || typeof outputObj !== "object") continue;
-
-            if (
-                outputObj._type === "document_artifact" ||
-                outputObj.document_id ||
-                tool.toolName === "GenerateAdministrativeDocumentTool"
-            ) {
-                const docId =
-                    typeof outputObj.document_id === "string"
-                        ? outputObj.document_id
-                        : undefined;
-                if (!docId || !renderedDocIds.has(docId)) {
-                    if (docId) renderedDocIds.add(docId);
-                    items.push(
-                        <DocumentDownloadCard
-                            key={`tool_doc_${tool.id}_${docId || "doc"}`}
-                            document={outputObj as unknown as DocumentArtifact}
-                        />
-                    );
+            const document = parseDocumentArtifact(output);
+            if (document) {
+                if (!docIds.has(document.document_id)) {
+                    docIds.add(document.document_id);
+                    items.push(<DocumentDownloadCard key={`tool_doc_${tool.id}`} document={document} />);
                 }
-            } else if (
-                outputObj._type === "chart_artifact" ||
-                outputObj.chart_type ||
-                tool.toolName === "GenerateAnalyticsChartTool"
-            ) {
-                const key =
-                    typeof outputObj.title === "string"
-                        ? outputObj.title
-                        : tool.id;
-                if (!renderedChartKeys.has(key)) {
-                    renderedChartKeys.add(key);
-                    items.push(
-                        <AnalyticsChartRenderer
-                            key={`tool_chart_${tool.id}`}
-                            chart={outputObj as unknown as ChartArtifact}
-                        />
-                    );
+                continue;
+            }
+            const chart = parseChartArtifact(output);
+            if (chart) {
+                const key = chartArtifactKey(chart);
+                if (!chartKeys.has(key)) {
+                    chartKeys.add(key);
+                    items.push(<AnalyticsChartRenderer key={`tool_chart_${tool.id}`} chart={chart} />);
                 }
             }
         }
@@ -727,7 +554,7 @@ export function ChatMessageFormatter({
             });
 
             if (res.ok) {
-                const blob = await res.blob();
+                const blob = await readArtifactBlob(res, "pdf");
                 const blobUrl = window.URL.createObjectURL(blob);
                 const a = window.document.createElement("a");
                 a.href = blobUrl;

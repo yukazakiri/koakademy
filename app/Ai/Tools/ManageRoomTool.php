@@ -10,11 +10,12 @@ use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Facades\Auth;
 use Laravel\Ai\Approvals\Approval;
 use Laravel\Ai\Concerns\InteractsWithApprovals;
+use Laravel\Ai\Contracts\Approvable;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
 
-final class ManageRoomTool implements Tool
+final class ManageRoomTool implements Approvable, Tool
 {
     use InteractsWithApprovals;
 
@@ -97,7 +98,7 @@ final class ManageRoomTool implements Tool
         ]);
 
         $user = Auth::user();
-        $schoolId = $user?->school_id ?? app(\App\Services\TenantContext::class)->getCurrentSchool()?->id;
+        $schoolId = app(\App\Services\TenantContext::class)->getCurrentSchool()?->id ?? $user?->school_id;
 
         $room = Room::query()->create([
             'name' => mb_trim($validated['name']),
@@ -171,7 +172,7 @@ final class ManageRoomTool implements Tool
     private function resolveRoom(Request $request): ?Room
     {
         $user = Auth::user();
-        $schoolId = $user?->school_id ?? app(\App\Services\TenantContext::class)->getCurrentSchool()?->id;
+        $schoolId = app(\App\Services\TenantContext::class)->getCurrentSchool()?->id ?? $user?->school_id;
 
         $query = Room::query();
         if ($schoolId) {

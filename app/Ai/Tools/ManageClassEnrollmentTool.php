@@ -12,6 +12,7 @@ use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Facades\Auth;
 use Laravel\Ai\Approvals\Approval;
 use Laravel\Ai\Concerns\InteractsWithApprovals;
+use Laravel\Ai\Contracts\Approvable;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
@@ -24,7 +25,7 @@ use Stringable;
  * which surfaces a confirmation card quoting the real student, subject, and
  * destination — never a value the model invented.
  */
-final class ManageClassEnrollmentTool implements Tool
+final class ManageClassEnrollmentTool implements Approvable, Tool
 {
     use InteractsWithApprovals;
 

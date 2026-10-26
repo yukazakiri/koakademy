@@ -1,3 +1,4 @@
+import { agentTools as fetchAgentTools, analyticsSummary, chat, conversations as conversationList, destroyConversation, index as aiIndex, updateConversation } from "@/actions/App/Http/Controllers/AdministratorAiController";
 import AdminLayout from "@/components/administrators/admin-layout";
 import {
     Message,
@@ -47,6 +48,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Shdr14 } from "@/components/ui/shdr-14";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import type { FeatureFlags } from "@/types/feature-flags";
 import type { User } from "@/types/user";
 import { Head, usePage } from "@inertiajs/react";
 import {
@@ -130,8 +132,27 @@ function getGreeting(name: string): string {
 }
 
 export default function AdministratorAiChatPage({ initialConversation, initialConversationId }: AiChatPageProps) {
-    const { auth } = usePage<{ auth: { user: User } }>().props;
+    const pageUrl = usePage().url;
+    const { auth, featureFlags } = usePage<{
+        auth: { user: User };
+        featureFlags?: FeatureFlags;
+    }>().props;
     const user = auth.user;
+    const enabledAgents = React.useMemo(() => {
+        const aiFlags = featureFlags?.ai;
+
+        if (!aiFlags) {
+            return ADMIN_AGENTS;
+        }
+
+        if (aiFlags.any === false) {
+            return [];
+        }
+
+        return ADMIN_AGENTS.filter(
+            (agent) => aiFlags.agents?.[agent.key] !== false,
+        );
+    }, [featureFlags?.ai]);
 
     const [mobileDrawerOpen, setMobileDrawerOpen] = React.useState(false);
     const [searchQuery, setSearchQuery] = React.useState("");
@@ -143,10 +164,21 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
     const [isLoadingMore, setIsLoadingMore] = React.useState(false);
     const [totalConversations, setTotalConversations] = React.useState(0);
 
-    const [selectedAgent, setSelectedAgent] = React.useState<AgentRoleKey>("admin_executive");
+    const [selectedAgent, setSelectedAgent] = React.useState<AgentRoleKey>(
+        enabledAgents[0]?.key ?? "admin_executive",
+    );
     const [selectedModel, setSelectedModel] = React.useState<string>("");
     const [availableModels, setAvailableModels] = React.useState<ModelOption[]>([]);
     const [selectedFiles, setSelectedFiles] = React.useState<File[]>([]);
+
+    React.useEffect(() => {
+        if (
+            enabledAgents.length > 0 &&
+            !enabledAgents.some((agent) => agent.key === selectedAgent)
+        ) {
+            setSelectedAgent(enabledAgents[0].key);
+        }
+    }, [enabledAgents, selectedAgent]);
 
     // ReUI AI Chat style interactive controls
     const [isThinkingMode, setIsThinkingMode] = React.useState(false);
@@ -210,8 +242,10 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
         isLoading,
         conversationId,
         lastError,
-        clearError,
         sendPrompt,
+        retryLastRequest,
+        approvalDecisions,
+        approvalsLocked,
         submitDecision,
         submitAllDecisions,
         autoApprove,
@@ -220,10 +254,11 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
         regenerateAssistant,
         stop,
         clearChat,
-        loadConversationMessages,
+        loadConversation,
     } = useAiChat({
         agent: selectedAgent,
-        endpoint: "/administrators/ai/chat",
+        context: { page: pageUrl },
+        endpoint: chat.url(),
         initialConversationId: initialConversationId || initialConversation?.id,
         initialMessages: initialConversation?.messages || [],
         onConversationCreated: (newId, title) => {
@@ -237,7 +272,7 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                 ...prev.filter((c) => c.id !== newId),
             ]);
             if (typeof window !== "undefined") {
-                const newUrl = `/administrators/ai?conversation=${newId}`;
+                const newUrl = aiIndex.url({ query: { conversation: newId } });
                 window.history.pushState(null, "", newUrl);
             }
         },
@@ -268,7 +303,7 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                 params.set("query", query.trim());
             }
 
-            const res = await fetch(`/administrators/ai/conversations?${params.toString()}`, {
+            const res = await fetch(conversationList.url({ query: { page, query: query.trim() || undefined } }), {
                 headers: { "X-Requested-With": "XMLHttpRequest" },
             });
             if (res.ok) {
@@ -320,7 +355,7 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
     // first primary-provider model > first model. Legacy best-free heuristics
     // are intentionally no longer used.
     React.useEffect(() => {
-        fetch("/administrators/ai/analytics-summary", {
+        fetch(analyticsSummary.url(), {
             headers: { "X-Requested-With": "XMLHttpRequest" },
         })
             .then((res) => res.json())
@@ -369,7 +404,7 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
     React.useEffect(() => {
         let cancelled = false;
         setToolsLoading(true);
-        fetch(`/administrators/ai/agent-tools?agent=${encodeURIComponent(selectedAgent)}`, {
+        fetch(fetchAgentTools.url({ query: { agent: selectedAgent } }), {
             headers: { "X-Requested-With": "XMLHttpRequest" },
         })
             .then((res) => (res.ok ? res.json() : null))
@@ -420,36 +455,25 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
             return;
         }
 
-        try {
-            const res = await fetch(`/administrators/ai/conversations/${id}`, {
-                headers: { "X-Requested-With": "XMLHttpRequest" },
-            });
-            if (!res.ok) {
-                throw new Error("Could not load conversation.");
-            }
-            const data = await res.json();
-            loadConversationMessages(data.messages || [], data.conversation.id);
-
+        if (await loadConversation(id)) {
             if (typeof window !== "undefined") {
-                window.history.pushState(null, "", `/administrators/ai?conversation=${id}`);
+                window.history.pushState(null, "", aiIndex.url({ query: { conversation: id } }));
             }
             setMobileDrawerOpen(false);
-        } catch (error: unknown) {
-            toast.error(error instanceof Error ? error.message : "Failed to load conversation history.");
         }
     };
 
     const handleNewChat = () => {
         clearChat();
         if (typeof window !== "undefined") {
-            window.history.pushState(null, "", "/administrators/ai");
+            window.history.pushState(null, "", aiIndex.url());
         }
         setMobileDrawerOpen(false);
     };
 
     const handleRenameConversation = async (id: string, newTitle: string) => {
         const csrfToken = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || "";
-        const res = await fetch(`/administrators/ai/conversations/${id}`, {
+        const res = await fetch(updateConversation.url(id), {
             method: "PATCH",
             headers: {
                 "Content-Type": "application/json",
@@ -471,7 +495,7 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
 
     const handleDeleteConversation = async (id: string) => {
         const csrfToken = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || "";
-        const res = await fetch(`/administrators/ai/conversations/${id}`, {
+        const res = await fetch(destroyConversation.url(id), {
             method: "DELETE",
             headers: {
                 "X-Requested-With": "XMLHttpRequest",
@@ -544,7 +568,9 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
         setSelectedAgent(suggestion.agent);
         sendPrompt(suggestion.prompt, undefined, {
             agent: suggestion.agent,
-            model: selectedModel || undefined,
+            model: selectedModel.includes(":") ? selectedModel.split(":").slice(1).join(":") : selectedModel || undefined,
+            provider: activeModel?.provider,
+            supportsDocuments: activeModel?.supports_documents,
             thinking: isThinkingMode,
             search: isSearchMode,
         });
@@ -617,7 +643,14 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
         }
     };
 
-    const activeAgentMeta = ADMIN_AGENTS.find((a) => a.key === selectedAgent) || ADMIN_AGENTS[0];
+    const activeAgentMeta = enabledAgents.find((a) => a.key === selectedAgent) || enabledAgents[0] || ADMIN_AGENTS[0];
+    const promptSuggestions = React.useMemo(
+        () =>
+            DEFAULT_PROMPT_SUGGESTIONS.filter((suggestion) =>
+                enabledAgents.some((agent) => agent.key === suggestion.agent),
+            ),
+        [enabledAgents],
+    );
 
     const firstName = user.name?.split(" ")[0] || "Administrator";
     const activeModel = availableModels.find((model) => model.id === selectedModel);
@@ -950,39 +983,41 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                 {/* ------------------------------------------------------------- */}
                 {/* Specialist Agent Tabs Bar (Matching Design System)             */}
                 {/* ------------------------------------------------------------- */}
-                <div className="no-scrollbar flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border/70 bg-muted/20 px-3 py-2 backdrop-blur-sm sm:px-4">
-                    {ADMIN_AGENTS.map((agent) => {
-                        const isSelected = selectedAgent === agent.key;
-                        const Icon = agent.icon;
-                        return (
-                            <button
-                                key={agent.key}
-                                type="button"
-                                onClick={() => {
-                                    setSelectedAgent(agent.key);
-                                    toast.success(`Active specialist: ${agent.label}`);
-                                }}
-                                className={cn(
-                                    "flex shrink-0 cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-all",
-                                    isSelected
-                                        ? "bg-[#9333ea] font-semibold text-white shadow-md shadow-purple-500/20"
-                                        : "border border-border/70 bg-background/80 text-muted-foreground hover:bg-muted hover:text-foreground"
-                                )}
-                            >
-                                <Icon className="size-3.5" />
-                                <span>{agent.label}</span>
-                                <span
+                {enabledAgents.length > 0 && (
+                    <div className="no-scrollbar flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border/70 bg-muted/20 px-3 py-2 backdrop-blur-sm sm:px-4">
+                        {enabledAgents.map((agent) => {
+                            const isSelected = selectedAgent === agent.key;
+                            const Icon = agent.icon;
+                            return (
+                                <button
+                                    key={agent.key}
+                                    type="button"
+                                    onClick={() => {
+                                        setSelectedAgent(agent.key);
+                                        toast.success(`Active specialist: ${agent.label}`);
+                                    }}
                                     className={cn(
-                                        "ml-0.5 rounded-md px-1.5 py-0.2 font-mono text-[10px]",
-                                        isSelected ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
+                                        "flex shrink-0 cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-all",
+                                        isSelected
+                                            ? "bg-[#9333ea] font-semibold text-white shadow-md shadow-purple-500/20"
+                                            : "border border-border/70 bg-background/80 text-muted-foreground hover:bg-muted hover:text-foreground"
                                     )}
                                 >
-                                    {agent.badge}
-                                </span>
-                            </button>
-                        );
-                    })}
-                </div>
+                                    <Icon className="size-3.5" />
+                                    <span>{agent.label}</span>
+                                    <span
+                                        className={cn(
+                                            "ml-0.5 rounded-md px-1.5 py-0.2 font-mono text-[10px]",
+                                            isSelected ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
+                                        )}
+                                    >
+                                        {agent.badge}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
 
                 {/* ------------------------------------------------------------- */}
                 {/* Main Content Workspace (Full Width Canvas)                     */}
@@ -1036,11 +1071,16 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                                 {/* Center Composer Container */}
                                 <div className="mt-8 w-full">
                                     {renderComposerBox()}
+                                    {enabledAgents.length === 0 && (
+                                        <div className="border-border/70 bg-muted/30 text-muted-foreground mx-auto max-w-xl rounded-2xl border px-4 py-3 text-center text-sm">
+                                            AI assistants are currently disabled for this account. You can still read and download previous conversations.
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Suggested Prompts */}
                                 <div className="mt-5 flex w-full flex-wrap justify-center gap-2">
-                                    {DEFAULT_PROMPT_SUGGESTIONS.map((suggestion) => {
+                                    {promptSuggestions.map((suggestion) => {
                                         const Icon = suggestion.icon;
                                         return (
                                             <button
@@ -1162,16 +1202,16 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                                                                                 size="sm"
                                                                                 variant="outline"
                                                                                 className="h-7 text-xs border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                                                                                disabled={isLoading || approvalsLocked}
                                                                                 onClick={() => submitAllDecisions("reject")}
-                                                                                disabled={isLoading}
                                                                             >
                                                                                 Reject All
                                                                             </Button>
                                                                             <Button
                                                                                 size="sm"
                                                                                 className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+                                                                                disabled={isLoading || approvalsLocked}
                                                                                 onClick={() => submitAllDecisions("approve")}
-                                                                                disabled={isLoading}
                                                                             >
                                                                                 Approve All
                                                                             </Button>
@@ -1184,7 +1224,8 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                                                                         approval={approval}
                                                                         onDecision={submitDecision}
                                                                         onApproveAll={message.pendingApprovals!.length > 1 ? () => submitAllDecisions("approve") : undefined}
-                                                                        disabled={isLoading}
+                                                                        disabled={isLoading || approvalsLocked}
+                                                                        decision={approvalDecisions[approval.id]?.action}
                                                                     />
                                                                 ))}
                                                             </div>
@@ -1233,24 +1274,14 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                                                     <p className="text-destructive/90 mt-0.5">{lastError.message}</p>
                                                 </div>
                                             </div>
-                                            {lastError.retryPrompt && (
+                                            {lastError.retryable !== false && (
                                                 <Button
                                                     type="button"
                                                     variant="outline"
                                                     size="sm"
                                                     className="border-destructive/30 hover:bg-destructive/15 h-7 shrink-0 text-xs"
-                                                    onClick={() => {
-                                                        clearError();
-                                                        sendPrompt(lastError.retryPrompt!, selectedFiles, {
-                                                            model: selectedModel.includes(":")
-                                                                ? selectedModel.split(":").slice(1).join(":")
-                                                                : selectedModel || undefined,
-                                                            provider: activeModel?.provider,
-                                                            supportsDocuments: activeModel?.supports_documents,
-                                                            thinking: isThinkingMode,
-                                                            search: isSearchMode,
-                                                        });
-                                                    }}
+                                                    onClick={retryLastRequest}
+                                                    disabled={isLoading}
                                                 >
                                                     <RefreshCw className="mr-1 size-3" />
                                                     Retry
@@ -1431,6 +1462,10 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
     /* Render Composer Box (Matches @reui/ai-chat-1 screenshot design)        */
     /* --------------------------------------------------------------------- */
     function renderComposerBox() {
+        if (enabledAgents.length === 0) {
+            return null;
+        }
+
         return (
             <div className="w-full">
                 {/* File Attachments Pills */}
@@ -1660,7 +1695,7 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                                             Switch specialist
                                         </p>
                                         <div className="grid gap-1">
-                                            {ADMIN_AGENTS.map((agent) => {
+                                            {enabledAgents.map((agent) => {
                                                 const Icon = agent.icon;
                                                 const isActive = agent.key === selectedAgent;
                                                 return (

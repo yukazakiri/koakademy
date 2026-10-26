@@ -10,11 +10,14 @@ use App\Ai\Agents\CampusSupportAgent;
 use App\Ai\Agents\RegistrarAuditAgent;
 use App\Ai\Mcp\ExternalMcpTool;
 use App\Ai\Mcp\ResilientMcpServerTool;
+use App\Models\AiChatRun;
 use App\Models\GeneralSetting;
 use App\Models\Student;
 use App\Models\StudentClearance;
 use App\Models\User;
+use App\Services\Ai\AiAgentAccess;
 use App\Services\Ai\AiAttachmentProcessor;
+use App\Services\Ai\AiChatRunService;
 use App\Services\Ai\AiDocumentGeneratorService;
 use App\Services\Ai\AiSettingsService;
 use Illuminate\Http\JsonResponse;
@@ -27,7 +30,6 @@ use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
 use InvalidArgumentException;
-use Laravel\Ai\Approvals\Decision;
 use Laravel\Ai\Approvals\Decisions;
 use Laravel\Ai\Approvals\PendingApproval;
 use Laravel\Ai\Contracts\Agent;
@@ -41,7 +43,7 @@ final class AdministratorAiController extends Controller
     /**
      * Render the full-page Administrator AI Chat interface.
      */
-    public function index(Request $request): InertiaResponse
+    public function index(Request $request, AiChatRunService $runService): InertiaResponse
     {
         $user = Auth::user();
         abort_unless($user instanceof User && $user->canAccessAdminPortal(), 403);
@@ -50,20 +52,17 @@ final class AdministratorAiController extends Controller
         $initialConversation = null;
 
         if (is_string($initialConversationId) && filled($initialConversationId)) {
-            $conversation = Conversation::query()
-                ->where('id', $initialConversationId)
-                ->where('participant_id', $user->id)
-                ->with(['messages'])
-                ->first();
-
-            if ($conversation) {
+            try {
+                $conversation = $runService->conversation($user, $initialConversationId)->load(['messages']);
                 $initialConversation = [
                     'id' => $conversation->id,
                     'title' => $conversation->title,
                     'created_at' => $conversation->created_at?->toISOString(),
                     'updated_at' => $conversation->updated_at?->toISOString(),
-                    'messages' => $this->formatMessages($conversation->messages),
+                    'messages' => $runService->formatMessages($conversation->messages, $conversation->id),
                 ];
+            } catch (Throwable) {
+                $initialConversation = null;
             }
         }
 
@@ -77,7 +76,7 @@ final class AdministratorAiController extends Controller
     /**
      * Handle streaming AI assistant chat for administrators with full multi-provider and custom model support.
      */
-    public function chat(Request $request): mixed
+    public function chat(Request $request, AiChatRunService $runService): mixed
     {
         $user = Auth::user();
         abort_unless($user instanceof User && $user->canAccessAdminPortal(), 403);
@@ -91,25 +90,28 @@ final class AdministratorAiController extends Controller
         }
 
         $validated = $request->validate([
-            'agent' => ['nullable', 'string', Rule::in([
-                'admin_executive',
-                'registrar_auditor',
-                'bursar_finance',
-                'campus_support',
-            ])],
+            ...AiChatRunService::rules(),
+            'agent' => ['nullable', 'string', Rule::in(AiAgentAccess::ADMIN_AGENT_KEYS)],
             'provider' => ['nullable', 'string', 'max:64'],
             'model' => ['nullable', 'string', 'max:255'],
             'thinking' => ['nullable', 'boolean'],
             'search' => ['nullable', 'boolean'],
             'auto_approve' => ['nullable', 'boolean'],
             'conversation_id' => ['nullable', 'string', 'max:36'],
-            'message' => ['nullable', 'string', 'required_without:decisions', 'prohibits:decisions'],
-            'decisions' => ['nullable', 'array', 'required_without:message', 'prohibits:message'],
+            'message' => ['nullable', 'string', 'required_without_all:decisions,replay_message_id', 'prohibits:decisions'],
+            'decisions' => ['nullable', 'array', 'required_without_all:message,replay_message_id', 'prohibits:message'],
             'decisions.*.action' => ['required_with:decisions', Rule::in(['approve', 'reject'])],
             'decisions.*.result' => ['nullable', 'string'],
             'attachments' => ['nullable'],
             'attachments.*' => ['file', 'max:20480', 'mimes:pdf,doc,docx,rtf,odt,ods,xlsx,xls,csv,tsv,txt,md,json,sql,log,png,jpg,jpeg,webp,gif,bmp,tif,tiff'],
         ]);
+
+        $validated = $runService->continuationOptions($user, $validated);
+        $agentKey = (string) ($validated['agent'] ?? 'admin_executive');
+
+        if (! app(AiAgentAccess::class)->isEnabled($agentKey, $user)) {
+            abort(403, 'The requested administrative AI assistant is not active.');
+        }
 
         $thinkingMode = (bool) ($validated['thinking'] ?? false);
         $searchMode = (bool) ($validated['search'] ?? false);
@@ -118,7 +120,6 @@ final class AdministratorAiController extends Controller
             session(['ai_auto_approve_actions' => (bool) ($validated['auto_approve'] ?? false)]);
         }
 
-        $agentKey = $validated['agent'] ?? 'admin_executive';
         $agent = $this->resolveAgent($agentKey);
 
         $selectedProvider = $validated['provider'] ?? null;
@@ -193,74 +194,68 @@ final class AdministratorAiController extends Controller
             ]);
         }
 
-        $prompt = isset($validated['decisions'])
-            ? Decisions::from(collect($validated['decisions'])->map(
-                fn (array $d) => match ($d['action']) {
-                    'approve' => Decision::approve(),
-                    'reject' => Decision::reject($d['result'] ?? null),
-                }
-            )->all())
-            : (string) ($validated['message'] ?? '');
+        $run = $runService->begin($user, array_merge($validated, ['agent' => $agentKey]), $selectedProvider, $selectedModel);
+        if (! $run->wasRecentlyCreated) {
+            if ($run->status === 'running') {
+                abort(409, 'This request is already in progress.');
+            }
+
+            return $this->streamSavedRun($run, $runService);
+        }
 
         $aiAttachments = [];
-        $rawFiles = $request->file('attachments', []);
-        // Attachment support is derived from the server's configured model list.
-        $supportsDocumentAttachments = $this->providerSupportsDocumentAttachments($selectedProvider, $selectedModel);
-        if ($rawFiles instanceof UploadedFile) {
-            $rawFiles = [$rawFiles];
-        }
-
-        if (is_string($prompt) && ! empty($rawFiles)) {
-            $processor = app(AiAttachmentProcessor::class);
-            $processed = $processor->process($rawFiles, $prompt, $supportsDocumentAttachments);
-            $prompt = $processed['enrichedPrompt'];
-            $aiAttachments = $processed['attachments'];
-        }
-
-        // Think / Search modes are explicit composer toggles. They must affect
-        // this turn without polluting persisted transcripts: RemembersConversations
-        // stores the streamed prompt as the user message, so we stream an
-        // augmented copy while remembering the faithful version to restore
-        // afterwards. Reopening a conversation must show what the administrator
-        // actually submitted, not internal `[Modes: ...]` directives.
-        $promptForPersistence = is_string($prompt) ? $prompt : null;
-        if (is_string($prompt) && $prompt !== '' && ($thinkingMode || $searchMode)) {
-            $prefixes = [];
-            if ($thinkingMode) {
-                $prefixes[] = 'Think through this step-by-step with deep reasoning before answering. Show your intermediate reasoning so the UI can display the Thought Process.';
-            }
-            if ($searchMode) {
-                $prefixes[] = 'Ground your answer with current institutional records. Use CampusKnowledgeSearchTool, QueryCampusAnalyticsTool, or SearchStudentsTool (as appropriate for the active specialist) before answering from memory, and cite the tool results.';
-            }
-            if ($prefixes !== []) {
-                $prompt = '[Modes: '.implode(' | ', array_map(
-                    static fn (bool $on, string $label): string => $label.'='.($on ? 'on' : 'off'),
-                    [$thinkingMode, $searchMode],
-                    ['thinking', 'search']
-                ))."]\n".implode("\n", $prefixes)."\n\n".$prompt;
-            }
-        }
-
+        $replayedRawAttachments = [];
         $conversationId = $validated['conversation_id'] ?? null;
 
-        if ($conversationId) {
-            Conversation::query()
-                ->where('id', $conversationId)
-                ->where('participant_id', $user->id)
-                ->firstOrFail();
+        if (filled($validated['replay_message_id'] ?? null)) {
+            abort_unless(filled($conversationId), 422, 'A conversation is required to replay a message.');
+            $replayed = $runService->replay($user, (string) $conversationId, (string) $validated['replay_message_id']);
+            $conversationId = $replayed['conversation_id'];
+            $run->update(['conversation_id' => $conversationId]);
+            $prompt = $replayed['message'];
+            $aiAttachments = $replayed['attachments'];
+            $replayedRawAttachments = $replayed['raw_attachments'];
+        } else {
+            $prompt = isset($validated['decisions'])
+                ? Decisions::from($runService->normalizeDecisions($validated['decisions']))
+                : (string) ($validated['message'] ?? '');
 
-            $agentInstance = $agent->continue($conversationId, as: $user);
+            $rawFiles = $request->file('attachments', []);
+            $supportsDocumentAttachments = $this->providerSupportsDocumentAttachments($selectedProvider, $selectedModel);
+            if ($rawFiles instanceof UploadedFile) {
+                $rawFiles = [$rawFiles];
+            }
+
+            if (is_string($prompt) && ! empty($rawFiles)) {
+                $processor = app(AiAttachmentProcessor::class);
+                $processed = $processor->process($rawFiles, $prompt, $supportsDocumentAttachments);
+                $prompt = $processed['enrichedPrompt'];
+                $aiAttachments = $processed['attachments'];
+            }
+        }
+
+        $supportsDocumentAttachments = $this->providerSupportsDocumentAttachments($selectedProvider, $selectedModel);
+        $promptForPersistence = is_string($prompt) ? $prompt : null;
+        if (is_string($prompt) && $prompt !== '') {
+            $prompt = $runService->augmentPrompt($user, $prompt, $thinkingMode, $searchMode, $validated['context'] ?? null);
+        }
+
+        if ($conversationId) {
+            $runService->conversation($user, (string) $conversationId);
+            $agentInstance = $agent->continue((string) $conversationId, as: $user);
         } else {
             $agentInstance = $agent->forUser($user);
         }
 
-        return response()->stream(function () use ($agentInstance, $prompt, $promptForPersistence, $conversationId, $aiAttachments, $selectedProvider, $selectedModel, $agentKey, $aiSettings, $supportsDocumentAttachments) {
+        return response()->stream(function () use ($agentInstance, $prompt, $promptForPersistence, $replayedRawAttachments, $conversationId, $aiAttachments, $selectedProvider, $selectedModel, $agentKey, $aiSettings, $supportsDocumentAttachments, $run, $runService) {
             if (function_exists('set_time_limit')) {
                 @set_time_limit(0);
             }
 
+            $stream = null;
+            $errorText = null;
+
             try {
-                $stream = null;
                 $iterator = null;
                 $sawText = false;
                 $sawTool = false;
@@ -372,9 +367,10 @@ final class AdministratorAiController extends Controller
                         }
                     } elseif ($event instanceof \Laravel\Ai\Streaming\Events\Error) {
                         $sawError = true;
+                        $errorText = (string) $event;
                         echo 'data: '.json_encode([
                             'type' => 'error',
-                            'errorText' => (string) $event,
+                            'errorText' => $errorText,
                         ])."\n\n";
                     }
 
@@ -400,9 +396,10 @@ final class AdministratorAiController extends Controller
                             'model' => $selectedModel,
                             'failed_tools' => $uniqueFailed,
                         ]);
+                        $errorText = "Tool execution failed ({$toolList}) and the assistant stopped before answering. Your request is preserved — retry, approve any pending tool, or switch to the global default model and try again.";
                         echo 'data: '.json_encode([
                             'type' => 'error',
-                            'errorText' => "Tool execution failed ({$toolList}) and the assistant stopped before answering. Your request is preserved — retry, approve any pending tool, or switch to the global default model and try again.",
+                            'errorText' => $errorText,
                         ])."\n\n";
                     } elseif (! $sawTool) {
                         Log::warning('Administrative AI turn ended with no assistant output.', [
@@ -410,9 +407,10 @@ final class AdministratorAiController extends Controller
                             'provider' => $selectedProvider ?? config('ai.default'),
                             'model' => $selectedModel,
                         ]);
+                        $errorText = 'The assistant stopped without producing a response. Your request is preserved — retry the request.';
                         echo 'data: '.json_encode([
                             'type' => 'error',
-                            'errorText' => 'The assistant stopped without producing a response. Your request is preserved — retry the request.',
+                            'errorText' => $errorText,
                         ])."\n\n";
                     }
                     if (ob_get_level() > 0) {
@@ -423,12 +421,26 @@ final class AdministratorAiController extends Controller
 
                 $resolvedConversationId = $stream?->conversationId ?? $agentInstance->currentConversation() ?? $conversationId;
                 if (filled($resolvedConversationId)) {
-                    $this->restoreFaithfulUserPrompt((string) $resolvedConversationId, $promptForPersistence, is_string($prompt) ? $prompt : null);
-                    $conversationTitle = Conversation::query()->where('id', $resolvedConversationId)->value('title');
+                    $runService->restoreFaithfulUserPrompt((string) $resolvedConversationId, $promptForPersistence, is_string($prompt) ? $prompt : null, $replayedRawAttachments);
+                }
+
+                if ($selectedProvider !== $run->provider || $selectedModel !== $run->model) {
+                    $run->forceFill(['provider' => $selectedProvider, 'model' => $selectedModel])->save();
+                }
+
+                $runStatus = $sawApproval ? 'paused' : (($sawError || $errorText !== null) ? 'failed' : 'completed');
+                $runService->finish($run, $stream, filled($resolvedConversationId) ? (string) $resolvedConversationId : null, $runStatus, $errorText);
+
+                if (filled($resolvedConversationId)) {
+                    $conv = Conversation::query()->with(['messages'])->find($resolvedConversationId);
                     echo 'data: '.json_encode([
                         'type' => 'conversation',
-                        'conversationId' => $resolvedConversationId,
-                        'title' => $conversationTitle,
+                        'conversationId' => (string) $resolvedConversationId,
+                        'title' => $conv?->title,
+                        'messages' => $conv ? $runService->formatMessages($conv->messages, (string) $resolvedConversationId) : [],
+                        'userMessageId' => $run->user_message_id,
+                        'assistantMessageId' => $run->assistant_message_id,
+                        'run' => $run->fresh()?->metadata() ?? $run->metadata(),
                     ])."\n\n";
                 }
 
@@ -449,16 +461,34 @@ final class AdministratorAiController extends Controller
                     'trace' => $e->getTraceAsString(),
                 ]);
 
-                // A failed turn may still have persisted the mode-augmented user
-                // message before throwing; restore the faithful version so the
-                // transcript stays clean for existing conversations.
-                if (filled($conversationId)) {
-                    $this->restoreFaithfulUserPrompt((string) $conversationId, $promptForPersistence, is_string($prompt) ? $prompt : null);
+                $failedConversationId = $stream?->conversationId ?? $agentInstance->currentConversation() ?? $conversationId;
+                if (filled($failedConversationId)) {
+                    $runService->restoreFaithfulUserPrompt((string) $failedConversationId, $promptForPersistence, is_string($prompt) ? $prompt : null, $replayedRawAttachments);
                 }
 
                 $providerName = (string) ($selectedProvider ?? config('ai.default', 'anthropic'));
                 $modelName = (string) ($selectedModel ?? 'default');
                 $errorMessage = "Error from [{$providerName}]: {$rawError}";
+
+                $runService->finish($run, $stream, filled($failedConversationId) ? (string) $failedConversationId : null, 'failed', $errorMessage);
+
+                if (filled($failedConversationId)) {
+                    $conv = Conversation::query()->with(['messages'])->find($failedConversationId);
+                    echo 'data: '.json_encode([
+                        'type' => 'conversation',
+                        'conversationId' => (string) $failedConversationId,
+                        'title' => $conv?->title,
+                        'messages' => $conv ? $runService->formatMessages($conv->messages, (string) $failedConversationId) : [],
+                        'userMessageId' => $run->user_message_id,
+                        'assistantMessageId' => $run->assistant_message_id,
+                        'run' => $run->fresh()?->metadata() ?? $run->metadata(),
+                    ])."\n\n";
+                } else {
+                    echo 'data: '.json_encode([
+                        'type' => 'run',
+                        'run' => $run->fresh()?->metadata() ?? $run->metadata(),
+                    ])."\n\n";
+                }
 
                 echo 'data: '.json_encode([
                     'type' => 'error',
@@ -505,17 +535,12 @@ final class AdministratorAiController extends Controller
     /**
      * Retrieve a conversation and its messages.
      */
-    public function showConversation(string $conversationId): JsonResponse
+    public function showConversation(string $conversationId, AiChatRunService $runService): JsonResponse
     {
         $user = Auth::user();
         abort_unless($user instanceof User && $user->canAccessAdminPortal(), 403);
 
-        $conversation = Conversation::query()
-            ->where('id', $conversationId)
-            ->where('participant_id', $user->id)
-            ->where('participant_type', $user->getMorphClass())
-            ->with(['messages'])
-            ->firstOrFail();
+        $conversation = $runService->conversation($user, $conversationId)->load(['messages']);
 
         return response()->json([
             'conversation' => [
@@ -524,14 +549,15 @@ final class AdministratorAiController extends Controller
                 'created_at' => $conversation->created_at?->toISOString(),
                 'updated_at' => $conversation->updated_at?->toISOString(),
             ],
-            'messages' => $this->formatMessages($conversation->messages),
+            'messages' => $runService->formatMessages($conversation->messages, $conversation->id),
+            'run' => $runService->latest($user, $conversation->id)?->metadata(),
         ]);
     }
 
     /**
      * Rename a conversation title.
      */
-    public function updateConversation(Request $request, string $conversationId): JsonResponse
+    public function updateConversation(Request $request, string $conversationId, AiChatRunService $runService): JsonResponse
     {
         $user = Auth::user();
         abort_unless($user instanceof User && $user->canAccessAdminPortal(), 403);
@@ -540,11 +566,7 @@ final class AdministratorAiController extends Controller
             'title' => 'required|string|max:120',
         ]);
 
-        $conversation = Conversation::query()
-            ->where('id', $conversationId)
-            ->where('participant_id', $user->id)
-            ->where('participant_type', $user->getMorphClass())
-            ->firstOrFail();
+        $conversation = $runService->conversation($user, $conversationId);
 
         $conversation->update([
             'title' => mb_trim($validated['title']),
@@ -559,17 +581,14 @@ final class AdministratorAiController extends Controller
     /**
      * Delete a conversation.
      */
-    public function destroyConversation(string $conversationId): JsonResponse
+    public function destroyConversation(string $conversationId, AiChatRunService $runService): JsonResponse
     {
         $user = Auth::user();
         abort_unless($user instanceof User && $user->canAccessAdminPortal(), 403);
 
-        $conversation = Conversation::query()
-            ->where('id', $conversationId)
-            ->where('participant_id', $user->id)
-            ->where('participant_type', $user->getMorphClass())
-            ->firstOrFail();
+        $conversation = $runService->conversation($user, $conversationId);
 
+        AiChatRun::query()->where('conversation_id', $conversation->id)->delete();
         $conversation->messages()->delete();
         $conversation->delete();
 
@@ -827,15 +846,15 @@ final class AdministratorAiController extends Controller
         abort_unless($user instanceof User && $user->canAccessAdminPortal(), 403);
 
         $validated = $request->validate([
-            'agent' => ['nullable', 'string', Rule::in([
-                'admin_executive',
-                'registrar_auditor',
-                'bursar_finance',
-                'campus_support',
-            ])],
+            'agent' => ['nullable', 'string', Rule::in(AiAgentAccess::ADMIN_AGENT_KEYS)],
         ]);
 
         $agentKey = (string) ($validated['agent'] ?? 'admin_executive');
+
+        if (! app(AiAgentAccess::class)->isEnabled($agentKey, $user)) {
+            abort(403, 'The requested administrative AI assistant is not active.');
+        }
+
         $agent = $this->resolveAgent($agentKey);
 
         $tools = [];
@@ -890,6 +909,50 @@ final class AdministratorAiController extends Controller
             'agent' => $agentKey,
             'count' => count($tools),
             'tools' => $tools,
+        ]);
+    }
+
+    /**
+     * Replay a previously completed/paused/failed run without re-executing the model or tools.
+     */
+    private function streamSavedRun(AiChatRun $run, AiChatRunService $runService): mixed
+    {
+        return response()->stream(function () use ($run, $runService): void {
+            $convId = $run->conversation_id;
+            if (filled($convId)) {
+                $conv = Conversation::query()->with(['messages'])->find($convId);
+                echo 'data: '.json_encode([
+                    'type' => 'conversation',
+                    'conversationId' => (string) $convId,
+                    'title' => $conv?->title,
+                    'messages' => $conv ? $runService->formatMessages($conv->messages, (string) $convId) : [],
+                    'userMessageId' => $run->user_message_id,
+                    'assistantMessageId' => $run->assistant_message_id,
+                    'run' => $run->metadata(),
+                ])."\n\n";
+            } else {
+                echo 'data: '.json_encode([
+                    'type' => 'run',
+                    'run' => $run->metadata(),
+                ])."\n\n";
+            }
+
+            if ($run->status === 'failed' && filled($run->error)) {
+                echo 'data: '.json_encode([
+                    'type' => 'error',
+                    'errorText' => (string) $run->error,
+                ])."\n\n";
+            }
+
+            echo "data: [DONE]\n\n";
+            if (ob_get_level() > 0) {
+                ob_flush();
+            }
+            flush();
+        }, 200, [
+            'Cache-Control' => 'no-cache, no-transform',
+            'Content-Type' => 'text/event-stream',
+            'X-Accel-Buffering' => 'no',
         ]);
     }
 

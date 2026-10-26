@@ -1,4 +1,5 @@
-import { chat } from "@/actions/App/Http/Controllers/AiChatController";
+import { chat, messages as showPortalConversation } from "@/actions/App/Http/Controllers/AiChatController";
+import { showConversation } from "@/actions/App/Http/Controllers/AdministratorAiController";
 import * as React from "react";
 import { toast } from "sonner";
 import type { PendingToolApproval } from "./approval-card";
@@ -21,11 +22,26 @@ export interface ToolInvocation {
     errorText?: string;
 }
 
-export interface CitationSource {
-    title: string;
-    url: string;
+export interface CitationSource { title: string; url: string }
+export interface PromptOptions {
+    agent?: AgentRoleKey;
+    model?: string;
+    provider?: string;
+    supportsDocuments?: boolean;
+    thinking?: boolean;
+    search?: boolean;
+    autoApprove?: boolean;
+    context?: { page: string };
 }
-
+export interface ChatRun {
+    id?: string;
+    request_id: string;
+    status: "running" | "paused" | "completed" | "failed";
+    agent: AgentRoleKey;
+    provider?: string;
+    model?: string;
+    options?: { thinking?: boolean; search?: boolean; auto_approve?: boolean; context?: { page: string } };
+}
 export interface ChatMessage {
     id: string;
     role: "user" | "assistant" | "system";
@@ -36,818 +52,469 @@ export interface ChatMessage {
     attachments?: ChatAttachment[];
     pendingApprovals?: PendingToolApproval[];
     createdAt?: Date;
+    run?: ChatRun;
+    requestOptions?: PromptOptions;
 }
-
 export interface UseAiChatOptions {
     agent: AgentRoleKey;
     endpoint?: string;
     initialConversationId?: string;
     initialMessages?: ChatMessage[];
     persistenceKey?: string;
+    context?: { page: string };
     onFinish?: (message: ChatMessage) => void;
     onError?: (error: Error) => void;
     onConversationCreated?: (conversationId: string, title?: string) => void;
 }
+export interface ApprovalDecision { action: "approve" | "reject"; result?: string }
+type ChatError = { title: string; message: string; retryable?: boolean };
+interface RequestSnapshot {
+    readonly requestId: string;
+    readonly conversationId?: string;
+    readonly replayMessageId?: string;
+    readonly content: string;
+    readonly files: readonly File[];
+    readonly options: Readonly<PromptOptions>;
+    readonly decisions?: Readonly<Record<string, ApprovalDecision>>;
+}
+interface Attempt {
+    snapshot: RequestSnapshot;
+    userId?: string;
+    assistantId: string;
+    conversationId?: string;
+    run?: ChatRun;
+    canonical?: ChatMessage;
+}
+interface Operation { generation: number; controller: AbortController; attempt?: Attempt }
 
-export interface PromptOptions {
-    agent?: AgentRoleKey;
-    model?: string;
-    provider?: string;
-    supportsDocuments?: boolean;
-    thinking?: boolean;
-    search?: boolean;
-    autoApprove?: boolean;
+const persistedId = (id?: string): id is string => !!id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+const localId = () => `local_${crypto.randomUUID()}`;
+
+/** Route paths only: queries and fragments can contain credentials or unrelated private filters. */
+export function chatPageContext(url?: string): { page: string } | undefined {
+    const path = (url || (typeof window !== "undefined" ? window.location.pathname : "")).split(/[?#]/, 1)[0];
+    return path.startsWith("/") && !path.startsWith("//") ? { page: path } : undefined;
+}
+function optionsFor(message: ChatMessage): PromptOptions | undefined {
+    if (!message.run) return message.requestOptions;
+    const { agent, provider, model, options } = message.run;
+    return { agent, provider, model, thinking: options?.thinking, search: options?.search, autoApprove: options?.auto_approve, context: options?.context };
+}
+function snapshotOf(snapshot: RequestSnapshot): RequestSnapshot {
+    const context = chatPageContext(snapshot.options.context?.page);
+    return Object.freeze({
+        ...snapshot,
+        files: Object.freeze([...snapshot.files]),
+        options: Object.freeze({ ...snapshot.options, context: context ? Object.freeze(context) : undefined }),
+        decisions: snapshot.decisions ? Object.freeze(Object.fromEntries(Object.entries(snapshot.decisions).map(([id, decision]) => [id, Object.freeze({ ...decision })]))) : undefined,
+    });
 }
 
-export function useAiChat({
-    agent,
-    endpoint,
-    initialConversationId,
-    initialMessages = [],
-    persistenceKey,
-    onFinish,
-    onError,
-    onConversationCreated,
-}: UseAiChatOptions) {
-    const [messages, setMessages] = React.useState<ChatMessage[]>(() => {
-        if (persistenceKey && typeof window !== "undefined") {
-            try {
-                const saved = sessionStorage.getItem(persistenceKey);
-                if (saved) {
-                    const parsed = JSON.parse(saved);
-                    if (Array.isArray(parsed) && parsed.length > 0) {
-                        return parsed;
-                    }
-                }
-            } catch {
-                // Ignore parsing errors
-            }
-        }
-        return initialMessages;
+export function useAiChat({ agent, endpoint, initialConversationId, initialMessages = [], persistenceKey, context, onFinish, onError, onConversationCreated }: UseAiChatOptions) {
+    const [messagesState, setMessagesState] = React.useState<ChatMessage[]>(() => {
+        try {
+            const saved = persistenceKey && typeof window !== "undefined" ? sessionStorage.getItem(persistenceKey) : null;
+            const parsed = saved ? JSON.parse(saved) : null;
+            return Array.isArray(parsed) ? parsed : initialMessages;
+        } catch { return initialMessages; }
+    });
+    const [conversationState, setConversationState] = React.useState<string | undefined>(() => {
+        try { return (persistenceKey && typeof window !== "undefined" ? sessionStorage.getItem(`${persistenceKey}_conv_id`) : null) || initialConversationId; }
+        catch { return initialConversationId; }
     });
     const [input, setInput] = React.useState("");
     const [isLoading, setIsLoading] = React.useState(false);
-    const [conversationId, setConversationId] = React.useState<string | undefined>(() => {
-        if (persistenceKey && typeof window !== "undefined") {
-            try {
-                const savedId = sessionStorage.getItem(`${persistenceKey}_conv_id`);
-                if (savedId) return savedId;
-            } catch {
-                // Ignore storage errors
-            }
-        }
-        return initialConversationId;
+    const [autoApprove, setAutoApproveState] = React.useState(() => {
+        try { return !!persistenceKey && typeof window !== "undefined" && sessionStorage.getItem(`${persistenceKey}_auto_approve`) === "true"; }
+        catch { return false; }
     });
-    const [autoApprove, setAutoApproveState] = React.useState<boolean>(() => {
-        if (persistenceKey && typeof window !== "undefined") {
-            try {
-                return sessionStorage.getItem(`${persistenceKey}_auto_approve`) === "true";
-            } catch {
-                return false;
-            }
-        }
-        return false;
-    });
-    const [lastError, setLastError] = React.useState<{ title: string; message: string; retryPrompt?: string } | null>(null);
-    const [lastPrompt, setLastPrompt] = React.useState<string>("");
+    const [lastError, setLastError] = React.useState<ChatError | null>(null);
+    const [lastPrompt, setLastPrompt] = React.useState("");
+    const [approvalDecisions, setApprovalDecisions] = React.useState<Record<string, ApprovalDecision>>({});
+    const [approvalsLocked, setApprovalsLocked] = React.useState(false);
+    const messagesRef = React.useRef(messagesState);
+    const conversationRef = React.useRef(conversationState);
+    const generationRef = React.useRef(0);
+    const activeRef = React.useRef<Operation | null>(null);
+    const failedRef = React.useRef<Attempt | null>(null);
+    const decisionsRef = React.useRef<Record<string, ApprovalDecision>>({});
+    const previewsRef = React.useRef(new Set<string>());
+    const callbacks = React.useRef({ onFinish, onError, onConversationCreated });
+    callbacks.current = { onFinish, onError, onConversationCreated };
+    const targetUrl = endpoint || chat.url();
 
-    const setAutoApprove = React.useCallback(
-        (val: boolean) => {
-            setAutoApproveState(val);
-            if (persistenceKey && typeof window !== "undefined") {
-                try {
-                    sessionStorage.setItem(`${persistenceKey}_auto_approve`, String(val));
-                } catch {
-                    // Ignore storage errors
-                }
-            }
-        },
-        [persistenceKey]
-    );
+    // Mirror synchronously so two callbacks before React renders still see the latest owner/history.
+    const setMessages = React.useCallback((value: React.SetStateAction<ChatMessage[]>) => {
+        const next = typeof value === "function" ? value(messagesRef.current) : value;
+        messagesRef.current = next;
+        setMessagesState(next);
+    }, []);
+    const setConversationId = React.useCallback((value: React.SetStateAction<string | undefined>) => {
+        const next = typeof value === "function" ? value(conversationRef.current) : value;
+        conversationRef.current = next;
+        setConversationState(next);
+    }, []);
+    const owns = React.useCallback((op: Operation) => activeRef.current === op && generationRef.current === op.generation && !op.controller.signal.aborted, []);
+    const invalidate = React.useCallback(() => {
+        generationRef.current++;
+        activeRef.current?.controller.abort();
+        activeRef.current = null;
+        setIsLoading(false);
+    }, []);
+    const releaseFiles = React.useCallback(() => {
+        failedRef.current = null;
+        previewsRef.current.forEach((url) => URL.revokeObjectURL(url));
+        previewsRef.current.clear();
+    }, []);
+    const resetDecisions = React.useCallback(() => {
+        decisionsRef.current = {};
+        setApprovalDecisions({});
+    }, []);
+    const begin = React.useCallback((attempt?: Attempt) => {
+        invalidate();
+        const op = { generation: generationRef.current, controller: new AbortController(), attempt };
+        activeRef.current = op;
+        setIsLoading(true);
+        return op;
+    }, [invalidate]);
+    const finish = React.useCallback((op: Operation) => {
+        if (!owns(op)) return;
+        activeRef.current = null;
+        setIsLoading(false);
+    }, [owns]);
 
-    // Save messages and conversationId whenever updated if persistenceKey provided
     React.useEffect(() => {
         if (!persistenceKey || typeof window === "undefined") return;
         try {
-            if (messages.length > 0) {
-                sessionStorage.setItem(persistenceKey, JSON.stringify(messages));
-            }
-            if (conversationId) {
-                sessionStorage.setItem(`${persistenceKey}_conv_id`, conversationId);
-            }
-        } catch {
-            // Ignore storage quotas
-        }
-    }, [messages, conversationId, persistenceKey]);
-
-    const abortControllerRef = React.useRef<AbortController | null>(null);
-    const isSendingRef = React.useRef(false);
-
-    const targetUrl = endpoint || chat.url();
-
+            sessionStorage.setItem(persistenceKey, JSON.stringify(messagesState));
+            if (conversationState) sessionStorage.setItem(`${persistenceKey}_conv_id`, conversationState);
+            else sessionStorage.removeItem(`${persistenceKey}_conv_id`);
+        } catch { /* Optional browser persistence. Files are held only in memory until success/new/load/unmount. */ }
+    }, [messagesState, conversationState, persistenceKey]);
+    React.useEffect(() => () => { invalidate(); releaseFiles(); }, [invalidate, releaseFiles]);
+    const previousAgent = React.useRef(agent);
     React.useEffect(() => {
-        if (initialConversationId !== undefined && initialConversationId !== conversationId) {
+        if (previousAgent.current !== agent) invalidate();
+        previousAgent.current = agent;
+    }, [agent, invalidate]);
+    const previousInitial = React.useRef(initialConversationId);
+    React.useEffect(() => {
+        if (previousInitial.current !== initialConversationId) {
+            invalidate(); releaseFiles(); resetDecisions();
             setConversationId(initialConversationId);
-        }
-    }, [initialConversationId]);
-
-    React.useEffect(() => {
-        if (initialMessages.length > 0 && messages.length === 0) {
             setMessages(initialMessages);
+            setLastError(null); setApprovalsLocked(false);
         }
-    }, [initialMessages]);
+        previousInitial.current = initialConversationId;
+    }, [initialConversationId, initialMessages, invalidate, releaseFiles, resetDecisions, setConversationId, setMessages]);
 
-    const appendMessage = React.useCallback((msg: Omit<ChatMessage, "id">) => {
-        const id = "msg_" + Math.random().toString(36).substring(2, 9);
-        const fullMessage: ChatMessage = { ...msg, id, createdAt: new Date() };
-        setMessages((prev) => [...prev, fullMessage]);
-        return fullMessage;
-    }, []);
-
-    const readStream = React.useCallback(
-        async (response: Response, assistantId: string, retryPromptText?: string, documentRetryPrompt?: string) => {
-            if (!response.body) {
-                throw new Error("No response body received from chat stream.");
+    const applySnapshot = React.useCallback((data: { messages?: ChatMessage[]; conversationId?: string; conversation?: { id: string }; userMessageId?: string; assistantMessageId?: string; run?: ChatRun; title?: string }, op: Operation) => {
+        if (!owns(op)) return;
+        const attempt = op.attempt;
+        const id = data.conversationId || data.conversation?.id || attempt?.conversationId;
+        const oldUserId = attempt?.userId;
+        const oldAssistantId = attempt?.assistantId;
+        if (attempt) {
+            attempt.conversationId = id;
+            attempt.userId = data.userMessageId || attempt.userId;
+            attempt.assistantId = data.assistantMessageId || attempt.assistantId;
+            if (data.run) attempt.run = data.run;
+        }
+        if (id) setConversationId(id);
+        if (Array.isArray(data.messages)) {
+            const canonical = data.messages.map((message) => ({ ...message, requestOptions: optionsFor(message) || (message.id === attempt?.assistantId ? attempt?.snapshot.options : undefined) }));
+            if (attempt) {
+                // Failed duplicate requests may return a snapshot before explicit message IDs are available.
+                const owned = canonical.filter((m) => m.run?.request_id === attempt.snapshot.requestId);
+                const user = owned.find((m) => m.role === "user");
+                const assistant = owned.filter((m) => m.role === "assistant").at(-1);
+                if (user) attempt.userId = user.id;
+                if (assistant) { attempt.assistantId = assistant.id; attempt.canonical = assistant; }
+                else attempt.canonical = canonical.find((m) => m.id === attempt.assistantId);
             }
+            setMessages(canonical);
+        } else if (attempt) {
+            setMessages((prev) => prev.map((m) => m.id === oldUserId ? { ...m, id: attempt.userId! } : m.id === oldAssistantId ? { ...m, id: attempt.assistantId, run: attempt.run } : m));
+        }
+    }, [owns, setConversationId, setMessages]);
 
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let accumulatedText = "";
-            let accumulatedReasoning = "";
-            let lineBuffer = "";
-            const pendingApprovals: PendingToolApproval[] = [];
-            const toolInvocations: Map<string, ToolInvocation> = new Map();
-            const citations: CitationSource[] = [];
-            let sawDone = false;
-            let sawStreamError = false;
-
-            while (true) {
-                const { value, done } = await reader.read();
-                if (done) break;
-
-                lineBuffer += decoder.decode(value, { stream: true });
-                const lines = lineBuffer.split("\n");
-                lineBuffer = lines.pop() ?? "";
-
-                for (const line of lines) {
-                    const trimmed = line.trim();
-                    if (!trimmed) continue;
-
-                    if (trimmed.startsWith("data: ")) {
-                        const dataPayload = trimmed.slice(6).trim();
-                        if (dataPayload === "[DONE]") {
-                            sawDone = true;
-                            continue;
-                        }
-
-                        try {
-                            const parsed = JSON.parse(dataPayload);
-                            if (parsed.type === "text-delta" || parsed.type === "text_delta") {
-                                accumulatedText += parsed.delta ?? parsed.text ?? "";
-                            } else if (parsed.type === "reasoning-delta" || parsed.type === "reasoning_delta") {
-                                accumulatedReasoning += parsed.delta ?? parsed.text ?? "";
-                            } else if (parsed.type === "tool-call" || parsed.type === "tool_call") {
-                                const callId = parsed.toolCallId || parsed.id;
-                                if (callId) {
-                                    toolInvocations.set(callId, {
-                                        id: callId,
-                                        toolName: parsed.toolName || parsed.name || "Tool",
-                                        state: "input-available",
-                                        input: parsed.input || parsed.arguments,
-                                    });
-                                }
-                            } else if (parsed.type === "tool-result" || parsed.type === "tool_result") {
-                                const callId = parsed.toolCallId || parsed.id;
-                                if (callId) {
-                                    const existing = toolInvocations.get(callId);
-                                    if (existing) {
-                                        existing.state = parsed.successful ? "output-available" : "output-error";
-                                        existing.output = parsed.output;
-                                        existing.errorText = parsed.error;
-                                    } else {
-                                        toolInvocations.set(callId, {
-                                            id: callId,
-                                            toolName: parsed.toolName || "Tool",
-                                            state: parsed.successful ? "output-available" : "output-error",
-                                            output: parsed.output,
-                                            errorText: parsed.error,
-                                        });
-                                    }
-                                }
-                            } else if (parsed.type === "citation") {
-                                if (parsed.url && !citations.some((c) => c.url === parsed.url)) {
-                                    citations.push({
-                                        title: parsed.title || parsed.url,
-                                        url: parsed.url,
-                                    });
-                                }
-                            } else if (parsed.type === "conversation") {
-                                const newConvId = parsed.conversationId || parsed.id;
-                                if (newConvId) {
-                                    setConversationId(newConvId);
-                                    onConversationCreated?.(newConvId, parsed.title);
-                                }
-                            } else if (parsed.type === "error") {
-                                sawStreamError = true;
-                                const errMsg = parsed.errorText || parsed.message || "An error occurred with the AI provider.";
-                                const documentCapabilityError = /does not support document attachments|only image attachments are supported/i.test(
-                                    errMsg,
-                                );
-                                setLastError({
-                                    title: documentCapabilityError ? "Selected model cannot read document files" : "AI Generation Error",
-                                    message: documentCapabilityError
-                                        ? "This provider accepts image attachments only. Your request remains available; choose a model with document support or attach text exports/page images, then retry."
-                                        : errMsg,
-                                    retryPrompt: documentCapabilityError ? documentRetryPrompt : retryPromptText,
-                                });
-                                if (!accumulatedText.trim()) {
-                                    accumulatedText = documentCapabilityError
-                                        ? "⚠️ This provider accepts image attachments only. Select a model with document support or attach text exports/page images, then retry."
-                                        : `⚠️ ${errMsg}`;
-                                }
-                            } else if (parsed.type === "tool-approval-request" || parsed.type === "tool_approval_request") {
-                                pendingApprovals.push({
-                                    id: parsed.approvalId || parsed.toolCallId || parsed.id,
-                                    tool: parsed.tool || "Tool Execution",
-                                    reason: parsed.reason,
-                                    arguments: parsed.arguments,
-                                });
-                            }
-                        } catch {
-                            // Plain text fallback
-                            accumulatedText += dataPayload;
-                        }
-                    } else if (trimmed.startsWith("0:")) {
-                        try {
-                            accumulatedText += JSON.parse(trimmed.slice(2));
-                        } catch {
-                            accumulatedText += trimmed.slice(2);
-                        }
-                    } else if (trimmed.startsWith("a:") || trimmed.includes("tool_approval")) {
-                        try {
-                            const raw = trimmed.startsWith("a:") ? trimmed.slice(2) : trimmed;
-                            const parsed = JSON.parse(raw);
-                            if (parsed?.approval) {
-                                pendingApprovals.push(parsed.approval);
-                            }
-                        } catch {
-                            // Silent fallback on non-json stream parts
-                        }
-                    }
-
-                    // Update current assistant message in real time
-                    setMessages((prev) =>
-                        prev.map((m) =>
-                            m.id === assistantId
-                                ? {
-                                      ...m,
-                                      content: accumulatedText,
-                                      reasoning: accumulatedReasoning || undefined,
-                                      toolCalls: toolInvocations.size > 0 ? Array.from(toolInvocations.values()) : undefined,
-                                      sources: citations.length > 0 ? [...citations] : undefined,
-                                      pendingApprovals: pendingApprovals.length > 0 ? [...pendingApprovals] : undefined,
-                                  }
-                                : m,
-                        ),
-                    );
-                }
-            }
-
-            // A dropped connection (proxy timeout, server kill) ends the reader
-            // without [DONE] and without an error event — previously the chat
-            // just stopped on a blank bubble. Surface it as a retryable error.
-            if (!sawDone && !sawStreamError) {
-                sawStreamError = true;
-                const interruptMsg =
-                    "The connection to the AI service was interrupted before the response completed. Your request is preserved — retry the request.";
-                setLastError({
-                    title: "AI Generation Error",
-                    message: interruptMsg,
-                    retryPrompt: retryPromptText,
-                });
-                if (!accumulatedText.trim()) {
-                    accumulatedText = `⚠️ ${interruptMsg}`;
-                }
-            }
-
-            // An empty turn with no text, tools, or approvals is never a valid
-            // silent stop — ensure the error banner and a visible message exist.
-            if (
-                !accumulatedText.trim() &&
-                toolInvocations.size === 0 &&
-                pendingApprovals.length === 0 &&
-                !sawStreamError
-            ) {
-                sawStreamError = true;
-                const emptyMsg =
-                    "The assistant stopped without producing a response. Your request is preserved — retry the request.";
-                setLastError({
-                    title: "AI Generation Error",
-                    message: emptyMsg,
-                    retryPrompt: retryPromptText,
-                });
-                accumulatedText = `⚠️ ${emptyMsg}`;
-            }
-
-            const finalMessage: ChatMessage = {
-                id: assistantId,
-                role: "assistant",
-                content: accumulatedText,
-                reasoning: accumulatedReasoning || undefined,
-                toolCalls: toolInvocations.size > 0 ? Array.from(toolInvocations.values()) : undefined,
-                sources: citations.length > 0 ? [...citations] : undefined,
-                pendingApprovals: pendingApprovals.length > 0 ? pendingApprovals : undefined,
-            };
-
-            onFinish?.(finalMessage);
-            return finalMessage;
-        },
-        [onFinish, onConversationCreated],
+    const conversationUrl = React.useCallback(
+        (id: string) => (targetUrl === chat.url() ? showPortalConversation.url(id) : showConversation.url(id)),
+        [targetUrl],
     );
 
-    const sendPrompt = React.useCallback(
-        async (content: string, files?: File[], options?: PromptOptions) => {
-            if ((!content.trim() && (!files || files.length === 0)) || isLoading || isSendingRef.current) return;
-            isSendingRef.current = true;
+    const reconcile = React.useCallback(async (op: Operation) => {
+        const id = op.attempt?.conversationId || conversationRef.current;
+        if (!id || !owns(op)) return false;
+        try {
+            const response = await fetch(conversationUrl(id), { headers: { "X-Requested-With": "XMLHttpRequest" }, signal: op.controller.signal });
+            if (!response.ok) return false;
+            const data = await response.json();
+            if (!owns(op)) return false;
+            // A latest run belonging to a different request cannot establish this request's execution status.
+            const run = data.run?.request_id === op.attempt?.snapshot.requestId ? data.run : undefined;
+            applySnapshot({ ...data, run }, op);
+            const ownMessage = data.messages?.find((m: ChatMessage) => m.run?.request_id === op.attempt?.snapshot.requestId);
+            if (ownMessage?.run && op.attempt) op.attempt.run = ownMessage.run;
+            setApprovalsLocked(false);
+            resetDecisions();
+            return true;
+        } catch { return false; }
+    }, [owns, applySnapshot, resetDecisions, conversationUrl]);
 
-            const userMessage = content.trim() || (files?.length ? "Please analyze the attached file(s)." : "");
-            const originalRequest = content.trim();
-            const documentRetryPrompt = `${content.trim() ? `Original request: ${content.trim()}\n\n` : ""}My file is attached, but the selected model provider rejected document attachments. Use the extracted workbook/text content already present in this conversation to answer or continue. If visual OCR is needed, ask me to attach page images or switch to a document-capable model.`;
+    const readStream = React.useCallback(async (response: Response, op: Operation) => {
+        if (!response.body || !op.attempt) throw new Error("No response body received from chat stream.");
+        const attempt = op.attempt;
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let content = "", reasoning = "", buffer = "", done = false, streamError = "";
+        const tools = new Map<string, ToolInvocation>();
+        const approvals = new Map<string, PendingToolApproval>();
+        const sources: CitationSource[] = [];
+        const update = () => {
+            if (!owns(op)) return;
+            setMessages((prev) => prev.map((m) => m.id === attempt.assistantId ? { ...m, content, reasoning: reasoning || undefined, toolCalls: tools.size ? [...tools.values()] : undefined, sources: sources.length ? [...sources] : undefined, pendingApprovals: approvals.size ? [...approvals.values()] : undefined, requestOptions: attempt.snapshot.options, run: attempt.run } : m));
+        };
+        const consume = (line: string) => {
+            if (!owns(op)) return;
+            const trimmed = line.trim();
+            if (trimmed.startsWith("data:")) {
+                const payload = trimmed.slice(5).trim();
+                if (payload === "[DONE]") { done = true; return; }
+                let parsed;
+                try { parsed = JSON.parse(payload); } catch { content += payload; update(); return; }
+                const type = parsed.type?.replaceAll("_", "-");
+                if (type === "conversation") {
+                    applySnapshot(parsed, op);
+                    if (attempt.canonical) {
+                        content = attempt.canonical.content || content;
+                        reasoning = attempt.canonical.reasoning || reasoning;
+                        tools.clear(); attempt.canonical.toolCalls?.forEach((t) => tools.set(t.id, t));
+                        approvals.clear(); attempt.canonical.pendingApprovals?.forEach((a) => approvals.set(a.id, a));
+                    }
+                    if (owns(op) && attempt.conversationId) callbacks.current.onConversationCreated?.(attempt.conversationId, parsed.title);
+                    return;
+                }
+                if (type === "text-delta") content += parsed.delta ?? parsed.text ?? "";
+                else if (type === "reasoning-delta") reasoning += parsed.delta ?? parsed.text ?? "";
+                else if (type === "tool-call") {
+                    const id = parsed.toolCallId || parsed.id;
+                    if (id) tools.set(id, { id, toolName: parsed.toolName || parsed.name || "Tool", state: "input-available", input: parsed.input || parsed.arguments });
+                } else if (type === "tool-result") {
+                    const id = parsed.toolCallId || parsed.id;
+                    if (id) tools.set(id, { ...tools.get(id), id, toolName: tools.get(id)?.toolName || parsed.toolName || "Tool", state: parsed.successful === false ? "output-error" : "output-available", output: parsed.output, errorText: parsed.error });
+                } else if (type === "citation" && parsed.url && !sources.some((s) => s.url === parsed.url)) sources.push({ title: parsed.title || parsed.url, url: parsed.url });
+                else if (type === "tool-approval-request") {
+                    const id = parsed.approvalId || parsed.toolCallId || parsed.id;
+                    if (id) approvals.set(id, { id, tool: parsed.tool || parsed.toolName || "Tool Execution", reason: parsed.reason, arguments: parsed.arguments });
+                } else if (type === "error") streamError = parsed.errorText || parsed.message || "An error occurred with the AI provider.";
+                else if (type === "run" && parsed.run) attempt.run = parsed.run;
+                update();
+            } else if (trimmed.startsWith("0:")) {
+                try { content += JSON.parse(trimmed.slice(2)); } catch { content += trimmed.slice(2); }
+                update();
+            } else if (trimmed.startsWith("a:")) {
+                try { const parsed = JSON.parse(trimmed.slice(2)); if (parsed.approval?.id) approvals.set(parsed.approval.id, parsed.approval); } catch { /* Ignore protocol metadata. */ }
+                update();
+            }
+        };
+        try {
+            while (owns(op)) {
+                const chunk = await reader.read();
+                if (!owns(op)) { void reader.cancel().catch(() => {}); return; }
+                if (chunk.done) break;
+                buffer += decoder.decode(chunk.value, { stream: true });
+                const lines = buffer.split("\n"); buffer = lines.pop() || "";
+                lines.forEach(consume);
+            }
+            buffer += decoder.decode();
+            if (buffer.trim()) consume(buffer);
+        } finally { reader.releaseLock(); }
+        if (!owns(op)) return;
+        if (!done && !streamError) streamError = "The connection ended before the response completed. Check the saved result before retrying.";
+        if (!content.trim() && !tools.size && !approvals.size && !streamError && attempt.run?.status !== "completed") streamError = "The assistant stopped without producing a response.";
+        if (!content.trim() && !tools.size && !approvals.size && !streamError) streamError = "The assistant stopped without producing a response.";
+        if (streamError && !content.trim()) content = `⚠️ ${streamError}`;
+        update(); // Commit synthesized EOF/empty errors as well as streamed content.
+        if (streamError) throw new Error(streamError);
+        const finalMessage = messagesRef.current.find((m) => m.id === attempt.assistantId);
+        if (finalMessage) callbacks.current.onFinish?.(finalMessage);
+    }, [owns, setMessages, applySnapshot]);
 
-            setLastError(null);
-            setLastPrompt(originalRequest);
-
-            const chatAttachments: ChatAttachment[] = (files || []).map((file) => ({
-                name: file.name,
-                size: file.size,
-                type: file.type,
-                previewUrl: ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type) ? URL.createObjectURL(file) : undefined,
-            }));
-
-            appendMessage({
-                role: "user",
-                content: userMessage,
-                attachments: chatAttachments.length > 0 ? chatAttachments : undefined,
+    const execute = React.useCallback(async (attempt: Attempt) => {
+        if (activeRef.current) return;
+        const op = begin(attempt);
+        failedRef.current = attempt;
+        setLastError(null);
+        const snapshot = attempt.snapshot;
+        if (snapshot.decisions) setApprovalsLocked(true);
+        const payload: Record<string, unknown> = {
+            request_id: snapshot.requestId, conversation_id: snapshot.conversationId,
+            replay_message_id: snapshot.replayMessageId, agent: snapshot.options.agent,
+            provider: snapshot.options.provider, model: snapshot.options.model,
+            thinking: snapshot.options.thinking, search: snapshot.options.search,
+            auto_approve: snapshot.options.autoApprove, context: snapshot.options.context,
+            ...(snapshot.decisions ? { decisions: snapshot.decisions } : { message: snapshot.content }),
+        };
+        const headers: Record<string, string> = { Accept: "text/event-stream, text/plain", "X-Requested-With": "XMLHttpRequest", "X-CSRF-TOKEN": (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || "" };
+        let body: BodyInit;
+        if (snapshot.files.length) {
+            const form = new FormData();
+            Object.entries(payload).forEach(([key, value]) => {
+                if (value === undefined) return;
+                if (key === "context") form.append("context[page]", snapshot.options.context!.page);
+                else form.append(key, typeof value === "boolean" ? (value ? "1" : "0") : String(value));
             });
-
-            setInput("");
-            setIsLoading(true);
-
-            // Create temporary assistant message placeholder
-            const assistantId = "msg_" + Math.random().toString(36).substring(2, 9);
-            setMessages((prev) => [
-                ...prev,
-                {
-                    id: assistantId,
-                    role: "assistant",
-                    content: "",
-                },
-            ]);
-
-            const controller = new AbortController();
-            abortControllerRef.current = controller;
-
-            const csrfToken = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || "";
-
-            const targetAgent = options?.agent || agent;
-
-            try {
-                let requestOptions: RequestInit;
-
-                if (files && files.length > 0) {
-                    const formData = new FormData();
-                    formData.append("agent", targetAgent);
-                    formData.append("message", userMessage);
-                    if (conversationId) {
-                        formData.append("conversation_id", conversationId);
-                    }
-                    if (options?.model) {
-                        formData.append("model", options.model);
-                    }
-                    if (options?.provider) {
-                        formData.append("provider", options.provider);
-                    }
-                    if (typeof options?.thinking === "boolean") {
-                        formData.append("thinking", options.thinking ? "1" : "0");
-                    }
-                    if (typeof options?.search === "boolean") {
-                        formData.append("search", options.search ? "1" : "0");
-                    }
-                    const isAutoApproveActive = typeof options?.autoApprove === "boolean" ? options.autoApprove : autoApprove;
-                    formData.append("auto_approve", isAutoApproveActive ? "1" : "0");
-                    files.forEach((file) => {
-                        formData.append("attachments[]", file);
-                    });
-
-                    requestOptions = {
-                        method: "POST",
-                        headers: {
-                            Accept: "text/event-stream, text/plain",
-                            "X-Requested-With": "XMLHttpRequest",
-                            "X-CSRF-TOKEN": csrfToken,
-                        },
-                        body: formData,
-                        signal: controller.signal,
-                    };
-                } else {
-                    const isAutoApproveActive = typeof options?.autoApprove === "boolean" ? options.autoApprove : autoApprove;
-                    const bodyPayload: Record<string, unknown> = {
-                        agent: targetAgent,
-                        message: userMessage,
-                        conversation_id: conversationId,
-                        auto_approve: Boolean(isAutoApproveActive),
-                    };
-                    if (options?.model) {
-                        bodyPayload.model = options.model;
-                    }
-                    if (options?.provider) {
-                        bodyPayload.provider = options.provider;
-                    }
-                    if (typeof options?.thinking === "boolean") {
-                        bodyPayload.thinking = options.thinking;
-                    }
-                    if (typeof options?.search === "boolean") {
-                        bodyPayload.search = options.search;
-                    }
-
-                    requestOptions = {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                            Accept: "text/event-stream, text/plain",
-                            "X-Requested-With": "XMLHttpRequest",
-                            "X-CSRF-TOKEN": csrfToken,
-                        },
-                        body: JSON.stringify(bodyPayload),
-                        signal: controller.signal,
-                    };
-                }
-
-                const response = await fetch(targetUrl, requestOptions);
-
-                if (!response.ok) {
-                    const errJson = await response.json().catch(() => ({}));
-                    const errorMsg = errJson.message || `Server error (${response.status})`;
-                    const documentCapabilityError = /does not support document attachments|only image attachments are supported/i.test(errorMsg);
-                    const errorObj = {
-                        title: documentCapabilityError ? "Selected model cannot read document files" : `AI Error (${response.status})`,
-                        message: documentCapabilityError
-                            ? "This provider accepts image attachments only. Your request is unchanged; switch to a document-capable model or attach text exports/page images, then retry."
-                            : errorMsg,
-                        retryPrompt: documentCapabilityError ? documentRetryPrompt : userMessage || documentRetryPrompt,
-                    };
-                    setLastError(errorObj);
-                    throw new Error(errorMsg);
-                }
-
-                await readStream(response, assistantId, userMessage, documentRetryPrompt);
-            } catch (err: unknown) {
-                if (err instanceof Error && err.name === "AbortError") return;
-
-                const message = err instanceof Error ? err.message : "Failed to communicate with AI agent.";
-                const documentCapabilityError = /does not support document attachments|only image attachments are supported/i.test(message);
-                // Stream/network failures previously only toasted, leaving no
-                // Retry affordance and sometimes a blank bubble. Always set a
-                // retryable error so the banner + retry button appear.
-                if (!documentCapabilityError) {
-                    setLastError({
-                        title: "AI Generation Error",
-                        message,
-                        retryPrompt: userMessage || documentRetryPrompt,
-                    });
-                }
-                toast.error(message);
-                onError?.(err instanceof Error ? err : new Error(message));
-
-                setMessages((prev) =>
-                    prev.map((m) =>
-                        m.id === assistantId
-                            ? {
-                                  ...m,
-                                  content:
-                                      m.content ||
-                                      (documentCapabilityError
-                                          ? "⚠️ This provider only accepts image attachments. Your uploaded files and prompt are preserved; switch to a document-capable model or attach page images, then retry."
-                                          : `⚠️ Generation failed: ${message}`),
-                              }
-                            : m,
-                    ),
-                );
-            } finally {
-                setIsLoading(false);
-                isSendingRef.current = false;
-                abortControllerRef.current = null;
+            snapshot.files.forEach((file) => form.append("attachments[]", file));
+            body = form;
+        } else { headers["Content-Type"] = "application/json"; body = JSON.stringify(payload); }
+        try {
+            const response = await fetch(targetUrl, { method: "POST", headers, body, signal: op.controller.signal });
+            if (!owns(op)) return;
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                if (!owns(op)) return;
+                if (data.messages || data.run) applySnapshot(data, op);
+                throw new Error(data.message || `Server error (${response.status})`);
             }
-        },
-        [agent, targetUrl, conversationId, isLoading, autoApprove, appendMessage, readStream, onError],
-    );
-
-    /**
-     * Resend a previously sent user message: truncate the transcript back to
-     * it, then send its content again as a fresh turn. Attachments cannot be
-     * reconstructed from history, so only the text is resent.
-     */
-    const resendUserMessage = React.useCallback(
-        async (messageId: string, options?: PromptOptions) => {
-            if (isLoading || isSendingRef.current) return;
-            const idx = messages.findIndex((m) => m.id === messageId);
-            if (idx < 0) return;
-            const target = messages[idx];
-            if (target.role !== "user" || !target.content.trim()) return;
-            if (target.attachments && target.attachments.length > 0) {
-                toast.info("Resending text only — attachments are not resent.");
+            await readStream(response, op);
+            if (!owns(op)) return;
+            failedRef.current = null;
+            // Preview URLs remain valid for the visible transcript; File objects are released here.
+            resetDecisions(); setApprovalsLocked(false);
+        } catch (error) {
+            if (!owns(op)) return;
+            const reconciled = await reconcile(op);
+            if (!owns(op)) return;
+            const message = error instanceof Error ? error.message : "Failed to communicate with AI agent.";
+            const knownFinished = attempt.run?.status === "completed" || attempt.run?.status === "paused";
+            if (knownFinished) {
+                failedRef.current = null;
+                setLastError({ title: "Saved result recovered", message: "The stream was interrupted. The saved conversation has been restored.", retryable: false });
+            } else {
+                const decisionFailure = !!snapshot.decisions;
+                const retryable = !decisionFailure || !attempt.run || attempt.run.status === "running";
+                setLastError({ title: "AI Generation Error", message: decisionFailure ? `${message} ${reconciled ? "Saved tool state has been refreshed." : "Tool execution status is unknown. Retry checks the same request without repeating it."}` : message, retryable });
+                if (decisionFailure && !reconciled) setApprovalsLocked(true);
             }
-            setMessages((prev) => prev.slice(0, idx));
-            setLastError(null);
-            setLastPrompt(target.content);
-            await sendPrompt(target.content, undefined, {
-                ...(options ?? {}),
-                agent: options?.agent ?? agent,
-            });
-        },
-        [agent, isLoading, messages, sendPrompt]
-    );
+            setMessages((prev) => prev.map((m) => m.id === attempt.assistantId && !m.content.trim() && !m.pendingApprovals?.length ? { ...m, content: `⚠️ ${message}` } : m));
+            callbacks.current.onError?.(error instanceof Error ? error : new Error(message));
+        } finally { finish(op); }
+    }, [targetUrl, begin, owns, applySnapshot, readStream, reconcile, finish, resetDecisions, setMessages]);
 
-    /**
-     * Regenerate an assistant reply: find the nearest preceding user message,
-     * truncate the transcript back to it, and send it again.
-     */
-    const regenerateAssistant = React.useCallback(
-        async (messageId: string, options?: PromptOptions) => {
-            if (isLoading || isSendingRef.current) return;
-            const idx = messages.findIndex((m) => m.id === messageId);
-            if (idx < 0 || messages[idx].role !== "assistant") return;
-            let userIdx = -1;
-            for (let i = idx - 1; i >= 0; i--) {
-                if (messages[i].role === "user") {
-                    userIdx = i;
-                    break;
-                }
-            }
-            if (userIdx < 0) {
-                toast.info("No earlier message to regenerate from.");
-                return;
-            }
-            await resendUserMessage(messages[userIdx].id, options);
-        },
-        [isLoading, messages, resendUserMessage]
-    );
+    const sendPrompt = React.useCallback(async (content: string, files?: File[], options?: PromptOptions) => {
+        if (activeRef.current || (!content.trim() && !files?.length)) return;
+        releaseFiles(); resetDecisions(); setApprovalsLocked(false);
+        const requestOptions = { ...options, agent: options?.agent || agent, autoApprove: options?.autoApprove ?? autoApprove, context: chatPageContext(options?.context?.page || context?.page) };
+        const snapshot = snapshotOf({ requestId: crypto.randomUUID(), conversationId: conversationRef.current, content: content.trim() || "Please analyze the attached file(s).", files: files || [], options: requestOptions });
+        const userId = localId(), assistantId = localId();
+        const attachments = snapshot.files.map((file) => {
+            const previewUrl = file.type.startsWith("image/") || file.type === "application/pdf" ? URL.createObjectURL(file) : undefined;
+            if (previewUrl) previewsRef.current.add(previewUrl);
+            return { name: file.name, size: file.size, type: file.type, previewUrl };
+        });
+        setMessages((prev) => [...prev, { id: userId, role: "user", content: snapshot.content, attachments, requestOptions, createdAt: new Date() }, { id: assistantId, role: "assistant", content: "", requestOptions }]);
+        setInput(""); setLastPrompt(snapshot.content);
+        await execute({ snapshot, userId, assistantId, conversationId: snapshot.conversationId });
+    }, [agent, autoApprove, context?.page, releaseFiles, resetDecisions, setMessages, execute]);
 
-    const submitDecision = React.useCallback(
-        async (callId: string, action: "approve" | "reject", result?: string) => {
-            if (isLoading || isSendingRef.current) return;
-            isSendingRef.current = true;
-            setIsLoading(true);
+    const replay = React.useCallback(async (messageId: string, options?: PromptOptions) => {
+        if (activeRef.current) return;
+        const transcript = messagesRef.current;
+        const index = transcript.findIndex((m) => m.id === messageId);
+        const target = transcript[index];
+        if (!target || !persistedId(target.id) || !conversationRef.current) { toast.info("Wait for the saved message before replaying this turn."); return; }
+        const user = target.role === "user" ? target : transcript.slice(0, index).reverse().find((m) => m.role === "user");
+        if (!user) return;
+        releaseFiles(); resetDecisions(); setApprovalsLocked(false);
+        const origin = optionsFor(target) || optionsFor(user);
+        const snapshot = snapshotOf({ requestId: crypto.randomUUID(), conversationId: conversationRef.current, replayMessageId: target.id, content: user.content, files: [], options: { ...origin, ...options, agent: options?.agent || origin?.agent || agent, autoApprove: options?.autoApprove ?? origin?.autoApprove ?? autoApprove, context: origin?.context || chatPageContext(context?.page) } });
+        const assistantId = localId();
+        // The server chooses the branch boundary/content/attachments. Keep saved history until it returns.
+        setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: "", requestOptions: snapshot.options }]);
+        await execute({ snapshot, userId: user.id, assistantId, conversationId: snapshot.conversationId });
+    }, [agent, autoApprove, context?.page, releaseFiles, resetDecisions, setMessages, execute]);
+    const resendUserMessage = React.useCallback(async (id: string, options?: PromptOptions) => {
+        if (messagesRef.current.find((m) => m.id === id)?.role === "user") await replay(id, options);
+    }, [replay]);
+    const regenerateAssistant = React.useCallback(async (id: string, options?: PromptOptions) => {
+        if (messagesRef.current.find((m) => m.id === id)?.role === "assistant") await replay(id, options);
+    }, [replay]);
 
-            // Find assistant message holding the pending approval
-            const targetAssistantMessage = messages
-                .slice()
-                .reverse()
-                .find((m) => m.role === "assistant" && m.pendingApprovals?.some((a) => a.id === callId));
-            const targetApproval = targetAssistantMessage?.pendingApprovals?.find((a) => a.id === callId);
+    const retryLastRequest = React.useCallback(async () => {
+        const failed = failedRef.current;
+        if (!failed || activeRef.current) return;
+        if (!failed.snapshot.decisions && failed.run?.status === "failed" && persistedId(failed.userId) && failed.conversationId) {
+            // A known failed attempt can fork at the canonical user; unknown outcomes keep the dedup ID.
+            const snapshot = snapshotOf({ ...failed.snapshot, requestId: crypto.randomUUID(), conversationId: failed.conversationId, replayMessageId: failed.userId, files: [] });
+            const assistantId = localId();
+            setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: "", requestOptions: snapshot.options }]);
+            await execute({ snapshot, userId: failed.userId, assistantId, conversationId: failed.conversationId });
+        } else await execute({ ...failed, run: undefined, canonical: undefined });
+    }, [execute, setMessages]);
 
-            // Optimistically update message approvals
-            setMessages((prev) =>
-                prev.map((m) => ({
-                    ...m,
-                    pendingApprovals: m.pendingApprovals?.filter((a) => a.id !== callId),
-                })),
-            );
-
-            const controller = new AbortController();
-            abortControllerRef.current = controller;
-
-            try {
-                const decisions = {
-                    [callId]: {
-                        action,
-                        result,
-                    },
-                };
-
-                const response = await fetch(targetUrl, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Accept: "text/event-stream, text/plain",
-                        "X-Requested-With": "XMLHttpRequest",
-                        "X-CSRF-TOKEN": (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || "",
-                    },
-                    body: JSON.stringify({
-                        agent,
-                        decisions,
-                        auto_approve: autoApprove,
-                        conversation_id: conversationId,
-                    }),
-                    signal: controller.signal,
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Decision submission failed (${response.status})`);
-                }
-
-                toast.success(action === "approve" ? "Approved. Executing tool..." : "Tool execution rejected.");
-
-                const contentType = response.headers.get("content-type") || "";
-                if (contentType.includes("text/event-stream") || contentType.includes("text/plain")) {
-                    // Create a new assistant message placeholder for the post-decision continuation turn,
-                    // preserving the prior assistant message and its tool call details.
-                    const continuationId = "msg_" + Math.random().toString(36).substring(2, 9);
-                    setMessages((prev) => [
-                        ...prev,
-                        {
-                            id: continuationId,
-                            role: "assistant",
-                            content: "",
-                        },
-                    ]);
-                    // Forward the last user prompt so a failed continuation turn
-                    // still offers a working Retry affordance instead of an
-                    // error that promises retry with no button.
-                    await readStream(response, continuationId, lastPrompt || undefined);
-                }
-            } catch (err: unknown) {
-                // Restore approval on failure
-                if (targetAssistantMessage && targetApproval) {
-                    setMessages((prev) =>
-                        prev.map((m) =>
-                            m.id === targetAssistantMessage.id
-                                ? {
-                                      ...m,
-                                      pendingApprovals: m.pendingApprovals
-                                          ? [...m.pendingApprovals.filter((a) => a.id !== callId), targetApproval]
-                                          : [targetApproval],
-                                  }
-                                : m,
-                        ),
-                    );
-                }
-                if (err instanceof Error && err.name === "AbortError") return;
-                const message = err instanceof Error ? err.message : "Failed to submit approval decision.";
-                toast.error(message);
-            } finally {
-                setIsLoading(false);
-                isSendingRef.current = false;
-                abortControllerRef.current = null;
-            }
-        },
-        [agent, targetUrl, conversationId, messages, lastPrompt, autoApprove, readStream],
-    );
+    const submitBatch = React.useCallback(async (target: ChatMessage, decisions: Record<string, ApprovalDecision>) => {
+        if (activeRef.current || approvalsLocked || !conversationRef.current) return;
+        const options = optionsFor(target);
+        if (!options?.agent) { setLastError({ title: "Reload approval details", message: "The originating run settings are missing. Reload this conversation before deciding.", retryable: false }); return; }
+        resetDecisions();
+        const snapshot = snapshotOf({ requestId: crypto.randomUUID(), conversationId: conversationRef.current, content: "", files: [], options, decisions });
+        const assistantId = localId();
+        setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: "", requestOptions: options }]);
+        await execute({ snapshot, assistantId, conversationId: snapshot.conversationId });
+    }, [approvalsLocked, execute, resetDecisions, setMessages]);
+    const submitDecision = React.useCallback(async (id: string, action: "approve" | "reject", result?: string) => {
+        if (activeRef.current || approvalsLocked) return;
+        const target = messagesRef.current.slice().reverse().find((m) => m.pendingApprovals?.some((a) => a.id === id));
+        if (!target) return;
+        const selected = { ...decisionsRef.current, [id]: { action, ...(result ? { result } : {}) } };
+        decisionsRef.current = selected; setApprovalDecisions(selected);
+        const pending = target.pendingApprovals!;
+        if (pending.every((a) => selected[a.id])) await submitBatch(target, Object.fromEntries(pending.map((a) => [a.id, selected[a.id]])));
+    }, [approvalsLocked, submitBatch]);
+    const submitAllDecisions = React.useCallback(async (action: "approve" | "reject") => {
+        const target = messagesRef.current.slice().reverse().find((m) => m.pendingApprovals?.length);
+        if (target) await submitBatch(target, Object.fromEntries(target.pendingApprovals!.map((a) => [a.id, { action }])));
+    }, [submitBatch]);
 
     const stop = React.useCallback(() => {
-        isSendingRef.current = false;
-        if (abortControllerRef.current) {
-            abortControllerRef.current.abort();
-            abortControllerRef.current = null;
-            setIsLoading(false);
+        const active = activeRef.current;
+        if (active?.attempt) {
+            failedRef.current = active.attempt;
+            setLastError({ title: "Response stopped", message: "The server may still finish this request. Retry checks the same request without repeating it.", retryable: true });
+            if (active.attempt.snapshot.decisions) setApprovalsLocked(true);
         }
-    }, []);
-
+        invalidate();
+    }, [invalidate]);
     const clearChat = React.useCallback(() => {
-        isSendingRef.current = false;
-        setMessages([]);
-        setConversationId(undefined);
-        setLastError(null);
-        if (persistenceKey && typeof window !== "undefined") {
-            try {
-                sessionStorage.removeItem(persistenceKey);
-                sessionStorage.removeItem(`${persistenceKey}_conv_id`);
-                sessionStorage.removeItem(`${persistenceKey}_auto_approve`);
-            } catch {
-                // Ignore storage errors
-            }
-        }
+        invalidate(); releaseFiles(); resetDecisions();
+        setMessages([]); setConversationId(undefined); setLastError(null); setLastPrompt(""); setInput(""); setApprovalsLocked(false);
+    }, [invalidate, releaseFiles, resetDecisions, setMessages, setConversationId]);
+    const loadConversationMessages = React.useCallback((loaded: ChatMessage[], id?: string) => {
+        invalidate(); releaseFiles(); resetDecisions();
+        setMessages(loaded); setConversationId(id); setLastError(null); setLastPrompt(""); setApprovalsLocked(false);
+    }, [invalidate, releaseFiles, resetDecisions, setMessages, setConversationId]);
+    const loadConversation = React.useCallback(async (id: string) => {
+        const op = begin();
+        releaseFiles(); resetDecisions(); setLastError(null); setApprovalsLocked(true);
+        try {
+            const response = await fetch(conversationUrl(id), { headers: { "X-Requested-With": "XMLHttpRequest" }, signal: op.controller.signal });
+            if (!owns(op)) return false;
+            if (!response.ok) throw new Error("Could not load conversation.");
+            const data = await response.json();
+            if (!owns(op)) return false;
+            applySnapshot(data, op); setApprovalsLocked(false);
+            return true;
+        } catch (error) {
+            if (owns(op)) { setLastError({ title: "History unavailable", message: error instanceof Error ? error.message : "Could not load conversation.", retryable: false }); setApprovalsLocked(false); }
+            return false;
+        } finally { finish(op); }
+    }, [begin, releaseFiles, resetDecisions, owns, applySnapshot, finish, conversationUrl]);
+    const setAutoApprove = React.useCallback((value: boolean) => {
+        setAutoApproveState(value);
+        try { if (persistenceKey) sessionStorage.setItem(`${persistenceKey}_auto_approve`, String(value)); } catch { /* Optional preference. */ }
     }, [persistenceKey]);
+    const clearError = React.useCallback(() => setLastError(null), []);
 
-    const submitAllDecisions = React.useCallback(
-        async (action: "approve" | "reject") => {
-            if (isLoading || isSendingRef.current) return;
-
-            const allPendingApprovals: PendingToolApproval[] = [];
-            messages.forEach((m) => {
-                if (m.role === "assistant" && m.pendingApprovals) {
-                    allPendingApprovals.push(...m.pendingApprovals);
-                }
-            });
-
-            if (allPendingApprovals.length === 0) return;
-
-            // Preserve pending approvals for rollback if batch submission fails
-            const previousApprovals = new Map(
-                messages
-                    .filter((m) => m.role === "assistant" && m.pendingApprovals && m.pendingApprovals.length > 0)
-                    .map((m) => [m.id, m.pendingApprovals!])
-            );
-
-            isSendingRef.current = true;
-            setIsLoading(true);
-
-            setMessages((prev) =>
-                prev.map((m) => ({
-                    ...m,
-                    pendingApprovals: undefined,
-                })),
-            );
-
-            const controller = new AbortController();
-            abortControllerRef.current = controller;
-
-            try {
-                const decisions: Record<string, { action: string }> = {};
-                allPendingApprovals.forEach((a) => {
-                    decisions[a.id] = { action };
-                });
-
-                const response = await fetch(targetUrl, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Accept: "text/event-stream, text/plain",
-                        "X-Requested-With": "XMLHttpRequest",
-                        "X-CSRF-TOKEN": (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || "",
-                    },
-                    body: JSON.stringify({
-                        agent,
-                        decisions,
-                        auto_approve: autoApprove,
-                        conversation_id: conversationId,
-                    }),
-                    signal: controller.signal,
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Decision submission failed (${response.status})`);
-                }
-
-                toast.success(action === "approve" ? "All actions approved. Continuing execution..." : "All pending actions rejected.");
-
-                const contentType = response.headers.get("content-type") || "";
-                if (contentType.includes("text/event-stream") || contentType.includes("text/plain")) {
-                    const continuationId = "msg_" + Math.random().toString(36).substring(2, 9);
-                    setMessages((prev) => [
-                        ...prev,
-                        {
-                            id: continuationId,
-                            role: "assistant",
-                            content: "",
-                        },
-                    ]);
-                    await readStream(response, continuationId, lastPrompt || undefined);
-                }
-            } catch (err: unknown) {
-                // Restore approvals on failure so user can retry
-                setMessages((prev) =>
-                    prev.map((m) =>
-                        previousApprovals.has(m.id)
-                            ? { ...m, pendingApprovals: previousApprovals.get(m.id) }
-                            : m
-                    )
-                );
-
-                if (err instanceof Error && err.name === "AbortError") return;
-                const message = err instanceof Error ? err.message : "Failed to submit approval decisions.";
-                toast.error(message);
-            } finally {
-                setIsLoading(false);
-                isSendingRef.current = false;
-                abortControllerRef.current = null;
-            }
-        },
-        [isLoading, messages, targetUrl, agent, autoApprove, conversationId, readStream, lastPrompt]
-    );
-
-    const clearError = React.useCallback(() => {
-        setLastError(null);
-    }, []);
-
-    const loadConversationMessages = React.useCallback((loadedMessages: ChatMessage[], newConversationId?: string) => {
-        setMessages(loadedMessages);
-        if (newConversationId !== undefined) {
-            setConversationId(newConversationId);
-        }
-        setLastError(null);
-    }, []);
-
-    return {
-        messages,
-        setMessages,
-        input,
-        setInput,
-        isLoading,
-        conversationId,
-        setConversationId,
-        lastError,
-        lastPrompt,
-        clearError,
-        sendPrompt,
-        submitDecision,
-        submitAllDecisions,
-        autoApprove,
-        setAutoApprove,
-        resendUserMessage,
-        regenerateAssistant,
-        stop,
-        clearChat,
-        loadConversationMessages,
-    };
+    return { messages: messagesState, setMessages, input, setInput, isLoading, conversationId: conversationState, setConversationId, lastError, lastPrompt, clearError, sendPrompt, retryLastRequest, submitDecision, submitAllDecisions, approvalDecisions, approvalsLocked, autoApprove, setAutoApprove, resendUserMessage, regenerateAssistant, stop, clearChat, loadConversationMessages, loadConversation };
 }

@@ -93,7 +93,7 @@ function rowSubtitle(group: SearchGroup, row: ResultRow): string {
         case "enrollments":
             return [text(row, "course_code"), text(row, "year_level"), text(row, "semester")].filter(Boolean).join(" · ");
         case "subjects":
-            return [text(row, "code"), text(row, "units") && `${text(row, "units")} units`].filter(Boolean).join(" · ");
+            return [text(row, "code"), text(row, "units") && `${text(row, "units")} units`, text(row, "course_code")].filter(Boolean).join(" · ");
         case "courses":
             return [text(row, "code"), text(row, "department")].filter(Boolean).join(" · ");
         default:

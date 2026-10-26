@@ -6,8 +6,11 @@ namespace App\Ai\Mcp;
 
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\JsonSchema as JsonSchemaFactory;
+use Illuminate\JsonSchema\Types\AnyOfType;
 use Illuminate\JsonSchema\Types\ObjectType;
+use Illuminate\JsonSchema\Types\Type;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 use Laravel\Ai\Approvals\Approval;
 use Laravel\Ai\Concerns\InteractsWithApprovals;
 use Laravel\Ai\Contracts\Approvable;
@@ -45,11 +48,17 @@ final class ExternalMcpTool implements Approvable, Tool
      */
     private const int MAX_OUTPUT_BYTES = 20_000;
 
+    /** @var array<string, Type> */
+    private readonly array $parameters;
+
+    private readonly bool $wrapArguments;
+
     public function __construct(
         private readonly ClientTool $tool,
         private readonly string $serverName,
         private readonly bool $readOnly,
     ) {
+        [$this->parameters, $this->wrapArguments] = $this->parameters();
         // Default to gated, then relax only when the server claims read-only.
         $this->requireApproval($this->approvalReason());
     }
@@ -58,7 +67,12 @@ final class ExternalMcpTool implements Approvable, Tool
     {
         // Server-qualified so two servers exposing the same tool name cannot
         // collide, and so the transcript records which system answered.
-        return 'mcp_'.Str::slug($this->serverName).'_'.Str::slug($this->tool->name);
+        // Slugging alone collapses get_user and get-user (and server names).
+        // The hash uses the original pair, so names stay stable as catalogs
+        // change, and the bounded prefix fits provider tool-name limits.
+        return 'mcp_'.mb_substr(Str::slug($this->serverName), 0, 20)
+            .'_'.mb_substr(Str::slug($this->tool->name), 0, 24)
+            .'_'.mb_substr(hash('sha256', $this->serverName."\0".$this->tool->name), 0, 12);
     }
 
     public function description(): Stringable|string
@@ -77,27 +91,19 @@ final class ExternalMcpTool implements Approvable, Tool
      */
     public function schema(JsonSchema $schema): array
     {
-        $input = $this->tool->inputSchema;
-
-        if (! is_array($input) || $input === []) {
-            return [];
-        }
-
-        try {
-            $type = JsonSchemaFactory::fromArray(SchemaNormalizer::normalize($input));
-        } catch (Throwable) {
-            return [];
-        }
-
-        return $type instanceof ObjectType
-            ? (fn (): array => $this->properties)->call($type)
-            : [];
+        return $this->parameters;
     }
 
     public function handle(Request $request): string
     {
         try {
-            $result = $this->tool->call($request->all());
+            $arguments = $this->wrapArguments ? $request->all()['arguments'] ?? null : $request->all();
+
+            if (! is_array($arguments) || ($arguments !== [] && array_is_list($arguments))) {
+                throw new InvalidArgumentException('Supply external tool arguments as an object matching the advertised schema.');
+            }
+
+            $result = $this->tool->call($arguments);
         } catch (Throwable $e) {
             return $this->encode([
                 'error' => true,
@@ -146,6 +152,41 @@ final class ExternalMcpTool implements Approvable, Tool
         return $this->approvalRequirement instanceof Approval
             ? $this->approvalRequirement
             : Approval::required($this->approvalReason());
+    }
+
+    /** @return array{array<string, Type>, bool} */
+    private function parameters(): array
+    {
+        $input = $this->tool->inputSchema;
+
+        if ($input === []) {
+            return [[], false];
+        }
+
+        // The installed normalizer merges oneOf branches lossily. Refuse to
+        // advertise an inaccurate schema rather than turn required inputs into
+        // an apparently parameterless or impossible tool.
+        if (isset($input['oneOf'])) {
+            throw new InvalidArgumentException('Root oneOf input schemas are not supported. Expose an object or anyOf of objects instead.');
+        }
+
+        try {
+            $type = JsonSchemaFactory::fromArray(SchemaNormalizer::normalize($input));
+        } catch (Throwable $e) {
+            throw new InvalidArgumentException('The external tool input schema could not be converted.', previous: $e);
+        }
+
+        if ($type instanceof ObjectType) {
+            return [(fn (): array => $this->properties)->call($type), false];
+        }
+
+        if ($type instanceof AnyOfType && collect($type->schemas())->every(fn (Type $branch): bool => $branch instanceof ObjectType)) {
+            return [[
+                'arguments' => $type->required()->description('Arguments for the external tool. Supply one of the documented object variants.'),
+            ], true];
+        }
+
+        throw new InvalidArgumentException('External tool inputs must be an object or an anyOf of object variants.');
     }
 
     private function approvalReason(): string

@@ -77,18 +77,17 @@ final class ClassEnrollmentController extends Controller
         if ($request->has('search')) {
             $search = $request->input('search');
             $query->where(function ($q) use ($search): void {
-                $q->where('student_id', 'ilike', "%{$search}%")
+                $q->whereLike('student_id', "%{$search}%")
                     ->orWhereHas('student', function ($studentQuery) use ($search): void {
-                        $studentQuery->where('first_name', 'ilike', "%{$search}%")
-                            ->orWhere('last_name', 'ilike', "%{$search}%")
-                            ->orWhere('student_id', 'ilike', "%{$search}%");
+                        $studentQuery->whereLike('first_name', "%{$search}%")
+                            ->orWhereLike('last_name', "%{$search}%")
+                            ->orWhereLike('student_id', "%{$search}%");
                     });
             });
         }
 
         // Paginate results
-        $perPage = (int) $request->input('per_page', 15);
-        $perPage = min(max($perPage, 1), 100);
+        $perPage = ApiPagination::perPage($request->input('per_page'));
 
         $enrollments = $query->paginate($perPage);
 
@@ -434,8 +433,7 @@ final class ClassEnrollmentController extends Controller
         }
 
         // Paginate results
-        $perPage = (int) $request->input('per_page', 15);
-        $perPage = min(max($perPage, 1), 100);
+        $perPage = ApiPagination::perPage($request->input('per_page'));
 
         $enrollments = $query->paginate($perPage);
 

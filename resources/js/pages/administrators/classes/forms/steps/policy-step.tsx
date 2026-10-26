@@ -1,13 +1,13 @@
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
-import { cn } from "@/lib/utils";
 import { BellRing, Eye, FileClock, GraduationCap, ImageUp, MessageSquare, Plus, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ClassFormData, ClassSettings } from "../../lib/class-defaults";
+import { FormSection } from "../form-section";
 
 type PolicyStepProps = {
     data: ClassFormData;
@@ -101,50 +101,54 @@ export function PolicyStep({ data, onDataChange }: PolicyStepProps): ReactNode {
     };
 
     return (
-        <div className="space-y-5">
-            <Card>
-                <CardHeader>
-                    <CardTitle>Classroom features</CardTitle>
-                    <CardDescription>What the students of this class can do. Every feature can be turned off again later.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <div className="grid gap-3 md:grid-cols-2">
-                        {featureToggles.map((toggle) => {
-                            const enabled = Boolean(data.settings[toggle.key]);
+        <div className="space-y-6">
+            <FormSection title="Classroom features" description="Control the tools students and faculty can use in this class.">
+                <div className="divide-y">
+                    {featureToggles.map((toggle) => {
+                        const enabled = Boolean(data.settings[toggle.key]);
 
-                            return (
-                                <label
-                                    key={toggle.key}
-                                    htmlFor={`class-policy-${toggle.key}`}
-                                    className={cn(
-                                        "flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors duration-200",
-                                        enabled ? "border-primary/40 bg-primary/5" : "hover:bg-muted/60",
-                                    )}
-                                >
-                                    <span className={cn("mt-0.5 shrink-0", enabled ? "text-primary" : "text-muted-foreground")}>{toggle.icon}</span>
-                                    <span className="min-w-0 flex-1">
-                                        <span className="block text-sm font-medium">{toggle.label}</span>
-                                        <span className="mt-0.5 block text-xs text-muted-foreground">{toggle.description}</span>
-                                    </span>
-                                    <Switch
-                                        id={`class-policy-${toggle.key}`}
-                                        checked={enabled}
-                                        onCheckedChange={(checked) => updateSettings({ [toggle.key]: checked })}
-                                        className="mt-0.5"
-                                    />
-                                </label>
-                            );
-                        })}
+                        return (
+                            <label
+                                key={toggle.key}
+                                htmlFor={`class-policy-${toggle.key}`}
+                                className="flex cursor-pointer items-start gap-4 py-4 first:pt-0 last:pb-0"
+                            >
+                                <span className="text-muted-foreground mt-1 shrink-0" aria-hidden="true">
+                                    {toggle.icon}
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                    <span className="block text-sm font-medium">{toggle.label}</span>
+                                    <span className="text-muted-foreground mt-1 block text-sm">{toggle.description}</span>
+                                </span>
+                                <Switch
+                                    id={`class-policy-${toggle.key}`}
+                                    checked={enabled}
+                                    onCheckedChange={(checked) => updateSettings({ [toggle.key]: checked })}
+                                    className="mt-0.5"
+                                />
+                            </label>
+                        );
+                    })}
+                </div>
+            </FormSection>
+
+            <FormSection title="Class appearance" description="Optional visual preferences for the student classroom.">
+                <div className="space-y-6">
+                    <div className="space-y-2">
+                        <Label htmlFor="class-theme">Classroom theme</Label>
+                        <Select value={data.settings.theme} onValueChange={(theme) => updateSettings({ theme: theme as ClassSettings["theme"] })}>
+                            <SelectTrigger id="class-theme" className="w-full sm:max-w-sm">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {(["default", "modern", "classic", "minimal", "vibrant"] as const).map((theme) => (
+                                    <SelectItem key={theme} value={theme}>
+                                        {theme.charAt(0).toUpperCase() + theme.slice(1)}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
                     </div>
-                </CardContent>
-            </Card>
-
-            <Card>
-                <CardHeader>
-                    <CardTitle>Appearance</CardTitle>
-                    <CardDescription>How the class looks to the students. The banner is optional.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-5">
                     <div className="grid gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
                             <Label htmlFor="class-background-color">Background colour</Label>
@@ -156,7 +160,7 @@ export function PolicyStep({ data, onDataChange }: PolicyStepProps): ReactNode {
                                     onChange={(event) => updateSettings({ background_color: event.target.value })}
                                     className="h-10 w-14 p-1"
                                 />
-                                <span className="font-mono text-xs text-muted-foreground">{data.settings.background_color}</span>
+                                <span className="text-muted-foreground font-mono text-sm">{data.settings.background_color}</span>
                             </div>
                         </div>
 
@@ -170,7 +174,7 @@ export function PolicyStep({ data, onDataChange }: PolicyStepProps): ReactNode {
                                     onChange={(event) => updateSettings({ accent_color: event.target.value })}
                                     className="h-10 w-14 p-1"
                                 />
-                                <span className="font-mono text-xs text-muted-foreground">{data.settings.accent_color}</span>
+                                <span className="text-muted-foreground font-mono text-sm">{data.settings.accent_color}</span>
                             </div>
                         </div>
                     </div>
@@ -188,19 +192,15 @@ export function PolicyStep({ data, onDataChange }: PolicyStepProps): ReactNode {
                             accept="image/*"
                             onChange={(event) => updateSettings({ banner_image: event.target.files?.[0] ?? null })}
                         />
-                        <p className="text-xs text-muted-foreground">Shown at the top of the class page for the students.</p>
+                        <p className="text-muted-foreground text-sm">Shown at the top of the class page for the students.</p>
                     </div>
-                </CardContent>
-            </Card>
+                </div>
+            </FormSection>
 
-            <Card>
-                <CardHeader>
-                    <CardTitle>Custom preferences</CardTitle>
-                    <CardDescription>Extra key and value settings for this class.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
+            <FormSection title="Custom preferences" description="Additional values used by this class. Existing preference names are retained.">
+                <div className="space-y-4">
                     {customEntries.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">No custom settings yet.</p>
+                        <p className="text-muted-foreground text-sm">No custom settings yet.</p>
                     ) : (
                         customEntries.map(([key, value]) => (
                             <div key={key} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]">
@@ -214,7 +214,7 @@ export function PolicyStep({ data, onDataChange }: PolicyStepProps): ReactNode {
                                     type="button"
                                     variant="ghost"
                                     size="icon"
-                                    className="text-muted-foreground hover:text-destructive"
+                                    className="text-muted-foreground hover:text-destructive size-11"
                                     onClick={() => removeCustomSetting(key)}
                                     aria-label={`Remove ${key}`}
                                 >
@@ -224,12 +224,12 @@ export function PolicyStep({ data, onDataChange }: PolicyStepProps): ReactNode {
                         ))
                     )}
 
-                    <Button type="button" variant="outline" size="sm" onClick={addCustomSetting}>
+                    <Button type="button" variant="outline" className="h-11 px-3" onClick={addCustomSetting}>
                         <Plus className="size-4" />
                         Add setting
                     </Button>
-                </CardContent>
-            </Card>
+                </div>
+            </FormSection>
         </div>
     );
 }

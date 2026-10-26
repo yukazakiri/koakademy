@@ -10,8 +10,12 @@ use App\Models\User;
 use App\Rules\NonOverlappingScheduleBlocksRule;
 use App\Rules\ScheduleOverlapRule;
 use App\Support\AdministratorPermissionChecker;
+use App\Support\ScheduleDelivery;
+use Closure;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Validator as ValidatorFacade;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 final class UpdateClassRequest extends FormRequest
 {
@@ -57,15 +61,27 @@ final class UpdateClassRequest extends FormRequest
             'semester' => ['sometimes', 'nullable', Rule::in(['1', '2', 1, 2, 'summer'])],
             'school_year' => ['sometimes', 'nullable', 'string', 'max:50'],
             'section' => ['sometimes', 'nullable', Rule::in(['A', 'B', 'C', 'D'])],
+            'delivery_mode' => ['sometimes', Rule::in(['face_to_face', 'online'])],
             'room_id' => ['sometimes', 'nullable', 'integer', 'exists:rooms,id'],
             'maximum_slots' => ['sometimes', 'nullable', 'integer', 'min:1'],
 
             // Schedule
             'schedules' => ['sometimes', 'array', new NonOverlappingScheduleBlocksRule, new ScheduleOverlapRule($classIdForScheduleExclusion)],
+            'schedules.*.id' => [
+                'sometimes',
+                'integer',
+                'distinct',
+                Rule::exists('schedule', 'id')->where('class_id', $classIdForScheduleExclusion),
+            ],
             'schedules.*.day_of_week' => ['required_with:schedules', Rule::in(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])],
             'schedules.*.start_time' => ['required_with:schedules', 'date_format:H:i'],
             'schedules.*.end_time' => ['required_with:schedules', 'date_format:H:i'],
-            'schedules.*.room_id' => ['required_with:schedules', 'integer', 'exists:rooms,id'],
+            'schedules.*.delivery_mode' => ['sometimes', Rule::in(['face_to_face', 'online'])],
+            'schedules.*.room_id' => ['nullable', 'integer', 'exists:rooms,id'],
+            'schedules.*.component_type' => ['nullable', 'string', Rule::in(['lecture', 'lab'])],
+            'schedules.*.pattern_group_id' => ['nullable', 'string', 'max:64'],
+            'schedules.*.status' => ['nullable', 'string', Rule::in(['draft', 'published'])],
+            'schedules.*.subject_id' => ['nullable', 'integer', 'exists:subject,id'],
 
             // Settings
             'settings' => ['sometimes', 'nullable', 'array'],
@@ -82,5 +98,65 @@ final class UpdateClassRequest extends FormRequest
             'settings.custom' => ['nullable', 'array'],
             'remove_banner_image' => ['sometimes', 'boolean'],
         ];
+    }
+
+    /** @return array<Closure> */
+    public function after(): array
+    {
+        return [function (Validator $validator): void {
+            if ($validator->errors()->isNotEmpty() || $this->exists('schedules')) {
+                return;
+            }
+
+            if ($this->only([
+                'delivery_mode', 'faculty_id', 'school_year', 'semester', 'classification',
+                'section', 'academic_year', 'course_codes', 'shs_strand_id', 'grade_level',
+            ]) === []) {
+                return;
+            }
+
+            $class = $this->route('class');
+            if (! $class instanceof Classes) {
+                return;
+            }
+
+            // A faculty, cohort, or term change must also validate retained blocks.
+            $schedules = $class->schedules()->get()->map(fn ($schedule): array => [
+                'day_of_week' => $schedule->day_of_week,
+                'start_time' => $schedule->start_time?->format('H:i:s'),
+                'end_time' => $schedule->end_time?->format('H:i:s'),
+                'room_id' => $schedule->room_id,
+                'delivery_mode' => $schedule->delivery_mode,
+            ])->all();
+
+            $overlapValidator = ValidatorFacade::make(
+                [...$this->all(), 'schedules' => $schedules],
+                ['schedules' => [new ScheduleOverlapRule($class->id)]],
+            );
+
+            if ($overlapValidator->fails()) {
+                $validator->errors()->merge($overlapValidator->errors());
+            }
+        }];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $class = $this->route('class');
+        if (! $class instanceof Classes && is_numeric($class)) {
+            $class = Classes::query()->find((int) $class);
+        }
+
+        if ($this->input('delivery_mode', $class?->delivery_mode) === Classes::DELIVERY_ONLINE) {
+            $this->merge(['room_id' => null]);
+        }
+
+        if ($this->exists('schedules')) {
+            $this->merge(['schedules' => ScheduleDelivery::normalizeSchedules(
+                $this->input('schedules'),
+                $class instanceof Classes ? $class : null,
+                is_string($this->input('delivery_mode')) ? $this->input('delivery_mode') : null,
+            )]);
+        }
     }
 }

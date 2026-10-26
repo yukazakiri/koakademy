@@ -39,6 +39,7 @@ final class GenerateStudentSoaPdfJob implements ShouldQueue
         public int $userId,
         public ?int $issuanceId = null,
     ) {
+        $this->onConnection((string) config('queue.assessment_notification_connection', config('queue.default')));
         $this->onQueue('pdf-generation');
     }
 

@@ -7,6 +7,7 @@ namespace App\Http\Requests;
 use App\Models\Classes;
 use App\Rules\NonOverlappingScheduleBlocksRule;
 use App\Rules\ScheduleOverlapRule;
+use App\Support\ScheduleDelivery;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -31,7 +32,7 @@ final class UpdateClassSchedulesRequest extends FormRequest
 
         return [
             'schedules' => ['required', 'array', new NonOverlappingScheduleBlocksRule, new ScheduleOverlapRule($classIdForScheduleExclusion)],
-            'schedules.*.id' => ['sometimes', 'integer', 'exists:schedule,id'],
+            'schedules.*.id' => ['sometimes', 'integer', 'distinct', Rule::exists('schedule', 'id')->where('class_id', $classIdForScheduleExclusion)],
             'schedules.*.day_of_week' => [
                 'required',
                 'string',
@@ -39,7 +40,16 @@ final class UpdateClassSchedulesRequest extends FormRequest
             ],
             'schedules.*.start_time' => ['required', 'date_format:H:i'],
             'schedules.*.end_time' => ['required', 'date_format:H:i'],
-            'schedules.*.room_id' => ['required', 'integer', 'exists:rooms,id'],
+            'schedules.*.delivery_mode' => ['sometimes', Rule::in(['face_to_face', 'online'])],
+            'schedules.*.room_id' => ['nullable', 'integer', 'exists:rooms,id'],
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $class = $this->route('class');
+        if ($class instanceof Classes) {
+            $this->merge(['schedules' => ScheduleDelivery::normalizeSchedules($this->input('schedules'), $class)]);
+        }
     }
 }

@@ -33,17 +33,21 @@ export function DataTableColumnHeader<TData, TValue>({ column, title, className 
                 <DropdownMenuContent align="start">
                     <DropdownMenuItem onClick={() => column.toggleSorting(false)}>
                         <ArrowUp className="text-muted-foreground/70 mr-2 h-3.5 w-3.5" />
-                        Asc
+                        Sort ascending
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => column.toggleSorting(true)}>
                         <ArrowDown className="text-muted-foreground/70 mr-2 h-3.5 w-3.5" />
-                        Desc
+                        Sort descending
                     </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => column.toggleVisibility(false)}>
-                        <EyeOff className="text-muted-foreground/70 mr-2 h-3.5 w-3.5" />
-                        Hide
-                    </DropdownMenuItem>
+                    {column.getCanHide() ? (
+                        <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => column.toggleVisibility(false)}>
+                                <EyeOff className="text-muted-foreground/70 mr-2 h-3.5 w-3.5" />
+                                Hide column
+                            </DropdownMenuItem>
+                        </>
+                    ) : null}
                 </DropdownMenuContent>
             </DropdownMenu>
         </div>

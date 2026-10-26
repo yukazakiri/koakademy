@@ -7,6 +7,7 @@ namespace App\Filament\Widgets;
 use App\Enums\StudentType;
 use App\Models\StudentEnrollment;
 use App\Services\DashboardStatisticsService;
+use App\Support\Database\SqlDialect;
 use Filament\Widgets\ChartWidget;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
@@ -72,8 +73,11 @@ final class StudentEnrollmentByTypeChart extends ChartWidget
             column: 'students.student_type',
             scope: function (Builder $query): void {
                 $query->withoutGlobalScope(SoftDeletingScope::class)
-                    ->join('students', function (JoinClause $join): void {
-                        $join->whereRaw('CAST(student_enrollment.student_id AS BIGINT) = students.id');
+                    ->join('students', function (JoinClause $join) use ($query): void {
+                        $join->whereRaw(sprintf(
+                            '%s = students.id',
+                            SqlDialect::integerCast($query, 'student_enrollment.student_id'),
+                        ));
                     });
             },
         );

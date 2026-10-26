@@ -4,19 +4,21 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Modules\ModuleAccessService;
+use App\Modules\ModuleManifestRepository;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
-use Nwidart\Modules\Contracts\RepositoryInterface;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use SplFileInfo;
 
 final class ModuleAdminNavigationService
 {
-    private const CACHE_KEY = 'admin-navigation-routes:v1';
+    private const CACHE_KEY = 'admin-navigation-routes:v2';
 
     public function __construct(
-        private readonly RepositoryInterface $modules,
+        private readonly ModuleManifestRepository $modules,
         private readonly CacheRepository $cache,
+        private readonly ModuleAccessService $access,
     ) {}
 
     /**
@@ -24,11 +26,25 @@ final class ModuleAdminNavigationService
      */
     public function getRoutes(): array
     {
-        return $this->cache->remember(
+        /** @var mixed $cached */
+        $cached = $this->cache->remember(
             self::CACHE_KEY,
             now()->addMinutes(5),
             fn (): array => $this->discoverRoutes(),
         );
+
+        $routes = is_array($cached) ? $cached : [];
+
+        $available = [];
+        foreach ($routes as $route) {
+            if (! is_array($route) || ! is_string($route['module'] ?? null) || ! $this->access->isAvailable($route['module'])) {
+                continue;
+            }
+            /** @var array<string, mixed> $route */
+            $available[] = $route;
+        }
+
+        return $available;
     }
 
     public function forgetCache(): void
@@ -43,14 +59,9 @@ final class ModuleAdminNavigationService
     {
         $routes = [];
 
-        foreach ($this->modules->all() as $module) {
-            if (! $module->isEnabled()) {
-                continue;
-            }
-
-            $moduleName = $module->getName();
-
-            $modulePath = $this->getModulePath($moduleName);
+        foreach ($this->modules->installed() as $module) {
+            $moduleName = $module->manifest->name;
+            $modulePath = $module->path;
             $modulePages = $this->getModuleInertiaPages($modulePath);
             $modulePagesLookup = array_fill_keys($modulePages, true);
 
@@ -59,8 +70,9 @@ final class ModuleAdminNavigationService
 
             $config = is_file($configPath) ? require $configPath : null;
 
-            if (is_array($config)) {
-                foreach (($config['admin'] ?? []) as $route) {
+            $configuredRoutes = is_array($config) ? ($config['admin'] ?? []) : [];
+            if (is_array($configuredRoutes)) {
+                foreach ($configuredRoutes as $route) {
                     if (! is_array($route)) {
                         continue;
                     }
@@ -75,9 +87,11 @@ final class ModuleAdminNavigationService
                         continue;
                     }
 
+                    /** @var array<string, mixed> $route */
                     $routes[] = [
                         ...$route,
                         'module' => $moduleName,
+                        'modulePath' => $module->frontendPath(),
                     ];
                 }
             }
@@ -86,21 +100,12 @@ final class ModuleAdminNavigationService
                 $routes[] = [
                     ...$autodiscoveredRoute,
                     'module' => $moduleName,
+                    'modulePath' => $module->frontendPath(),
                 ];
             }
         }
 
         return $routes;
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    private function getModulePath(string $moduleName): string
-    {
-        $module = $this->modules->find($moduleName);
-
-        return $module?->getPath() ?? base_path("Modules/{$moduleName}");
     }
 
     /**
@@ -164,10 +169,7 @@ final class ModuleAdminNavigationService
                 continue;
             }
 
-            $moduleSlug = $matches[1] ?? null;
-            if ($moduleSlug === '') {
-                continue;
-            }
+            $moduleSlug = $matches[1];
 
             $link = '/administrators/'.$moduleSlug;
             if (isset($configuredLookup[$link])) {

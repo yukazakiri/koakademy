@@ -39,9 +39,9 @@ Run `npm run dev` in a separate terminal when working on React portal components
 Whether you are fixing a bug or adding a feature, follow this step-by-step workflow:
 
 1. **Create a topic branch** from `master`:
-   ```sh
-   git checkout -b fix/enrollment-fee-calculation
-   ```
+    ```sh
+    git checkout -b fix/enrollment-fee-calculation
+    ```
 2. **Write or update a Pest test** that reproduces the issue or verifies the new behavior.
 3. **Implement your changes** following repository conventions (strict types in PHP, TypeScript in React).
 4. **Run local validation** before opening your PR.
@@ -194,16 +194,16 @@ KOAKADEMY_ENV_FILE=.env.production.example \
 
 KoAkademy maintains a **single-source documentation system**:
 
-| Location | Role | How to Edit |
-| -------- | ---- | ----------- |
-| `CONTRIBUTING.md` | **Canonical Source** | Edit directly in the root directory. |
-| `docs/src/content/docs/self-hosting/*`, `docs/src/content/docs/start-here/{installation,deployment,configuration,troubleshooting,development,architecture,faq}.mdx` | **Native Docs Pages** | Edit directly under `docs/src/content/docs/`. |
-| `docs/src/content/docs/start-here/contributing.mdx`, etc. | **Generated Mirrors** | **Do not edit manually.** Run `npm run docs:sync`. |
-| `docs/src/content/docs/system/*`, `docs/src/content/docs/user-guide/*`, `docs/src/content/docs/enrollment-policies/*`, `docs/src/content/docs/api/*` | **Native Docs Pages** | Edit directly under `docs/src/content/docs/`. |
+| Location                                                                                                                                                            | Role                  | How to Edit                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------- |
+| `CONTRIBUTING.md`                                                                                                                                                   | **Canonical Source**  | Edit directly in the root directory.               |
+| `docs/src/content/docs/self-hosting/*`, `docs/src/content/docs/start-here/{installation,deployment,configuration,troubleshooting,development,architecture,faq}.mdx` | **Native Docs Pages** | Edit directly under `docs/src/content/docs/`.      |
+| `docs/src/content/docs/start-here/contributing.mdx`, etc.                                                                                                           | **Generated Mirrors** | **Do not edit manually.** Run `npm run docs:sync`. |
+| `docs/src/content/docs/system/*`, `docs/src/content/docs/user-guide/*`, `docs/src/content/docs/enrollment-policies/*`, `docs/src/content/docs/api/*`                | **Native Docs Pages** | Edit directly under `docs/src/content/docs/`.      |
 
 ## Standalone Module Contributions
 
-Standalone domain extensions (such as the Forms module) live in dedicated repositories under the [KoAkademy module registry](https://github.com/yukazakiri/koakademy-modules). Check the [Module Creation Guide](docs/src/content/docs/start-here/architecture.mdx) and registry guidelines before publishing a new module package.
+Standalone domain extensions (such as the Forms module) live in dedicated repositories under the [KoAkademy module registry](https://github.com/yukazakiri/koakademy-modules). Check the [Module Creation Guide](docs/src/content/docs/maintainers/create-module.mdx) and registry guidelines before publishing a new module package.
 
 ## Regulatory Report Providers
 

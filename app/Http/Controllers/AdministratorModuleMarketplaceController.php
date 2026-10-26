@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enterprise\EnterpriseMarketplaceService;
 use App\Models\User;
 use App\Modules\CompatibilityChecker;
 use App\Modules\Contracts\ModuleManifest;
@@ -14,6 +15,7 @@ use App\Modules\ModuleManifestRepository;
 use App\Modules\ModuleStateRepository;
 use App\Modules\RegistryClient;
 use App\Services\ModuleAdminNavigationService;
+use App\Services\TenantContext;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -35,7 +37,7 @@ final class AdministratorModuleMarketplaceController extends Controller
         private readonly ModuleAdminNavigationService $moduleAdminNavigation,
     ) {}
 
-    public function index(Request $request): Response
+    public function index(Request $request, EnterpriseMarketplaceService $enterprise, TenantContext $tenants): Response
     {
         $user = $this->administrator();
         $registryEntries = [];
@@ -54,6 +56,7 @@ final class AdministratorModuleMarketplaceController extends Controller
 
         return Inertia::render('administrators/module-marketplace/index', [
             'user' => $this->userPayload($user),
+            'enterprise' => $enterprise->summary($user, $tenants->getCurrentSchool()),
             'marketplace' => [
                 'enabled' => (bool) config('modules-marketplace.enabled', false),
                 'registry_url' => config('modules-marketplace.registry_url'),
@@ -116,8 +119,10 @@ final class AdministratorModuleMarketplaceController extends Controller
     {
         $installedManifest = $this->manifests->find($manifest->name);
         $installedModule = $this->modules->find($manifest->name);
-        $compatibility = $this->compatibility->check($manifest);
-        $activationErrors = $this->activationErrors($manifest, $installedModule);
+        $activationManifest = $installedManifest ?? $manifest;
+        $compatibility = $this->compatibility->check($activationManifest);
+        $catalogCompatibility = $this->compatibility->check($manifest);
+        $activationErrors = $this->activationErrors($activationManifest, $installedModule);
         $latestRelease = $entry?->latestRelease();
         $restartRequired = $installedModule instanceof Module && $this->states->restartRequired($manifest->name);
         $status = ! ($installedModule instanceof Module)
@@ -147,6 +152,8 @@ final class AdministratorModuleMarketplaceController extends Controller
             'update_command' => $this->updateCommand($manifest, $latestRelease, $installationSource),
             'compatible' => $compatibility->isCompatible() && $activationErrors === [],
             'compatibility_errors' => [...$compatibility->errors, ...$activationErrors],
+            'update_compatible' => $catalogCompatibility->isCompatible(),
+            'update_compatibility_errors' => $catalogCompatibility->errors,
             'asset_url' => $latestRelease?->assetUrl,
             'released_at' => $latestRelease?->releasedAt,
         ];
@@ -184,7 +191,7 @@ final class AdministratorModuleMarketplaceController extends Controller
         $manifest = $this->manifests->find($module->getName());
         abort_unless($manifest instanceof ModuleManifest, 404);
 
-        $activationErrors = $this->activationErrors($manifest, $module);
+        $activationErrors = [...$this->compatibility->check($manifest)->errors, ...$this->activationErrors($manifest, $module)];
 
         if ($enabled && $activationErrors !== []) {
             throw ValidationException::withMessages(['module' => $activationErrors]);

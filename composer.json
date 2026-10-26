@@ -15,7 +15,6 @@
     ],
     "license": "AGPL-3.0-or-later",
     "require": {
-        "php": ">=8.5.12 <8.6",
         "achyutn/filament-log-viewer": "^2.0",
         "alizharb/filament-activity-log": "^2.0",
         "astrophp/trail": "^0.3.1",
@@ -24,6 +23,7 @@
         "barryvdh/laravel-debugbar": "^4.0",
         "bezhansalleh/filament-shield": "^4.0",
         "chrome-php/chrome": "^1.15",
+        "composer/semver": "^3.5",
         "coolsam/modules": "^5.0",
         "cweagans/composer-patches": "^2.0",
         "endroid/qr-code": "^6.0",
@@ -67,6 +67,7 @@
         "moataz-01/filament-notification-sound": "^1.0",
         "mohammed-mojaly/laralyze": "^0.7.2",
         "mozex/laravel-scout-bulk-actions": "^1.7",
+        "php": ">=8.5.12 <8.6",
         "predis/predis": "^3.2",
         "pusher/pusher-php-server": "^7.2",
         "pxlrbt/filament-environment-indicator": "^3.0",
@@ -96,6 +97,7 @@
         "barryvdh/laravel-ide-helper": "^3.6",
         "driftingly/rector-laravel": "^2.0",
         "fakerphp/faker": "^1.23",
+        "koakademy/school-notes-starter": "0.1.0",
         "larastan/larastan": "^3.0",
         "laravel/boost": "^2.0",
         "laravel/pail": "^1.2",
@@ -140,6 +142,13 @@
         "forms": {
             "type": "vcs",
             "url": "https://github.com/yukazakiri/koakademy-module-forms.git"
+        },
+        "extension-starter": {
+            "type": "path",
+            "url": "extensions/starter",
+            "options": {
+                "symlink": false
+            }
         }
     },
     "scripts": {
@@ -186,6 +195,9 @@
             "@php artisan wayfinder:generate",
             "npm install",
             "npm run build"
+        ],
+        "test:extensions": [
+            "@php vendor/bin/pest --configuration=phpunit.extensions.xml"
         ]
     },
     "extra": {

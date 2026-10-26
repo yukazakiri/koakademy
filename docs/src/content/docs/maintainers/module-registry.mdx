@@ -61,8 +61,8 @@ registry entry; that fallback is not a substitute for publishing the module
 to the catalog.
 
 Commit `composer.json` and `composer.lock`, then build the normal KoAkademy
-image. Run migrations in the release container when the package includes
-database migrations, clear/rebuild application caches, and roll the Swarm
+image. Run migrations and `php artisan modules:sync-permissions` in the release container,
+validate with `php artisan modules:validate --all`, clear/rebuild application caches, and roll the Swarm
 service. Only after the package is in the image should a super administrator
 open **Administrators → Marketplace** and enable it. The enable/disable
 decision is stored in `module_installations`, and the application shows a
@@ -114,29 +114,17 @@ unusable after completion. The queue must be running for delivery.
 
 ### Contributor steps
 
-1. Keep the module source in its own repository.
-2. Update `module.json` and `composer.json`; keep the package name, provider,
-   and repository identity stable.
-3. Create a matching public semver tag: manifest `1.2.3` must use tag `v1.2.3`.
-4. In a checkout of the registry repository, download the exact tag archive:
+1. Keep the extension in a contributor-owned repository with a public semver tag matching its manifest. Start with the tested package under `extensions/starter`.
+2. Submit a registry PR adding the repository to `modules.json`, with the exact release, passing package/host CI, support details, migrations, permissions, and rollback notes.
+3. The registry rebuild discovers releases from that allowlist. Review the proposed metadata change for each release; allowlisting a publisher does not approve every future tag.
+4. Generate both indexes using the registry scripts. The manual `scripts/update-module.php` command remains available for local/exceptional updates. Contributors must never create a competing signing key.
+5. Check the generated catalog with the host parser before signing:
 
-   ```sh
-   curl -L https://github.com/OWNER/REPOSITORY/archive/refs/tags/v1.2.3.zip \
-       -o /tmp/module-v1.2.3.zip
-   php scripts/update-module.php \
-       --module=/path/to/module-repository \
-       --archive=/tmp/module-v1.2.3.zip
-   php scripts/validate-registry.php
-   ```
+    ```sh
+    php /path/to/koakademy/scripts/validate-module-catalog.php /path/to/koakademy-modules/registry.json
+    ```
 
-5. Open a pull request containing the generated `registry.json` and
-   `packages.json` changes, the module release/tag, compatibility requirements,
-   migrations, permissions, and rollback notes.
-
-The updater reads the module manifest and Composer metadata, calculates the
-SHA-256 and Composer distribution checksums, updates both indexes, sorts the
-entries, and removes the old signature. Contributors must not generate or
-commit a signing key.
+The live registry and this host are separate repositories. Registry automation changes belong in the [registry repository](https://github.com/yukazakiri/koakademy-modules). Follow `integrations/module-registry/README.md` for the review and signing handoff; deploying the host alone does not change registry automation.
 
 ### Maintainer steps
 
@@ -145,6 +133,7 @@ registry key from protected storage:
 
 ```sh
 php scripts/validate-registry.php
+php /path/to/koakademy/scripts/validate-module-catalog.php registry.json
 php scripts/sign-registry.php registry.json /secure/registry-private.key registry.json
 php scripts/validate-registry.php
 php scripts/verify-registry.php
@@ -167,16 +156,16 @@ For a new Announcement release such as `1.0.2`:
 2. Add the release to the signed registry and wait for Pages publication.
 3. In KoAkademy, run:
 
-   ```sh
-   composer update koakademy/announcement --with-dependencies
-   php artisan test --compact
-   git add composer.json composer.lock
-   git commit -m "chore(modules): update announcement"
-   git push
-   ```
+    ```sh
+    composer update koakademy/announcement --with-dependencies
+    php artisan test --compact
+    git add composer.json composer.lock
+    git commit -m "chore(modules): update announcement"
+    git push
+    ```
 
-   If Announcement is not yet a Composer dependency, use
-   `composer require koakademy/announcement:^1.0.2` instead.
+    If Announcement is not yet a Composer dependency, use
+    `composer require koakademy/announcement:^1.0.2` instead.
 
 4. Build and deploy the new stable or edge image through the normal release
    process.

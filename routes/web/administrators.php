@@ -442,6 +442,10 @@ Route::middleware(['auth', 'administrators.only'])
         // System Management
         Route::get('/system-management', [App\Http\Controllers\AdministratorSystemManagementController::class, 'index'])->name('system-management.index');
         Route::get('/module-marketplace', [AdministratorModuleMarketplaceController::class, 'index'])->name('module-marketplace.index');
+        Route::post('/enterprise/schools/{school}/license', [App\Http\Controllers\AdministratorEnterpriseLicenseController::class, 'store'])
+            ->middleware('throttle:10,1')->name('enterprise.licenses.store');
+        Route::put('/enterprise/schools/{school}/capabilities/{capability}', [App\Http\Controllers\AdministratorSchoolCapabilityController::class, 'update'])
+            ->name('enterprise.capabilities.update');
         Route::post('/module-marketplace/{module}/enable', [AdministratorModuleMarketplaceController::class, 'enable'])
             ->where('module', '[A-Za-z][A-Za-z0-9_-]*')
             ->name('module-marketplace.enable');

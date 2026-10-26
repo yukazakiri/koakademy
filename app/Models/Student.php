@@ -1089,7 +1089,7 @@ final class Student extends Model implements RecordsActivity
         return $this->hasMany(StudentTuition::class, 'student_id', 'id');
     }
 
-    public function studentEnrollments(): \Illuminate\Database\Eloquent\Relations\HasMany
+    public function studentEnrollments(): HasMany
     {
         return $this->hasMany(StudentEnrollment::class, 'student_id', 'id');
     }

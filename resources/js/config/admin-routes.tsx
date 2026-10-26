@@ -1,5 +1,6 @@
-import type { Route } from "@/components/sidebar-03/nav-main";
 import { AiCircleLogo } from "@/components/ai/ai-circle-logo";
+import type { Route } from "@/components/sidebar-03/nav-main";
+import { modulePageExists } from "@/lib/module-page-registry";
 import { index as libraryIndex } from "@/routes/library";
 import {
     ACADEMIC_ADMIN_ROLES,
@@ -117,6 +118,7 @@ export interface ModuleAdminRoute {
     allowedRoles?: UserRole[];
     separator?: boolean;
     module?: string;
+    modulePath?: string | null;
     inertiaPage?: string;
     autodiscovered?: boolean;
     subs?: {
@@ -615,7 +617,7 @@ export const ADMIN_ROUTES: AdminRoute[] = [
     // ============================================
     {
         id: "admin-module-marketplace",
-        title: "Marketplace",
+        title: "Extensions & licenses",
         icon: <IconTools className="size-4" />,
         link: "/administrators/module-marketplace",
         section: "system",
@@ -895,7 +897,7 @@ function hasModuleBackedReactPage(route: ModuleAdminRoute): boolean {
 
     const explicitPage = route.inertiaPage?.trim();
     if (explicitPage) {
-        return modulePageExists(route.module, explicitPage);
+        return modulePageExists(Object.keys(MODULE_REACT_PAGES), route.module, explicitPage, route.modulePath);
     }
 
     const inferredPages = inferInertiaPagesFromLink(route.link);
@@ -903,7 +905,7 @@ function hasModuleBackedReactPage(route: ModuleAdminRoute): boolean {
         return false;
     }
 
-    return inferredPages.some((page) => modulePageExists(route.module as string, page));
+    return inferredPages.some((page) => modulePageExists(Object.keys(MODULE_REACT_PAGES), route.module as string, page, route.modulePath));
 }
 
 function inferInertiaPagesFromLink(link: string): string[] {
@@ -913,31 +915,6 @@ function inferInertiaPagesFromLink(link: string): string[] {
     }
 
     return [`${normalized}/index`, normalized];
-}
-
-function modulePageExists(moduleName: string, inertiaPage: string): boolean {
-    const pageSuffix = `/resources/assets/js/Pages/${inertiaPage}.tsx`;
-    const moduleDirectory = `/Modules/${moduleName}/`;
-    const composerModuleDirectory = `/vendor/[^/]+/${toComposerModuleSlug(moduleName)}/`;
-    const composerModulePattern = new RegExp(composerModuleDirectory.replaceAll("/", "\\/"));
-
-    return Object.keys(MODULE_REACT_PAGES).some((pagePath) => {
-        const normalizedPagePath = pagePath.replaceAll("\\", "/");
-
-        if (!normalizedPagePath.endsWith(pageSuffix)) {
-            return false;
-        }
-
-        return normalizedPagePath.includes(moduleDirectory) || composerModulePattern.test(normalizedPagePath);
-    });
-}
-
-function toComposerModuleSlug(moduleName: string): string {
-    return moduleName
-        .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
-        .replace(/[^a-zA-Z0-9]+/g, "-")
-        .replace(/^-|-$/g, "")
-        .toLowerCase();
 }
 
 /**

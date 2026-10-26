@@ -11,6 +11,7 @@ use App\Filament\Auth\MultiFactor\SecurityAwareAppAuthentication;
 use App\Filament\Auth\MultiFactor\SecurityAwareEmailAuthentication;
 use App\Filament\Pages\Backups;
 use App\Filament\Pages\GeneralSettings;
+use App\Filament\Plugins\DiscoveredModulesPlugin;
 use App\Filament\Plugins\PennantManagerPlugin;
 use App\Services\AnalyticsSettingsService;
 use App\Settings\SiteSettings;
@@ -18,7 +19,6 @@ use Awcodes\Gravatar\GravatarPlugin;
 use Awcodes\Gravatar\GravatarProvider;
 use Backstage\Mails\MailsPlugin;
 use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
-use Coolsam\Modules\ModulesPlugin;
 use Exception;
 use Filament\Actions\Action;
 use Filament\Http\Middleware\Authenticate;
@@ -149,7 +149,7 @@ final class AdminPanelProvider extends PanelProvider
         $isTestingEnvironment = ($_ENV['APP_ENV'] ?? $_SERVER['APP_ENV'] ?? null) === 'testing';
 
         if (! $isTestingEnvironment || config('filament-modules.enabled_in_testing', false)) {
-            $plugins[] = ModulesPlugin::make();
+            $plugins[] = DiscoveredModulesPlugin::make();
         }
 
         $panel->renderHook(

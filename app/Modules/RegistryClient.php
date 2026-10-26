@@ -33,7 +33,7 @@ final class RegistryClient
         }
 
         $cacheKey = 'module-registry:'.hash('sha256', $url);
-        $ttl = max(60, (int) config('modules-marketplace.cache_ttl', 3600));
+        $ttl = max(60, config()->integer('modules-marketplace.cache_ttl', 3600));
 
         if ($forceRefresh) {
             Cache::forget($cacheKey);
@@ -84,7 +84,7 @@ final class RegistryClient
     }
 
     /**
-     * @param  array<string, mixed>  $payload
+     * @param  array<array-key, mixed>  $payload
      */
     private function verifySignature(array $payload): void
     {
@@ -114,7 +114,9 @@ final class RegistryClient
 
         if (
             $signatureBytes === false
+            || $signatureBytes === ''
             || $publicKeyBytes === false
+            || $publicKeyBytes === ''
             || mb_strlen($signatureBytes, '8bit') !== SODIUM_CRYPTO_SIGN_BYTES
             || mb_strlen($publicKeyBytes, '8bit') !== SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES
         ) {

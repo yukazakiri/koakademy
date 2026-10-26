@@ -11,6 +11,10 @@ use Modules\Forms\Models\FormResponse;
 use Modules\Forms\Services\FormLifecycleService;
 use Modules\Forms\Services\FormTemplateService;
 
+beforeEach(function (): void {
+    config(['modules.scan.enabled' => true]);
+});
+
 it('tests profile completion invitation submission and redirects to thanks', function (): void {
     $admin = User::factory()->create();
     $student = Student::factory()->create([

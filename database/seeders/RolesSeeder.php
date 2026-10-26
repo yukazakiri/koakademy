@@ -136,8 +136,8 @@ final class RolesSeeder extends Seeder
         $policiesPath = app_path('Policies');
         $policyFiles = File::files($policiesPath);
 
-        foreach (File::directories(base_path('Modules')) as $moduleDir) {
-            $modulePolicyPath = $moduleDir.'/app/Policies';
+        foreach (app(\App\Modules\ModuleManifestRepository::class)->installed() as $module) {
+            $modulePolicyPath = $module->path.'/app/Policies';
             if (File::isDirectory($modulePolicyPath)) {
                 $policyFiles = array_merge($policyFiles, File::files($modulePolicyPath));
             }
@@ -164,6 +164,10 @@ final class RolesSeeder extends Seeder
                 ['name' => $permissionName, 'guard_name' => 'web']
             );
             $createdPermissions->push($permission);
+        }
+
+        foreach (app(\App\Modules\ModulePermissionService::class)->sync() as $permissionName) {
+            $createdPermissions->push(Permission::findByName($permissionName, 'web'));
         }
 
         return $createdPermissions;

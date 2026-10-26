@@ -1,4 +1,5 @@
 import AdminLayout from "@/components/administrators/admin-layout";
+import { EnterpriseLicensePanel, type EnterpriseMarketplace } from "@/components/administrators/enterprise-license-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,6 +30,8 @@ interface MarketplaceModule {
     update_command: string | null;
     compatible: boolean;
     compatibility_errors: string[];
+    update_compatible: boolean;
+    update_compatibility_errors: string[];
     asset_url: string | null;
     released_at: string | null;
 }
@@ -43,9 +46,10 @@ interface MarketplaceProps {
 interface Props {
     user: User;
     marketplace: MarketplaceProps;
+    enterprise: EnterpriseMarketplace;
 }
 
-export default function ModuleMarketplacePage({ user, marketplace }: Props) {
+export default function ModuleMarketplacePage({ user, marketplace, enterprise }: Props) {
     const [processingModule, setProcessingModule] = useState<string | null>(null);
     const [selectedUpdate, setSelectedUpdate] = useState<MarketplaceModule | null>(null);
     const [copiedUpdateCommand, setCopiedUpdateCommand] = useState(false);
@@ -91,8 +95,8 @@ export default function ModuleMarketplacePage({ user, marketplace }: Props) {
     }
 
     return (
-        <AdminLayout user={user} title="Module Marketplace">
-            <Head title="Module Marketplace" />
+        <AdminLayout user={user} title="Extensions & licenses">
+            <Head title="Extensions & licenses" />
 
             <div className="mx-auto w-full max-w-[80rem] space-y-6 pb-8">
                 <header className="border-border/70 bg-card/85 overflow-hidden rounded-2xl border px-5 py-6 shadow-sm backdrop-blur-xl sm:px-7 sm:py-8">
@@ -102,9 +106,9 @@ export default function ModuleMarketplacePage({ user, marketplace }: Props) {
                                 <PackageOpen className="size-5" aria-hidden="true" />
                             </span>
                             <p className="text-muted-foreground mt-5 text-xs font-semibold tracking-[0.1em] uppercase">Platform extensions</p>
-                            <h1 className="text-foreground mt-2 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl">Module Marketplace</h1>
+                            <h1 className="text-foreground mt-2 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl">Extensions & licenses</h1>
                             <p className="text-muted-foreground mt-3 max-w-2xl text-sm leading-6 sm:text-base">
-                                Review the signed public catalog and control modules that are already included in this application image.
+                                Manage your school’s purchased capabilities and review installed extensions.
                             </p>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
@@ -112,15 +116,15 @@ export default function ModuleMarketplacePage({ user, marketplace }: Props) {
                                 {marketplace.enabled ? "Marketplace enabled" : "Marketplace disabled"}
                             </Badge>
                             {marketplace.registry_url && (
-                                <Button variant="outline" size="sm" asChild>
-                                    <a href="?refresh=1">
-                                        <RefreshCw className="size-3.5" /> Refresh catalog
-                                    </a>
+                                <Button variant="outline" size="sm" nativeButton={false} render={<a href="?refresh=1" />}>
+                                    <RefreshCw className="size-3.5" /> Refresh catalog
                                 </Button>
                             )}
                         </div>
                     </div>
                 </header>
+
+                <EnterpriseLicensePanel enterprise={enterprise} />
 
                 {marketplace.registry_error && (
                     <div className="border-destructive/30 bg-destructive/10 text-destructive rounded-xl border px-4 py-3 text-sm" role="alert">
@@ -216,17 +220,23 @@ export default function ModuleMarketplacePage({ user, marketplace }: Props) {
                                     <CardFooter className="flex flex-wrap justify-between gap-2">
                                         <div className="flex flex-wrap gap-2">
                                             {module.repository && (
-                                                <Button variant="ghost" size="sm" asChild>
-                                                    <a href={module.repository} target="_blank" rel="noreferrer">
-                                                        Source <ExternalLink className="size-3.5" />
-                                                    </a>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    nativeButton={false}
+                                                    render={<a href={module.repository} target="_blank" rel="noreferrer" />}
+                                                >
+                                                    Source <ExternalLink className="size-3.5" />
                                                 </Button>
                                             )}
                                             {module.asset_url && !module.installed && (
-                                                <Button variant="ghost" size="sm" asChild>
-                                                    <a href={module.asset_url} target="_blank" rel="noreferrer">
-                                                        Release <ExternalLink className="size-3.5" />
-                                                    </a>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    nativeButton={false}
+                                                    render={<a href={module.asset_url} target="_blank" rel="noreferrer" />}
+                                                >
+                                                    Release <ExternalLink className="size-3.5" />
                                                 </Button>
                                             )}
                                         </div>
@@ -267,10 +277,14 @@ export default function ModuleMarketplacePage({ user, marketplace }: Props) {
                                 : "Configure a signed module registry to publish modules here."}
                         </p>
                         {marketplace.registry_url && (
-                            <Button variant="link" size="sm" asChild className="mt-2">
-                                <a href={marketplace.registry_url} target="_blank" rel="noreferrer">
-                                    Open registry
-                                </a>
+                            <Button
+                                variant="link"
+                                size="sm"
+                                nativeButton={false}
+                                render={<a href={marketplace.registry_url} target="_blank" rel="noreferrer" />}
+                                className="mt-2"
+                            >
+                                Open registry
                             </Button>
                         )}
                     </div>
@@ -290,6 +304,16 @@ export default function ModuleMarketplacePage({ user, marketplace }: Props) {
 
                         {selectedUpdate && (
                             <div className="space-y-5">
+                                {!selectedUpdate.update_compatible && (
+                                    <div role="alert" className="text-destructive text-sm">
+                                        This release needs a different application environment:
+                                        <ul className="list-disc pl-5">
+                                            {selectedUpdate.update_compatibility_errors.map((error) => (
+                                                <li key={error}>{error}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
                                 {selectedUpdate.installation_source === "composer" && selectedUpdate.update_command ? (
                                     <div className="space-y-2">
                                         <p className="text-sm font-medium">Run this in the KoAkademy application repository:</p>

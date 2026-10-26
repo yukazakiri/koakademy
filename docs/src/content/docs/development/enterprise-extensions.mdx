@@ -1,0 +1,142 @@
+---
+title: Enterprise Extensions
+description: Package paid capabilities, issue offline school licenses, and enforce access across school contexts.
+---
+
+KoAkademy separates installed extension code, purchased entitlements, school
+activation, release flags, and user authorization. Composer and application
+images deliver code. A signed license grants capabilities already present in
+that release; importing a license never installs packages or runs migrations.
+
+## First extension: consolidated school reporting
+
+`Modules/EnterpriseReporting` is the first Composer-ready enterprise extension,
+published in this source tree under the existing AGPL license. Its package name
+is `koakademy/enterprise-reporting`. It provides an enrollment comparison for up
+to 50 selected schools and a CSV export, using one school year and semester.
+Student counts are distinct within each school, and consolidated totals sum
+those school counts. Deleted enrollments and other academic periods are excluded.
+
+The extension currently lives in `Modules/` so it follows the existing build and
+autoload pipeline. It can be extracted into a standalone Composer repository
+with the same module layout. A Community distribution may omit the directory
+and package; core license management continues to work and reports no installed
+enterprise capabilities. This change does not create a hosted billing portal,
+publish a private package, or add a separate Enterprise image release workflow.
+
+## Deploy and activate
+
+1. Run `php artisan migrate --force` during the normal deployment process.
+2. Regenerate Composer autoloading and Wayfinder helpers, rebuild browser and SSR
+   assets, and roll all application workers. The bundled report module is
+   registered at startup; its purchased capability remains off for every school
+   until a valid license is imported and the capability is explicitly enabled.
+3. Configure `ENTERPRISE_LICENSE_PUBLIC_KEY` with the vendor's base64url Ed25519
+   **public** key, then rebuild configuration caches and restart workers.
+4. As a super administrator, open **Extensions & licenses** and select a school
+   using the organization switcher. Expand the license request details to obtain
+   the installation UUID and school reference UUID.
+5. Obtain a license bound to those identifiers and import its `.license` file.
+6. Enable **Consolidated school reports**. Repeat licensing and activation for
+   each participating school, then open the report.
+
+Every selected school must be active, licensed, enabled, and accessible to the
+user. Users also need `ViewAny:StudentEnrollment`. Super administrators can
+administer all schools, but cannot bypass a missing commercial grant.
+
+Activation and renewal take effect on subsequent requests without changing
+`module_installations` or re-registering routes. Deploying new extension code
+still requires a normal release. The existing installation-wide module switch
+remains a deployment concern and requires the usual worker rollout.
+
+## Declare capabilities
+
+Add optional `capabilities` metadata to an installed module's `module.json`:
+
+```json
+{
+  "capabilities": [
+    {
+      "key": "enterprise.consolidated-reports",
+      "name": "Consolidated school reports",
+      "description": "Enrollment comparison across licensed schools.",
+      "permission": "ViewAny:StudentEnrollment",
+      "entry_route": "administrators.consolidated-reports.index"
+    }
+  ]
+}
+```
+
+Capability keys must be unique across installed modules. `entry_route` is
+optional. An optional `feature` key applies the existing managed feature-release
+policy as an additional check; an allow assignment can never replace a license.
+The registry reads installed manifests, never the remote marketplace catalog.
+
+Packages must protect **backend operations**, not just their navigation:
+
+```php
+$decision = $access->decide('enterprise.consolidated-reports', $user, $school);
+abort_unless($decision->allowed, 403, $decision->reason);
+```
+
+For a route operating on the current school, use
+`ensure.capability:enterprise.consolidated-reports` after authentication and
+tenant-context middleware. Queued jobs must pass their explicit user and school
+to `CapabilityAccessService`; they must not inherit an HTTP session context.
+For reports involving multiple schools, check **all** selected schools before
+issuing an aggregate query, then explicitly constrain the query to that allowlist.
+
+## Issue a license on the vendor's machine
+
+Keep the Ed25519 signing key outside customer deployments and source control.
+The school application only verifies signatures. The module catalog signing key
+is a separate trust root and must not be reused for enterprise licenses.
+
+The claims file has this shape; replace identifiers with the values for the
+actual installation, school, and purchase:
+
+```json
+{
+  "schema": 1,
+  "license_id": "7f99190a-ff60-48cc-8755-c25260f679da",
+  "revision": 1,
+  "installation_id": "c5747045-debf-44f4-8024-692a6ab3d9ae",
+  "school_reference": "13be5abc-c560-4427-aa4d-8d0e29f43e5e",
+  "customer": "Bayani College",
+  "issued_at": "2026-10-25T00:00:00+00:00",
+  "maintenance_until": "2027-10-25T00:00:00+00:00",
+  "grants": ["enterprise.consolidated-reports"]
+}
+```
+
+Run the vendor-side issuer with a base64-encoded 64-byte Ed25519 secret key file:
+
+```sh
+php scripts/issue-enterprise-license.php \
+  --claims=/secure/claims.json \
+  --private-key=/secure/vendor-signing.key \
+  --output=/secure/bayani-college.license
+```
+
+The tool does not print keys, generate a trust root, or overwrite an existing
+output file. It signs the original claims bytes with the domain separator
+`koakademy-enterprise-license:v1\n`. The envelope contains `key_id`, a base64url
+`payload`, and a base64url `signature`. Imports are limited to 64 KB, and the
+stored document is verified again when grants are checked. Edited database
+fields and feature assignments cannot create a valid grant.
+
+Renewals retain the license UUID, increase `revision`, and use an issuance time
+at least as recent as the previous revision. Older revisions are rejected. For
+key rotation, retain required public keys in `config/enterprise.php` under their
+key IDs while migrating customers to newly signed licenses.
+
+`maintenance_until` describes maintenance eligibility. It never expires already
+purchased functionality. Vendor download and support systems must enforce
+maintenance eligibility separately; this application does not yet implement
+those services. Offline licensing cannot prevent a server owner from modifying
+their own software, and does not change recipients' AGPL rights.
+
+Back up the enterprise identity and entitlement tables with the rest of the
+school database. Restoring that database preserves license bindings. Staging
+installation rights and any commercial license changes must be settled before
+offering those terms to customers.

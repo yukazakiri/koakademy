@@ -381,15 +381,15 @@ it('defers the student records dataset during Inertia navigation', function (): 
 });
 
 it('caches module navigation discovery and supports explicit invalidation', function (): void {
-    Cache::forget('admin-navigation-routes:v1');
+    Cache::forget('admin-navigation-routes:v2');
 
     $service = app(ModuleAdminNavigationService::class);
     $routes = $service->getRoutes();
 
     expect($routes)->toBeArray()->not->toBeEmpty();
-    expect(Cache::has('admin-navigation-routes:v1'))->toBeTrue();
+    expect(Cache::has('admin-navigation-routes:v2'))->toBeTrue();
 
     $service->forgetCache();
 
-    expect(Cache::has('admin-navigation-routes:v1'))->toBeFalse();
+    expect(Cache::has('admin-navigation-routes:v2'))->toBeFalse();
 });

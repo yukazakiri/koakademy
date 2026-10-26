@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "f301c9277ea60b9c1a3f49f125a83dc7",
+    "content-hash": "d919ab4346484754a9380b9da451798a",
     "packages": [
         {
             "name": "achyutn/filament-log-viewer",
@@ -20297,6 +20297,43 @@
             "time": "2026-01-28T22:20:33+00:00"
         },
         {
+            "name": "koakademy/school-notes-starter",
+            "version": "0.1.0",
+            "dist": {
+                "type": "path",
+                "url": "extensions/starter",
+                "reference": "eb5edf0d1fdddd3e523fd7068a864d1bb51f2ff8"
+            },
+            "require": {
+                "filament/filament": "^5.0",
+                "inertiajs/inertia-laravel": "^3.0",
+                "laravel/framework": "^13.0",
+                "nwidart/laravel-modules": "^13.0",
+                "php": ">=8.5.12 <8.6"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Koakademy\\SchoolNotes\\Providers\\SchoolNotesServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Koakademy\\SchoolNotes\\": "app/"
+                }
+            },
+            "license": [
+                "AGPL-3.0-or-later"
+            ],
+            "description": "A working community extension starter for Koakademy.",
+            "transport-options": {
+                "symlink": false,
+                "relative": true
+            }
+        },
+        {
             "name": "larastan/larastan",
             "version": "v3.13.0",
             "source": {
@@ -23864,6 +23901,6 @@
     "platform": {
         "php": ">=8.5.12 <8.6"
     },
-    "platform-dev": {},
+    "platform-dev": [],
     "plugin-api-version": "2.6.0"
 }

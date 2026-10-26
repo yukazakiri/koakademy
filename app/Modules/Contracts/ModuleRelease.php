@@ -9,7 +9,7 @@ use InvalidArgumentException;
 final readonly class ModuleRelease
 {
     /**
-     * @param  array<string, string>  $requires
+     * @param  array{core?: string, php?: string, modules?: array<string, string>}  $requires
      */
     public function __construct(
         public string $version,
@@ -21,11 +21,14 @@ final readonly class ModuleRelease
     ) {}
 
     /**
-     * @param  array<string, mixed>  $data
+     * @param  array<array-key, mixed>  $data
      */
     public static function fromArray(array $data): self
     {
         $version = self::requiredString($data, 'version');
+        if (! preg_match('/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/', $version)) {
+            throw new InvalidArgumentException('Module release versions must use semantic versioning.');
+        }
         $assetUrl = self::optionalString($data, 'asset_url')
             ?? self::optionalString($data, 'download')
             ?? self::optionalString($data, 'url');
@@ -39,20 +42,7 @@ final readonly class ModuleRelease
             throw new InvalidArgumentException("Module release [{$version}] must declare a SHA-256 checksum.");
         }
 
-        $requires = [];
-        if (isset($data['requires'])) {
-            if (! is_array($data['requires'])) {
-                throw new InvalidArgumentException("Module release [{$version}] requirements must be an object.");
-            }
-
-            foreach ($data['requires'] as $key => $value) {
-                if (! is_string($key) || ! is_string($value) || mb_trim($key) === '' || mb_trim($value) === '') {
-                    throw new InvalidArgumentException("Module release [{$version}] requirements must contain strings.");
-                }
-
-                $requires[$key] = mb_trim($value);
-            }
-        }
+        $requires = ModuleRequirements::fromArray($data['requires'] ?? []);
 
         return new self(
             version: $version,
@@ -65,7 +55,7 @@ final readonly class ModuleRelease
     }
 
     /**
-     * @param  array<string, mixed>  $data
+     * @param  array<array-key, mixed>  $data
      */
     private static function requiredString(array $data, string $key): string
     {
@@ -79,7 +69,7 @@ final readonly class ModuleRelease
     }
 
     /**
-     * @param  array<string, mixed>  $data
+     * @param  array<array-key, mixed>  $data
      */
     private static function optionalString(array $data, string $key): ?string
     {

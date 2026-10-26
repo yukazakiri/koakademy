@@ -175,20 +175,15 @@ final class RegistrarAnalyticsService
     private function enrollmentQuery(array $filters): Builder
     {
         $query = StudentEnrollment::query()->withTrashed();
-        $studentIdCast = SqlDialect::integerCast($query, 'student_enrollment.student_id');
-        $courseIdCast = SqlDialect::integerCast(
-            $query,
-            sprintf('NULLIF(%s, %s)', SqlDialect::textCast($query, 'student_enrollment.course_id'), "''"),
-        );
 
         $query
             ->where('student_enrollment.school_year', $filters['school_year'])
-            ->leftJoin('students', function ($join) use ($studentIdCast): void {
-                $join->whereRaw(sprintf('%s = students.id', $studentIdCast))
+            ->leftJoin('students', function ($join): void {
+                $join->on('student_enrollment.student_id', '=', 'students.id')
                     ->whereRaw('(students.school_id = student_enrollment.school_id OR (students.school_id IS NULL AND student_enrollment.school_id IS NULL))');
             })
-            ->leftJoin('courses', function ($join) use ($courseIdCast): void {
-                $join->whereRaw(sprintf('%s = courses.id', $courseIdCast))
+            ->leftJoin('courses', function ($join): void {
+                $join->on('student_enrollment.course_id', '=', 'courses.id')
                     ->whereRaw('(courses.school_id = student_enrollment.school_id OR (courses.school_id IS NULL AND student_enrollment.school_id IS NULL))');
             })
             ->leftJoin('departments', function ($join): void {

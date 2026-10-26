@@ -14,7 +14,6 @@ use App\Filament\Resources\StudentEnrollments\Tables\StudentEnrollmentsTable;
 use App\Models\StudentEnrollment;
 use App\Services\EnrollmentPipelineService;
 use App\Services\GeneralSettingsService;
-use App\Support\Database\SqlDialect;
 use Filament\Actions\Action;
 use Filament\GlobalSearch\GlobalSearchResult;
 use Filament\Resources\Resource;
@@ -72,10 +71,7 @@ final class StudentEnrollmentResource extends Resource
                         $subQuery
                             ->select(DB::raw(1))
                             ->from('students')
-                            ->whereRaw(sprintf(
-                                '%s = students.id',
-                                SqlDialect::integerCast($subQuery, 'student_enrollment.student_id'),
-                            ))
+                            ->whereColumn('student_enrollment.student_id', 'students.id')
                             ->where(function ($nameQuery) use ($search): void {
                                 $nameQuery
                                     ->whereLike('students.first_name', "%{$search}%")
@@ -87,10 +83,7 @@ final class StudentEnrollmentResource extends Resource
                         $subQuery
                             ->select(DB::raw(1))
                             ->from('courses')
-                            ->whereRaw(sprintf(
-                                '%s = courses.id',
-                                SqlDialect::integerCast($subQuery, 'student_enrollment.course_id'),
-                            ))
+                            ->whereColumn('student_enrollment.course_id', 'courses.id')
                             ->where(function ($courseQuery) use ($search): void {
                                 $courseQuery
                                     ->whereLike('courses.code', "%{$search}%")

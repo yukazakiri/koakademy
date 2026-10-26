@@ -92,25 +92,9 @@ final class GenerateBulkAssessmentsJob implements ShouldBeUnique, ShouldQueue
             ->where('student_enrollment.school_year', (string) $filters['school_year'])
             ->where('student_enrollment.semester', (int) $filters['semester'])
             ->where('student_enrollment.status', $pipeline->getCashierVerifiedStatus());
-        $textCast = match ($query->getConnection()->getDriverName()) {
-            'mysql', 'mariadb' => 'CHAR',
-            default => 'TEXT',
-        };
         $query
-            ->leftJoin((new Course)->getTable().' as export_courses', function ($join) use ($textCast): void {
-                $join->on(
-                    DB::raw("CAST(export_courses.id AS {$textCast})"),
-                    '=',
-                    DB::raw("CAST(student_enrollment.course_id AS {$textCast})"),
-                );
-            })
-            ->leftJoin((new Student)->getTable().' as export_students', function ($join) use ($textCast): void {
-                $join->on(
-                    DB::raw("CAST(export_students.id AS {$textCast})"),
-                    '=',
-                    DB::raw("CAST(student_enrollment.student_id AS {$textCast})"),
-                );
-            })
+            ->leftJoin((new Course)->getTable().' as export_courses', 'export_courses.id', '=', 'student_enrollment.course_id')
+            ->leftJoin((new Student)->getTable().' as export_students', 'export_students.id', '=', 'student_enrollment.student_id')
             ->select('student_enrollment.id')
             ->orderBy('export_courses.code')
             ->orderBy('student_enrollment.academic_year')

@@ -519,12 +519,7 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
     {
         $query = StudentEnrollment::query();
         $query
-            ->join('students', function ($join) use ($query): void {
-                $join->whereRaw(sprintf(
-                    '%s = students.id',
-                    SqlDialect::integerCast($query, 'student_enrollment.student_id'),
-                ));
-            })
+            ->join('students', 'student_enrollment.student_id', '=', 'students.id')
             ->whereNull('student_enrollment.deleted_at')
             ->whereNull('students.deleted_at');
 
@@ -712,12 +707,7 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
         // 1. Enrollment Equity Aggregates per course
         $enrQuery = StudentEnrollment::query();
         $enrQuery
-            ->join('students', function ($join) use ($enrQuery): void {
-                $join->whereRaw(sprintf(
-                    '%s = students.id',
-                    SqlDialect::integerCast($enrQuery, 'student_enrollment.student_id'),
-                ));
-            })
+            ->join('students', 'student_enrollment.student_id', '=', 'students.id')
             ->whereNull('student_enrollment.deleted_at')
             ->whereNull('students.deleted_at')
             ->where('students.status', '!=', StudentStatus::Graduated->value);
@@ -833,12 +823,7 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
 
         $enrQuery = StudentEnrollment::query();
         $enrQuery
-            ->join('students', function ($join) use ($enrQuery): void {
-                $join->whereRaw(sprintf(
-                    '%s = students.id',
-                    SqlDialect::integerCast($enrQuery, 'student_enrollment.student_id'),
-                ));
-            })
+            ->join('students', 'student_enrollment.student_id', '=', 'students.id')
             ->whereNull('student_enrollment.deleted_at')
             ->whereNull('students.deleted_at')
             ->where('students.status', '!=', StudentStatus::Graduated->value)

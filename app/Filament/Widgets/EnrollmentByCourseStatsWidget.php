@@ -6,7 +6,6 @@ namespace App\Filament\Widgets;
 
 use App\Models\Course;
 use App\Models\StudentEnrollment;
-use App\Support\Database\SqlDialect;
 use Filament\Widgets\ChartWidget;
 use Illuminate\Support\Facades\DB;
 use Override;
@@ -34,7 +33,7 @@ final class EnrollmentByCourseStatsWidget extends ChartWidget
         $query = StudentEnrollment::query();
 
         $query
-            ->join('courses', DB::raw(SqlDialect::integerCast($query, 'student_enrollment.course_id')), '=', 'courses.id')
+            ->join('courses', 'student_enrollment.course_id', '=', 'courses.id')
             ->select(
                 DB::raw("
                     CASE 

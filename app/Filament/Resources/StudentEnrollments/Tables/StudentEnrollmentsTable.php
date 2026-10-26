@@ -9,7 +9,6 @@ use App\Models\Course;
 use App\Models\StudentEnrollment;
 use App\Services\EnrollmentPipelineService;
 use App\Services\GeneralSettingsService;
-use App\Support\Database\SqlDialect;
 use Exception;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
@@ -118,10 +117,7 @@ final class StudentEnrollmentsTable
                             $query
                                 ->select(DB::raw(1))
                                 ->from('students')
-                                ->whereRaw(sprintf(
-                                    '%s = students.id',
-                                    SqlDialect::integerCast($query, 'student_enrollment.student_id'),
-                                ))
+                                ->whereColumn('student_enrollment.student_id', 'students.id')
                                 ->whereIn(
                                     'students.course_id',
                                     $data['course_id']

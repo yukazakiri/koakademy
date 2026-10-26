@@ -587,7 +587,8 @@ final class StudentEnrollment extends Model
     {
         return [
             'id' => 'integer',
-            'student_id' => 'string', // Explicitly cast to string for consistency
+            'student_id' => 'integer',
+            'course_id' => 'integer',
             'status' => 'string',
             'semester' => 'integer',
             'academic_year' => 'integer',

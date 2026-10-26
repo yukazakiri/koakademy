@@ -1089,11 +1089,9 @@ final class Student extends Model implements RecordsActivity
         return $this->hasMany(StudentTuition::class, 'student_id', 'id');
     }
 
-    public function studentEnrollments()
+    public function studentEnrollments(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
-        // Handle type mismatch by using a query that casts the student ID to string
-        // Include soft-deleted records for complete data integrity
-        return StudentEnrollment::withTrashed()->where('student_id', (string) $this->id);
+        return $this->hasMany(StudentEnrollment::class, 'student_id', 'id');
     }
 
     /**

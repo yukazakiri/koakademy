@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Filament\Widgets;
 
 use App\Models\StudentEnrollment;
-use App\Support\Database\SqlDialect;
 use Filament\Widgets\ChartWidget;
 use Override;
 
@@ -37,40 +36,26 @@ final class CourseDistributionChart extends ChartWidget
 
     protected function getData(): array
     {
-        $studentIdCast = SqlDialect::integerCast(StudentEnrollment::query(), 'student_enrollment.student_id');
-
         // Get course distribution data
         $bsitCount = StudentEnrollment::currentAcademicPeriod()
             ->withTrashed()
-            ->whereRaw(sprintf(
-                "EXISTS (SELECT * FROM students WHERE %s = students.id AND EXISTS (SELECT * FROM courses WHERE students.course_id = courses.id AND code LIKE 'BSIT%%'))",
-                $studentIdCast,
-            ))
+            ->whereRaw("EXISTS (SELECT * FROM students WHERE student_enrollment.student_id = students.id AND EXISTS (SELECT * FROM courses WHERE students.course_id = courses.id AND code LIKE 'BSIT%'))")
             ->count();
 
         $bshmCount = StudentEnrollment::currentAcademicPeriod()
             ->withTrashed()
-            ->whereRaw(sprintf(
-                "EXISTS (SELECT * FROM students WHERE %s = students.id AND EXISTS (SELECT * FROM courses WHERE students.course_id = courses.id AND code LIKE 'BSHM%%'))",
-                $studentIdCast,
-            ))
+            ->whereRaw("EXISTS (SELECT * FROM students WHERE student_enrollment.student_id = students.id AND EXISTS (SELECT * FROM courses WHERE students.course_id = courses.id AND code LIKE 'BSHM%'))")
             ->count();
 
         $bsbaCount = StudentEnrollment::currentAcademicPeriod()
             ->withTrashed()
-            ->whereRaw(sprintf(
-                "EXISTS (SELECT * FROM students WHERE %s = students.id AND EXISTS (SELECT * FROM courses WHERE students.course_id = courses.id AND code LIKE 'BSBA%%'))",
-                $studentIdCast,
-            ))
+            ->whereRaw("EXISTS (SELECT * FROM students WHERE student_enrollment.student_id = students.id AND EXISTS (SELECT * FROM courses WHERE students.course_id = courses.id AND code LIKE 'BSBA%'))")
             ->count();
 
         // Get other courses (not BSIT, BSHM, BSBA)
         $otherCount = StudentEnrollment::currentAcademicPeriod()
             ->withTrashed()
-            ->whereRaw(sprintf(
-                "EXISTS (SELECT * FROM students WHERE %s = students.id AND EXISTS (SELECT * FROM courses WHERE students.course_id = courses.id AND code NOT LIKE 'BSIT%%' AND code NOT LIKE 'BSHM%%' AND code NOT LIKE 'BSBA%%'))",
-                $studentIdCast,
-            ))
+            ->whereRaw("EXISTS (SELECT * FROM students WHERE student_enrollment.student_id = students.id AND EXISTS (SELECT * FROM courses WHERE students.course_id = courses.id AND code NOT LIKE 'BSIT%' AND code NOT LIKE 'BSHM%' AND code NOT LIKE 'BSBA%'))")
             ->count();
 
         return [

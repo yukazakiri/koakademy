@@ -25,6 +25,7 @@ use App\Models\User;
 use App\Services\ClassPostPayloadService;
 use App\Services\GradeEvaluationService;
 use App\Services\GradingSystemService;
+use App\Services\TenantContext;
 use Carbon\Carbon;
 use Exception;
 use Filament\Actions\Action;
@@ -228,7 +229,8 @@ final class FacultyClassController extends Controller
         $attendance = $this->buildAttendancePayload($class);
 
         // Cache rooms list since it rarely changes
-        $rooms = cache()->remember('rooms_list', 300, fn () => Room::query()
+        $schoolId = app(TenantContext::class)->getCurrentSchoolId() ?? 0;
+        $rooms = cache()->remember("rooms_list:{$schoolId}", 300, fn () => Room::query()
             ->select(['id', 'name'])
             ->orderBy('name')
             ->get()
@@ -1795,7 +1797,8 @@ final class FacultyClassController extends Controller
         }
 
         // Cache faculty lookup per request to avoid duplicate queries
-        $cacheKey = "faculty_resolved_{$user->email}";
+        $schoolId = app(TenantContext::class)->getCurrentSchoolId() ?? $user->school_id ?? 0;
+        $cacheKey = "faculty_resolved:{$schoolId}:".hash('sha256', mb_strtolower($user->email));
 
         /** @var Faculty|null $faculty */
         $faculty = cache()->remember($cacheKey, 60, fn () => Faculty::where('email', $user->email)->first());

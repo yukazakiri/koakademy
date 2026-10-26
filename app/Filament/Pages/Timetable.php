@@ -12,6 +12,7 @@ use App\Models\Schedule;
 use App\Models\Student;
 use App\Services\GeneralSettingsService;
 use App\Services\PdfGenerationService;
+use App\Services\TenantContext;
 use App\Services\TimetableConflictService;
 use BackedEnum;
 use Exception;
@@ -493,7 +494,7 @@ final class Timetable extends Page implements HasForms, HasTable
     public function clearConflictCache(): void
     {
         $conflictService = app(TimetableConflictService::class);
-        $cacheKey = "timetable_conflicts_{$this->selectedView}_{$this->selectedId}";
+        $cacheKey = $this->getConflictCacheKey();
         $conflictService->clearConflictCache($cacheKey);
 
         // Re-detect conflicts
@@ -1060,10 +1061,17 @@ final class Timetable extends Page implements HasForms, HasTable
         }
 
         $conflictService = app(TimetableConflictService::class);
-        $cacheKey = "timetable_conflicts_{$this->selectedView}_{$this->selectedId}";
+        $cacheKey = $this->getConflictCacheKey();
 
         $this->conflicts = $conflictService->getCachedConflicts($cacheKey, $this->schedules);
         $this->conflictSummary = $conflictService->getConflictSummary($this->conflicts);
+    }
+
+    private function getConflictCacheKey(): string
+    {
+        $schoolId = app(TenantContext::class)->getCurrentSchoolId() ?? 0;
+
+        return "timetable_conflicts:{$schoolId}:{$this->selectedView}:{$this->selectedId}";
     }
 
     /**

@@ -10,6 +10,7 @@ use App\Enums\EmploymentStatus;
 use App\Enums\ScholarshipType;
 use App\Enums\StudentStatus;
 use App\Enums\StudentType;
+use App\Exceptions\FinancialAuditLockException;
 use App\Models\Concerns\BelongsToSchool;
 use App\Models\Concerns\HasAcademicPeriodScope;
 use App\Services\GeneralSettingsService;
@@ -22,6 +23,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Notifications\DatabaseNotificationCollection;
@@ -546,7 +548,7 @@ final class Student extends Model implements RecordsActivity
         return $clearance && $clearance->is_cleared;
     }
 
-    public function statusRecords(): \Illuminate\Database\Eloquent\Relations\HasMany
+    public function statusRecords(): HasMany
     {
         return $this->hasMany(StudentStatusRecord::class);
     }
@@ -1253,6 +1255,33 @@ final class Student extends Model implements RecordsActivity
         return $this->hasMany(\Modules\StudentMedicalRecords\Models\MedicalRecord::class, 'student_id', 'id');
     }
 
+    public function statementOfAccountIssuances(): HasMany
+    {
+        return $this->hasMany(StatementOfAccountIssuance::class);
+    }
+
+    public function paymentAllocations(): HasMany
+    {
+        return $this->hasMany(PaymentAllocation::class);
+    }
+
+    public function tuitionUpdateRequests(): HasMany
+    {
+        return $this->hasMany(StudentTuitionUpdateRequest::class);
+    }
+
+    public function hasFinancialRecords(): bool
+    {
+        return $this->statementOfAccountIssuances()->exists()
+            || $this->paymentAllocations()->exists()
+            || $this->StudentTransactions()->exists()
+            // Any tuition ledger row counts, even one with zero amounts:
+            // the DB-level RESTRICT on student_tuition.enrollment_id would
+            // block the delete anyway, so the message must stay consistent.
+            || $this->StudentTuition()->exists()
+            || $this->tuitionUpdateRequests()->exists();
+    }
+
     // Query Scopes for Statistical Reporting
 
     /**
@@ -1484,6 +1513,10 @@ final class Student extends Model implements RecordsActivity
             }
         });
         self::forceDeleting(function ($student): void {
+            if ($student->hasFinancialRecords()) {
+                throw FinancialAuditLockException::studentHasFinancialRecords($student->id);
+            }
+
             $student->StudentTransactions()->delete();
             $student->StudentTuition()->forceDelete();
             $student->StudentParentInfo()->delete();

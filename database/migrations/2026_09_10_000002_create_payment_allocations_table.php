@@ -12,9 +12,9 @@ return new class extends Migration
     {
         Schema::create('payment_allocations', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('transaction_id')->constrained('transactions')->cascadeOnDelete();
+            $table->foreignId('transaction_id')->constrained('transactions')->restrictOnDelete();
             $table->foreignId('student_transaction_id')->nullable()->constrained('student_transactions')->nullOnDelete();
-            $table->foreignId('student_id')->constrained('students')->cascadeOnDelete();
+            $table->foreignId('student_id')->constrained('students')->restrictOnDelete();
             $table->foreignId('student_enrollment_id')->nullable()->constrained('student_enrollment')->nullOnDelete();
             $table->foreignId('student_tuition_id')->nullable()->constrained('student_tuition')->nullOnDelete();
             $table->string('charge_category', 32)->default('tuition');

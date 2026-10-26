@@ -16,8 +16,8 @@ return new class extends Migration
         if (! Schema::hasTable('admin_transactions')) {
             Schema::create('admin_transactions', function (Blueprint $blueprint): void {
                 $blueprint->id();
-                $blueprint->foreignId('admin_id')->constrained('users')->onDelete('cascade');
-                $blueprint->foreignId('transaction_id')->constrained('transactions')->onDelete('cascade');
+                $blueprint->foreignId('admin_id')->constrained('users')->restrictOnDelete();
+                $blueprint->foreignId('transaction_id')->constrained('transactions')->restrictOnDelete();
                 $blueprint->decimal('amount', 10, 2);
                 $blueprint->string('type'); // 'credit' or 'debit'
                 $blueprint->text('description')->nullable();

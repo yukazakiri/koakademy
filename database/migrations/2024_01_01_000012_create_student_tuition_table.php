@@ -26,7 +26,7 @@ return new class extends Migration
                 $blueprint->string('school_year');
                 $blueprint->integer('academic_year');
                 $blueprint->integer('student_id');
-                $blueprint->foreignId('enrollment_id')->nullable()->constrained('student_enrollment')->onDelete('cascade');
+                $blueprint->foreignId('enrollment_id')->nullable()->constrained('student_enrollment')->restrictOnDelete();
                 $blueprint->integer('discount')->default(0);
                 $blueprint->decimal('downpayment', 10, 2)->default(0);
                 $blueprint->decimal('overall_tuition', 10, 2)->default(0);

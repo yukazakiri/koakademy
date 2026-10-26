@@ -17,7 +17,7 @@ return new class extends Migration
             Schema::create('student_transactions', function (Blueprint $blueprint): void {
                 $blueprint->id();
                 $blueprint->integer('student_id');
-                $blueprint->foreignId('transaction_id')->constrained('transactions')->onDelete('cascade');
+                $blueprint->foreignId('transaction_id')->constrained('transactions')->restrictOnDelete();
                 $blueprint->integer('amount');
                 $blueprint->string('status')->nullable();
                 $blueprint->timestamps();

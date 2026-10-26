@@ -41,8 +41,12 @@ final class StudentPolicy
         return $authUser->can('Restore:Student');
     }
 
-    public function forceDelete(AuthUser $authUser): bool
+    public function forceDelete(AuthUser $authUser, ?\App\Models\Student $student = null): bool
     {
+        if ($student?->hasFinancialRecords()) {
+            return false;
+        }
+
         return $authUser->can('ForceDelete:Student');
     }
 

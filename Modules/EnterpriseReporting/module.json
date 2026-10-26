@@ -1,0 +1,20 @@
+{
+    "name": "EnterpriseReporting",
+    "alias": "enterprise-reporting",
+    "composer_package": "koakademy/enterprise-reporting",
+    "version": "0.1.0",
+    "description": "Consolidated enrollment reporting across licensed schools.",
+    "author": "KoAkademy contributors",
+    "license": "AGPL-3.0-or-later",
+    "requires": { "core": ">=1.20.0", "php": ">=8.5", "modules": {} },
+    "compatibility": { "laravel": "^13.0", "filament": "^5.0" },
+    "providers": ["Modules\\EnterpriseReporting\\Providers\\EnterpriseReportingServiceProvider"],
+    "capabilities": [{
+        "key": "enterprise.consolidated-reports",
+        "name": "Consolidated school reports",
+        "description": "Compare enrollment and student counts across licensed schools for the same academic period.",
+        "permission": "ViewAny:StudentEnrollment",
+        "entry_route": "administrators.consolidated-reports.index"
+    }],
+    "files": []
+}

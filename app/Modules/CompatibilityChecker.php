@@ -20,7 +20,7 @@ final class CompatibilityChecker
     {
         $errors = [];
 
-        $this->checkConstraint($errors, 'core', $manifest->requires['core'] ?? null, (string) config('app.version', '0.0.0'));
+        $this->checkConstraint($errors, 'core', $manifest->requires['core'] ?? null, config()->string('app.version', '0.0.0'));
         $this->checkConstraint($errors, 'PHP', $manifest->requires['php'] ?? null, PHP_VERSION);
         $this->checkConstraint($errors, 'Laravel', $manifest->compatibility['laravel'] ?? null, Application::VERSION);
         $this->checkConstraint($errors, 'Filament', $manifest->compatibility['filament'] ?? null, $this->installedVersion('filament/filament'));

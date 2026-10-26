@@ -46,7 +46,6 @@ use Laravel\Passkeys\Passkeys;
 use Laravel\Pennant\Feature;
 use Laravel\Scout\EngineManager;
 use Livewire\Livewire;
-use Nwidart\Modules\Contracts\RepositoryInterface;
 use PhpOffice\PhpSpreadsheet\Cell\Cell;
 use PhpOffice\PhpSpreadsheet\Cell\DefaultValueBinder;
 use RuntimeException;
@@ -66,12 +65,15 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->singleton(RegistryClient::class);
         $this->app->singleton(VersionConstraint::class);
         $this->app->scoped(CompatibilityChecker::class);
+        $this->app->scoped(\App\Enterprise\CapabilityRegistry::class);
+        $this->app->scoped(\App\Enterprise\CapabilityAccessService::class);
+        $this->app->scoped(\App\Enterprise\EntitlementService::class);
 
         $this->app->resolving(Migrator::class, function (Migrator $migrator): void {
             $migrationPath = (string) config('modules.paths.generator.migration.path');
 
-            foreach ($this->app->make(RepositoryInterface::class)->all() as $module) {
-                $path = $module->getExtraPath($migrationPath);
+            foreach ($this->app->make(ModuleManifestRepository::class)->installed() as $module) {
+                $path = $module->path.'/'.$migrationPath;
 
                 if (is_dir($path)) {
                     $migrator->path($path);

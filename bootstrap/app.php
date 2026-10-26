@@ -55,6 +55,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->trustHosts(at: HostingSecurity::trustedHostPatterns());
 
         $middleware->web(append: [
+            App\Http\Middleware\EnsureModuleEnabled::class,
             App\Http\Middleware\ResetFeatureAccessState::class,
             App\Http\Middleware\EnsureSystemIsSetup::class,
             App\Http\Middleware\EnsureUserAccountAccess::class,
@@ -63,7 +64,7 @@ return Application::configure(basePath: dirname(__DIR__))
             SetTenantContext::class,
         ]);
 
-        $middleware->api(prepend: [App\Http\Middleware\ResetFeatureAccessState::class], append: [App\Http\Middleware\EnsureUserAccountAccess::class]);
+        $middleware->api(prepend: [App\Http\Middleware\EnsureModuleEnabled::class, App\Http\Middleware\ResetFeatureAccessState::class], append: [App\Http\Middleware\EnsureUserAccountAccess::class]);
 
         $middleware->appendToPriorityList(
             Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests::class,
@@ -76,6 +77,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'faculty.only' => App\Http\Middleware\EnsureFacultyAccess::class,
             'student.only' => App\Http\Middleware\EnsureStudentAccess::class,
             'ensure.feature' => App\Http\Middleware\EnsureFeatureEnabled::class,
+            'ensure.capability' => App\Http\Middleware\EnsureCapabilityEnabled::class,
+            'ensure.module' => App\Http\Middleware\EnsureModuleEnabled::class,
             'tenant.context' => SetTenantContext::class,
             'api.ability' => EnsureMobileApiAbility::class,
             'api.tenant' => SetApiTenantContext::class,

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Contracts;
 
+use App\Enterprise\Capability;
 use InvalidArgumentException;
 
 final readonly class ModuleManifest
@@ -12,6 +13,8 @@ final readonly class ModuleManifest
      * @param  array{core?: string, php?: string, modules?: array<string, string>}  $requires
      * @param  array<string, string>  $compatibility
      * @param  list<string>  $providers
+     * @param  list<array<array-key, mixed>>  $capabilities
+     * @param  list<string>  $permissions
      */
     public function __construct(
         public string $name,
@@ -26,10 +29,12 @@ final readonly class ModuleManifest
         public ?string $composerPackage = null,
         public ?string $repository = null,
         public ?string $homepage = null,
+        public array $capabilities = [],
+        public array $permissions = [],
     ) {}
 
     /**
-     * @param  array<string, mixed>  $data
+     * @param  array<array-key, mixed>  $data
      */
     public static function fromArray(array $data): self
     {
@@ -39,8 +44,19 @@ final readonly class ModuleManifest
         $description = self::optionalString($data, 'description') ?? '';
         $author = self::optionalString($data, 'author') ?? '';
         $license = self::requiredString($data, 'license');
+        $capabilities = $data['capabilities'] ?? [];
+        if (! is_array($capabilities) || ! array_is_list($capabilities)) {
+            throw new InvalidArgumentException('Module capabilities must be a list.');
+        }
+        foreach ($capabilities as $capability) {
+            if (! is_array($capability)) {
+                throw new InvalidArgumentException('Each module capability must be an object.');
+            }
+            Capability::fromArray($capability, $name);
+        }
+        $permissions = self::stringList($data['permissions'] ?? [], 'permissions');
         $providers = self::stringList($data['providers'] ?? null, 'providers');
-        $requires = self::requirements($data['requires'] ?? []);
+        $requires = ModuleRequirements::fromArray($data['requires'] ?? []);
         $compatibility = self::stringMap($data['compatibility'] ?? [], 'compatibility');
 
         if (! preg_match('/^[A-Za-z][A-Za-z0-9_-]*$/', $name)) {
@@ -78,6 +94,8 @@ final readonly class ModuleManifest
             composerPackage: $composerPackage,
             repository: self::optionalString($data, 'repository'),
             homepage: self::optionalString($data, 'homepage'),
+            capabilities: $capabilities,
+            permissions: $permissions,
         );
     }
 
@@ -96,6 +114,8 @@ final readonly class ModuleManifest
             'requires' => $this->requires,
             'compatibility' => $this->compatibility,
             'providers' => $this->providers,
+            ...($this->capabilities !== [] ? ['capabilities' => $this->capabilities] : []),
+            ...($this->permissions !== [] ? ['permissions' => $this->permissions] : []),
             ...array_filter([
                 'composer_package' => $this->composerPackage,
                 'repository' => $this->repository,
@@ -105,7 +125,7 @@ final readonly class ModuleManifest
     }
 
     /**
-     * @param  array<string, mixed>  $data
+     * @param  array<array-key, mixed>  $data
      */
     private static function requiredString(array $data, string $key): string
     {
@@ -119,7 +139,7 @@ final readonly class ModuleManifest
     }
 
     /**
-     * @param  array<string, mixed>  $data
+     * @param  array<array-key, mixed>  $data
      */
     private static function optionalString(array $data, string $key): ?string
     {
@@ -178,33 +198,5 @@ final readonly class ModuleManifest
         }
 
         return $values;
-    }
-
-    /**
-     * @return array{core?: string, php?: string, modules?: array<string, string>}
-     */
-    private static function requirements(mixed $value): array
-    {
-        if (! is_array($value)) {
-            throw new InvalidArgumentException('Module manifest field [requires] must be an object.');
-        }
-
-        $requirements = [];
-
-        foreach (['core', 'php'] as $key) {
-            if (array_key_exists($key, $value)) {
-                if (! is_string($value[$key]) || mb_trim($value[$key]) === '') {
-                    throw new InvalidArgumentException("Module manifest requirement [{$key}] must be a string.");
-                }
-
-                $requirements[$key] = mb_trim($value[$key]);
-            }
-        }
-
-        if (array_key_exists('modules', $value)) {
-            $requirements['modules'] = self::stringMap($value['modules'], 'requires.modules');
-        }
-
-        return $requirements;
     }
 }

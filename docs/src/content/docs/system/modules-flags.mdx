@@ -17,16 +17,24 @@ Modules are managed via `nwidart/laravel-modules` and integrated with Filament t
 
 ### Bundled Core Modules
 
-KoAkademy includes six bundled modules under `Modules/` that are active by default:
+KoAkademy includes six community modules and a licensed reporting extension under
+`Modules/`. Package registration is active by default; paid reporting still
+requires a school license and explicit school activation:
 
-| Module | Namespace | Purpose |
-| ------ | --------- | ------- |
-| **Announcement** | `Modules\Announcement` | School-wide news and targeted broadcast banners |
-| **Cashier** | `Modules\Cashier` | In-person student balance lookup and cashier payment processing |
-| **Inventory** | `Modules\Inventory` | Campus equipment tracking, suppliers, and stock ledger |
-| **LibrarySystem** | `Modules\LibrarySystem` | Book cataloging, borrow/return logs, and digital paper archives |
-| **NotificationCenter** | `Modules\NotificationCenter` | Dynamic notification templates and batch broadcast jobs |
-| **StudentMedicalRecords** | `Modules\StudentMedicalRecords` | Confidential clinic visit notes and student medical profiles |
+| Module                    | Namespace                       | Purpose                                                                     |
+| ------------------------- | ------------------------------- | --------------------------------------------------------------------------- |
+| **Announcement**          | `Modules\Announcement`          | School-wide news and targeted broadcast banners                             |
+| **Cashier**               | `Modules\Cashier`               | In-person student balance lookup and cashier payment processing             |
+| **Inventory**             | `Modules\Inventory`             | Campus equipment tracking, suppliers, and stock ledger                      |
+| **LibrarySystem**         | `Modules\LibrarySystem`         | Book cataloging, borrow/return logs, and digital paper archives             |
+| **NotificationCenter**    | `Modules\NotificationCenter`    | Dynamic notification templates and batch broadcast jobs                     |
+| **StudentMedicalRecords** | `Modules\StudentMedicalRecords` | Confidential clinic visit notes and student medical profiles                |
+| **EnterpriseReporting**   | `Modules\EnterpriseReporting`   | Consolidated enrollment comparisons and CSV exports across licensed schools |
+
+Enterprise capabilities use signed school entitlements in addition to module
+status, feature-release policy, and user permissions. See
+[Enterprise Extensions](/koakademy/development/enterprise-extensions/) for
+activation, packaging, and offline license issuance.
 
 ### Standalone Composer Modules
 
@@ -39,7 +47,7 @@ Installation is performed at the Composer level:
 composer config repositories.koakademy composer https://yukazakiri.github.io/koakademy-modules
 
 # Require the desired module package
-composer require koakademy/module-forms:^1.0
+composer require koakademy/forms:^1.10
 
 # Run module database migrations
 php artisan migrate --force
@@ -144,8 +152,8 @@ Feature::define(FacultyAnalytics::class);
 
 ## Choosing the Right Extensibility Mechanism
 
-| If you are adding... | Use this mechanism |
-| -------------------- | ------------------ |
-| A complete domain with separate database tables and migrations | **A Module** |
-| A toggleable screen, sub-feature, or staged rollout | **A Pennant Feature Flag** |
+| If you are adding...                                              | Use this mechanism              |
+| ----------------------------------------------------------------- | ------------------------------- |
+| A complete domain with separate database tables and migrations    | **A Module**                    |
+| A toggleable screen, sub-feature, or staged rollout               | **A Pennant Feature Flag**      |
 | School-specific preferences (e.g. school logo, term labels, fees) | **A `GeneralSetting` property** |

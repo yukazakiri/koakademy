@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 $providers = [
     App\Providers\AppServiceProvider::class,
+    App\Providers\ModuleIntegrationServiceProvider::class,
     App\Providers\AuthServiceProvider::class,
     App\Providers\EnrollmentPolicyServiceProvider::class,
     App\Providers\EventServiceProvider::class,

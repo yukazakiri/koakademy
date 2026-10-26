@@ -1,0 +1,20 @@
+{
+    "name": "SchoolNotes",
+    "alias": "school-notes",
+    "composer_package": "koakademy/school-notes-starter",
+    "version": "0.1.0",
+    "description": "School-scoped notes demonstrating the Koakademy extension contract.",
+    "author": "Koakademy contributors",
+    "license": "AGPL-3.0-or-later",
+    "requires": {
+        "core": ">=1.22.0",
+        "php": ">=8.5.12 <8.6",
+        "modules": {}
+    },
+    "compatibility": {
+        "laravel": "^13.0",
+        "filament": "^5.0"
+    },
+    "permissions": ["school-notes.view", "school-notes.create"],
+    "providers": ["Koakademy\\SchoolNotes\\Providers\\SchoolNotesServiceProvider"]
+}

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules;
 
+use App\Modules\Contracts\InstalledModule;
 use App\Modules\Contracts\ModuleManifest;
 use InvalidArgumentException;
 use JsonException;
@@ -21,8 +22,17 @@ final class ModuleManifestRepository
      */
     public function all(): array
     {
+        return array_map(static fn (InstalledModule $module): ModuleManifest => $module->manifest, $this->installed());
+    }
+
+    /**
+     * @return list<InstalledModule>
+     */
+    public function installed(): array
+    {
         $manifests = [];
         $manifestPaths = [];
+        $identities = [];
 
         foreach ($this->manifestDirectories() as $path) {
             $path = mb_rtrim($path, DIRECTORY_SEPARATOR);
@@ -36,12 +46,55 @@ final class ModuleManifestRepository
         }
 
         foreach ($manifestPaths as $manifestPath) {
-            $manifests[] = $this->read($manifestPath);
+            $manifest = $this->read($manifestPath);
+            $path = dirname(realpath($manifestPath) ?: $manifestPath);
+            foreach (array_filter([$manifest->name, $manifest->alias, $manifest->composerPackage]) as $identifier) {
+                $key = mb_strtolower($identifier);
+                if (isset($identities[$key]) && $identities[$key] !== $path) {
+                    throw new InvalidArgumentException("Duplicate module identity [{$identifier}] in [{$identities[$key]}] and [{$path}]. Remove the duplicate before deployment.");
+                }
+                $identities[$key] = $path;
+            }
+            $manifests[] = new InstalledModule($manifest, $path, dirname($manifestPath));
         }
 
-        usort($manifests, static fn (ModuleManifest $first, ModuleManifest $second): int => strcasecmp($first->name, $second->name));
+        usort($manifests, static fn (InstalledModule $first, InstalledModule $second): int => strcasecmp($first->manifest->name, $second->manifest->name));
 
         return $manifests;
+    }
+
+    public function installedModule(string $identifier): ?InstalledModule
+    {
+        foreach ($this->installed() as $module) {
+            if (in_array(mb_strtolower($identifier), array_map('mb_strtolower', [
+                $module->manifest->name, $module->manifest->alias, $module->manifest->composerPackage ?? '',
+            ]), true)) {
+                return $module;
+            }
+        }
+
+        return null;
+    }
+
+    public function owningFile(string $file): ?InstalledModule
+    {
+        foreach ($this->installed() as $module) {
+            if ($module->containsFile($file)) {
+                return $module;
+            }
+        }
+
+        // Laravel may auto-discover a package even when module scanning is off.
+        // Recognize its ownership so availability fails closed in that case.
+        $directory = dirname(realpath($file) ?: $file);
+        while ($directory !== dirname($directory)) {
+            if (is_file($directory.'/module.json')) {
+                return new InstalledModule($this->read($directory.'/module.json'), $directory);
+            }
+            $directory = dirname($directory);
+        }
+
+        return null;
     }
 
     public function find(string $identifier): ?ModuleManifest
@@ -75,10 +128,10 @@ final class ModuleManifestRepository
             return is_dir($this->modulesPath) ? [$this->modulesPath] : [];
         }
 
-        $directories = [base_path('Modules')];
+        $directories = [config()->string('modules.paths.modules', base_path('Modules'))];
 
         if ((bool) config('modules.scan.enabled', false)) {
-            foreach (config('modules.scan.paths', []) as $path) {
+            foreach (config()->array('modules.scan.paths', []) as $path) {
                 if (is_string($path) && $path !== '') {
                     $directories[] = $path;
                 }

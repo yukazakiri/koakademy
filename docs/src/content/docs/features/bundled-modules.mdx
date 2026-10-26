@@ -1,11 +1,14 @@
 ---
 title: Bundled Specialized Modules
-description: Complete reference for Koakademy's six built-in modules—Announcements, Cashier, Inventory, Library, Notifications, and Clinic Records.
+description: Community domain modules and the licensed consolidated school reporting extension.
 ---
 
 # Bundled Specialized Modules
 
-Koakademy includes six pre-packaged domain modules residing in `Modules/`. Each module provides dedicated Eloquent models, database migrations, Filament management resources, and portal endpoints. Modules can be enabled or disabled per institution without code changes.
+Koakademy includes six community domain modules and a licensed reporting extension
+in `Modules/`. Installation-wide module changes take effect after workers are
+restarted or rolled. Purchased enterprise capabilities are activated separately
+for each school and take effect on subsequent requests.
 
 ---
 
@@ -75,8 +78,20 @@ The Clinic module provides confidential campus healthcare records with HIPAA-gra
 
 ---
 
-## Module Marketplace & Standalone Packages
+## Consolidated School Reporting (`Modules\EnterpriseReporting`)
+
+The first enterprise extension compares enrollment, student records, and course
+counts across selected licensed schools for a common school year and semester.
+It includes a CSV export. Each participating school needs a signed license and
+explicit activation, and the user needs enrollment viewing permission and
+access to every selected school. See
+[Enterprise Extensions](/koakademy/development/enterprise-extensions/) for setup.
+
+## Extensions & Licenses and Standalone Packages
 
 Beyond the six bundled modules, Koakademy supports standalone Composer modules (such as the [Forms Module](https://github.com/yukazakiri/koakademy-module-forms)) distributed via the [Koakademy Module Registry](https://github.com/yukazakiri/koakademy-modules).
 
-Administrators can toggle any installed module on or off from **Administrators → Marketplace** without redeploying the application image.
+Administrators manage installed modules and school capabilities from
+**Administrators → Extensions & licenses**. Changing an installation-wide module
+state requires a worker restart or rollout. Importing a school license or
+activating a purchased capability does not require a new application image.

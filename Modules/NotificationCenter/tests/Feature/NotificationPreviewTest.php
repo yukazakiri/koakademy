@@ -9,7 +9,7 @@ use Spatie\Permission\Models\Role;
 uses(Tests\TestCase::class, RefreshDatabase::class);
 
 beforeEach(function () {
-    Role::create(['name' => 'super_admin']);
+    Role::findOrCreate('super_admin', 'web');
     $this->admin = User::factory()->create();
     $this->admin->assignRole('super_admin');
 });

@@ -1,0 +1,67 @@
+name: Extension CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      APP_ENV: testing
+      APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      DB_CONNECTION: sqlite
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: array
+      MAIL_MAILER: array
+      PULSE_ENABLED: "false"
+      TELESCOPE_ENABLED: "false"
+      NIGHTWATCH_ENABLED: "false"
+      INERTIA_SSR_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: extension
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: yukazakiri/koakademy
+          # Pin the first released core revision containing the extension SDK.
+          ref: master
+          path: host
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.5.12"
+          extensions: mbstring, bcmath, pcntl, intl, gd, zip, sqlite3
+          coverage: none
+          tools: composer:v2
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.12.1"
+          cache: npm
+          cache-dependency-path: host/package-lock.json
+      - name: Install the contributed package in its host workbench
+        working-directory: host
+        run: |
+          cp .env.example .env
+          composer config repositories.extension-under-test path "$GITHUB_WORKSPACE/extension"
+          package_name="$(php -r 'echo json_decode(file_get_contents("../extension/composer.json"), true, 512, JSON_THROW_ON_ERROR)["name"];')"
+          composer require --dev "$package_name:*" --with-dependencies --no-interaction --prefer-dist
+          php artisan modules:validate --all --no-interaction
+          vendor/bin/pint --test ../extension/app ../extension/tests ../extension/routes ../extension/database
+      - name: Test the extension in the real host application
+        working-directory: host
+        run: php vendor/bin/pest --configuration=phpunit.extensions.xml ../extension/tests
+      - name: Build browser and SSR assets
+        working-directory: host
+        run: |
+          npm ci
+          php artisan wayfinder:generate --no-interaction
+          npm run build

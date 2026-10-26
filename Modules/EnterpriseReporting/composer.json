@@ -1,0 +1,7 @@
+{
+    "name": "koakademy/enterprise-reporting",
+    "description": "Consolidated reporting extension for KoAkademy.",
+    "type": "library",
+    "license": "AGPL-3.0-or-later",
+    "autoload": { "psr-4": { "Modules\\EnterpriseReporting\\": "app/" } }
+}

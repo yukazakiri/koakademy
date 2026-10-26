@@ -38,10 +38,10 @@ final class ModuleStateRepository
     {
         $this->loadStatuses();
 
-        return array_values(array_keys(array_filter(
+        return array_keys(array_filter(
             $this->statuses,
             static fn (bool $enabled): bool => $enabled,
-        )));
+        ));
     }
 
     public function restartRequired(string $moduleName): bool
@@ -160,9 +160,9 @@ final class ModuleStateRepository
 
     public function statusFilePath(): string
     {
-        return (string) config(
+        return config()->string(
             'modules.statuses-file',
-            config('modules.activators.file.statuses-file', base_path('modules_statuses.json')),
+            config()->string('modules.activators.file.statuses-file', base_path('modules_statuses.json')),
         );
     }
 

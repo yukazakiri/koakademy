@@ -29,7 +29,9 @@ final class TestingDatabase
             ? "testing_{$token}.sqlite"
             : 'testing.sqlite';
 
-        return dirname(__DIR__, 2)."/database/{$name}";
+        $base = $_SERVER['APP_BASE_PATH'] ?? dirname(__DIR__, 2);
+
+        return "{$base}/database/{$name}";
     }
 
     /**

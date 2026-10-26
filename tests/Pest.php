@@ -33,6 +33,16 @@ $_ENV['APP_ROUTES_CACHE'] = sys_get_temp_dir().'/koakademy_testing_routes.php';
 $_SERVER['APP_ROUTES_CACHE'] = sys_get_temp_dir().'/koakademy_testing_routes.php';
 
 spl_autoload_register(function (string $class): bool {
+    if (str_starts_with($class, 'Tests\\')) {
+        $sub = str_replace('\\', '/', mb_substr($class, 6));
+        $file = dirname(__DIR__)."/tests/{$sub}.php";
+        if (is_file($file)) {
+            require_once $file;
+
+            return true;
+        }
+    }
+
     if (str_starts_with($class, 'Modules\\')) {
         $parts = explode('\\', $class);
         $module = $parts[1] ?? '';

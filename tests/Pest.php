@@ -83,7 +83,7 @@ spl_autoload_register(function (string $class): bool {
 
 use Tests\TestCase;
 
-pest()->extend(TestCase::class)->in('Feature', getcwd().'/tests/Feature');
+pest()->extend(TestCase::class)->in('Feature');
 
 /*
 |--------------------------------------------------------------------------

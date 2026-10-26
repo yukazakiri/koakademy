@@ -206,11 +206,7 @@ final class StudentEnrollment extends Model
 
     public function hasFinancialRecords(): bool
     {
-        return $this->studentTuition()->where(function ($query): void {
-            $query->where('overall_tuition', '>', 0)
-                ->orWhere('paid', '>', 0)
-                ->orWhere('total_balance', '>', 0);
-        })->exists()
+        return $this->studentTuition()->exists()
             || $this->additionalFees()->exists()
             || $this->financialDocuments()->exists()
             || $this->studentTransactions()->exists()

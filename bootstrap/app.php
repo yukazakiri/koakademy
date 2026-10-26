@@ -2,9 +2,18 @@
 
 declare(strict_types=1);
 
+/**
+ * Worktree-friendly App\ class fallback.
+ *
+ * When a worktree shares a vendor/ directory with its parent checkout,
+ * composer's autoloader resolves App\* classes to the parent checkout's
+ * absolute paths, silently loading the wrong code. This prepend-only
+ * fallback resolves App\* from this checkout first; in a normal install
+ * it resolves the same files composer would, so behavior is unchanged.
+ */
 spl_autoload_register(function (string $class): bool {
     if (str_starts_with($class, 'App\\')) {
-        $sub = str_replace('\\', '/', substr($class, 4));
+        $sub = str_replace('\\', '/', mb_substr($class, 4));
         $file = __DIR__."/../app/{$sub}.php";
         if (is_file($file)) {
             require_once $file;

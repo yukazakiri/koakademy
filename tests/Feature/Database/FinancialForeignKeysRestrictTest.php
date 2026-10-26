@@ -415,3 +415,60 @@ it('rejects controller forceDestroy when enrollment has financial records', func
     expect(StudentEnrollment::whereKey($enrollment->id)->exists())->toBeTrue();
     expect(AdditionalFee::where('enrollment_id', $enrollment->id)->exists())->toBeTrue();
 });
+
+it('blocks StudentEnrollment::forceDelete when only a zero-amount tuition ledger exists', function (): void {
+    $course = Course::factory()->create();
+    $student = Student::factory()->create();
+    $enrollment = StudentEnrollment::create([
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'semester' => 1,
+        'academic_year' => 1,
+        'school_year' => '2026-2027',
+        'status' => 'enrolled',
+    ]);
+
+    // A zero-amount ledger row is still an immutable ledger: the DB-level
+    // RESTRICT on student_tuition.enrollment_id would block the delete, so
+    // the application guard must report the same outcome.
+    StudentTuition::create([
+        'student_id' => $student->id,
+        'enrollment_id' => $enrollment->id,
+        'semester' => 1,
+        'school_year' => '2026-2027',
+        'academic_year' => 1,
+        'overall_tuition' => 0,
+        'paid' => 0,
+        'total_balance' => 0,
+    ]);
+
+    expect(fn () => $enrollment->forceDelete())->toThrow(FinancialAuditLockException::class);
+    expect(StudentEnrollment::whereKey($enrollment->id)->exists())->toBeTrue();
+});
+
+it('blocks Student::forceDelete when only a zero-amount tuition ledger exists', function (): void {
+    $student = Student::factory()->create();
+
+    $enrollment = StudentEnrollment::create([
+        'student_id' => $student->id,
+        'course_id' => Course::factory()->create()->id,
+        'semester' => 1,
+        'academic_year' => 1,
+        'school_year' => '2026-2027',
+        'status' => 'enrolled',
+    ]);
+
+    StudentTuition::create([
+        'student_id' => $student->id,
+        'enrollment_id' => $enrollment->id,
+        'semester' => 1,
+        'school_year' => '2026-2027',
+        'academic_year' => 1,
+        'overall_tuition' => 0,
+        'paid' => 0,
+        'total_balance' => 0,
+    ]);
+
+    expect(fn () => $student->forceDelete())->toThrow(FinancialAuditLockException::class);
+    expect(Student::whereKey($student->id)->exists())->toBeTrue();
+});

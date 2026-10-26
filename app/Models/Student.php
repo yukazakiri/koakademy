@@ -1275,11 +1275,10 @@ final class Student extends Model implements RecordsActivity
         return $this->statementOfAccountIssuances()->exists()
             || $this->paymentAllocations()->exists()
             || $this->StudentTransactions()->exists()
-            || $this->StudentTuition()->where(function ($query): void {
-                $query->where('overall_tuition', '>', 0)
-                    ->orWhere('paid', '>', 0)
-                    ->orWhere('total_balance', '>', 0);
-            })->exists()
+            // Any tuition ledger row counts, even one with zero amounts:
+            // the DB-level RESTRICT on student_tuition.enrollment_id would
+            // block the delete anyway, so the message must stay consistent.
+            || $this->StudentTuition()->exists()
             || $this->tuitionUpdateRequests()->exists();
     }
 

@@ -36,7 +36,7 @@ spl_autoload_register(function (string $class): bool {
     $base = getcwd() ?: dirname(__DIR__);
 
     if (str_starts_with($class, 'App\\')) {
-        $sub = str_replace('\\', '/', substr($class, 4));
+        $sub = str_replace('\\', '/', mb_substr($class, 4));
         $file = "{$base}/app/{$sub}.php";
         if (is_file($file)) {
             require_once $file;
@@ -46,7 +46,7 @@ spl_autoload_register(function (string $class): bool {
     }
 
     if (str_starts_with($class, 'Tests\\')) {
-        $sub = str_replace('\\', '/', substr($class, 6));
+        $sub = str_replace('\\', '/', mb_substr($class, 6));
         $file = "{$base}/tests/{$sub}.php";
         if (is_file($file)) {
             require_once $file;

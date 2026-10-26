@@ -13,8 +13,8 @@ return new class extends Migration
         Schema::create('assessment_revisions', function (Blueprint $table): void {
             $table->id();
             $table->uuid('public_id')->unique();
-            $table->foreignId('student_tuition_id')->constrained('student_tuition')->cascadeOnDelete();
-            $table->foreignId('student_enrollment_id')->constrained('student_enrollment')->cascadeOnDelete();
+            $table->foreignId('student_tuition_id')->constrained('student_tuition')->restrictOnDelete();
+            $table->foreignId('student_enrollment_id')->constrained('student_enrollment')->restrictOnDelete();
             $table->foreignId('fee_schedule_version_id')->nullable()->constrained('fee_schedule_versions')->nullOnDelete();
             $table->foreignId('tuition_adjustment_id')->nullable()->constrained('tuition_adjustments')->nullOnDelete();
             $table->foreignId('actor_user_id')->nullable()->constrained('users')->nullOnDelete();

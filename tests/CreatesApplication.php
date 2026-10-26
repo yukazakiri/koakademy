@@ -37,7 +37,9 @@ trait CreatesApplication
         $_ENV['APP_ROUTES_CACHE'] = sys_get_temp_dir().'/koakademy_testing_routes.php';
         $_SERVER['APP_ROUTES_CACHE'] = sys_get_temp_dir().'/koakademy_testing_routes.php';
 
-        $app = require __DIR__.'/../bootstrap/app.php';
+        $basePath = TestingDatabase::basePath();
+        $app = require $basePath.'/bootstrap/app.php';
+        $app->setBasePath($basePath);
 
         $app->make(Kernel::class)->bootstrap();
 

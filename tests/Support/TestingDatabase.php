@@ -21,6 +21,29 @@ namespace Tests\Support;
  */
 final class TestingDatabase
 {
+    public static function basePath(): string
+    {
+        $cwd = getcwd();
+        if ($cwd && file_exists($cwd.'/artisan')) {
+            return $cwd;
+        }
+
+        if (! empty($_SERVER['APP_BASE_PATH'])) {
+            return (string) $_SERVER['APP_BASE_PATH'];
+        }
+
+        if (! empty($_ENV['APP_BASE_PATH'])) {
+            return (string) $_ENV['APP_BASE_PATH'];
+        }
+
+        $envBase = getenv('APP_BASE_PATH');
+        if ($envBase !== false && $envBase !== '') {
+            return $envBase;
+        }
+
+        return getcwd() ?: dirname(__DIR__, 2);
+    }
+
     public static function path(): string
     {
         $token = (string) ($_SERVER['TEST_TOKEN'] ?? '');
@@ -29,7 +52,7 @@ final class TestingDatabase
             ? "testing_{$token}.sqlite"
             : 'testing.sqlite';
 
-        return dirname(__DIR__, 2)."/database/{$name}";
+        return self::basePath()."/database/{$name}";
     }
 
     /**

@@ -16,7 +16,7 @@ return new class extends Migration
         Schema::create('statement_of_account_issuances', function (Blueprint $table): void {
             $table->id();
             $table->uuid('uuid')->unique();
-            $table->foreignId('student_id')->constrained('students')->cascadeOnDelete();
+            $table->foreignId('student_id')->constrained('students')->restrictOnDelete();
             $table->foreignId('enrollment_id')->nullable()->constrained('student_enrollment')->nullOnDelete();
             $table->foreignId('tuition_id')->nullable()->constrained('student_tuition')->nullOnDelete();
             $table->foreignId('issued_by')->nullable()->constrained('users')->nullOnDelete();

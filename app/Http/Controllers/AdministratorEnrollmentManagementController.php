@@ -2098,6 +2098,10 @@ final class AdministratorEnrollmentManagementController extends Controller
 
         $studentName = $enrollmentModel->student?->full_name ?? 'Unknown Student';
 
+        if ($enrollmentModel->hasFinancialRecords()) {
+            return back()->with('flash', ['error' => "Enrollment for \"{$studentName}\" cannot be permanently deleted because tuition ledgers, fees, or transactions exist."]);
+        }
+
         try {
             DB::transaction(function () use ($enrollmentModel): void {
                 // Delete related subject enrollments

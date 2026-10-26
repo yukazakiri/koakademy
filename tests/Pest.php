@@ -33,11 +33,33 @@ $_ENV['APP_ROUTES_CACHE'] = sys_get_temp_dir().'/koakademy_testing_routes.php';
 $_SERVER['APP_ROUTES_CACHE'] = sys_get_temp_dir().'/koakademy_testing_routes.php';
 
 spl_autoload_register(function (string $class): bool {
+    $base = getcwd() ?: dirname(__DIR__);
+
+    if (str_starts_with($class, 'App\\')) {
+        $sub = str_replace('\\', '/', mb_substr($class, 4));
+        $file = "{$base}/app/{$sub}.php";
+        if (is_file($file)) {
+            require_once $file;
+
+            return true;
+        }
+    }
+
+    if (str_starts_with($class, 'Tests\\')) {
+        $sub = str_replace('\\', '/', mb_substr($class, 6));
+        $file = "{$base}/tests/{$sub}.php";
+        if (is_file($file)) {
+            require_once $file;
+
+            return true;
+        }
+    }
+
     if (str_starts_with($class, 'Modules\\')) {
         $parts = explode('\\', $class);
         $module = $parts[1] ?? '';
         $sub = implode('/', array_slice($parts, 2));
-        $file = dirname(__DIR__)."/Modules/{$module}/app/{$sub}.php";
+        $file = "{$base}/Modules/{$module}/app/{$sub}.php";
         if (is_file($file)) {
             require_once $file;
 

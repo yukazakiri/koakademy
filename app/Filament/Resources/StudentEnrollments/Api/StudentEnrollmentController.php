@@ -6,6 +6,7 @@ namespace App\Filament\Resources\StudentEnrollments\Api;
 
 use App\Data\Enrollment\EnrollmentSubmissionData;
 use App\Enrollment\EnrollmentWorkflowCoordinator;
+use App\Exceptions\FinancialAuditLockException;
 use App\Filament\Resources\StudentEnrollments\Api\Transformers\StudentEnrollmentTransformer;
 use App\Http\Controllers\Api\V1\ApiPagination;
 use App\Http\Controllers\Controller;
@@ -403,6 +404,11 @@ final class StudentEnrollmentController extends Controller
                 'message' => 'Enrollment permanently deleted',
             ], 200);
 
+        } catch (FinancialAuditLockException $e) {
+            return response()->json([
+                'message' => 'Enrollment cannot be permanently deleted: immutable financial records exist.',
+                'error' => $e->getMessage(),
+            ], 409);
         } catch (Exception $e) {
             return response()->json([
                 'message' => 'Failed to permanently delete enrollment',

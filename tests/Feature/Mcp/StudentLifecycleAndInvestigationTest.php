@@ -146,7 +146,7 @@ it('previews and transfers records from one student to another', function (): vo
     ]);
 
     $enrollment = StudentEnrollment::factory()->create([
-        'student_id' => (string) $studentA->id,
+        'student_id' => $studentA->id,
         'school_id' => $this->school->id,
         'course_id' => $course->id,
     ]);
@@ -194,7 +194,7 @@ it('previews and transfers records from one student to another', function (): vo
                 ->etc();
         });
 
-    expect($enrollment->fresh()->student_id)->toBe((string) $studentB->id);
+    expect($enrollment->fresh()->student_id)->toBe($studentB->id);
 });
 
 it('manages enrollment lifecycle including soft delete and restore via ManageEnrollmentTool', function (): void {

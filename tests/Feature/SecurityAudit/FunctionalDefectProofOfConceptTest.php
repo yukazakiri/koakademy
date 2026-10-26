@@ -9,9 +9,17 @@ use App\Jobs\GenerateAttendancePdfJob;
 use App\Jobs\GenerateEnrollmentReportPreviewPdfJob;
 use App\Jobs\GenerateStudentSoaPdfJob;
 use App\Jobs\MoveStudentToSectionJob;
+use App\Models\Classes;
+use App\Models\Faculty;
+use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
+use App\Models\User;
+use App\Services\FacultyClassShareService;
+use App\Services\GeneralSettingsService;
+use App\Services\TenantContext;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 
 /**

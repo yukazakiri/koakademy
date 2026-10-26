@@ -1378,9 +1378,9 @@ it('automatically creates official enrollment for applicant using current academ
     $response->assertOk();
 
     // Verify enrollment was created with student primary key
-    $enrollment = App\Models\StudentEnrollment::query()->where('student_id', (string) $student->id)->first();
+    $enrollment = App\Models\StudentEnrollment::query()->where('student_id', $student->id)->first();
     expect($enrollment)->not->toBeNull()
-        ->and($enrollment->student_id)->toBe((string) $student->id)
+        ->and($enrollment->student_id)->toBe($student->id)
         ->and($enrollment->course_id)->toBe($course->id)
         ->and($enrollment->status)->toBe('enrolled');
 

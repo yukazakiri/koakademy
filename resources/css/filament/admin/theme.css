@@ -1,12 +1,16 @@
 @import "../../../../vendor/filament/filament/resources/css/theme.css";
 @import "../../../../vendor/guava/calendar/resources/css/theme.css";
-@source '../../../../vendor/helios-live/filament-feature-showcase/resources/**/*.blade.php';
-@source '../../../../app/Filament/**/*';
-@source '../../../../resources/views/filament/**/*';
-@source '../../../../vendor/guava/calendar/resources/**/*';
-@source '../../../**/*.blade.php';
-@source '../**/*.js';
-@source '../views';
+@source "../../../../vendor/helios-live/filament-feature-showcase/resources/**/*.blade.php";
+@source "../../../../app/Filament/**/*";
+@source "../../../../Modules/*/app/Filament/**/*";
+@source "../../../../Modules/*/resources/views/**/*";
+@source "../../../../vendor/*/*/app/Filament/**/*";
+@source "../../../../vendor/*/*/resources/views/**/*";
+@source "../../../../resources/views/filament/**/*";
+@source "../../../../vendor/guava/calendar/resources/**/*";
+@source "../../../**/*.blade.php";
+@source "../**/*.js";
+@source "../views";
 
 /* Filament v5 form input styling overrides.
    Filament's compiled .fi-input-wrp uses a 1px box-shadow ring with 20%

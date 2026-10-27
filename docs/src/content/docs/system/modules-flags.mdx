@@ -15,10 +15,11 @@ KoAkademy provides modular extensibility and runtime configurability through thr
 
 Modules are managed via `nwidart/laravel-modules` and integrated with Filament through `coolsam/modules`:
 
-### Bundled Core Modules
+### Installed domain extensions
 
-KoAkademy includes six community modules and a licensed reporting extension under
-`Modules/`. Package registration is active by default; paid reporting still
+The six community extensions below are installed into `vendor/koakademy/` from
+their dedicated repositories. Their existing PHP namespaces remain stable.
+EnterpriseReporting currently remains bundled under `Modules/`; paid reporting
 requires a school license and explicit school activation:
 
 | Module                    | Namespace                       | Purpose                                                                     |
@@ -54,7 +55,7 @@ php artisan migrate --force
 ```
 
 :::note[Marketplace Enablement]
-The in-app Marketplace under **Administrators → Marketplace** displays available and installed modules. The Marketplace allows administrators to enable or disable installed modules, but it never executes arbitrary shell commands or modifies a running container at runtime.
+The catalog under **Administrators → Extensions & licenses** displays available and installed modules. The Marketplace allows administrators to enable or disable installed modules, but it never executes arbitrary shell commands or modifies a running container at runtime.
 :::
 
 ## Feature Flags (Laravel Pennant)

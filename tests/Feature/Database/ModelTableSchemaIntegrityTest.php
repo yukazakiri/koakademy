@@ -46,9 +46,8 @@ it('ensures every Eloquent model has a corresponding database table in the schem
 
     $collectModels(app_path('Models'), 'App\\Models');
 
-    foreach (glob(base_path('Modules/*/app/Models')) as $modDir) {
-        $modName = basename(dirname(dirname($modDir)));
-        $collectModels($modDir, "Modules\\{$modName}\\Models");
+    foreach (app(App\Modules\ModuleManifestRepository::class)->installed() as $module) {
+        $collectModels($module->path.'/app/Models', "Modules\\{$module->manifest->name}\\Models");
     }
 
     // A wrongly-namespaced model file must not silently disappear from this scan.

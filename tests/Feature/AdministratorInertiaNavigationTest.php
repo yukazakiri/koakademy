@@ -203,7 +203,8 @@ it('keeps a complete administrator page catalog mapped to existing React compone
         $routeName = $page[0];
         $component = $page[1];
         $componentPath = base_path('resources/js/pages/'.str_replace('/', DIRECTORY_SEPARATOR, $component).'.tsx');
-        $moduleComponentPath = collect(glob(base_path('Modules/*/resources/assets/js/Pages/'.str_replace('/', DIRECTORY_SEPARATOR, $component).'.tsx')) ?: [])
+        $moduleComponentPath = collect(app(App\Modules\ModuleManifestRepository::class)->installed())
+            ->map(fn (App\Modules\Contracts\InstalledModule $module): string => $module->path.'/resources/assets/js/Pages/'.str_replace('/', DIRECTORY_SEPARATOR, $component).'.tsx')
             ->first(fn (string $path): bool => is_file($path));
 
         expect(

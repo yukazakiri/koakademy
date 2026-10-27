@@ -42,7 +42,13 @@
         "inertiajs/inertia-laravel": "^3.0",
         "joaopaulolndev/filament-edit-profile": "^3.0",
         "joaopaulolndev/filament-general-settings": "^3.0",
+        "koakademy/announcement": "dev-master as 1.1.0",
+        "koakademy/cashier": "dev-master as 1.1.0",
         "koakademy/forms": "^1.10",
+        "koakademy/inventory": "dev-master as 1.1.0",
+        "koakademy/library-system": "dev-master as 1.1.0",
+        "koakademy/notification-center": "dev-master as 1.1.0",
+        "koakademy/student-medical-records": "dev-master as 1.1.0",
         "laraowl/client": "^1.0",
         "laravel/ai": "^1.0",
         "laravel/framework": "^13.0",
@@ -130,6 +136,30 @@
         }
     },
     "repositories": {
+        "module-announcement": {
+            "type": "git",
+            "url": "https://github.com/yukazakiri/koakademy-module-announcement.git"
+        },
+        "module-cashier": {
+            "type": "git",
+            "url": "https://github.com/yukazakiri/koakademy-module-cashier.git"
+        },
+        "module-inventory": {
+            "type": "git",
+            "url": "https://github.com/yukazakiri/koakademy-module-inventory.git"
+        },
+        "module-library-system": {
+            "type": "git",
+            "url": "https://github.com/yukazakiri/koakademy-module-library-system.git"
+        },
+        "module-notification-center": {
+            "type": "git",
+            "url": "https://github.com/yukazakiri/koakademy-module-notification-center.git"
+        },
+        "module-student-medical-records": {
+            "type": "git",
+            "url": "https://github.com/yukazakiri/koakademy-module-student-medical-records.git"
+        },
         "shadebridge": {
             "type": "vcs",
             "url": "https://github.com/yukazakiri/laravel-shadebridge.git"

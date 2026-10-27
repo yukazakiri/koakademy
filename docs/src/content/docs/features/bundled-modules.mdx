@@ -1,13 +1,15 @@
 ---
-title: Bundled Specialized Modules
+title: Specialized Extensions
 description: Community domain modules and the licensed consolidated school reporting extension.
 ---
 
-# Bundled Specialized Modules
+# Specialized Extensions
 
-Koakademy includes six community domain modules and a licensed reporting extension
-in `Modules/`. Installation-wide module changes take effect after workers are
-restarted or rolled. Purchased enterprise capabilities are activated separately
+Koakademy installs its six established community domain extensions from their
+dedicated Composer repositories into `vendor/`. Forms is also a Composer package.
+The licensed reporting prototype remains in `Modules/EnterpriseReporting` until
+it is extracted and released. The `Modules\\...` PHP namespaces stay unchanged.
+Installation-wide module changes take effect after workers are restarted or rolled. Purchased enterprise capabilities are activated separately
 for each school and take effect on subsequent requests.
 
 ---
@@ -69,7 +71,7 @@ The Notification Center coordinates automated transactional communications acros
 
 ## 6. Student Medical Records (`Modules\StudentMedicalRecords`)
 
-The Clinic module provides confidential campus healthcare records with HIPAA-grade privacy isolation:
+The Clinic module provides student clinic records with application permission controls:
 
 - **Student Health Profiles:** Tracks blood type, chronic illnesses, severe allergies, immunization records, and emergency contact details.
 - **Clinic Visit Encounters:** Records date/time, presenting symptoms, nursing diagnosis, administered medication, and recommended action.
@@ -89,7 +91,7 @@ access to every selected school. See
 
 ## Extensions & Licenses and Standalone Packages
 
-Beyond the six bundled modules, Koakademy supports standalone Composer modules (such as the [Forms Module](https://github.com/yukazakiri/koakademy-module-forms)) distributed via the [Koakademy Module Registry](https://github.com/yukazakiri/koakademy-modules).
+These extensions and the [Forms Module](https://github.com/yukazakiri/koakademy-module-forms) are maintained in their dedicated repositories and distributed through the [Koakademy Module Registry](https://github.com/yukazakiri/koakademy-modules). See [Module ownership and migration](/koakademy/maintainers/module-ownership/) for contribution and release order. `extensions/starter/` is the development template, not the installation directory for production packages.
 
 Administrators manage installed modules and school capabilities from
 **Administrators → Extensions & licenses**. Changing an installation-wide module

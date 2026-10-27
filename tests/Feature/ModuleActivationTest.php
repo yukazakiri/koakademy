@@ -15,7 +15,9 @@ beforeEach(function (): void {
     $this->moduleFixturePath = storage_path('framework/testing/activation-'.bin2hex(random_bytes(6)));
     File::ensureDirectoryExists($this->moduleFixturePath.'/Announcement');
     File::ensureDirectoryExists($this->moduleFixturePath.'/LibrarySystem');
-    File::copy(base_path('Modules/LibrarySystem/module.json'), $this->moduleFixturePath.'/LibrarySystem/module.json');
+    File::put($this->moduleFixturePath.'/LibrarySystem/module.json', json_encode(
+        app(ModuleManifestRepository::class)->find('LibrarySystem')->toArray(), JSON_THROW_ON_ERROR,
+    ));
     config([
         'modules-marketplace.enabled' => true,
         'modules-marketplace.registry_url' => null,
@@ -30,7 +32,7 @@ afterEach(function (): void {
 });
 
 it('rejects direct activation of incompatible or incomplete extensions', function (array $requires, array $compatibility): void {
-    $data = json_decode(File::get(base_path('Modules/Announcement/module.json')), true, 512, JSON_THROW_ON_ERROR);
+    $data = app(ModuleManifestRepository::class)->find('Announcement')->toArray();
     $data['requires'] = $requires;
     $data['compatibility'] = $compatibility;
     File::put($this->moduleFixturePath.'/Announcement/module.json', json_encode($data, JSON_THROW_ON_ERROR));
@@ -57,7 +59,7 @@ it('rejects direct activation of incompatible or incomplete extensions', functio
 ]);
 
 it('rejects module identity collisions before choosing an installed copy', function (string $field, string $value): void {
-    $first = json_decode(File::get(base_path('Modules/Announcement/module.json')), true, 512, JSON_THROW_ON_ERROR);
+    $first = app(ModuleManifestRepository::class)->find('Announcement')->toArray();
     $second = $first;
     $second['name'] = 'Other';
     $second['alias'] = 'other';

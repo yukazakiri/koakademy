@@ -43,9 +43,9 @@ it('shows installed modules in the marketplace and persists status changes', fun
             ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
                 ->component('administrators/module-marketplace/index', false)
                 ->where('marketplace.enabled', true)
-                ->has('marketplace.modules', 7)
+                ->has('marketplace.modules', 9)
                 ->where('marketplace.modules.0.installed', true)
-                ->where('marketplace.modules.0.installation_source', 'source'));
+                ->where('marketplace.modules.0.installation_source', 'composer'));
 
         Cache::put('admin-navigation-routes:v2', ['stale-route']);
 
@@ -72,7 +72,7 @@ it('prevents non-super administrators from changing module status', function ():
 
 it('keeps installed compatibility separate from a newer incompatible catalog release', function (): void {
     $url = 'https://registry.example.test/newer-incompatible.json';
-    $data = json_decode(File::get(base_path('Modules/Announcement/module.json')), true, 512, JSON_THROW_ON_ERROR);
+    $data = app(App\Modules\ModuleManifestRepository::class)->find('Announcement')->toArray();
     $data['version'] = '99.0.0';
     $data['requires'] = ['core' => '>=99.0.0'];
     $data['versions'] = [[

@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "d919ab4346484754a9380b9da451798a",
+    "content-hash": "0bec6eaa2f8b528abf4e4c1051fff99e",
     "packages": [
         {
             "name": "achyutn/filament-log-viewer",
@@ -5741,6 +5741,117 @@
             "time": "2026-10-14T12:55:07+00:00"
         },
         {
+            "name": "koakademy/announcement",
+            "version": "dev-fix/core-package-parity",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/yukazakiri/koakademy-module-announcement.git",
+                "reference": "5d519e7ee5bd8c6fbe25d8acad524f296258af76"
+            },
+            "require": {
+                "coolsam/modules": "^5.0",
+                "filament/filament": "^5.0",
+                "inertiajs/inertia-laravel": "^3.0",
+                "laravel/framework": "^13.0",
+                "nwidart/laravel-modules": "^13.0",
+                "php": ">=8.5.12 <8.6",
+                "spatie/laravel-permission": "^6.21"
+            },
+            "require-dev": {
+                "pestphp/pest": "^5.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Modules\\Announcement\\Providers\\AnnouncementServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Modules\\Announcement\\": "app/",
+                    "Modules\\Announcement\\Database\\Factories\\": "database/factories/",
+                    "Modules\\Announcement\\Database\\Seeders\\": "database/seeders/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "Modules\\Announcement\\Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "pest --compact tests/Unit/PackageContractTest.php"
+                ]
+            },
+            "license": [
+                "AGPL-3.0-or-later"
+            ],
+            "authors": [
+                {
+                    "name": "KoAkademy contributors"
+                }
+            ],
+            "description": "School-wide announcements for administrators and portal users.",
+            "time": "2026-10-27T00:25:33+00:00"
+        },
+        {
+            "name": "koakademy/cashier",
+            "version": "dev-fix/core-package-parity",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/yukazakiri/koakademy-module-cashier.git",
+                "reference": "6fca6dff1e4bb10ab472d55c0ae9747f70752c33"
+            },
+            "require": {
+                "bezhansalleh/filament-shield": "^4.0",
+                "coolsam/modules": "^5.0",
+                "filament/filament": "^5.0",
+                "laravel/framework": "^13.0",
+                "nwidart/laravel-modules": "^13.0",
+                "php": ">=8.5.12 <8.6"
+            },
+            "require-dev": {
+                "pestphp/pest": "^5.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Modules\\Cashier\\Providers\\CashierServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Modules\\Cashier\\": "app/",
+                    "Modules\\Cashier\\Database\\Factories\\": "database/factories/",
+                    "Modules\\Cashier\\Database\\Seeders\\": "database/seeders/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "Modules\\Cashier\\Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "pest --compact tests/Unit/PackageContractTest.php"
+                ]
+            },
+            "license": [
+                "AGPL-3.0-or-later"
+            ],
+            "authors": [
+                {
+                    "name": "KoAkademy contributors"
+                }
+            ],
+            "description": "Cashier workflows for student balance lookup and payment posting.",
+            "time": "2026-10-27T00:25:36+00:00"
+        },
+        {
             "name": "koakademy/forms",
             "version": "1.10.13",
             "source": {
@@ -5776,6 +5887,226 @@
                     "Modules\\Forms\\Database\\Seeders\\": "database/seeders/"
                 }
             }
+        },
+        {
+            "name": "koakademy/inventory",
+            "version": "dev-fix/core-package-parity",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/yukazakiri/koakademy-module-inventory.git",
+                "reference": "80e0b53579f3a448791ababbd8a5a069f2c46183"
+            },
+            "require": {
+                "coolsam/modules": "^5.0",
+                "filament/filament": "^5.0",
+                "inertiajs/inertia-laravel": "^3.0",
+                "laravel/framework": "^13.0",
+                "nwidart/laravel-modules": "^13.0",
+                "php": ">=8.5.12 <8.6"
+            },
+            "require-dev": {
+                "pestphp/pest": "^5.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Modules\\Inventory\\Providers\\InventoryServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Modules\\Inventory\\": "app/",
+                    "Modules\\Inventory\\Database\\Factories\\": "database/factories/",
+                    "Modules\\Inventory\\Database\\Seeders\\": "database/seeders/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "Modules\\Inventory\\Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "pest --compact tests/Unit/PackageContractTest.php"
+                ]
+            },
+            "license": [
+                "AGPL-3.0-or-later"
+            ],
+            "authors": [
+                {
+                    "name": "KoAkademy contributors"
+                }
+            ],
+            "description": "Property and inventory management for products, suppliers, stock, and borrowings.",
+            "time": "2026-10-27T00:25:39+00:00"
+        },
+        {
+            "name": "koakademy/library-system",
+            "version": "dev-fix/core-package-parity",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/yukazakiri/koakademy-module-library-system.git",
+                "reference": "fe7d91405462b8f7184111960b756e1e9d061155"
+            },
+            "require": {
+                "coolsam/modules": "^5.0",
+                "filament/filament": "^5.0",
+                "inertiajs/inertia-laravel": "^3.0",
+                "laravel/framework": "^13.0",
+                "nwidart/laravel-modules": "^13.0",
+                "php": ">=8.5.12 <8.6",
+                "spatie/laravel-tags": "^4.10"
+            },
+            "require-dev": {
+                "pestphp/pest": "^5.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Modules\\LibrarySystem\\Providers\\LibrarySystemServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Modules\\LibrarySystem\\": "app/",
+                    "Modules\\LibrarySystem\\Database\\Factories\\": "database/factories/",
+                    "Modules\\LibrarySystem\\Database\\Seeders\\": "database/seeders/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "Modules\\LibrarySystem\\Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "pest --compact tests/Unit/PackageContractTest.php"
+                ]
+            },
+            "license": [
+                "AGPL-3.0-or-later"
+            ],
+            "authors": [
+                {
+                    "name": "KoAkademy contributors"
+                }
+            ],
+            "description": "Library catalogue, borrowing, research papers, and rights-cleared digital editions.",
+            "time": "2026-10-27T00:25:41+00:00"
+        },
+        {
+            "name": "koakademy/notification-center",
+            "version": "dev-fix/core-package-parity",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/yukazakiri/koakademy-module-notification-center.git",
+                "reference": "02a238e3bae73d22843f30b98418461be4c1b197"
+            },
+            "require": {
+                "filament/filament": "^5.0",
+                "inertiajs/inertia-laravel": "^3.0",
+                "laravel/framework": "^13.0",
+                "nwidart/laravel-modules": "^13.0",
+                "php": ">=8.5.12 <8.6",
+                "spatie/laravel-permission": "^6.21"
+            },
+            "require-dev": {
+                "pestphp/pest": "^5.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Modules\\NotificationCenter\\Providers\\NotificationCenterServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Modules\\NotificationCenter\\": "app/",
+                    "Modules\\NotificationCenter\\Database\\Factories\\": "database/factories/",
+                    "Modules\\NotificationCenter\\Database\\Seeders\\": "database/seeders/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "Modules\\NotificationCenter\\Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "pest --compact tests/Unit/PackageContractTest.php"
+                ]
+            },
+            "license": [
+                "AGPL-3.0-or-later"
+            ],
+            "authors": [
+                {
+                    "name": "KoAkademy contributors"
+                }
+            ],
+            "description": "Template-based notification management and bulk messaging tools.",
+            "time": "2026-10-27T00:25:44+00:00"
+        },
+        {
+            "name": "koakademy/student-medical-records",
+            "version": "dev-fix/core-package-parity",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/yukazakiri/koakademy-module-student-medical-records.git",
+                "reference": "36473c46c0c9cb2db6365b4ba02402faf52f68be"
+            },
+            "require": {
+                "coolsam/modules": "^5.0",
+                "filament/filament": "^5.0",
+                "laravel/framework": "^13.0",
+                "nwidart/laravel-modules": "^13.0",
+                "php": ">=8.5.12 <8.6"
+            },
+            "require-dev": {
+                "pestphp/pest": "^5.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Modules\\StudentMedicalRecords\\Providers\\StudentMedicalRecordsServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Modules\\StudentMedicalRecords\\": "app/",
+                    "Modules\\StudentMedicalRecords\\Database\\Factories\\": "database/factories/",
+                    "Modules\\StudentMedicalRecords\\Database\\Seeders\\": "database/seeders/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "Modules\\StudentMedicalRecords\\Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "pest --compact tests/Unit/PackageContractTest.php"
+                ]
+            },
+            "license": [
+                "AGPL-3.0-or-later"
+            ],
+            "authors": [
+                {
+                    "name": "KoAkademy contributors"
+                }
+            ],
+            "description": "Confidential student medical records, clinic visits, and reporting tools.",
+            "time": "2026-10-27T00:25:47+00:00"
         },
         {
             "name": "laminas/laminas-diactoros",
@@ -23890,9 +24221,52 @@
             "time": "2025-12-08T11:19:18+00:00"
         }
     ],
-    "aliases": [],
+    "aliases": [
+        {
+            "package": "koakademy/announcement",
+            "version": "dev-fix/core-package-parity",
+            "alias": "1.1.0",
+            "alias_normalized": "1.1.0.0"
+        },
+        {
+            "package": "koakademy/cashier",
+            "version": "dev-fix/core-package-parity",
+            "alias": "1.1.0",
+            "alias_normalized": "1.1.0.0"
+        },
+        {
+            "package": "koakademy/inventory",
+            "version": "dev-fix/core-package-parity",
+            "alias": "1.1.0",
+            "alias_normalized": "1.1.0.0"
+        },
+        {
+            "package": "koakademy/library-system",
+            "version": "dev-fix/core-package-parity",
+            "alias": "1.1.0",
+            "alias_normalized": "1.1.0.0"
+        },
+        {
+            "package": "koakademy/notification-center",
+            "version": "dev-fix/core-package-parity",
+            "alias": "1.1.0",
+            "alias_normalized": "1.1.0.0"
+        },
+        {
+            "package": "koakademy/student-medical-records",
+            "version": "dev-fix/core-package-parity",
+            "alias": "1.1.0",
+            "alias_normalized": "1.1.0.0"
+        }
+    ],
     "minimum-stability": "stable",
     "stability-flags": {
+        "koakademy/announcement": 20,
+        "koakademy/cashier": 20,
+        "koakademy/inventory": 20,
+        "koakademy/library-system": 20,
+        "koakademy/notification-center": 20,
+        "koakademy/student-medical-records": 20,
         "maatwebsite/excel": 20,
         "mansoor/filament-versionable": 20
     },
@@ -23901,6 +24275,6 @@
     "platform": {
         "php": ">=8.5.12 <8.6"
     },
-    "platform-dev": [],
+    "platform-dev": {},
     "plugin-api-version": "2.6.0"
 }

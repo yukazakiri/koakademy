@@ -1,0 +1,91 @@
+---
+title: Module Ownership and Migration
+description: Maintain existing extensions in their dedicated repositories and install one locked package per feature.
+---
+
+## One source owner per extension
+
+`Modules/` is a Laravel module layout and PHP namespace. `extensions/starter/`
+is the development template. Neither name determines whether a feature is free,
+paid, or installed. Production extension code is delivered through Composer into
+`vendor/`, compiled into the application image, and managed in Extensions & licenses.
+
+The established domain extensions have these source owners:
+
+| Extension             | Composer package                    | Source repository                                                                         |
+| --------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------- |
+| Announcement          | `koakademy/announcement`            | [Announcement](https://github.com/yukazakiri/koakademy-module-announcement)               |
+| Cashier               | `koakademy/cashier`                 | [Cashier](https://github.com/yukazakiri/koakademy-module-cashier)                         |
+| Inventory             | `koakademy/inventory`               | [Inventory](https://github.com/yukazakiri/koakademy-module-inventory)                     |
+| LibrarySystem         | `koakademy/library-system`          | [Library](https://github.com/yukazakiri/koakademy-module-library-system)                  |
+| NotificationCenter    | `koakademy/notification-center`     | [Notification Center](https://github.com/yukazakiri/koakademy-module-notification-center) |
+| StudentMedicalRecords | `koakademy/student-medical-records` | [Medical Records](https://github.com/yukazakiri/koakademy-module-student-medical-records) |
+| Forms                 | `koakademy/forms`                   | [Forms](https://github.com/yukazakiri/koakademy-module-forms)                             |
+
+Forms was already Composer-installed. HR Management is catalog-listed but is
+not installed by this application. EnterpriseReporting remains bundled while
+its first package and release process are developed; it is not silently added
+to another feature's repository. The starter remains development-only.
+
+## Complete the 1.1 package handoff
+
+The six extraction proposals reconcile their source with core commit
+`ff3cae913b14b11737380446472f2119e3e60b28`. This includes Library stock accounting,
+authorization, and school isolation fixes, the missing Inventory migration,
+Announcement schema-cache invalidation, Cashier behavior, and current medical
+and notification fixes. Provider paths are relative to the package rather than
+dependent on discovery order.
+
+1. Review and merge each package's v1.1.0 proposal, including its passing
+   standalone and host integration/build checks.
+2. Publish `v1.1.0` tags whose source `module.json` version is exactly `1.1.0`.
+   Existing tags and checksums must remain unchanged.
+3. Review and sign the registry's generated catalog PR using the existing key.
+4. Replace the application's review-only branch aliases with stable `^1.1`
+   requirements and update only these six lockfile entries. Use the reviewed
+   tags/commits and run the full checks again.
+5. Merge and build the application migration after those releases exist.
+
+The draft migration intentionally pins review commits with inline aliases so
+the complete package installation can be tested before tags are published.
+Those preview requirements are not the final production release policy. Git
+repository fallbacks may remain until the signed Composer catalog is published.
+
+## Preserve existing installations
+
+Remove a bundled directory in the same application dependency change that adds
+its Composer package. The host rejects duplicate module names, aliases, and
+package identities. Moving the directory to `extensions/` would preserve the
+duplicate ownership problem.
+
+Keep existing PHP namespaces, provider names, routes, table names, historical
+migration filenames, and module identities. Existing imports and database rows
+then continue to refer to the same feature. Do not reset the school database,
+delete module-installation records, run `migrate:fresh`, or reseed customer data.
+
+In the release container, run the normal migrations, synchronize permissions,
+validate installed contracts, clear/rebuild application and module caches, and
+roll all workers. Keep `MODULE_SCAN_VENDOR=true`. Synchronize installation
+metadata without overwriting administrator enable/disable choices. Preserve
+the existing persistent module status file and acknowledge a completed rollout
+only after all replicas are healthy.
+
+The application requires all six packages by default to preserve the features
+already delivered by its images. Administrators can keep any of them disabled.
+Community extensions do not acquire a commercial license requirement through
+this ownership migration. Enterprise capabilities still use their separate
+school entitlement and user-permission checks.
+
+## Future contributions
+
+Change an extension in its own repository, run its package and host checks,
+release a new tag, review/sign the catalog, then update the host lockfile and
+image. Change shared SDK contracts or cross-extension integration in core.
+Additional frontend dependencies require a host npm lockfile change. Package
+CI installs the contribution into a clean host checkout, removes its bundled
+duplicate where needed, and builds both browser and SSR assets.
+
+The host's Tailwind sources explicitly include installed packages' frontend and
+view directories, and the Filament theme includes their resource classes and
+views. Keep those package layouts when contributing UI so moving code into
+Composer's ignored `vendor/` directory does not remove its generated styles.

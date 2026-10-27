@@ -4,6 +4,14 @@
         <testsuite name="Bundled module tests">
             <directory>Modules/*/tests</directory>
         </testsuite>
+        <testsuite name="Installed package tests">
+            <directory>vendor/koakademy/announcement/tests</directory>
+            <directory>vendor/koakademy/cashier/tests</directory>
+            <directory>vendor/koakademy/inventory/tests</directory>
+            <directory>vendor/koakademy/library-system/tests</directory>
+            <directory>vendor/koakademy/notification-center/tests</directory>
+            <directory>vendor/koakademy/student-medical-records/tests</directory>
+        </testsuite>
         <testsuite name="Composer extension integration">
             <directory>tests/Extensions</directory>
             <directory>extensions/starter/tests</directory>

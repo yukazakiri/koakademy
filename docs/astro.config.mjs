@@ -100,6 +100,7 @@ export default defineConfig({
                         { slug: "development/authority-code-imports", label: "Authority Code Imports" },
                         { slug: "maintainers/create-module", label: "Module Authoring" },
                         { slug: "maintainers/module-registry", label: "Module Registry" },
+                        { slug: "maintainers/module-ownership", label: "Module Ownership" },
                         { slug: "development/enterprise-extensions", label: "Enterprise Extensions" },
                     ],
                 },

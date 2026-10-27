@@ -120,6 +120,9 @@
         "phpstan/phpstan": "^2.2",
         "rector/rector": "^2.6"
     },
+    "conflict": {
+        "phpunit/phpunit": ">=13.4.0 <13.4.4"
+    },
     "autoload": {
         "files": [
             "app/helpers.php"

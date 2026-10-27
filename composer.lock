@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "e373b6fd588b1a9646e872197d014d5e",
+    "content-hash": "8910fe41dae4c7f1c10519aa94a0ebec",
     "packages": [
         {
             "name": "achyutn/filament-log-viewer",
@@ -6041,11 +6041,17 @@
         },
         {
             "name": "koakademy/notification-center",
-            "version": "dev-master",
+            "version": "v1.1.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/yukazakiri/koakademy-module-notification-center.git",
-                "reference": "fed3af70ee17d01cf34b53ba371236906b84c33a"
+                "reference": "e20cc4a0b3006161d867e54d083d12d13b8c8beb"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/yukazakiri/koakademy-module-notification-center/zipball/e20cc4a0b3006161d867e54d083d12d13b8c8beb",
+                "reference": "e20cc4a0b3006161d867e54d083d12d13b8c8beb",
+                "shasum": ""
             },
             "require": {
                 "filament/filament": "^5.0",
@@ -6058,7 +6064,6 @@
             "require-dev": {
                 "pestphp/pest": "^5.0"
             },
-            "default-branch": true,
             "type": "library",
             "extra": {
                 "laravel": {
@@ -6070,20 +6075,11 @@
             "autoload": {
                 "psr-4": {
                     "Modules\\NotificationCenter\\": "app/",
-                    "Modules\\NotificationCenter\\Database\\Factories\\": "database/factories/",
-                    "Modules\\NotificationCenter\\Database\\Seeders\\": "database/seeders/"
+                    "Modules\\NotificationCenter\\Database\\Seeders\\": "database/seeders/",
+                    "Modules\\NotificationCenter\\Database\\Factories\\": "database/factories/"
                 }
             },
-            "autoload-dev": {
-                "psr-4": {
-                    "Modules\\NotificationCenter\\Tests\\": "tests/"
-                }
-            },
-            "scripts": {
-                "test": [
-                    "pest --compact tests/Unit/PackageContractTest.php"
-                ]
-            },
+            "notification-url": "https://packagist.org/downloads/",
             "license": [
                 "AGPL-3.0-or-later"
             ],
@@ -6093,15 +6089,31 @@
                 }
             ],
             "description": "Template-based notification management and bulk messaging tools.",
-            "time": "2026-10-27T01:01:44+00:00"
+            "homepage": "https://github.com/yukazakiri/koakademy-module-notification-center",
+            "keywords": [
+                "koakademy",
+                "notification-center",
+                "school-management"
+            ],
+            "support": {
+                "issues": "https://github.com/yukazakiri/koakademy-module-notification-center/issues",
+                "source": "https://github.com/yukazakiri/koakademy-module-notification-center"
+            },
+            "time": "2026-10-27T06:13:12+00:00"
         },
         {
             "name": "koakademy/student-medical-records",
-            "version": "dev-master",
+            "version": "v1.1.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/yukazakiri/koakademy-module-student-medical-records.git",
-                "reference": "0e3b9f04f1b49a4ddb50f7ae5a9feaa20be67119"
+                "reference": "e4c1acd23e4086d32e0d62744aa53f96410f9995"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/yukazakiri/koakademy-module-student-medical-records/zipball/e4c1acd23e4086d32e0d62744aa53f96410f9995",
+                "reference": "e4c1acd23e4086d32e0d62744aa53f96410f9995",
+                "shasum": ""
             },
             "require": {
                 "coolsam/modules": "^5.0",
@@ -6113,7 +6125,6 @@
             "require-dev": {
                 "pestphp/pest": "^5.0"
             },
-            "default-branch": true,
             "type": "library",
             "extra": {
                 "laravel": {
@@ -6125,20 +6136,11 @@
             "autoload": {
                 "psr-4": {
                     "Modules\\StudentMedicalRecords\\": "app/",
-                    "Modules\\StudentMedicalRecords\\Database\\Factories\\": "database/factories/",
-                    "Modules\\StudentMedicalRecords\\Database\\Seeders\\": "database/seeders/"
+                    "Modules\\StudentMedicalRecords\\Database\\Seeders\\": "database/seeders/",
+                    "Modules\\StudentMedicalRecords\\Database\\Factories\\": "database/factories/"
                 }
             },
-            "autoload-dev": {
-                "psr-4": {
-                    "Modules\\StudentMedicalRecords\\Tests\\": "tests/"
-                }
-            },
-            "scripts": {
-                "test": [
-                    "pest --compact tests/Unit/PackageContractTest.php"
-                ]
-            },
+            "notification-url": "https://packagist.org/downloads/",
             "license": [
                 "AGPL-3.0-or-later"
             ],
@@ -6148,7 +6150,17 @@
                 }
             ],
             "description": "Confidential student medical records, clinic visits, and reporting tools.",
-            "time": "2026-10-27T01:01:23+00:00"
+            "homepage": "https://github.com/yukazakiri/koakademy-module-student-medical-records",
+            "keywords": [
+                "koakademy",
+                "school-management",
+                "student-medical-records"
+            ],
+            "support": {
+                "issues": "https://github.com/yukazakiri/koakademy-module-student-medical-records/issues",
+                "source": "https://github.com/yukazakiri/koakademy-module-student-medical-records"
+            },
+            "time": "2026-10-27T06:13:07+00:00"
         },
         {
             "name": "laminas/laminas-diactoros",
@@ -24263,24 +24275,9 @@
             "time": "2025-12-08T11:19:18+00:00"
         }
     ],
-    "aliases": [
-        {
-            "package": "koakademy/notification-center",
-            "version": "9999999-dev",
-            "alias": "1.1.0",
-            "alias_normalized": "1.1.0.0"
-        },
-        {
-            "package": "koakademy/student-medical-records",
-            "version": "9999999-dev",
-            "alias": "1.1.0",
-            "alias_normalized": "1.1.0.0"
-        }
-    ],
+    "aliases": [],
     "minimum-stability": "stable",
     "stability-flags": {
-        "koakademy/notification-center": 20,
-        "koakademy/student-medical-records": 20,
         "maatwebsite/excel": 20,
         "mansoor/filament-versionable": 20
     },

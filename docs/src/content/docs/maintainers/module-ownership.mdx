@@ -29,26 +29,25 @@ to another feature's repository. The starter remains development-only.
 
 ## Complete the 1.1 package handoff
 
-The six extraction proposals reconcile their source with core commit
+The six merged package changes reconcile their source with core commit
 `ff3cae913b14b11737380446472f2119e3e60b28`. This includes Library stock accounting,
 authorization, and school isolation fixes, the missing Inventory migration,
 Announcement schema-cache invalidation, Cashier behavior, and current medical
 and notification fixes. Provider paths are relative to the package rather than
 dependent on discovery order.
 
-1. Review and merge each package's v1.1.0 proposal, including its passing
-   standalone and host integration/build checks.
-2. Publish `v1.1.0` tags whose source `module.json` version is exactly `1.1.0`.
+1. Publish `v1.1.0` tags from the reviewed package commits, whose source
+   `module.json` version is exactly `1.1.0`.
    Existing tags and checksums must remain unchanged.
-3. Review and sign the registry's generated catalog PR using the existing key.
-4. Replace the application's review-only branch aliases with stable `^1.1`
+2. Review and sign the registry's generated catalog PR using the existing key.
+3. Replace the application's temporary branch aliases with stable `^1.1`
    requirements and update only these six lockfile entries. Use the reviewed
    tags/commits and run the full checks again.
-5. Merge and build the application migration after those releases exist.
+4. Merge and build the application migration after those releases exist.
 
-The draft migration intentionally pins review commits with inline aliases so
-the complete package installation can be tested before tags are published.
-Those preview requirements are not the final production release policy. Git
+The migration currently locks the merged `master` commits with inline aliases
+so the complete package installation can be tested before tags are published.
+Those temporary requirements are not the final production release policy. Git
 repository fallbacks may remain until the signed Composer catalog is published.
 
 ## Preserve existing installations

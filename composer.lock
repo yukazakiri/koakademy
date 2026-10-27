@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "812c106c5f8d8e1a1bd141d100f0f470",
+    "content-hash": "e373b6fd588b1a9646e872197d014d5e",
     "packages": [
         {
             "name": "achyutn/filament-log-viewer",
@@ -5742,11 +5742,11 @@
         },
         {
             "name": "koakademy/announcement",
-            "version": "dev-master",
+            "version": "v1.1.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/yukazakiri/koakademy-module-announcement.git",
-                "reference": "a3d09a0822d3a5d8b6d31336aea6ca71cb705297"
+                "reference": "946922b8306bea6fa204f664441e4c5d46f178a7"
             },
             "require": {
                 "coolsam/modules": "^5.0",
@@ -5760,7 +5760,6 @@
             "require-dev": {
                 "pestphp/pest": "^5.0"
             },
-            "default-branch": true,
             "type": "library",
             "extra": {
                 "laravel": {
@@ -5795,15 +5794,25 @@
                 }
             ],
             "description": "School-wide announcements for administrators and portal users.",
-            "time": "2026-10-27T01:03:09+00:00"
+            "homepage": "https://github.com/yukazakiri/koakademy-module-announcement",
+            "keywords": [
+                "announcement",
+                "koakademy",
+                "school-management"
+            ],
+            "support": {
+                "issues": "https://github.com/yukazakiri/koakademy-module-announcement/issues",
+                "source": "https://github.com/yukazakiri/koakademy-module-announcement"
+            },
+            "time": "2026-10-27T05:12:55+00:00"
         },
         {
             "name": "koakademy/cashier",
-            "version": "dev-master",
+            "version": "v1.1.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/yukazakiri/koakademy-module-cashier.git",
-                "reference": "6172cdc5621435ff72098a102e5c53181461b166"
+                "reference": "9e8ade3650a4570801cc41bd2cbc7ce83f331b33"
             },
             "require": {
                 "bezhansalleh/filament-shield": "^4.0",
@@ -5816,7 +5825,6 @@
             "require-dev": {
                 "pestphp/pest": "^5.0"
             },
-            "default-branch": true,
             "type": "library",
             "extra": {
                 "laravel": {
@@ -5851,7 +5859,17 @@
                 }
             ],
             "description": "Cashier workflows for student balance lookup and payment posting.",
-            "time": "2026-10-27T01:02:58+00:00"
+            "homepage": "https://github.com/yukazakiri/koakademy-module-cashier",
+            "keywords": [
+                "cashier",
+                "koakademy",
+                "school-management"
+            ],
+            "support": {
+                "issues": "https://github.com/yukazakiri/koakademy-module-cashier/issues",
+                "source": "https://github.com/yukazakiri/koakademy-module-cashier"
+            },
+            "time": "2026-10-27T05:13:02+00:00"
         },
         {
             "name": "koakademy/forms",
@@ -5892,11 +5910,11 @@
         },
         {
             "name": "koakademy/inventory",
-            "version": "dev-master",
+            "version": "v1.1.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/yukazakiri/koakademy-module-inventory.git",
-                "reference": "084e7002a2d4e9421e4481b547a685644aa32d64"
+                "reference": "dd2c97033662f8ea23da4b4cd0a8c7828421987c"
             },
             "require": {
                 "coolsam/modules": "^5.0",
@@ -5909,7 +5927,6 @@
             "require-dev": {
                 "pestphp/pest": "^5.0"
             },
-            "default-branch": true,
             "type": "library",
             "extra": {
                 "laravel": {
@@ -5944,15 +5961,25 @@
                 }
             ],
             "description": "Property and inventory management for products, suppliers, stock, and borrowings.",
-            "time": "2026-10-27T01:02:10+00:00"
+            "homepage": "https://github.com/yukazakiri/koakademy-module-inventory",
+            "keywords": [
+                "inventory",
+                "koakademy",
+                "school-management"
+            ],
+            "support": {
+                "issues": "https://github.com/yukazakiri/koakademy-module-inventory/issues",
+                "source": "https://github.com/yukazakiri/koakademy-module-inventory"
+            },
+            "time": "2026-10-27T05:13:08+00:00"
         },
         {
             "name": "koakademy/library-system",
-            "version": "dev-master",
+            "version": "v1.1.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/yukazakiri/koakademy-module-library-system.git",
-                "reference": "005e5aaa337ead61c023fa7a693d7a68187c2723"
+                "reference": "677b5ff42d7711b22211dff695bb96d7b39f0d53"
             },
             "require": {
                 "coolsam/modules": "^5.0",
@@ -5966,7 +5993,6 @@
             "require-dev": {
                 "pestphp/pest": "^5.0"
             },
-            "default-branch": true,
             "type": "library",
             "extra": {
                 "laravel": {
@@ -6001,7 +6027,17 @@
                 }
             ],
             "description": "Library catalogue, borrowing, research papers, and rights-cleared digital editions.",
-            "time": "2026-10-27T01:01:58+00:00"
+            "homepage": "https://github.com/yukazakiri/koakademy-module-library-system",
+            "keywords": [
+                "koakademy",
+                "library-system",
+                "school-management"
+            ],
+            "support": {
+                "issues": "https://github.com/yukazakiri/koakademy-module-library-system/issues",
+                "source": "https://github.com/yukazakiri/koakademy-module-library-system"
+            },
+            "time": "2026-10-27T05:13:14+00:00"
         },
         {
             "name": "koakademy/notification-center",
@@ -24229,30 +24265,6 @@
     ],
     "aliases": [
         {
-            "package": "koakademy/announcement",
-            "version": "9999999-dev",
-            "alias": "1.1.0",
-            "alias_normalized": "1.1.0.0"
-        },
-        {
-            "package": "koakademy/cashier",
-            "version": "9999999-dev",
-            "alias": "1.1.0",
-            "alias_normalized": "1.1.0.0"
-        },
-        {
-            "package": "koakademy/inventory",
-            "version": "9999999-dev",
-            "alias": "1.1.0",
-            "alias_normalized": "1.1.0.0"
-        },
-        {
-            "package": "koakademy/library-system",
-            "version": "9999999-dev",
-            "alias": "1.1.0",
-            "alias_normalized": "1.1.0.0"
-        },
-        {
             "package": "koakademy/notification-center",
             "version": "9999999-dev",
             "alias": "1.1.0",
@@ -24267,10 +24279,6 @@
     ],
     "minimum-stability": "stable",
     "stability-flags": {
-        "koakademy/announcement": 20,
-        "koakademy/cashier": 20,
-        "koakademy/inventory": 20,
-        "koakademy/library-system": 20,
         "koakademy/notification-center": 20,
         "koakademy/student-medical-records": 20,
         "maatwebsite/excel": 20,

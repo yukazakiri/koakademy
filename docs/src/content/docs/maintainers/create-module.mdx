@@ -10,7 +10,7 @@ Koakademy extensions are Composer packages delivered in a tested application ima
 The working starter is in `extensions/starter`. It demonstrates school notes with tenant isolation, policies, validation, permissions, migrations, an Inertia page, a Filament plugin, a Livewire component, and class-based queue work.
 
 :::note[SDK availability]
-The starter and integration helpers are introduced by this change. Use a host checkout containing this SDK. Before publishing a standalone package, set its minimum core requirement and CI host reference to the first compatible released core tag or commit.
+The starter and integration helpers are included in the core repository. Use a host checkout containing this SDK. Before publishing a standalone package, set its minimum core requirement and CI host reference to the first compatible released core tag or commit.
 :::
 
 ## Run the starter
@@ -119,11 +119,12 @@ Copy the starter’s workflow into the new repository. It checks out Koakademy, 
 
 ## Publish and contribute
 
-1. Keep source in the contributor's own repository, with a license, support information, tests, and upgrade/rollback notes.
-2. Publish a public `vX.Y.Z` tag matching the module version. Add the real repository and homepage fields before registry submission.
-3. Submit the repository to the registry's `modules.json` allowlist with its release and passing CI evidence.
-4. Have maintainers review the package and exact release, generate both indexes, verify the application parser accepts the catalog, and sign the approved result.
-5. An operator adopts the package in an application lockfile, builds a tested image, applies migrations, provisions permissions, and completes deployment/activation.
+1. Keep source in your public repository under a Composer vendor namespace you control, with a license, support information, tests, and upgrade/rollback notes. Match the Composer `name` and `module.json` `composer_package`; use the `koakademy` namespace only with its maintainer's authorization.
+2. Run `composer validate --strict`, package tests, and host integration checks. Publish a public `vX.Y.Z` Git tag matching the `module.json` version.
+3. [Submit the repository to Packagist](https://packagist.org/packages/submit), configure automatic GitHub updates, and verify that the package name, tag, and source commit are visible there.
+4. Open a PR to the [marketplace registry](https://github.com/yukazakiri/koakademy-modules) adding your repository to `modules.json`. Include the release, Packagist link, passing CI, compatibility, migrations, permissions, and rollback details.
+5. Maintainers manually verify the Packagist release and review the generated catalog and legacy index before signing with the existing key. Publication to Packagist does not automatically list or approve a module in the Marketplace.
+6. An operator adopts the package in an application lockfile, builds a tested image, applies migrations, provisions permissions, and completes deployment/activation.
 
 See [Module Registry](/koakademy/maintainers/module-registry/) for registry and rollout commands. Catalog publication alone does not install a package on a school’s server.
 

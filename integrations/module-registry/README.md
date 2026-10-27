@@ -4,7 +4,7 @@ The public catalog and its release workflows are maintained in the separate [koa
 
 Release discovery should propose a generated pull request for each changed catalog. Review and signing are separate maintainer steps; the discovery job does not need the private signing key.
 
-Before accepting a generated module release, inspect its immutable source revision, passing module CI, host integration evidence, compatibility, migrations, permissions, and rollback behavior.
+Before accepting a generated module release, manually verify its package name, version, and source commit on Packagist (the builder does not do this), then inspect its immutable source revision, passing module CI, host integration evidence, compatibility, migrations, permissions, and rollback behavior.
 
 Validate with both contracts:
 
@@ -14,3 +14,5 @@ Validate with both contracts:
 After review, sign the approved catalog using the existing protected signing workflow or maintainer procedure and verify it before merging. Keep signing credentials out of contributor PR jobs. Protect the registry's publication branch and signing environment using its repository settings.
 
 Deploying the host application does not update registry automation, configure repository protection, publish a catalog, or rotate its signing key.
+
+Packagist distributes public packages; `registry.json` is the signed Marketplace catalog. The generated `packages.json` remains available to legacy clients; newly signed catalogs bind its exact bytes, while historical signatures may predate that binding. Publication to Packagist does not automatically approve a catalog entry.

@@ -5,12 +5,12 @@ description: Publish, install, update, and operate standalone KoAkademy modules.
 
 # Module Registry
 
-KoAkademy distributes standalone modules through the public
-[module registry](https://github.com/yukazakiri/koakademy-modules). The registry
-contains two related indexes:
-
-- `registry.json` is the signed Marketplace catalog.
-- `packages.json` is the Composer repository used during application builds.
+Public module packages are published on [Packagist](https://packagist.org/),
+Composer's default public repository. The separate [module registry](https://github.com/yukazakiri/koakademy-modules)
+publishes `registry.json`, the signed Marketplace catalog. Its `packages.json`
+is retained as a legacy Composer index for older installations; new public
+installs use Packagist. Newly signed catalogs bind the index; historical
+signatures may predate that binding.
 
 The Marketplace is a catalog and module-status interface. It is not a live
 package installer. Composer and the application image remain the code delivery
@@ -23,16 +23,14 @@ focuses on the registry, signing, installation, and update boundary.
 ## How the pieces fit together
 
 ```text
-module repository and vX.Y.Z tag
-        │
-        ├─ registry updater ──▶ signed registry.json + packages.json
-        │                                  │
-        │                                  └─ GitHub Pages
-        │
-        └─ KoAkademy composer.json/lock ──▶ application image ──▶ Swarm
-                                                               │
-                                                               └─ Marketplace enable/disable
+module repository + vX.Y.Z tag
+        ├─ Packagist ──▶ Composer lockfile ──▶ application image
+        └─ reviewed registry PR ──▶ signed Marketplace catalog
 ```
+
+New catalog signatures bind the legacy `packages.json` index; historical
+signatures may predate that binding. Composer uses HTTPS and its lockfile; it does not verify the catalog's
+Ed25519 signature.
 
 Updating the registry changes catalog information. It does not modify a
 running container, install `vendor/` dependencies, rebuild Vite assets, run
@@ -48,19 +46,18 @@ See [Module ownership and migration](/koakademy/maintainers/module-ownership/) f
 
 ## Install a standalone module
 
-From the KoAkademy application repository, configure the Composer registry and
-require the package:
+Once a public package and its desired release are available on Packagist,
+require it from the KoAkademy application repository:
 
 ```sh
-composer config repositories.koakademy composer https://yukazakiri.github.io/koakademy-modules
-composer require koakademy/forms:^1.8
+composer require koakademy/forms:^1.10
 ```
 
-Use this command after the package has a catalog entry in the public registry.
-The KoAkademy core repository may temporarily carry a direct package
-repository definition while a newly released module is waiting for its signed
-registry entry; that fallback is not a substitute for publishing the module
-to the catalog.
+A Marketplace entry and Packagist publication are separate: confirm both when
+appropriate. The six migrated packages temporarily use direct Git fallbacks and
+branch aliases until their `v1.1.0` releases are tagged and registered. Packagist
+has priority when a package is available; see the
+[handoff](/koakademy/maintainers/module-ownership/) before removing the fallbacks.
 
 Commit `composer.json` and `composer.lock`, then build the normal KoAkademy
 image. Run migrations and `php artisan modules:sync-permissions` in the release container,
@@ -116,15 +113,13 @@ unusable after completion. The queue must be running for delivery.
 
 ### Contributor steps
 
-1. Keep the extension in a contributor-owned repository with a public semver tag matching its manifest. Start with the tested package under `extensions/starter`.
-2. Submit a registry PR adding the repository to `modules.json`, with the exact release, passing package/host CI, support details, migrations, permissions, and rollback notes.
-3. The registry rebuild discovers releases from that allowlist. Review the proposed metadata change for each release; allowlisting a publisher does not approve every future tag.
-4. Generate both indexes using the registry scripts. The manual `scripts/update-module.php` command remains available for local/exceptional updates. Contributors must never create a competing signing key.
-5. Check the generated catalog with the host parser before signing:
+1. Maintain the extension in a public repository under a Composer vendor namespace you control. Match `composer.json`'s `name` to `module.json`'s `composer_package`, and supply license, support, tests, and compatibility details. The `koakademy` namespace requires its existing maintainer's authorization.
+2. Run `composer validate --strict`, package tests, and host integration checks. Tag the exact release `vX.Y.Z`, matching `module.json`'s version.
+3. [Submit the repository to Packagist](https://packagist.org/packages/submit), configure GitHub synchronization, and verify the package name, release, and source commit appear there.
+4. Open a PR to the [registry repository](https://github.com/yukazakiri/koakademy-modules) adding the repository to `modules.json`. Include the release, Packagist link, package/host CI evidence, migrations, permissions, compatibility, and rollback notes.
+5. Maintainers manually verify the Packagist release matches the reviewed tag and commit, then review the generated catalog and legacy index, validate both contracts, and sign with the existing key. The registry builder does not currently verify Packagist availability. Publishing to Packagist does not automatically approve a Marketplace listing.
 
-    ```sh
-    php /path/to/koakademy/scripts/validate-module-catalog.php /path/to/koakademy-modules/registry.json
-    ```
+Contributors must never create a competing signing key.
 
 The live registry and this host are separate repositories. Registry automation changes belong in the [registry repository](https://github.com/yukazakiri/koakademy-modules). Follow `integrations/module-registry/README.md` for the review and signing handoff; deploying the host alone does not change registry automation.
 
@@ -152,10 +147,10 @@ The complete contributor checklist is in the registry repository’s
 
 ## Update a deployed module
 
-For a new Announcement release such as `1.0.2`:
+For a future Announcement release such as `1.1.0`, once it is published:
 
-1. Release `v1.0.2` from the Announcement module repository.
-2. Add the release to the signed registry and wait for Pages publication.
+1. Release `v1.1.0` from the Announcement module repository.
+2. Verify the release and source commit on Packagist, then have maintainers review and sign the catalog update and wait for Pages publication.
 3. In KoAkademy, run:
 
     ```sh
@@ -167,7 +162,7 @@ For a new Announcement release such as `1.0.2`:
     ```
 
     If Announcement is not yet a Composer dependency, use
-    `composer require koakademy/announcement:^1.0.2` instead.
+    `composer require koakademy/announcement:^1.1` instead.
 
 4. Build and deploy the new stable or edge image through the normal release
    process.
@@ -184,15 +179,11 @@ retained for first-boot defaults and compatibility with older releases.
 
 ## Legacy source-tree modules
 
-The six original modules under the application’s `Modules/` directory are
-source-tree modules and remain enabled by the image’s status file for backward
-compatibility. A standalone repository with the same module name does not
-automatically replace that local source.
-
-Migrate a local module to its Composer package as a separate, tested change.
-Keep the existing module enabled during the migration unless the migration
-plan explicitly changes its status. The `module_installations` row preserves
-administrator choices across application upgrades.
+The six migrated domain extensions are installed from Composer, while
+EnterpriseReporting remains bundled in `Modules/`. Older installations may still
+have bundled copies. Never install a package alongside a bundled module with the
+same identity; migrate it in a tested change while preserving database and
+activation state. See [Module ownership and migration](/koakademy/maintainers/module-ownership/).
 
 ## Configuration and troubleshooting
 

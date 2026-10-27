@@ -39,14 +39,11 @@ activation, packaging, and offline license issuance.
 
 ### Standalone Composer Modules
 
-Standalone modules (like the [Forms Module](https://github.com/yukazakiri/koakademy-module-forms)) are published as separate Composer packages via the [KoAkademy Module Registry](https://github.com/yukazakiri/koakademy-modules).
+Standalone modules (like the [Forms Module](https://github.com/yukazakiri/koakademy-module-forms)) are published as separate Composer packages on [Packagist](https://packagist.org/). The [KoAkademy Module Registry](https://github.com/yukazakiri/koakademy-modules) publishes the separately reviewed Marketplace catalog.
 
 Installation is performed at the Composer level:
 
 ```sh
-# Add the registry repository
-composer config repositories.koakademy composer https://yukazakiri.github.io/koakademy-modules
-
 # Require the desired module package
 composer require koakademy/forms:^1.10
 

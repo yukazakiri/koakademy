@@ -36,19 +36,16 @@ Announcement schema-cache invalidation, Cashier behavior, and current medical
 and notification fixes. Provider paths are relative to the package rather than
 dependent on discovery order.
 
-1. Publish `v1.1.0` tags from the reviewed package commits, whose source
-   `module.json` version is exactly `1.1.0`.
-   Existing tags and checksums must remain unchanged.
-2. Review and sign the registry's generated catalog PR using the existing key.
-3. Replace the application's temporary branch aliases with stable `^1.1`
-   requirements and update only these six lockfile entries. Use the reviewed
-   tags/commits and run the full checks again.
-4. Merge and build the application migration after those releases exist.
+1. Merge the package publication metadata changes, then tag `v1.1.0` from each reviewed package commit, whose `module.json` version is exactly `1.1.0`. Do not replace existing tags.
+2. Submit each public repository to Packagist using a maintainer account for the `koakademy` vendor namespace. Verify the package, version, and source commit are visible.
+3. Review and sign the Marketplace registry's generated catalog PR using the existing key.
+4. Replace the application's temporary branch aliases with stable `^1.1` requirements, remove the six temporary Git fallbacks, update their lockfile entries, and run the full checks. Build and deploy the new image through the normal release process.
 
-The migration currently locks the merged `master` commits with inline aliases
-so the complete package installation can be tested before tags are published.
-Those temporary requirements are not the final production release policy. Git
-repository fallbacks may remain until the signed Composer catalog is published.
+The application currently locks merged `master` commits with inline aliases.
+Packagist is preferred for public packages; direct Git fallbacks keep the six
+packages installable until their first compatible releases appear there.
+The signed Marketplace catalog and legacy Composer index remain separate from
+Packagist publication.
 
 ## Preserve existing installations
 
@@ -78,7 +75,7 @@ school entitlement and user-permission checks.
 ## Future contributions
 
 Change an extension in its own repository, run its package and host checks,
-release a new tag, review/sign the catalog, then update the host lockfile and
+release a new tag, publish it to Packagist, review/sign the catalog, then update the host lockfile and
 image. Change shared SDK contracts or cross-extension integration in core.
 Additional frontend dependencies require a host npm lockfile change. Package
 CI installs the contribution into a clean host checkout, removes its bundled

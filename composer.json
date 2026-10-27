@@ -136,6 +136,21 @@
         }
     },
     "repositories": {
+        "extension-starter": {
+            "type": "path",
+            "url": "extensions/starter",
+            "options": {
+                "symlink": false
+            }
+        },
+        "shadebridge": {
+            "type": "vcs",
+            "url": "https://github.com/yukazakiri/laravel-shadebridge.git"
+        },
+        "packagist": {
+            "type": "composer",
+            "url": "https://repo.packagist.org"
+        },
         "module-announcement": {
             "type": "git",
             "url": "https://github.com/yukazakiri/koakademy-module-announcement.git"
@@ -159,26 +174,6 @@
         "module-student-medical-records": {
             "type": "git",
             "url": "https://github.com/yukazakiri/koakademy-module-student-medical-records.git"
-        },
-        "shadebridge": {
-            "type": "vcs",
-            "url": "https://github.com/yukazakiri/laravel-shadebridge.git"
-        },
-        "0": {
-            "type": "composer",
-            "url": "https://yukazakiri.github.io/koakademy-modules",
-            "canonical": false
-        },
-        "forms": {
-            "type": "vcs",
-            "url": "https://github.com/yukazakiri/koakademy-module-forms.git"
-        },
-        "extension-starter": {
-            "type": "path",
-            "url": "extensions/starter",
-            "options": {
-                "symlink": false
-            }
         }
     },
     "scripts": {

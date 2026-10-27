@@ -36,14 +36,15 @@ Announcement schema-cache invalidation, Cashier behavior, and current medical
 and notification fixes. Provider paths are relative to the package rather than
 dependent on discovery order.
 
-1. Merge the package publication metadata changes, then tag `v1.1.0` from each reviewed package commit, whose `module.json` version is exactly `1.1.0`. Do not replace existing tags.
+1. All six packages have reviewed `v1.1.0` tags whose `module.json` versions are `1.1.0`. Do not replace existing tags.
 2. Submit each public repository to Packagist using a maintainer account for the `koakademy` vendor namespace. Verify the package, version, and source commit are visible.
 3. Review and sign the Marketplace registry's generated catalog PR using the existing key.
-4. Replace the application's temporary branch aliases with stable `^1.1` requirements, remove the six temporary Git fallbacks, update their lockfile entries, and run the full checks. Build and deploy the new image through the normal release process.
+4. After all six packages are available on Packagist, remove the temporary Git fallbacks, update their lockfile entries, and run the full checks. Build and deploy the new image through the normal release process.
 
-The application currently locks merged `master` commits with inline aliases.
-Packagist is preferred for public packages; direct Git fallbacks keep the six
-packages installable until their first compatible releases appear there.
+The application requires all six packages with stable `^1.1` constraints and
+locks them to their `v1.1.0` tags. Packagist is preferred for public packages;
+direct Git fallbacks keep the six packages installable until their first
+compatible releases appear there.
 The signed Marketplace catalog and legacy Composer index remain separate from
 Packagist publication.
 

@@ -15,6 +15,7 @@
     ],
     "license": "AGPL-3.0-or-later",
     "require": {
+        "php": ">=8.5.12 <8.6",
         "achyutn/filament-log-viewer": "^2.0",
         "alizharb/filament-activity-log": "^2.0",
         "astrophp/trail": "^0.3.1",
@@ -42,13 +43,13 @@
         "inertiajs/inertia-laravel": "^3.0",
         "joaopaulolndev/filament-edit-profile": "^3.0",
         "joaopaulolndev/filament-general-settings": "^3.0",
-        "koakademy/announcement": "dev-master as 1.1.0",
-        "koakademy/cashier": "dev-master as 1.1.0",
+        "koakademy/announcement": "^1.1",
+        "koakademy/cashier": "^1.1",
         "koakademy/forms": "^1.10",
-        "koakademy/inventory": "dev-master as 1.1.0",
-        "koakademy/library-system": "dev-master as 1.1.0",
-        "koakademy/notification-center": "dev-master as 1.1.0",
-        "koakademy/student-medical-records": "dev-master as 1.1.0",
+        "koakademy/inventory": "^1.1",
+        "koakademy/library-system": "^1.1",
+        "koakademy/notification-center": "^1.1",
+        "koakademy/student-medical-records": "^1.1",
         "laraowl/client": "^1.0",
         "laravel/ai": "^1.0",
         "laravel/framework": "^13.0",
@@ -73,7 +74,6 @@
         "moataz-01/filament-notification-sound": "^1.0",
         "mohammed-mojaly/laralyze": "^0.7.2",
         "mozex/laravel-scout-bulk-actions": "^1.7",
-        "php": ">=8.5.12 <8.6",
         "predis/predis": "^3.2",
         "pusher/pusher-php-server": "^7.2",
         "pxlrbt/filament-environment-indicator": "^3.0",
@@ -119,6 +119,9 @@
         "pestphp/pest-plugin-rector": "^5.0",
         "phpstan/phpstan": "^2.2",
         "rector/rector": "^2.6"
+    },
+    "conflict": {
+        "phpunit/phpunit": ">=13.4.0 <13.4.4"
     },
     "autoload": {
         "files": [

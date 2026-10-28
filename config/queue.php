@@ -68,7 +68,10 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            // A job may declare its own timeout, and Laravel prefers it over
+            // the worker option. The reservation must outlast the longest job
+            // on this connection or a second worker can pop a running job.
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 600),
             'after_commit' => true,
         ],
 
@@ -96,7 +99,10 @@ return [
             'driver' => 'redis',
             'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
             'queue' => env('REDIS_QUEUE', 'default'),
-            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 90),
+            // The student export and PDF jobs on this connection allow
+            // themselves 300 seconds. A shorter reservation lets a second
+            // worker start the same job while the first is still running.
+            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 600),
             'block_for' => (int) env('REDIS_QUEUE_BLOCK_FOR', 5),
             'after_commit' => true,
         ],

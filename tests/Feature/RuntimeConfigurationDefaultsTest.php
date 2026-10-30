@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Jobs\ExportStudentDataJob;
+use App\Jobs\GenerateStudentListPdfJob;
+use App\Jobs\GenerateStudentTimetablePdfJob;
 use Laravel\Pulse\Recorders;
 
 /**
@@ -118,6 +121,43 @@ it('dispatches the queued jobs after the transaction commits', function (): void
     expect(config('scout.after_commit'))->toBeTrue()
         ->and($queues['redis']['after_commit'])->toBeTrue()
         ->and($queues['database']['after_commit'])->toBeTrue();
+});
+
+/**
+ * A job's own timeout wins over the worker's --timeout option. A reservation
+ * shorter than that timeout lets a second worker pop the same job while the
+ * first one is still running, so the student export can run twice.
+ */
+it('keeps the queue reservation above the longest job timeout', function (): void {
+    $queues = config('queue.connections');
+
+    $jobTimeouts = [
+        'student export' => (new ReflectionClass(ExportStudentDataJob::class))->getDefaultProperties()['timeout'],
+        'student list pdf' => (new ReflectionClass(GenerateStudentListPdfJob::class))->getDefaultProperties()['timeout'],
+        'student timetable pdf' => (new ReflectionClass(GenerateStudentTimetablePdfJob::class))->getDefaultProperties()['timeout'],
+    ];
+
+    expect((int) $queues['redis']['retry_after'])->toBeGreaterThan(max($jobTimeouts))
+        ->and((int) $queues['database']['retry_after'])->toBeGreaterThan(max($jobTimeouts));
+
+    expect(runtimeEnvDefault('queue.php', 'REDIS_QUEUE_RETRY_AFTER'))->toBe('600')
+        ->and(runtimeEnvDefault('queue.php', 'DB_QUEUE_RETRY_AFTER'))->toBe('600');
+});
+
+it('sets the queue reservation window in the environment templates', function (string $file, string $variable): void {
+    expect(file_get_contents(base_path($file)))->toContain("{$variable}=600");
+})->with([
+    ['.env.example', 'REDIS_QUEUE_RETRY_AFTER'],
+    ['.env.example', 'DB_QUEUE_RETRY_AFTER'],
+    ['.env.production.example', 'REDIS_QUEUE_RETRY_AFTER'],
+]);
+
+it('retries a student export with backoff instead of giving up silently', function (): void {
+    $job = new ExportStudentDataJob(1);
+
+    expect($job->timeout)->toBe(300)
+        ->and($job->tries)->toBe(3)
+        ->and($job->backoff)->toBe([60, 300]);
 });
 
 it('gives horizon a worker on the search index queue', function (): void {

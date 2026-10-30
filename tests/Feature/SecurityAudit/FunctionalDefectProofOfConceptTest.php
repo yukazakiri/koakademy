@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\UserRole;
 use App\Jobs\BulkMoveStudentsToSectionJob;
+use App\Jobs\ExportStudentDataJob;
 use App\Jobs\GenerateAssessmentPdfJob;
 use App\Jobs\GenerateAttendancePdfJob;
 use App\Jobs\GenerateEnrollmentReportPreviewPdfJob;
@@ -142,6 +143,23 @@ it('PoC-B · BUG: PDF jobs target the pdf-generation queue on the wrong Redis co
     $supervisorPdf = config('horizon.defaults.supervisor-pdf');
     expect($supervisorPdf['connection'])->toBe('redis-pdf')
         ->and($supervisorPdf['queue'])->toContain('pdf-generation');
+});
+
+/**
+ * Functional defect proof of concept tests (DCC-37 / PERF-006).
+ *
+ * Verifies that the Redis reservation window outlasts the 300 second export
+ * and PDF jobs, and that the student export retries with backoff instead of
+ * giving up after the first attempt.
+ */
+it('PoC-B · BUG: job timeout (300s) exceeds the Redis retry_after (90s), allowing duplicate execution', function (): void {
+    $retryAfter = (int) config('queue.connections.redis.retry_after');
+
+    $job = new ExportStudentDataJob(1);
+
+    expect($retryAfter)->toBeGreaterThan($job->timeout)
+        ->and($job->tries)->toBe(3)
+        ->and($job->backoff)->toBe([60, 300]);
 });
 
 it('PoC-C · BUG: the faculty cache key has no tenant prefix', function (): void {

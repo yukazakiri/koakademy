@@ -52,7 +52,7 @@ final class CreateHandler extends Handlers
         ];
 
         $settingsData = [];
-        $requestData = $request->all();
+        $requestData = $request->safe()->except(['settings', 'id', 'school_id']);
 
         // Extract settings from request
         foreach ($settingsFields as $field) {

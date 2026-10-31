@@ -40,7 +40,6 @@ final class UpdateFacultyRequest extends FormRequest
             'status' => ['sometimes', 'string', 'in:active,inactive'],
             'gender' => ['nullable', 'string', 'in:male,female'],
             'age' => ['nullable', 'integer', 'min:0'],
-            'password' => ['nullable', 'string', 'min:8'],
             'faculty_id_number' => ['nullable', 'string', 'max:50'],
         ];
     }

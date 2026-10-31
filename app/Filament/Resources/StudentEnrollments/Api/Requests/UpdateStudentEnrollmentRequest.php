@@ -24,16 +24,13 @@ final class UpdateStudentEnrollmentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'student_id' => 'required',
-            'course_id' => 'required',
-            'status' => 'required',
-            'semester' => 'required',
-            'academic_year' => 'required',
-            'school_year' => 'required',
-            'deleted_at' => 'required',
-            'downpayment' => 'required',
-            'remarks' => 'required|string',
-            'payment_method' => 'required',
+            'course_id' => ['sometimes', 'integer', 'exists:courses,id'],
+            'status' => ['sometimes', 'string'],
+            'semester' => ['sometimes', 'integer', 'in:1,2'],
+            'academic_year' => ['sometimes', 'integer', 'min:1', 'max:4'],
+            'school_year' => ['sometimes', 'string'],
+            'downpayment' => ['sometimes', 'numeric', 'min:0'],
+            'remarks' => ['nullable', 'string'],
         ];
     }
 }

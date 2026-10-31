@@ -42,7 +42,17 @@ final class UpdateHandler extends Handlers
             return self::sendNotFoundResponse();
         }
 
-        $model->fill($request->all());
+        $allowed = [
+            'course_id',
+            'status',
+            'semester',
+            'academic_year',
+            'school_year',
+            'downpayment',
+            'remarks',
+        ];
+
+        $model->fill($request->safe()->only($allowed));
 
         $model->save();
 

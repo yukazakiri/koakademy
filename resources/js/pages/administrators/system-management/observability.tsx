@@ -593,6 +593,9 @@ export default function SystemManagementObservabilityPage({ user, sentry, error_
                                     className="bg-background resize-y font-mono text-xs"
                                     placeholder={`<script src="https://js.sentry-cdn.com/<loader-key>.min.js" crossorigin="anonymous"></script>`}
                                 />
+                                {form.errors["providers.sentry.frontend_script"] && (
+                                    <p className="text-destructive mt-1 text-xs">{form.errors["providers.sentry.frontend_script"]}</p>
+                                )}
                                 <p className="text-muted-foreground mt-2 text-[11px] leading-tight">
                                     When filled, the application injects this snippet exactly and ignores the generated browser
                                     configuration above.

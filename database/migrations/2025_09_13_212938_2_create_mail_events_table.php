@@ -33,4 +33,9 @@ return new class extends Migration
             });
         }
     }
+
+    public function down(): void
+    {
+        Schema::dropIfExists(config('mails.database.tables.events', 'mail_events'));
+    }
 };

@@ -33,6 +33,16 @@ Schedule::command('system-logs:prune-due')
     ->onOneServer()
     ->withoutOverlapping();
 
+Schedule::command('sessions:prune')
+    ->daily()
+    ->onOneServer()
+    ->withoutOverlapping();
+
+Schedule::command('notifications:prune')
+    ->daily()
+    ->onOneServer()
+    ->withoutOverlapping();
+
 if (class_exists(Astro\Trail\Trail::class)) {
     Schedule::command('trail:prune')
         ->daily()

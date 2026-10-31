@@ -192,6 +192,7 @@ it('writes the bulk status update with a single statement per table', function (
 });
 
 it('keeps the audit trail of a bulk status update', function (): void {
+    activity()->enableLogging();
     Activity::query()->delete();
 
     $user = User::factory()->create(['role' => UserRole::Admin]);
@@ -217,6 +218,7 @@ it('keeps the audit trail of a bulk status update', function (): void {
 });
 
 it('keeps the audit trail of a bulk soft delete', function (): void {
+    activity()->enableLogging();
     Activity::query()->delete();
 
     $user = User::factory()->create(['role' => UserRole::Admin]);

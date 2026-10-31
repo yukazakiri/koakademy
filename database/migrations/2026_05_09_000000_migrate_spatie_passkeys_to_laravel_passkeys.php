@@ -69,7 +69,7 @@ return new class extends Migration
 
         Schema::table('passkeys', function (Blueprint $table): void {
             if (Schema::hasColumn('passkeys', 'credential_id')) {
-                $table->string('credential_id')->change();
+                $table->string('credential_id', 255)->nullable(false)->change();
             }
 
             $table->unique('credential_id', 'passkeys_credential_id_unique');

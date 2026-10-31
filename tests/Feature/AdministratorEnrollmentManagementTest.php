@@ -419,7 +419,7 @@ it('calculates the assessment preview balance from paid transactions', function 
         ->assertOk()
         ->assertJsonPath('tuition.total_balance', 16075);
 
-    expect($enrollment->studentTuition()->first()?->total_balance)->toBe(16075.0);
+    expect((float) $enrollment->studentTuition()->first()?->total_balance)->toBe(16075.0);
 });
 
 it('returns readable structured schedule entries for assessment previews', function (): void {
@@ -740,7 +740,7 @@ it('allows administrators to edit enrollment details', function (): void {
             ->where('enrollment.id', $enrollment->id)
             ->where('enrollment.student.id', $student->id)
             ->where('enrollment.tuition.discount_id', $discount->id)
-            ->where('enrollment.tuition.miscellaneous_fee', 3250)
+            ->where('enrollment.tuition.miscellaneous_fee', fn ($value): bool => (float) $value === 3250.0)
             ->has('enrollment.subjects', 1)
             ->where('discounts', fn ($discounts): bool => collect($discounts)->contains(
                 fn (array $option): bool => $option['id'] === $discount->id
@@ -777,10 +777,10 @@ it('allows administrators to edit enrollment details', function (): void {
 
     $tuition = $enrollment->studentTuition()->first();
 
-    expect($tuition?->overall_tuition)->toBe(4810.0)
-        ->and($tuition?->total_lectures)->toBe(360.0)
-        ->and($tuition?->total_laboratory)->toBe(200.0)
-        ->and($tuition?->total_balance)->toBe(4810.0);
+    expect((float) $tuition?->overall_tuition)->toBe(4810.0)
+        ->and((float) $tuition?->total_lectures)->toBe(360.0)
+        ->and((float) $tuition?->total_laboratory)->toBe(200.0)
+        ->and((float) $tuition?->total_balance)->toBe(4810.0);
 });
 
 it('removes class enrollment when subject is removed from enrollment', function (): void {
@@ -1097,9 +1097,9 @@ it('excludes selected subjects from tuition calculations', function (): void {
         ->firstOrFail();
 
     expect($enrollment->subjectsEnrolled()->where('subject_id', $excludedSubject->id)->first()?->exclude_from_tuition)->toBeTrue()
-        ->and($enrollment->studentTuition()->first()?->total_lectures)->toBe(300.0)
-        ->and($enrollment->studentTuition()->first()?->total_laboratory)->toBe(0.0)
-        ->and($enrollment->studentTuition()->first()?->overall_tuition)->toBe(4300.0);
+        ->and((float) $enrollment->studentTuition()->first()?->total_lectures)->toBe(300.0)
+        ->and((float) $enrollment->studentTuition()->first()?->total_laboratory)->toBe(0.0)
+        ->and((float) $enrollment->studentTuition()->first()?->overall_tuition)->toBe(4300.0);
 });
 
 it('creates class enrollments when storing an enrollment with assigned classes', function (): void {
@@ -1414,11 +1414,11 @@ it('persists a miscellaneous override and discounts lecture fees only', function
 
     expect($tuition->discount_id)->toBe($discount->id)
         ->and($tuition->discount)->toBe(50)
-        ->and($tuition->total_lectures)->toBe(200.0)
-        ->and($tuition->total_laboratory)->toBe(200.0)
-        ->and($tuition->total_miscelaneous_fees)->toBe(1200.0)
-        ->and($tuition->overall_tuition)->toBe(1700.0)
-        ->and($tuition->total_balance)->toBe(1700.0);
+        ->and((float) $tuition->total_lectures)->toBe(200.0)
+        ->and((float) $tuition->total_laboratory)->toBe(200.0)
+        ->and((float) $tuition->total_miscelaneous_fees)->toBe(1200.0)
+        ->and((float) $tuition->overall_tuition)->toBe(1700.0)
+        ->and((float) $tuition->total_balance)->toBe(1700.0);
 });
 
 it('keeps laboratory modular miscellaneous and additional fees outside a full lecture discount', function (): void {
@@ -1477,11 +1477,11 @@ it('keeps laboratory modular miscellaneous and additional fees outside a full le
 
     $tuition = StudentTuition::query()->where('student_id', $student->id)->firstOrFail();
 
-    expect($tuition->total_lectures)->toBe(0.0)
-        ->and($tuition->total_laboratory)->toBe(100.0)
-        ->and($tuition->total_tuition)->toBe(2500.0)
-        ->and($tuition->total_miscelaneous_fees)->toBe(800.0)
-        ->and($tuition->overall_tuition)->toBe(3350.0);
+    expect((float) $tuition->total_lectures)->toBe(0.0)
+        ->and((float) $tuition->total_laboratory)->toBe(100.0)
+        ->and((float) $tuition->total_tuition)->toBe(2500.0)
+        ->and((float) $tuition->total_miscelaneous_fees)->toBe(800.0)
+        ->and((float) $tuition->overall_tuition)->toBe(3350.0);
 });
 
 it('preserves an existing legacy discount while updating its miscellaneous fee', function (): void {
@@ -1567,8 +1567,8 @@ it('preserves an existing legacy discount while updating its miscellaneous fee',
 
     expect($tuition->discount_id)->toBeNull()
         ->and($tuition->discount)->toBe(25)
-        ->and($tuition->total_miscelaneous_fees)->toBe(2750.0)
-        ->and($tuition->overall_tuition)->toBe(2975.0);
+        ->and((float) $tuition->total_miscelaneous_fees)->toBe(2750.0)
+        ->and((float) $tuition->overall_tuition)->toBe(2975.0);
 });
 
 it('returns sections whose course_codes store the course id as a string', function (): void {

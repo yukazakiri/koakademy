@@ -185,9 +185,9 @@ final class SubjectEnrollment extends Model
         return [
             'subject_id' => 'int',
             'class_id' => 'int',
-            'grade' => 'float',
+            'grade' => 'decimal:2',
             'grading_policy_version_id' => 'int',
-            'grade_quality_points' => 'float',
+            'grade_quality_points' => 'decimal:2',
             'student_id' => 'int',
             'semester' => 'int',
             'enrollment_id' => 'int',
@@ -196,8 +196,8 @@ final class SubjectEnrollment extends Model
             'credited_subject_id' => 'int',
             'is_modular' => 'bool',
             'exclude_from_tuition' => 'bool',
-            'lecture_fee' => 'float',
-            'laboratory_fee' => 'float',
+            'lecture_fee' => 'decimal:2',
+            'laboratory_fee' => 'decimal:2',
             'enrolled_lecture_units' => 'int',
             'enrolled_laboratory_units' => 'int',
         ];

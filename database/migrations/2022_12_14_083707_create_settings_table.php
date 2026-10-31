@@ -28,4 +28,9 @@ return new class extends Migration
             $blueprint->unique(['group', 'name']);
         });
     }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('settings');
+    }
 };

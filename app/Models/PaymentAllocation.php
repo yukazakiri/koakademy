@@ -52,7 +52,7 @@ final class PaymentAllocation extends Model
     protected function casts(): array
     {
         return [
-            'amount' => 'float',
+            'amount' => 'decimal:2',
         ];
     }
 }

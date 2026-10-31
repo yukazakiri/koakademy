@@ -148,6 +148,7 @@ it('reports enrollments that belong to another class as errors', function (): vo
 });
 
 it('keeps the audit trail of a bulk grade update', function (): void {
+    activity()->enableLogging();
     Activity::query()->delete();
 
     $enrollment = ClassEnrollment::factory()->create([

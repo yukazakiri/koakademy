@@ -32,4 +32,28 @@ return new class extends Migration
             }
         });
     }
+
+    public function down(): void
+    {
+        $eventsTable = config('mails.database.tables.events', 'mail_events');
+        if (Schema::hasTable($eventsTable)) {
+            Schema::table($eventsTable, function (Blueprint $table) use ($eventsTable): void {
+                if (Schema::hasColumn($eventsTable, 'unsuppressed_at')) {
+                    $table->dropColumn('unsuppressed_at');
+                }
+            });
+        }
+
+        $mailsTable = config('mails.database.tables.mails', 'mails');
+        if (Schema::hasTable($mailsTable)) {
+            Schema::table($mailsTable, function (Blueprint $table) use ($mailsTable): void {
+                if (Schema::hasColumn($mailsTable, 'stream_id')) {
+                    $table->dropColumn('stream_id');
+                }
+                if (Schema::hasColumn($mailsTable, 'mailer')) {
+                    $table->dropColumn('mailer');
+                }
+            });
+        }
+    }
 };

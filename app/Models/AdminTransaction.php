@@ -54,6 +54,7 @@ final class AdminTransaction extends Model
         return [
             'admin_id' => 'int',
             'transaction_id' => 'int',
+            'amount' => 'decimal:2',
         ];
     }
 }

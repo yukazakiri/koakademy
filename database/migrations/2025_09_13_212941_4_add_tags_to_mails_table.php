@@ -18,4 +18,16 @@ return new class extends Migration
             }
         });
     }
+
+    public function down(): void
+    {
+        $mailsTable = config('mails.database.tables.mails', 'mails');
+        if (Schema::hasTable($mailsTable)) {
+            Schema::table($mailsTable, function (Blueprint $table) use ($mailsTable): void {
+                if (Schema::hasColumn($mailsTable, 'tags')) {
+                    $table->dropColumn('tags');
+                }
+            });
+        }
+    }
 };

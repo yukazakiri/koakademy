@@ -12,6 +12,7 @@ use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
@@ -76,7 +77,10 @@ final class GeneralSettingController extends Controller
             'seo_keywords' => 'nullable|string',
             'seo_metadata' => 'nullable|array',
             'social_network' => 'nullable|array',
-            'more_configs' => 'nullable|array',
+            // Subsystem configurations (error reporting, integrations, notification
+            // channels, etc.) are managed through their respective system management
+            // screens and controllers, not this generic endpoint, to enforce per-section
+            // RBAC and prevent arbitrary configuration injection.
             'school_starting_date' => 'nullable|date',
             'school_ending_date' => 'nullable|date|after_or_equal:school_starting_date',
             'school_portal_url' => 'nullable|url|max:255',
@@ -114,7 +118,7 @@ final class GeneralSettingController extends Controller
             // The school keeps a single configuration: a second row would fight
             // the first one over which settings the application serves.
             $setting = GeneralSetting::firstOrCreateGlobal();
-            $setting->update($validator->validated());
+            $setting->update($this->prepareSettingsPayload($setting, $validator->validated()));
 
             return response()->json([
                 'message' => 'General settings created successfully',
@@ -188,7 +192,10 @@ final class GeneralSettingController extends Controller
             'seo_keywords' => 'nullable|string',
             'seo_metadata' => 'nullable|array',
             'social_network' => 'nullable|array',
-            'more_configs' => 'nullable|array',
+            // Subsystem configurations (error reporting, integrations, notification
+            // channels, etc.) are managed through their respective system management
+            // screens and controllers, not this generic endpoint, to enforce per-section
+            // RBAC and prevent arbitrary configuration injection.
             'school_starting_date' => 'nullable|date',
             'school_ending_date' => 'nullable|date|after_or_equal:school_starting_date',
             'school_portal_url' => 'nullable|url|max:255',
@@ -223,7 +230,7 @@ final class GeneralSettingController extends Controller
         }
 
         try {
-            $setting->update($validator->validated());
+            $setting->update($this->prepareSettingsPayload($setting, $validator->validated()));
 
             return response()->json([
                 'message' => 'General settings updated successfully',
@@ -368,7 +375,11 @@ final class GeneralSettingController extends Controller
             ['school_year', 'school_year_string', 'semester_name']
         );
 
-        if (! in_array($key, $supportedKeys, true)) {
+        if (
+            ! in_array($key, $supportedKeys, true)
+            || in_array($key, $setting->getHidden(), true)
+            || GeneralSettingResource::isSecretKey($key)
+        ) {
             return response()->json([
                 'message' => "Setting '{$key}' not found",
                 'data' => null,
@@ -379,6 +390,9 @@ final class GeneralSettingController extends Controller
             'school_year' => $setting->getSchoolYear(),
             'school_year_string' => $setting->getSchoolYearString(),
             'semester_name' => $setting->getSemester(),
+            'email_settings' => Arr::except(GeneralSettingResource::recursivelySanitizeSecrets($setting->email_settings ?? []), ['password', 'sequenzy_api_key']),
+            'social_network' => GeneralSettingResource::sanitizeSocialNetwork($setting->social_network),
+            'more_configs' => GeneralSettingResource::sanitizeMoreConfigs($setting->more_configs),
             default => data_get($setting->toArray(), $key),
         };
 
@@ -535,10 +549,12 @@ final class GeneralSettingController extends Controller
     {
         $this->authorize('viewSchool', GeneralSetting::class);
 
+        $globalModel = $this->settingsService->getGlobalSettingsModel();
+
         return response()->json([
             'message' => 'Global settings retrieved successfully',
             'data' => [
-                'settings_model' => $this->settingsService->getGlobalSettingsModel(),
+                'settings_model' => $globalModel instanceof GeneralSetting ? new GeneralSettingResource($globalModel) : null,
                 'student_portal_url' => $this->settingsService->getStudentPortalUrl(),
                 'global_setting_example' => $this->settingsService->getGlobalSetting('site_name', 'Default Site Name'),
             ],
@@ -587,5 +603,27 @@ final class GeneralSettingController extends Controller
                 ],
             ],
         ], $success ? 200 : 400);
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return array<string, mixed>
+     */
+    private function prepareSettingsPayload(GeneralSetting $setting, array $validated): array
+    {
+        if (array_key_exists('social_network', $validated)) {
+            $incoming = is_array($validated['social_network']) ? $validated['social_network'] : [];
+            $safeIncoming = GeneralSettingResource::sanitizeSocialNetwork($incoming) ?? [];
+
+            $existingSecrets = array_filter(
+                is_array($setting->social_network) ? $setting->social_network : [],
+                fn (mixed $val, string|int $key): bool => is_string($key) && GeneralSettingResource::isSecretKey($key),
+                ARRAY_FILTER_USE_BOTH
+            );
+
+            $validated['social_network'] = array_merge($existingSecrets, $safeIncoming);
+        }
+
+        return $validated;
     }
 }

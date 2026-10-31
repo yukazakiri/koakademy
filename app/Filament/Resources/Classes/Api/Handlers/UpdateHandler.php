@@ -66,7 +66,7 @@ final class UpdateHandler extends Handlers
         ];
 
         $settingsData = [];
-        $requestData = $request->safe()->except('schedules');
+        $requestData = $request->safe()->except(['schedules', 'settings', 'id', 'school_id']);
 
         // Extract settings from request
         foreach ($settingsFields as $field) {
@@ -76,7 +76,6 @@ final class UpdateHandler extends Handlers
             }
         }
 
-        // Update regular model attributes
         // Update regular model attributes
         $model->fill($requestData);
 

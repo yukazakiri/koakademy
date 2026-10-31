@@ -48,7 +48,9 @@ final class UpdateHandler extends Handlers
             return response()->json(['message' => 'You can only update your own faculty record.'], 403);
         }
 
-        $model->fill($request->safe()->only($model->getFillable()));
+        $allowed = array_diff($model->getFillable(), ['id', 'school_id', 'password']);
+
+        $model->fill($request->safe()->only($allowed));
 
         $model->save();
 

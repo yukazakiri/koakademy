@@ -36,7 +36,9 @@ final class CreateHandler extends Handlers
     {
         $model = new (self::getModel());
 
-        $model->fill($request->safe()->only($model->getFillable()));
+        $allowed = array_diff($model->getFillable(), ['id', 'school_id']);
+
+        $model->fill($request->safe()->only($allowed));
 
         $model->save();
 

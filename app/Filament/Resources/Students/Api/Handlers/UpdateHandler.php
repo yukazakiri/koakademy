@@ -44,16 +44,18 @@ final class UpdateHandler extends Handlers
 
         // Check ownership: students can only update their own record
         $user = $request->user();
-        if ($user && $user->role?->isStudent() && $model->user_id !== $user->id) {
+        if ($user && $user->role?->isStudent() && (int) $model->user_id !== (int) $user->id) {
             return response()->json(['message' => 'You can only update your own student record.'], 403);
         }
 
         // Faculty should only have read access to students, not write access
-        if ($user && in_array($user->role?->value, [\App\Enums\UserRole::Instructor->value, \App\Enums\UserRole::Professor->value, \App\Enums\UserRole::Dean->value], true)) {
+        if ($user && ($user->role?->isFaculty() || $user->role === \App\Enums\UserRole::Dean)) {
             return response()->json(['message' => 'Faculty members cannot update student records.'], 403);
         }
 
-        $model->fill($request->safe()->only($model->getFillable()));
+        $allowed = array_diff($model->getFillable(), ['id', 'user_id', 'school_id']);
+
+        $model->fill($request->safe()->only($allowed));
 
         $model->save();
 

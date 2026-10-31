@@ -82,7 +82,7 @@ final readonly class DashboardContext
         $to = CarbonImmutable::now()->endOfDay();
 
         if ($range === 'months') {
-            return [CarbonImmutable::now()->subMonths(6)->startOfDay(), $to];
+            return [CarbonImmutable::now()->subMonthsNoOverflow(6)->startOfDay(), $to];
         }
 
         // Default to the school year when its bounds are resolvable, else the trailing year.

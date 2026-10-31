@@ -5808,11 +5808,17 @@
         },
         {
             "name": "koakademy/cashier",
-            "version": "v1.1.0",
+            "version": "v1.1.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/yukazakiri/koakademy-module-cashier.git",
-                "reference": "9e8ade3650a4570801cc41bd2cbc7ce83f331b33"
+                "reference": "be54064e1127f297630a3c7b9002a75b1e19c374"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/yukazakiri/koakademy-module-cashier/zipball/be54064e1127f297630a3c7b9002a75b1e19c374",
+                "reference": "be54064e1127f297630a3c7b9002a75b1e19c374",
+                "shasum": ""
             },
             "require": {
                 "bezhansalleh/filament-shield": "^4.0",
@@ -5836,20 +5842,11 @@
             "autoload": {
                 "psr-4": {
                     "Modules\\Cashier\\": "app/",
-                    "Modules\\Cashier\\Database\\Factories\\": "database/factories/",
-                    "Modules\\Cashier\\Database\\Seeders\\": "database/seeders/"
+                    "Modules\\Cashier\\Database\\Seeders\\": "database/seeders/",
+                    "Modules\\Cashier\\Database\\Factories\\": "database/factories/"
                 }
             },
-            "autoload-dev": {
-                "psr-4": {
-                    "Modules\\Cashier\\Tests\\": "tests/"
-                }
-            },
-            "scripts": {
-                "test": [
-                    "pest --compact tests/Unit/PackageContractTest.php"
-                ]
-            },
+            "notification-url": "https://packagist.org/downloads/",
             "license": [
                 "AGPL-3.0-or-later"
             ],
@@ -5869,7 +5866,7 @@
                 "issues": "https://github.com/yukazakiri/koakademy-module-cashier/issues",
                 "source": "https://github.com/yukazakiri/koakademy-module-cashier"
             },
-            "time": "2026-10-27T05:13:02+00:00"
+            "time": "2026-10-31T03:34:10+00:00"
         },
         {
             "name": "koakademy/forms",
@@ -16689,16 +16686,16 @@
         },
         {
             "name": "symfony/mime",
-            "version": "v8.1.7",
+            "version": "v8.1.10",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/mime.git",
-                "reference": "773ac57f20e2795bdadb65b5b1b5f4850d498283"
+                "reference": "8d1232052c9cdef170ed9608b3147bca4f61ff69"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/mime/zipball/773ac57f20e2795bdadb65b5b1b5f4850d498283",
-                "reference": "773ac57f20e2795bdadb65b5b1b5f4850d498283",
+                "url": "https://api.github.com/repos/symfony/mime/zipball/8d1232052c9cdef170ed9608b3147bca4f61ff69",
+                "reference": "8d1232052c9cdef170ed9608b3147bca4f61ff69",
                 "shasum": ""
             },
             "require": {
@@ -16751,7 +16748,7 @@
                 "mime-type"
             ],
             "support": {
-                "source": "https://github.com/symfony/mime/tree/v8.1.7"
+                "source": "https://github.com/symfony/mime/tree/v8.1.10"
             },
             "funding": [
                 {
@@ -16771,7 +16768,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-09-04T11:02:17+00:00"
+            "time": "2026-10-28T17:58:38+00:00"
         },
         {
             "name": "symfony/options-resolver",

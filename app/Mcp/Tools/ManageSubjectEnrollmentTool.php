@@ -565,7 +565,7 @@ final class ManageSubjectEnrollmentTool extends Tool
             'subject_title' => $record->subject?->title ?? $record->external_subject_title ?? 'N/A',
             'section' => $record->class?->section ?? $record->section,
             'class_id' => $record->class_id,
-            'grade' => $record->grade,
+            'grade' => $record->grade !== null ? (float) $record->grade : null,
             'grade_symbol' => $record->grade_symbol,
             'remarks' => $record->remarks,
             'is_modular' => (bool) $record->is_modular,

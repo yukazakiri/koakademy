@@ -88,7 +88,7 @@ final class GetStudentSubjectEnrollmentsTool extends Tool
                 'subject_code' => $subject?->code ?? $se->external_subject_code ?? 'N/A',
                 'subject_title' => $subject?->title ?? $se->external_subject_title ?? 'N/A',
                 'units' => $units,
-                'grade' => $se->grade,
+                'grade' => $se->grade !== null ? (float) $se->grade : null,
                 'remarks' => $se->remarks,
                 'section' => $se->section ?? $se->class?->section ?? 'N/A',
                 'instructor' => $se->instructor ?? $se->class?->faculty?->full_name ?? 'TBA',

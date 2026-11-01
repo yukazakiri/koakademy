@@ -187,25 +187,37 @@ it('prunes read notifications via notifications:prune', function (): void {
 
 it('reads ACTIVITY_LOG_ENABLED as a fallback in activitylog config', function (): void {
     $repo = Illuminate\Support\Env::getRepository();
-    $repo->clear('ACTIVITY_LOGGER_ENABLED');
-    $repo->set('ACTIVITY_LOG_ENABLED', 'false');
+    $clearEnv = function (string $key) use ($repo): void {
+        putenv($key);
+        unset($_ENV[$key], $_SERVER[$key]);
+        $repo->clear($key);
+    };
+    $setEnv = function (string $key, string $value) use ($repo): void {
+        putenv("{$key}={$value}");
+        $_ENV[$key] = $value;
+        $_SERVER[$key] = $value;
+        $repo->set($key, $value);
+    };
+
+    $clearEnv('ACTIVITY_LOGGER_ENABLED');
+    $setEnv('ACTIVITY_LOG_ENABLED', 'false');
 
     $config = require config_path('activitylog.php');
     expect($config['enabled'])->toBeFalse();
 
-    $repo->set('ACTIVITY_LOG_ENABLED', 'true');
+    $setEnv('ACTIVITY_LOG_ENABLED', 'true');
     $config = require config_path('activitylog.php');
     expect($config['enabled'])->toBeTrue();
 
     // Specific ACTIVITY_LOGGER_ENABLED takes precedence if defined
-    $repo->set('ACTIVITY_LOGGER_ENABLED', 'false');
-    $repo->set('ACTIVITY_LOG_ENABLED', 'true');
+    $setEnv('ACTIVITY_LOGGER_ENABLED', 'false');
+    $setEnv('ACTIVITY_LOG_ENABLED', 'true');
     $config = require config_path('activitylog.php');
     expect($config['enabled'])->toBeFalse();
 
     // Clean up
-    $repo->clear('ACTIVITY_LOGGER_ENABLED');
-    $repo->set('ACTIVITY_LOG_ENABLED', 'false');
+    $clearEnv('ACTIVITY_LOGGER_ENABLED');
+    $setEnv('ACTIVITY_LOG_ENABLED', 'false');
 });
 
 it('executes up and down on the grade constraints and jsonb migration', function (): void {

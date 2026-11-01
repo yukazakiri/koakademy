@@ -95,7 +95,7 @@ it('updates an existing historical subject enrollment', function (): void {
         ->assertRedirect();
 
     // Verify
-    expect($pastEnrollment->refresh()->grade)->toBe(75.0)
+    expect((float) $pastEnrollment->refresh()->grade)->toBe(75.0)
         ->and($pastEnrollment->refresh()->remarks)->toBe('Passed on appeal')
         ->and($currentEnrollment->refresh()->grade)->toBeNull();
 });
@@ -207,7 +207,7 @@ it('creates a new historical subject enrollment if is_new_record is true', funct
     expect(SubjectEnrollment::where('student_id', $student->id)->where('subject_id', $subject->id)->count())->toBe(1);
 
     $enrollment = SubjectEnrollment::where('student_id', $student->id)->first();
-    expect($enrollment->grade)->toBe(74.0)
+    expect((float) $enrollment->grade)->toBe(74.0)
         ->and($enrollment->remarks)->toBe('Failed take 1');
 });
 

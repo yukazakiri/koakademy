@@ -255,7 +255,7 @@ final class AdministratorRegistrarDocumentController extends Controller
                 'units' => (int) ($subject?->units ?? $subjectEnrollment->external_subject_units ?? 0),
                 'section' => $class?->section ?? $subjectEnrollment->section ?? '—',
                 'schedule' => $class?->schedules?->map(fn ($schedule): string => sprintf('%s %s–%s', $schedule->day_of_week, $schedule->start_time, $schedule->end_time))->implode(', ') ?: 'TBA',
-                'grade' => $subjectEnrollment->grade,
+                'grade' => $subjectEnrollment->grade !== null ? (float) $subjectEnrollment->grade : null,
             ];
         })->values()->all();
     }
@@ -275,10 +275,10 @@ final class AdministratorRegistrarDocumentController extends Controller
                 'code' => $subject?->code ?? $class?->subject_code ?? '—',
                 'title' => $subject?->title ?? $class?->subject_title ?? '—',
                 'units' => (int) ($subject?->units ?? 0),
-                'prelim' => $classEnrollment->prelim_grade,
-                'midterm' => $classEnrollment->midterm_grade,
-                'finals' => $classEnrollment->finals_grade,
-                'average' => $classEnrollment->total_average,
+                'prelim' => $classEnrollment->prelim_grade !== null ? (float) $classEnrollment->prelim_grade : null,
+                'midterm' => $classEnrollment->midterm_grade !== null ? (float) $classEnrollment->midterm_grade : null,
+                'finals' => $classEnrollment->finals_grade !== null ? (float) $classEnrollment->finals_grade : null,
+                'average' => $classEnrollment->total_average !== null ? (float) $classEnrollment->total_average : null,
                 'status' => $classEnrollment->is_grades_verified ? 'Verified' : ($classEnrollment->is_grades_finalized ? 'Finalized' : 'Pending'),
             ];
         })->values();
@@ -291,7 +291,7 @@ final class AdministratorRegistrarDocumentController extends Controller
                 'prelim' => null,
                 'midterm' => null,
                 'finals' => null,
-                'average' => $subject['grade'],
+                'average' => $subject['grade'] !== null ? (float) $subject['grade'] : null,
                 'status' => 'Pending',
             ]);
         }

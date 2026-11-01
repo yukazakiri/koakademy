@@ -2092,7 +2092,7 @@ it('updates grades and remarks on a subject enrollment with idempotency and eval
                 ->etc();
         });
 
-    expect($subjectEnrollment->refresh()->grade)->toBe(92.5)
+    expect((float) $subjectEnrollment->refresh()->grade)->toBe(92.5)
         ->and($subjectEnrollment->remarks)->toBe('Passed with honors')
         ->and($subjectEnrollment->grade_outcome)->not->toBeNull();
 
@@ -2167,7 +2167,7 @@ it('drops an enrolled subject releasing the record and recalculating tuition wit
         });
 
     expect(SubjectEnrollment::query()->find($id))->toBeNull();
-    expect($tuition->refresh()->total_tuition)->toBe(0.00);
+    expect((float) $tuition->refresh()->total_tuition)->toBe(0.00);
 
     // Replaying drop with same idempotency key is safely idempotent
     $replayed = KoAkademyServer::actingAs($this->staff)

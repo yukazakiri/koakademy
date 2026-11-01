@@ -126,7 +126,7 @@ final class GetAvailableSubjectsTool extends Tool
                 'prerequisites' => $prerequisites,
                 'unmet_prerequisites' => $unmetPrerequisites,
                 'status' => $status,
-                'last_grade' => $priorEnrollment?->grade,
+                'last_grade' => $priorEnrollment?->grade !== null ? (float) $priorEnrollment->grade : null,
                 'last_remarks' => $priorEnrollment?->remarks,
             ];
         })->values()->all();

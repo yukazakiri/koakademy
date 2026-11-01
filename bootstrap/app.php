@@ -64,7 +64,7 @@ return Application::configure(basePath: dirname(__DIR__))
             SetTenantContext::class,
         ]);
 
-        $middleware->api(prepend: [App\Http\Middleware\EnsureModuleEnabled::class, App\Http\Middleware\ResetFeatureAccessState::class], append: [App\Http\Middleware\EnsureUserAccountAccess::class]);
+        $middleware->api(prepend: [EnsureApiEnabled::class, App\Http\Middleware\EnsureModuleEnabled::class, App\Http\Middleware\ResetFeatureAccessState::class], append: [App\Http\Middleware\EnsureUserAccountAccess::class]);
 
         $middleware->appendToPriorityList(
             Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests::class,

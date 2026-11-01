@@ -27,7 +27,8 @@ final class LogoConversionService
      *   - branding/{ts}/og-image.png                  (1200x630)
      *
      * SVG uploads are rasterized via rsvg-convert before GD processing.
-     * The original SVG is also stored verbatim as branding/{ts}/logo.svg.
+     * The original SVG is stored only on the private disk as branding/{ts}/logo.svg;
+     * only rasterized outputs are stored on the public disk.
      *
      * Each upload uses a unique timestamp-based subdirectory so previous uploads
      * are never overwritten — reverting the database leaves old logo files intact.
@@ -48,11 +49,11 @@ final class LogoConversionService
         $prefix = "branding/{$ts}";
         $sourcePath = $file->getRealPath();
 
-        // ── SVG: store original and rasterize to PNG for GD processing ──
+        // ── SVG: rasterize to PNG for GD processing and retain original only on private disk ──
         if ($this->isSvg($file)) {
-            Storage::disk($disk)->put("{$prefix}/logo.svg", file_get_contents($sourcePath));
             $rasterPath = $tmpDir.'/source-rasterized.png';
             $this->rasterizeSvg($sourcePath, $rasterPath, 512, 512);
+            Storage::disk('private')->put("{$prefix}/logo.svg", (string) file_get_contents($file->getRealPath()));
             $sourcePath = $rasterPath;
         }
 

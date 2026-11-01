@@ -487,7 +487,7 @@ it('previews differences and retrieves revision history via endpoints', function
     $historyResponse->assertOk()
         ->assertJsonCount(1, 'revisions')
         ->assertJsonPath('revisions.0.revision_number', 1)
-        ->assertJsonPath('revisions.0.overall_tuition', 14000)
+        ->assertJsonPath('revisions.0.overall_tuition', '14000.00')
         ->assertJsonPath('revisions.0.reason', 'Scholarship discount revision');
 });
 

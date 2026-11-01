@@ -54,7 +54,6 @@ final class UpdateStudentRequest extends FormRequest
             'special_order' => ['nullable', 'string'],
             'issued_date' => ['nullable', 'date'],
             'subject_enrolled' => ['nullable', 'array'],
-            'user_id' => ['nullable', 'integer'],
             'institution_id' => ['nullable', 'string'],
             'lrn' => ['nullable', 'string', 'max:20'],
             'student_type' => ['nullable', 'string'],

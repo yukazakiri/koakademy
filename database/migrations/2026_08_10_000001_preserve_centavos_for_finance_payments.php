@@ -45,10 +45,13 @@ return new class extends Migration
     }
 
     /**
-     * This is intentionally a forward-only repair: converting decimal payments back
-     * to integers would silently discard recorded centavos.
+     * Converting decimal payments back to integers would discard recorded centavos,
+     * but the created inventory_stock_movements table is safely dropped on rollback.
      */
-    public function down(): void {}
+    public function down(): void
+    {
+        Schema::dropIfExists('inventory_stock_movements');
+    }
 
     private function columnIsNullable(string $table, string $column): bool
     {

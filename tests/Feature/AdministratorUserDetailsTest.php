@@ -26,6 +26,10 @@ function userManagementAdmin(array $permissions): User
     return $admin;
 }
 
+beforeEach(function (): void {
+    activity()->enableLogging();
+});
+
 it('shows only the selected accounts security events with safe overview fields', function (): void {
     $admin = userManagementAdmin(['View:User']);
     $target = User::factory()->create(['role' => UserRole::Student]);

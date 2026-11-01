@@ -10,6 +10,7 @@ use App\Models\Student;
 use Spatie\Activitylog\Models\Activity;
 
 beforeEach(function (): void {
+    activity()->enableLogging();
     // Clear any existing activities
     Activity::truncate();
 });

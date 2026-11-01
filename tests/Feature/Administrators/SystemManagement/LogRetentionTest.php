@@ -219,6 +219,7 @@ it('deletes stored attachment files with their mail log', function (): void {
 });
 
 it('protects its own cleanup audit trail from activity log purges', function (): void {
+    activity()->enableLogging();
     $user = logRetentionAdministrator();
     activity('default')->causedBy($user)->log('Enrolled a student');
     activity('system-log-maintenance')->causedBy($user)->log('Purged telescope logs');

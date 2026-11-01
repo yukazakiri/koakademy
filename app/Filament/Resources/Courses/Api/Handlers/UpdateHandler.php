@@ -42,7 +42,9 @@ final class UpdateHandler extends Handlers
             return self::sendNotFoundResponse();
         }
 
-        $model->fill($request->all());
+        $allowed = array_diff($model->getFillable(), ['id', 'school_id']);
+
+        $model->fill($request->safe()->only($allowed));
 
         $model->save();
 

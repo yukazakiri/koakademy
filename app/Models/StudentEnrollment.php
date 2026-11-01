@@ -592,7 +592,7 @@ final class StudentEnrollment extends Model
             'status' => 'string',
             'semester' => 'integer',
             'academic_year' => 'integer',
-            'downpayment' => 'float',
+            'downpayment' => 'decimal:2',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
             'deleted_at' => 'datetime',
@@ -700,11 +700,13 @@ final class StudentEnrollment extends Model
                                 }
                             })
                             ->where(function (Builder $matchingQuery) use ($subject): void {
+                                $trimmedCode = mb_trim((string) $subject->code);
+
                                 $matchingQuery
                                     ->whereJsonContains('subject_ids', $subject->id)
                                     ->orWhereJsonContains('subject_ids', (string) $subject->id)
-                                    ->orWhereRaw('LOWER(TRIM(subject_code)) = LOWER(TRIM(?))', [$subject->code])
-                                    ->orWhereRaw('LOWER(subject_code) LIKE LOWER(?)', ['%'.$subject->code.'%']);
+                                    ->orWhereRaw('LOWER(subject_code) = LOWER(?)', [$trimmedCode])
+                                    ->orWhereRaw('LOWER(subject_code) LIKE LOWER(?)', ['%'.$trimmedCode.'%']);
                             });
                     });
                 }

@@ -15,6 +15,16 @@ final class GeneralSettingPolicy
         return array_any(SystemManagementPermissions::sectionKeys(), fn (string $section): bool => $this->canViewSection($user, $section));
     }
 
+    public function view(User $user): bool
+    {
+        return $this->viewSchool($user);
+    }
+
+    public function update(User $user): bool
+    {
+        return $this->updateSchool($user);
+    }
+
     public function viewSchool(User $user): bool
     {
         return $this->canViewSection($user, 'school');

@@ -637,7 +637,7 @@ final class AdministratorStudentManagementController extends Controller
                         'title' => $subject->title,
                         'units' => $subject->units,
                         'status' => $status,
-                        'grade' => $enrolledSubject ? ($enrolledSubject->grade_symbol ?? $enrolledSubject->grade) : null,
+                        'grade' => $enrolledSubject ? ($enrolledSubject->grade_symbol ?? (is_numeric($enrolledSubject->grade) ? (float) $enrolledSubject->grade : $enrolledSubject->grade)) : null,
                         'grade_symbol' => $enrolledSubject?->grade_symbol,
                         'grade_outcome' => $enrolledSubject?->grade_outcome,
                         'grade_quality_points' => $enrolledSubject?->grade_quality_points,

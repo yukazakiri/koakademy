@@ -28,7 +28,7 @@ it('does not restore or modify a historical soft-deleted enrollment', function (
 
     expect($current->id)->not->toBe($historical->id)
         ->and($historical->fresh()->trashed())->toBeTrue()
-        ->and($historical->fresh()->finals_grade)->toBe(88.0);
+        ->and((float) $historical->fresh()->finals_grade)->toBe(88.0);
 });
 
 it('validates class enrollment grades against active policy bounds', function (): void {

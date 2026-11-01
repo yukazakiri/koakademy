@@ -200,7 +200,20 @@ final class SentrySettingsService
         }
 
         if ($frontend['script'] !== '') {
-            return $frontend['script'];
+            $trustedUrl = $this->extractTrustedSentryCdnUrl($frontend['script']);
+
+            if ($trustedUrl !== null) {
+                $escapedUrl = htmlspecialchars($trustedUrl, ENT_QUOTES, 'UTF-8');
+
+                return <<<HTML
+<script src="{$escapedUrl}" crossorigin="anonymous"></script>
+HTML;
+            }
+
+            // Stored script is not a whitelisted Sentry CDN URL; never render unvalidated HTML.
+            if ($frontend['dsn'] === '') {
+                return '';
+            }
         }
 
         if ($frontend['dsn'] === '') {
@@ -232,6 +245,32 @@ HTML;
     }
 
     /**
+     * Validate and extract a trusted Sentry CDN script URL.
+     * Only official Sentry CDN domains (js.sentry-cdn.com, js-de.sentry-cdn.com, browser.sentry-cdn.com)
+     * are permitted. Returns the validated URL or null if untrusted.
+     */
+    public function extractTrustedSentryCdnUrl(string $input): ?string
+    {
+        $trimmed = mb_trim($input);
+
+        if ($trimmed === '') {
+            return null;
+        }
+
+        $url = $trimmed;
+
+        if (preg_match('/<script\b[^>]*\bsrc=["\']([^"\']+)["\']/i', $trimmed, $matches) === 1) {
+            $url = mb_trim($matches[1]);
+        }
+
+        if (preg_match('#^https://(?:js|js-de|browser)\.sentry-cdn\.com/[a-zA-Z0-9_.\-/]+\.js(?:\?[a-zA-Z0-9_.=&-]+)?$#', $url) !== 1) {
+            return null;
+        }
+
+        return $url;
+    }
+
+    /**
      * @param  array<string, mixed>  $attributes
      * @return array<string, mixed>
      */
@@ -239,6 +278,11 @@ HTML;
     {
         $dsn = $this->normalizeString($attributes['dsn'] ?? '');
         $frontendDsn = $this->normalizeString($attributes['frontend_dsn'] ?? '');
+        $rawFrontendScript = $this->normalizeString($attributes['frontend_script'] ?? '');
+        $trustedUrl = $this->extractTrustedSentryCdnUrl($rawFrontendScript);
+        $frontendScript = $trustedUrl !== null
+            ? sprintf('<script src="%s" crossorigin="anonymous"></script>', $trustedUrl)
+            : '';
 
         return [
             'enabled' => (bool) ($attributes['enabled'] ?? false),
@@ -254,7 +298,7 @@ HTML;
             'enable_logs' => (bool) ($attributes['enable_logs'] ?? false),
             'frontend_enabled' => (bool) ($attributes['frontend_enabled'] ?? false),
             'frontend_dsn' => mb_substr($frontendDsn !== '' ? $frontendDsn : $dsn, 0, 2048),
-            'frontend_script' => mb_substr($this->normalizeString($attributes['frontend_script'] ?? ''), 0, 20000),
+            'frontend_script' => $frontendScript,
             'frontend_traces_sample_rate' => $this->clampFloat($attributes['frontend_traces_sample_rate'] ?? 0.1, 0.0, 1.0),
             'frontend_replays_session_sample_rate' => $this->clampFloat($attributes['frontend_replays_session_sample_rate'] ?? 0.0, 0.0, 1.0),
             'frontend_replays_on_error_sample_rate' => $this->clampFloat($attributes['frontend_replays_on_error_sample_rate'] ?? 1.0, 0.0, 1.0),

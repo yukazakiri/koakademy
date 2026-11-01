@@ -96,6 +96,13 @@ final class UpdateSentrySettingsRequest extends FormRequest
             $frontendDsn = mb_trim((string) ($sentry['frontend_dsn'] ?? ''));
             $frontendScript = mb_trim((string) ($sentry['frontend_script'] ?? ''));
 
+            if ($frontendScript !== '' && app(\App\Services\SentrySettingsService::class)->extractTrustedSentryCdnUrl($frontendScript) === null) {
+                $validator->errors()->add(
+                    'providers.sentry.frontend_script',
+                    'The Sentry frontend script must be a valid script from the official Sentry CDN (js.sentry-cdn.com, js-de.sentry-cdn.com, or browser.sentry-cdn.com).'
+                );
+            }
+
             if ($frontendDsn === '' && $frontendScript === '' && $dsn === '') {
                 $validator->errors()->add('providers.sentry.frontend_dsn', 'A frontend DSN or a manual browser snippet is required when the browser integration is enabled.');
             }

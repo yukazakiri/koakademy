@@ -58,11 +58,11 @@ it('updates the grades of every student in one request', function (): void {
     foreach ($enrollments as $enrollment) {
         $fresh = $enrollment->fresh();
 
-        expect($fresh->prelim_grade)->toBe(80.0)
-            ->and($fresh->midterm_grade)->toBe(90.0)
-            ->and($fresh->finals_grade)->toBe(100.0)
+        expect((float) $fresh->prelim_grade)->toBe(80.0)
+            ->and((float) $fresh->midterm_grade)->toBe(90.0)
+            ->and((float) $fresh->finals_grade)->toBe(100.0)
             // 80 * 0.3 + 90 * 0.3 + 100 * 0.4
-            ->and($fresh->total_average)->toBe(91.0);
+            ->and((float) $fresh->total_average)->toBe(91.0);
     }
 });
 
@@ -90,7 +90,7 @@ it('computes the total average with the configured weights', function (): void {
         ])
         ->assertOk();
 
-    expect($enrollment->fresh()->total_average)->toBe(50.0);
+    expect((float) $enrollment->fresh()->total_average)->toBe(50.0);
 });
 
 it('keeps the stored total average when a grade is cleared', function (): void {
@@ -117,7 +117,7 @@ it('keeps the stored total average when a grade is cleared', function (): void {
     $fresh = $enrollment->fresh();
 
     expect($fresh->prelim_grade)->toBeNull()
-        ->and($fresh->total_average)->toBe(91.0);
+        ->and((float) $fresh->total_average)->toBe(91.0);
 });
 
 it('reports enrollments that belong to another class as errors', function (): void {

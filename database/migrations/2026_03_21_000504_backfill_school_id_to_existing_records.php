@@ -29,11 +29,13 @@ return new class extends Migration
             'users',
         ];
 
-        // Get the first school ID from the schools table
-        $mainSchoolId = DB::table('schools')->first()?->id;
+        // Resolve default or first school ID from the schools table
+        $mainSchoolId = DB::table('schools')->where('code', 'DEFAULT')->value('id')
+            ?? DB::table('schools')->where('is_active', true)->orderBy('id')->value('id')
+            ?? DB::table('schools')->orderBy('id')->value('id');
 
-        // Check if school 4 exists to prevent foreign key errors
-        $schoolExists = DB::table('schools')->where('id', $mainSchoolId)->exists();
+        // Check if resolved school exists to prevent foreign key errors
+        $schoolExists = $mainSchoolId !== null && DB::table('schools')->where('id', $mainSchoolId)->exists();
 
         if ($schoolExists) {
             foreach ($tables as $table) {

@@ -244,6 +244,10 @@ it('sets general_settings.school_id to null when school is deleted instead of ca
         'site_name' => 'Test Academy',
     ]);
 
+    // School creation also installs a restrict-on-delete student policy. Remove
+    // that independent dependency so this test isolates general_settings.
+    DB::table('student_configurations')->where('school_id', $school->id)->delete();
+
     DB::table('schools')->where('id', $school->id)->delete();
 
     $setting->refresh();

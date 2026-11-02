@@ -4,284 +4,110 @@ declare(strict_types=1);
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
     /**
-     * Run the migrations.
+     * Existing installations may have custom-named, missing, or already-correct
+     * foreign keys. Identify relationships by their columns, never by a guessed
+     * constraint name. Keep this list in dependency-independent order.
+     *
+     * @var list<array{string, string, string, string}>
      */
+    private const array RELATIONSHIPS = [
+        ['student_tuition', 'enrollment_id', 'student_enrollment', 'restrict'],
+        ['admin_transactions', 'admin_id', 'users', 'restrict'],
+        ['admin_transactions', 'transaction_id', 'transactions', 'restrict'],
+        ['student_transactions', 'transaction_id', 'transactions', 'restrict'],
+        ['statement_of_account_issuances', 'student_id', 'students', 'restrict'],
+        ['payment_allocations', 'transaction_id', 'transactions', 'restrict'],
+        ['payment_allocations', 'student_id', 'students', 'restrict'],
+        ['additional_fees', 'enrollment_id', 'student_enrollment', 'restrict'],
+        ['assessment_revisions', 'student_tuition_id', 'student_tuition', 'restrict'],
+        ['assessment_revisions', 'student_enrollment_id', 'student_enrollment', 'restrict'],
+        ['student_tuition_update_requests', 'submitted_by_user_id', 'users', 'restrict'],
+        ['student_tuition_update_requests', 'student_id', 'students', 'restrict'],
+        ['general_settings', 'school_id', 'schools', 'set null'],
+    ];
+
     public function up(): void
     {
-        // 1. student_tuition.enrollment_id -> RESTRICT
-        if (Schema::hasTable('student_tuition')) {
-            Schema::table('student_tuition', function (Blueprint $table): void {
-                $table->dropForeign(['enrollment_id']);
-            });
-            Schema::table('student_tuition', function (Blueprint $table): void {
-                $table->foreign('enrollment_id')
-                    ->references('id')
-                    ->on('student_enrollment')
-                    ->restrictOnDelete();
-            });
-        }
-
-        // 2. admin_transactions.admin_id & transaction_id -> RESTRICT
-        if (Schema::hasTable('admin_transactions')) {
-            Schema::table('admin_transactions', function (Blueprint $table): void {
-                $table->dropForeign(['admin_id']);
-                $table->dropForeign(['transaction_id']);
-            });
-            Schema::table('admin_transactions', function (Blueprint $table): void {
-                $table->foreign('admin_id')
-                    ->references('id')
-                    ->on('users')
-                    ->restrictOnDelete();
-                $table->foreign('transaction_id')
-                    ->references('id')
-                    ->on('transactions')
-                    ->restrictOnDelete();
-            });
-        }
-
-        // 3. student_transactions.transaction_id -> RESTRICT
-        if (Schema::hasTable('student_transactions')) {
-            Schema::table('student_transactions', function (Blueprint $table): void {
-                $table->dropForeign(['transaction_id']);
-            });
-            Schema::table('student_transactions', function (Blueprint $table): void {
-                $table->foreign('transaction_id')
-                    ->references('id')
-                    ->on('transactions')
-                    ->restrictOnDelete();
-            });
-        }
-
-        // 4. statement_of_account_issuances.student_id -> RESTRICT
-        if (Schema::hasTable('statement_of_account_issuances')) {
-            Schema::table('statement_of_account_issuances', function (Blueprint $table): void {
-                $table->dropForeign(['student_id']);
-            });
-            Schema::table('statement_of_account_issuances', function (Blueprint $table): void {
-                $table->foreign('student_id')
-                    ->references('id')
-                    ->on('students')
-                    ->restrictOnDelete();
-            });
-        }
-
-        // 5. payment_allocations.transaction_id & student_id -> RESTRICT
-        if (Schema::hasTable('payment_allocations')) {
-            Schema::table('payment_allocations', function (Blueprint $table): void {
-                $table->dropForeign(['transaction_id']);
-                $table->dropForeign(['student_id']);
-            });
-            Schema::table('payment_allocations', function (Blueprint $table): void {
-                $table->foreign('transaction_id')
-                    ->references('id')
-                    ->on('transactions')
-                    ->restrictOnDelete();
-                $table->foreign('student_id')
-                    ->references('id')
-                    ->on('students')
-                    ->restrictOnDelete();
-            });
-        }
-
-        // 6. additional_fees.enrollment_id -> RESTRICT
-        if (Schema::hasTable('additional_fees')) {
-            Schema::table('additional_fees', function (Blueprint $table): void {
-                $table->dropForeign(['enrollment_id']);
-            });
-            Schema::table('additional_fees', function (Blueprint $table): void {
-                $table->foreign('enrollment_id')
-                    ->references('id')
-                    ->on('student_enrollment')
-                    ->restrictOnDelete();
-            });
-        }
-
-        // 7. assessment_revisions.student_tuition_id & student_enrollment_id -> RESTRICT
-        if (Schema::hasTable('assessment_revisions')) {
-            Schema::table('assessment_revisions', function (Blueprint $table): void {
-                $table->dropForeign(['student_tuition_id']);
-                $table->dropForeign(['student_enrollment_id']);
-            });
-            Schema::table('assessment_revisions', function (Blueprint $table): void {
-                $table->foreign('student_tuition_id')
-                    ->references('id')
-                    ->on('student_tuition')
-                    ->restrictOnDelete();
-                $table->foreign('student_enrollment_id')
-                    ->references('id')
-                    ->on('student_enrollment')
-                    ->restrictOnDelete();
-            });
-        }
-
-        // 8. student_tuition_update_requests.submitted_by_user_id & student_id -> RESTRICT
-        if (Schema::hasTable('student_tuition_update_requests')) {
-            Schema::table('student_tuition_update_requests', function (Blueprint $table): void {
-                $table->dropForeign(['submitted_by_user_id']);
-                $table->dropForeign(['student_id']);
-            });
-            Schema::table('student_tuition_update_requests', function (Blueprint $table): void {
-                $table->foreign('submitted_by_user_id')
-                    ->references('id')
-                    ->on('users')
-                    ->restrictOnDelete();
-                $table->foreign('student_id')
-                    ->references('id')
-                    ->on('students')
-                    ->restrictOnDelete();
-            });
-        }
-
-        // 9. general_settings.school_id -> SET NULL
-        if (Schema::hasTable('general_settings')) {
-            Schema::table('general_settings', function (Blueprint $table): void {
-                $table->dropForeign(['school_id']);
-            });
-            Schema::table('general_settings', function (Blueprint $table): void {
-                $table->foreign('school_id')
-                    ->references('id')
-                    ->on('schools')
-                    ->nullOnDelete();
-            });
+        foreach (self::RELATIONSHIPS as [$table, $column, $target, $onDelete]) {
+            $this->replaceForeignKey($table, $column, $target, $onDelete);
         }
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
-        if (Schema::hasTable('general_settings')) {
-            Schema::table('general_settings', function (Blueprint $table): void {
-                $table->dropForeign(['school_id']);
-            });
-            Schema::table('general_settings', function (Blueprint $table): void {
-                $table->foreign('school_id')
-                    ->references('id')
-                    ->on('schools')
-                    ->cascadeOnDelete();
-            });
+        // Retain the migration's original rollback behavior; older databases may
+        // have had different delete actions before the migration was applied.
+        foreach (array_reverse(self::RELATIONSHIPS) as [$table, $column, $target]) {
+            $this->replaceForeignKey($table, $column, $target, 'cascade');
+        }
+    }
+
+    private function replaceForeignKey(string $table, string $column, string $target, string $onDelete): void
+    {
+        if (! Schema::hasTable($table)) {
+            return;
         }
 
-        if (Schema::hasTable('student_tuition_update_requests')) {
-            Schema::table('student_tuition_update_requests', function (Blueprint $table): void {
-                $table->dropForeign(['submitted_by_user_id']);
-                $table->dropForeign(['student_id']);
-            });
-            Schema::table('student_tuition_update_requests', function (Blueprint $table): void {
-                $table->foreign('submitted_by_user_id')
-                    ->references('id')
-                    ->on('users')
-                    ->cascadeOnDelete();
-                $table->foreign('student_id')
-                    ->references('id')
-                    ->on('students')
-                    ->cascadeOnDelete();
-            });
+        if (! Schema::hasColumn($table, $column) || ! Schema::hasTable($target) || ! Schema::hasColumn($target, 'id')) {
+            throw new RuntimeException("Cannot protect {$table}.{$column}: the column or referenced table {$target}.id is missing. No financial records were removed.");
         }
 
-        if (Schema::hasTable('assessment_revisions')) {
-            Schema::table('assessment_revisions', function (Blueprint $table): void {
-                $table->dropForeign(['student_tuition_id']);
-                $table->dropForeign(['student_enrollment_id']);
-            });
-            Schema::table('assessment_revisions', function (Blueprint $table): void {
-                $table->foreign('student_tuition_id')
-                    ->references('id')
-                    ->on('student_tuition')
-                    ->cascadeOnDelete();
-                $table->foreign('student_enrollment_id')
-                    ->references('id')
-                    ->on('student_enrollment')
-                    ->cascadeOnDelete();
-            });
+        $foreignKeys = collect(Schema::getForeignKeys($table))
+            ->filter(fn (array $foreignKey): bool => in_array($column, $foreignKey['columns'], true));
+        $conflicting = $foreignKeys->first(fn (array $foreignKey): bool => $foreignKey['columns'] !== [$column]
+            || $foreignKey['foreign_table'] !== $target
+            || $foreignKey['foreign_columns'] !== ['id']);
+        if ($conflicting !== null) {
+            throw new RuntimeException("Cannot safely replace {$table}.{$column}: an existing foreign key references a different relationship or uses multiple columns. Inspect the database schema before retrying.");
         }
 
-        if (Schema::hasTable('additional_fees')) {
-            Schema::table('additional_fees', function (Blueprint $table): void {
-                $table->dropForeign(['enrollment_id']);
-            });
-            Schema::table('additional_fees', function (Blueprint $table): void {
-                $table->foreign('enrollment_id')
-                    ->references('id')
-                    ->on('student_enrollment')
-                    ->cascadeOnDelete();
-            });
+        $expectedSchema = DB::getDriverName() === 'pgsql' ? DB::selectOne('select current_schema() as name')->name : null;
+        if ($expectedSchema !== null && $foreignKeys->contains(fn (array $foreignKey): bool => $foreignKey['foreign_schema'] !== $expectedSchema)) {
+            throw new RuntimeException("Cannot safely replace {$table}.{$column}: the existing foreign key points to a different PostgreSQL schema. Inspect the database schema before retrying.");
         }
 
-        if (Schema::hasTable('payment_allocations')) {
-            Schema::table('payment_allocations', function (Blueprint $table): void {
-                $table->dropForeign(['transaction_id']);
-                $table->dropForeign(['student_id']);
-            });
-            Schema::table('payment_allocations', function (Blueprint $table): void {
-                $table->foreign('transaction_id')
-                    ->references('id')
-                    ->on('transactions')
-                    ->cascadeOnDelete();
-                $table->foreign('student_id')
-                    ->references('id')
-                    ->on('students')
-                    ->cascadeOnDelete();
-            });
+        if ($foreignKeys->count() === 1 && mb_strtolower((string) $foreignKeys->first()['on_delete']) === $onDelete) {
+            return;
         }
 
-        if (Schema::hasTable('statement_of_account_issuances')) {
-            Schema::table('statement_of_account_issuances', function (Blueprint $table): void {
-                $table->dropForeign(['student_id']);
-            });
-            Schema::table('statement_of_account_issuances', function (Blueprint $table): void {
-                $table->foreign('student_id')
-                    ->references('id')
-                    ->on('students')
-                    ->cascadeOnDelete();
-            });
+        $updateActions = $foreignKeys->pluck('on_update')->map(fn ($action): string => mb_strtolower($action ?? 'no action'))->unique();
+        if ($updateActions->count() > 1) {
+            throw new RuntimeException("Cannot safely replace {$table}.{$column}: existing foreign keys have conflicting update actions.");
+        }
+        $onUpdate = $updateActions->first() ?? 'no action';
+
+        // PostgreSQL and SQLite DDL participates in transactions. This also
+        // restores the prior constraint if validation fails on existing orphan
+        // rows. MySQL DDL commits implicitly, so validate rows before dropping.
+        $orphans = DB::table($table)->whereNotNull($column)
+            ->whereNotExists(fn ($query) => $query->selectRaw('1')->from($target)->whereColumn($target.'.id', $table.'.'.$column))
+            ->exists();
+        if ($orphans) {
+            throw new RuntimeException("Cannot add protection for {$table}.{$column}: existing rows reference missing {$target} records. Back up and review the orphaned records before retrying; none were deleted.");
         }
 
-        if (Schema::hasTable('student_transactions')) {
-            Schema::table('student_transactions', function (Blueprint $table): void {
-                $table->dropForeign(['transaction_id']);
+        $change = function () use ($table, $column, $target, $onDelete, $onUpdate, $foreignKeys): void {
+            foreach ($foreignKeys as $foreignKey) {
+                Schema::table($table, function (Blueprint $blueprint) use ($column, $foreignKey): void {
+                    // SQLite exposes no names and rebuilds the table by column.
+                    $blueprint->dropForeign($foreignKey['name'] ?? [$column]);
+                });
+            }
+            Schema::table($table, function (Blueprint $blueprint) use ($column, $target, $onDelete, $onUpdate): void {
+                $blueprint->foreign($column)->references('id')->on($target)->onUpdate($onUpdate)->onDelete($onDelete);
             });
-            Schema::table('student_transactions', function (Blueprint $table): void {
-                $table->foreign('transaction_id')
-                    ->references('id')
-                    ->on('transactions')
-                    ->cascadeOnDelete();
-            });
-        }
+        };
 
-        if (Schema::hasTable('admin_transactions')) {
-            Schema::table('admin_transactions', function (Blueprint $table): void {
-                $table->dropForeign(['admin_id']);
-                $table->dropForeign(['transaction_id']);
-            });
-            Schema::table('admin_transactions', function (Blueprint $table): void {
-                $table->foreign('admin_id')
-                    ->references('id')
-                    ->on('users')
-                    ->cascadeOnDelete();
-                $table->foreign('transaction_id')
-                    ->references('id')
-                    ->on('transactions')
-                    ->cascadeOnDelete();
-            });
-        }
-
-        if (Schema::hasTable('student_tuition')) {
-            Schema::table('student_tuition', function (Blueprint $table): void {
-                $table->dropForeign(['enrollment_id']);
-            });
-            Schema::table('student_tuition', function (Blueprint $table): void {
-                $table->foreign('enrollment_id')
-                    ->references('id')
-                    ->on('student_enrollment')
-                    ->cascadeOnDelete();
-            });
+        if (in_array(DB::getDriverName(), ['pgsql', 'sqlite'], true)) {
+            DB::transaction($change);
+        } else {
+            $change();
         }
     }
 };

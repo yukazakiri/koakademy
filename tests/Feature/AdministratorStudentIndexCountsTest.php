@@ -153,7 +153,7 @@ it('filters the dataset without sqlite-specific query errors when search is supp
             ->component('administrators/students/index', false)
             ->has('students.data', 1)
             ->where('students.total', 1)
-            ->where('students.data.0.student_id', 20240001)
+            ->where('students.data.0.student_id', '20240001')
         );
 })->with([
     'student id' => ['20240001'],

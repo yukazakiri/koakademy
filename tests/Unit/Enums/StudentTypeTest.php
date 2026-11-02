@@ -3,6 +3,16 @@
 declare(strict_types=1);
 
 use App\Enums\StudentType;
+use Tests\TestCase;
+
+uses(TestCase::class);
+
+beforeEach(function (): void {
+    app(App\Services\StudentConfigurationService::class)->update(App\Services\StudentConfigurationService::defaults(legacy: true));
+    app(App\Services\IdentifierGenerator::class)->sequenceFor('student')->update([
+        'prefix_mode' => 'by_type', 'type_prefixes' => ['college' => '2', 'tesda' => '2', 'dhrt' => '2', 'shs' => '3'],
+    ]);
+});
 
 it('can verify DHRT student ID prefix and properties', function () {
     // Test that DHRT students use prefix 2

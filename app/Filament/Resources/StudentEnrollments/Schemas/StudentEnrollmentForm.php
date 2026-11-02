@@ -108,18 +108,11 @@ final class StudentEnrollmentForm
                                 // Student Type Selection (affects ID generation)
                                 Select::make('student_type')
                                     ->label('Student Type')
-                                    ->options(StudentType::asSelectOptions())
+                                    ->options(fn (): array => collect(app(\App\Services\StudentConfigurationService::class)->get()['enabled_types'])
+                                        ->mapWithKeys(fn (string $type): array => [$type => app(\App\Services\StudentConfigurationService::class)->get()['type_labels'][$type]])->all())
                                     ->required()
-                                    ->default(StudentType::College->value)
-                                    ->live()
-                                    ->afterStateUpdated(function ($state, Set $set): void {
-                                        // Update the preview when student type changes
-                                        if ($state) {
-                                            $studentType = StudentType::from($state);
-                                            $nextId = Student::generateNextId($studentType);
-                                            $set('preview_student_id', $nextId);
-                                        }
-                                    }),
+                                    ->default(fn (): string => app(\App\Services\StudentConfigurationService::class)->get()['default_type'])
+                                    ->live(),
 
                                 // Placeholder to preview the next available ID
                                 Placeholder::make('preview_student_id')
@@ -127,12 +120,19 @@ final class StudentEnrollmentForm
                                     ->content(function (Get $get): HtmlString {
                                         $studentTypeValue = $get('student_type') ?? StudentType::College->value;
                                         $studentType = StudentType::from($studentTypeValue);
-                                        $nextId = Student::generateNextId($studentType);
+                                        $configuration = app(\App\Services\StudentConfigurationService::class);
+                                        if ($configuration->usesExternal($studentType->value)) {
+                                            return new HtmlString(e($configuration->externalFor($studentType->value)['label'].' will be used as the student number.'));
+                                        }
+                                        if (app(\App\Services\IdentifierGenerator::class)->studentPolicy()['assignment_mode'] === 'manual') {
+                                            return new HtmlString('This school requires a manually assigned student number. Create the student in the administrator form.');
+                                        }
+                                        $nextId = app(\App\Services\IdentifierGenerator::class)->previewStudentId($studentType);
 
                                         return new HtmlString(
                                             sprintf(
-                                                "<span class='text-lg font-semibold text-primary-600 dark:text-primary-400'>%d</span> (%s - This ID will be assigned upon creation)",
-                                                $nextId,
+                                                "<span class='text-lg font-semibold text-primary-600 dark:text-primary-400'>%s</span> (%s - This ID will be assigned upon creation)",
+                                                e($nextId),
                                                 $studentType->getLabel()
                                             )
                                         );
@@ -141,13 +141,12 @@ final class StudentEnrollmentForm
 
                                 // LRN field (conditional on student type)
                                 TextInput::make('lrn')
-                                    ->label('Learner Reference Number (LRN)')
+                                    ->label(fn (Get $get): string => app(\App\Services\StudentConfigurationService::class)->externalFor($get('student_type') ?? StudentType::College->value)['label'])
                                     ->maxLength(255)
                                     ->visible(function (Get $get): bool {
                                         $studentTypeValue = $get('student_type') ?? StudentType::College->value;
-                                        $studentType = StudentType::from($studentTypeValue);
 
-                                        return $studentType->requiresLrn();
+                                        return app(\App\Services\StudentConfigurationService::class)->externalFor($studentTypeValue)['enabled'];
                                     })
                                     ->required(function (Get $get): bool {
                                         $studentTypeValue = $get('student_type') ?? StudentType::College->value;
@@ -155,7 +154,7 @@ final class StudentEnrollmentForm
 
                                         return $studentType->requiresLrn();
                                     })
-                                    ->helperText('Required for Senior High School students'),
+                                    ->helperText(fn (Get $get): ?string => app(\App\Services\StudentConfigurationService::class)->externalFor($get('student_type') ?? StudentType::College->value)['help_text']),
                             ])
                             ->columns(2),
 
@@ -239,23 +238,13 @@ final class StudentEnrollmentForm
                                 Select::make('academic_year')
                                     ->label('Starting Academic Year')
                                     ->options(function ($get): array {
-                                        if ($get('student_type') === StudentType::SeniorHighSchool->value) {
-                                            return [
-                                                '11' => 'Grade 11',
-                                                '12' => 'Grade 12',
-                                            ];
-                                        }
+                                        $type = $get('student_type') ?? StudentType::College->value;
 
-                                        return [
-                                            '1' => '1st Year',
-                                            '2' => '2nd Year',
-                                            '3' => '3rd Year',
-                                            '4' => '4th Year',
-                                            '5' => 'Graduate',
-                                        ];
+                                        return collect(app(\App\Services\StudentConfigurationService::class)->get()['year_levels'][$type] ?? [])
+                                            ->mapWithKeys(fn (array $level): array => [(string) $level['value'] => $level['label']])->all();
                                     })
                                     ->required()
-                                    ->default('1'),
+                                    ->default(fn (): string => (string) app(\App\Services\StudentConfigurationService::class)->get()['year_levels'][app(\App\Services\StudentConfigurationService::class)->get()['default_type']][0]['value']),
                                 Select::make('status')
                                     ->label('Student Status')
                                     ->options(StudentStatus::class)

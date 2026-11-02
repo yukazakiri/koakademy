@@ -8,7 +8,17 @@ Student preferences belong to each school, not to the application source code. A
 - **System Management → Student & Staff IDs**: student-number label, assignment mode, character set, prefixes, padding, validation, and counters.
 - Initial setup offers **Neutral international defaults** and **Philippine legacy preferences**. Presets load a starting configuration; they are not reapplied on upgrades. The setup school level selects the initial neutral category for higher education, senior high, or technical training.
 
-Core identity and academic placement remain mandatory. This is configuration of the application's supported student categories and fields, not an arbitrary custom-form or custom-student-type builder. Regional reporting is an explicit opt-in; disabling a field does not delete its existing value on edit.
+Core identity and academic placement remain mandatory. The existing supported student categories can be enabled and relabeled; creating entirely new workflow categories is not currently supported. Regional reporting is an explicit opt-in; disabling a field does not delete its existing value on edit.
+
+### Institution-specific fields
+
+Under **Student information**, add up to 30 institution-specific fields with a label and a text, number, date, or single-choice answer. Their stable internal keys are generated automatically. Active fields appear on the administrator student create, edit, and profile views; values are stored under `students.profile_details.custom_fields` without adding database columns. Do not put secrets, passwords, or credentials in these fields. Access follows existing student-profile permissions.
+
+Custom responses are intentionally excluded from the create form's persistent browser draft. Staff must re-enter them when restoring a draft.
+
+Existing field types cannot be changed after saving. Archive a field instead of deleting it: its values stay in the student record and reappear if the field is reactivated. Retired choice values remain valid for students who already have them, but cannot be assigned to new records. Existing student records are not forced to acquire newly required values on edit, while a required field must be supplied on new records and cannot be cleared once filled.
+
+Custom fields are currently collected only by the administrator student form, not the public form, Filament, AI/MCP tools, or API. If any active custom field is required, those secondary creation channels reject new students and public enrollment is closed with instructions to contact the school office. Existing records may still be edited through supported channels without clearing these fields. Optional custom fields do not block other creation channels. Exports and bulk imports do not yet include custom values.
 
 Some secondary entry points cannot collect every configurable field. When a school marks an unsupported field required, those entry points reject creation with an explanation and direct staff to the administrator form instead of silently creating an incomplete record.
 

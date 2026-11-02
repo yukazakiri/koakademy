@@ -163,6 +163,9 @@ it('returns school autocomplete options with paired addresses', function (): voi
 it('stores related student information from the create page', function (): void {
     $user = User::factory()->create(['role' => UserRole::Admin]);
     $course = Course::factory()->create(['is_active' => true]);
+    $configuration = app(App\Services\StudentConfigurationService::class)->get();
+    $configuration['fields']['religion']['visible'] = true;
+    app(App\Services\StudentConfigurationService::class)->update($configuration);
 
     $response = actingAs($user)
         ->post(portalUrlForAdministrators('/administrators/students'), studentCreatePayload($course, [

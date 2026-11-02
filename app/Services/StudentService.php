@@ -14,6 +14,7 @@ use Exception;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 final class StudentService
 {
@@ -32,7 +33,9 @@ final class StudentService
                 ? StudentType::from($data['student_type'])
                 : StudentType::College;
 
-            $newStudentId = Student::generateNextId($studentType);
+            $newStudentId = app(IdentifierGenerator::class)->assignForNewStudent([
+                ...$data, 'student_type' => $studentType->value,
+            ]);
 
             // Calculate age from birth_date
             $birthDate = Carbon::parse($data['birth_date']);
@@ -54,7 +57,7 @@ final class StudentService
             $student = Student::query()->create([
                 'student_id' => $newStudentId,
                 'institution_id' => $data['institution_id'] ?? 1,
-                'lrn' => $data['lrn'] ?? null,
+                'lrn' => app(StudentConfigurationService::class)->externalFor($studentType->value)['enabled'] ? ($data['lrn'] ?? null) : null,
                 'student_type' => $studentType->value,
                 'first_name' => $data['first_name'],
                 'last_name' => $data['last_name'],
@@ -88,6 +91,10 @@ final class StudentService
 
             return $student;
 
+        } catch (ValidationException $exception) {
+            DB::rollBack();
+
+            throw $exception;
         } catch (Exception $exception) {
             DB::rollBack();
             Log::error('Student Creation Failed: '.$exception->getMessage(), ['data' => $data, 'exception' => $exception]); // Log detailed error

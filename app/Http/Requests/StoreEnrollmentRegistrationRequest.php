@@ -125,6 +125,7 @@ final class StoreEnrollmentRegistrationRequest extends FormRequest
         ];
         $configuration = app(\App\Services\StudentConfigurationService::class);
         $policies = $configuration->get();
+        $configuration->assertRequiredFieldsSupported(['email', 'phone', 'civil_status', 'nationality', 'citizenship', 'religion', 'height', 'weight', 'birthplace', 'current_address', 'permanent_address']);
         $type = (string) $this->input('student_type');
         $rules['student_type'] = ['required', \Illuminate\Validation\Rule::in(array_intersect(['college', 'tesda'], $policies['enabled_types']))];
         if (app(\App\Services\TenantContext::class)->getCurrentSchoolId() === null && \App\Models\School::query()->where('is_active', true)->count() > 1) {

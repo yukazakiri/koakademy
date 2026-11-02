@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { studentDirectoryReturnUrl } from "@/lib/student-directory-return";
 import { index as studentsIndex } from "@/routes/administrators/students";
 import { Head, Link, router, useForm, usePage } from "@inertiajs/react";
@@ -302,8 +303,8 @@ export default function AdministratorStudentShow({ user, student, options }: Stu
 
                         <Link
                             href={
-                                student.current_enrollment_url
-                                || (student.current_enrollment_id
+                                student.current_enrollment_url ||
+                                (student.current_enrollment_id
                                     ? `/administrators/enrollments/${student.current_enrollment_id}`
                                     : `/administrators/students/${student.id}/current-enrollment`)
                             }
@@ -337,6 +338,23 @@ export default function AdministratorStudentShow({ user, student, options }: Stu
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
                     <div className="space-y-6 md:col-span-3">
                         <StudentDetailsCard student={student} />
+                        {(student.custom_fields ?? []).length > 0 && (
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Institution-specific information</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <dl className="grid gap-4 sm:grid-cols-2">
+                                        {student.custom_fields?.map((field) => (
+                                            <div key={field.key} className="flex flex-col gap-1">
+                                                <dt className="text-muted-foreground text-sm">{field.label}</dt>
+                                                <dd className="text-sm">{field.value ?? "—"}</dd>
+                                            </div>
+                                        ))}
+                                    </dl>
+                                </CardContent>
+                            </Card>
+                        )}
 
                         <StudentTabs
                             student={student}

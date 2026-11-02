@@ -19,6 +19,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 final class FacultyClassShsStudentController extends Controller
 {
@@ -48,6 +49,14 @@ final class FacultyClassShsStudentController extends Controller
         DB::beginTransaction();
 
         try {
+            $studentId = app(\App\Services\IdentifierGenerator::class)->assignForNewStudent([
+                'student_type' => StudentType::SeniorHighSchool->value,
+                'academic_year' => $validated['grade_level'],
+                'lrn' => $validated['lrn'],
+            ]);
+            if (! app(\App\Services\StudentConfigurationService::class)->externalFor(StudentType::SeniorHighSchool->value)['enabled']) {
+                throw ValidationException::withMessages(['lrn' => 'This school does not collect an SHS LRN through this form. Create the student using the administrator form.']);
+            }
             $strand = ShsStrand::query()->findOrFail($validated['strand_id']);
 
             $birthDate = Carbon::parse($validated['birth_date']);
@@ -69,8 +78,6 @@ final class FacultyClassShsStudentController extends Controller
             if (Student::query()->where('lrn', $validated['lrn'])->exists()) {
                 throw new Exception('Student with this LRN already exists in the students table.');
             }
-
-            $studentId = Student::generateNextId(StudentType::SeniorHighSchool);
 
             $student = Student::query()->create([
                 'student_id' => $studentId,
@@ -111,6 +118,10 @@ final class FacultyClassShsStudentController extends Controller
             return redirect()->back()->with('flash', [
                 'success' => "SHS student {$student->full_name} created and enrolled successfully.",
             ]);
+        } catch (ValidationException $e) {
+            DB::rollBack();
+
+            throw $e;
         } catch (Exception $e) {
             DB::rollBack();
 

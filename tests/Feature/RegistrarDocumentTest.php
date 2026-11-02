@@ -64,7 +64,7 @@ it('builds a student-facing certificate preview from the selected academic perio
     $response->assertOk()
         ->assertJsonPath('template', 'certificate_of_enrollment')
         ->assertJsonPath('variant', 'verification_letter')
-        ->assertJsonPath('student.student_number', 20240001)
+        ->assertJsonPath('student.student_number', '20240001')
         ->assertJsonPath('student.course_code', 'BSIT')
         ->assertJsonPath('enrollment.total_units', 3)
         ->assertJsonPath('enrollment.subjects.0.code', 'IT101')

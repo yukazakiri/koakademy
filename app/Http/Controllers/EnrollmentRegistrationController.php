@@ -63,6 +63,12 @@ final class EnrollmentRegistrationController extends Controller
         $studentConfiguration = app(\App\Services\StudentConfigurationService::class)->get();
         $identifiers = app(\App\Services\IdentifierGenerator::class)->studentPolicy();
         $configuration = app(\App\Services\StudentConfigurationService::class);
+        $requiresInstitutionFields = collect($studentConfiguration['custom_fields'])->contains(fn (array $field): bool => $field['active'] && $field['required']);
+        if ($requiresInstitutionFields) {
+            return Inertia::render('enrollment/closed', [
+                'message' => 'This institution collects additional information that cannot be submitted online. Please contact the school office to register.',
+            ]);
+        }
         $collegeEnabled = $collegeEnabled && $identifiers['assignment_mode'] !== 'manual' && ! $configuration->usesExternal('college') && in_array('college', $studentConfiguration['enabled_types'], true);
         $tesdaEnabled = $tesdaEnabled && $identifiers['assignment_mode'] !== 'manual' && ! $configuration->usesExternal('tesda') && in_array('tesda', $studentConfiguration['enabled_types'], true);
 
@@ -302,6 +308,10 @@ final class EnrollmentRegistrationController extends Controller
 
         /** @var Student $student */
         $student = DB::transaction(function () use ($request, $payload, $studentType, $birthDate, $courseId, $academicYear, $settings, $workflowCoordinator): Student {
+            app(\App\Services\IdentifierGenerator::class)->sequenceFor('student', lock: true);
+            $configuration = app(\App\Services\StudentConfigurationService::class);
+            $configuration->forget();
+            $configuration->assertRequiredFieldsSupported(['email', 'phone', 'civil_status', 'nationality', 'citizenship', 'religion', 'height', 'weight', 'birthplace', 'current_address', 'permanent_address']);
             $studentId = app(\App\Services\IdentifierGenerator::class)->assign($studentType, null, 'automatic');
 
             $studentContactId = null;

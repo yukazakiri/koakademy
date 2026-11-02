@@ -32,6 +32,15 @@ final class UpdateStudentConfigurationRequest extends FormRequest
             'defaults.gender' => ['nullable', Rule::in(['male', 'female', 'other', 'prefer_not_to_say'])],
             'philippine_reporting' => ['required', 'boolean'],
             'fields' => ['required', 'array:'.implode(',', array_keys(StudentConfigurationService::fieldLabels()))],
+            'custom_fields' => ['sometimes', 'array', 'max:30'],
+            'custom_fields.*' => ['required', 'array:key,label,type,active,required,options'],
+            'custom_fields.*.key' => ['required', 'string', 'max:64', 'distinct', 'regex:/\A[a-z][a-z0-9_]*\z/'],
+            'custom_fields.*.label' => ['required', 'string', 'max:80', 'distinct'],
+            'custom_fields.*.type' => ['required', Rule::in(['text', 'number', 'date', 'choice'])],
+            'custom_fields.*.active' => ['required', 'boolean'],
+            'custom_fields.*.required' => ['required', 'boolean'],
+            'custom_fields.*.options' => ['present', 'array', 'max:30'],
+            'custom_fields.*.options.*' => ['required', 'string', 'max:80'],
             'external_identifier' => ['required', 'array:enabled,label,help_text,required,student_types,format,min_length,max_length,use_as_student_id'],
             'external_identifier.enabled' => ['required', 'boolean'],
             'external_identifier.label' => ['required', 'string', 'max:80'],
@@ -75,6 +84,28 @@ final class UpdateStudentConfigurationRequest extends FormRequest
             foreach ($this->input('fields') as $key => $field) {
                 if ($field['required'] && ! $field['visible']) {
                     $validator->errors()->add('fields.'.$key.'.required', 'A hidden field cannot be required.');
+                }
+            }
+            $existing = collect(app(StudentConfigurationService::class)->get()['custom_fields'])->keyBy('key');
+            $submitted = collect($this->input('custom_fields', []))->keyBy('key');
+            if ($this->has('custom_fields') && $existing->keys()->diff($submitted->keys())->isNotEmpty()) {
+                $validator->errors()->add('custom_fields', 'Archive existing fields instead of removing them so saved values remain available.');
+            }
+            foreach ($this->input('custom_fields', []) as $index => $field) {
+                if (in_array('__none__', $field['options'], true)) {
+                    $validator->errors()->add("custom_fields.{$index}.options", 'The option value __none__ is reserved.');
+                }
+                if (count($field['options']) !== count(array_unique($field['options']))) {
+                    $validator->errors()->add("custom_fields.{$index}.options", 'Each choice must be unique within this field.');
+                }
+                if ($field['type'] === 'choice' && $field['active'] && count($field['options']) === 0) {
+                    $validator->errors()->add("custom_fields.{$index}.options", 'Add at least one choice.');
+                }
+                if (! $field['active'] && $field['required']) {
+                    $validator->errors()->add("custom_fields.{$index}.required", 'An archived field cannot be required.');
+                }
+                if (isset($existing[$field['key']]) && $existing[$field['key']]['type'] !== $field['type']) {
+                    $validator->errors()->add("custom_fields.{$index}.type", 'The type of an existing field cannot be changed; archive it and create another field.');
                 }
             }
             if ($this->boolean('external_identifier.enabled') && $this->input('external_identifier.student_types') === []) {

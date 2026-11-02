@@ -609,8 +609,12 @@ final class AdministratorSystemManagementController extends Controller
     {
         DB::transaction(function () use ($request, $configuration): void {
             app(IdentifierGenerator::class)->sequenceFor(IdentifierGenerator::Student, lock: true);
-            $configuration->validateIdentifierCompatibility($request->validated());
-            $configuration->update($request->validated());
+            $configuration->forget();
+            $settings = $request->validated();
+            $settings['custom_fields'] ??= $configuration->get()['custom_fields'];
+            $configuration->validateCustomFieldChanges($settings['custom_fields']);
+            $configuration->validateIdentifierCompatibility($settings);
+            $configuration->update($settings);
         });
 
         return Redirect::back()->with('success', 'Student configuration updated. Existing records and identifiers were not changed.');

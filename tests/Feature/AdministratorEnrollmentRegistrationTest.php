@@ -33,6 +33,7 @@ it('creates a student applicant from the online enrollment form', function (): v
 
     $course = Course::factory()->create([
         'department_id' => $department->id,
+        'school_id' => $department->school_id,
         'is_active' => true,
     ]);
 

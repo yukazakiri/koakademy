@@ -1,6 +1,7 @@
 import { generateId, store } from "@/actions/App/Http/Controllers/AdministratorStudentManagementController";
 import AdminLayout from "@/components/administrators/admin-layout";
 import { ConfiguredStudentField } from "@/components/administrators/configured-student-field";
+import { CustomStudentFields } from "@/components/administrators/custom-student-fields";
 import type { BadgeProps } from "@/components/reui/badge";
 import { Badge as BadgeOptional } from "@/components/reui/badge";
 import { AutocompleteFieldInput } from "@/components/ui/autocomplete-field-input";
@@ -110,6 +111,7 @@ interface CreateStudentProps {
 }
 
 interface StudentCreateForm {
+    custom_fields: Record<string, string>;
     identifier_assignment: "automatic" | "manual";
     student_type: string;
     student_id: string;
@@ -244,6 +246,7 @@ function getStatusVariant(statusValue: string): BadgeProps["variant"] {
 }
 
 const BLANK_FORM: StudentCreateForm = {
+    custom_fields: {},
     identifier_assignment: "automatic",
     student_type: "college",
     student_id: "",
@@ -357,12 +360,15 @@ interface StudentCreateSection {
 
 type StudentCreateDraft = Omit<StudentCreateForm, "picture_1x1" | "signature">;
 
+// Institution-defined responses can contain sensitive data. Keep them out of
+// the browser's persistent local-storage draft; staff re-enter them on restore.
 function buildDraftPayload(data: StudentCreateForm): StudentCreateDraft {
-    const { picture_1x1, signature, ...draft } = data;
+    const { picture_1x1, signature, custom_fields, ...draft } = data;
     void picture_1x1;
     void signature;
+    void custom_fields;
 
-    return draft;
+    return { ...draft, custom_fields: {} };
 }
 
 function isStudentCreateDraft(value: unknown): value is Partial<StudentCreateDraft> {
@@ -391,11 +397,14 @@ function hasMeaningfulDraftData(data: StudentCreateForm): boolean {
         "remarks",
     ];
 
-    return meaningfulFields.some((field) => {
-        const value = data[field];
+    return (
+        Object.values(data.custom_fields ?? {}).some((value) => value !== "") ||
+        meaningfulFields.some((field) => {
+            const value = data[field];
 
-        return value !== null && value !== "" && value !== false;
-    });
+            return value !== null && value !== "" && value !== false;
+        })
+    );
 }
 
 function formatPersonName(value: string): string {
@@ -554,6 +563,7 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
                         ...defaults,
                         income_bracket_mode: options.default_income_mode || BLANK_FORM.income_bracket_mode,
                         ...parsed,
+                        custom_fields: {},
                         student_type: options.types.some((type) => type.value === parsed.student_type)
                             ? parsed.student_type!
                             : configuration.default_type,
@@ -849,6 +859,12 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
             return;
         }
 
+        if (String(firstErrorKey).startsWith("custom_fields.")) {
+            setSubmitErrorSectionId(null);
+            document.getElementById(`custom-${String(firstErrorKey).split(".")[1]}`)?.scrollIntoView({ block: "center" });
+            return;
+        }
+
         const sectionId = sectionByField.get(firstErrorKey) ?? "required";
 
         setSubmitErrorSectionId(sectionId);
@@ -1045,6 +1061,11 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
 
         transform((formData) => ({
             ...formData,
+            custom_fields: Object.fromEntries(
+                (configuration.custom_fields ?? [])
+                    .filter((field) => field.active)
+                    .map((field) => [field.key, formData.custom_fields[field.key] ?? ""]),
+            ),
             student_id: automaticId || usesExternal ? "" : formData.student_id,
             academic_year: parseInt(formData.academic_year, 10),
             course_id: formData.course_id ? parseInt(formData.course_id, 10) : "",
@@ -1083,7 +1104,7 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
                             <div className="flex flex-wrap items-center gap-2">
                                 <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Create Student</h1>
                                 <Badge variant="secondary">{configuration.type_labels[data.student_type as StudentCategory]}</Badge>
-                                {!isSHS && data.student_id && <Badge variant="outline">ID {data.student_id}</Badge>}
+                                {!usesExternal && data.student_id && <Badge variant="outline">ID {data.student_id}</Badge>}
                                 {hasServerErrors && (
                                     <Badge variant="destructive" className="gap-1">
                                         <AlertCircle className="h-3.5 w-3.5" />
@@ -2898,6 +2919,12 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
                     </div>
 
                     {/* Sticky bottom bar */}
+                    <CustomStudentFields
+                        fields={configuration.custom_fields ?? []}
+                        values={data.custom_fields ?? {}}
+                        errors={errors}
+                        onChange={(key, value) => setData("custom_fields", { ...data.custom_fields, [key]: value })}
+                    />
                     <div className="bg-background/95 sticky bottom-0 z-10 -mx-4 -mb-6 border-t px-4 py-3 backdrop-blur-sm sm:-mx-6 sm:px-6">
                         <div className="mx-auto flex max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                             <div className="min-w-0 space-y-2 text-sm">

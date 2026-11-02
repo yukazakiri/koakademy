@@ -101,6 +101,86 @@ it('validates student settings and protects their update permission', function (
     $this->actingAs($user)->put(route('administrators.system-management.student-configuration.update'), StudentConfigurationService::defaults())->assertForbidden();
 });
 
+it('lets schools add institution fields and keeps archived student values', function (): void {
+    $settings = StudentConfigurationService::defaults();
+    $settings['custom_fields'] = [
+        ['key' => 'custom_1', 'label' => 'Cohort', 'type' => 'choice', 'active' => true, 'required' => true, 'options' => ['Morning', 'Evening']],
+        ['key' => 'custom_2', 'label' => 'Locker', 'type' => 'text', 'active' => true, 'required' => false, 'options' => []],
+    ];
+    $this->put(route('administrators.system-management.student-configuration.update'), $settings)->assertSessionHasNoErrors();
+    $course = Course::factory()->create();
+    $this->post(route('administrators.students.store'), studentPolicyPayload($course))->assertSessionHasErrors('custom_fields.custom_1');
+    $this->post(route('administrators.students.store'), studentPolicyPayload($course, ['custom_fields' => ['custom_1' => null]]))->assertSessionHasErrors('custom_fields.custom_1');
+    $this->post(route('administrators.students.store'), studentPolicyPayload($course, ['custom_fields' => ['custom_1' => 'Unknown']]))->assertSessionHasErrors('custom_fields.custom_1');
+    $this->post(route('administrators.students.store'), studentPolicyPayload($course, ['custom_fields' => ['custom_1' => 'Evening', 'custom_2' => 'B12', 'unconfigured' => 'ignored']]))->assertSessionHasNoErrors();
+    $student = Student::query()->sole();
+    expect(data_get($student->profile_details, 'custom_fields'))->toBe(['custom_1' => 'Evening', 'custom_2' => 'B12']);
+    $settings['custom_fields'][1]['active'] = false;
+    $this->put(route('administrators.system-management.student-configuration.update'), $settings)->assertSessionHasNoErrors();
+    $this->put(route('administrators.students.update', $student), studentPolicyPayload($course, ['student_id' => $student->student_id, 'custom_fields' => ['custom_1' => 'Morning', 'custom_2' => 'tampered']]))->assertSessionHasNoErrors();
+    expect(data_get($student->fresh()->profile_details, 'custom_fields'))->toBe(['custom_1' => 'Morning', 'custom_2' => 'B12']);
+    $this->put(route('administrators.students.update', $student), studentPolicyPayload($course, ['student_id' => $student->student_id, 'custom_fields' => ['custom_1' => '']]))->assertSessionHasErrors('custom_fields.custom_1');
+    $this->get(route('administrators.students.show', $student))->assertInertia(fn (Assert $page) => $page->has('student.custom_fields', 1)->where('student.custom_fields.0.label', 'Cohort')->where('student.custom_fields.0.value', 'Morning'));
+    $settings['custom_fields'][0]['type'] = 'number';
+    $this->put(route('administrators.system-management.student-configuration.update'), $settings)->assertSessionHasErrors('custom_fields.0.type');
+    $settings['custom_fields'] = [];
+    $this->put(route('administrators.system-management.student-configuration.update'), $settings)->assertSessionHasErrors('custom_fields');
+});
+
+it('scopes custom student fields to each school and blocks unsupported required creation channels', function (): void {
+    $settings = StudentConfigurationService::defaults();
+    $settings['custom_fields'] = [['key' => 'custom_1', 'label' => 'Cohort', 'type' => 'text', 'active' => true, 'required' => true, 'options' => []]];
+    app(StudentConfigurationService::class)->update($settings, $this->school->id);
+    $other = School::factory()->create();
+    expect(app(StudentConfigurationService::class)->get($other->id)['custom_fields'])->toBe([]);
+    expect(fn () => app(IdentifierGenerator::class)->assignForNewStudent(['student_type' => 'college', 'academic_year' => 1, 'email' => 'staff@example.test']))
+        ->toThrow(Illuminate\Validation\ValidationException::class);
+    $this->get(route('enrollment.create'))->assertInertia(fn (Assert $page) => $page->component('enrollment/closed')->where('message', 'This institution collects additional information that cannot be submitted online. Please contact the school office to register.'));
+    $this->post(route('enrollment.store'), [])->assertSessionHasErrors('custom_fields.custom_1');
+});
+
+it('preserves custom fields if an older settings client omits them', function (): void {
+    $settings = StudentConfigurationService::defaults();
+    $settings['custom_fields'] = [['key' => 'custom_1', 'label' => 'Cohort', 'type' => 'text', 'active' => true, 'required' => false, 'options' => []]];
+    app(StudentConfigurationService::class)->update($settings);
+    unset($settings['custom_fields']);
+    $this->put(route('administrators.system-management.student-configuration.update'), $settings)->assertSessionHasNoErrors();
+    expect(app(StudentConfigurationService::class)->get()['custom_fields'])->toHaveCount(1);
+});
+
+it('preserves an existing choice after its option is retired while rejecting it for new records', function (): void {
+    $settings = StudentConfigurationService::defaults();
+    $settings['custom_fields'] = [['key' => 'custom_1', 'label' => 'Cohort', 'type' => 'choice', 'active' => true, 'required' => false, 'options' => ['Evening']]];
+    app(StudentConfigurationService::class)->update($settings);
+    $course = Course::factory()->create();
+    $student = Student::factory()->create(['course_id' => $course->id, 'profile_details' => ['custom_fields' => ['custom_1' => 'Morning']]]);
+    $this->put(route('administrators.students.update', $student), studentPolicyPayload($course, ['student_id' => $student->student_id, 'custom_fields' => ['custom_1' => 'Morning']]))->assertSessionHasNoErrors();
+    $this->post(route('administrators.students.store'), studentPolicyPayload($course, ['custom_fields' => ['custom_1' => 'Morning']]))->assertSessionHasErrors('custom_fields.custom_1');
+    expect(data_get($student->fresh()->profile_details, 'custom_fields.custom_1'))->toBe('Morning');
+});
+
+it('validates custom field definitions before saving settings', function (): void {
+    $settings = StudentConfigurationService::defaults();
+    $settings['custom_fields'] = [['key' => 'profile.secret', 'label' => 'Invalid', 'type' => 'choice', 'active' => true, 'required' => true, 'options' => []]];
+    $this->put(route('administrators.system-management.student-configuration.update'), $settings)->assertSessionHasErrors('custom_fields.0.key');
+    $settings['custom_fields'][0]['key'] = 'valid_key';
+    $this->put(route('administrators.system-management.student-configuration.update'), $settings)->assertSessionHasErrors('custom_fields.0.options');
+});
+
+it('validates custom number and date answers for student records', function (): void {
+    $settings = StudentConfigurationService::defaults();
+    $settings['custom_fields'] = [
+        ['key' => 'custom_number', 'label' => 'Distance', 'type' => 'number', 'active' => true, 'required' => false, 'options' => []],
+        ['key' => 'custom_date', 'label' => 'Start date', 'type' => 'date', 'active' => true, 'required' => false, 'options' => []],
+    ];
+    app(StudentConfigurationService::class)->update($settings);
+    $course = Course::factory()->create();
+    $this->post(route('administrators.students.store'), studentPolicyPayload($course, ['custom_fields' => ['custom_number' => 'not-a-number', 'custom_date' => 'not-a-date']]))
+        ->assertSessionHasErrors(['custom_fields.custom_number', 'custom_fields.custom_date']);
+    $this->post(route('administrators.students.store'), studentPolicyPayload($course, ['custom_fields' => ['custom_number' => '3.5', 'custom_date' => '2026-03-01']]))->assertSessionHasNoErrors();
+    expect(data_get(Student::query()->sole()->profile_details, 'custom_fields'))->toBe(['custom_number' => '3.5', 'custom_date' => '2026-03-01']);
+});
+
 it('preserves hidden values and unchanged identifiers when editing under new policies', function (): void {
     $student = Student::factory()->create(['school_id' => $this->school->id, 'student_id' => 'OLD-42', 'religion' => 'Previously recorded']);
     $config = StudentConfigurationService::defaults();
@@ -305,6 +385,17 @@ it('does not let a secondary creation tool bypass a configured required field it
     app(StudentConfigurationService::class)->update($policies);
     expect(fn () => app(IdentifierGenerator::class)->assignForNewStudent(['student_type' => 'college', 'academic_year' => 1, 'email' => 'tool@example.test']))
         ->toThrow(Illuminate\Validation\ValidationException::class);
+    expect(Student::query()->count())->toBe(0);
+});
+
+it('rejects Filament enrollment student creation when a required institution field cannot be collected', function (): void {
+    $settings = StudentConfigurationService::defaults();
+    $settings['custom_fields'] = [['key' => 'custom_1', 'label' => 'Cohort', 'type' => 'text', 'active' => true, 'required' => true, 'options' => []]];
+    app(StudentConfigurationService::class)->update($settings);
+    expect(fn () => app(App\Services\StudentService::class)->createStudent([
+        'student_type' => 'college', 'academic_year' => 1, 'first_name' => 'Amina', 'last_name' => 'Example',
+        'email' => 'student@example.test', 'birth_date' => '2001-02-03', 'gender' => 'female', 'course_id' => Course::factory()->create()->id,
+    ]))->toThrow(Illuminate\Validation\ValidationException::class);
     expect(Student::query()->count())->toBe(0);
 });
 

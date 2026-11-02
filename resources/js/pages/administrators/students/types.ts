@@ -71,6 +71,14 @@ export interface ChecklistSubject {
     remarks: string | null;
     history: ChecklistHistoryRecord[];
     isStandaloneNonCredited?: boolean;
+    academic_year?: number | string | null;
+    school_year?: string | null;
+    semester?: number | string | null;
+    school_name?: string | null;
+    external_subject_code?: string | null;
+    external_subject_title?: string | null;
+    external_subject_units?: number | string | null;
+    credited_subject_id?: number | null;
 }
 
 export interface ChecklistSemesterGroup {
@@ -101,6 +109,7 @@ export type StudentDetail = {
     graduation_semester: number | null;
     academic_year: string;
     academic_year_value: number | null;
+    custom_fields?: { key: string; label: string; value: string | number | null }[];
     course: { id?: number; code: string | null; title: string | null };
     created_at: string | null;
     updated_at: string | null;

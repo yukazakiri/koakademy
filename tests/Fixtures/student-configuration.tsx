@@ -29,6 +29,9 @@ const neutral: Configuration = {
     default_type: "college",
     defaults: { nationality: "", citizenship: "", gender: "" },
     philippine_reporting: false,
+    custom_fields: new URLSearchParams(location.search).has("custom")
+        ? [{ key: "custom_1", label: "Cohort", type: "choice", active: true, required: true, options: ["Morning", "Evening"] }]
+        : [],
     fields: Object.fromEntries(
         Object.entries(fields).map(([key, label]) => [key, { label, visible: !["religion", "weight", "height"].includes(key), required: false }]),
     ),

@@ -30,6 +30,7 @@ final class StudentConfigurationService
             'defaults' => ['nationality' => $legacy ? 'filipino' : '', 'citizenship' => $legacy ? 'filipino' : '', 'gender' => $legacy ? 'male' : ''],
             'philippine_reporting' => $legacy,
             'fields' => $fields,
+            'custom_fields' => [],
             'external_identifier' => [
                 'enabled' => $legacy, 'label' => $legacy ? 'LRN' : 'External Identifier',
                 'help_text' => $legacy ? 'Learner Reference Number assigned by the Department of Education.' : 'An identifier assigned outside this institution.',
@@ -138,6 +139,21 @@ final class StudentConfigurationService
         unset($this->resolved[self::scope($schoolId)]);
     }
 
+    /** Recheck stable field identities after taking the settings write lock. */
+    public function validateCustomFieldChanges(array $fields): void
+    {
+        $existing = collect($this->get()['custom_fields'])->keyBy('key');
+        $submitted = collect($fields)->keyBy('key');
+        if ($existing->keys()->diff($submitted->keys())->isNotEmpty()) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['custom_fields' => 'Settings changed while you were editing. Reload and archive fields instead of removing them.']);
+        }
+        foreach ($fields as $index => $field) {
+            if (isset($existing[$field['key']]) && $existing[$field['key']]['type'] !== $field['type']) {
+                throw \Illuminate\Validation\ValidationException::withMessages(["custom_fields.{$index}.type" => 'The type of an existing field cannot be changed; archive it and create another field.']);
+            }
+        }
+    }
+
     /** Invalidate a request-local snapshot after taking the identifier lock. */
     public function forget(?int $schoolId = null): void
     {
@@ -179,6 +195,13 @@ final class StudentConfigurationService
     /** Reject creation when an entry point cannot collect a configured required field. */
     public function assertRequiredFieldsSupported(array $supportedFields, ?int $schoolId = null): void
     {
+        foreach ($this->get($schoolId)['custom_fields'] as $field) {
+            if ($field['active'] && $field['required']) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'custom_fields.'.$field['key'] => $field['label'].' is required by this school. Create this student using the administrator form.',
+                ]);
+            }
+        }
         foreach ($this->get($schoolId)['fields'] as $field => $policy) {
             if ($policy['visible'] && $policy['required'] && ! in_array($field, $supportedFields, true)) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
@@ -186,6 +209,67 @@ final class StudentConfigurationService
                 ]);
             }
         }
+    }
+
+    /** @return array<string, mixed> */
+    public function customFieldRules(?Student $student = null, ?int $schoolId = null): array
+    {
+        $rules = ['custom_fields' => ['sometimes', 'array']];
+        foreach ($this->get($student?->school_id ?? $schoolId)['custom_fields'] as $field) {
+            if (! $field['active']) {
+                continue;
+            }
+            $existingValue = $student === null ? null : data_get($student->profile_details, 'custom_fields.'.$field['key']);
+            $presence = $field['required'] && ($student === null || filled($existingValue)) ? 'required' : 'sometimes';
+            $valueRules = $presence === 'required' ? ['required'] : ['sometimes', 'nullable'];
+            $rules['custom_fields.'.$field['key']] = [
+                ...$valueRules,
+                ...match ($field['type']) {
+                    'number' => ['numeric', function (string $attribute, mixed $value, Closure $fail): void {
+                        if (! is_scalar($value) || mb_strlen((string) $value) > 100) {
+                            $fail('The number must be at most 100 characters.');
+                        }
+                    }],
+                    'date' => ['date_format:Y-m-d'],
+                    'choice' => ['string', Rule::in($student !== null && is_string($existingValue) ? array_unique([...$field['options'], $existingValue]) : $field['options'])],
+                    default => ['string', 'max:1000'],
+                },
+            ];
+        }
+
+        return $rules;
+    }
+
+    /** Preserve values for archived fields and fields absent from partial edits. */
+    public function mergeCustomValues(Student $student, array $validated, ?int $schoolId = null): void
+    {
+        if (! array_key_exists('custom_fields', $validated)) {
+            return;
+        }
+        $details = is_array($student->profile_details) ? $student->profile_details : [];
+        $current = is_array($details['custom_fields'] ?? null) ? $details['custom_fields'] : [];
+        $submitted = $validated['custom_fields'] ?? [];
+        if (! is_array($submitted)) {
+            return;
+        }
+        foreach ($this->get($student->school_id ?? $schoolId)['custom_fields'] as $field) {
+            if ($field['active'] && array_key_exists($field['key'], $submitted)) {
+                $current[$field['key']] = $submitted[$field['key']];
+            }
+        }
+        $details['custom_fields'] = $current;
+        $student->profile_details = $details;
+    }
+
+    /** Only expose active, school-configured fields to authorized staff views. */
+    public function displayCustomValues(Student $student): array
+    {
+        $values = data_get($student->profile_details, 'custom_fields', []);
+
+        return collect($this->get($student->school_id)['custom_fields'])
+            ->filter(fn (array $field): bool => $field['active'])
+            ->map(fn (array $field): array => ['key' => $field['key'], 'label' => $field['label'], 'value' => is_array($values) ? ($values[$field['key']] ?? null) : null])
+            ->values()->all();
     }
 
     public function fieldIsVisible(string $field, ?int $schoolId = null): bool

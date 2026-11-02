@@ -40,6 +40,9 @@ it('creates an SHS student with enrolled status', function (): void {
         'grade_level' => 'Grade 11',
     ]);
 
+    app(App\Services\StudentConfigurationService::class)->update(App\Services\StudentConfigurationService::defaults(legacy: true), $class->school_id);
+    app(App\Services\TenantContext::class)->setCurrentSchool($class->school);
+
     $payload = [
         'lrn' => '32423412312',
         'last_name' => 'Louis',
@@ -55,7 +58,7 @@ it('creates an SHS student with enrolled status', function (): void {
 
     $this->actingAs($user)
         ->post(route('faculty.classes.students.store-shs', ['class' => $class->id]), $payload)
-        ->assertRedirect();
+        ->assertRedirect()->assertSessionHasNoErrors();
 
     $this->assertDatabaseHas('students', [
         'lrn' => $payload['lrn'],
@@ -75,5 +78,22 @@ it('creates an SHS student with enrolled status', function (): void {
         'status' => true,
     ]);
 
-    expect($student->status)->toBe(StudentStatus::Enrolled);
+    expect($student->status)->toBe(StudentStatus::Enrolled)->and($student->student_id)->toBe($payload['lrn']);
+});
+
+it('does not create a faculty SHS student when the school requires an unsupported institution field', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Instructor, 'faculty_id_number' => 'FAC-TEST-002']);
+    $faculty = Faculty::factory()->create(['email' => $user->email]);
+    $strand = ShsStrand::factory()->create();
+    $class = Classes::factory()->create(['faculty_id' => $faculty->id, 'classification' => 'shs', 'shs_track_id' => $strand->track_id, 'shs_strand_id' => $strand->id]);
+    $settings = App\Services\StudentConfigurationService::defaults(legacy: true);
+    $settings['custom_fields'] = [['key' => 'custom_1', 'label' => 'Cohort', 'type' => 'text', 'active' => true, 'required' => true, 'options' => []]];
+    app(App\Services\StudentConfigurationService::class)->update($settings, $class->school_id);
+    app(App\Services\TenantContext::class)->setCurrentSchool($class->school);
+    $this->actingAs($user)->post(route('faculty.classes.students.store-shs', ['class' => $class->id]), [
+        'lrn' => '32423412313', 'last_name' => 'Example', 'first_name' => 'Alex', 'birth_date' => '2008-01-15',
+        'gender' => 'male', 'strand_id' => $strand->id, 'grade_level' => '11',
+    ])->assertSessionHasErrors('custom_fields.custom_1');
+    $this->assertDatabaseMissing('students', ['lrn' => '32423412313']);
+    $this->assertDatabaseMissing('shs_students', ['student_lrn' => '32423412313']);
 });

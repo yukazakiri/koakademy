@@ -202,7 +202,7 @@ it('allows cashiers to search students for payment entry by name and school ID',
         ->assertOk()
         ->assertJsonFragment([
             'id' => $student->id,
-            'student_id' => 208323,
+            'student_id' => '208323',
             'full_name' => $student->full_name,
         ]);
 
@@ -213,7 +213,7 @@ it('allows cashiers to search students for payment entry by name and school ID',
         ->assertOk()
         ->assertJsonFragment([
             'id' => $student->id,
-            'student_id' => 208323,
+            'student_id' => '208323',
             'full_name' => $student->full_name,
         ]);
 });

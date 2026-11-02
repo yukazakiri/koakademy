@@ -840,6 +840,7 @@ final class AdministratorStudentManagementController extends Controller
                 'academic_year' => $student->formatted_academic_year,
                 // Raw year level, needed by the inline editor to reconcile optimistic updates.
                 'academic_year_value' => $student->academic_year,
+                'custom_fields' => app(\App\Services\StudentConfigurationService::class)->displayCustomValues($student),
                 'year_level_options' => app(\App\Services\StudentConfigurationService::class)->get($student->school_id)['year_levels'][$student->student_type?->value ?? 'college'],
                 'course' => [
                     'id' => $student->Course?->id,
@@ -1178,7 +1179,7 @@ final class AdministratorStudentManagementController extends Controller
             'employment_date' => ['nullable', 'date'],
             'employed_by_institution' => ['nullable', 'boolean'],
         ];
-        $validated = $request->validate($configuration->rules($rules, $typeValue));
+        $validated = $request->validate([...$configuration->rules($rules, $typeValue), ...$configuration->customFieldRules()]);
 
         if (($validated['student_type'] ?? null) === StudentType::TESDA->value && isset($validated['course_id'])) {
             $course = Course::query()->with('department')->find($validated['course_id']);
@@ -1208,7 +1209,11 @@ final class AdministratorStudentManagementController extends Controller
             $validated['guardian_relationship'] = $validated['emergency_contact_relationship'];
         }
 
-        $student = DB::transaction(function () use ($identifierGenerator, $validated, $usesExternal, $mode): Student {
+        $schoolId = app(\App\Services\TenantContext::class)->getCurrentSchoolId();
+        $student = DB::transaction(function () use ($identifierGenerator, $validated, $usesExternal, $mode, $configuration, $schoolId): Student {
+            $identifierGenerator->sequenceFor(IdentifierGenerator::Student, lock: true, schoolId: $schoolId);
+            $configuration->forget($schoolId);
+            \Illuminate\Support\Facades\Validator::make($validated, $configuration->customFieldRules(schoolId: $schoolId))->validate();
             $studentType = StudentType::from($validated['student_type']);
             $status = StudentStatus::from($validated['status']);
             $birthDate = Carbon::parse($validated['birth_date']);
@@ -1269,6 +1274,7 @@ final class AdministratorStudentManagementController extends Controller
             $student->student_id = $usesExternal
                 ? $identifierGenerator->claimExternalIdentifier($studentType, $validated['lrn'])
                 : $identifierGenerator->assign($studentType, $validated['student_id'] ?? null, $mode);
+            $configuration->mergeCustomValues($student, $validated, $schoolId);
             if ($studentType === StudentType::SeniorHighSchool) {
                 $student->shs_strand_id = $validated['shs_strand_id'];
             } else {
@@ -1586,12 +1592,17 @@ final class AdministratorStudentManagementController extends Controller
             'employed_by_institution' => ['nullable', 'boolean'],
             'stay' => ['nullable', 'boolean'],
         ];
-        $validated = $request->validate($configuration->rules($rules, (string) $request->input('student_type'), $student));
+        $validated = $request->validate([...$configuration->rules($rules, (string) $request->input('student_type'), $student), ...$configuration->customFieldRules($student)]);
         $validated = $configuration->preserveHidden($validated, $student);
 
-        DB::transaction(function () use ($validated, $student, $usesExternal, $configuration): void {
+        DB::transaction(function () use ($validated, $student, $usesExternal, $configuration, $identifierGenerator): void {
+            $identifierGenerator->sequenceFor(IdentifierGenerator::Student, lock: true, schoolId: $student->school_id);
+            $configuration->forget($student->school_id);
+            $student->refresh();
+            \Illuminate\Support\Facades\Validator::make($validated, $configuration->customFieldRules($student))->validate();
             // Update main student record
             $student->student_type = $validated['student_type'];
+            $configuration->mergeCustomValues($student, $validated);
             $student->first_name = $validated['first_name'];
             $student->last_name = $validated['last_name'];
             $student->middle_name = $validated['middle_name'] ?? null;
@@ -3252,7 +3263,7 @@ final class AdministratorStudentManagementController extends Controller
 
     private function getFormOptions(CurriculumCapabilityResolver $capabilityResolver, ?Student $student = null): array
     {
-        $configuration = app(\App\Services\StudentConfigurationService::class)->get();
+        $configuration = app(\App\Services\StudentConfigurationService::class)->get($student?->school_id);
         $enabledTypes = $configuration['enabled_types'];
         if ($student?->student_type !== null) {
             $enabledTypes[] = $student->student_type->value;

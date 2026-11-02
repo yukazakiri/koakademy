@@ -44,7 +44,7 @@ final class StudentFactory extends Factory
         return [
             'institution_id' => $schoolId,
             'school_id' => $schoolId,
-            'student_id' => $this->faker->numberBetween(200000, 209999),
+            'student_id' => $this->faker->unique()->numberBetween(200000, 99999999),
             'lrn' => StudentData::randomLrn(),
             'student_type' => 'college',
             'first_name' => $firstName,

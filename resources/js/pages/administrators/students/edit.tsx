@@ -1,6 +1,7 @@
 import { generateId } from "@/actions/App/Http/Controllers/AdministratorStudentManagementController";
 import AdminLayout from "@/components/administrators/admin-layout";
 import { ConfiguredStudentField } from "@/components/administrators/configured-student-field";
+import { CustomStudentFields } from "@/components/administrators/custom-student-fields";
 import { AutocompleteFieldInput } from "@/components/ui/autocomplete-field-input";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -54,6 +55,7 @@ interface CourseGroup {
 
 interface Student {
     id: number;
+    profile_details?: { custom_fields?: Record<string, string | number | null> } | null;
     student_type: string | null;
     student_id: string | number | null;
     lrn: string | null;
@@ -113,6 +115,7 @@ interface Student {
 }
 
 interface EditStudentForm {
+    custom_fields: Record<string, string>;
     student_type: string;
     student_id: string;
     lrn: string;
@@ -322,6 +325,9 @@ export default function AdministratorStudentEdit({ user, student, options, curre
     const [isGeneratingId, setIsGeneratingId] = useState(false);
 
     const { data, setData, put, processing, errors } = useForm<EditStudentForm>({
+        custom_fields: Object.fromEntries(
+            Object.entries(student.profile_details?.custom_fields ?? {}).map(([key, value]) => [key, value == null ? "" : String(value)]),
+        ),
         student_type: student.student_type || "college",
         student_id: asString(student.student_id),
         lrn: student.lrn || "",
@@ -601,7 +607,7 @@ export default function AdministratorStudentEdit({ user, student, options, curre
                         </h1>
                         <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
                             <Badge variant="outline" className="font-mono">
-                                {isSHS ? data.lrn || "No LRN" : data.student_id || "No ID"}
+                                {data.student_id || "No student number"}
                             </Badge>
                             <Badge variant="secondary">
                                 {options.types.find((type) => type.value === data.student_type)?.label ?? data.student_type}
@@ -1755,13 +1761,19 @@ export default function AdministratorStudentEdit({ user, student, options, curre
                                 )}
                             </CardContent>
                         </Card>
-
-                        <Button type="submit" disabled={processing} className="w-full lg:hidden">
-                            {processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                            {processing ? "Saving..." : "Save Student"}
-                        </Button>
                     </div>
                 </div>
+                <CustomStudentFields
+                    fields={configuration.custom_fields ?? []}
+                    values={data.custom_fields}
+                    errors={errors}
+                    editing
+                    onChange={(key, value) => setData("custom_fields", { ...data.custom_fields, [key]: value })}
+                />
+                <Button type="submit" disabled={processing} className="w-full lg:hidden">
+                    {processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                    {processing ? "Saving..." : "Save Student"}
+                </Button>
             </form>
         </AdminLayout>
     );

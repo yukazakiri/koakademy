@@ -40,6 +40,28 @@ return new class extends Migration
 
         // 3. Convert JSON columns to jsonb and add GIN indexes on PostgreSQL
         if ($driver === 'pgsql') {
+            // PostgreSQL applies USING only to row values, not to existing
+            // defaults. Save their expressions and convert them explicitly so
+            // legacy text/json defaults do not block the type change.
+            $columns = [
+                ['classes', 'course_codes'],
+                ['classes', 'subject_ids'],
+                ['students', 'subject_enrolled'],
+                ['students', 'contacts'],
+            ];
+            $defaults = [];
+            $grammar = DB::connection()->getQueryGrammar();
+            foreach ($columns as [$table, $column]) {
+                $metadata = collect(Schema::getColumns($table))->firstWhere('name', $column);
+                if ($metadata === null) {
+                    throw new RuntimeException("Cannot convert {$table}.{$column} to jsonb: the column does not exist.");
+                }
+                $defaults["{$table}.{$column}"] = $metadata['default'];
+                if ($metadata['default'] !== null) {
+                    DB::statement('ALTER TABLE '.$grammar->wrapTable($table).' ALTER COLUMN '.$grammar->wrap($column).' DROP DEFAULT');
+                }
+            }
+
             DB::statement("ALTER TABLE classes ALTER COLUMN course_codes TYPE jsonb USING (
                 CASE
                     WHEN course_codes IS NULL OR TRIM(course_codes::text) = '' THEN '[]'::jsonb
@@ -67,6 +89,19 @@ return new class extends Migration
                     ELSE contacts::jsonb
                 END
             )");
+
+            foreach ($columns as [$table, $column]) {
+                $default = $defaults["{$table}.{$column}"];
+                if ($default !== null) {
+                    // PostgreSQL may defer evaluating a default expression until
+                    // INSERT. Check it now so bad legacy defaults cannot leave
+                    // a successful migration followed by broken new records.
+                    DB::select('SELECT (('.$default.')::text)::jsonb');
+                    // pg_get_expr supplied this expression from PostgreSQL's
+                    // catalog. Cast its value, preserving existing semantics.
+                    DB::statement('ALTER TABLE '.$grammar->wrapTable($table).' ALTER COLUMN '.$grammar->wrap($column).' SET DEFAULT (('.$default.')::text)::jsonb');
+                }
+            }
 
             DB::statement('CREATE INDEX IF NOT EXISTS classes_course_codes_gin_index ON classes USING GIN (course_codes)');
             DB::statement('CREATE INDEX IF NOT EXISTS classes_subject_ids_gin_index ON classes USING GIN (subject_ids)');

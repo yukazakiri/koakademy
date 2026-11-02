@@ -53,7 +53,7 @@ final class GetStudentChecklistTool extends Tool
     public function schema(JsonSchema $schema): array
     {
         return [
-            'student_id' => $schema->integer()->min(1)->description('The student database ID or student number. Optional for student callers.'),
+            'student_id' => $schema->integer()->min(1)->description('The student database ID, or an unpadded numeric student number. Optional for student callers.'),
             'year_level' => $schema->integer()->min(1)->max(6)->description('Optional filter by curriculum year level (1 to 5).'),
             'semester' => $schema->integer()->enum([1, 2])->description('Optional filter by semester (1 or 2).'),
             'status' => $schema->string()->enum(['all', 'completed', 'in_progress', 'failed', 'deficient'])->description('Optional filter by subject checklist status.'),

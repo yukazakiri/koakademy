@@ -1,4 +1,6 @@
+import { generateId, store } from "@/actions/App/Http/Controllers/AdministratorStudentManagementController";
 import AdminLayout from "@/components/administrators/admin-layout";
+import { ConfiguredStudentField } from "@/components/administrators/configured-student-field";
 import type { BadgeProps } from "@/components/reui/badge";
 import { Badge as BadgeOptional } from "@/components/reui/badge";
 import { AutocompleteFieldInput } from "@/components/ui/autocomplete-field-input";
@@ -20,6 +22,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { PHILIPPINE_CITIES_MUNICIPALITIES, PHILIPPINE_PROVINCES, PHILIPPINE_REGIONS } from "@/data/philippine-geography";
 import { useFeatureFlags } from "@/hooks/use-feature-flags";
 import { cn } from "@/lib/utils";
+import type { StudentCategory, StudentConfiguration, StudentIdentifierPolicy } from "@/types/student-configuration";
 import type { User } from "@/types/user";
 import { Head, Link, useForm, usePage } from "@inertiajs/react";
 import {
@@ -89,6 +92,9 @@ interface IncomeModeOption {
 interface CreateStudentProps {
     user: User;
     options: {
+        configuration_scope: string;
+        student_configuration: StudentConfiguration;
+        identifier_policy: StudentIdentifierPolicy;
         types: Option[];
         statuses: Option[];
         scholarship_types: Option[];
@@ -104,6 +110,7 @@ interface CreateStudentProps {
 }
 
 interface StudentCreateForm {
+    identifier_assignment: "automatic" | "manual";
     student_type: string;
     student_id: string;
     lrn: string;
@@ -209,16 +216,6 @@ const CIVIL_STATUS_OPTIONS = [
     { value: "annulled", label: "Annulled" },
 ];
 
-const NATIONALITY_OPTIONS = [
-    { value: "filipino", label: "Filipino" },
-    { value: "american", label: "American" },
-    { value: "chinese", label: "Chinese" },
-    { value: "indian", label: "Indian" },
-    { value: "korean", label: "Korean" },
-    { value: "japanese", label: "Japanese" },
-    { value: "other", label: "Other" },
-];
-
 const RELATIONSHIP_OPTIONS = [
     { value: "mother", label: "Mother" },
     { value: "father", label: "Father" },
@@ -247,6 +244,7 @@ function getStatusVariant(statusValue: string): BadgeProps["variant"] {
 }
 
 const BLANK_FORM: StudentCreateForm = {
+    identifier_assignment: "automatic",
     student_type: "college",
     student_id: "",
     lrn: "",
@@ -255,7 +253,7 @@ const BLANK_FORM: StudentCreateForm = {
     last_name: "",
     middle_name: "",
     suffix: "",
-    gender: "male",
+    gender: "",
     birth_date: "",
     age: "",
     email: "",
@@ -263,7 +261,7 @@ const BLANK_FORM: StudentCreateForm = {
     signature: null,
     phone: "",
     civil_status: "single",
-    nationality: "filipino",
+    nationality: "",
     religion: "",
     course_id: "",
     shs_strand_id: "",
@@ -294,7 +292,7 @@ const BLANK_FORM: StudentCreateForm = {
     current_address: "",
     permanent_address: "",
     birthplace: "",
-    citizenship: "filipino",
+    citizenship: "",
     weight: "",
     height: "",
     elementary_school: "",
@@ -361,6 +359,8 @@ type StudentCreateDraft = Omit<StudentCreateForm, "picture_1x1" | "signature">;
 
 function buildDraftPayload(data: StudentCreateForm): StudentCreateDraft {
     const { picture_1x1, signature, ...draft } = data;
+    void picture_1x1;
+    void signature;
 
     return draft;
 }
@@ -399,20 +399,26 @@ function hasMeaningfulDraftData(data: StudentCreateForm): boolean {
 }
 
 function formatPersonName(value: string): string {
-    return value
-        .trim()
-        .replace(/\s+/g, " ")
-        .toLocaleLowerCase()
-        .replace(/(^|[\s'-])([a-z])/g, (_match, separator: string, character: string) => `${separator}${character.toLocaleUpperCase()}`);
+    return value.trim().replace(/\s+/g, " ");
 }
 
 export default function AdministratorStudentCreate({ user, options }: CreateStudentProps) {
-    const [previewId, setPreviewId] = useState<number | null>(null);
+    const configuration = options.student_configuration;
+    const identifier = options.identifier_policy;
+    const draftKey = `${STUDENT_CREATE_DRAFT_KEY}:${user.id}:${options.configuration_scope}`;
+    const defaults = {
+        ...BLANK_FORM,
+        student_type: configuration.default_type,
+        academic_year: String(configuration.year_levels[configuration.default_type][0].value),
+        ...Object.fromEntries(Object.entries(configuration.defaults).map(([key, value]) => [key, value ?? ""])),
+        identifier_assignment: identifier.assignment_mode === "manual" ? ("manual" as const) : ("automatic" as const),
+    };
+    const [previewId, setPreviewId] = useState<string | null>(null);
     const [isGeneratingId, setIsGeneratingId] = useState(false);
     const [idGenerationError, setIdGenerationError] = useState<string | null>(null);
 
     const { data, setData, post, processing, errors, transform, progress } = useForm<StudentCreateForm>({
-        ...BLANK_FORM,
+        ...defaults,
         income_bracket_mode: options.default_income_mode || BLANK_FORM.income_bracket_mode,
     });
     const { branding } = usePage().props as { branding?: { defaultCountryCode?: string } };
@@ -421,6 +427,8 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
     const submitActionRef = useRef("view");
     const restoredDraftRef = useRef(false);
     const pendingDraftRestoreRef = useRef(false);
+    const preserveRestoredPlacementRef = useRef<string | null>(null);
+    const generationRequestRef = useRef(0);
 
     const flags = useFeatureFlags();
     const pictureInputRef = useRef<HTMLInputElement>(null);
@@ -508,7 +516,7 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
     };
 
     useEffect(() => {
-        const storedDraft = window.localStorage.getItem(STUDENT_CREATE_DRAFT_KEY);
+        const storedDraft = window.localStorage.getItem(draftKey);
 
         if (!storedDraft) {
             return;
@@ -527,24 +535,34 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
                         parsed = JSON.parse(storedDraft) as unknown;
                     } catch {
                         pendingDraftRestoreRef.current = false;
-                        window.localStorage.removeItem(STUDENT_CREATE_DRAFT_KEY);
+                        window.localStorage.removeItem(draftKey);
                         toast.error("Saved draft could not be restored.");
                         return;
                     }
 
                     if (!isStudentCreateDraft(parsed)) {
                         pendingDraftRestoreRef.current = false;
-                        window.localStorage.removeItem(STUDENT_CREATE_DRAFT_KEY);
+                        window.localStorage.removeItem(draftKey);
                         toast.error("Saved draft could not be restored.");
                         return;
                     }
 
                     pendingDraftRestoreRef.current = false;
                     restoredDraftRef.current = true;
+                    preserveRestoredPlacementRef.current = parsed.student_type ?? null;
                     setData({
-                        ...BLANK_FORM,
+                        ...defaults,
                         income_bracket_mode: options.default_income_mode || BLANK_FORM.income_bracket_mode,
                         ...parsed,
+                        student_type: options.types.some((type) => type.value === parsed.student_type)
+                            ? parsed.student_type!
+                            : configuration.default_type,
+                        identifier_assignment:
+                            identifier.assignment_mode === "manual"
+                                ? "manual"
+                                : identifier.assignment_mode === "automatic"
+                                  ? "automatic"
+                                  : (parsed.identifier_assignment ?? defaults.identifier_assignment),
                         picture_1x1: null,
                         signature: null,
                     });
@@ -555,7 +573,7 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
                 label: "Discard",
                 onClick: () => {
                     pendingDraftRestoreRef.current = false;
-                    window.localStorage.removeItem(STUDENT_CREATE_DRAFT_KEY);
+                    window.localStorage.removeItem(draftKey);
                 },
             },
         });
@@ -569,11 +587,11 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
                 }
 
                 if (!hasMeaningfulDraftData(data)) {
-                    window.localStorage.removeItem(STUDENT_CREATE_DRAFT_KEY);
+                    window.localStorage.removeItem(draftKey);
                     return;
                 }
 
-                window.localStorage.setItem(STUDENT_CREATE_DRAFT_KEY, JSON.stringify(buildDraftPayload(data)));
+                window.localStorage.setItem(draftKey, JSON.stringify(buildDraftPayload(data)));
             },
             restoredDraftRef.current ? 250 : 1000,
         );
@@ -596,6 +614,10 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
     }, [errors]);
 
     const isSHS = data.student_type === "shs";
+    const external = configuration.external_identifier;
+    const showExternal = external.enabled && external.student_types.includes(data.student_type as StudentCategory);
+    const usesExternal = showExternal && external.use_as_student_id;
+    const automaticId = !usesExternal && data.identifier_assignment === "automatic";
     const isTESDA = data.student_type === "tesda";
     const isGraduated = data.status === "graduated";
     const isWithdrawn = data.status === "withdrawn" || data.status === "dropped";
@@ -636,7 +658,12 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
         "gender",
         "birth_date",
         "academic_year",
-        ...(isSHS ? (["lrn", "shs_strand_id"] as const) : (["student_id", "course_id"] as const)),
+        ...(isSHS ? (["shs_strand_id"] as const) : (["course_id"] as const)),
+        ...(!usesExternal && !automaticId ? (["student_id"] as const) : []),
+        ...(showExternal && (external.required || usesExternal) ? (["lrn"] as const) : []),
+        ...Object.entries(configuration.fields)
+            .filter(([, field]) => field.visible && field.required)
+            .map(([key]) => key as keyof StudentCreateForm),
     ];
     const filledRequired = requiredFields.filter((f) => {
         const val = data[f];
@@ -650,10 +677,10 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
             {
                 id: "record",
                 label: "Record",
-                description: isSHS ? "Type, status, and LRN" : "Type, status, and ID",
+                description: "Type, status, and identifiers",
                 icon: UserIcon,
-                fields: ["student_type", "status", isSHS ? "lrn" : "student_id"],
-                requiredFields: ["student_type", "status", isSHS ? "lrn" : "student_id"],
+                fields: ["student_type", "status", "lrn", "student_id"],
+                requiredFields: ["student_type", "status"],
             },
             {
                 id: "required",
@@ -909,31 +936,17 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
         setData("family_income_bracket", "");
     }, [data.use_same_parent_income]);
 
-    const yearLevelOptions = isSHS
-        ? [
-              { value: "11", label: "Grade 11" },
-              { value: "12", label: "Grade 12" },
-          ]
-        : isTESDA
-          ? [
-                { value: "1", label: "Training Level 1" },
-                { value: "2", label: "Training Level 2" },
-                { value: "3", label: "Training Level 3" },
-                { value: "4", label: "Training Level 4" },
-                { value: "5", label: "Training Level 5" },
-            ]
-          : [
-              { value: "1", label: "1st Year" },
-              { value: "2", label: "2nd Year" },
-              { value: "3", label: "3rd Year" },
-              { value: "4", label: "4th Year" },
-              { value: "5", label: "Graduate" },
-          ];
+    const yearLevelOptions = configuration.year_levels[data.student_type as StudentCategory].map((level) => ({
+        ...level,
+        value: String(level.value),
+    }));
 
     const fetchGeneratedId = useCallback(async () => {
-        if (isSHS) {
+        const requestId = ++generationRequestRef.current;
+        if (usesExternal || data.identifier_assignment !== "automatic") {
             setPreviewId(null);
             setIdGenerationError(null);
+            setIsGeneratingId(false);
             return;
         }
 
@@ -941,53 +954,42 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
         setIdGenerationError(null);
 
         try {
-            const response = await fetch(route("administrators.students.generate-id", { type: data.student_type }));
+            const response = await fetch(generateId.url({ query: { type: data.student_type } }));
+            if (requestId !== generationRequestRef.current) return;
 
             if (!response.ok) {
                 setIdGenerationError("Unable to generate an ID");
                 return;
             }
 
-            const result = (await response.json()) as { id?: number };
+            const result = (await response.json()) as { id?: string };
+            if (requestId !== generationRequestRef.current) return;
 
             if (result.id) {
                 setPreviewId(result.id);
-                setData("student_id", result.id.toString());
                 return;
             }
 
             setIdGenerationError("No ID available");
         } catch {
-            setIdGenerationError("Unable to generate an ID");
+            if (requestId === generationRequestRef.current) setIdGenerationError("Unable to generate an ID");
         } finally {
-            setIsGeneratingId(false);
+            if (requestId === generationRequestRef.current) setIsGeneratingId(false);
         }
-    }, [data.student_type, isSHS, setData]);
+    }, [data.student_type, data.identifier_assignment, usesExternal]);
 
     useEffect(() => {
-        if (!isSHS) {
-            void fetchGeneratedId();
-        }
-    }, [fetchGeneratedId, isSHS]);
+        void fetchGeneratedId();
+    }, [fetchGeneratedId]);
 
     useEffect(() => {
-        if (isSHS) {
+        if (preserveRestoredPlacementRef.current !== data.student_type) {
             setData("course_id", "");
-            setData("student_id", "");
-
-            if (data.academic_year !== "11" && data.academic_year !== "12") {
-                setData("academic_year", "11");
-            }
-
-            return;
+            if (!isSHS) setData("shs_strand_id", "");
         }
-
-        setData("lrn", "");
-        setData("shs_strand_id", "");
-        setData("course_id", "");
-
-        if (data.academic_year === "11" || data.academic_year === "12") {
-            setData("academic_year", "1");
+        preserveRestoredPlacementRef.current = null;
+        if (!yearLevelOptions.some((level) => level.value === data.academic_year)) {
+            setData("academic_year", yearLevelOptions[0].value);
         }
     }, [data.student_type]);
 
@@ -1034,7 +1036,7 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
 
     const saveDraft = () => {
         pendingDraftRestoreRef.current = false;
-        window.localStorage.setItem(STUDENT_CREATE_DRAFT_KEY, JSON.stringify(buildDraftPayload(data)));
+        window.localStorage.setItem(draftKey, JSON.stringify(buildDraftPayload(data)));
         toast.success("Student draft saved.");
     };
 
@@ -1043,7 +1045,7 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
 
         transform((formData) => ({
             ...formData,
-            student_id: !isSHS && !formData.student_id && previewId ? previewId.toString() : formData.student_id,
+            student_id: automaticId || usesExternal ? "" : formData.student_id,
             academic_year: parseInt(formData.academic_year, 10),
             course_id: formData.course_id ? parseInt(formData.course_id, 10) : "",
             shs_strand_id: formData.shs_strand_id ? parseInt(formData.shs_strand_id, 10) : "",
@@ -1053,13 +1055,13 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
             submit_action: submitActionRef.current,
         }));
 
-        post(route("administrators.students.store"), {
+        post(store.url(), {
             forceFormData: true,
             onStart: () => {
                 setSubmitErrorSectionId(null);
             },
             onSuccess: () => {
-                window.localStorage.removeItem(STUDENT_CREATE_DRAFT_KEY);
+                window.localStorage.removeItem(draftKey);
                 toast.success("Student created successfully");
             },
             onError: (formErrors) => {
@@ -1080,7 +1082,7 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
                         <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
                                 <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Create Student</h1>
-                                <Badge variant="secondary">{isSHS ? "Senior High" : isTESDA ? "TESDA Training" : "College / Program"}</Badge>
+                                <Badge variant="secondary">{configuration.type_labels[data.student_type as StudentCategory]}</Badge>
                                 {!isSHS && data.student_id && <Badge variant="outline">ID {data.student_id}</Badge>}
                                 {hasServerErrors && (
                                     <Badge variant="destructive" className="gap-1">
@@ -1168,57 +1170,82 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
                                 {fieldError("status")}
                             </Field>
 
-                            {!isSHS ? (
+                            {!usesExternal && (
                                 <Field>
                                     <div className="flex items-center gap-2">
                                         <FieldLabel htmlFor="student_id">
                                             <Hash className="mr-1 inline h-3.5 w-3.5" />
-                                            Student ID <span className="text-destructive">*</span>
+                                            {identifier.display_label} <span className="text-destructive">*</span>
                                         </FieldLabel>
                                         <Tooltip>
                                             <TooltipTrigger className="inline-flex items-center">
                                                 <HelpCircleIcon className="text-muted-foreground size-3.5" />
                                             </TooltipTrigger>
                                             <TooltipContent>
-                                                Unique numeric identifier for the student. Click the refresh icon to auto-generate the next available
-                                                ID.
+                                                Automatic numbers are assigned when the record is saved. The preview does not reserve a number.
                                             </TooltipContent>
                                         </Tooltip>
                                     </div>
+                                    {identifier.assignment_mode === "hybrid" && (
+                                        <Select
+                                            value={data.identifier_assignment}
+                                            onValueChange={(value) => setData("identifier_assignment", value as "automatic" | "manual")}
+                                        >
+                                            <SelectTrigger aria-label="Identifier assignment">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="automatic">Assign automatically on save</SelectItem>
+                                                <SelectItem value="manual">Enter an existing number</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    )}
                                     <div className="flex gap-2">
                                         <Input
                                             id="student_id"
-                                            value={data.student_id}
+                                            value={automaticId ? (previewId ?? "") : data.student_id}
                                             onChange={(event) => setData("student_id", event.target.value)}
-                                            placeholder="Student ID"
+                                            readOnly={automaticId}
+                                            placeholder={automaticId ? "Assigned on save" : identifier.display_label}
                                             className="font-mono"
                                         />
-                                        <Button type="button" variant="outline" size="icon" onClick={fetchGeneratedId} disabled={isGeneratingId}>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="icon"
+                                            aria-label="Refresh identifier preview"
+                                            onClick={fetchGeneratedId}
+                                            disabled={isGeneratingId || !automaticId}
+                                        >
                                             <RefreshCw className={cn("h-4 w-4", isGeneratingId && "animate-spin")} />
                                         </Button>
                                     </div>
                                     {idGenerationError && <p className="text-destructive text-sm">{idGenerationError}</p>}
                                     {fieldError("student_id")}
+                                    {automaticId && <FieldDescription>Preview only. The final number may change before saving.</FieldDescription>}
                                 </Field>
-                            ) : (
+                            )}
+                            {showExternal && (
                                 <Field>
                                     <div className="flex items-center gap-2">
                                         <FieldLabel htmlFor="lrn">
                                             <Hash className="mr-1 inline h-3.5 w-3.5" />
-                                            LRN <span className="text-destructive">*</span>
+                                            {external.label} {(external.required || usesExternal) && <span className="text-destructive">*</span>}
                                         </FieldLabel>
                                         <Tooltip>
                                             <TooltipTrigger className="inline-flex items-center">
                                                 <HelpCircleIcon className="text-muted-foreground size-3.5" />
                                             </TooltipTrigger>
-                                            <TooltipContent>Learner Reference Number assigned by the Department of Education.</TooltipContent>
+                                            <TooltipContent>{external.help_text}</TooltipContent>
                                         </Tooltip>
                                     </div>
                                     <Input
                                         id="lrn"
                                         value={data.lrn}
                                         onChange={(event) => setData("lrn", event.target.value)}
-                                        placeholder="Learner Reference Number"
+                                        placeholder={external.label}
+                                        maxLength={external.max_length}
+                                        inputMode={external.format === "digits" ? "numeric" : "text"}
                                         className="font-mono"
                                     />
                                     {fieldError("lrn")}
@@ -1342,13 +1369,7 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
                                         <Input id="age" value={data.age} readOnly className="bg-muted" />
                                     </Field>
 
-                                    <Field>
-                                        <div className="flex items-center justify-between gap-2">
-                                            <FieldLabel htmlFor="email">Email</FieldLabel>
-                                            <BadgeOptional variant="warning-outline" size="sm">
-                                                Optional
-                                            </BadgeOptional>
-                                        </div>
+                                    <ConfiguredStudentField name="email" policy={configuration.fields.email} error={errors.email}>
                                         <InputGroup>
                                             <InputGroupInput
                                                 id="email"
@@ -1361,79 +1382,81 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
                                                 <Mail className="h-4 w-4" />
                                             </InputGroupAddon>
                                         </InputGroup>
-                                        {fieldError("email")}
-                                    </Field>
+                                    </ConfiguredStudentField>
 
-                                    <Field>
-                                        <div className="flex items-center justify-between gap-2">
-                                            <FieldLabel htmlFor="phone">
-                                                <Phone className="mr-1 inline h-3.5 w-3.5" />
-                                                Phone
-                                            </FieldLabel>
-                                            <BadgeOptional variant="warning-outline" size="sm">
-                                                Optional
-                                            </BadgeOptional>
-                                        </div>
+                                    <ConfiguredStudentField name="phone" policy={configuration.fields.phone} error={errors.phone}>
                                         <PhoneInput
                                             id="phone"
                                             value={data.phone}
                                             onChange={(value) => setData("phone", value)}
                                             defaultCountryCode={branding?.defaultCountryCode}
                                         />
-                                    </Field>
+                                    </ConfiguredStudentField>
 
-                                    <div className="space-y-2 md:col-span-2">
-                                        <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-2">
-                                                <Label htmlFor="current_address" className="flex items-center gap-1.5">
-                                                    <MapPin className="h-3.5 w-3.5" />
-                                                    Current Address
-                                                </Label>
-                                                <Tooltip>
-                                                    <TooltipTrigger className="inline-flex items-center">
-                                                        <HelpCircleIcon className="text-muted-foreground size-3.5" />
-                                                    </TooltipTrigger>
-                                                    <TooltipContent>
-                                                        Where the student currently resides. May differ from the permanent home address.
-                                                    </TooltipContent>
-                                                </Tooltip>
+                                    {configuration.fields.current_address.visible && (
+                                        <div className="space-y-2 md:col-span-2">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <Label htmlFor="current_address" className="flex items-center gap-1.5">
+                                                        <MapPin className="h-3.5 w-3.5" />
+                                                        {configuration.fields.current_address.label}
+                                                        {configuration.fields.current_address.required && (
+                                                            <span className="text-destructive"> *</span>
+                                                        )}
+                                                    </Label>
+                                                    <Tooltip>
+                                                        <TooltipTrigger className="inline-flex items-center">
+                                                            <HelpCircleIcon className="text-muted-foreground size-3.5" />
+                                                        </TooltipTrigger>
+                                                        <TooltipContent>
+                                                            Where the student currently resides. May differ from the permanent home address.
+                                                        </TooltipContent>
+                                                    </Tooltip>
+                                                </div>
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => setData("current_address", data.permanent_address)}
+                                                    disabled={!data.permanent_address}
+                                                    className="h-auto px-2 py-1 text-xs"
+                                                >
+                                                    <Copy className="mr-1 h-3 w-3" />
+                                                    Same as Permanent
+                                                </Button>
                                             </div>
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => setData("current_address", data.permanent_address)}
-                                                disabled={!data.permanent_address}
-                                                className="h-auto px-2 py-1 text-xs"
-                                            >
-                                                <Copy className="mr-1 h-3 w-3" />
-                                                Same as Permanent
-                                            </Button>
+                                            <Textarea
+                                                id="current_address"
+                                                value={data.current_address}
+                                                onChange={(event) => setData("current_address", event.target.value)}
+                                                rows={3}
+                                            />
+                                            {fieldError("current_address")}
                                         </div>
-                                        <Textarea
-                                            id="current_address"
-                                            value={data.current_address}
-                                            onChange={(event) => setData("current_address", event.target.value)}
-                                            rows={3}
-                                        />
-                                    </div>
-                                    <div className="space-y-2 md:col-span-2">
-                                        <div className="flex items-center justify-between">
-                                            <Label htmlFor="permanent_address" className="flex items-center gap-1.5">
-                                                <MapPin className="h-3.5 w-3.5" />
-                                                Permanent Address
-                                            </Label>
-                                            <BadgeOptional variant="warning-outline" size="sm">
-                                                Optional
-                                            </BadgeOptional>
+                                    )}
+                                    {configuration.fields.permanent_address.visible && (
+                                        <div className="space-y-2 md:col-span-2">
+                                            <div className="flex items-center justify-between">
+                                                <Label htmlFor="permanent_address" className="flex items-center gap-1.5">
+                                                    <MapPin className="h-3.5 w-3.5" />
+                                                    {configuration.fields.permanent_address.label}
+                                                    {configuration.fields.permanent_address.required && <span className="text-destructive"> *</span>}
+                                                </Label>
+                                                {!configuration.fields.permanent_address.required && (
+                                                    <BadgeOptional variant="warning-outline" size="sm">
+                                                        Optional
+                                                    </BadgeOptional>
+                                                )}
+                                            </div>
+                                            <Textarea
+                                                id="permanent_address"
+                                                value={data.permanent_address}
+                                                onChange={(event) => setData("permanent_address", event.target.value)}
+                                                rows={3}
+                                            />
+                                            {fieldError("permanent_address")}
                                         </div>
-                                        <Textarea
-                                            id="permanent_address"
-                                            value={data.permanent_address}
-                                            onChange={(event) => setData("permanent_address", event.target.value)}
-                                            rows={3}
-                                        />
-                                    </div>
+                                    )}
 
                                     {!isSHS ? (
                                         <Field>
@@ -1584,13 +1607,7 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
                                                 fieldName="mothers_name"
                                             />
                                         </Field>
-                                        <Field>
-                                            <div className="flex items-center justify-between gap-2">
-                                                <FieldLabel htmlFor="birthplace">Birthplace</FieldLabel>
-                                                <BadgeOptional variant="warning-outline" size="sm">
-                                                    Optional
-                                                </BadgeOptional>
-                                            </div>
+                                        <ConfiguredStudentField name="birthplace" policy={configuration.fields.birthplace} error={errors.birthplace}>
                                             <AutocompleteFieldInput
                                                 id="birthplace"
                                                 value={data.birthplace}
@@ -1598,14 +1615,12 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
                                                 fieldName="birthplace"
                                                 placeholder="Type or pick a birthplace"
                                             />
-                                        </Field>
-                                        <Field>
-                                            <div className="flex items-center justify-between gap-2">
-                                                <FieldLabel htmlFor="civil_status">Civil Status</FieldLabel>
-                                                <BadgeOptional variant="warning-outline" size="sm">
-                                                    Optional
-                                                </BadgeOptional>
-                                            </div>
+                                        </ConfiguredStudentField>
+                                        <ConfiguredStudentField
+                                            name="civil_status"
+                                            policy={configuration.fields.civil_status}
+                                            error={errors.civil_status}
+                                        >
                                             <Select value={data.civil_status} onValueChange={setSelectData("civil_status")}>
                                                 <SelectTrigger id="civil_status">
                                                     <SelectValue placeholder="Select status" />
@@ -1618,57 +1633,30 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
                                                     ))}
                                                 </SelectContent>
                                             </Select>
-                                        </Field>
-                                        <Field>
-                                            <div className="flex items-center justify-between gap-2">
-                                                <FieldLabel htmlFor="nationality">Nationality</FieldLabel>
-                                                <BadgeOptional variant="warning-outline" size="sm">
-                                                    Optional
-                                                </BadgeOptional>
-                                            </div>
-                                            <Select
+                                        </ConfiguredStudentField>
+                                        <ConfiguredStudentField
+                                            name="nationality"
+                                            policy={configuration.fields.nationality}
+                                            error={errors.nationality}
+                                        >
+                                            <Input
+                                                id="nationality"
                                                 value={data.nationality}
-                                                onValueChange={(value) => {
-                                                    if (value === null) {
-                                                        return;
-                                                    }
-
-                                                    setData("nationality", value);
-                                                    setData("citizenship", value);
-                                                }}
-                                            >
-                                                <SelectTrigger id="nationality">
-                                                    <SelectValue placeholder="Select nationality" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {NATIONALITY_OPTIONS.map((nationality) => (
-                                                        <SelectItem key={nationality.value} value={nationality.value}>
-                                                            {nationality.label}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </Field>
-                                        <Field>
-                                            <div className="flex items-center justify-between gap-2">
-                                                <FieldLabel htmlFor="citizenship">Citizenship</FieldLabel>
-                                                <BadgeOptional variant="warning-outline" size="sm">
-                                                    Optional
-                                                </BadgeOptional>
-                                            </div>
+                                                onChange={(event) => setData("nationality", event.target.value)}
+                                            />
+                                        </ConfiguredStudentField>
+                                        <ConfiguredStudentField
+                                            name="citizenship"
+                                            policy={configuration.fields.citizenship}
+                                            error={errors.citizenship}
+                                        >
                                             <Input
                                                 id="citizenship"
                                                 value={data.citizenship}
                                                 onChange={(event) => setData("citizenship", event.target.value)}
                                             />
-                                        </Field>
-                                        <Field>
-                                            <div className="flex items-center justify-between gap-2">
-                                                <FieldLabel htmlFor="religion">Religion</FieldLabel>
-                                                <BadgeOptional variant="warning-outline" size="sm">
-                                                    Optional
-                                                </BadgeOptional>
-                                            </div>
+                                        </ConfiguredStudentField>
+                                        <ConfiguredStudentField name="religion" policy={configuration.fields.religion} error={errors.religion}>
                                             <AutocompleteFieldInput
                                                 id="religion"
                                                 value={data.religion}
@@ -1676,35 +1664,23 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
                                                 fieldName="religion"
                                                 placeholder="Type or pick a religion"
                                             />
-                                        </Field>
-                                        <Field>
-                                            <div className="flex items-center justify-between gap-2">
-                                                <FieldLabel htmlFor="height">Height</FieldLabel>
-                                                <BadgeOptional variant="warning-outline" size="sm">
-                                                    Optional
-                                                </BadgeOptional>
-                                            </div>
+                                        </ConfiguredStudentField>
+                                        <ConfiguredStudentField name="height" policy={configuration.fields.height} error={errors.height}>
                                             <Input
                                                 id="height"
                                                 value={data.height}
                                                 onChange={(event) => setData("height", event.target.value)}
                                                 placeholder="e.g. 170"
                                             />
-                                        </Field>
-                                        <Field>
-                                            <div className="flex items-center justify-between gap-2">
-                                                <FieldLabel htmlFor="weight">Weight</FieldLabel>
-                                                <BadgeOptional variant="warning-outline" size="sm">
-                                                    Optional
-                                                </BadgeOptional>
-                                            </div>
+                                        </ConfiguredStudentField>
+                                        <ConfiguredStudentField name="weight" policy={configuration.fields.weight} error={errors.weight}>
                                             <Input
                                                 id="weight"
                                                 value={data.weight}
                                                 onChange={(event) => setData("weight", event.target.value)}
                                                 placeholder="e.g. 60"
                                             />
-                                        </Field>
+                                        </ConfiguredStudentField>
 
                                         <div className="grid gap-4 border-t pt-5 md:col-span-2 md:grid-cols-3">
                                             <Field>
@@ -1962,315 +1938,320 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
                                 </CardHeader>
                                 {!collapsedSections.reporting && (
                                     <CardContent className="grid gap-5 md:grid-cols-2">
-                                        <Field>
-                                            <div className="flex items-center justify-between gap-2">
-                                                <FieldLabel htmlFor="region_of_origin">Region of Origin</FieldLabel>
-                                                <BadgeOptional variant="warning-outline" size="sm">
-                                                    Optional
-                                                </BadgeOptional>
-                                            </div>
-                                            <Select value={data.region_of_origin} onValueChange={handleRegionChange}>
-                                                <SelectTrigger id="region_of_origin">
-                                                    <SelectValue placeholder="Select region" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {PHILIPPINE_REGIONS.map((region) => (
-                                                        <SelectItem key={region.code} value={region.value}>
-                                                            {region.label}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </Field>
-                                        <Field>
-                                            <div className="flex items-center justify-between gap-2">
-                                                <FieldLabel htmlFor="ethnicity">Ethnicity</FieldLabel>
-                                                <BadgeOptional variant="warning-outline" size="sm">
-                                                    Optional
-                                                </BadgeOptional>
-                                            </div>
-                                            <AutocompleteFieldInput
-                                                id="ethnicity"
-                                                value={data.ethnicity}
-                                                onChange={(value: string) => setData("ethnicity", value)}
-                                                fieldName="ethnicity"
-                                                placeholder="Type or pick an ethnicity"
-                                            />
-                                        </Field>
-                                        <Field>
-                                            <div className="flex items-center justify-between gap-2">
-                                                <FieldLabel htmlFor="province_of_origin">Province of Origin</FieldLabel>
-                                                <BadgeOptional variant="warning-outline" size="sm">
-                                                    Optional
-                                                </BadgeOptional>
-                                            </div>
-                                            <Select
-                                                value={data.province_of_origin}
-                                                onValueChange={handleProvinceChange}
-                                                disabled={!selectedRegion || provinceOptions.length === 0}
-                                            >
-                                                <SelectTrigger id="province_of_origin">
-                                                    <SelectValue
-                                                        placeholder={
-                                                            selectedRegion && provinceOptions.length === 0
-                                                                ? "No province required"
-                                                                : "Select province"
-                                                        }
-                                                    />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {provinceOptions.map((province) => (
-                                                        <SelectItem key={province.code} value={province.name}>
-                                                            {province.name}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </Field>
-                                        <Field>
-                                            <div className="flex items-center justify-between gap-2">
-                                                <FieldLabel htmlFor="city_of_origin">City of Origin</FieldLabel>
-                                                <BadgeOptional variant="warning-outline" size="sm">
-                                                    Optional
-                                                </BadgeOptional>
-                                            </div>
-                                            <Select
-                                                value={data.city_of_origin}
-                                                onValueChange={setSelectData("city_of_origin")}
-                                                disabled={!selectedRegion || cityOptions.length === 0}
-                                            >
-                                                <SelectTrigger id="city_of_origin">
-                                                    <SelectValue placeholder="Select city or municipality" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {cityOptions.map((city) => (
-                                                        <SelectItem key={city.code} value={city.name}>
-                                                            {city.name}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </Field>
-                                        <div className="flex items-center gap-3 rounded-md border p-3 md:col-span-2">
-                                            <Checkbox
-                                                id="is_indigenous_person"
-                                                checked={data.is_indigenous_person}
-                                                onCheckedChange={(checked) => setData("is_indigenous_person", checked === true)}
-                                            />
-                                            <Label htmlFor="is_indigenous_person" className="cursor-pointer">
-                                                Indigenous Person
-                                            </Label>
-                                        </div>
-                                        {data.is_indigenous_person && (
-                                            <div className="md:col-span-2">
+                                        {configuration.philippine_reporting && (
+                                            <>
                                                 <Field>
                                                     <div className="flex items-center justify-between gap-2">
-                                                        <FieldLabel htmlFor="indigenous_group">Indigenous Group</FieldLabel>
+                                                        <FieldLabel htmlFor="region_of_origin">Region of Origin</FieldLabel>
                                                         <BadgeOptional variant="warning-outline" size="sm">
                                                             Optional
                                                         </BadgeOptional>
                                                     </div>
-                                                    <Input
-                                                        id="indigenous_group"
-                                                        value={data.indigenous_group}
-                                                        onChange={(event) => setData("indigenous_group", event.target.value)}
-                                                    />
+                                                    <Select value={data.region_of_origin} onValueChange={handleRegionChange}>
+                                                        <SelectTrigger id="region_of_origin">
+                                                            <SelectValue placeholder="Select region" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {PHILIPPINE_REGIONS.map((region) => (
+                                                                <SelectItem key={region.code} value={region.value}>
+                                                                    {region.label}
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
                                                 </Field>
-                                            </div>
-                                        )}
-                                        <div className="grid gap-3 md:col-span-2 md:grid-cols-3">
-                                            <div className="flex items-center gap-2 rounded-md border p-3">
-                                                <Checkbox
-                                                    id="is_pwd"
-                                                    checked={data.is_pwd}
-                                                    onCheckedChange={(checked) => setData("is_pwd", checked === true)}
-                                                />
-                                                <Label htmlFor="is_pwd" className="cursor-pointer">
-                                                    PWD
-                                                </Label>
-                                            </div>
-                                            <div className="flex items-center gap-2 rounded-md border p-3">
-                                                <Checkbox
-                                                    id="is_solo_parent"
-                                                    checked={data.is_solo_parent}
-                                                    onCheckedChange={(checked) => setData("is_solo_parent", checked === true)}
-                                                />
-                                                <Label htmlFor="is_solo_parent" className="cursor-pointer">
-                                                    Solo Parent
-                                                </Label>
-                                            </div>
-                                            <div className="flex items-center gap-2 rounded-md border p-3">
-                                                <Checkbox
-                                                    id="is_senior_citizen"
-                                                    checked={data.is_senior_citizen}
-                                                    onCheckedChange={(checked) => setData("is_senior_citizen", checked === true)}
-                                                />
-                                                <Label htmlFor="is_senior_citizen" className="cursor-pointer">
-                                                    Senior Citizen
-                                                </Label>
-                                            </div>
-                                            <div className="flex items-center gap-2 rounded-md border p-3">
-                                                <Checkbox
-                                                    id="is_magna_carta"
-                                                    checked={data.is_magna_carta}
-                                                    onCheckedChange={(checked) => setData("is_magna_carta", checked === true)}
-                                                />
-                                                <Label htmlFor="is_magna_carta" className="cursor-pointer">
-                                                    Magna Carta
-                                                </Label>
-                                            </div>
-                                            <div className="flex items-center gap-2 rounded-md border p-3">
-                                                <Checkbox
-                                                    id="is_underprivileged"
-                                                    checked={data.is_underprivileged}
-                                                    onCheckedChange={(checked) => setData("is_underprivileged", checked === true)}
-                                                />
-                                                <Label htmlFor="is_underprivileged" className="cursor-pointer">
-                                                    Underprivileged
-                                                </Label>
-                                            </div>
-                                            <div className="flex items-center gap-2 rounded-md border p-3">
-                                                <Checkbox
-                                                    id="is_first_generation"
-                                                    checked={data.is_first_generation}
-                                                    onCheckedChange={(checked) => setData("is_first_generation", checked === true)}
-                                                />
-                                                <Label htmlFor="is_first_generation" className="cursor-pointer">
-                                                    First Generation
-                                                </Label>
-                                            </div>
-                                        </div>
-                                        {data.is_pwd && (
-                                            <div className="md:col-span-2">
                                                 <Field>
                                                     <div className="flex items-center justify-between gap-2">
-                                                        <FieldLabel htmlFor="pwd_type">PWD Type</FieldLabel>
+                                                        <FieldLabel htmlFor="ethnicity">Ethnicity</FieldLabel>
                                                         <BadgeOptional variant="warning-outline" size="sm">
                                                             Optional
                                                         </BadgeOptional>
                                                     </div>
-                                                    <Input
-                                                        id="pwd_type"
-                                                        value={data.pwd_type}
-                                                        onChange={(event) => setData("pwd_type", event.target.value)}
+                                                    <AutocompleteFieldInput
+                                                        id="ethnicity"
+                                                        value={data.ethnicity}
+                                                        onChange={(value: string) => setData("ethnicity", value)}
+                                                        fieldName="ethnicity"
+                                                        placeholder="Type or pick an ethnicity"
                                                     />
                                                 </Field>
-                                            </div>
+                                                <Field>
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <FieldLabel htmlFor="province_of_origin">Province of Origin</FieldLabel>
+                                                        <BadgeOptional variant="warning-outline" size="sm">
+                                                            Optional
+                                                        </BadgeOptional>
+                                                    </div>
+                                                    <Select
+                                                        value={data.province_of_origin}
+                                                        onValueChange={handleProvinceChange}
+                                                        disabled={!selectedRegion || provinceOptions.length === 0}
+                                                    >
+                                                        <SelectTrigger id="province_of_origin">
+                                                            <SelectValue
+                                                                placeholder={
+                                                                    selectedRegion && provinceOptions.length === 0
+                                                                        ? "No province required"
+                                                                        : "Select province"
+                                                                }
+                                                            />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {provinceOptions.map((province) => (
+                                                                <SelectItem key={province.code} value={province.name}>
+                                                                    {province.name}
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </Field>
+                                                <Field>
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <FieldLabel htmlFor="city_of_origin">City of Origin</FieldLabel>
+                                                        <BadgeOptional variant="warning-outline" size="sm">
+                                                            Optional
+                                                        </BadgeOptional>
+                                                    </div>
+                                                    <Select
+                                                        value={data.city_of_origin}
+                                                        onValueChange={setSelectData("city_of_origin")}
+                                                        disabled={!selectedRegion || cityOptions.length === 0}
+                                                    >
+                                                        <SelectTrigger id="city_of_origin">
+                                                            <SelectValue placeholder="Select city or municipality" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {cityOptions.map((city) => (
+                                                                <SelectItem key={city.code} value={city.name}>
+                                                                    {city.name}
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </Field>
+                                                <div className="flex items-center gap-3 rounded-md border p-3 md:col-span-2">
+                                                    <Checkbox
+                                                        id="is_indigenous_person"
+                                                        checked={data.is_indigenous_person}
+                                                        onCheckedChange={(checked) => setData("is_indigenous_person", checked === true)}
+                                                    />
+                                                    <Label htmlFor="is_indigenous_person" className="cursor-pointer">
+                                                        Indigenous Person
+                                                    </Label>
+                                                </div>
+                                                {data.is_indigenous_person && (
+                                                    <div className="md:col-span-2">
+                                                        <Field>
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <FieldLabel htmlFor="indigenous_group">Indigenous Group</FieldLabel>
+                                                                <BadgeOptional variant="warning-outline" size="sm">
+                                                                    Optional
+                                                                </BadgeOptional>
+                                                            </div>
+                                                            <Input
+                                                                id="indigenous_group"
+                                                                value={data.indigenous_group}
+                                                                onChange={(event) => setData("indigenous_group", event.target.value)}
+                                                            />
+                                                        </Field>
+                                                    </div>
+                                                )}
+                                                <div className="grid gap-3 md:col-span-2 md:grid-cols-3">
+                                                    <div className="flex items-center gap-2 rounded-md border p-3">
+                                                        <Checkbox
+                                                            id="is_pwd"
+                                                            checked={data.is_pwd}
+                                                            onCheckedChange={(checked) => setData("is_pwd", checked === true)}
+                                                        />
+                                                        <Label htmlFor="is_pwd" className="cursor-pointer">
+                                                            PWD
+                                                        </Label>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 rounded-md border p-3">
+                                                        <Checkbox
+                                                            id="is_solo_parent"
+                                                            checked={data.is_solo_parent}
+                                                            onCheckedChange={(checked) => setData("is_solo_parent", checked === true)}
+                                                        />
+                                                        <Label htmlFor="is_solo_parent" className="cursor-pointer">
+                                                            Solo Parent
+                                                        </Label>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 rounded-md border p-3">
+                                                        <Checkbox
+                                                            id="is_senior_citizen"
+                                                            checked={data.is_senior_citizen}
+                                                            onCheckedChange={(checked) => setData("is_senior_citizen", checked === true)}
+                                                        />
+                                                        <Label htmlFor="is_senior_citizen" className="cursor-pointer">
+                                                            Senior Citizen
+                                                        </Label>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 rounded-md border p-3">
+                                                        <Checkbox
+                                                            id="is_magna_carta"
+                                                            checked={data.is_magna_carta}
+                                                            onCheckedChange={(checked) => setData("is_magna_carta", checked === true)}
+                                                        />
+                                                        <Label htmlFor="is_magna_carta" className="cursor-pointer">
+                                                            Magna Carta
+                                                        </Label>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 rounded-md border p-3">
+                                                        <Checkbox
+                                                            id="is_underprivileged"
+                                                            checked={data.is_underprivileged}
+                                                            onCheckedChange={(checked) => setData("is_underprivileged", checked === true)}
+                                                        />
+                                                        <Label htmlFor="is_underprivileged" className="cursor-pointer">
+                                                            Underprivileged
+                                                        </Label>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 rounded-md border p-3">
+                                                        <Checkbox
+                                                            id="is_first_generation"
+                                                            checked={data.is_first_generation}
+                                                            onCheckedChange={(checked) => setData("is_first_generation", checked === true)}
+                                                        />
+                                                        <Label htmlFor="is_first_generation" className="cursor-pointer">
+                                                            First Generation
+                                                        </Label>
+                                                    </div>
+                                                </div>
+                                                {data.is_pwd && (
+                                                    <div className="md:col-span-2">
+                                                        <Field>
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <FieldLabel htmlFor="pwd_type">PWD Type</FieldLabel>
+                                                                <BadgeOptional variant="warning-outline" size="sm">
+                                                                    Optional
+                                                                </BadgeOptional>
+                                                            </div>
+                                                            <Input
+                                                                id="pwd_type"
+                                                                value={data.pwd_type}
+                                                                onChange={(event) => setData("pwd_type", event.target.value)}
+                                                            />
+                                                        </Field>
+                                                    </div>
+                                                )}
+                                                <div className="grid gap-4 border-t pt-5 md:col-span-2 md:grid-cols-2">
+                                                    <div className="space-y-1 md:col-span-2">
+                                                        <h3 className="font-medium">Family Income</h3>
+                                                        <p className="text-muted-foreground text-sm">
+                                                            Set income basis first, then choose one shared family range or separate father and mother
+                                                            ranges.
+                                                        </p>
+                                                    </div>
+                                                    <Field>
+                                                        <div className="flex items-center justify-between gap-2">
+                                                            <FieldLabel htmlFor="income_bracket_mode">Income Basis</FieldLabel>
+                                                            <BadgeOptional variant="warning-outline" size="sm">
+                                                                Optional
+                                                            </BadgeOptional>
+                                                        </div>
+                                                        <Select value={data.income_bracket_mode} onValueChange={setSelectData("income_bracket_mode")}>
+                                                            <SelectTrigger id="income_bracket_mode">
+                                                                <SelectValue placeholder="Select income basis" />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                {options.income_modes.map((mode) => (
+                                                                    <SelectItem key={mode.value} value={mode.value}>
+                                                                        {mode.label}
+                                                                    </SelectItem>
+                                                                ))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </Field>
+                                                    <div className="flex items-center gap-2 rounded-md border p-3">
+                                                        <Checkbox
+                                                            id="use_same_parent_income"
+                                                            checked={data.use_same_parent_income}
+                                                            onCheckedChange={(checked) => setData("use_same_parent_income", checked === true)}
+                                                        />
+                                                        <Label htmlFor="use_same_parent_income" className="cursor-pointer">
+                                                            Father and mother have the same income bracket
+                                                        </Label>
+                                                    </div>
+                                                    {data.use_same_parent_income ? (
+                                                        <div className="md:col-span-2">
+                                                            <Field>
+                                                                <div className="flex items-center justify-between gap-2">
+                                                                    <FieldLabel htmlFor="family_income_bracket">Family Income Bracket</FieldLabel>
+                                                                    <BadgeOptional variant="warning-outline" size="sm">
+                                                                        Optional
+                                                                    </BadgeOptional>
+                                                                </div>
+                                                                <Select
+                                                                    value={data.family_income_bracket}
+                                                                    onValueChange={setSelectData("family_income_bracket")}
+                                                                >
+                                                                    <SelectTrigger id="family_income_bracket">
+                                                                        <SelectValue placeholder="Select income range..." />
+                                                                    </SelectTrigger>
+                                                                    <SelectContent>
+                                                                        {activeIncomeBrackets.map((bracket) => (
+                                                                            <SelectItem key={bracket.value} value={bracket.value}>
+                                                                                {bracket.label}
+                                                                            </SelectItem>
+                                                                        ))}
+                                                                    </SelectContent>
+                                                                </Select>
+                                                            </Field>
+                                                        </div>
+                                                    ) : (
+                                                        <>
+                                                            <Field>
+                                                                <div className="flex items-center justify-between gap-2">
+                                                                    <FieldLabel htmlFor="father_income_bracket">Father Income Bracket</FieldLabel>
+                                                                    <BadgeOptional variant="warning-outline" size="sm">
+                                                                        Optional
+                                                                    </BadgeOptional>
+                                                                </div>
+                                                                <Select
+                                                                    value={data.father_income_bracket}
+                                                                    onValueChange={setSelectData("father_income_bracket")}
+                                                                >
+                                                                    <SelectTrigger id="father_income_bracket">
+                                                                        <SelectValue placeholder="Select income range..." />
+                                                                    </SelectTrigger>
+                                                                    <SelectContent>
+                                                                        {activeIncomeBrackets.map((bracket) => (
+                                                                            <SelectItem key={bracket.value} value={bracket.value}>
+                                                                                {bracket.label}
+                                                                            </SelectItem>
+                                                                        ))}
+                                                                    </SelectContent>
+                                                                </Select>
+                                                            </Field>
+                                                            <Field>
+                                                                <div className="flex items-center justify-between gap-2">
+                                                                    <FieldLabel htmlFor="mother_income_bracket">Mother Income Bracket</FieldLabel>
+                                                                    <BadgeOptional variant="warning-outline" size="sm">
+                                                                        Optional
+                                                                    </BadgeOptional>
+                                                                </div>
+                                                                <Select
+                                                                    value={data.mother_income_bracket}
+                                                                    onValueChange={setSelectData("mother_income_bracket")}
+                                                                >
+                                                                    <SelectTrigger id="mother_income_bracket">
+                                                                        <SelectValue placeholder="Select income range..." />
+                                                                    </SelectTrigger>
+                                                                    <SelectContent>
+                                                                        {activeIncomeBrackets.map((bracket) => (
+                                                                            <SelectItem key={bracket.value} value={bracket.value}>
+                                                                                {bracket.label}
+                                                                            </SelectItem>
+                                                                        ))}
+                                                                    </SelectContent>
+                                                                </Select>
+                                                            </Field>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </>
                                         )}
-                                        <div className="grid gap-4 border-t pt-5 md:col-span-2 md:grid-cols-2">
-                                            <div className="space-y-1 md:col-span-2">
-                                                <h3 className="font-medium">Family Income</h3>
-                                                <p className="text-muted-foreground text-sm">
-                                                    Set income basis first, then choose one shared family range or separate father and mother ranges.
-                                                </p>
-                                            </div>
-                                            <Field>
-                                                <div className="flex items-center justify-between gap-2">
-                                                    <FieldLabel htmlFor="income_bracket_mode">Income Basis</FieldLabel>
-                                                    <BadgeOptional variant="warning-outline" size="sm">
-                                                        Optional
-                                                    </BadgeOptional>
-                                                </div>
-                                                <Select value={data.income_bracket_mode} onValueChange={setSelectData("income_bracket_mode")}>
-                                                    <SelectTrigger id="income_bracket_mode">
-                                                        <SelectValue placeholder="Select income basis" />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        {options.income_modes.map((mode) => (
-                                                            <SelectItem key={mode.value} value={mode.value}>
-                                                                {mode.label}
-                                                            </SelectItem>
-                                                        ))}
-                                                    </SelectContent>
-                                                </Select>
-                                            </Field>
-                                            <div className="flex items-center gap-2 rounded-md border p-3">
-                                                <Checkbox
-                                                    id="use_same_parent_income"
-                                                    checked={data.use_same_parent_income}
-                                                    onCheckedChange={(checked) => setData("use_same_parent_income", checked === true)}
-                                                />
-                                                <Label htmlFor="use_same_parent_income" className="cursor-pointer">
-                                                    Father and mother have the same income bracket
-                                                </Label>
-                                            </div>
-                                            {data.use_same_parent_income ? (
-                                                <div className="md:col-span-2">
-                                                    <Field>
-                                                        <div className="flex items-center justify-between gap-2">
-                                                            <FieldLabel htmlFor="family_income_bracket">Family Income Bracket</FieldLabel>
-                                                            <BadgeOptional variant="warning-outline" size="sm">
-                                                                Optional
-                                                            </BadgeOptional>
-                                                        </div>
-                                                        <Select
-                                                            value={data.family_income_bracket}
-                                                            onValueChange={setSelectData("family_income_bracket")}
-                                                        >
-                                                            <SelectTrigger id="family_income_bracket">
-                                                                <SelectValue placeholder="Select income range..." />
-                                                            </SelectTrigger>
-                                                            <SelectContent>
-                                                                {activeIncomeBrackets.map((bracket) => (
-                                                                    <SelectItem key={bracket.value} value={bracket.value}>
-                                                                        {bracket.label}
-                                                                    </SelectItem>
-                                                                ))}
-                                                            </SelectContent>
-                                                        </Select>
-                                                    </Field>
-                                                </div>
-                                            ) : (
-                                                <>
-                                                    <Field>
-                                                        <div className="flex items-center justify-between gap-2">
-                                                            <FieldLabel htmlFor="father_income_bracket">Father Income Bracket</FieldLabel>
-                                                            <BadgeOptional variant="warning-outline" size="sm">
-                                                                Optional
-                                                            </BadgeOptional>
-                                                        </div>
-                                                        <Select
-                                                            value={data.father_income_bracket}
-                                                            onValueChange={setSelectData("father_income_bracket")}
-                                                        >
-                                                            <SelectTrigger id="father_income_bracket">
-                                                                <SelectValue placeholder="Select income range..." />
-                                                            </SelectTrigger>
-                                                            <SelectContent>
-                                                                {activeIncomeBrackets.map((bracket) => (
-                                                                    <SelectItem key={bracket.value} value={bracket.value}>
-                                                                        {bracket.label}
-                                                                    </SelectItem>
-                                                                ))}
-                                                            </SelectContent>
-                                                        </Select>
-                                                    </Field>
-                                                    <Field>
-                                                        <div className="flex items-center justify-between gap-2">
-                                                            <FieldLabel htmlFor="mother_income_bracket">Mother Income Bracket</FieldLabel>
-                                                            <BadgeOptional variant="warning-outline" size="sm">
-                                                                Optional
-                                                            </BadgeOptional>
-                                                        </div>
-                                                        <Select
-                                                            value={data.mother_income_bracket}
-                                                            onValueChange={setSelectData("mother_income_bracket")}
-                                                        >
-                                                            <SelectTrigger id="mother_income_bracket">
-                                                                <SelectValue placeholder="Select income range..." />
-                                                            </SelectTrigger>
-                                                            <SelectContent>
-                                                                {activeIncomeBrackets.map((bracket) => (
-                                                                    <SelectItem key={bracket.value} value={bracket.value}>
-                                                                        {bracket.label}
-                                                                    </SelectItem>
-                                                                ))}
-                                                            </SelectContent>
-                                                        </Select>
-                                                    </Field>
-                                                </>
-                                            )}
-                                        </div>
                                         <Field>
                                             <div className="flex items-center justify-between gap-2">
                                                 <FieldLabel htmlFor="scholarship_type">Scholarship</FieldLabel>

@@ -22,10 +22,7 @@ final class StudentOrganizationAssignmentService
     {
         return Student::withoutSchoolScope()
             ->whereRaw('LOWER(email) = ?', [$this->normalizeEmail($email)])
-            ->whereIn('student_type', [
-                StudentType::College->value,
-                StudentType::SeniorHighSchool->value,
-            ])
+            ->whereIn('student_type', array_column(StudentType::cases(), 'value'))
             ->whereNotNull('school_id')
             ->whereHas('school', fn ($query) => $query->where('is_active', true))
             ->with(['Course' => fn ($query) => $query->withoutSchoolScope()])
@@ -44,13 +41,16 @@ final class StudentOrganizationAssignmentService
         string $identifier,
         int|string|null $recordId = null,
         bool $lockForUpdate = false,
+        ?string $inputField = null,
     ): Student {
-        $identifierField = $studentType->requiresLrn() ? 'lrn' : 'student_id';
+        $identifierField = $inputField ?? ($studentType === StudentType::SeniorHighSchool ? 'lrn' : 'student_id');
 
         $query = Student::withoutSchoolScope()
             ->whereRaw('LOWER(email) = ?', [$this->normalizeEmail($email)])
             ->where('student_type', $studentType->value)
-            ->where($identifierField, $identifier)
+            ->where(function ($query) use ($identifier): void {
+                $query->where('student_id', $identifier)->orWhere('lrn', $identifier);
+            })
             ->whereNotNull('school_id')
             ->whereHas('school', fn ($schoolQuery) => $schoolQuery->where('is_active', true));
 
@@ -62,7 +62,15 @@ final class StudentOrganizationAssignmentService
             $query->lockForUpdate();
         }
 
-        $students = $query->limit(2)->get();
+        // Policy belongs to each candidate school, not to a public caller's session.
+        // Legacy SHS clients can still submit the lrn key; neutral schools use student_id.
+        $students = $query->get()->filter(function (Student $student) use ($identifier, $inputField): bool {
+            $external = app(StudentConfigurationService::class)->usesExternal($student->student_type->value, $student->school_id)
+                && (string) $student->student_id === (string) $student->lrn;
+            $expectedField = $external ? 'lrn' : 'student_id';
+
+            return ($inputField === null || $inputField === $expectedField) && (string) $student->{$expectedField} === $identifier;
+        });
 
         if ($students->count() !== 1) {
             throw ValidationException::withMessages([

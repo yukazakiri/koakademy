@@ -733,7 +733,7 @@ final class ApplicantDirectoryService
 
         return [
             'id' => (int) $row->id,
-            'student_id' => $row->student_id !== null ? (int) $row->student_id : null,
+            'student_id' => $row->student_id !== null ? (string) $row->student_id : null,
             'lrn' => $row->lrn !== null ? (string) $row->lrn : null,
             'name' => $name,
             'first_name' => (string) $row->first_name,

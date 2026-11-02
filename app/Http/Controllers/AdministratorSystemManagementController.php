@@ -591,7 +591,29 @@ final class AdministratorSystemManagementController extends Controller
 
     public function identifiers(): Response
     {
-        return $this->renderSystemManagementPage('administrators/system-management/identifiers', 'identifiers', 'viewIdentifiers');
+        return $this->renderSystemManagementPage('administrators/system-management/identifiers', 'identifiers', 'viewIdentifiers', ['identifier_year' => now()->format('Y')]);
+    }
+
+    public function studentConfiguration(): Response
+    {
+        return $this->renderSystemManagementPage('administrators/system-management/student-configuration', 'student_configuration', 'viewStudentConfiguration', [
+            'student_configuration' => app(\App\Services\StudentConfigurationService::class)->get(),
+            'student_presets' => [
+                'neutral' => \App\Services\StudentConfigurationService::defaults(),
+                'legacy_ph' => \App\Services\StudentConfigurationService::defaults(legacy: true),
+            ],
+        ]);
+    }
+
+    public function updateStudentConfiguration(\App\Http\Requests\Administrators\UpdateStudentConfigurationRequest $request, \App\Services\StudentConfigurationService $configuration): RedirectResponse
+    {
+        DB::transaction(function () use ($request, $configuration): void {
+            app(IdentifierGenerator::class)->sequenceFor(IdentifierGenerator::Student, lock: true);
+            $configuration->validateIdentifierCompatibility($request->validated());
+            $configuration->update($request->validated());
+        });
+
+        return Redirect::back()->with('success', 'Student configuration updated. Existing records and identifiers were not changed.');
     }
 
     public function facultyFields(FacultyCustomFieldDefinitionService $definitions, \App\Services\TenantContext $tenantContext): Response
@@ -627,23 +649,34 @@ final class AdministratorSystemManagementController extends Controller
 
         $validated = $request->validate([
             'student' => ['required', 'array'],
-            'student.start_number' => ['required', 'integer', 'min:1', 'max:2147483647'],
-            'student.next_number' => ['required', 'integer', 'min:1', 'max:2147483647'],
+            'student.start_number' => ['required', 'integer', 'min:1', 'max:999999999999'],
+            'student.next_number' => ['required', 'integer', 'gte:student.start_number', 'max:999999999999'],
+            'student.expected_next_number' => ['nullable', 'integer'],
+            'student.type_next_numbers' => ['sometimes', 'array:college,shs,tesda,dhrt'],
+            'student.type_next_numbers.*' => ['required', 'integer', 'min:1', 'max:999999999999'],
+            'student.expected_type_next_numbers' => ['sometimes', 'array:college,shs,tesda,dhrt'],
+            'student.expected_type_next_numbers.*' => ['required', 'integer', 'min:1', 'max:999999999999'],
+            'student.assignment_mode' => ['sometimes', 'required', 'in:automatic,manual,hybrid'],
+            'student.character_set' => ['sometimes', 'required', 'in:numeric,alphanumeric'],
+            'student.display_label' => ['sometimes', 'required', 'string', 'max:80'],
+            'student.counter_scope' => ['sometimes', 'required', 'in:shared,by_type'],
+            'student.legacy_format' => ['sometimes', 'required', 'boolean'],
             'student.increment_by' => ['required', 'integer', 'min:1', 'max:1000'],
             'student.padding' => ['nullable', 'integer', 'min:0', 'max:12'],
             'student.prefix_mode' => ['nullable', 'string', 'in:none,static,year,by_type'],
             'student.prefix_value' => ['nullable', 'string', 'max:10'],
             'student.enforce_prefix' => ['nullable', 'boolean'],
             'student.enforce_length' => ['nullable', 'boolean'],
-            'student.exact_length' => ['nullable', 'integer', 'min:3', 'max:12'],
-            'student.min_length' => ['nullable', 'integer', 'min:1', 'max:12'],
-            'student.max_length' => ['nullable', 'integer', 'min:1', 'max:12'],
-            'student.type_prefixes' => ['nullable', 'array'],
+            'student.exact_length' => ['required_if:student.enforce_length,true', 'nullable', 'integer', 'min:1', 'max:64'],
+            'student.min_length' => ['nullable', 'integer', 'min:1', 'max:64'],
+            'student.max_length' => ['nullable', 'integer', 'gte:student.min_length', 'max:64'],
+            'student.type_prefixes' => ['nullable', 'array:college,tesda,dhrt,shs'],
             'student.type_prefixes.college' => ['nullable', 'string', 'max:10'],
             'student.type_prefixes.tesda' => ['nullable', 'string', 'max:10'],
             'student.type_prefixes.dhrt' => ['nullable', 'string', 'max:10'],
             'student.type_prefixes.shs' => ['nullable', 'string', 'max:10'],
-            'staff' => ['required', 'array:start_number,next_number,increment_by,padding'],
+            'staff' => ['required', 'array'],
+            'staff.expected_next_number' => ['nullable', 'integer'],
             'staff.start_number' => ['required', 'integer', 'min:1', 'max:2147483647'],
             'staff.next_number' => ['required', 'integer', 'min:1', 'max:2147483647'],
             'staff.increment_by' => ['required', 'integer', 'min:1', 'max:1000'],
@@ -1566,6 +1599,9 @@ final class AdministratorSystemManagementController extends Controller
                 : ($settings->more_configs['grading'] ?? app(GradingSystemService::class)->getConfig()),
             'id_sequences' => $activeSection === 'identifiers'
                 ? app(IdentifierGenerator::class)->configuration()
+                : null,
+            'student_configuration' => in_array($activeSection, ['identifiers', 'student_configuration'], true)
+                ? app(\App\Services\StudentConfigurationService::class)->get()
                 : null,
             'courses_with_subjects' => $activeSection === 'grading'
                 ? app(GradingSystemService::class)->getCoursesWithSubjects()

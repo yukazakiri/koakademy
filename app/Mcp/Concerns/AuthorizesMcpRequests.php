@@ -160,7 +160,7 @@ trait AuthorizesMcpRequests
                 throw new AuthorizationException('No student profile is associated with your account.');
             }
 
-            if ($studentId !== null && (int) $student->id !== $studentId && (int) $student->student_id !== $studentId) {
+            if ($studentId !== null && (int) $student->id !== $studentId && (string) $student->student_id !== (string) $studentId) {
                 throw new AuthorizationException('Students can only access their own student records.');
             }
 

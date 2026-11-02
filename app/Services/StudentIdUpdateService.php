@@ -18,12 +18,13 @@ final class StudentIdUpdateService
      * Update a student's student_id (not the primary key)
      *
      * @param  Student  $student  The student to update
-     * @param  int  $newStudentId  The new student ID to assign
+     * @param  string|int  $newStudentId  The new student ID to assign
      * @param  bool  $bypassSafetyChecks  Whether to bypass safety checks (when user has confirmed)
      * @return array Result array with success status and message
      */
-    public function updateStudentId(Student $student, int $newStudentId, bool $bypassSafetyChecks = false): array
+    public function updateStudentId(Student $student, string|int $newStudentId, bool $bypassSafetyChecks = false): array
     {
+        $newStudentId = (string) $newStudentId;
         // Validate the new student ID
         $validation = $this->validateNewStudentId($student, $newStudentId);
         if ($validation !== true) {
@@ -52,6 +53,8 @@ final class StudentIdUpdateService
                     'changed_by' => Auth::user()?->email ?? 'System',
                     'affected_records' => ['students' => 1, 'total_updated' => $updatedRecords],
                     'backup_data' => [
+                        'student_record_id' => $student->id,
+                        'school_id' => $student->school_id,
                         'student_data' => ['student_id' => $oldStudentId],
                         'timestamp' => format_timestamp_now(),
                     ],
@@ -94,22 +97,22 @@ final class StudentIdUpdateService
     /**
      * Check if a student ID is available
      */
-    public function isIdAvailable(int $studentId): bool
+    public function isIdAvailable(string|int $studentId): bool
     {
         return ! Student::withTrashed()->where('student_id', $studentId)->exists();
     }
 
     /**
-     * Generate a suggested 6-digit student ID
+     * Preview the next number without consuming it.
      */
-    public function generateSuggestedId(?StudentType $studentType = null): int
+    public function generateSuggestedId(?StudentType $studentType = null): string
     {
         // Default to College if no type specified
         if (! $studentType instanceof StudentType) {
             $studentType = StudentType::College;
         }
 
-        return Student::generateNextId($studentType);
+        return app(IdentifierGenerator::class)->previewStudentId($studentType);
     }
 
     /**
@@ -126,7 +129,7 @@ final class StudentIdUpdateService
     /**
      * Undo a student ID change
      */
-    public function undoStudentIdChange(int $changeLogId): array
+    public function undoStudentIdChange(int $changeLogId, ?Student $expectedStudent = null): array
     {
         try {
             $changeLog = StudentIdChangeLog::query()->findOrFail($changeLogId);
@@ -138,7 +141,18 @@ final class StudentIdUpdateService
                 ];
             }
 
-            $student = Student::withTrashed()->where('student_id', $changeLog->new_student_id)->first();
+            if ($expectedStudent !== null && isset($changeLog->backup_data['student_record_id']) && (int) $changeLog->backup_data['student_record_id'] !== $expectedStudent->id) {
+                return ['success' => false, 'message' => 'This identifier change belongs to another student.'];
+            }
+            if ($expectedStudent !== null && ! isset($changeLog->backup_data['student_record_id']) && $changeLog->student_name !== $expectedStudent->full_name) {
+                return ['success' => false, 'message' => 'This legacy identifier change cannot be verified for this student.'];
+            }
+
+            $recordId = $changeLog->backup_data['student_record_id'] ?? null;
+            $student = Student::withTrashed()->where('student_id', $changeLog->new_student_id)
+                ->when($recordId !== null, fn ($query) => $query->whereKey($recordId))
+                ->when($expectedStudent !== null, fn ($query) => $query->whereKey($expectedStudent->id))
+                ->first();
 
             if (! $student) {
                 return [
@@ -193,8 +207,17 @@ final class StudentIdUpdateService
         }
 
         return StudentIdChangeLog::query()
-            ->where('old_student_id', (string) $student->student_id)
-            ->orWhere('new_student_id', (string) $student->student_id)
+            ->where(function ($query) use ($student): void {
+                $query->where('backup_data->student_record_id', $student->id)
+                    ->orWhere(function ($legacy) use ($student): void {
+                        $legacy->whereNull('backup_data->student_record_id')
+                            ->where('student_name', $student->full_name)
+                            ->where(function ($numbers) use ($student): void {
+                                $numbers->where('old_student_id', (string) $student->student_id)
+                                    ->orWhere('new_student_id', (string) $student->student_id);
+                            });
+                    });
+            })
             ->orderBy('created_at', 'desc')
             ->get();
     }
@@ -202,7 +225,7 @@ final class StudentIdUpdateService
     /**
      * Validate the new student ID
      */
-    private function validateNewStudentId(Student $student, int $newStudentId): array|true
+    private function validateNewStudentId(Student $student, string $newStudentId): array|true
     {
         Log::info("Validating student ID update from {$student->student_id} to {$newStudentId}");
 
@@ -215,16 +238,18 @@ final class StudentIdUpdateService
         }
 
         // Check if new ID already exists
-        if (! $this->isIdAvailable($newStudentId)) {
+        if (Student::withoutSchoolScope()->withTrashed()->where('school_id', $student->school_id)->where('student_id', $newStudentId)->whereKeyNot($student->id)->exists()) {
             return [
                 'success' => false,
                 'message' => "Student ID {$newStudentId} is already in use.",
             ];
         }
 
-        // Validate 6-digit format (optional warning, not blocking)
-        if ($newStudentId < 100000 || $newStudentId > 999999) {
-            Log::warning("Student ID {$newStudentId} is not in the recommended 6-digit format");
+        $validator = \Illuminate\Support\Facades\Validator::make(['student_id' => $newStudentId], [
+            'student_id' => app(IdentifierGenerator::class)->getStudentIdValidationRules($student->student_type, $student->id, schoolId: $student->school_id),
+        ]);
+        if ($validator->fails()) {
+            return ['success' => false, 'message' => $validator->errors()->first('student_id')];
         }
 
         return true;
@@ -246,9 +271,9 @@ final class StudentIdUpdateService
     /**
      * Perform the student ID update flow.
      */
-    private function performIdUpdate(Student $student, int $newId): int
+    private function performIdUpdate(Student $student, string $newId): int
     {
-        $oldId = (int) $student->student_id;
+        $oldId = (string) $student->student_id;
 
         $student->update(['student_id' => $newId]);
 
@@ -263,7 +288,7 @@ final class StudentIdUpdateService
     /**
      * Update related records in tables that are not constrained by foreign keys.
      */
-    private function updateRelatedRecordsManually(int $oldId, int $newId): int
+    private function updateRelatedRecordsManually(string $oldId, string $newId): int
     {
         unset($oldId, $newId);
 
@@ -273,7 +298,7 @@ final class StudentIdUpdateService
     /**
      * Update related records in tables that are constrained by foreign keys.
      */
-    private function updateTablesWithForeignKeyConstraints(int $oldId, int $newId): int
+    private function updateTablesWithForeignKeyConstraints(string $oldId, string $newId): int
     {
         unset($oldId, $newId);
 
@@ -283,9 +308,9 @@ final class StudentIdUpdateService
     /**
      * Verify state after update.
      */
-    private function verifyPostUpdateState(?Student $student, int $expectedStudentId): void
+    private function verifyPostUpdateState(?Student $student, string $expectedStudentId): void
     {
-        if (! $student instanceof Student || (int) $student->student_id !== $expectedStudentId) {
+        if (! $student instanceof Student || (string) $student->student_id !== $expectedStudentId) {
             throw new Exception('Post-update verification failed for student ID update.');
         }
     }

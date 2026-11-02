@@ -121,7 +121,7 @@ final class GetStudentSubjectEnrollmentsTool extends Tool
     {
         return [
             'enrollment_id' => $schema->integer()->min(1)->description('Target enrollment record ID. If provided, returns subjects in that enrollment.'),
-            'student_id' => $schema->integer()->min(1)->description('The student database ID or student number. Optional for student callers.'),
+            'student_id' => $schema->integer()->min(1)->description('The student database ID, or an unpadded numeric student number. Optional for student callers.'),
             'school_year' => $schema->string()->description('Optional school year (e.g. "2026 - 2027"). Defaults to current school year when student_id is used.'),
             'semester' => $schema->integer()->enum([1, 2])->description('Optional semester (1 or 2). Defaults to current semester when student_id is used.'),
         ];

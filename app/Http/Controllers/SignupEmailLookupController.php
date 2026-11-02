@@ -97,6 +97,10 @@ final class SignupEmailLookupController extends Controller
                     'type' => 'student',
                     'student_type' => $studentType?->value ?? 'college',
                     'is_shs' => $isShs,
+                    'identifier_field' => app(\App\Services\StudentConfigurationService::class)->usesExternal($studentType->value, $student->school_id) && (string) $student->student_id === (string) $student->lrn ? 'lrn' : 'student_id',
+                    'identifier_label' => app(\App\Services\StudentConfigurationService::class)->usesExternal($studentType->value, $student->school_id) && (string) $student->student_id === (string) $student->lrn
+                        ? app(\App\Services\StudentConfigurationService::class)->externalFor($studentType->value, $student->school_id)['label']
+                        : app(\App\Services\IdentifierGenerator::class)->sequenceFor('student', schoolId: $student->school_id)->display_label,
                     'name' => $student->full_name,
                     // 'student_id' => $student->student_id, // Removed for security/verification
                     // 'lrn' => $student->lrn, // Removed for security/verification

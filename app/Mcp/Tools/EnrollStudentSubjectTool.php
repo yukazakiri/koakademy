@@ -430,8 +430,9 @@ final class EnrollStudentSubjectTool extends Tool
         $query = \App\Models\Student::query()
             ->where(function ($query) use ($identifier) {
                 if (is_numeric($identifier)) {
-                    $query->where('id', (int) $identifier)
-                        ->orWhere('student_id', (int) $identifier);
+                    if ((string) (int) $identifier === $identifier) {
+                        $query->where('id', (int) $identifier);
+                    }
                 }
                 $query->orWhere('student_id', $identifier)
                     ->orWhere('email', $identifier);

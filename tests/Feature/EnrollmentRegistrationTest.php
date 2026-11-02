@@ -24,7 +24,10 @@ use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Pennant\Feature;
 
 beforeEach(function () {
-    //
+    app(App\Services\StudentConfigurationService::class)->update(App\Services\StudentConfigurationService::defaults(legacy: true));
+    $school = School::factory()->create(['name' => 'KoAkademy']);
+    app(App\Services\StudentConfigurationService::class)->update(App\Services\StudentConfigurationService::defaults(legacy: true), $school->id);
+    app(App\Services\TenantContext::class)->setCurrentSchool($school);
 });
 
 it('can view enrollment page', function () {
@@ -82,7 +85,9 @@ it('exposes TESDA diploma metadata to public enrollment choices', function (): v
 
 it('uses the configured school name on the enrollment privacy notice', function () {
     School::factory()->inactive()->create(['name' => 'Archived School']);
-    School::factory()->create(['name' => 'KoAkademy Main Campus', 'is_active' => true]);
+    $school = School::factory()->create(['name' => 'KoAkademy Main Campus', 'is_active' => true]);
+    app(App\Services\TenantContext::class)->setCurrentSchool(null);
+    app(App\Services\TenantContext::class)->setCurrentSchool($school);
 
     $this->get(route('enrollment.create'))
         ->assertOk()
@@ -348,6 +353,8 @@ it('lets the resolved policy strategy control public curriculum assignment', fun
     int $expectedSubjects,
 ): void {
     $school = School::factory()->create(['is_active' => true]);
+    app(App\Services\StudentConfigurationService::class)->update(App\Services\StudentConfigurationService::defaults(legacy: true), $school->id);
+    app(App\Services\TenantContext::class)->setCurrentSchool($school);
     $course = Course::factory()->create([
         'school_id' => $school->id,
         'department' => 'TESDA',
@@ -550,6 +557,8 @@ it('saves continuing enrollment using first school when no active school exists'
         'semester' => 1,
     ]);
 
+    app(App\Services\TenantContext::class)->setCurrentSchool(null);
+    DB::table('student_configurations')->whereNotNull('school_id')->delete();
     DB::table('schools')->delete();
 
     School::factory()->inactive()->create();

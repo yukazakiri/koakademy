@@ -72,6 +72,10 @@ final class SystemManagementPermissions
                 'view' => 'View:SystemManagementIdentifiers',
                 'update' => 'Update:SystemManagementIdentifiers',
             ],
+            'student_configuration' => [
+                'view' => 'View:SystemManagementStudentConfiguration',
+                'update' => 'Update:SystemManagementStudentConfiguration',
+            ],
             'faculty_fields' => [
                 'view' => 'View:SystemManagementFacultyFields',
                 'update' => 'Update:SystemManagementFacultyFields',

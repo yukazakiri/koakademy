@@ -164,7 +164,7 @@ it('updates the year level through the quick-update endpoint and returns the der
         ])
         ->assertOk()
         ->assertJsonPath('student.academic_year', 3)
-        ->assertJsonPath('student.formatted_academic_year', '3rd year')
+        ->assertJsonPath('student.formatted_academic_year', '3rd Year')
         ->assertJsonPath('student.status', 'enrolled');
 
     expect($student->refresh()->academic_year)->toBe(3);
@@ -277,7 +277,7 @@ it('exposes the raw year level on the show page for the inline editor', function
         ->assertSuccessful()
         ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
             ->component('administrators/students/show', false)
-            ->where('student.academic_year', '2nd year')
+            ->where('student.academic_year', '2nd Year')
             ->where('student.academic_year_value', 2)
         );
 });

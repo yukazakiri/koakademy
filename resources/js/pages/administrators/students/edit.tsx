@@ -1,4 +1,6 @@
+import { generateId } from "@/actions/App/Http/Controllers/AdministratorStudentManagementController";
 import AdminLayout from "@/components/administrators/admin-layout";
+import { ConfiguredStudentField } from "@/components/administrators/configured-student-field";
 import { AutocompleteFieldInput } from "@/components/ui/autocomplete-field-input";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -12,6 +14,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSepa
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import type { StudentCategory, StudentConfiguration, StudentIdentifierPolicy } from "@/types/student-configuration";
 import type { User } from "@/types/user";
 import { Head, Link, router, useForm } from "@inertiajs/react";
 import {
@@ -25,8 +28,6 @@ import {
     Hash,
     LayoutGrid,
     Loader2,
-    Mail,
-    MapPin,
     Phone,
     Plus,
     RefreshCw,
@@ -233,6 +234,8 @@ interface EditStudentProps {
     user: User;
     student: Student;
     options: {
+        student_configuration: StudentConfiguration;
+        identifier_policy: StudentIdentifierPolicy;
         types: Option[];
         statuses: Option[];
         courses: CourseGroup[];
@@ -253,16 +256,6 @@ const CIVIL_STATUS_OPTIONS = [
     { value: "widowed", label: "Widowed" },
     { value: "separated", label: "Separated" },
     { value: "annulled", label: "Annulled" },
-];
-
-const NATIONALITY_OPTIONS = [
-    { value: "filipino", label: "Filipino" },
-    { value: "american", label: "American" },
-    { value: "chinese", label: "Chinese" },
-    { value: "indian", label: "Indian" },
-    { value: "korean", label: "Korean" },
-    { value: "japanese", label: "Japanese" },
-    { value: "other", label: "Other" },
 ];
 
 function requiredLabel(label: string) {
@@ -322,6 +315,8 @@ function nestedValue(source: Record<string, unknown> | null, path: string): stri
 }
 
 export default function AdministratorStudentEdit({ user, student, options, current_enrollments = [], current_classes = [] }: EditStudentProps) {
+    const configuration = options.student_configuration;
+    const identifier = options.identifier_policy;
     const [addSubjectOpen, setAddSubjectOpen] = useState(false);
     const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
     const [isGeneratingId, setIsGeneratingId] = useState(false);
@@ -341,8 +336,8 @@ export default function AdministratorStudentEdit({ user, student, options, curre
         email: student.email || "",
         phone: student.phone || "",
         civil_status: student.civil_status || relationValue(student.personalInfo, "civil_status") || "single",
-        nationality: student.nationality || relationValue(student.personalInfo, "citizenship") || "filipino",
-        citizenship: student.nationality || relationValue(student.personalInfo, "citizenship") || "filipino",
+        nationality: student.nationality || "",
+        citizenship: relationValue(student.personalInfo, "citizenship") || "",
         religion: student.religion || relationValue(student.personalInfo, "religion"),
         course_id: student.course_id ? student.course_id.toString() : "",
         academic_year: student.academic_year ? student.academic_year.toString() : "1",
@@ -457,6 +452,9 @@ export default function AdministratorStudentEdit({ user, student, options, curre
     });
 
     const isSHS = data.student_type === "shs";
+    const external = configuration.external_identifier;
+    const showExternal = external.enabled && external.student_types.includes(data.student_type as StudentCategory);
+    const usesExternal = showExternal && external.use_as_student_id && (String(student.student_id) === student.lrn || !student.student_id);
     const isGraduated = data.status === "graduated";
     const isWithdrawn = data.status === "withdrawn" || data.status === "dropped";
     const showEmployment =
@@ -482,18 +480,17 @@ export default function AdministratorStudentEdit({ user, student, options, curre
             setData(field, value as never);
         };
 
-    const yearLevelOptions = isSHS
-        ? [
-              { value: "11", label: "Grade 11" },
-              { value: "12", label: "Grade 12" },
-          ]
-        : [
-              { value: "1", label: "1st Year" },
-              { value: "2", label: "2nd Year" },
-              { value: "3", label: "3rd Year" },
-              { value: "4", label: "4th Year" },
-              { value: "5", label: "Graduate" },
-          ];
+    const yearLevelOptions = configuration.year_levels[data.student_type as StudentCategory].map((level) => ({
+        ...level,
+        value: String(level.value),
+    }));
+    if (
+        data.student_type === student.student_type &&
+        student.academic_year &&
+        !yearLevelOptions.some((level) => level.value === String(student.academic_year))
+    ) {
+        yearLevelOptions.push({ value: String(student.academic_year), label: `Existing level ${student.academic_year}` });
+    }
 
     useEffect(() => {
         if (!data.birth_date) {
@@ -516,33 +513,26 @@ export default function AdministratorStudentEdit({ user, student, options, curre
     useEffect(() => {
         if (isSHS) {
             setData("course_id", "");
-
-            if (data.academic_year !== "11" && data.academic_year !== "12") {
-                setData("academic_year", "11");
-            }
-
-            return;
+        } else {
+            setData("shs_strand_id", "");
         }
-
-        setData("shs_strand_id", "");
-
-        if (data.academic_year === "11" || data.academic_year === "12") {
-            setData("academic_year", "1");
+        if (!yearLevelOptions.some((level) => level.value === data.academic_year)) {
+            setData("academic_year", yearLevelOptions[0].value);
         }
     }, [data.student_type]);
 
     const handleGenerateId = async () => {
-        if (!data.student_type || isSHS) {
+        if (!data.student_type || usesExternal) {
             return;
         }
 
         setIsGeneratingId(true);
 
         try {
-            const response = await fetch(route("administrators.students.generate-id", { type: data.student_type }));
+            const response = await fetch(generateId.url({ query: { type: data.student_type } }));
 
             if (response.ok) {
-                const result = (await response.json()) as { id?: number };
+                const result = (await response.json()) as { id?: string };
 
                 if (result.id) {
                     setData("student_id", result.id.toString());
@@ -683,37 +673,47 @@ export default function AdministratorStudentEdit({ user, student, options, curre
                             {fieldError("status")}
                         </div>
 
-                        {!isSHS ? (
+                        {!usesExternal && (
                             <div className="space-y-2">
                                 <Label htmlFor="student_id" className="flex items-center gap-1.5">
                                     <Hash className="h-3.5 w-3.5" />
-                                    {requiredLabel("Student ID")}
+                                    {requiredLabel(identifier.display_label)}
                                 </Label>
                                 <div className="flex gap-2">
                                     <Input
                                         id="student_id"
                                         value={data.student_id}
+                                        readOnly={identifier.assignment_mode === "automatic"}
                                         onChange={(event) => setData("student_id", event.target.value)}
                                         placeholder="Student ID"
                                         className="font-mono"
                                     />
-                                    <Button type="button" variant="outline" size="icon" onClick={handleGenerateId} disabled={isGeneratingId}>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="icon"
+                                        aria-label="Preview a replacement identifier"
+                                        onClick={handleGenerateId}
+                                        disabled={isGeneratingId || identifier.assignment_mode === "automatic"}
+                                    >
                                         <RefreshCw className={cn("h-4 w-4", isGeneratingId && "animate-spin")} />
                                     </Button>
                                 </div>
                                 {fieldError("student_id")}
                             </div>
-                        ) : (
+                        )}
+                        {showExternal && (
                             <div className="space-y-2">
                                 <Label htmlFor="lrn" className="flex items-center gap-1.5">
                                     <Hash className="h-3.5 w-3.5" />
-                                    {requiredLabel("LRN")}
+                                    {external.required || usesExternal ? requiredLabel(external.label) : external.label}
                                 </Label>
                                 <Input
                                     id="lrn"
                                     value={data.lrn}
                                     onChange={(event) => setData("lrn", event.target.value)}
-                                    placeholder="Learner Reference Number"
+                                    placeholder={external.label}
+                                    maxLength={external.max_length}
                                     className="font-mono"
                                 />
                                 {fieldError("lrn")}
@@ -797,22 +797,13 @@ export default function AdministratorStudentEdit({ user, student, options, curre
                                     <Input id="age" value={data.age} readOnly className="bg-muted" />
                                 </div>
 
-                                <div className="space-y-2">
-                                    <Label htmlFor="email" className="flex items-center gap-1.5">
-                                        <Mail className="h-3.5 w-3.5" />
-                                        Email
-                                    </Label>
+                                <ConfiguredStudentField name="email" policy={configuration.fields.email} error={errors.email}>
                                     <Input id="email" type="email" value={data.email} onChange={(event) => setData("email", event.target.value)} />
-                                    {fieldError("email")}
-                                </div>
+                                </ConfiguredStudentField>
 
-                                <div className="space-y-2">
-                                    <Label htmlFor="phone" className="flex items-center gap-1.5">
-                                        <Phone className="h-3.5 w-3.5" />
-                                        Phone
-                                    </Label>
+                                <ConfiguredStudentField name="phone" policy={configuration.fields.phone} error={errors.phone}>
                                     <Input id="phone" value={data.phone} onChange={(event) => setData("phone", event.target.value)} />
-                                </div>
+                                </ConfiguredStudentField>
 
                                 {!isSHS ? (
                                     <div className="space-y-2">
@@ -1001,8 +992,7 @@ export default function AdministratorStudentEdit({ user, student, options, curre
                                         rows={2}
                                     />
                                 </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="birthplace">Birthplace</Label>
+                                <ConfiguredStudentField name="birthplace" policy={configuration.fields.birthplace} error={errors.birthplace}>
                                     <AutocompleteFieldInput
                                         id="birthplace"
                                         value={data.birthplace}
@@ -1010,9 +1000,8 @@ export default function AdministratorStudentEdit({ user, student, options, curre
                                         fieldName="birthplace"
                                         placeholder="Type or pick a birthplace"
                                     />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="civil_status">Civil Status</Label>
+                                </ConfiguredStudentField>
+                                <ConfiguredStudentField name="civil_status" policy={configuration.fields.civil_status} error={errors.civil_status}>
                                     <Select value={data.civil_status} onValueChange={setSelectData("civil_status")}>
                                         <SelectTrigger id="civil_status">
                                             <SelectValue placeholder="Select status" />
@@ -1025,42 +1014,22 @@ export default function AdministratorStudentEdit({ user, student, options, curre
                                             ))}
                                         </SelectContent>
                                     </Select>
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="nationality">Nationality</Label>
-                                    <Select
+                                </ConfiguredStudentField>
+                                <ConfiguredStudentField name="nationality" policy={configuration.fields.nationality} error={errors.nationality}>
+                                    <Input
+                                        id="nationality"
                                         value={data.nationality}
-                                        onValueChange={(value) => {
-                                            if (value === null) {
-                                                return;
-                                            }
-
-                                            setData("nationality", value);
-                                            setData("citizenship", value);
-                                        }}
-                                    >
-                                        <SelectTrigger id="nationality">
-                                            <SelectValue placeholder="Select nationality" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {NATIONALITY_OPTIONS.map((nationality) => (
-                                                <SelectItem key={nationality.value} value={nationality.value}>
-                                                    {nationality.label}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="citizenship">Citizenship</Label>
+                                        onChange={(event) => setData("nationality", event.target.value)}
+                                    />
+                                </ConfiguredStudentField>
+                                <ConfiguredStudentField name="citizenship" policy={configuration.fields.citizenship} error={errors.citizenship}>
                                     <Input
                                         id="citizenship"
                                         value={data.citizenship}
                                         onChange={(event) => setData("citizenship", event.target.value)}
                                     />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="religion">Religion</Label>
+                                </ConfiguredStudentField>
+                                <ConfiguredStudentField name="religion" policy={configuration.fields.religion} error={errors.religion}>
                                     <AutocompleteFieldInput
                                         id="religion"
                                         value={data.religion}
@@ -1068,15 +1037,13 @@ export default function AdministratorStudentEdit({ user, student, options, curre
                                         fieldName="religion"
                                         placeholder="Type or pick a religion"
                                     />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="height">Height</Label>
+                                </ConfiguredStudentField>
+                                <ConfiguredStudentField name="height" policy={configuration.fields.height} error={errors.height}>
                                     <Input id="height" value={data.height} onChange={(event) => setData("height", event.target.value)} />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="weight">Weight</Label>
+                                </ConfiguredStudentField>
+                                <ConfiguredStudentField name="weight" policy={configuration.fields.weight} error={errors.weight}>
                                     <Input id="weight" value={data.weight} onChange={(event) => setData("weight", event.target.value)} />
-                                </div>
+                                </ConfiguredStudentField>
 
                                 <div className="grid gap-4 border-t pt-5 md:col-span-2 md:grid-cols-3">
                                     <div className="space-y-2">
@@ -1231,188 +1198,196 @@ export default function AdministratorStudentEdit({ user, student, options, curre
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="grid gap-5 md:grid-cols-2">
-                                <div className="space-y-2">
-                                    <Label htmlFor="region_of_origin">Region of Origin</Label>
-                                    <Select value={data.region_of_origin} onValueChange={setSelectData("region_of_origin")}>
-                                        <SelectTrigger id="region_of_origin">
-                                            <SelectValue placeholder="Select region" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {options.regions.map((region) => (
-                                                <SelectItem key={region.value} value={region.value.toString()}>
-                                                    {region.label}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="ethnicity">Ethnicity</Label>
-                                    <AutocompleteFieldInput
-                                        id="ethnicity"
-                                        value={data.ethnicity}
-                                        onChange={(value: string) => setData("ethnicity", value)}
-                                        fieldName="ethnicity"
-                                        placeholder="Type or pick an ethnicity"
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="province_of_origin">Province of Origin</Label>
-                                    <AutocompleteFieldInput
-                                        id="province_of_origin"
-                                        value={data.province_of_origin}
-                                        onChange={(value: string) => setData("province_of_origin", value)}
-                                        fieldName="province_of_origin"
-                                        placeholder="Type or pick a province"
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="city_of_origin">City of Origin</Label>
-                                    <AutocompleteFieldInput
-                                        id="city_of_origin"
-                                        value={data.city_of_origin}
-                                        onChange={(value: string) => setData("city_of_origin", value)}
-                                        fieldName="city_of_origin"
-                                        placeholder="Type or pick a city"
-                                    />
-                                </div>
-                                <div className="flex items-center gap-3 rounded-md border p-3 md:col-span-2">
-                                    <Checkbox
-                                        id="is_indigenous_person"
-                                        checked={data.is_indigenous_person}
-                                        onCheckedChange={(checked) => setData("is_indigenous_person", checked === true)}
-                                    />
-                                    <Label htmlFor="is_indigenous_person" className="cursor-pointer">
-                                        Indigenous Person
-                                    </Label>
-                                </div>
-                                {data.is_indigenous_person && (
-                                    <div className="space-y-2 md:col-span-2">
-                                        <Label htmlFor="indigenous_group">Indigenous Group</Label>
-                                        <Input
-                                            id="indigenous_group"
-                                            value={data.indigenous_group}
-                                            onChange={(event) => setData("indigenous_group", event.target.value)}
-                                        />
-                                    </div>
-                                )}
-                                <div className="grid gap-3 md:col-span-2 md:grid-cols-3">
-                                    <div className="flex items-center gap-2 rounded-md border p-3">
-                                        <Checkbox
-                                            id="is_pwd"
-                                            checked={data.is_pwd}
-                                            onCheckedChange={(checked) => setData("is_pwd", checked === true)}
-                                        />
-                                        <Label htmlFor="is_pwd" className="cursor-pointer">
-                                            PWD
-                                        </Label>
-                                    </div>
-                                    <div className="flex items-center gap-2 rounded-md border p-3">
-                                        <Checkbox
-                                            id="is_solo_parent"
-                                            checked={data.is_solo_parent}
-                                            onCheckedChange={(checked) => setData("is_solo_parent", checked === true)}
-                                        />
-                                        <Label htmlFor="is_solo_parent" className="cursor-pointer">
-                                            Solo Parent
-                                        </Label>
-                                    </div>
-                                    <div className="flex items-center gap-2 rounded-md border p-3">
-                                        <Checkbox
-                                            id="is_senior_citizen"
-                                            checked={data.is_senior_citizen}
-                                            onCheckedChange={(checked) => setData("is_senior_citizen", checked === true)}
-                                        />
-                                        <Label htmlFor="is_senior_citizen" className="cursor-pointer">
-                                            Senior Citizen
-                                        </Label>
-                                    </div>
-                                    <div className="flex items-center gap-2 rounded-md border p-3">
-                                        <Checkbox
-                                            id="is_magna_carta"
-                                            checked={data.is_magna_carta}
-                                            onCheckedChange={(checked) => setData("is_magna_carta", checked === true)}
-                                        />
-                                        <Label htmlFor="is_magna_carta" className="cursor-pointer">
-                                            Magna Carta
-                                        </Label>
-                                    </div>
-                                    <div className="flex items-center gap-2 rounded-md border p-3">
-                                        <Checkbox
-                                            id="is_underprivileged"
-                                            checked={data.is_underprivileged}
-                                            onCheckedChange={(checked) => setData("is_underprivileged", checked === true)}
-                                        />
-                                        <Label htmlFor="is_underprivileged" className="cursor-pointer">
-                                            Underprivileged
-                                        </Label>
-                                    </div>
-                                    <div className="flex items-center gap-2 rounded-md border p-3">
-                                        <Checkbox
-                                            id="is_first_generation"
-                                            checked={data.is_first_generation}
-                                            onCheckedChange={(checked) => setData("is_first_generation", checked === true)}
-                                        />
-                                        <Label htmlFor="is_first_generation" className="cursor-pointer">
-                                            First Generation
-                                        </Label>
-                                    </div>
-                                </div>
-                                {data.is_pwd && (
-                                    <div className="space-y-2 md:col-span-2">
-                                        <Label htmlFor="pwd_type">PWD Type</Label>
-                                        <Input id="pwd_type" value={data.pwd_type} onChange={(event) => setData("pwd_type", event.target.value)} />
-                                    </div>
-                                )}
-                                <div className="grid gap-4 border-t pt-5 md:col-span-2 md:grid-cols-2">
-                                    <div className="space-y-2">
-                                        <Label htmlFor="income_bracket_mode">Income Bracket Mode</Label>
-                                        <Input
-                                            id="income_bracket_mode"
-                                            value={data.income_bracket_mode}
-                                            onChange={(event) => setData("income_bracket_mode", event.target.value)}
-                                            placeholder="annual"
-                                        />
-                                    </div>
-                                    <div className="flex items-center gap-2 rounded-md border p-3">
-                                        <Checkbox
-                                            id="use_same_parent_income"
-                                            checked={data.use_same_parent_income}
-                                            onCheckedChange={(checked) => setData("use_same_parent_income", checked === true)}
-                                        />
-                                        <Label htmlFor="use_same_parent_income" className="cursor-pointer">
-                                            Use Same Parent Income Bracket
-                                        </Label>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="family_income_bracket">Family Income Bracket</Label>
-                                        <Input
-                                            id="family_income_bracket"
-                                            value={data.family_income_bracket}
-                                            onChange={(event) => setData("family_income_bracket", event.target.value)}
-                                        />
-                                    </div>
-                                    {!data.use_same_parent_income && (
-                                        <>
-                                            <div className="space-y-2">
-                                                <Label htmlFor="father_income_bracket">Father Income Bracket</Label>
+                                {configuration.philippine_reporting && (
+                                    <>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="region_of_origin">Region of Origin</Label>
+                                            <Select value={data.region_of_origin} onValueChange={setSelectData("region_of_origin")}>
+                                                <SelectTrigger id="region_of_origin">
+                                                    <SelectValue placeholder="Select region" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {options.regions.map((region) => (
+                                                        <SelectItem key={region.value} value={region.value.toString()}>
+                                                            {region.label}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="ethnicity">Ethnicity</Label>
+                                            <AutocompleteFieldInput
+                                                id="ethnicity"
+                                                value={data.ethnicity}
+                                                onChange={(value: string) => setData("ethnicity", value)}
+                                                fieldName="ethnicity"
+                                                placeholder="Type or pick an ethnicity"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="province_of_origin">Province of Origin</Label>
+                                            <AutocompleteFieldInput
+                                                id="province_of_origin"
+                                                value={data.province_of_origin}
+                                                onChange={(value: string) => setData("province_of_origin", value)}
+                                                fieldName="province_of_origin"
+                                                placeholder="Type or pick a province"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="city_of_origin">City of Origin</Label>
+                                            <AutocompleteFieldInput
+                                                id="city_of_origin"
+                                                value={data.city_of_origin}
+                                                onChange={(value: string) => setData("city_of_origin", value)}
+                                                fieldName="city_of_origin"
+                                                placeholder="Type or pick a city"
+                                            />
+                                        </div>
+                                        <div className="flex items-center gap-3 rounded-md border p-3 md:col-span-2">
+                                            <Checkbox
+                                                id="is_indigenous_person"
+                                                checked={data.is_indigenous_person}
+                                                onCheckedChange={(checked) => setData("is_indigenous_person", checked === true)}
+                                            />
+                                            <Label htmlFor="is_indigenous_person" className="cursor-pointer">
+                                                Indigenous Person
+                                            </Label>
+                                        </div>
+                                        {data.is_indigenous_person && (
+                                            <div className="space-y-2 md:col-span-2">
+                                                <Label htmlFor="indigenous_group">Indigenous Group</Label>
                                                 <Input
-                                                    id="father_income_bracket"
-                                                    value={data.father_income_bracket}
-                                                    onChange={(event) => setData("father_income_bracket", event.target.value)}
+                                                    id="indigenous_group"
+                                                    value={data.indigenous_group}
+                                                    onChange={(event) => setData("indigenous_group", event.target.value)}
                                                 />
                                             </div>
-                                            <div className="space-y-2">
-                                                <Label htmlFor="mother_income_bracket">Mother Income Bracket</Label>
+                                        )}
+                                        <div className="grid gap-3 md:col-span-2 md:grid-cols-3">
+                                            <div className="flex items-center gap-2 rounded-md border p-3">
+                                                <Checkbox
+                                                    id="is_pwd"
+                                                    checked={data.is_pwd}
+                                                    onCheckedChange={(checked) => setData("is_pwd", checked === true)}
+                                                />
+                                                <Label htmlFor="is_pwd" className="cursor-pointer">
+                                                    PWD
+                                                </Label>
+                                            </div>
+                                            <div className="flex items-center gap-2 rounded-md border p-3">
+                                                <Checkbox
+                                                    id="is_solo_parent"
+                                                    checked={data.is_solo_parent}
+                                                    onCheckedChange={(checked) => setData("is_solo_parent", checked === true)}
+                                                />
+                                                <Label htmlFor="is_solo_parent" className="cursor-pointer">
+                                                    Solo Parent
+                                                </Label>
+                                            </div>
+                                            <div className="flex items-center gap-2 rounded-md border p-3">
+                                                <Checkbox
+                                                    id="is_senior_citizen"
+                                                    checked={data.is_senior_citizen}
+                                                    onCheckedChange={(checked) => setData("is_senior_citizen", checked === true)}
+                                                />
+                                                <Label htmlFor="is_senior_citizen" className="cursor-pointer">
+                                                    Senior Citizen
+                                                </Label>
+                                            </div>
+                                            <div className="flex items-center gap-2 rounded-md border p-3">
+                                                <Checkbox
+                                                    id="is_magna_carta"
+                                                    checked={data.is_magna_carta}
+                                                    onCheckedChange={(checked) => setData("is_magna_carta", checked === true)}
+                                                />
+                                                <Label htmlFor="is_magna_carta" className="cursor-pointer">
+                                                    Magna Carta
+                                                </Label>
+                                            </div>
+                                            <div className="flex items-center gap-2 rounded-md border p-3">
+                                                <Checkbox
+                                                    id="is_underprivileged"
+                                                    checked={data.is_underprivileged}
+                                                    onCheckedChange={(checked) => setData("is_underprivileged", checked === true)}
+                                                />
+                                                <Label htmlFor="is_underprivileged" className="cursor-pointer">
+                                                    Underprivileged
+                                                </Label>
+                                            </div>
+                                            <div className="flex items-center gap-2 rounded-md border p-3">
+                                                <Checkbox
+                                                    id="is_first_generation"
+                                                    checked={data.is_first_generation}
+                                                    onCheckedChange={(checked) => setData("is_first_generation", checked === true)}
+                                                />
+                                                <Label htmlFor="is_first_generation" className="cursor-pointer">
+                                                    First Generation
+                                                </Label>
+                                            </div>
+                                        </div>
+                                        {data.is_pwd && (
+                                            <div className="space-y-2 md:col-span-2">
+                                                <Label htmlFor="pwd_type">PWD Type</Label>
                                                 <Input
-                                                    id="mother_income_bracket"
-                                                    value={data.mother_income_bracket}
-                                                    onChange={(event) => setData("mother_income_bracket", event.target.value)}
+                                                    id="pwd_type"
+                                                    value={data.pwd_type}
+                                                    onChange={(event) => setData("pwd_type", event.target.value)}
                                                 />
                                             </div>
-                                        </>
-                                    )}
-                                </div>
+                                        )}
+                                        <div className="grid gap-4 border-t pt-5 md:col-span-2 md:grid-cols-2">
+                                            <div className="space-y-2">
+                                                <Label htmlFor="income_bracket_mode">Income Bracket Mode</Label>
+                                                <Input
+                                                    id="income_bracket_mode"
+                                                    value={data.income_bracket_mode}
+                                                    onChange={(event) => setData("income_bracket_mode", event.target.value)}
+                                                    placeholder="annual"
+                                                />
+                                            </div>
+                                            <div className="flex items-center gap-2 rounded-md border p-3">
+                                                <Checkbox
+                                                    id="use_same_parent_income"
+                                                    checked={data.use_same_parent_income}
+                                                    onCheckedChange={(checked) => setData("use_same_parent_income", checked === true)}
+                                                />
+                                                <Label htmlFor="use_same_parent_income" className="cursor-pointer">
+                                                    Use Same Parent Income Bracket
+                                                </Label>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label htmlFor="family_income_bracket">Family Income Bracket</Label>
+                                                <Input
+                                                    id="family_income_bracket"
+                                                    value={data.family_income_bracket}
+                                                    onChange={(event) => setData("family_income_bracket", event.target.value)}
+                                                />
+                                            </div>
+                                            {!data.use_same_parent_income && (
+                                                <>
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="father_income_bracket">Father Income Bracket</Label>
+                                                        <Input
+                                                            id="father_income_bracket"
+                                                            value={data.father_income_bracket}
+                                                            onChange={(event) => setData("father_income_bracket", event.target.value)}
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="mother_income_bracket">Mother Income Bracket</Label>
+                                                        <Input
+                                                            id="mother_income_bracket"
+                                                            value={data.mother_income_bracket}
+                                                            onChange={(event) => setData("mother_income_bracket", event.target.value)}
+                                                        />
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
+                                    </>
+                                )}
                                 <div className="space-y-2">
                                     <Label htmlFor="scholarship_type">Scholarship</Label>
                                     <Select value={data.scholarship_type} onValueChange={setSelectData("scholarship_type")}>
@@ -1650,27 +1625,30 @@ export default function AdministratorStudentEdit({ user, student, options, curre
                                         rows={2}
                                     />
                                 </div>
-                                <div className="space-y-2 border-t pt-5">
-                                    <Label htmlFor="current_address" className="flex items-center gap-1.5">
-                                        <MapPin className="h-3.5 w-3.5" />
-                                        Current Address
-                                    </Label>
+                                <ConfiguredStudentField
+                                    name="current_address"
+                                    policy={configuration.fields.current_address}
+                                    error={errors.current_address}
+                                >
                                     <Textarea
                                         id="current_address"
                                         value={data.current_address}
                                         onChange={(event) => setData("current_address", event.target.value)}
                                         rows={3}
                                     />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="permanent_address">Permanent Address</Label>
+                                </ConfiguredStudentField>
+                                <ConfiguredStudentField
+                                    name="permanent_address"
+                                    policy={configuration.fields.permanent_address}
+                                    error={errors.permanent_address}
+                                >
                                     <Textarea
                                         id="permanent_address"
                                         value={data.permanent_address}
                                         onChange={(event) => setData("permanent_address", event.target.value)}
                                         rows={3}
                                     />
-                                </div>
+                                </ConfiguredStudentField>
                             </CardContent>
                         </Card>
 

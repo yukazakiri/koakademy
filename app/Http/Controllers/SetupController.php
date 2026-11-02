@@ -116,6 +116,7 @@ final class SetupController extends Controller
             'programs' => ['nullable', 'array', 'max:100'],
             'programs.*' => ['string', 'max:50'],
             'seed_strand_subjects' => ['nullable', 'boolean'],
+            'student_preset' => ['nullable', Rule::in(['neutral', 'legacy_ph'])],
             // Step 4: Brand & Appearance (optional)
             'site_name' => ['nullable', 'string', 'max:255'],
             'site_description' => ['nullable', 'string', 'max:500'],

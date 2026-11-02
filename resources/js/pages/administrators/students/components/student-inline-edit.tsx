@@ -41,13 +41,9 @@ const STATUSES = [
     { value: "rejected", label: "Application Rejected" },
 ];
 
-function formatYearLevel(value: number | null): string {
-    return YEAR_LEVELS.find((level) => level.value === String(value))?.label ?? "—";
-}
-
 type PendingField = "academic_year" | "status";
 
-type InlineStudent = Pick<StudentDetail, "id" | "academic_year" | "academic_year_value" | "status">;
+type InlineStudent = Pick<StudentDetail, "id" | "academic_year" | "academic_year_value" | "status" | "year_level_options">;
 
 interface StudentInlineEditProps {
     student: InlineStudent;
@@ -62,6 +58,7 @@ interface StudentInlineEditProps {
  * prop so the authoritative values land without rebuilding the whole page.
  */
 export function StudentInlineEdit({ student }: StudentInlineEditProps) {
+    const yearLevels = student.year_level_options?.map((level) => ({ ...level, value: String(level.value) })) ?? YEAR_LEVELS;
     const [editing, setEditing] = useState<PendingField | null>(null);
     const [saving, setSaving] = useState<PendingField | null>(null);
     const [draft, setDraft] = useState("");
@@ -130,10 +127,10 @@ export function StudentInlineEdit({ student }: StudentInlineEditProps) {
         <>
             <InlineField
                 label="Year Level"
-                displayValue={formatYearLevel(shownYearLevel)}
+                displayValue={yearLevels.find((level) => level.value === String(shownYearLevel))?.label ?? student.academic_year ?? "—"}
                 isEditing={editing === "academic_year"}
                 isSaving={saving === "academic_year"}
-                options={YEAR_LEVELS}
+                options={yearLevels}
                 draft={draft}
                 setDraft={setDraft}
                 onStart={() => {

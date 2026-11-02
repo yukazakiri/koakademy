@@ -47,6 +47,10 @@ final class EnrollmentRegistrationController extends Controller
 {
     public function create(CurriculumCapabilityResolver $capabilityResolver): Response
     {
+        app(\App\Services\StudentConfigurationService::class)->resolvePublicSchool();
+        if (app(\App\Services\TenantContext::class)->getCurrentSchoolId() === null && School::query()->where('is_active', true)->count() > 1) {
+            return Inertia::render('enrollment/closed', ['message' => 'Choose an active school before registering. Contact the school office for its enrollment link.']);
+        }
         $generalSettings = app(GeneralSettingsService::class)->getGlobalSettingsModel();
         $configuredEnrollmentCourseIds = collect($generalSettings?->enrollment_courses ?? [])
             ->map(fn (mixed $courseId): int => (int) $courseId)
@@ -56,6 +60,11 @@ final class EnrollmentRegistrationController extends Controller
 
         $collegeEnabled = Feature::active(\App\Features\Toggles\OnlineCollegeEnrollment::class);
         $tesdaEnabled = Feature::active(\App\Features\Toggles\OnlineTesdaEnrollment::class);
+        $studentConfiguration = app(\App\Services\StudentConfigurationService::class)->get();
+        $identifiers = app(\App\Services\IdentifierGenerator::class)->studentPolicy();
+        $configuration = app(\App\Services\StudentConfigurationService::class);
+        $collegeEnabled = $collegeEnabled && $identifiers['assignment_mode'] !== 'manual' && ! $configuration->usesExternal('college') && in_array('college', $studentConfiguration['enabled_types'], true);
+        $tesdaEnabled = $tesdaEnabled && $identifiers['assignment_mode'] !== 'manual' && ! $configuration->usesExternal('tesda') && in_array('tesda', $studentConfiguration['enabled_types'], true);
 
         if (! $collegeEnabled && ! $tesdaEnabled) {
             return Inertia::render('enrollment/closed', [
@@ -122,7 +131,8 @@ final class EnrollmentRegistrationController extends Controller
             ->all();
 
         $currencySymbol = app(SiteSettings::class)->getCurrency() === 'PHP' ? '₱' : (app(SiteSettings::class)->getCurrency() === 'USD' ? '$' : app(SiteSettings::class)->getCurrency());
-        $schoolName = School::query()->active()->orderBy('id')->value('name')
+        $schoolName = app(\App\Services\TenantContext::class)->getCurrentSchool()?->name
+            ?? School::query()->active()->orderBy('id')->value('name')
             ?? School::query()->orderBy('id')->value('name')
             ?? 'KoAkademy';
 
@@ -170,6 +180,7 @@ final class EnrollmentRegistrationController extends Controller
             'tesda_enrollment_enabled' => $tesdaEnabled,
             'income_modes' => $incomeModes,
             'default_income_mode' => (string) config('income_brackets.default_mode', 'annual'),
+            'student_configuration' => $studentConfiguration,
             'currency_symbol' => $currencySymbol,
             'school_name' => $schoolName,
         ]);
@@ -291,7 +302,7 @@ final class EnrollmentRegistrationController extends Controller
 
         /** @var Student $student */
         $student = DB::transaction(function () use ($request, $payload, $studentType, $birthDate, $courseId, $academicYear, $settings, $workflowCoordinator): Student {
-            $studentId = Student::generateNextId($studentType);
+            $studentId = app(\App\Services\IdentifierGenerator::class)->assign($studentType, null, 'automatic');
 
             $studentContactId = null;
             $studentContactAttributes = $this->onlyExistingColumns('student_contacts', [
@@ -409,9 +420,9 @@ final class EnrollmentRegistrationController extends Controller
                 'age' => (int) $birthDate->diffInYears(now()),
                 'gender' => $payload['gender'],
                 'civil_status' => $payload['civil_status'] ?? null,
-                'nationality' => $payload['nationality'],
+                'nationality' => $payload['nationality'] ?? null,
                 'religion' => $payload['religion'] ?? null,
-                'address' => $payload['address'],
+                'address' => $payload['address'] ?? null,
                 'emergency_contact' => $payload['contacts']['emergency_contact_phone'] ?? null,
                 'course_id' => $courseId,
                 'academic_year' => $academicYear,
@@ -505,19 +516,15 @@ final class EnrollmentRegistrationController extends Controller
     {
         $validated = $request->validate([
             'email' => ['required', 'email', 'max:255'],
-            'student_id' => ['required', 'string', 'max:20'],
+            'student_id' => ['required', 'string', 'max:64'],
         ]);
 
-        $studentIdNumeric = (int) preg_replace('/\D/', '', (string) $validated['student_id']);
-
-        if ($studentIdNumeric === 0) {
-            return response()->json(['matched' => false]);
-        }
+        $studentNumber = mb_trim($validated['student_id']);
 
         $student = Student::query()
             ->with(['Course.department'])
             ->whereRaw('LOWER(email) = ?', [Str::lower((string) $validated['email'])])
-            ->where('student_id', $studentIdNumeric)
+            ->where('student_id', $studentNumber)
             ->first();
 
         if (! $student instanceof Student) {
@@ -564,16 +571,16 @@ final class EnrollmentRegistrationController extends Controller
     {
         $validated = $request->validate([
             'email' => ['required', 'email', 'max:255'],
-            'student_id' => ['required', 'string', 'max:20'],
+            'student_id' => ['required', 'string', 'max:64'],
             'search' => ['nullable', 'string', 'max:100'],
         ]);
 
-        $studentIdNumeric = (int) preg_replace('/\D/', '', (string) $validated['student_id']);
+        $studentNumber = mb_trim($validated['student_id']);
 
         $student = Student::query()
             ->with('Course')
             ->whereRaw('LOWER(email) = ?', [Str::lower((string) $validated['email'])])
-            ->where('student_id', $studentIdNumeric)
+            ->where('student_id', $studentNumber)
             ->first();
 
         if (! $student instanceof Student || ! $student->course_id) {
@@ -685,7 +692,7 @@ final class EnrollmentRegistrationController extends Controller
     ): RedirectResponse {
         $validated = $request->validate([
             'email' => ['required', 'email', 'max:255'],
-            'student_id' => ['required', 'string', 'max:20'],
+            'student_id' => ['required', 'string', 'max:64'],
             'academic_year' => ['required', 'integer', 'in:1,2,3,4'],
             'semester' => ['nullable', 'integer', 'in:1,2'],
             'subjects' => ['required', 'array', 'min:1'],
@@ -703,12 +710,12 @@ final class EnrollmentRegistrationController extends Controller
             'subjects.min' => 'Please select at least one subject to enroll in.',
         ]);
 
-        $studentIdNumeric = (int) preg_replace('/\D/', '', (string) $validated['student_id']);
+        $studentNumber = mb_trim($validated['student_id']);
 
         $student = Student::query()
             ->with('Course')
             ->whereRaw('LOWER(email) = ?', [Str::lower((string) $validated['email'])])
-            ->where('student_id', $studentIdNumeric)
+            ->where('student_id', $studentNumber)
             ->first();
 
         if (! $student instanceof Student) {
@@ -981,6 +988,11 @@ final class EnrollmentRegistrationController extends Controller
     {
         if ($student instanceof Student && $student->school_id) {
             return (int) $student->school_id;
+        }
+
+        $activeSchoolId = app(\App\Services\TenantContext::class)->getCurrentSchoolId();
+        if ($activeSchoolId !== null) {
+            return $activeSchoolId;
         }
 
         $activeSchoolId = School::query()

@@ -117,6 +117,17 @@ final class SetupExecutionService
                 'dean_email' => $input['dean_email'] ?? null,
                 'is_active' => true,
             ]);
+            $studentConfiguration = StudentConfigurationService::defaults(legacy: ($input['student_preset'] ?? 'neutral') === 'legacy_ph');
+            if ($studentConfiguration['preset'] === 'neutral') {
+                $defaultType = match ($schoolLevel) {
+                    SchoolLevel::SeniorHigh => 'shs',
+                    SchoolLevel::TechnicalVocational => 'tesda',
+                    default => 'college',
+                };
+                $studentConfiguration['enabled_types'] = [$defaultType];
+                $studentConfiguration['default_type'] = $defaultType;
+            }
+            app(StudentConfigurationService::class)->update($studentConfiguration, $school->id);
 
             $generalSetting = GeneralSetting::first() ?? new GeneralSetting();
             $generalSetting->site_name = ! empty($input['site_name']) ? (string) $input['site_name'] : (string) $input['school_name'];

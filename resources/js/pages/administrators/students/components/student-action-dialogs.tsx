@@ -152,7 +152,9 @@ export function UpdateIdDialog({ open, onOpenChange, student }: DialogProps) {
             <DialogContent>
                 <DialogHeader>
                     <DialogTitle>Update Student ID</DialogTitle>
-                    <DialogDescription>This will update the student ID and all related records. This action cannot be undone.</DialogDescription>
+                    <DialogDescription>
+                        This changes only the public student number. Internal record links stay unchanged and the change is audited.
+                    </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div className="space-y-2">
@@ -164,8 +166,9 @@ export function UpdateIdDialog({ open, onOpenChange, student }: DialogProps) {
                         <Input
                             value={data.new_student_id}
                             onChange={(event) => setData("new_student_id", event.target.value)}
-                            type="number"
-                            placeholder="Enter 6-digit ID"
+                            type="text"
+                            maxLength={64}
+                            placeholder="Enter the new student number"
                         />
                         {errors.new_student_id && <span className="text-destructive text-xs">{errors.new_student_id}</span>}
                     </div>

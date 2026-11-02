@@ -41,7 +41,7 @@ use Spatie\Activitylog\Support\LogOptions;
 /**
  * @property int $id
  * @property int $institution_id
- * @property int $student_id
+ * @property string|null $student_id
  * @property string|null $lrn
  * @property string $student_type
  * @property string $first_name
@@ -144,7 +144,7 @@ final class Student extends Model implements RecordsActivity
     public $timestamps = true;
 
     #[Override]
-    public $incrementing = false;
+    public $incrementing = true;
 
     protected $versionable = ['institution_id',
         'student_id',
@@ -317,7 +317,7 @@ final class Student extends Model implements RecordsActivity
     /**
      * Generate the next available configured student ID.
      */
-    public static function generateNextId(?StudentType $studentType = null): int
+    public static function generateNextId(?StudentType $studentType = null): string
     {
         return app(IdentifierGenerator::class)->generateStudentId($studentType);
     }
@@ -1446,22 +1446,20 @@ final class Student extends Model implements RecordsActivity
     {
         parent::boot();
 
-        self::creating(function (Student $student): void {
-            if (! $student->id) {
-                // Find the maximum ID in the students table (including soft deleted)
-                $maxId = self::withTrashed()->max('id') ?? 0;
-                $student->id = $maxId + 1;
-
-                // Ensure the ID doesn't already exist (handle race conditions)
-                while (self::withTrashed()->where('id', $student->id)->exists()) {
-                    $student->id++;
-                }
+        self::saving(function (Student $student): void {
+            if (! $student->exists && $student->school_id === null) {
+                $student->school_id = app(\App\Services\TenantContext::class)->getCurrentSchoolId();
+            }
+            if ($student->isDirty(['student_id', 'school_id']) || ! $student->exists) {
+                $student->identifier_key = filled($student->student_id)
+                    ? \App\Services\StudentConfigurationService::scope($student->school_id).':'.$student->student_id
+                    : null;
             }
         });
 
         self::created(function (Student $student): void {
             // Sync to ShsStudent model if student type is SHS
-            if ($student->student_type === StudentType::SeniorHighSchool->value) {
+            if ($student->student_type === StudentType::SeniorHighSchool) {
                 self::syncToShsStudent($student);
             }
         });
@@ -1469,14 +1467,14 @@ final class Student extends Model implements RecordsActivity
         self::updated(function (Student $student): void {
             // Check if student type changed to or from SHS
             if ($student->wasChanged('student_type')) {
-                if ($student->student_type === StudentType::SeniorHighSchool->value) {
+                if ($student->student_type === StudentType::SeniorHighSchool) {
                     // Changed to SHS - create or update ShsStudent record
                     self::syncToShsStudent($student);
                 } else {
                     // Changed from SHS - delete ShsStudent record if exists
-                    ShsStudent::where('student_lrn', $student->lrn)->delete();
+                    ShsStudent::where('student_lrn', $student->lrn)->where('school_id', $student->school_id)->delete();
                 }
-            } elseif ($student->student_type === StudentType::SeniorHighSchool->value) {
+            } elseif ($student->student_type === StudentType::SeniorHighSchool) {
                 // Student is SHS and other fields were updated - sync to ShsStudent
                 self::syncToShsStudent($student);
             }
@@ -1596,14 +1594,9 @@ final class Student extends Model implements RecordsActivity
     protected function formattedAcademicYear(): Attribute
     {
         return Attribute::make(get: function (): string {
-            $years = [
-                1 => '1st year',
-                2 => '2nd year',
-                3 => '3rd year',
-                4 => '4th year',
-            ];
+            $levels = app(\App\Services\StudentConfigurationService::class)->get($this->school_id)['year_levels'][$this->student_type?->value ?? 'college'] ?? [];
 
-            return $years[$this->academic_year] ?? 'Unknown year';
+            return collect($levels)->firstWhere('value', $this->academic_year)['label'] ?? 'Year '.$this->academic_year;
         });
     }
 
@@ -1612,7 +1605,7 @@ final class Student extends Model implements RecordsActivity
         return [
             'id' => 'integer',
             'institution_id' => 'integer',
-            'student_id' => 'integer',
+            'student_id' => 'string',
             'age' => 'integer',
             'course_id' => 'integer',
             'academic_year' => 'integer',
@@ -1666,6 +1659,9 @@ final class Student extends Model implements RecordsActivity
      */
     private static function syncToShsStudent(self $student): void
     {
+        if (blank($student->lrn) || ! app(\App\Services\StudentConfigurationService::class)->get($student->school_id)['philippine_reporting']) {
+            return;
+        }
         try {
             $fullName = mb_trim(sprintf(
                 '%s %s %s',
@@ -1691,6 +1687,7 @@ final class Student extends Model implements RecordsActivity
 
             // Prepare data for ShsStudent
             $shsStudentData = [
+                'school_id' => $student->school_id,
                 'student_lrn' => $student->lrn,
                 'fullname' => $fullName,
                 'civil_status' => $student->civil_status ?? $student->personalInfo?->civil_status,
@@ -1713,7 +1710,7 @@ final class Student extends Model implements RecordsActivity
 
             // Update or create ShsStudent record based on LRN
             ShsStudent::updateOrCreate(
-                ['student_lrn' => $student->lrn],
+                ['student_lrn' => $student->lrn, 'school_id' => $student->school_id],
                 $shsStudentData
             );
 

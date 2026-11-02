@@ -15,13 +15,19 @@ use Override;
 final class FixCollegeStudentIds extends Command
 {
     #[Override]
-    protected $signature = 'students:fix-college-ids {--dry-run : Simulate the fix process without making changes}';
+    protected $signature = 'students:fix-college-ids {--dry-run : Simulate the fix process without making changes} {--confirm-legacy-format : Explicitly acknowledge this legacy numeric-only conversion}';
 
     #[Override]
     protected $description = 'Fix college students with 7 or 8 digit IDs and convert them to proper 6-digit IDs starting with 206***';
 
     public function handle(): int
     {
+        if (! $this->option('confirm-legacy-format')) {
+            $this->error('This legacy command rewrites student numbers using institution-specific numeric rules and is unsafe for configurable identifiers. Do not run it on global installations.');
+
+            return self::FAILURE;
+        }
+
         $dryRun = $this->option('dry-run');
         $studentIdText = SqlDialect::textCast(Student::query(), 'student_id');
 

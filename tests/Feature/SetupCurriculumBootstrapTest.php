@@ -26,6 +26,10 @@ it('bootstraps CHED degree programs with departments during setup', function ():
     expect($school)->not->toBeNull();
     expect($school?->curriculum_framework)->toBe(CurriculumFramework::ChedPsg);
     expect($school?->curriculum_reference)->toBe('CMO 46 s. 2012 (OBE) + program PSGs');
+    $studentConfiguration = app(App\Services\StudentConfigurationService::class)->get($school->id);
+    expect($studentConfiguration['preset'])->toBe('neutral')
+        ->and($studentConfiguration['external_identifier']['enabled'])->toBeFalse()
+        ->and($studentConfiguration['defaults']['nationality'])->toBe('');
 
     $bsit = Course::query()->where('code', 'BSIT')->first();
 
@@ -40,6 +44,14 @@ it('bootstraps CHED degree programs with departments during setup', function ():
 
     expect(Course::query()->where('code', 'BSCS')->exists())->toBeTrue();
     expect(Department::query()->where('school_id', $school?->id)->where('code', 'IT')->exists())->toBeTrue();
+});
+
+it('applies legacy student preferences only when explicitly requested during setup', function (): void {
+    $this->post('/setup', setupPayload(['student_preset' => 'legacy_ph']))->assertRedirect('/');
+    $configuration = app(App\Services\StudentConfigurationService::class)->get(School::query()->sole()->id);
+    expect($configuration['preset'])->toBe('legacy_ph')
+        ->and($configuration['external_identifier']['use_as_student_id'])->toBeTrue()
+        ->and($configuration['defaults']['nationality'])->toBe('filipino');
 });
 
 it('bootstraps SHS tracks and strands during setup', function (): void {

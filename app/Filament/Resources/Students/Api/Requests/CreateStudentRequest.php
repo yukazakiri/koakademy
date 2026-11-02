@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Students\Api\Requests;
 
 use App\Models\User;
+use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 
 final class CreateStudentRequest extends FormRequest
@@ -16,7 +17,8 @@ final class CreateStudentRequest extends FormRequest
     {
         $user = $this->user();
 
-        return $user instanceof User && ! $user->role->isStudent();
+        return $user instanceof User && ! $user->role?->isStudent() && ! $user->role?->isFaculty()
+            && $user->role !== \App\Enums\UserRole::Dean && $user->can('create', \App\Models\Student::class);
     }
 
     /**
@@ -26,54 +28,39 @@ final class CreateStudentRequest extends FormRequest
      */
     public function rules(): array
     {
-        return [
-            'first_name' => 'required',
-            'last_name' => 'required',
-            'middle_name' => 'required',
-            'gender' => 'required|in:male,female,other,prefer_not_to_say',
-            'birth_date' => 'required|date',
-            'age' => 'required',
-            'address' => 'required',
-            'contacts' => 'required|string',
-            'course_id' => 'required',
-            'academic_year' => 'required',
-            'email' => 'required',
-            'remarks' => 'required|string',
-            'profile_url' => 'required',
-            'student_contact_id' => 'required',
-            'student_parent_info' => 'required',
-            'student_education_id' => 'required',
-            'student_personal_id' => 'required',
-            'document_location_id' => 'required',
-            'deleted_at' => 'required',
-            'student_id' => 'required',
-            'status' => 'required',
-            'clearance_status' => 'required',
-            'year_graduated' => 'required',
-            'special_order' => 'required',
-            'issued_date' => 'required|date',
-            'subject_enrolled' => 'required',
-            'user_id' => 'required',
-            'institution_id' => 'required',
-            'lrn' => 'required',
-            'student_type' => 'required',
-            'ethnicity' => 'required',
-            'city_of_origin' => 'required',
-            'province_of_origin' => 'required',
-            'region_of_origin' => 'required',
-            'is_indigenous_person' => 'required',
-            'indigenous_group' => 'required',
-            'withdrawal_date' => 'required|date',
-            'withdrawal_reason' => 'required|string',
-            'attrition_category' => 'required',
-            'dropout_date' => 'required|date',
-            'employment_status' => 'required',
-            'employer_name' => 'required',
-            'job_position' => 'required',
-            'employment_date' => 'required|date',
-            'employed_by_institution' => 'required',
-            'scholarship_type' => 'required',
-            'scholarship_details' => 'required|string',
+        $type = (string) $this->input('student_type');
+        $configuration = app(\App\Services\StudentConfigurationService::class);
+        $configuration->assertRequiredFieldsSupported(['email', 'phone', 'civil_status', 'nationality', 'religion']);
+        $rules = [
+            'first_name' => ['required', 'string', 'max:100'],
+            'last_name' => ['required', 'string', 'max:100'],
+            'middle_name' => ['nullable', 'string', 'max:100'],
+            'suffix' => ['nullable', 'string', 'max:20'],
+            'gender' => ['required', 'in:male,female,other,prefer_not_to_say'],
+            'birth_date' => ['required', 'date', 'before:today'],
+            'student_type' => ['required', 'string'],
+            'status' => ['required', \Illuminate\Validation\Rule::enum(\App\Enums\StudentStatus::class)],
+            'academic_year' => ['required', 'integer'],
+            'email' => ['nullable', 'email', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:30'],
+            'civil_status' => ['nullable', 'string', 'max:50'],
+            'nationality' => ['nullable', 'string', 'max:50'],
+            'religion' => ['nullable', 'string', 'max:50'],
+            'remarks' => ['nullable', 'string'],
+            'address' => ['nullable', 'string', 'max:500'],
+            // Legacy clients sent JSON as text; preserve that public contract.
+            'contacts' => ['nullable', function (string $attribute, mixed $value, Closure $fail): void {
+                if (! is_array($value) && ! is_string($value)) {
+                    $fail('The contacts must be text or an object.');
+                }
+            }],
+            'identifier_assignment' => ['nullable', 'in:automatic,manual'],
+            'course_id' => [\Illuminate\Validation\Rule::requiredIf($type !== 'shs'), 'nullable', 'exists:courses,id'],
+            'shs_strand_id' => [\Illuminate\Validation\Rule::requiredIf($type === 'shs'), 'nullable', 'exists:shs_strands,id'],
+            'student_id' => $configuration->usesExternal($type) || $this->input('identifier_assignment', $this->filled('student_id') ? 'manual' : 'automatic') === 'automatic'
+                ? ['exclude'] : app(\App\Services\IdentifierGenerator::class)->getStudentIdValidationRules(\App\Enums\StudentType::tryFrom($type)),
         ];
+
+        return $configuration->rules($rules, $type);
     }
 }

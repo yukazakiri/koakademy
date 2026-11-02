@@ -10,8 +10,9 @@ use App\Models\IdSequence;
 use App\Models\Student;
 use Closure;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\Rules\Unique;
+use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
 final class IdentifierGenerator
@@ -20,46 +21,136 @@ final class IdentifierGenerator
 
     public const string Staff = 'staff';
 
-    public function preview(string $key): string
+    public function previewStudentId(?StudentType $type = null, ?int $schoolId = null): string
     {
-        $sequence = $this->sequenceFor($key);
+        $sequence = $this->sequenceFor(self::Student, type: $type, schoolId: $schoolId);
 
-        return $this->format((int) $sequence->next_number, $sequence->padding);
+        return $this->nextAvailable($sequence, $type, $schoolId)[1];
     }
 
-    public function generate(string $key): string
+    public function generateStudentId(?StudentType $type = null, ?int $schoolId = null): string
     {
-        return DB::transaction(function () use ($key): string {
-            $sequence = $this->sequenceFor($key, lock: true);
-            $identifier = $this->format((int) $sequence->next_number, $sequence->padding);
-
-            $sequence->forceFill([
-                'next_number' => (int) $sequence->next_number + (int) $sequence->increment_by,
-            ])->save();
+        return DB::transaction(function () use ($type, $schoolId): string {
+            $sequence = $this->sequenceFor(self::Student, lock: true, type: $type, schoolId: $schoolId);
+            app(StudentConfigurationService::class)->forget($schoolId);
+            if ($type !== null && app(StudentConfigurationService::class)->usesExternal($type->value, $schoolId)) {
+                throw ValidationException::withMessages(['student_id' => 'This category uses its external identifier as the student number.']);
+            }
+            if ($sequence->assignment_mode === 'manual') {
+                throw ValidationException::withMessages(['student_id' => 'This school requires a manually assigned identifier.']);
+            }
+            [$counter, $identifier] = $this->nextAvailable($sequence, $type, $schoolId);
+            $this->validateFormat($identifier, $sequence, $type);
+            $sequence->forceFill(['next_number' => $counter + $sequence->increment_by])->save();
 
             return $identifier;
         });
     }
 
-    public function previewStudentId(?StudentType $type = null): int
+    /** Shared by non-HTTP entry points such as approved AI/MCP tools. */
+    public function assignForNewStudent(array $attributes, ?int $schoolId = null): string
     {
-        $sequence = $this->sequenceFor(self::Student);
+        if (DB::transactionLevel() === 0) {
+            return DB::transaction(fn (): string => $this->assignForNewStudent($attributes, $schoolId));
+        }
+        $this->sequenceFor(self::Student, lock: true, schoolId: $schoolId);
+        $configuration = app(StudentConfigurationService::class);
+        $configuration->forget($schoolId);
+        $configuration->assertRequiredFieldsSupported(['email'], $schoolId);
+        $type = StudentType::from($attributes['student_type'] ?? $configuration->get($schoolId)['default_type']);
+        foreach (array_keys($attributes) as $field) {
+            if (! $configuration->fieldIsVisible($field, $schoolId)) {
+                throw ValidationException::withMessages([$field => 'This field is disabled by the school configuration.']);
+            }
+        }
+        $rules = $configuration->rules([
+            'email' => ['nullable', 'email', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:30'],
+            'nationality' => ['nullable', 'string', 'max:50'],
+            'religion' => ['nullable', 'string', 'max:50'],
+        ], $type->value, schoolId: $schoolId);
+        Validator::make($attributes, $rules)->validate();
 
-        return $this->resolveFormattedStudentId((int) $sequence->next_number, $sequence, $type);
+        return $configuration->usesExternal($type->value, $schoolId)
+            ? (string) $attributes['lrn'] : $this->assign($type, null, 'automatic', $schoolId);
     }
 
-    public function generateStudentId(?StudentType $type = null): int
+    /** Recheck an external number after acquiring the settings/sequence lock. */
+    public function claimExternalIdentifier(StudentType $type, string $value, ?int $schoolId = null): string
     {
-        return DB::transaction(function () use ($type): int {
-            $sequence = $this->sequenceFor(self::Student, lock: true);
-            $studentId = $this->resolveFormattedStudentId((int) $sequence->next_number, $sequence, $type);
+        if (DB::transactionLevel() === 0) {
+            return DB::transaction(fn (): string => $this->claimExternalIdentifier($type, $value, $schoolId));
+        }
+        $this->sequenceFor(self::Student, lock: true, schoolId: $schoolId);
+        $configuration = app(StudentConfigurationService::class);
+        $configuration->forget($schoolId);
+        if (! $configuration->usesExternal($type->value, $schoolId)) {
+            throw ValidationException::withMessages(['lrn' => 'Identifier settings changed. Reload the form before saving.']);
+        }
+        $rules = $configuration->rules([], $type->value, schoolId: $schoolId)['lrn'];
+        Validator::make(['lrn' => $value], ['lrn' => $rules])->validate();
 
-            $sequence->forceFill([
-                'next_number' => (int) $sequence->next_number + (int) $sequence->increment_by,
-            ])->save();
+        return $value;
+    }
 
-            return $studentId;
+    /** Call inside the transaction that creates the student. Never trust a preview. */
+    public function assign(StudentType $type, ?string $value, string $mode, ?int $schoolId = null): string
+    {
+        return DB::transaction(function () use ($type, $value, $mode, $schoolId): string {
+            $sequence = $this->sequenceFor(self::Student, lock: true, type: $type, schoolId: $schoolId);
+            app(StudentConfigurationService::class)->forget($schoolId);
+            if (app(StudentConfigurationService::class)->usesExternal($type->value, $schoolId)) {
+                throw ValidationException::withMessages(['student_id' => 'This category uses its external identifier as the student number.']);
+            }
+            if ($mode === 'automatic') {
+                if ($sequence->assignment_mode === 'manual') {
+                    throw ValidationException::withMessages(['student_id' => 'This school requires a manually assigned identifier.']);
+                }
+
+                return $this->generateStudentId($type, $schoolId);
+            }
+            if ($sequence->assignment_mode === 'automatic') {
+                throw ValidationException::withMessages(['student_id' => 'Manual identifier overrides are disabled for this school.']);
+            }
+            Validator::make(['student_id' => $value], ['student_id' => $this->getStudentIdValidationRules($type, schoolId: $schoolId)])->validate();
+
+            return (string) $value;
         });
+    }
+
+    public function preview(string $key): string
+    {
+        if ($key === self::Student) {
+            return $this->previewStudentId();
+        }
+        $sequence = $this->sequenceFor($key);
+
+        return $this->format($sequence->next_number, $sequence->padding);
+    }
+
+    public function generate(string $key): string
+    {
+        if ($key === self::Student) {
+            return $this->generateStudentId();
+        }
+
+        return DB::transaction(function () use ($key): string {
+            $sequence = $this->sequenceFor($key, lock: true);
+            $number = $sequence->next_number;
+            while (Faculty::withoutSchoolScope()->where('faculty_id_number', $this->format($number, $sequence->padding))->exists()) {
+                $number += $sequence->increment_by;
+            }
+            $sequence->forceFill(['next_number' => $number + $sequence->increment_by])->save();
+
+            return $this->format($number, $sequence->padding);
+        });
+    }
+
+    public function studentPolicy(?StudentType $type = null, ?int $schoolId = null): array
+    {
+        return $this->sequenceFor(self::Student, type: $type, schoolId: $schoolId)->only([
+            'display_label', 'assignment_mode', 'character_set', 'legacy_format',
+        ]);
     }
 
     public function previewStaffId(): string
@@ -74,137 +165,94 @@ final class IdentifierGenerator
 
     public function resolvePrefix(IdSequence $sequence, ?StudentType $studentType = null): string
     {
-        $mode = $sequence->prefix_mode ?? 'none';
-
-        return match ($mode) {
-            'static' => (string) ($sequence->prefix_value ?? ''),
-            'year' => (string) date('Y'),
-            'by_type' => $this->resolveTypePrefix($sequence, $studentType),
+        return match ($sequence->prefix_mode) {
+            'static' => (string) $sequence->prefix_value,
+            'year' => now()->format('Y'),
+            'by_type' => (string) (($sequence->type_prefixes ?? [])[$studentType?->value ?? 'college'] ?? ''),
             default => '',
         };
     }
 
-    public function resolveFormattedStudentId(int $nextNumber, IdSequence $sequence, ?StudentType $studentType = null): int
+    public function resolveFormattedStudentId(int $nextNumber, IdSequence $sequence, ?StudentType $studentType = null): string
     {
         $prefix = $this->resolvePrefix($sequence, $studentType);
-        $formatted = $this->format($nextNumber, $sequence->padding);
+        $number = $this->format($nextNumber, $sequence->padding);
+        if ($sequence->legacy_format) {
+            // Explicit compatibility mode only. New policies always prepend the prefix.
+            $combined = $prefix !== '' && ! str_starts_with($number, $prefix) ? $prefix.$number : $number;
 
-        if ($prefix !== '' && ! str_starts_with($formatted, $prefix)) {
-            $combined = $prefix.$formatted;
-            if (ctype_digit($combined) && (float) $combined <= 2147483647) {
-                return (int) $combined;
-            }
+            return (string) (int) (ctype_digit($combined) && (float) $combined <= 2147483647 ? $combined : $number);
         }
 
-        return (int) $formatted;
+        return $prefix.$number;
     }
 
-    /**
-     * Get dynamic validation rules for student ID based on configuration.
-     *
-     * @return array<int, string|Unique|Closure>
-     */
-    public function getStudentIdValidationRules(
-        ?StudentType $studentType = null,
-        ?int $ignoreId = null,
-        bool $required = true
-    ): array {
-        if ($studentType === StudentType::SeniorHighSchool) {
-            return ['nullable', 'string', 'max:20'];
-        }
-
-        $sequence = $this->sequenceFor(self::Student);
-        $rules = [];
-
-        if ($required) {
-            $rules[] = 'required';
-        } else {
-            $rules[] = 'nullable';
-        }
-
-        $rules[] = 'numeric';
-
-        // Length validation
-        if ($sequence->enforce_length && $sequence->exact_length) {
-            $rules[] = 'digits:'.$sequence->exact_length;
-        } else {
-            $min = $sequence->min_length ?? 4;
-            $max = $sequence->max_length ?? 12;
-            $rules[] = "digits_between:{$min},{$max}";
-        }
-
-        // Uniqueness validation
-        $uniqueRule = Rule::unique('students', 'student_id');
+    public function getStudentIdValidationRules(?StudentType $studentType = null, ?int $ignoreId = null, bool $required = true, ?int $schoolId = null): array
+    {
+        $schoolId ??= app(TenantContext::class)->getCurrentSchoolId();
+        $unique = Rule::unique('students', 'student_id')->where('school_id', $schoolId)->ignore($ignoreId);
         if ($ignoreId !== null) {
-            $uniqueRule = $uniqueRule->ignore($ignoreId);
-        }
-        $rules[] = $uniqueRule;
+            $existing = Student::withoutSchoolScope()->withTrashed()->where('school_id', $schoolId)->find($ignoreId);
+            // Existing identifiers remain valid after a policy change; uniqueness is still checked.
+            if ($existing !== null) {
+                $sequence = $this->sequenceFor(self::Student, type: $studentType, schoolId: $schoolId);
 
-        // Prefix validation if enforced
-        if ($sequence->enforce_prefix) {
-            $prefix = $this->resolvePrefix($sequence, $studentType);
-            if ($prefix !== '') {
-                $rules[] = function (string $attribute, mixed $value, Closure $fail) use ($prefix, $studentType): void {
-                    $valueStr = (string) $value;
-                    if (! str_starts_with($valueStr, $prefix)) {
-                        $typeLabel = $studentType?->getLabel() ?? 'Student';
-                        $fail("The student ID must start with {$prefix} for {$typeLabel}.");
+                return ['bail', $required ? 'required' : 'nullable', function (string $attribute, mixed $value, Closure $fail) use ($existing, $sequence, $studentType, $unique): void {
+                    if (! is_string($value) && ! is_int($value)) {
+                        $fail('The identifier must be text.');
+
+                        return;
                     }
-                };
+                    if ((string) $value !== (string) $existing->student_id) {
+                        if ($sequence->assignment_mode === 'automatic') {
+                            $fail('Manual identifier overrides are disabled for this school.');
+
+                            return;
+                        }
+                        if (app(StudentConfigurationService::class)->usesExternal($studentType?->value ?? $existing->student_type->value, $existing->school_id)
+                            && (string) $existing->student_id === (string) $existing->lrn) {
+                            $fail('Change this student number through its external identifier field so both values remain consistent.');
+
+                            return;
+                        }
+                        $validator = Validator::make(['student_id' => $value], ['student_id' => [...$this->formatRules($sequence, $studentType), $unique]]);
+                        if ($validator->fails()) {
+                            $fail($validator->errors()->first('student_id'));
+                        }
+                    }
+                }];
             }
         }
 
-        return $rules;
+        return ['bail', $required ? 'required' : 'nullable', ...$this->formatRules($this->sequenceFor(self::Student, type: $studentType, schoolId: $schoolId), $studentType), $unique];
     }
 
-    /**
-     * @return array<string, array<string, mixed>>
-     */
     public function configuration(): array
     {
-        return collect([self::Student, self::Staff])
-            ->mapWithKeys(function (string $key): array {
-                $sequence = $this->sequenceFor($key);
+        $student = $this->sequenceFor(self::Student);
+        $staff = $this->sequenceFor(self::Staff);
+        $serialize = fn (IdSequence $sequence): array => array_intersect_key($sequence->toArray(), array_flip(['key', 'label', 'start_number', 'next_number', 'increment_by', 'padding', 'prefix_mode', 'prefix_value', 'enforce_prefix', 'enforce_length', 'exact_length', 'min_length', 'max_length', 'type_prefixes', 'assignment_mode', 'character_set', 'display_label', 'counter_scope', 'legacy_format']));
+        $configuration = ['student' => $serialize($student), 'staff' => $serialize($staff)];
+        // Settings must remain reachable even when a sequence needs repair.
+        try {
+            $configuration['student']['preview'] = $this->previewStudentId();
+        } catch (ValidationException $exception) {
+            $configuration['student']['preview'] = $this->resolveFormattedStudentId($student->next_number, $student);
+            $configuration['student']['preview_error'] = $exception->validator->errors()->first();
+        }
+        $configuration['staff']['preview'] = $this->previewStaffId();
+        foreach (StudentType::cases() as $type) {
+            try {
+                $configuration['student']['type_previews'][$type->value] = $this->previewStudentId($type);
+            } catch (ValidationException) {
+                $configuration['student']['type_previews'][$type->value] = $this->resolveFormattedStudentId($student->next_number, $student, $type);
+            }
+            $configuration['student']['type_next_numbers'][$type->value] = $this->sequenceFor(self::Student, type: $type)->next_number;
+        }
 
-                $config = [
-                    'key' => $sequence->key,
-                    'label' => $sequence->label,
-                    'start_number' => (int) $sequence->start_number,
-                    'next_number' => (int) $sequence->next_number,
-                    'increment_by' => (int) $sequence->increment_by,
-                    'padding' => $sequence->padding === null ? null : (int) $sequence->padding,
-                    'preview' => $this->format((int) $sequence->next_number, $sequence->padding),
-                ];
-
-                if ($key === self::Student) {
-                    $config['prefix_mode'] = $sequence->prefix_mode ?? 'none';
-                    $config['prefix_value'] = $sequence->prefix_value;
-                    $config['enforce_prefix'] = (bool) ($sequence->enforce_prefix ?? false);
-                    $config['enforce_length'] = (bool) ($sequence->enforce_length ?? false);
-                    $config['exact_length'] = $sequence->exact_length ? (int) $sequence->exact_length : null;
-                    $config['min_length'] = $sequence->min_length ? (int) $sequence->min_length : 4;
-                    $config['max_length'] = $sequence->max_length ? (int) $sequence->max_length : 12;
-                    $config['type_prefixes'] = $sequence->type_prefixes ?? [
-                        'college' => '2',
-                        'tesda' => '2',
-                        'dhrt' => '2',
-                        'shs' => '3',
-                    ];
-                    $config['type_previews'] = [
-                        'college' => (string) $this->previewStudentId(StudentType::College),
-                        'tesda' => (string) $this->previewStudentId(StudentType::TESDA),
-                        'dhrt' => (string) $this->previewStudentId(StudentType::DHRT),
-                    ];
-                }
-
-                return [$key => $config];
-            })
-            ->all();
+        return $configuration;
     }
 
-    /**
-     * @param  array<string, array<string, mixed>>  $sequences
-     */
     public function updateConfiguration(array $sequences): void
     {
         DB::transaction(function () use ($sequences): void {
@@ -212,233 +260,179 @@ final class IdentifierGenerator
                 if (! isset($sequences[$key])) {
                     continue;
                 }
-
                 $sequence = $this->sequenceFor($key, lock: true);
                 $data = $sequences[$key];
-
-                $fillData = [
-                    'start_number' => (int) $data['start_number'],
-                    'next_number' => (int) $data['next_number'],
-                    'increment_by' => (int) $data['increment_by'],
-                    'padding' => isset($data['padding']) && $data['padding'] !== null && $data['padding'] !== ''
-                        ? (int) $data['padding']
-                        : null,
-                ];
-
-                if (array_key_exists('prefix_mode', $data)) {
-                    $fillData['prefix_mode'] = (string) $data['prefix_mode'];
+                if (isset($data['expected_next_number']) && (int) $data['expected_next_number'] !== $sequence->next_number) {
+                    throw ValidationException::withMessages([$key.'.next_number' => 'The sequence advanced while you were editing. Reload the settings before saving.']);
                 }
-                if (array_key_exists('prefix_value', $data)) {
-                    $fillData['prefix_value'] = $data['prefix_value'] !== null && $data['prefix_value'] !== ''
-                        ? (string) $data['prefix_value']
-                        : null;
+                $sequence->fill(array_intersect_key($data, array_flip(array_diff($sequence->getFillable(), ['scope', 'key', 'label']))));
+                if ($key === self::Student && $sequence->assignment_mode !== 'manual') {
+                    app(StudentConfigurationService::class)->forget();
+                    $configuration = app(StudentConfigurationService::class)->get();
+                    $prefixes = [];
+                    foreach ($configuration['enabled_types'] as $value) {
+                        $type = StudentType::from($value);
+                        if (app(StudentConfigurationService::class)->usesExternal($value)) {
+                            continue;
+                        }
+                        $prefixes[] = $this->resolvePrefix($sequence, $type);
+                        $number = $sequence->counter_scope === 'by_type'
+                            ? max($sequence->start_number, (int) ($data['type_next_numbers'][$value] ?? $sequence->start_number))
+                            : $sequence->next_number;
+                        $validator = Validator::make(['identifier' => $this->resolveFormattedStudentId($number, $sequence, $type)], ['identifier' => $this->formatRules($sequence, $type)]);
+                        if ($validator->fails()) {
+                            throw ValidationException::withMessages(['student.next_number' => $validator->errors()->first('identifier')]);
+                        }
+                    }
+                    if ($sequence->counter_scope === 'by_type' && count(array_unique($prefixes)) !== count($prefixes)) {
+                        throw ValidationException::withMessages(['student.counter_scope' => 'Separate counters require distinct category prefixes to avoid overlapping identifiers.']);
+                    }
                 }
-                if (array_key_exists('enforce_prefix', $data)) {
-                    $fillData['enforce_prefix'] = (bool) $data['enforce_prefix'];
+                $sequence->save();
+                if ($key === self::Student && $sequence->counter_scope === 'shared') {
+                    // Existing per-category rows keep their positions, but their
+                    // formatting must follow policy while shared mode is active.
+                    foreach (StudentType::cases() as $type) {
+                        $counter = IdSequence::query()->where('scope', $sequence->scope)->where('key', self::Student.':'.$type->value)->lockForUpdate()->first();
+                        if ($counter === null) {
+                            continue;
+                        }
+                        $settings = $sequence->getAttributes();
+                        $settings['type_prefixes'] = $sequence->type_prefixes;
+                        unset($settings['id'], $settings['key'], $settings['scope'], $settings['created_at'], $settings['updated_at'], $settings['next_number']);
+                        $counter->forceFill($settings)->save();
+                    }
                 }
-                if (array_key_exists('enforce_length', $data)) {
-                    $fillData['enforce_length'] = (bool) $data['enforce_length'];
+                if ($key === self::Student && $sequence->counter_scope === 'by_type') {
+                    foreach (StudentType::cases() as $type) {
+                        $counter = $this->sequenceFor(self::Student, lock: true, type: $type);
+                        $requested = $data['type_next_numbers'][$type->value] ?? $counter->next_number;
+                        $expected = $data['expected_type_next_numbers'][$type->value] ?? null;
+                        if ($expected !== null && (int) $expected !== $counter->next_number) {
+                            throw ValidationException::withMessages(['student.type_next_numbers.'.$type->value => 'This category counter advanced. Reload before saving.']);
+                        }
+                        $settings = $sequence->getAttributes();
+                        $settings['type_prefixes'] = $sequence->type_prefixes;
+                        unset($settings['id'], $settings['key'], $settings['scope'], $settings['created_at'], $settings['updated_at'], $settings['next_number']);
+                        $settings['next_number'] = max($sequence->start_number, (int) $requested);
+                        $counter->forceFill($settings)->save();
+                    }
                 }
-                if (array_key_exists('exact_length', $data)) {
-                    $fillData['exact_length'] = isset($data['exact_length']) && $data['exact_length'] !== null && $data['exact_length'] !== ''
-                        ? (int) $data['exact_length']
-                        : null;
-                }
-                if (array_key_exists('min_length', $data)) {
-                    $fillData['min_length'] = isset($data['min_length']) && $data['min_length'] !== null && $data['min_length'] !== ''
-                        ? (int) $data['min_length']
-                        : 4;
-                }
-                if (array_key_exists('max_length', $data)) {
-                    $fillData['max_length'] = isset($data['max_length']) && $data['max_length'] !== null && $data['max_length'] !== ''
-                        ? (int) $data['max_length']
-                        : 12;
-                }
-                if (array_key_exists('type_prefixes', $data) && is_array($data['type_prefixes'])) {
-                    $fillData['type_prefixes'] = $data['type_prefixes'];
-                }
-
-                $sequence->forceFill($fillData)->save();
             }
         });
     }
 
-    public function sequenceFor(string $key, bool $lock = false): IdSequence
+    public function sequenceFor(string $key, bool $lock = false, ?StudentType $type = null, ?int $schoolId = null): IdSequence
     {
-        $query = IdSequence::query()->where('key', $key);
-
-        if ($lock) {
-            $query->lockForUpdate();
+        if (! in_array($key, [self::Student, self::Staff], true)) {
+            throw new InvalidArgumentException("Unknown ID sequence [{$key}].");
+        }
+        // Staff numbers are still installation-unique in faculty validation and
+        // signup. Keep their shared installation counter until that contract changes.
+        $scope = $key === self::Staff ? 'installation' : $this->scope($schoolId);
+        $base = IdSequence::query()->where('scope', $scope)->where('key', $key)->first();
+        $base ??= IdSequence::query()->createOrFirst(['scope' => $scope, 'key' => $key], $this->defaults($key, $schoolId));
+        if ($lock && $key === self::Student) {
+            // Lock base before category counters so settings and issuance serialize.
+            $base = IdSequence::query()->whereKey($base->id)->lockForUpdate()->firstOrFail();
+        }
+        if ($key === self::Student && $type !== null && $base->counter_scope === 'by_type') {
+            $key .= ':'.$type->value;
+            $attributes = $base->getAttributes();
+            $attributes['type_prefixes'] = $base->type_prefixes;
+            unset($attributes['id'], $attributes['scope'], $attributes['key'], $attributes['created_at'], $attributes['updated_at']);
+            $attributes['next_number'] = $base->start_number;
+            if (! IdSequence::query()->where('scope', $scope)->where('key', $key)->exists()) {
+                IdSequence::query()->createOrFirst(['scope' => $scope, 'key' => $key], $attributes);
+            }
         }
 
-        $sequence = $query->first();
-
-        if ($sequence instanceof IdSequence) {
-            return $this->adaptToExistingRecords($sequence);
-        }
-
-        return IdSequence::query()->create($this->defaultsFor($key));
+        return IdSequence::query()->where('scope', $scope)->where('key', $key)->when($lock, fn ($query) => $query->lockForUpdate())->firstOrFail();
     }
 
-    private function resolveTypePrefix(IdSequence $sequence, ?StudentType $studentType = null): string
+    public function assertPolicyFormat(IdSequence $sequence, StudentType $type, int $counter): void
     {
-        if (! $studentType instanceof StudentType) {
-            return (string) ($sequence->prefix_value ?? '2');
-        }
-
-        $typePrefixes = is_array($sequence->type_prefixes) ? $sequence->type_prefixes : [];
-
-        if (isset($typePrefixes[$studentType->value]) && $typePrefixes[$studentType->value] !== '') {
-            return (string) $typePrefixes[$studentType->value];
-        }
-
-        return $studentType->getIdPrefix();
+        $this->validateFormat($this->resolveFormattedStudentId($counter, $sequence, $type), $sequence, $type);
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    private function defaultsFor(string $key): array
+    private function scope(?int $schoolId = null): string
     {
-        return match ($key) {
-            self::Student => $this->studentDefaults(),
-            self::Staff => $this->staffDefaults(),
-            default => throw new InvalidArgumentException("Unknown ID sequence [{$key}]."),
-        };
+        return StudentConfigurationService::scope($schoolId ?? app(TenantContext::class)->getCurrentSchoolId());
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    private function studentDefaults(): array
+    private function formatRules(IdSequence $sequence, ?StudentType $type): array
     {
-        $startNumber = 200000;
-        $nextNumber = max((int) $this->latestCreatedGeneratedStudentId() + 1, $startNumber);
-
-        return [
-            'key' => self::Student,
-            'label' => 'Student IDs',
-            'start_number' => $startNumber,
-            'next_number' => $nextNumber,
-            'increment_by' => 1,
-            'padding' => 6,
-            'prefix_mode' => 'none',
-            'prefix_value' => null,
-            'enforce_prefix' => false,
-            'enforce_length' => false,
-            'exact_length' => 6,
-            'min_length' => 4,
-            'max_length' => 12,
-            'type_prefixes' => [
-                'college' => '2',
-                'tesda' => '2',
-                'dhrt' => '2',
-                'shs' => '3',
-            ],
-        ];
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function staffDefaults(): array
-    {
-        $startNumber = 800000;
-        $latestNumericFacultyId = $this->latestNumericFacultyId();
-
-        $nextNumber = max((int) $latestNumericFacultyId + 1, $startNumber);
-
-        return [
-            'key' => self::Staff,
-            'label' => 'Staff IDs',
-            'start_number' => $startNumber,
-            'next_number' => $nextNumber,
-            'increment_by' => 1,
-            'padding' => 6,
-        ];
-    }
-
-    private function adaptToExistingRecords(IdSequence $sequence): IdSequence
-    {
-        $latestStudentId = $sequence->key === self::Student
-            ? $this->latestCreatedGeneratedStudentId()
-            : null;
-
-        $minimumNextNumber = match ($sequence->key) {
-            self::Student => $latestStudentId === null
-                ? (int) $sequence->start_number
-                : $latestStudentId + 1,
-            self::Staff => (int) $this->latestNumericFacultyId() + 1,
-            default => (int) $sequence->next_number,
+        $rules = ['bail', 'regex:'.($sequence->character_set === 'numeric' ? '/\A[0-9]+\z/' : '/\A[A-Za-z0-9_-]+\z/')];
+        $rules[] = function (string $attribute, mixed $value, Closure $fail) use ($sequence, $type): void {
+            $length = mb_strlen((string) $value);
+            $minimum = $sequence->enforce_length ? (int) ($sequence->exact_length ?? 6) : (int) ($sequence->min_length ?? 1);
+            $maximum = $sequence->enforce_length ? (int) ($sequence->exact_length ?? 6) : (int) ($sequence->max_length ?? 64);
+            if ($length < $minimum || $length > $maximum) {
+                $fail("The identifier must contain {$minimum}–{$maximum} characters.");
+            }
+            $prefix = $this->resolvePrefix($sequence, $type);
+            if ($sequence->enforce_prefix && $prefix !== '' && ! str_starts_with((string) $value, $prefix)) {
+                $fail("The identifier must start with {$prefix}.");
+            }
         };
 
-        if ($sequence->key === self::Student && $this->shouldRepairStudentSequence((int) $sequence->next_number, $minimumNextNumber, $sequence->padding, (int) $sequence->start_number)) {
-            $sequence->forceFill([
-                'next_number' => max($minimumNextNumber, (int) $sequence->start_number),
-            ])->save();
-
-            return $sequence->refresh();
-        }
-
-        if ($minimumNextNumber <= (int) $sequence->next_number) {
-            return $sequence;
-        }
-
-        $sequence->forceFill([
-            'next_number' => $minimumNextNumber,
-        ])->save();
-
-        return $sequence->refresh();
+        return $rules;
     }
 
-    private function latestNumericFacultyId(): ?int
+    private function validateFormat(string $identifier, IdSequence $sequence, ?StudentType $type): void
     {
-        return Faculty::query()
-            ->whereNotNull('faculty_id_number')
-            ->pluck('faculty_id_number')
-            ->filter(fn (string $facultyIdNumber): bool => ctype_digit($facultyIdNumber))
-            ->map(fn (string $facultyIdNumber): int => (int) $facultyIdNumber)
-            ->max();
+        Validator::make(['student_id' => $identifier], ['student_id' => $this->formatRules($sequence, $type)])->validate();
     }
 
-    private function latestCreatedGeneratedStudentId(): ?int
+    private function nextAvailable(IdSequence $sequence, ?StudentType $type, ?int $schoolId): array
     {
-        return Student::query()
-            ->withTrashed()
-            ->where('student_type', '!=', StudentType::SeniorHighSchool->value)
-            ->whereNotNull('student_id')
-            ->latest('created_at')
-            ->latest('id')
-            ->value('student_id');
+        $schoolId ??= app(TenantContext::class)->getCurrentSchoolId();
+        $number = max($sequence->start_number, $sequence->next_number);
+        for ($attempt = 0; $attempt < 10000; $attempt++) {
+            if ($number > 999999999999) {
+                break;
+            }
+            $identifier = $this->resolveFormattedStudentId($number, $sequence, $type);
+            if (! Student::withoutSchoolScope()->withTrashed()->where('school_id', $schoolId)->where('student_id', $identifier)->exists()) {
+                return [$number, $identifier];
+            }
+            $number += $sequence->increment_by;
+        }
+
+        throw ValidationException::withMessages(['student_id' => 'The identifier sequence is exhausted or overlaps existing records. Update its next number.']);
     }
 
-    private function shouldRepairStudentSequence(int $nextNumber, int $expectedNextNumber, ?int $padding, int $startNumber = 200000): bool
+    private function defaults(string $key, ?int $schoolId): array
     {
-        // Polluted by 12-digit SHS LRN
-        if (mb_strlen((string) $nextNumber) >= 12) {
-            return true;
+        $legacy = app(StudentConfigurationService::class)->get($schoolId)['preset'] === 'legacy_ph';
+        $start = $legacy ? ($key === self::Student ? 200000 : 800000) : 1;
+        $next = $start;
+        if ($legacy) {
+            $query = $key === self::Student
+                ? Student::withoutSchoolScope()->withTrashed()->where('student_type', '!=', 'shs')
+                : Faculty::withoutSchoolScope();
+            $column = $key === self::Student ? 'student_id' : 'faculty_id_number';
+            $last = $key === self::Student
+                ? $query->where('school_id', $schoolId ?? app(TenantContext::class)->getCurrentSchoolId())->orderByDesc('created_at')->orderByDesc('id')->value($column)
+                : $query->pluck($column)->filter(fn ($value): bool => ctype_digit((string) $value))->map(fn ($value): int => (int) $value)->max();
+            if ($last !== null && ctype_digit((string) $last)) {
+                $next = max($start, (int) $last + 1);
+            }
         }
 
-        if ($padding !== null && mb_strlen((string) $nextNumber) > $padding) {
-            return true;
-        }
-
-        // If nextNumber is aligned with user's configured start_number, do not repair
-        if ($nextNumber >= $startNumber && abs($nextNumber - $startNumber) < 50000) {
-            return false;
-        }
-
-        $distanceFromLatestPattern = abs($nextNumber - $expectedNextNumber);
-
-        return $distanceFromLatestPattern > 100000;
+        return [
+            'label' => $key === self::Student ? 'Student IDs' : 'Staff IDs',
+            'start_number' => $start, 'next_number' => $next, 'increment_by' => 1, 'padding' => 6,
+            'prefix_mode' => 'none', 'prefix_value' => null, 'enforce_prefix' => false,
+            'enforce_length' => false, 'exact_length' => 6, 'min_length' => $legacy ? 4 : 1, 'max_length' => $legacy ? 12 : 64,
+            'type_prefixes' => $legacy ? ['college' => '2', 'tesda' => '2', 'dhrt' => '2', 'shs' => '3'] : [],
+            'assignment_mode' => 'hybrid', 'character_set' => 'numeric', 'display_label' => 'Student ID',
+            'counter_scope' => 'shared', 'legacy_format' => $legacy,
+        ];
     }
 
     private function format(int $number, ?int $padding): string
     {
-        if ($padding === null || $padding < 1) {
-            return (string) $number;
-        }
-
-        return mb_str_pad((string) $number, $padding, '0', STR_PAD_LEFT);
+        return mb_str_pad((string) $number, $padding ?? 0, '0', STR_PAD_LEFT);
     }
 }

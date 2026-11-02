@@ -56,6 +56,10 @@ final class UpdateHandler extends Handlers
         $allowed = array_diff($model->getFillable(), ['id', 'user_id', 'school_id']);
 
         $model->fill($request->safe()->only($allowed));
+        if ($request->exists('lrn') && app(\App\Services\StudentConfigurationService::class)->usesExternal($model->student_type->value, $model->school_id)
+            && (string) $model->getOriginal('student_id') === (string) $model->getOriginal('lrn')) {
+            $model->student_id = $model->lrn;
+        }
 
         $model->save();
 

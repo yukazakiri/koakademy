@@ -4,8 +4,9 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { Link } from "@inertiajs/react";
 import { index as logRetentionIndex } from "@/routes/administrators/system-management/log-retention";
+import { index as studentConfigurationIndex } from "@/routes/administrators/system-management/student-configuration";
+import { Link } from "@inertiajs/react";
 import { motion, useReducedMotion } from "framer-motion";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -16,7 +17,6 @@ import {
     Calculator,
     CalendarClock,
     Check,
-    ChevronRight,
     FileBadge2,
     Fingerprint,
     Globe,
@@ -185,10 +185,19 @@ export const systemSettingsItems: SystemSettingsItem[] = [
         key: "identifiers",
         group: "academic_operations",
         label: "Student & Staff IDs",
-        description: "Manage the numeric sequences used for student and staff records.",
+        description: "Manage school-specific numbering, formatting, and assignment policies.",
         href: "/administrators/system-management/identifiers",
         keywords: ["identifier", "id sequence", "student id", "staff id", "numbering"],
         icon: Hash,
+    },
+    {
+        key: "student_configuration",
+        group: "academic_operations",
+        label: "Student Configuration",
+        description: "Configure student categories, external identifiers, and form preferences.",
+        href: studentConfigurationIndex.url(),
+        keywords: ["student", "fields", "nationality", "LRN", "preset", "categories"],
+        icon: Fingerprint,
     },
     {
         key: "faculty_fields",
@@ -455,7 +464,7 @@ function SettingsNavigationList({
 
     if (visibleGroups.length === 0) {
         return (
-            <div className="px-3 py-8 text-center text-xs text-muted-foreground">
+            <div className="text-muted-foreground px-3 py-8 text-center text-xs">
                 <Search className="mx-auto mb-2 size-4 opacity-50" />
                 No matching settings
             </div>
@@ -474,11 +483,11 @@ function SettingsNavigationList({
                                 <div className="flex items-center justify-between px-2.5 py-1">
                                     <h2
                                         id={`settings-nav-group-${group.key}`}
-                                        className="text-[10.5px] font-semibold tracking-wider text-muted-foreground uppercase"
+                                        className="text-muted-foreground text-[10.5px] font-semibold tracking-wider uppercase"
                                     >
                                         {group.label}
                                     </h2>
-                                    <span className="text-[10px] font-mono text-muted-foreground/60">{group.items.length}</span>
+                                    <span className="text-muted-foreground/60 font-mono text-[10px]">{group.items.length}</span>
                                 </div>
                             )}
 
@@ -496,7 +505,7 @@ function SettingsNavigationList({
                                             aria-current={active ? "page" : undefined}
                                             className={cn(
                                                 "group relative flex items-center gap-2.5 rounded-lg text-sm font-medium transition-colors outline-none",
-                                                collapsed ? "h-9 w-9 justify-center p-0 mx-auto" : "h-9 px-2.5 py-1.5",
+                                                collapsed ? "mx-auto h-9 w-9 justify-center p-0" : "h-9 px-2.5 py-1.5",
                                                 active
                                                     ? "bg-accent/80 text-foreground font-semibold shadow-xs"
                                                     : "text-muted-foreground hover:bg-muted/60 hover:text-foreground active:scale-[0.985]",
@@ -505,7 +514,7 @@ function SettingsNavigationList({
                                             {active && (
                                                 <motion.span
                                                     layoutId={reducedMotion ? undefined : "active-settings-nav-pill"}
-                                                    className="absolute inset-0 rounded-lg bg-accent border border-border/80"
+                                                    className="bg-accent border-border/80 absolute inset-0 rounded-lg border"
                                                     transition={{ type: "spring", bounce: 0.15, duration: 0.3 }}
                                                     aria-hidden="true"
                                                 />
@@ -524,9 +533,7 @@ function SettingsNavigationList({
 
                                             {!collapsed && (
                                                 <>
-                                                    <span className="relative z-10 min-w-0 flex-1 truncate text-xs sm:text-[13px]">
-                                                        {item.label}
-                                                    </span>
+                                                    <span className="relative z-10 min-w-0 flex-1 truncate text-xs sm:text-[13px]">{item.label}</span>
                                                     <span
                                                         className={cn("relative z-10 size-1.5 shrink-0 rounded-full", status.dotColor)}
                                                         title={status.label}
@@ -566,12 +573,7 @@ function SettingsNavigationList({
     );
 }
 
-export function SystemSettingsNavigation({
-    access,
-    activeSection,
-    mobile = false,
-    collapsed = false,
-}: SystemSettingsNavigationProps) {
+export function SystemSettingsNavigation({ access, activeSection, mobile = false, collapsed = false }: SystemSettingsNavigationProps) {
     const [filterQuery, setFilterQuery] = useState("");
 
     if (mobile) {
@@ -583,10 +585,10 @@ export function SystemSettingsNavigation({
                         Settings Menu
                     </Button>
                 </SheetTrigger>
-                <SheetContent side="left" className="flex flex-col w-[min(20rem,88vw)] p-0">
+                <SheetContent side="left" className="flex w-[min(20rem,88vw)] flex-col p-0">
                     <SheetHeader className="border-b px-4 py-3.5">
                         <div className="flex items-center gap-2">
-                            <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                            <span className="bg-primary/10 text-primary flex size-7 items-center justify-center rounded-lg">
                                 <Settings2 className="size-4" />
                             </span>
                             <div>
@@ -598,17 +600,17 @@ export function SystemSettingsNavigation({
 
                     <div className="px-3 pt-3">
                         <div className="relative">
-                            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                            <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
                             <Input
                                 value={filterQuery}
                                 onChange={(e) => setFilterQuery(e.target.value)}
                                 placeholder="Quick filter..."
-                                className="h-8 pl-8 pr-7 text-xs bg-muted/40"
+                                className="bg-muted/40 h-8 pr-7 pl-8 text-xs"
                             />
                             {filterQuery && (
                                 <button
                                     onClick={() => setFilterQuery("")}
-                                    className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                    className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2"
                                     aria-label="Clear filter"
                                 >
                                     <X className="size-3" />
@@ -618,12 +620,7 @@ export function SystemSettingsNavigation({
                     </div>
 
                     <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-                        <SettingsNavigationList
-                            access={access}
-                            activeSection={activeSection}
-                            filterQuery={filterQuery}
-                            closeOnNavigate
-                        />
+                        <SettingsNavigationList access={access} activeSection={activeSection} filterQuery={filterQuery} closeOnNavigate />
                     </div>
                 </SheetContent>
             </Sheet>
@@ -631,39 +628,34 @@ export function SystemSettingsNavigation({
     }
 
     return (
-        <aside
-            className={cn(
-                "hidden lg:block shrink-0 transition-[width] duration-200 ease-out",
-                collapsed ? "w-12" : "w-60 xl:w-64",
-            )}
-        >
-            <div className="sticky top-6 rounded-xl border border-border/60 bg-card/65 p-2 shadow-xs backdrop-blur-md">
+        <aside className={cn("hidden shrink-0 transition-[width] duration-200 ease-out lg:block", collapsed ? "w-12" : "w-60 xl:w-64")}>
+            <div className="border-border/60 bg-card/65 sticky top-6 rounded-xl border p-2 shadow-xs backdrop-blur-md">
                 {!collapsed && (
                     <div className="mb-3 space-y-2 px-1 pt-1">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                                <span className="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary">
+                                <span className="bg-primary/10 text-primary flex size-6 items-center justify-center rounded-md">
                                     <Layers className="size-3.5" aria-hidden="true" />
                                 </span>
-                                <span className="text-xs font-semibold tracking-tight text-foreground">Navigation</span>
+                                <span className="text-foreground text-xs font-semibold tracking-tight">Navigation</span>
                             </div>
-                            <Badge variant="outline" className="h-5 px-1.5 text-[10px] font-mono text-muted-foreground">
+                            <Badge variant="outline" className="text-muted-foreground h-5 px-1.5 font-mono text-[10px]">
                                 16 sections
                             </Badge>
                         </div>
 
                         <div className="relative">
-                            <Search className="pointer-events-none absolute top-1/2 left-2 size-3 -translate-y-1/2 text-muted-foreground" />
+                            <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2 size-3 -translate-y-1/2" />
                             <Input
                                 value={filterQuery}
                                 onChange={(e) => setFilterQuery(e.target.value)}
                                 placeholder="Filter sections..."
-                                className="h-7.5 pl-7 pr-6 text-xs bg-muted/30 border-border/50"
+                                className="bg-muted/30 border-border/50 h-7.5 pr-6 pl-7 text-xs"
                             />
                             {filterQuery && (
                                 <button
                                     onClick={() => setFilterQuery("")}
-                                    className="absolute top-1/2 right-1.5 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                    className="text-muted-foreground hover:text-foreground absolute top-1/2 right-1.5 -translate-y-1/2"
                                     aria-label="Clear filter"
                                 >
                                     <X className="size-2.5" />
@@ -673,13 +665,8 @@ export function SystemSettingsNavigation({
                     </div>
                 )}
 
-                <div className="max-h-[calc(100vh-10rem)] overflow-y-auto pr-0.5 scrollbar-thin">
-                    <SettingsNavigationList
-                        access={access}
-                        activeSection={activeSection}
-                        collapsed={collapsed}
-                        filterQuery={filterQuery}
-                    />
+                <div className="max-h-[calc(100vh-10rem)] scrollbar-thin overflow-y-auto pr-0.5">
+                    <SettingsNavigationList access={access} activeSection={activeSection} collapsed={collapsed} filterQuery={filterQuery} />
                 </div>
             </div>
         </aside>
@@ -690,11 +677,8 @@ export function SystemSettingsStateBadge({ item, access }: { item: SystemSetting
     const status = getSystemSettingsStatus(item, access);
 
     return (
-        <Badge
-            variant="outline"
-            className={cn("gap-1.5 text-xs font-normal border-border/60 bg-background/60", status.badgeClass)}
-        >
-            <span className={cn("size-1.5 rounded-full shrink-0", status.dotColor)} aria-hidden="true" />
+        <Badge variant="outline" className={cn("border-border/60 bg-background/60 gap-1.5 text-xs font-normal", status.badgeClass)}>
+            <span className={cn("size-1.5 shrink-0 rounded-full", status.dotColor)} aria-hidden="true" />
             {status.label}
         </Badge>
     );

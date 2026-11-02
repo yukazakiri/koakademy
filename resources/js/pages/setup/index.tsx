@@ -233,6 +233,7 @@ export default function Setup() {
         school_code: "",
         country_code: "US", // Clean OSS default
         school_level: "higher_education",
+        student_preset: "neutral",
         school_description: "",
         school_email: "",
         school_phone: "",
@@ -754,6 +755,24 @@ export default function Setup() {
                                         ))}
                                     </select>
                                 </div>
+                            </div>
+
+                            <div className="flex flex-col gap-2">
+                                <Label htmlFor="student-preset">Student preferences</Label>
+                                <Select value={data.student_preset} onValueChange={(value) => setData("student_preset", value)}>
+                                    <SelectTrigger id="student-preset">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="neutral">Neutral international defaults</SelectItem>
+                                        <SelectItem value="legacy_ph">Philippine legacy preferences</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-muted-foreground text-xs">
+                                    Neutral defaults do not require an LRN or preselect personal facts. Preferences and numbering can be changed later
+                                    in System Management.
+                                </p>
+                                {errors.student_preset && <p className="text-destructive text-xs">{errors.student_preset}</p>}
                             </div>
 
                             {/* Name and Acronym */}

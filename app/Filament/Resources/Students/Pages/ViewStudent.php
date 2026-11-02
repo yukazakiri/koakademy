@@ -142,32 +142,15 @@ final class ViewStudent extends ViewRecord
                             ->schema([
                                 TextInput::make('new_student_id')
                                     ->label('New Student ID')
-                                    ->numeric()
                                     ->required()
-                                    ->rules([
-                                        'integer',
-                                        'min:100000',
-                                        'max:999999',
-                                    ])
+                                    ->rules(fn (Student $record): array => app(\App\Services\IdentifierGenerator::class)->getStudentIdValidationRules($record->student_type, $record->id, schoolId: $record->school_id))
                                     ->live(onBlur: true)
                                     ->afterStateUpdated(function ($state, $set, $get, $component): void {
                                         if (! $state) {
                                             return;
                                         }
 
-                                        // Convert to integer and validate
-                                        if (! is_numeric($state)) {
-                                            $component->state(null);
-                                            Notification::make()
-                                                ->title('Invalid Input')
-                                                ->body('Student ID must be a number.')
-                                                ->danger()
-                                                ->send();
-
-                                            return;
-                                        }
-
-                                        $newStudentId = (int) $state;
+                                        $newStudentId = (string) $state;
                                         $model = $this->getRecord();
                                         $studentIdUpdateService = app(StudentIdUpdateService::class);
 
@@ -188,30 +171,19 @@ final class ViewStudent extends ViewRecord
                                             $component->state(null);
                                             Notification::make()
                                                 ->title('ID Already Exists')
-                                                ->body(sprintf('Student ID %d already exists.', $newStudentId))
+                                                ->body(sprintf('Student ID %s already exists.', $newStudentId))
                                                 ->danger()
                                                 ->send();
 
                                             return;
                                         }
 
-                                        // Check 6-digit format (100000-999999)
-                                        if ($newStudentId < 100000 || $newStudentId > 999999) {
-                                            $component->state(null);
-                                            Notification::make()
-                                                ->title('Invalid ID Format')
-                                                ->body('Student ID must be exactly 6 digits (100000-999999).')
-                                                ->warning()
-                                                ->send();
-
-                                            return;
-                                        }
                                     })
                                     ->helperText(function (): string {
                                         $studentIdUpdateService = app(StudentIdUpdateService::class);
                                         $suggested = $studentIdUpdateService->generateSuggestedId();
 
-                                        return 'Suggested ID: '.$suggested.' (next available 6-digit ID)';
+                                        return 'Suggested ID: '.$suggested.' (preview only)';
                                     }),
                             ]),
 
@@ -229,12 +201,12 @@ final class ViewStudent extends ViewRecord
                     ->action(function (array $data, Student $record): void {
                         $studentIdUpdateService = app(StudentIdUpdateService::class);
                         $oldStudentId = $record->student_id;
-                        $newStudentId = (int) $data['new_student_id'];
+                        $newStudentId = (string) $data['new_student_id'];
 
                         // Send initial notification about the update process
                         Notification::make()
                             ->title('Updating Student ID...')
-                            ->body(sprintf('Starting update from student ID %s to %d.', $oldStudentId ?? 'Not set', $newStudentId))
+                            ->body(sprintf('Starting update from student ID %s to %s.', $oldStudentId ?? 'Not set', $newStudentId))
                             ->info()
                             ->duration(2000)
                             ->send();
@@ -255,7 +227,7 @@ final class ViewStudent extends ViewRecord
                             // Send database notification
                             Notification::make()
                                 ->title('Student ID Updated')
-                                ->body(sprintf('Student ID changed from %s to %d.', $oldStudentId ?? 'Not set', $newStudentId))
+                                ->body(sprintf('Student ID changed from %s to %s.', $oldStudentId ?? 'Not set', $newStudentId))
                                 ->success()
                                 ->sendToDatabase(Auth::user());
 
@@ -327,7 +299,7 @@ final class ViewStudent extends ViewRecord
                             ->duration(2000)
                             ->send();
 
-                        $result = $studentIdUpdateService->undoStudentIdChange($changeLogId);
+                        $result = $studentIdUpdateService->undoStudentIdChange($changeLogId, $record);
 
                         if ($result['success']) {
                             // Create detailed success message

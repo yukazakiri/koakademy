@@ -473,6 +473,8 @@ Route::middleware(['auth', 'administrators.only'])
         Route::put('/system-management/log-retention', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateLogRetention'])->name('system-management.log-retention.update');
         Route::post('/system-management/log-retention/clean', [App\Http\Controllers\AdministratorSystemManagementController::class, 'cleanSystemLogs'])->middleware('throttle:6,1')->name('system-management.log-retention.clean');
         Route::get('/system-management/identifiers', [App\Http\Controllers\AdministratorSystemManagementController::class, 'identifiers'])->name('system-management.identifiers.index');
+        Route::get('/system-management/student-configuration', [App\Http\Controllers\AdministratorSystemManagementController::class, 'studentConfiguration'])->name('system-management.student-configuration.index');
+        Route::put('/system-management/student-configuration', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateStudentConfiguration'])->name('system-management.student-configuration.update');
         Route::get('/system-management/faculty-fields', [App\Http\Controllers\AdministratorSystemManagementController::class, 'facultyFields'])->name('system-management.faculty-fields.index');
         Route::post('/system-management/school', [App\Http\Controllers\AdministratorSystemManagementController::class, 'storeSchool'])->name('system-management.school.store');
         Route::put('/system-management/school', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateSchool'])->name('system-management.school.update');

@@ -25,6 +25,12 @@ final class IdSequence extends Model
         'min_length',
         'max_length',
         'type_prefixes',
+        'scope',
+        'assignment_mode',
+        'character_set',
+        'display_label',
+        'counter_scope',
+        'legacy_format',
     ];
 
     protected function casts(): array
@@ -40,6 +46,7 @@ final class IdSequence extends Model
             'min_length' => 'integer',
             'max_length' => 'integer',
             'type_prefixes' => 'array',
+            'legacy_format' => 'boolean',
         ];
     }
 }

@@ -1,4 +1,5 @@
 import type { AnalyticsConfig, AnalyticsProviderDefinition, AnalyticsProviderInstance } from "@/types/analytics";
+import type { StudentConfiguration, StudentIdentifierPolicy } from "@/types/student-configuration";
 import type { User } from "@/types/user";
 
 export type SystemManagementSectionKey =
@@ -18,6 +19,7 @@ export type SystemManagementSectionKey =
     | "tuition_payment_schedule"
     | "grading"
     | "identifiers"
+    | "student_configuration"
     | "faculty_fields"
     | "pulse"
     | "observability"
@@ -565,7 +567,8 @@ export interface StudentTypePrefixes {
     shs: string;
 }
 
-export interface IdSequenceConfig {
+export interface IdSequenceConfig extends StudentIdentifierPolicy {
+    preview_error?: string;
     key: "student" | "staff";
     label: string;
     start_number: number;
@@ -582,6 +585,8 @@ export interface IdSequenceConfig {
     max_length?: number | null;
     type_prefixes?: StudentTypePrefixes;
     type_previews?: Record<string, string>;
+    counter_scope: "shared" | "by_type";
+    type_next_numbers?: Record<string, number>;
 }
 
 export type FacultyFieldType = "text" | "date" | "number" | "select";
@@ -632,6 +637,7 @@ export interface SystemManagementAccess {
 export type SanityConfig = Record<string, unknown>;
 
 export interface SystemManagementPageProps {
+    student_configuration: StudentConfiguration;
     user: User;
     general_settings: GeneralSettings;
     active_school: School | null;

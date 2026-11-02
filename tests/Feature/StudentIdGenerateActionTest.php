@@ -6,6 +6,10 @@ use App\Enums\StudentType;
 use App\Models\Student;
 use Illuminate\Support\Facades\DB;
 
+beforeEach(function (): void {
+    app(App\Services\StudentConfigurationService::class)->update(App\Services\StudentConfigurationService::defaults(legacy: true));
+});
+
 it('generates correct student ID for College type', function () {
     // Clear existing students first
     Student::query()->delete();
@@ -39,9 +43,9 @@ it('generates correct student ID for College type', function () {
     $nextId = Student::generateNextId(StudentType::College);
 
     // Should find the highest ID + 1 (200003)
-    expect($nextId)->toBe(200003);
-    expect($nextId)->toBeGreaterThanOrEqual(200000);
-    expect($nextId)->toBeLessThanOrEqual(299999);
+    expect($nextId)->toBe('200003');
+    expect((int) $nextId)->toBeGreaterThanOrEqual(200000);
+    expect((int) $nextId)->toBeLessThanOrEqual(299999);
 });
 
 it('generates correct student ID for TESDA type', function () {
@@ -63,9 +67,9 @@ it('generates correct student ID for TESDA type', function () {
 
     $nextId = Student::generateNextId(StudentType::TESDA);
 
-    expect($nextId)->toBe(200011);
+    expect($nextId)->toBe('200011');
     expect(mb_strlen((string) $nextId))->toBe(6);
-    expect($nextId)->toBeGreaterThanOrEqual(200000);
+    expect((int) $nextId)->toBeGreaterThanOrEqual(200000);
 });
 
 it('generates correct student ID for DHRT type', function () {
@@ -99,7 +103,7 @@ it('generates correct student ID for DHRT type', function () {
 
     $nextId = Student::generateNextId(StudentType::DHRT);
 
-    expect($nextId)->toBe(200052);
+    expect($nextId)->toBe('200052');
     expect(mb_strlen((string) $nextId))->toBe(6);
 });
 
@@ -149,9 +153,9 @@ it('handles mixed student types sharing same prefix correctly', function () {
     $tesdaId = Student::generateNextId(StudentType::TESDA);
     $dhrtId = Student::generateNextId(StudentType::DHRT);
 
-    expect($collegeId)->toBe(200103);
-    expect($tesdaId)->toBe(200104);
-    expect($dhrtId)->toBe(200105);
+    expect($collegeId)->toBe('200103');
+    expect($tesdaId)->toBe('200104');
+    expect($dhrtId)->toBe('200105');
 
     // All should be unique 6-digit numbers starting with 2
     expect(mb_strlen((string) $collegeId))->toBe(6);
@@ -191,7 +195,7 @@ it('finds gaps in ID sequence', function () {
     $nextId = Student::generateNextId(StudentType::College);
 
     // Should find the highest ID + 1 (200004)
-    expect($nextId)->toBe(200004);
+    expect($nextId)->toBe('200004');
 });
 
 it('handles edge case with no existing students', function () {
@@ -201,7 +205,7 @@ it('handles edge case with no existing students', function () {
     $nextId = Student::generateNextId(StudentType::College);
 
     // Should start from the beginning of the range
-    expect($nextId)->toBe(200000);
+    expect($nextId)->toBe('200000');
     expect(mb_strlen((string) $nextId))->toBe(6);
 });
 

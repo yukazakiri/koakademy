@@ -13,7 +13,9 @@ final class UpdateStudentRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return true;
+        $student = \App\Models\Student::query()->find($this->route('id'));
+
+        return $this->user() !== null && ($student === null || $this->user()->can('update', $student));
     }
 
     /**
@@ -23,7 +25,7 @@ final class UpdateStudentRequest extends FormRequest
      */
     public function rules(): array
     {
-        return [
+        $rules = [
             'first_name' => ['sometimes', 'string', 'max:255'],
             'last_name' => ['sometimes', 'string', 'max:255'],
             'middle_name' => ['nullable', 'string', 'max:255'],
@@ -32,7 +34,7 @@ final class UpdateStudentRequest extends FormRequest
             'age' => ['sometimes', 'integer', 'min:0'],
             'address' => ['nullable', 'string', 'max:500'],
             'contacts' => ['nullable', 'array'],
-            'course_id' => ['sometimes', 'integer'],
+            'course_id' => ['sometimes', 'integer', 'exists:courses,id'],
             'academic_year' => ['sometimes', 'integer', 'min:1', 'max:6'],
             'email' => ['sometimes', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:20'],
@@ -75,5 +77,19 @@ final class UpdateStudentRequest extends FormRequest
             'scholarship_type' => ['nullable', 'string', 'max:100'],
             'scholarship_details' => ['nullable', 'string'],
         ];
+        $student = \App\Models\Student::query()->find($this->route('id'));
+        if ($student !== null) {
+            $configuration = app(\App\Services\StudentConfigurationService::class);
+            $type = (string) $this->input('student_type', $student->student_type?->value);
+            $rules = $configuration->rules($rules, $type, $student);
+            $rules['student_id'] = ['sometimes', ...app(\App\Services\IdentifierGenerator::class)->getStudentIdValidationRules(\App\Enums\StudentType::tryFrom($type), $student->id, schoolId: $student->school_id)];
+            foreach ($rules as $field => &$fieldRules) {
+                if (! $this->exists($field)) {
+                    $fieldRules = ['sometimes', ...$fieldRules];
+                }
+            }
+        }
+
+        return $rules;
     }
 }

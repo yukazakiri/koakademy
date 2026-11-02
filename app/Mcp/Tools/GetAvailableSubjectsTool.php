@@ -154,7 +154,7 @@ final class GetAvailableSubjectsTool extends Tool
     public function schema(JsonSchema $schema): array
     {
         return [
-            'student_id' => $schema->integer()->min(1)->description('The student database ID or student number. Optional for student callers.'),
+            'student_id' => $schema->integer()->min(1)->description('The student database ID, or an unpadded numeric student number. Optional for student callers.'),
             'year_level' => $schema->integer()->min(1)->max(6)->description('Year level to filter (e.g. 1, 2, 3, 4). Defaults to student\'s current academic year.'),
             'semester' => $schema->integer()->enum([1, 2])->description('Semester to filter (1 or 2). Defaults to current semester.'),
         ];

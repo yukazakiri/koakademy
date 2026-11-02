@@ -84,6 +84,7 @@ export interface ChecklistYearGroup {
 }
 
 export type StudentDetail = {
+    year_level_options?: Array<{ value: number; label: string }>;
     id: number;
     student_id: number | string | null;
     name: string;

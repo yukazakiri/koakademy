@@ -2321,6 +2321,7 @@ it('performs student CRUD via MCP ManageStudentTool', function (): void {
 
 it('writes and reads special equity data via MCP ManageStudentTool', function (): void {
     config(['api.mcp.write_enabled' => true]);
+    app(App\Services\StudentConfigurationService::class)->update(App\Services\StudentConfigurationService::defaults(legacy: true), $this->school->id);
     $this->staff->createToken('Staff Agent', ['mcp:read', 'mcp:write']);
     $this->staff->givePermissionTo(['View:Student', 'Update:Student', 'Create:Student']);
 

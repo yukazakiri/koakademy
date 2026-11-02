@@ -469,6 +469,12 @@ final readonly class RegistrarStudentProfileImportService
                     continue;
                 }
 
+                if (! app(StudentConfigurationService::class)->fieldIsVisible($fieldKey, $schoolId)) {
+                    $group['errors'][] = "Excel row {$rowNumber}: {$heading} is disabled by the school's student configuration.";
+
+                    continue;
+                }
+
                 $currentValue = $currentProfile[$fieldKey] ?? null;
                 if (! $this->workbook->valuesEqual($currentValue, $oldValue)) {
                     $group['errors'][] = "Excel row {$rowNumber}: {$heading} changed in the system after this workbook was exported.";
@@ -674,6 +680,13 @@ final readonly class RegistrarStudentProfileImportService
         }
 
         $studentChanges = collect($changes)->where('target', 'student')->values()->all();
+        foreach ($studentChanges as $change) {
+            if (! app(StudentConfigurationService::class)->fieldIsVisible($change['key'], $schoolId)) {
+                $this->skipRow($row, 'A field in this import was disabled after the workbook was staged.');
+
+                return;
+            }
+        }
         if ($studentChanges !== []) {
             $this->applyStudentChanges($student, $studentChanges);
         }

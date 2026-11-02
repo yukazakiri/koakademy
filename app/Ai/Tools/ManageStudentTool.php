@@ -135,8 +135,9 @@ final class ManageStudentTool implements Approvable, Tool
             'email' => $schema->string()->description('Student email address.'),
             'course_code' => $schema->string()->description('Academic program code (e.g. "BSCS", "BSIT", "BSA").'),
             'course_id' => $schema->integer()->description('Course database ID.'),
-            'academic_year' => $schema->integer()->description('Year level (1 to 5).'),
-            'student_type' => $schema->string()->enum(['college', 'shs'])->description('Student level: college or shs.'),
+            'academic_year' => $schema->integer()->description('Configured year or grade level.'),
+            'student_type' => $schema->string()->enum(['college', 'shs', 'tesda', 'dhrt'])->description('Supported school student category.'),
+            'lrn' => $schema->string()->description('External identifier when enabled by the school.'),
             'status' => $schema->string()->enum(['enrolled', 'applicant', 'graduated', 'on_leave', 'dropped'])->description('Student status.'),
             'gender' => $schema->string()->enum(['Male', 'Female', 'Other'])->description('Student gender.'),
             'birth_date' => $schema->string()->description('Date of birth in YYYY-MM-DD format.'),
@@ -219,8 +220,9 @@ final class ManageStudentTool implements Approvable, Tool
             'email' => 'required|email|max:150',
             'course_id' => 'nullable|integer',
             'course_code' => 'nullable|string|max:50',
-            'academic_year' => 'nullable|integer|between:1,5',
-            'student_type' => 'nullable|string|in:college,shs',
+            'academic_year' => 'nullable|integer|between:1,99',
+            'student_type' => 'nullable|string|in:college,shs,tesda,dhrt',
+            'lrn' => 'nullable|string|max:32',
             'gender' => 'nullable|string|in:Male,Female,Other',
             'birth_date' => 'nullable|date',
             'status' => 'nullable|string',
@@ -237,28 +239,30 @@ final class ManageStudentTool implements Approvable, Tool
             $courseId = $defaultCourse?->id ?? 1;
         }
 
-        $studentType = isset($validated['student_type']) && $validated['student_type'] === 'shs'
-            ? StudentType::Shs
-            : StudentType::College;
+        $studentType = StudentType::from($validated['student_type'] ?? app(\App\Services\StudentConfigurationService::class)->get()['default_type']);
 
         try {
             return DB::transaction(function () use ($validated, $courseId, $studentType) {
-                $newStudentId = Student::generateNextId($studentType);
+                $newStudentId = app(\App\Services\IdentifierGenerator::class)->assignForNewStudent([
+                    ...$validated, 'student_type' => $studentType->value,
+                    'academic_year' => $validated['academic_year'] ?? 1,
+                ]);
                 $birthDate = filled($validated['birth_date'] ?? null)
                     ? Carbon::parse($validated['birth_date'])
                     : now()->subYears(18);
 
                 $student = Student::query()->create([
                     'student_id' => $newStudentId,
-                    'institution_id' => 1,
+                    'institution_id' => app(\App\Services\TenantContext::class)->getCurrentSchoolId(),
                     'student_type' => $studentType->value,
+                    'lrn' => app(\App\Services\StudentConfigurationService::class)->externalFor($studentType->value)['enabled'] ? ($validated['lrn'] ?? null) : null,
                     'first_name' => $validated['first_name'],
                     'last_name' => $validated['last_name'],
                     'middle_name' => $validated['middle_name'] ?? null,
                     'email' => $validated['email'],
                     'course_id' => $courseId,
                     'academic_year' => $validated['academic_year'] ?? 1,
-                    'gender' => $validated['gender'] ?? 'Other',
+                    'gender' => $validated['gender'] ?? 'prefer_not_to_say',
                     'birth_date' => $birthDate->format('Y-m-d'),
                     'age' => $birthDate->age,
                     'status' => $validated['status'] ?? StudentStatus::Applicant->value,
@@ -298,7 +302,7 @@ final class ManageStudentTool implements Approvable, Tool
             'email' => 'nullable|email|max:150',
             'course_id' => 'nullable|integer',
             'course_code' => 'nullable|string|max:50',
-            'academic_year' => 'nullable|integer|between:1,5',
+            'academic_year' => 'nullable|integer|between:1,99',
             'status' => 'nullable|string',
             'gender' => 'nullable|string',
         ]);
@@ -331,6 +335,7 @@ final class ManageStudentTool implements Approvable, Tool
             return json_encode(['error' => true, 'message' => 'No valid fields provided to update.']);
         }
 
+        app(\App\Services\StudentConfigurationService::class)->validatePartialUpdate($updates, $student);
         $student->update($updates);
 
         return json_encode([
@@ -385,7 +390,9 @@ final class ManageStudentTool implements Approvable, Tool
             'students.*.lrn' => 'nullable|string|max:20',
             'students.*.course_code' => 'nullable|string|max:50',
             'students.*.course_id' => 'nullable|integer',
-            'students.*.academic_year' => 'nullable|integer|between:1,5',
+            'students.*.academic_year' => 'nullable|integer|between:1,99',
+            'students.*.student_type' => 'nullable|string|in:college,shs,tesda,dhrt',
+            'students.*.lrn' => 'nullable|string|max:32',
             'students.*.student_type' => 'nullable|string|in:college,shs',
             'students.*.gender' => 'nullable|string|in:Male,Female,Other',
             'students.*.birth_date' => 'nullable|date',
@@ -432,10 +439,10 @@ final class ManageStudentTool implements Approvable, Tool
                             'academic_year' => $sData['academic_year'] ?? null,
                             'status' => $sData['status'] ?? null,
                             'gender' => $sData['gender'] ?? null,
-                            'lrn' => $sData['lrn'] ?? null,
                         ], fn ($val) => $val !== null);
 
                         if (! empty($updates)) {
+                            app(\App\Services\StudentConfigurationService::class)->validatePartialUpdate($updates, $existing);
                             $existing->update($updates);
                         }
 
@@ -447,26 +454,28 @@ final class ManageStudentTool implements Approvable, Tool
                             'status' => $existing->status,
                         ];
                     } else {
-                        $studentType = isset($sData['student_type']) && $sData['student_type'] === 'shs'
-                            ? StudentType::Shs
-                            : StudentType::College;
+                        $studentType = StudentType::from($sData['student_type'] ?? app(\App\Services\StudentConfigurationService::class)->get()['default_type']);
 
-                        $newStudentId = Student::generateNextId($studentType);
+                        $newStudentId = app(\App\Services\IdentifierGenerator::class)->assignForNewStudent([
+                            ...$sData, 'student_type' => $studentType->value,
+                            'academic_year' => $sData['academic_year'] ?? 1,
+                        ]);
                         $birthDate = filled($sData['birth_date'] ?? null)
                             ? Carbon::parse($sData['birth_date'])
                             : now()->subYears(18);
 
                         $newStudent = Student::query()->create([
                             'student_id' => $newStudentId,
-                            'institution_id' => 1,
+                            'institution_id' => app(\App\Services\TenantContext::class)->getCurrentSchoolId(),
                             'student_type' => $studentType->value,
+                            'lrn' => app(\App\Services\StudentConfigurationService::class)->externalFor($studentType->value)['enabled'] ? ($sData['lrn'] ?? null) : null,
                             'first_name' => $sData['first_name'],
                             'last_name' => $sData['last_name'],
                             'middle_name' => $sData['middle_name'] ?? null,
                             'email' => $sData['email'],
                             'course_id' => $courseId,
                             'academic_year' => $sData['academic_year'] ?? 1,
-                            'gender' => $sData['gender'] ?? 'Other',
+                            'gender' => $sData['gender'] ?? 'prefer_not_to_say',
                             'birth_date' => $birthDate->format('Y-m-d'),
                             'age' => $birthDate->age,
                             'status' => $sData['status'] ?? StudentStatus::Applicant->value,
@@ -646,7 +655,7 @@ final class ManageStudentTool implements Approvable, Tool
     {
         $query = $withTrashed ? Student::withTrashed() : Student::query();
 
-        if (is_numeric($identifier)) {
+        if (ctype_digit($identifier) && (string) (int) $identifier === $identifier) {
             $found = (clone $query)->find((int) $identifier);
             if ($found) {
                 return $found;

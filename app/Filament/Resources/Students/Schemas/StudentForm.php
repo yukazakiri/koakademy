@@ -10,6 +10,8 @@ use App\Enums\ScholarshipType;
 use App\Enums\StudentStatus;
 use App\Enums\StudentType;
 use App\Models\Student;
+use App\Services\IdentifierGenerator;
+use App\Services\StudentConfigurationService;
 use Filament\Actions\Action;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Placeholder;
@@ -57,6 +59,7 @@ final class StudentForm
                     )
                     ->lazy(),
                 Section::make('Statistical & Reporting Data')
+                    ->visible(fn (): bool => app(StudentConfigurationService::class)->get()['philippine_reporting'])
                     ->schema(self::getStatisticalDataSection())
                     ->columns(2)
                     ->columnSpan(['lg' => 3])
@@ -75,16 +78,12 @@ final class StudentForm
         return [
             Select::make('student_type')
                 ->label('Student Type')
-                ->options(StudentType::asSelectOptions())
-                ->default(StudentType::College->value)
+                ->options(fn (?Student $record): array => collect(app(StudentConfigurationService::class)->get()['type_labels'])->filter(fn ($label, $key): bool => in_array($key, app(StudentConfigurationService::class)->get()['enabled_types'], true) || $record?->student_type?->value === $key)->all())
+                ->default(fn (): string => app(StudentConfigurationService::class)->get()['default_type'])
                 ->required()
                 ->live(onBlur: false)
                 ->afterStateUpdated(function ($set, $state, $get): void {
-                    // Clear student_id when student type changes
-                    $set('student_id', null);
-                    // Clear LRN when switching away from SHS
                     if ($state !== StudentType::SeniorHighSchool->value) {
-                        $set('lrn', null);
                         // Clear SHS fields when switching away from SHS
                         $set('shs_track_id', null);
                         $set('shs_strand_id', null);
@@ -95,6 +94,12 @@ final class StudentForm
                     }
                 }),
 
+            Select::make('identifier_assignment')
+                ->label('Identifier assignment')
+                ->options(['automatic' => 'Assign automatically on save', 'manual' => 'Enter an existing number'])
+                ->default(fn (): string => app(IdentifierGenerator::class)->sequenceFor('student')->assignment_mode === 'manual' ? 'manual' : 'automatic')
+                ->live()
+                ->visible(fn (?Student $record): bool => $record === null && app(IdentifierGenerator::class)->sequenceFor('student')->assignment_mode === 'hybrid'),
             self::getStudentIdField(),
             self::getLrnField(),
 
@@ -112,30 +117,35 @@ final class StudentForm
                 ->numeric()
                 ->required(),
             TextInput::make('email')
-                ->label('Email address')
+                ->label(fn (): string => app(StudentConfigurationService::class)->get()['fields']['email']['label'])
+                ->visible(fn (): bool => app(StudentConfigurationService::class)->get()['fields']['email']['visible'])
+                ->required(fn (): bool => app(StudentConfigurationService::class)->get()['fields']['email']['required'])
                 ->email()
                 ->maxLength(255),
+            TextInput::make('phone')
+                ->label(fn (): string => app(StudentConfigurationService::class)->get()['fields']['phone']['label'])
+                ->visible(fn (): bool => app(StudentConfigurationService::class)->get()['fields']['phone']['visible'])
+                ->required(fn (): bool => app(StudentConfigurationService::class)->get()['fields']['phone']['required'])
+                ->maxLength(30),
+            TextInput::make('nationality')
+                ->label(fn (): string => app(StudentConfigurationService::class)->get()['fields']['nationality']['label'])
+                ->visible(fn (): bool => app(StudentConfigurationService::class)->get()['fields']['nationality']['visible'])
+                ->required(fn (): bool => app(StudentConfigurationService::class)->get()['fields']['nationality']['required'])
+                ->default(fn (): ?string => app(StudentConfigurationService::class)->get()['defaults']['nationality'])
+                ->maxLength(50),
             Select::make('course_id')
                 ->relationship('course', 'code')
                 ->searchable()
                 ->preload()
                 ->hidden(fn ($get): bool => $get('student_type') === StudentType::SeniorHighSchool->value),
             Select::make('academic_year')
-                ->options(function ($get): array {
-                    if ($get('student_type') === StudentType::SeniorHighSchool->value) {
-                        return [
-                            '11' => 'Grade 11',
-                            '12' => 'Grade 12',
-                        ];
+                ->options(function ($get, ?Student $record): array {
+                    $levels = collect(app(StudentConfigurationService::class)->get()['year_levels'][$get('student_type') ?: 'college'])->pluck('label', 'value')->all();
+                    if ($record !== null && $record->student_type?->value === $get('student_type') && ! isset($levels[$record->academic_year])) {
+                        $levels[$record->academic_year] = 'Existing level '.$record->academic_year;
                     }
 
-                    return [
-                        '1' => '1st Year',
-                        '2' => '2nd Year',
-                        '3' => '3rd Year',
-                        '4' => '4th Year',
-                        '5' => 'Graduate',
-                    ];
+                    return $levels;
                 })
                 ->required(),
 
@@ -150,6 +160,7 @@ final class StudentForm
     private static function getGenderSelect(): Select
     {
         return Select::make('gender')
+            ->default(fn (): ?string => app(StudentConfigurationService::class)->get()['defaults']['gender'])
             ->options([
                 'male' => 'Male',
                 'female' => 'Female',
@@ -297,25 +308,41 @@ final class StudentForm
             ->relationship('personalInfo')
             ->schema([
                 TextInput::make('birthplace')
+                    ->label(fn (): string => app(StudentConfigurationService::class)->get()['fields']['birthplace']['label'])
+                    ->visible(fn (): bool => app(StudentConfigurationService::class)->get()['fields']['birthplace']['visible'])
+                    ->required(fn (): bool => app(StudentConfigurationService::class)->get()['fields']['birthplace']['required'])
                     ->hint('(Municipality / City)')
-                    ->label('Birthplace'),
-                TextInput::make('civil_status')->label(
-                    'Civil Status',
-                ),
-                TextInput::make('citizenship')->label(
-                    'Citizenship',
-                ),
-                TextInput::make('religion')->label('Religion'),
+                    ->maxLength(255),
+                TextInput::make('civil_status')
+                    ->label(fn (): string => app(StudentConfigurationService::class)->get()['fields']['civil_status']['label'])
+                    ->visible(fn (): bool => app(StudentConfigurationService::class)->get()['fields']['civil_status']['visible'])
+                    ->required(fn (): bool => app(StudentConfigurationService::class)->get()['fields']['civil_status']['required']),
+                TextInput::make('citizenship')
+                    ->label(fn (): string => app(StudentConfigurationService::class)->get()['fields']['citizenship']['label'])
+                    ->visible(fn (): bool => app(StudentConfigurationService::class)->get()['fields']['citizenship']['visible'])
+                    ->required(fn (): bool => app(StudentConfigurationService::class)->get()['fields']['citizenship']['required'])
+                    ->default(fn (): ?string => app(StudentConfigurationService::class)->get()['defaults']['citizenship']),
+                TextInput::make('religion')
+                    ->label(fn (): string => app(StudentConfigurationService::class)->get()['fields']['religion']['label'])
+                    ->visible(fn (): bool => app(StudentConfigurationService::class)->get()['fields']['religion']['visible'])
+                    ->required(fn (): bool => app(StudentConfigurationService::class)->get()['fields']['religion']['required']),
                 TextInput::make('weight')
-                    ->label('Weight')
+                    ->label(fn (): string => app(StudentConfigurationService::class)->get()['fields']['weight']['label'])
+                    ->visible(fn (): bool => app(StudentConfigurationService::class)->get()['fields']['weight']['visible'])
+                    ->required(fn (): bool => app(StudentConfigurationService::class)->get()['fields']['weight']['required'])
                     ->numeric(),
-                TextInput::make('height')->label('Height'),
-                TextInput::make('current_adress')->label(
-                    'Current Address',
-                ),
-                TextInput::make('permanent_address')->label(
-                    'Permanent Address',
-                ),
+                TextInput::make('height')
+                    ->label(fn (): string => app(StudentConfigurationService::class)->get()['fields']['height']['label'])
+                    ->visible(fn (): bool => app(StudentConfigurationService::class)->get()['fields']['height']['visible'])
+                    ->required(fn (): bool => app(StudentConfigurationService::class)->get()['fields']['height']['required'])->numeric(),
+                TextInput::make('current_adress')
+                    ->label(fn (): string => app(StudentConfigurationService::class)->get()['fields']['current_address']['label'])
+                    ->visible(fn (): bool => app(StudentConfigurationService::class)->get()['fields']['current_address']['visible'])
+                    ->required(fn (): bool => app(StudentConfigurationService::class)->get()['fields']['current_address']['required']),
+                TextInput::make('permanent_address')
+                    ->label(fn (): string => app(StudentConfigurationService::class)->get()['fields']['permanent_address']['label'])
+                    ->visible(fn (): bool => app(StudentConfigurationService::class)->get()['fields']['permanent_address']['visible'])
+                    ->required(fn (): bool => app(StudentConfigurationService::class)->get()['fields']['permanent_address']['required']),
             ])
             ->columns(2);
     }
@@ -323,17 +350,18 @@ final class StudentForm
     private static function getStudentIdField(): TextInput
     {
         return TextInput::make('student_id')
-            ->label('Student ID')
+            ->label(fn (): string => app(IdentifierGenerator::class)->sequenceFor('student')->display_label)
             ->live()
-            ->visible(function ($get): bool {
+            ->visible(function ($get, ?Student $record): bool {
                 $studentType = $get('student_type');
 
-                // For SHS, we use LRN as student_id, so hide this field
-                return $studentType !== StudentType::SeniorHighSchool->value;
+                return ! app(StudentConfigurationService::class)->usesExternal((string) $studentType)
+                    || ($record !== null && (string) $record->student_id !== (string) $record->lrn);
             })
+            ->readOnly(fn ($get, ?Student $record): bool => app(IdentifierGenerator::class)->sequenceFor('student')->assignment_mode === 'automatic' || ($record === null && $get('identifier_assignment') !== 'manual'))
             ->rules(function ($get, $record): array {
                 $studentType = $get('student_type');
-                if ($studentType === StudentType::SeniorHighSchool->value) {
+                if (app(StudentConfigurationService::class)->usesExternal((string) $studentType) || ($record === null && $get('identifier_assignment') !== 'manual')) {
                     return [];
                 }
 
@@ -389,7 +417,7 @@ final class StudentForm
                         }
 
                         // Generate next available ID for the student type
-                        $nextId = Student::generateNextId($type);
+                        $nextId = app(IdentifierGenerator::class)->previewStudentId($type);
                         $set('student_id', $nextId);
                     })
             );
@@ -398,36 +426,27 @@ final class StudentForm
     private static function getLrnField(): TextInput
     {
         return TextInput::make('lrn')
-            ->label('Learner Reference Number (LRN)')
-            ->unique(Student::class, 'lrn', ignoreRecord: true)
+            ->label(fn (): string => app(StudentConfigurationService::class)->get()['external_identifier']['label'])
             ->visible(function ($get): bool {
                 $studentType = $get('student_type');
 
-                return $studentType === StudentType::SeniorHighSchool->value;
+                return app(StudentConfigurationService::class)->externalFor((string) $studentType)['enabled'];
             })
             ->required(function ($get): bool {
                 $studentType = $get('student_type');
 
-                return $studentType === StudentType::SeniorHighSchool->value;
-            })
-            ->rules(function ($get): array {
-                $studentType = $get('student_type');
-                if ($studentType === StudentType::SeniorHighSchool->value) {
-                    return [
-                        'required',
-                        'string',
-                        'max:20', // LRN can be alphanumeric and longer
-                    ];
-                }
+                $external = app(StudentConfigurationService::class)->externalFor((string) $studentType);
 
-                return [];
+                return $external['enabled'] && ($external['required'] || $external['use_as_student_id']);
             })
-            ->placeholder('12-digit LRN (e.g., 123456789012)')
-            ->helperText('For Senior High School students, LRN is used as the student identifier')
-            ->afterStateUpdated(function ($set, $state, $get): void {
+            ->rules(function ($get, ?Student $record): array {
+                return app(StudentConfigurationService::class)->rules([], (string) $get('student_type'), $record)['lrn'];
+            })
+            ->helperText(fn (): ?string => app(StudentConfigurationService::class)->get()['external_identifier']['help_text'])
+            ->afterStateUpdated(function ($set, $state, $get, ?Student $record): void {
                 // For SHS students, copy LRN to student_id field
                 $studentType = $get('student_type');
-                if ($studentType === StudentType::SeniorHighSchool->value && $state) {
+                if (app(StudentConfigurationService::class)->usesExternal((string) $studentType) && $state && ($record === null || (string) $record->student_id === (string) $record->lrn)) {
                     $set('student_id', $state);
                 }
             });

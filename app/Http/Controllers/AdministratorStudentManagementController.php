@@ -840,6 +840,7 @@ final class AdministratorStudentManagementController extends Controller
                 'academic_year' => $student->formatted_academic_year,
                 // Raw year level, needed by the inline editor to reconcile optimistic updates.
                 'academic_year_value' => $student->academic_year,
+                'year_level_options' => app(\App\Services\StudentConfigurationService::class)->get($student->school_id)['year_levels'][$student->student_type?->value ?? 'college'],
                 'course' => [
                     'id' => $student->Course?->id,
                     'code' => $student->Course?->code,
@@ -1050,10 +1051,11 @@ final class AdministratorStudentManagementController extends Controller
     public function store(Request $request, CurriculumCapabilityResolver $capabilityResolver): RedirectResponse
     {
         $identifierGenerator = app(IdentifierGenerator::class);
-
-        if ($request->input('student_type') !== StudentType::SeniorHighSchool->value && blank($request->input('student_id'))) {
-            $request->merge(['student_id' => $identifierGenerator->previewStudentId()]);
-        }
+        $configuration = app(\App\Services\StudentConfigurationService::class);
+        $typeValue = (string) $request->input('student_type');
+        $usesExternal = $configuration->usesExternal($typeValue);
+        // Older API clients may omit the mode: supplied values are manual, never inferred from a preview.
+        $mode = (string) $request->input('identifier_assignment', $request->filled('student_id') ? 'manual' : 'automatic');
 
         // Sanitize name fields to prevent stored XSS attacks
         $sanitizedNames = [];
@@ -1066,7 +1068,8 @@ final class AdministratorStudentManagementController extends Controller
             $request->merge($sanitizedNames);
         }
 
-        $validated = $request->validate([
+        $rules = [
+            'identifier_assignment' => ['nullable', 'in:automatic,manual'],
             'student_type' => ['required', Rule::enum(StudentType::class)],
             'first_name' => ['required', 'string', 'max:100'],
             'last_name' => ['required', 'string', 'max:100'],
@@ -1091,13 +1094,7 @@ final class AdministratorStudentManagementController extends Controller
                 'nullable',
                 'exists:shs_strands,id',
             ],
-            'student_id' => [
-                Rule::requiredIf(fn (): bool => $request->student_type !== StudentType::SeniorHighSchool->value),
-                ...$identifierGenerator->getStudentIdValidationRules(
-                    StudentType::tryFrom((string) $request->student_type),
-                    required: false
-                ),
-            ],
+            'student_id' => $usesExternal || $mode === 'automatic' ? ['exclude'] : $identifierGenerator->getStudentIdValidationRules(StudentType::tryFrom($typeValue)),
             'lrn' => [
                 Rule::requiredIf(fn (): bool => $request->student_type === StudentType::SeniorHighSchool->value),
                 'nullable',
@@ -1180,7 +1177,8 @@ final class AdministratorStudentManagementController extends Controller
             'job_position' => ['nullable', 'string', 'max:255'],
             'employment_date' => ['nullable', 'date'],
             'employed_by_institution' => ['nullable', 'boolean'],
-        ]);
+        ];
+        $validated = $request->validate($configuration->rules($rules, $typeValue));
 
         if (($validated['student_type'] ?? null) === StudentType::TESDA->value && isset($validated['course_id'])) {
             $course = Course::query()->with('department')->find($validated['course_id']);
@@ -1210,7 +1208,7 @@ final class AdministratorStudentManagementController extends Controller
             $validated['guardian_relationship'] = $validated['emergency_contact_relationship'];
         }
 
-        $student = DB::transaction(function () use ($identifierGenerator, $validated): Student {
+        $student = DB::transaction(function () use ($identifierGenerator, $validated, $usesExternal, $mode): Student {
             $studentType = StudentType::from($validated['student_type']);
             $status = StudentStatus::from($validated['status']);
             $birthDate = Carbon::parse($validated['birth_date']);
@@ -1267,15 +1265,13 @@ final class AdministratorStudentManagementController extends Controller
                 'contacts' => $this->studentContactsPayload($validated),
             ]);
 
+            $student->lrn = $validated['lrn'] ?? null;
+            $student->student_id = $usesExternal
+                ? $identifierGenerator->claimExternalIdentifier($studentType, $validated['lrn'])
+                : $identifierGenerator->assign($studentType, $validated['student_id'] ?? null, $mode);
             if ($studentType === StudentType::SeniorHighSchool) {
-                $student->lrn = $validated['lrn'];
-                $student->student_id = $validated['lrn'];
                 $student->shs_strand_id = $validated['shs_strand_id'];
             } else {
-                $submittedStudentId = (int) $validated['student_id'];
-                $student->student_id = $submittedStudentId === $identifierGenerator->previewStudentId()
-                    ? $identifierGenerator->generateStudentId()
-                    : $submittedStudentId;
                 $student->course_id = $validated['course_id'];
             }
 
@@ -1329,7 +1325,7 @@ final class AdministratorStudentManagementController extends Controller
                 ];
             })->filter()->values(),
             'current_classes' => $student->getCurrentClasses(),
-            'options' => $this->getFormOptions($capabilityResolver),
+            'options' => $this->getFormOptions($capabilityResolver, $student),
         ]);
     }
 
@@ -1341,10 +1337,13 @@ final class AdministratorStudentManagementController extends Controller
             return response()->json(['id' => null], 400);
         }
 
-        if ($type === StudentType::SeniorHighSchool) {
+        if (app(\App\Services\StudentConfigurationService::class)->usesExternal($type->value)) {
             return response()->json(['id' => null]);
         }
 
+        if (! in_array($type->value, app(\App\Services\StudentConfigurationService::class)->get()['enabled_types'], true)) {
+            return response()->json(['id' => null], 422);
+        }
         $nextId = $identifierGenerator->previewStudentId($type);
 
         return response()->json(['id' => $nextId]);
@@ -1444,15 +1443,12 @@ final class AdministratorStudentManagementController extends Controller
 
     public function update(Request $request, Student $student): RedirectResponse
     {
-        $idWasGenerated = false;
-        // If student_id is empty and not SHS, fallback to using the model's ID (primary key)
         $identifierGenerator = app(IdentifierGenerator::class);
-
-        if (empty($request->input('student_id')) && $request->input('student_type') !== StudentType::SeniorHighSchool->value) {
-            $padding = $identifierGenerator->sequenceFor(IdentifierGenerator::Student)->padding ?? 6;
-            $generatedId = mb_str_pad((string) $student->id, $padding, '0', STR_PAD_LEFT);
-            $request->merge(['student_id' => $generatedId]);
-            $idWasGenerated = true;
+        $configuration = app(\App\Services\StudentConfigurationService::class);
+        $usesExternal = $configuration->usesExternal((string) $request->input('student_type'), $student->school_id)
+            && ((string) $student->student_id === (string) $student->lrn || blank($student->student_id));
+        if (! $usesExternal && blank($request->input('student_id'))) {
+            $request->merge(['student_id' => $student->student_id]);
         }
 
         // Sanitize name fields to prevent stored XSS attacks
@@ -1466,7 +1462,7 @@ final class AdministratorStudentManagementController extends Controller
             $request->merge($sanitizedNames);
         }
 
-        $validated = $request->validate([
+        $rules = [
             'student_type' => ['required', 'string'],
             'first_name' => ['required', 'string', 'max:50'],
             'last_name' => ['required', 'string', 'max:50'],
@@ -1487,12 +1483,11 @@ final class AdministratorStudentManagementController extends Controller
                 'nullable',
                 'exists:shs_strands,id',
             ],
-            'student_id' => [
-                Rule::requiredIf(fn (): bool => $request->student_type !== StudentType::SeniorHighSchool->value),
+            'student_id' => $usesExternal ? ['exclude'] : [
                 ...$identifierGenerator->getStudentIdValidationRules(
                     StudentType::tryFrom((string) $request->student_type),
                     ignoreId: $student->id,
-                    required: false
+                    schoolId: $student->school_id,
                 ),
             ],
             'lrn' => [
@@ -1590,9 +1585,11 @@ final class AdministratorStudentManagementController extends Controller
             'employment_date' => ['nullable', 'date'],
             'employed_by_institution' => ['nullable', 'boolean'],
             'stay' => ['nullable', 'boolean'],
-        ]);
+        ];
+        $validated = $request->validate($configuration->rules($rules, (string) $request->input('student_type'), $student));
+        $validated = $configuration->preserveHidden($validated, $student);
 
-        DB::transaction(function () use ($validated, $student): void {
+        DB::transaction(function () use ($validated, $student, $usesExternal, $configuration): void {
             // Update main student record
             $student->student_type = $validated['student_type'];
             $student->first_name = $validated['first_name'];
@@ -1606,7 +1603,9 @@ final class AdministratorStudentManagementController extends Controller
             $student->civil_status = $validated['civil_status'] ?? null;
             $student->nationality = $validated['nationality'] ?? ($validated['citizenship'] ?? null);
             $student->religion = $validated['religion'] ?? null;
-            $student->address = ($validated['current_address'] ?? null) ?: ($validated['permanent_address'] ?? null);
+            if ($configuration->fieldIsVisible('current_address', $student->school_id) || $configuration->fieldIsVisible('permanent_address', $student->school_id)) {
+                $student->address = ($validated['current_address'] ?? null) ?: ($validated['permanent_address'] ?? null);
+            }
             $student->emergency_contact = $validated['emergency_contact_name'] ?? null;
             $student->academic_year = $validated['academic_year'];
             $student->remarks = $validated['remarks'] ?? null;
@@ -1646,15 +1645,13 @@ final class AdministratorStudentManagementController extends Controller
             $student->employed_by_institution = $validated['employed_by_institution'] ?? false;
 
             // Handle Type Specifics
+            $student->lrn = $validated['lrn'] ?? $student->lrn;
+            $student->student_id = $usesExternal ? $validated['lrn'] : $validated['student_id'];
             if ($validated['student_type'] === StudentType::SeniorHighSchool->value) {
-                $student->lrn = $validated['lrn'];
-                $student->student_id = $validated['lrn']; // For SHS, LRN is used as ID
                 $student->shs_strand_id = $validated['shs_strand_id'];
                 $student->course_id = null;
             } else {
-                $student->student_id = $validated['student_id'];
                 $student->course_id = $validated['course_id'];
-                $student->lrn = null;
                 $student->shs_strand_id = null;
             }
 
@@ -1672,9 +1669,6 @@ final class AdministratorStudentManagementController extends Controller
         });
 
         $message = 'Student updated successfully.';
-        if ($idWasGenerated) {
-            $message .= " Student ID defaulted to {$validated['student_id']}.";
-        }
 
         if ($request->boolean('stay', false) || $request->has('stay')) {
             return redirect()->route('administrators.students.edit', $student)
@@ -1933,21 +1927,17 @@ final class AdministratorStudentManagementController extends Controller
     public function updateStudentId(Request $request, Student $student): RedirectResponse
     {
         $validated = $request->validate([
-            'new_student_id' => ['required', 'integer', 'min:100000', 'max:999999'],
+            'new_student_id' => app(IdentifierGenerator::class)->getStudentIdValidationRules($student->student_type, $student->id, schoolId: $student->school_id),
             'confirm_operation' => ['required', 'accepted'],
         ]);
 
-        $newId = (int) $validated['new_student_id'];
+        $newId = (string) $validated['new_student_id'];
 
         if ($newId === $student->student_id) {
             return back()->with('error', 'New ID cannot be the same as current ID.');
         }
 
         $service = app(StudentIdUpdateService::class);
-        if (! $service->isIdAvailable($newId)) {
-            return back()->with('error', "Student ID {$newId} already exists.");
-        }
-
         $result = $service->updateStudentId($student, $newId, true);
 
         if ($result['success']) {
@@ -1965,7 +1955,7 @@ final class AdministratorStudentManagementController extends Controller
         ]);
 
         $service = app(StudentIdUpdateService::class);
-        $result = $service->undoStudentIdChange($validated['change_log_id']);
+        $result = $service->undoStudentIdChange($validated['change_log_id'], $student);
 
         if ($result['success']) {
             return back()->with('success', "Student ID reverted from {$result['old_id']} to {$result['new_id']}.");
@@ -2225,8 +2215,11 @@ final class AdministratorStudentManagementController extends Controller
      */
     public function quickUpdate(Request $request, Student $student): JsonResponse
     {
+        $configuration = app(\App\Services\StudentConfigurationService::class)->get($student->school_id);
+        $levels = array_column($configuration['year_levels'][$student->student_type->value] ?? [], 'value');
+        $levels[] = $student->academic_year;
         $validated = $request->validate([
-            'academic_year' => ['sometimes', 'required', 'integer', 'in:1,2,3,4'],
+            'academic_year' => ['sometimes', 'required', 'integer', Rule::in($levels)],
             'status' => ['sometimes', 'required', new RulesEnum(StudentStatus::class)],
         ]);
 
@@ -3257,10 +3250,19 @@ final class AdministratorStudentManagementController extends Controller
             ->all();
     }
 
-    private function getFormOptions(CurriculumCapabilityResolver $capabilityResolver): array
+    private function getFormOptions(CurriculumCapabilityResolver $capabilityResolver, ?Student $student = null): array
     {
+        $configuration = app(\App\Services\StudentConfigurationService::class)->get();
+        $enabledTypes = $configuration['enabled_types'];
+        if ($student?->student_type !== null) {
+            $enabledTypes[] = $student->student_type->value;
+        }
+
         return [
-            'types' => collect(StudentType::cases())->map(fn ($s): array => ['value' => $s->value, 'label' => $s->getLabel()])->values()->all(),
+            'student_configuration' => $configuration,
+            'configuration_scope' => \App\Services\StudentConfigurationService::scope(app(\App\Services\TenantContext::class)->getCurrentSchoolId()),
+            'identifier_policy' => app(IdentifierGenerator::class)->studentPolicy(),
+            'types' => collect(StudentType::cases())->filter(fn ($type): bool => in_array($type->value, $enabledTypes, true))->map(fn ($type): array => ['value' => $type->value, 'label' => $configuration['type_labels'][$type->value]])->values()->all(),
             'statuses' => collect(StudentStatus::cases())->map(fn ($s): array => ['value' => $s->value, 'label' => $s->getLabel()])->values()->all(),
             'scholarship_types' => collect(ScholarshipType::cases())->map(fn ($s): array => ['value' => $s->value, 'label' => $s->getLabel()])->values()->all(),
             'employment_statuses' => collect(EmploymentStatus::cases())->map(fn ($s): array => ['value' => $s->value, 'label' => $s->getLabel()])->values()->all(),

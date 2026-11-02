@@ -79,7 +79,7 @@ final class ListStudentEnrollmentsTool extends Tool
     public function schema(JsonSchema $schema): array
     {
         return [
-            'student_id' => $schema->integer()->min(1)->description('The student database ID or student number. Optional for student callers.'),
+            'student_id' => $schema->integer()->min(1)->description('The student database ID, or an unpadded numeric student number. Optional for student callers.'),
             'limit' => $schema->integer()->min(1)->max(50)->description('Maximum number of enrollment records to return. Defaults to 20.'),
         ];
     }

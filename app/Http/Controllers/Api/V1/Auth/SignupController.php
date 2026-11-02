@@ -107,6 +107,7 @@ final class SignupController extends Controller
                     'type' => 'student',
                     'student_type' => $studentType?->value ?? 'college',
                     'is_shs' => $isShs,
+                    'identifier_field' => app(\App\Services\StudentConfigurationService::class)->usesExternal($studentType->value, $student->school_id) && (string) $student->student_id === (string) $student->lrn ? 'lrn' : 'student_id',
                     'name' => $student->full_name,
                     'course' => $student->Course?->name ?? null,
                     'academic_year' => $student->academic_year,
@@ -220,16 +221,13 @@ final class SignupController extends Controller
             'email' => 'required|string|email|max:255',
             'password' => ['required', 'confirmed', Password::defaults()],
             'user_type' => 'required|string|in:student',
-            'student_type' => 'required|string|in:college,shs',
+            'student_type' => ['required', 'string', \Illuminate\Validation\Rule::enum(StudentType::class)],
             'record_id' => 'nullable|integer',
             'otp' => 'required|string',
         ];
 
-        if ($isShs) {
-            $validationRules['lrn'] = 'required|string|max:12';
-        } else {
-            $validationRules['student_id'] = 'required|string|max:20';
-        }
+        $identifierField = $request->filled('student_id') ? 'student_id' : 'lrn';
+        $validationRules[$identifierField] = 'required|string|max:64';
 
         $validator = Validator::make($request->all(), $validationRules);
 
@@ -260,13 +258,14 @@ final class SignupController extends Controller
         }
 
         $role = $isShs ? UserRole::ShsStudent : UserRole::Student;
-        $user = DB::transaction(function () use ($request, $role, $studentType, $isShs, $email): User {
+        $user = DB::transaction(function () use ($request, $role, $studentType, $email, $identifierField): User {
             $student = $this->studentOrganizations->resolveForSignup(
                 email: $email,
                 studentType: StudentType::from($studentType),
-                identifier: $request->string($isShs ? 'lrn' : 'student_id')->toString(),
+                identifier: $request->string($identifierField)->toString(),
                 recordId: $request->input('record_id'),
                 lockForUpdate: true,
+                inputField: $identifierField,
             );
 
             $spatieRole = Role::firstOrCreate(
@@ -414,18 +413,13 @@ final class SignupController extends Controller
     private function validateStudentForOtp(Request $request): ?JsonResponse
     {
         $studentType = $request->input('student_type');
-        $isShs = $studentType === 'shs';
-
         $rules = [
-            'student_type' => 'required|string|in:college,shs',
+            'student_type' => ['required', 'string', \Illuminate\Validation\Rule::enum(StudentType::class)],
             'record_id' => 'nullable|integer',
         ];
 
-        if ($isShs) {
-            $rules['lrn'] = 'required|string';
-        } else {
-            $rules['student_id'] = 'required|string';
-        }
+        $identifierField = $request->filled('student_id') ? 'student_id' : 'lrn';
+        $rules[$identifierField] = 'required|string|max:64';
 
         $validator = Validator::make($request->all(), $rules);
 
@@ -436,8 +430,9 @@ final class SignupController extends Controller
         $this->studentOrganizations->resolveForSignup(
             email: $request->string('email')->toString(),
             studentType: StudentType::from($studentType),
-            identifier: $request->string($isShs ? 'lrn' : 'student_id')->toString(),
+            identifier: $request->string($identifierField)->toString(),
             recordId: $request->input('record_id'),
+            inputField: $identifierField,
         );
 
         return null;

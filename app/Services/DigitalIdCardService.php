@@ -195,7 +195,7 @@ final class DigitalIdCardService
 
             if ($data['type'] === 'student') {
                 $student = Student::find($data['record_id']);
-                if ($student instanceof Student && (int) $student->student_id === (int) $data['id']) {
+                if ($student instanceof Student && (string) $student->student_id === (string) $data['id']) {
                     $isValid = $student->status === StudentStatus::Enrolled;
                     $course = $student->Course;
                     $personData = [

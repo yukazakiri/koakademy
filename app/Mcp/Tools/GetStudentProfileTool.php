@@ -83,7 +83,7 @@ final class GetStudentProfileTool extends Tool
     public function schema(JsonSchema $schema): array
     {
         return [
-            'student_id' => $schema->integer()->min(1)->description('The student database ID or student number. Optional for student callers (defaults to their own profile).'),
+            'student_id' => $schema->integer()->min(1)->description('The student database ID, or an unpadded numeric student number. Optional for student callers (defaults to their own profile).'),
         ];
     }
 }

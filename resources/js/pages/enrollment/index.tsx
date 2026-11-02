@@ -1,5 +1,6 @@
 import EnrollmentPolicyContextController from "@/actions/App/Http/Controllers/EnrollmentPolicyContextController";
 import { store as storeEnrollment } from "@/actions/App/Http/Controllers/EnrollmentRegistrationController";
+import { ConfiguredStudentField } from "@/components/administrators/configured-student-field";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,6 +11,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import type { StudentConfiguration } from "@/types/student-configuration";
 import { Head, router, useForm, usePage } from "@inertiajs/react";
 import axios from "axios";
 import { AnimatePresence, motion } from "framer-motion";
@@ -212,6 +214,7 @@ type IncomeModeOption = {
 };
 
 interface EnrollmentCreateProps {
+    student_configuration: StudentConfiguration;
     departments: Department[];
     courses: Course[];
     flash?: Flash;
@@ -267,54 +270,28 @@ const programSchema = z.object({
 });
 
 const personalSchema = z.object({
-    first_name: z
-        .string()
-        .min(1, "First name is required")
-        .regex(/^[a-zA-Z\s.-]+$/, "Name must contain only letters"),
-    last_name: z
-        .string()
-        .min(1, "Last name is required")
-        .regex(/^[a-zA-Z\s.-]+$/, "Name must contain only letters"),
-    middle_name: z
-        .string()
-        .min(1, "Middle name is required")
-        .regex(/^[a-zA-Z\s.-]+$/, "Name must contain only letters"),
+    first_name: z.string().trim().min(1, "First name is required"),
+    last_name: z.string().trim().min(1, "Last name is required"),
     birth_date: z.string().min(1, "Birth date is required"),
     gender: z.string().min(1, "Gender is required"),
-    civil_status: z.string().min(1, "Civil status is required"),
-    religion: z.string().min(1, "Religion is required"),
-    nationality: z
-        .string()
-        .min(1, "Nationality is required")
-        .regex(/^[a-zA-Z\s.-]+$/, "Nationality must contain only letters"),
-    city_of_origin: z.string().min(1, "City of origin is required"),
-    province_of_origin: z.string().min(1, "Province of origin is required"),
-    region_of_origin: z.string().min(1, "Region of origin is required"),
-    email: z.string().min(1, "Email address is required").email("Invalid email address"),
-    phone: z.string().min(10, "Phone number is required").regex(/^\d+$/, "Phone number must contain only numbers"),
-    personal_info: z.object({
-        birthplace: z.string().min(1, "Birthplace is required"),
-        current_address: z.string().min(5, "Complete Current Address is required"),
-    }),
 });
 
 const contactsSchema = z
     .object({
-        contacts: z
-            .object({
-                facebook: z.string(),
-                twitter: z.string(),
-                instagram: z.string(),
-                linkedin: z.string(),
-                emergency_contact_name: z
-                    .string()
-                    .min(1, "Emergency contact name is required")
-                    .regex(/^[a-zA-Z\s.-]+$/, "Name must contain only letters"),
-                emergency_contact_phone: z
-                    .string()
-                    .min(1, "Emergency contact phone is required")
-                    .regex(/^\d+$/, "Phone number must contain only numbers"),
-            }),
+        contacts: z.object({
+            facebook: z.string(),
+            twitter: z.string(),
+            instagram: z.string(),
+            linkedin: z.string(),
+            emergency_contact_name: z
+                .string()
+                .min(1, "Emergency contact name is required")
+                .regex(/^[a-zA-Z\s.-]+$/, "Name must contain only letters"),
+            emergency_contact_phone: z
+                .string()
+                .min(1, "Emergency contact phone is required")
+                .regex(/^\d+$/, "Phone number must contain only numbers"),
+        }),
         parents: z.object({
             father_contact: z.string().min(10, "Father contact number is required").regex(/^\d+$/, "Phone number must contain only numbers"),
             mother_contact: z.string().min(10, "Mother contact number is required").regex(/^\d+$/, "Phone number must contain only numbers"),
@@ -377,9 +354,10 @@ interface Branding {
 }
 
 const sanitizeNumberInput = (value: string) => value.replace(/\D/g, "");
-const sanitizeNameInput = (value: string) => value.replace(/[^a-zA-Z\s.-]/g, "");
+const sanitizeNameInput = (value: string) => value;
 
 export default function EnrollmentCreate({
+    student_configuration: configuration,
     departments,
     courses,
     flash,
@@ -498,9 +476,9 @@ export default function EnrollmentCreate({
         suffix: "",
 
         birth_date: "",
-        gender: "",
+        gender: configuration.defaults.gender ?? "",
         civil_status: "",
-        nationality: "Filipino",
+        nationality: configuration.defaults.nationality ?? "",
         religion: "",
         ethnicity: "",
 
@@ -685,9 +663,7 @@ export default function EnrollmentCreate({
                 : [];
         }
         const deptCodesWithCourses = new Set(
-            courses
-                .filter((course) => course.curriculum_kind === "program")
-                .map((course) => (course.department ?? "").trim().toUpperCase()),
+            courses.filter((course) => course.curriculum_kind === "program").map((course) => (course.department ?? "").trim().toUpperCase()),
         );
         return departments.filter((dept) => dept.code !== "TESDA" && deptCodesWithCourses.has(dept.code.toUpperCase()));
     }, [data.student_type, departments, courses]);
@@ -765,6 +741,13 @@ export default function EnrollmentCreate({
                 programSchema.parse({ student_type: data.student_type, course_id: data.course_id });
             } else if (step === 1) {
                 personalSchema.parse(data);
+                for (const [key, field] of Object.entries(configuration.fields)) {
+                    const value = key in data ? data[key as keyof EnrollmentFormData] : data.personal_info[key as keyof typeof data.personal_info];
+                    if (field.visible && field.required && !String(value ?? "").trim()) {
+                        toast.error(`${field.label} is required`);
+                        return false;
+                    }
+                }
             } else if (step === 2) {
                 contactsSchema.parse(data);
             }
@@ -1327,11 +1310,9 @@ export default function EnrollmentCreate({
                             <p className="text-muted-foreground mt-0.5 text-[10px] sm:text-xs">Privacy and consent</p>
                         </div>
                     </div>
-                    <Button variant="ghost" size="sm" asChild>
-                        <a href="/login" className="gap-1.5">
-                            <LogIn className="h-4 w-4" />
-                            <span className="hidden sm:inline">Sign in</span>
-                        </a>
+                    <Button variant="ghost" size="sm" render={<a href="/login" className="gap-1.5" />} nativeButton={false}>
+                        <LogIn className="h-4 w-4" />
+                        <span className="hidden sm:inline">Sign in</span>
                     </Button>
                 </div>
             </header>
@@ -1466,11 +1447,9 @@ export default function EnrollmentCreate({
                             <p className="text-muted-foreground mt-0.5 text-[10px] sm:text-xs">Online Registration Portal</p>
                         </div>
                     </div>
-                    <Button variant="ghost" size="sm" asChild>
-                        <a href="/login" className="gap-1.5">
-                            <LogIn className="h-4 w-4" />
-                            <span className="hidden sm:inline">Sign in</span>
-                        </a>
+                    <Button variant="ghost" size="sm" render={<a href="/login" className="gap-1.5" />} nativeButton={false}>
+                        <LogIn className="h-4 w-4" />
+                        <span className="hidden sm:inline">Sign in</span>
                     </Button>
                 </div>
             </header>
@@ -2316,8 +2295,8 @@ export default function EnrollmentCreate({
                                             <Button size="lg" onClick={handleStartNewRegistration} className="sm:flex-1">
                                                 {successData.continuing ? "Enroll another student" : "Submit another registration"}
                                             </Button>
-                                            <Button variant="outline" size="lg" asChild className="sm:flex-1">
-                                                <a href="/">Back to homepage</a>
+                                            <Button variant="outline" size="lg" render={<a href="/" />} nativeButton={false} className="sm:flex-1">
+                                                Back to homepage
                                             </Button>
                                         </div>
                                     </CardContent>
@@ -2616,7 +2595,9 @@ export default function EnrollmentCreate({
                                                                                 variant="outline"
                                                                                 className="w-fit shrink-0 border-amber-500/30 bg-amber-500/5 text-[10px] text-amber-700 dark:text-amber-300"
                                                                             >
-                                                                                {course.tesda_program_type === "diploma" ? "Institutional Diploma" : "National Certificate"}
+                                                                                {course.tesda_program_type === "diploma"
+                                                                                    ? "Institutional Diploma"
+                                                                                    : "National Certificate"}
                                                                             </Badge>
                                                                         )}
                                                                     </div>
@@ -2642,24 +2623,39 @@ export default function EnrollmentCreate({
                                                                                     </Badge>
                                                                                     {course.curriculum_kind === "tesda_qualification" && (
                                                                                         <>
-                                                                                            <Badge variant="outline" className="bg-background border-border/60">
+                                                                                            <Badge
+                                                                                                variant="outline"
+                                                                                                className="bg-background border-border/60"
+                                                                                            >
                                                                                                 {course.tesda_program_type === "diploma"
                                                                                                     ? "Institutional Diploma"
                                                                                                     : "National Certificate"}
                                                                                             </Badge>
-                                                                                            <Badge variant="outline" className="bg-background border-border/60">
+                                                                                            <Badge
+                                                                                                variant="outline"
+                                                                                                className="bg-background border-border/60"
+                                                                                            >
                                                                                                 {course.qualification_level || "TESDA Qualification"}
                                                                                             </Badge>
                                                                                             {course.duration_hours && (
-                                                                                                <Badge variant="outline" className="bg-background border-border/60">
-                                                                                                    {course.duration_hours.toLocaleString()} total hours
+                                                                                                <Badge
+                                                                                                    variant="outline"
+                                                                                                    className="bg-background border-border/60"
+                                                                                                >
+                                                                                                    {course.duration_hours.toLocaleString()} total
+                                                                                                    hours
                                                                                                 </Badge>
                                                                                             )}
-                                                                                            {course.tesda_program_type === "diploma" && course.internship_hours && (
-                                                                                                <Badge variant="outline" className="bg-background border-border/60">
-                                                                                                    {course.internship_hours.toLocaleString()} OJT hours
-                                                                                                </Badge>
-                                                                                            )}
+                                                                                            {course.tesda_program_type === "diploma" &&
+                                                                                                course.internship_hours && (
+                                                                                                    <Badge
+                                                                                                        variant="outline"
+                                                                                                        className="bg-background border-border/60"
+                                                                                                    >
+                                                                                                        {course.internship_hours.toLocaleString()} OJT
+                                                                                                        hours
+                                                                                                    </Badge>
+                                                                                                )}
                                                                                         </>
                                                                                     )}
                                                                                     {course.department_name && (
@@ -2685,11 +2681,17 @@ export default function EnrollmentCreate({
 
                                                                                 {course.tesda_program_type === "diploma" && (
                                                                                     <div className="text-muted-foreground space-y-1 text-sm">
-                                                                                        {course.duration_years && <p>Typical duration: {course.duration_years} year(s)</p>}
+                                                                                        {course.duration_years && (
+                                                                                            <p>Typical duration: {course.duration_years} year(s)</p>
+                                                                                        )}
                                                                                         {course.bundled_qualifications?.length ? (
-                                                                                            <p>Includes: {course.bundled_qualifications.join(", ")}</p>
+                                                                                            <p>
+                                                                                                Includes: {course.bundled_qualifications.join(", ")}
+                                                                                            </p>
                                                                                         ) : null}
-                                                                                        {course.advanced_topics && <p>Advanced topics: {course.advanced_topics}</p>}
+                                                                                        {course.advanced_topics && (
+                                                                                            <p>Advanced topics: {course.advanced_topics}</p>
+                                                                                        )}
                                                                                     </div>
                                                                                 )}
 
@@ -2782,18 +2784,16 @@ export default function EnrollmentCreate({
                                                             className="block w-full"
                                                         />
                                                     </div>
-                                                    <div className="space-y-1.5">
-                                                        <Label className="text-sm">
-                                                            Birthplace <span className="text-destructive">*</span>
-                                                        </Label>
+                                                    <ConfiguredStudentField name="birthplace" policy={configuration.fields.birthplace}>
                                                         <Input
+                                                            id="birthplace"
                                                             value={data.personal_info.birthplace}
                                                             onChange={(e) =>
                                                                 setData("personal_info", { ...data.personal_info, birthplace: e.target.value })
                                                             }
-                                                            placeholder="City, Province"
+                                                            placeholder="City or place of birth"
                                                         />
-                                                    </div>
+                                                    </ConfiguredStudentField>
                                                     <div className="space-y-1.5">
                                                         <Label className="text-sm">
                                                             Gender <span className="text-destructive">*</span>
@@ -2810,10 +2810,7 @@ export default function EnrollmentCreate({
                                                             <option value="prefer_not_to_say">Prefer not to say</option>
                                                         </select>
                                                     </div>
-                                                    <div className="space-y-1.5">
-                                                        <Label className="text-sm">
-                                                            Civil Status <span className="text-destructive">*</span>
-                                                        </Label>
+                                                    <ConfiguredStudentField name="civil_status" policy={configuration.fields.civil_status}>
                                                         <select
                                                             className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
                                                             value={data.civil_status}
@@ -2825,105 +2822,40 @@ export default function EnrollmentCreate({
                                                             <option value="Widowed">Widowed</option>
                                                             <option value="Separated">Separated</option>
                                                         </select>
-                                                    </div>
-                                                    <div className="space-y-1.5">
-                                                        <Label className="text-sm">
-                                                            Nationality <span className="text-destructive">*</span>
-                                                        </Label>
+                                                    </ConfiguredStudentField>
+                                                    <ConfiguredStudentField name="nationality" policy={configuration.fields.nationality}>
                                                         <Input
+                                                            id="nationality"
                                                             value={data.nationality}
                                                             onChange={(e) => setData("nationality", sanitizeNameInput(e.target.value))}
-                                                            placeholder="e.g. Filipino"
+                                                            placeholder="Nationality"
                                                         />
-                                                    </div>
-                                                    <div className="space-y-1.5">
-                                                        <Label className="text-sm">Citizenship</Label>
+                                                    </ConfiguredStudentField>
+                                                    <ConfiguredStudentField name="citizenship" policy={configuration.fields.citizenship}>
                                                         <Input
+                                                            id="citizenship"
                                                             value={data.personal_info.citizenship}
                                                             onChange={(e) =>
                                                                 setData("personal_info", { ...data.personal_info, citizenship: e.target.value })
                                                             }
                                                             placeholder="e.g. Filipino"
                                                         />
-                                                    </div>
-                                                    <div className="space-y-1.5">
-                                                        <Label className="text-sm">
-                                                            Religion <span className="text-destructive">*</span>
-                                                        </Label>
+                                                    </ConfiguredStudentField>
+                                                    <ConfiguredStudentField name="religion" policy={configuration.fields.religion}>
                                                         <Input
+                                                            id="religion"
                                                             value={data.religion}
                                                             onChange={(e) => setData("religion", e.target.value)}
                                                             placeholder="e.g. Roman Catholic"
                                                         />
-                                                    </div>
-                                                    <div className="space-y-1.5">
-                                                        <Label className="text-sm">Ethnicity</Label>
-                                                        <Input
-                                                            value={data.ethnicity}
-                                                            onChange={(e) => setData("ethnicity", e.target.value)}
-                                                            placeholder="e.g. Tagalog, Cebuano"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-
-                                        <Card className="border shadow-sm">
-                                            <CardContent className="space-y-4 p-4 sm:p-6">
-                                                <div className="mb-1 flex items-center gap-2">
-                                                    <School className="text-primary h-5 w-5" />
-                                                    <h3 className="text-base font-semibold">Origin</h3>
-                                                </div>
-                                                <div className="grid gap-3 sm:grid-cols-3">
-                                                    <div className="space-y-1.5">
-                                                        <Label className="text-sm">
-                                                            City <span className="text-destructive">*</span>
-                                                        </Label>
-                                                        <Input
-                                                            value={data.city_of_origin}
-                                                            onChange={(e) => setData("city_of_origin", e.target.value)}
-                                                            placeholder="City of origin"
-                                                        />
-                                                    </div>
-                                                    <div className="space-y-1.5">
-                                                        <Label className="text-sm">
-                                                            Province <span className="text-destructive">*</span>
-                                                        </Label>
-                                                        <Input
-                                                            value={data.province_of_origin}
-                                                            onChange={(e) => setData("province_of_origin", e.target.value)}
-                                                            placeholder="Province"
-                                                        />
-                                                    </div>
-                                                    <div className="space-y-1.5">
-                                                        <Label className="text-sm">
-                                                            Region <span className="text-destructive">*</span>
-                                                        </Label>
-                                                        <Input
-                                                            value={data.region_of_origin}
-                                                            onChange={(e) => setData("region_of_origin", e.target.value)}
-                                                            placeholder="Region"
-                                                        />
-                                                    </div>
-                                                </div>
-                                                <div className="space-y-3 rounded-lg border p-3">
-                                                    <div className="flex items-center gap-2">
-                                                        <Checkbox
-                                                            id="indigenous"
-                                                            checked={data.is_indigenous_person}
-                                                            onCheckedChange={(checked) => setData("is_indigenous_person", checked === true)}
-                                                        />
-                                                        <Label htmlFor="indigenous" className="cursor-pointer text-sm font-medium">
-                                                            I am an Indigenous Person (IP)
-                                                        </Label>
-                                                    </div>
-                                                    {data.is_indigenous_person && (
+                                                    </ConfiguredStudentField>
+                                                    {configuration.philippine_reporting && (
                                                         <div className="space-y-1.5">
-                                                            <Label className="text-sm">Indigenous Group</Label>
+                                                            <Label className="text-sm">Ethnicity</Label>
                                                             <Input
-                                                                value={data.indigenous_group}
-                                                                onChange={(e) => setData("indigenous_group", e.target.value)}
-                                                                placeholder="e.g. Manobo, Ifugao"
+                                                                value={data.ethnicity}
+                                                                onChange={(e) => setData("ethnicity", e.target.value)}
+                                                                placeholder="e.g. Tagalog, Cebuano"
                                                             />
                                                         </div>
                                                     )}
@@ -2931,233 +2863,308 @@ export default function EnrollmentCreate({
                                             </CardContent>
                                         </Card>
 
-                                        <Card className="border shadow-sm">
-                                            <CardContent className="space-y-4 p-4 sm:p-6">
-                                                <div className="mb-1 flex items-center gap-2">
-                                                    <School className="text-primary h-5 w-5" />
-                                                    <h3 className="text-base font-semibold">Special Equity Groups</h3>
-                                                </div>
-                                                <p className="text-muted-foreground text-sm">
-                                                    Select any categories that apply to you. This helps the institution provide appropriate support.
-                                                </p>
-                                                <div className="space-y-3">
-                                                    <div className="space-y-3 rounded-lg border p-3">
-                                                        <div className="flex items-center gap-2">
-                                                            <Checkbox
-                                                                id="pwd"
-                                                                checked={data.is_pwd}
-                                                                onCheckedChange={(checked) => {
-                                                                    setData("is_pwd", checked === true);
-                                                                    if (!checked) setData("pwd_type", "");
-                                                                }}
-                                                            />
-                                                            <Label htmlFor="pwd" className="cursor-pointer text-sm font-medium">
-                                                                Person with Disability (PWD)
-                                                            </Label>
+                                        {configuration.philippine_reporting && (
+                                            <>
+                                                <Card className="border shadow-sm">
+                                                    <CardContent className="space-y-4 p-4 sm:p-6">
+                                                        <div className="mb-1 flex items-center gap-2">
+                                                            <School className="text-primary h-5 w-5" />
+                                                            <h3 className="text-base font-semibold">Origin</h3>
                                                         </div>
-                                                        {data.is_pwd && (
+                                                        <div className="grid gap-3 sm:grid-cols-3">
                                                             <div className="space-y-1.5">
-                                                                <Label className="text-sm">Type of Disability</Label>
+                                                                <Label className="text-sm">
+                                                                    City <span className="text-destructive">*</span>
+                                                                </Label>
+                                                                <Input
+                                                                    value={data.city_of_origin}
+                                                                    onChange={(e) => setData("city_of_origin", e.target.value)}
+                                                                    placeholder="City of origin"
+                                                                />
+                                                            </div>
+                                                            <div className="space-y-1.5">
+                                                                <Label className="text-sm">
+                                                                    Province <span className="text-destructive">*</span>
+                                                                </Label>
+                                                                <Input
+                                                                    value={data.province_of_origin}
+                                                                    onChange={(e) => setData("province_of_origin", e.target.value)}
+                                                                    placeholder="Province"
+                                                                />
+                                                            </div>
+                                                            <div className="space-y-1.5">
+                                                                <Label className="text-sm">
+                                                                    Region <span className="text-destructive">*</span>
+                                                                </Label>
+                                                                <Input
+                                                                    value={data.region_of_origin}
+                                                                    onChange={(e) => setData("region_of_origin", e.target.value)}
+                                                                    placeholder="Region"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                        <div className="space-y-3 rounded-lg border p-3">
+                                                            <div className="flex items-center gap-2">
+                                                                <Checkbox
+                                                                    id="indigenous"
+                                                                    checked={data.is_indigenous_person}
+                                                                    onCheckedChange={(checked) => setData("is_indigenous_person", checked === true)}
+                                                                />
+                                                                <Label htmlFor="indigenous" className="cursor-pointer text-sm font-medium">
+                                                                    I am an Indigenous Person (IP)
+                                                                </Label>
+                                                            </div>
+                                                            {data.is_indigenous_person && (
+                                                                <div className="space-y-1.5">
+                                                                    <Label className="text-sm">Indigenous Group</Label>
+                                                                    <Input
+                                                                        value={data.indigenous_group}
+                                                                        onChange={(e) => setData("indigenous_group", e.target.value)}
+                                                                        placeholder="e.g. Manobo, Ifugao"
+                                                                    />
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </CardContent>
+                                                </Card>
+
+                                                <Card className="border shadow-sm">
+                                                    <CardContent className="space-y-4 p-4 sm:p-6">
+                                                        <div className="mb-1 flex items-center gap-2">
+                                                            <School className="text-primary h-5 w-5" />
+                                                            <h3 className="text-base font-semibold">Special Equity Groups</h3>
+                                                        </div>
+                                                        <p className="text-muted-foreground text-sm">
+                                                            Select any categories that apply to you. This helps the institution provide appropriate
+                                                            support.
+                                                        </p>
+                                                        <div className="space-y-3">
+                                                            <div className="space-y-3 rounded-lg border p-3">
+                                                                <div className="flex items-center gap-2">
+                                                                    <Checkbox
+                                                                        id="pwd"
+                                                                        checked={data.is_pwd}
+                                                                        onCheckedChange={(checked) => {
+                                                                            setData("is_pwd", checked === true);
+                                                                            if (!checked) setData("pwd_type", "");
+                                                                        }}
+                                                                    />
+                                                                    <Label htmlFor="pwd" className="cursor-pointer text-sm font-medium">
+                                                                        Person with Disability (PWD)
+                                                                    </Label>
+                                                                </div>
+                                                                {data.is_pwd && (
+                                                                    <div className="space-y-1.5">
+                                                                        <Label className="text-sm">Type of Disability</Label>
+                                                                        <select
+                                                                            value={data.pwd_type}
+                                                                            onChange={(e) => setData("pwd_type", e.target.value)}
+                                                                            className="border-input bg-background ring-offset-background focus-visible:ring-ring placeholder:text-muted-foreground flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:ring-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                                                                        >
+                                                                            <option value="">Select type...</option>
+                                                                            <option value="Apparent Physical Disability">
+                                                                                Apparent Physical Disability
+                                                                            </option>
+                                                                            <option value="Deaf/Hard of Hearing Disability">
+                                                                                Deaf/Hard of Hearing Disability
+                                                                            </option>
+                                                                            <option value="Intellectual Disability">Intellectual Disability</option>
+                                                                            <option value="Mental/Psychological Disability">
+                                                                                Mental/Psychological Disability
+                                                                            </option>
+                                                                            <option value="Learning Disability">Learning Disability</option>
+                                                                            <option value="Visual Disability">Visual Disability</option>
+                                                                            <option value="Speech and Language Impairment">
+                                                                                Speech and Language Impairment
+                                                                            </option>
+                                                                            <option value="Non-apparent Rare Disease">
+                                                                                Non-apparent Rare Disease
+                                                                            </option>
+                                                                        </select>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            <div className="grid gap-3 sm:grid-cols-2">
+                                                                <div className="flex items-center gap-2 rounded-lg border p-3">
+                                                                    <Checkbox
+                                                                        id="solo_parent"
+                                                                        checked={data.is_solo_parent}
+                                                                        onCheckedChange={(checked) => setData("is_solo_parent", checked === true)}
+                                                                    />
+                                                                    <Label htmlFor="solo_parent" className="cursor-pointer text-sm font-medium">
+                                                                        Solo Parent
+                                                                    </Label>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 rounded-lg border p-3">
+                                                                    <Checkbox
+                                                                        id="senior_citizen"
+                                                                        checked={data.is_senior_citizen}
+                                                                        onCheckedChange={(checked) => setData("is_senior_citizen", checked === true)}
+                                                                    />
+                                                                    <Label htmlFor="senior_citizen" className="cursor-pointer text-sm font-medium">
+                                                                        Senior Citizen
+                                                                    </Label>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 rounded-lg border p-3">
+                                                                    <Checkbox
+                                                                        id="magna_carta"
+                                                                        checked={data.is_magna_carta}
+                                                                        onCheckedChange={(checked) => setData("is_magna_carta", checked === true)}
+                                                                    />
+                                                                    <Label htmlFor="magna_carta" className="cursor-pointer text-sm font-medium">
+                                                                        Magna Carta of the Poor
+                                                                    </Label>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 rounded-lg border p-3">
+                                                                    <Checkbox
+                                                                        id="underprivileged"
+                                                                        checked={data.is_underprivileged}
+                                                                        onCheckedChange={(checked) => setData("is_underprivileged", checked === true)}
+                                                                    />
+                                                                    <Label htmlFor="underprivileged" className="cursor-pointer text-sm font-medium">
+                                                                        Underprivileged / Homeless
+                                                                    </Label>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 rounded-lg border p-3 sm:col-span-2">
+                                                                    <Checkbox
+                                                                        id="first_generation"
+                                                                        checked={data.is_first_generation}
+                                                                        onCheckedChange={(checked) =>
+                                                                            setData("is_first_generation", checked === true)
+                                                                        }
+                                                                    />
+                                                                    <Label htmlFor="first_generation" className="cursor-pointer text-sm font-medium">
+                                                                        First Generation Student (first in family to attend college)
+                                                                    </Label>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </CardContent>
+                                                </Card>
+
+                                                <Card className="border shadow-sm">
+                                                    <CardContent className="space-y-4 p-4 sm:p-6">
+                                                        <div className="mb-1 flex items-center gap-2">
+                                                            <School className="text-primary h-5 w-5" />
+                                                            <h3 className="text-base font-semibold">Family Income</h3>
+                                                        </div>
+                                                        <p className="text-muted-foreground text-sm">
+                                                            Set income basis first (monthly or annual), then choose one shared family range or
+                                                            separate father and mother ranges.
+                                                        </p>
+                                                        <div className="grid gap-3 sm:grid-cols-2">
+                                                            <div className="space-y-1.5">
+                                                                <Label className="text-sm">Income Basis</Label>
                                                                 <select
-                                                                    value={data.pwd_type}
-                                                                    onChange={(e) => setData("pwd_type", e.target.value)}
+                                                                    value={data.income_bracket_mode}
+                                                                    onChange={(e) => setData("income_bracket_mode", e.target.value)}
                                                                     className="border-input bg-background ring-offset-background focus-visible:ring-ring placeholder:text-muted-foreground flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:ring-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                                                                 >
-                                                                    <option value="">Select type...</option>
-                                                                    <option value="Apparent Physical Disability">Apparent Physical Disability</option>
-                                                                    <option value="Deaf/Hard of Hearing Disability">
-                                                                        Deaf/Hard of Hearing Disability
-                                                                    </option>
-                                                                    <option value="Intellectual Disability">Intellectual Disability</option>
-                                                                    <option value="Mental/Psychological Disability">
-                                                                        Mental/Psychological Disability
-                                                                    </option>
-                                                                    <option value="Learning Disability">Learning Disability</option>
-                                                                    <option value="Visual Disability">Visual Disability</option>
-                                                                    <option value="Speech and Language Impairment">
-                                                                        Speech and Language Impairment
-                                                                    </option>
-                                                                    <option value="Non-apparent Rare Disease">Non-apparent Rare Disease</option>
+                                                                    {income_modes.map((mode) => (
+                                                                        <option key={mode.value} value={mode.value}>
+                                                                            {mode.label}
+                                                                        </option>
+                                                                    ))}
                                                                 </select>
                                                             </div>
+                                                            <div className="flex items-center gap-2 rounded-lg border p-3">
+                                                                <Checkbox
+                                                                    id="same_parent_income"
+                                                                    checked={data.use_same_parent_income}
+                                                                    onCheckedChange={(checked) => setData("use_same_parent_income", checked === true)}
+                                                                />
+                                                                <Label htmlFor="same_parent_income" className="cursor-pointer text-sm font-medium">
+                                                                    Father and mother have the same income bracket
+                                                                </Label>
+                                                            </div>
+                                                        </div>
+
+                                                        {data.use_same_parent_income ? (
+                                                            <div className="space-y-1.5">
+                                                                <Label className="text-sm">Family Income Bracket</Label>
+                                                                <select
+                                                                    value={data.family_income_bracket}
+                                                                    onChange={(e) => setData("family_income_bracket", e.target.value)}
+                                                                    className="border-input bg-background ring-offset-background focus-visible:ring-ring placeholder:text-muted-foreground flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:ring-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                                                                >
+                                                                    <option value="">Select income range...</option>
+                                                                    {activeIncomeBrackets.map((bracket) => (
+                                                                        <option key={bracket.value} value={bracket.value}>
+                                                                            {bracket.label}
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="grid gap-3 sm:grid-cols-2">
+                                                                <div className="space-y-1.5">
+                                                                    <Label className="text-sm">Father's Income Bracket</Label>
+                                                                    <select
+                                                                        value={data.father_income_bracket}
+                                                                        onChange={(e) => setData("father_income_bracket", e.target.value)}
+                                                                        className="border-input bg-background ring-offset-background focus-visible:ring-ring placeholder:text-muted-foreground flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:ring-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                                                                    >
+                                                                        <option value="">Select income range...</option>
+                                                                        {activeIncomeBrackets.map((bracket) => (
+                                                                            <option key={bracket.value} value={bracket.value}>
+                                                                                {bracket.label}
+                                                                            </option>
+                                                                        ))}
+                                                                    </select>
+                                                                </div>
+                                                                <div className="space-y-1.5">
+                                                                    <Label className="text-sm">Mother's Income Bracket</Label>
+                                                                    <select
+                                                                        value={data.mother_income_bracket}
+                                                                        onChange={(e) => setData("mother_income_bracket", e.target.value)}
+                                                                        className="border-input bg-background ring-offset-background focus-visible:ring-ring placeholder:text-muted-foreground flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:ring-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                                                                    >
+                                                                        <option value="">Select income range...</option>
+                                                                        {activeIncomeBrackets.map((bracket) => (
+                                                                            <option key={bracket.value} value={bracket.value}>
+                                                                                {bracket.label}
+                                                                            </option>
+                                                                        ))}
+                                                                    </select>
+                                                                </div>
+                                                            </div>
                                                         )}
+                                                    </CardContent>
+                                                </Card>
+                                            </>
+                                        )}
+                                        {(configuration.fields.weight.visible || configuration.fields.height.visible) && (
+                                            <Card className="border shadow-sm">
+                                                <CardContent className="space-y-4 p-4 sm:p-6">
+                                                    <div className="mb-1 flex items-center gap-2">
+                                                        <User className="text-primary h-5 w-5" />
+                                                        <h3 className="text-base font-semibold">Physical Info</h3>
                                                     </div>
                                                     <div className="grid gap-3 sm:grid-cols-2">
-                                                        <div className="flex items-center gap-2 rounded-lg border p-3">
-                                                            <Checkbox
-                                                                id="solo_parent"
-                                                                checked={data.is_solo_parent}
-                                                                onCheckedChange={(checked) => setData("is_solo_parent", checked === true)}
+                                                        <ConfiguredStudentField name="weight" policy={configuration.fields.weight}>
+                                                            <Input
+                                                                id="weight"
+                                                                value={data.personal_info.weight}
+                                                                onChange={(e) =>
+                                                                    setData("personal_info", { ...data.personal_info, weight: e.target.value })
+                                                                }
+                                                                placeholder="e.g. 60"
                                                             />
-                                                            <Label htmlFor="solo_parent" className="cursor-pointer text-sm font-medium">
-                                                                Solo Parent
-                                                            </Label>
-                                                        </div>
-                                                        <div className="flex items-center gap-2 rounded-lg border p-3">
-                                                            <Checkbox
-                                                                id="senior_citizen"
-                                                                checked={data.is_senior_citizen}
-                                                                onCheckedChange={(checked) => setData("is_senior_citizen", checked === true)}
+                                                        </ConfiguredStudentField>
+                                                        <ConfiguredStudentField name="height" policy={configuration.fields.height}>
+                                                            <Input
+                                                                id="height"
+                                                                value={data.personal_info.height}
+                                                                onChange={(e) =>
+                                                                    setData("personal_info", { ...data.personal_info, height: e.target.value })
+                                                                }
+                                                                placeholder="e.g. 170"
                                                             />
-                                                            <Label htmlFor="senior_citizen" className="cursor-pointer text-sm font-medium">
-                                                                Senior Citizen
-                                                            </Label>
-                                                        </div>
-                                                        <div className="flex items-center gap-2 rounded-lg border p-3">
-                                                            <Checkbox
-                                                                id="magna_carta"
-                                                                checked={data.is_magna_carta}
-                                                                onCheckedChange={(checked) => setData("is_magna_carta", checked === true)}
-                                                            />
-                                                            <Label htmlFor="magna_carta" className="cursor-pointer text-sm font-medium">
-                                                                Magna Carta of the Poor
-                                                            </Label>
-                                                        </div>
-                                                        <div className="flex items-center gap-2 rounded-lg border p-3">
-                                                            <Checkbox
-                                                                id="underprivileged"
-                                                                checked={data.is_underprivileged}
-                                                                onCheckedChange={(checked) => setData("is_underprivileged", checked === true)}
-                                                            />
-                                                            <Label htmlFor="underprivileged" className="cursor-pointer text-sm font-medium">
-                                                                Underprivileged / Homeless
-                                                            </Label>
-                                                        </div>
-                                                        <div className="flex items-center gap-2 rounded-lg border p-3 sm:col-span-2">
-                                                            <Checkbox
-                                                                id="first_generation"
-                                                                checked={data.is_first_generation}
-                                                                onCheckedChange={(checked) => setData("is_first_generation", checked === true)}
-                                                            />
-                                                            <Label htmlFor="first_generation" className="cursor-pointer text-sm font-medium">
-                                                                First Generation Student (first in family to attend college)
-                                                            </Label>
-                                                        </div>
+                                                        </ConfiguredStudentField>
                                                     </div>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-
-                                        <Card className="border shadow-sm">
-                                            <CardContent className="space-y-4 p-4 sm:p-6">
-                                                <div className="mb-1 flex items-center gap-2">
-                                                    <School className="text-primary h-5 w-5" />
-                                                    <h3 className="text-base font-semibold">Family Income</h3>
-                                                </div>
-                                                <p className="text-muted-foreground text-sm">
-                                                    Set income basis first (monthly or annual), then choose one shared family range or separate father
-                                                    and mother ranges.
-                                                </p>
-                                                <div className="grid gap-3 sm:grid-cols-2">
-                                                    <div className="space-y-1.5">
-                                                        <Label className="text-sm">Income Basis</Label>
-                                                        <select
-                                                            value={data.income_bracket_mode}
-                                                            onChange={(e) => setData("income_bracket_mode", e.target.value)}
-                                                            className="border-input bg-background ring-offset-background focus-visible:ring-ring placeholder:text-muted-foreground flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:ring-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                                                        >
-                                                            {income_modes.map((mode) => (
-                                                                <option key={mode.value} value={mode.value}>
-                                                                    {mode.label}
-                                                                </option>
-                                                            ))}
-                                                        </select>
-                                                    </div>
-                                                    <div className="flex items-center gap-2 rounded-lg border p-3">
-                                                        <Checkbox
-                                                            id="same_parent_income"
-                                                            checked={data.use_same_parent_income}
-                                                            onCheckedChange={(checked) => setData("use_same_parent_income", checked === true)}
-                                                        />
-                                                        <Label htmlFor="same_parent_income" className="cursor-pointer text-sm font-medium">
-                                                            Father and mother have the same income bracket
-                                                        </Label>
-                                                    </div>
-                                                </div>
-
-                                                {data.use_same_parent_income ? (
-                                                    <div className="space-y-1.5">
-                                                        <Label className="text-sm">Family Income Bracket</Label>
-                                                        <select
-                                                            value={data.family_income_bracket}
-                                                            onChange={(e) => setData("family_income_bracket", e.target.value)}
-                                                            className="border-input bg-background ring-offset-background focus-visible:ring-ring placeholder:text-muted-foreground flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:ring-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                                                        >
-                                                            <option value="">Select income range...</option>
-                                                            {activeIncomeBrackets.map((bracket) => (
-                                                                <option key={bracket.value} value={bracket.value}>
-                                                                    {bracket.label}
-                                                                </option>
-                                                            ))}
-                                                        </select>
-                                                    </div>
-                                                ) : (
-                                                    <div className="grid gap-3 sm:grid-cols-2">
-                                                        <div className="space-y-1.5">
-                                                            <Label className="text-sm">Father's Income Bracket</Label>
-                                                            <select
-                                                                value={data.father_income_bracket}
-                                                                onChange={(e) => setData("father_income_bracket", e.target.value)}
-                                                                className="border-input bg-background ring-offset-background focus-visible:ring-ring placeholder:text-muted-foreground flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:ring-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                                                            >
-                                                                <option value="">Select income range...</option>
-                                                                {activeIncomeBrackets.map((bracket) => (
-                                                                    <option key={bracket.value} value={bracket.value}>
-                                                                        {bracket.label}
-                                                                    </option>
-                                                                ))}
-                                                            </select>
-                                                        </div>
-                                                        <div className="space-y-1.5">
-                                                            <Label className="text-sm">Mother's Income Bracket</Label>
-                                                            <select
-                                                                value={data.mother_income_bracket}
-                                                                onChange={(e) => setData("mother_income_bracket", e.target.value)}
-                                                                className="border-input bg-background ring-offset-background focus-visible:ring-ring placeholder:text-muted-foreground flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:ring-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                                                            >
-                                                                <option value="">Select income range...</option>
-                                                                {activeIncomeBrackets.map((bracket) => (
-                                                                    <option key={bracket.value} value={bracket.value}>
-                                                                        {bracket.label}
-                                                                    </option>
-                                                                ))}
-                                                            </select>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </CardContent>
-                                        </Card>
-
-                                        <Card className="border shadow-sm">
-                                            <CardContent className="space-y-4 p-4 sm:p-6">
-                                                <div className="mb-1 flex items-center gap-2">
-                                                    <User className="text-primary h-5 w-5" />
-                                                    <h3 className="text-base font-semibold">Physical Info</h3>
-                                                </div>
-                                                <div className="grid gap-3 sm:grid-cols-2">
-                                                    <div className="space-y-1.5">
-                                                        <Label className="text-sm">Weight (kg)</Label>
-                                                        <Input
-                                                            value={data.personal_info.weight}
-                                                            onChange={(e) =>
-                                                                setData("personal_info", { ...data.personal_info, weight: e.target.value })
-                                                            }
-                                                            placeholder="e.g. 60"
-                                                        />
-                                                    </div>
-                                                    <div className="space-y-1.5">
-                                                        <Label className="text-sm">Height (cm)</Label>
-                                                        <Input
-                                                            value={data.personal_info.height}
-                                                            onChange={(e) =>
-                                                                setData("personal_info", { ...data.personal_info, height: e.target.value })
-                                                            }
-                                                            placeholder="e.g. 170"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
+                                                </CardContent>
+                                            </Card>
+                                        )}
 
                                         <Card className="border shadow-sm">
                                             <CardContent className="space-y-4 p-4 sm:p-6">
@@ -3166,54 +3173,51 @@ export default function EnrollmentCreate({
                                                     <h3 className="text-base font-semibold">Contact Info</h3>
                                                 </div>
                                                 <div className="grid gap-3 sm:grid-cols-2">
-                                                    <div className="space-y-1.5">
-                                                        <Label className="text-sm">
-                                                            Email Address <span className="text-destructive">*</span>
-                                                        </Label>
+                                                    <ConfiguredStudentField name="email" policy={configuration.fields.email}>
                                                         <Input
+                                                            id="email"
                                                             type="email"
                                                             value={data.email}
                                                             onChange={(e) => setData("email", e.target.value)}
-                                                            placeholder="juan@example.com"
+                                                            placeholder="student@example.com"
                                                         />
-                                                    </div>
-                                                    <div className="space-y-1.5">
-                                                        <Label className="text-sm">
-                                                            Mobile Number <span className="text-destructive">*</span>
-                                                        </Label>
+                                                    </ConfiguredStudentField>
+                                                    <ConfiguredStudentField name="phone" policy={configuration.fields.phone}>
                                                         <Input
+                                                            id="phone"
                                                             value={data.phone}
-                                                            onChange={(e) => setData("phone", sanitizeNumberInput(e.target.value))}
-                                                            placeholder="09123456789"
+                                                            onChange={(e) => setData("phone", e.target.value)}
+                                                            placeholder="Phone number"
                                                             type="tel"
-                                                            inputMode="numeric"
                                                         />
-                                                    </div>
+                                                    </ConfiguredStudentField>
                                                 </div>
-                                                <div className="space-y-1.5">
-                                                    <Label className="text-sm">
-                                                        Complete Current Address <span className="text-destructive">*</span>
-                                                    </Label>
+                                                <ConfiguredStudentField name="current_address" policy={configuration.fields.current_address}>
                                                     <Input
+                                                        id="current_address"
                                                         value={data.personal_info.current_address}
                                                         onChange={(e) => {
                                                             setData("personal_info", { ...data.personal_info, current_address: e.target.value });
                                                             setData("address", e.target.value);
                                                         }}
-                                                        placeholder="House No., Street, Barangay, City, Province"
+                                                        placeholder="Current address"
                                                     />
-                                                </div>
+                                                </ConfiguredStudentField>
                                                 <div className="grid gap-3 sm:grid-cols-2">
-                                                    <div className="space-y-1.5 sm:col-span-2">
-                                                        <Label className="text-sm">Permanent Address</Label>
+                                                    <ConfiguredStudentField
+                                                        name="permanent_address"
+                                                        policy={configuration.fields.permanent_address}
+                                                        className="sm:col-span-2"
+                                                    >
                                                         <Input
+                                                            id="permanent_address"
                                                             value={data.personal_info.permanent_address}
                                                             onChange={(e) =>
                                                                 setData("personal_info", { ...data.personal_info, permanent_address: e.target.value })
                                                             }
-                                                            placeholder="Home province address"
+                                                            placeholder="Permanent address"
                                                         />
-                                                    </div>
+                                                    </ConfiguredStudentField>
                                                 </div>
                                             </CardContent>
                                         </Card>

@@ -18,11 +18,12 @@ final class StoreEnrollmentRegistrationRequest extends FormRequest
      */
     public function rules(): array
     {
+        app(\App\Services\StudentConfigurationService::class)->resolvePublicSchool($this->integer('course_id') ?: null);
         $incomeModes = array_keys(config('income_brackets.modes', []));
         $selectedMode = (string) $this->input('income_bracket_mode', config('income_brackets.default_mode', 'annual'));
         $incomeBracketKeys = $this->incomeBracketKeysForMode($selectedMode);
 
-        return [
+        $rules = [
             'student_type' => ['required', 'in:college,tesda'],
             'department' => ['required_if:student_type,college', 'exists:departments,code'],
             'course_id' => ['required', 'integer', 'exists:courses,id'],
@@ -41,7 +42,7 @@ final class StoreEnrollmentRegistrationRequest extends FormRequest
 
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:30'],
-            'address' => ['required', 'string', 'max:2000'],
+            'address' => ['nullable', 'string', 'max:2000'],
 
             'contacts.personal_contact' => ['nullable', 'string', 'max:30'],
             'contacts.emergency_contact_name' => ['required', 'string', 'max:255'],
@@ -122,6 +123,41 @@ final class StoreEnrollmentRegistrationRequest extends FormRequest
             'consent' => ['accepted'],
             'marketing_consent' => ['sometimes', 'boolean'],
         ];
+        $configuration = app(\App\Services\StudentConfigurationService::class);
+        $policies = $configuration->get();
+        $type = (string) $this->input('student_type');
+        $rules['student_type'] = ['required', \Illuminate\Validation\Rule::in(array_intersect(['college', 'tesda'], $policies['enabled_types']))];
+        if (app(\App\Services\TenantContext::class)->getCurrentSchoolId() === null && \App\Models\School::query()->where('is_active', true)->count() > 1) {
+            $rules['student_type'][] = function ($attribute, $value, $fail): void {
+                $fail('Choose an active school before registering. Contact the school office for its enrollment link.');
+            };
+        }
+        $rules['academic_year'] = ['required_if:student_type,college', 'nullable', 'integer', \Illuminate\Validation\Rule::in(array_column($policies['year_levels'][$type] ?? [], 'value'))];
+        foreach ($policies['fields'] as $key => $policy) {
+            if (isset($rules[$key])) {
+                $rules[$key] = ! $policy['visible'] ? ['exclude'] : [$policy['required'] ? 'required' : 'nullable', ...array_diff($rules[$key], ['required', 'nullable'])];
+            }
+            $nested = 'personal_info.'.$key;
+            if (isset($rules[$nested])) {
+                $rules[$nested] = ! $policy['visible'] ? ['exclude'] : [$policy['required'] ? 'required' : 'nullable', ...array_diff($rules[$nested], ['required', 'nullable'])];
+            }
+        }
+        if (! $policies['fields']['current_address']['visible']) {
+            $rules['address'] = ['exclude'];
+        }
+        foreach (\App\Services\StudentConfigurationService::reportingFields() as $field) {
+            if (! $policies['philippine_reporting'] && isset($rules[$field])) {
+                $rules[$field] = ['exclude'];
+            }
+        }
+
+        if ($configuration->usesExternal($type)) {
+            $rules['student_type'][] = function ($attribute, $value, $fail): void {
+                $fail('This category uses an externally assigned student number. Please register through the school office.');
+            };
+        }
+
+        return $rules;
     }
 
     public function messages(): array

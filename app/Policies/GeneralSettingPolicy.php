@@ -190,6 +190,16 @@ final class GeneralSettingPolicy
         return $this->canViewSection($user, 'identifiers');
     }
 
+    public function viewStudentConfiguration(User $user): bool
+    {
+        return $this->canViewSection($user, 'student_configuration');
+    }
+
+    public function updateStudentConfiguration(User $user): bool
+    {
+        return $this->canUpdateSection($user, 'student_configuration');
+    }
+
     public function updateIdentifiers(User $user): bool
     {
         return $this->canUpdateSection($user, 'identifiers');

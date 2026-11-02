@@ -89,6 +89,7 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->scoped(\App\Services\SentrySettingsService::class);
         $this->app->scoped(\App\Services\ErrorReportingService::class);
         $this->app->scoped(\App\Services\TenantContext::class);
+        $this->app->scoped(\App\Services\StudentConfigurationService::class);
         $this->app->scoped(\App\Services\FeatureAccessService::class);
         $this->app->bind(AssessmentFormPdfRenderer::class, LaravelAssessmentFormPdfRenderer::class);
 

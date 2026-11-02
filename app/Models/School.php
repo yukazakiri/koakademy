@@ -265,6 +265,11 @@ final class School extends Model
             $school->code = mb_strtoupper($school->code);
             $school->country_code = self::normalizeCountryCode($school->country_code);
         });
+        self::created(function (School $school): void {
+            if (\Illuminate\Support\Facades\Schema::hasTable('student_configurations')) {
+                app(\App\Services\StudentConfigurationService::class)->update(\App\Services\StudentConfigurationService::defaults(), $school->id);
+            }
+        });
 
         self::updating(function (School $school): void {
             $school->code = mb_strtoupper($school->code);

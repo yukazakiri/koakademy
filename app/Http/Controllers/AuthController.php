@@ -175,17 +175,13 @@ final class AuthController extends Controller
             'email' => 'required|string|email|max:255',
             'password' => ['required', 'confirmed', Password::defaults()],
             'user_type' => 'required|string|in:student',
-            'student_type' => 'required|string|in:college,shs',
+            'student_type' => ['required', 'string', \Illuminate\Validation\Rule::enum(StudentType::class)],
             'record_id' => 'nullable|integer',
             'otp' => 'required|string',
         ];
 
-        // Add specific validation based on student type
-        if ($isShs) {
-            $validationRules['lrn'] = 'required|string|max:12';
-        } else {
-            $validationRules['student_id'] = 'required|string|max:20';
-        }
+        $identifierField = $request->filled('student_id') ? 'student_id' : 'lrn';
+        $validationRules[$identifierField] = 'required|string|max:64';
 
         $validator = Validator::make($request->all(), $validationRules);
 
@@ -215,13 +211,14 @@ final class AuthController extends Controller
 
         // Determine the role based on student type
         $role = $isShs ? UserRole::ShsStudent : UserRole::Student;
-        $user = DB::transaction(function () use ($request, $role, $studentType, $isShs, $email): User {
+        $user = DB::transaction(function () use ($request, $role, $studentType, $email, $identifierField): User {
             $student = $this->studentOrganizations->resolveForSignup(
                 email: $email,
                 studentType: StudentType::from($studentType),
-                identifier: $request->string($isShs ? 'lrn' : 'student_id')->toString(),
+                identifier: $request->string($identifierField)->toString(),
                 recordId: $request->input('record_id'),
                 lockForUpdate: true,
+                inputField: $identifierField,
             );
 
             $spatieRole = Role::firstOrCreate(

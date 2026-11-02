@@ -79,12 +79,9 @@ enum StudentType: string implements HasColor, HasLabel
      */
     public function requiresLrn(): bool
     {
-        return match ($this) {
-            self::SeniorHighSchool => true,
-            self::College => false,
-            self::TESDA => false,
-            self::DHRT => false,
-        };
+        $external = app(\App\Services\StudentConfigurationService::class)->externalFor($this->value);
+
+        return $external['enabled'] && ($external['required'] || $external['use_as_student_id']);
     }
 
     /**
@@ -92,11 +89,8 @@ enum StudentType: string implements HasColor, HasLabel
      */
     public function getIdPrefix(): string
     {
-        return match ($this) {
-            self::College => '2', // College students start with 2
-            self::SeniorHighSchool => '3', // SHS students start with 3
-            self::TESDA => '2', // TESDA students start with 2 (changed from 4)
-            self::DHRT => '2', // DHRT students start with 2
-        };
+        $generator = app(\App\Services\IdentifierGenerator::class);
+
+        return $generator->resolvePrefix($generator->sequenceFor('student', type: $this), $this);
     }
 }

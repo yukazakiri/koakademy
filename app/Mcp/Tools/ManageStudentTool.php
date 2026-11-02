@@ -167,7 +167,9 @@ final class ManageStudentTool extends Tool
             'email' => $schema->string()->description('Student email address.'),
             'course_code' => $schema->string()->description('Degree program code (e.g. BSCS).'),
             'course_id' => $schema->integer()->description('Degree program database ID.'),
-            'academic_year' => $schema->integer()->description('Year level (1-5).'),
+            'academic_year' => $schema->integer()->description('Configured year or grade level.'),
+            'student_type' => $schema->string()->enum(['college', 'shs', 'tesda', 'dhrt'])->description('Supported school student category.'),
+            'lrn' => $schema->string()->description('External identifier when enabled by the school.'),
             'status' => $schema->string()->description('Status: enrolled, applicant, graduated, on_leave, dropped.'),
             'reason' => $schema->string()->description('Reason for archiving, soft-deleting, or transferring records.'),
             'idempotency_key' => $schema->string()->description('Unique idempotency key for safe retries on create.'),
@@ -216,8 +218,9 @@ final class ManageStudentTool extends Tool
             'email' => ['required', 'email', 'max:150'],
             'course_id' => ['nullable', 'integer'],
             'course_code' => ['nullable', 'string', 'max:50'],
-            'academic_year' => ['nullable', 'integer', 'between:1,5'],
-            'student_type' => ['nullable', 'string', 'in:college,shs'],
+            'academic_year' => ['nullable', 'integer', 'between:1,99'],
+            'student_type' => ['nullable', 'string', 'in:college,shs,tesda,dhrt'],
+            'lrn' => ['nullable', 'string', 'max:32'],
             'gender' => ['nullable', 'string', 'in:Male,Female,Other'],
             'birth_date' => ['nullable', 'date'],
             'status' => ['nullable', 'string'],
@@ -267,13 +270,14 @@ final class ManageStudentTool extends Tool
             $courseId = $defaultCourse?->id ?? 1;
         }
 
-        $studentType = isset($validated['student_type']) && $validated['student_type'] === 'shs'
-            ? StudentType::Shs
-            : StudentType::College;
+        $studentType = StudentType::from($validated['student_type'] ?? app(\App\Services\StudentConfigurationService::class)->get()['default_type']);
 
         $school = $this->school();
         $student = DB::transaction(function () use ($validated, $courseId, $studentType, $school, $idempotencyKey, $equity) {
-            $newStudentId = Student::generateNextId($studentType);
+            $newStudentId = app(\App\Services\IdentifierGenerator::class)->assignForNewStudent([
+                ...$validated, 'student_type' => $studentType->value,
+                'academic_year' => $validated['academic_year'] ?? 1,
+            ], $school->id);
             $birthDate = filled($validated['birth_date'] ?? null)
                 ? Carbon::parse($validated['birth_date'])
                 : now()->subYears(18);
@@ -283,13 +287,14 @@ final class ManageStudentTool extends Tool
                 'institution_id' => $school->id,
                 'school_id' => $school->id,
                 'student_type' => $studentType->value,
+                'lrn' => app(\App\Services\StudentConfigurationService::class)->externalFor($studentType->value, $school->id)['enabled'] ? ($validated['lrn'] ?? null) : null,
                 'first_name' => $validated['first_name'],
                 'last_name' => $validated['last_name'],
                 'middle_name' => $validated['middle_name'] ?? null,
                 'email' => $validated['email'],
                 'course_id' => $courseId,
                 'academic_year' => $validated['academic_year'] ?? 1,
-                'gender' => $validated['gender'] ?? 'Other',
+                'gender' => $validated['gender'] ?? 'prefer_not_to_say',
                 'birth_date' => $birthDate->format('Y-m-d'),
                 'age' => $birthDate->age,
                 'status' => $validated['status'] ?? StudentStatus::Applicant->value,
@@ -331,7 +336,7 @@ final class ManageStudentTool extends Tool
             'first_name' => ['nullable', 'string', 'max:100'],
             'last_name' => ['nullable', 'string', 'max:100'],
             'email' => ['nullable', 'email', 'max:150'],
-            'academic_year' => ['nullable', 'integer', 'between:1,5'],
+            'academic_year' => ['nullable', 'integer', 'between:1,99'],
             'status' => ['nullable', 'string'],
             ...$this->equityRules(),
         ]);
@@ -358,6 +363,7 @@ final class ManageStudentTool extends Tool
         // literal false, and a nullable field sent as null is an intentional clear.
         $updates += $equity;
 
+        app(\App\Services\StudentConfigurationService::class)->validatePartialUpdate($updates, $student);
         $student->update($updates);
 
         return Response::structured([
@@ -385,7 +391,9 @@ final class ManageStudentTool extends Tool
             'students.*.lrn' => ['nullable', 'string', 'max:20'],
             'students.*.course_code' => ['nullable', 'string', 'max:50'],
             'students.*.course_id' => ['nullable', 'integer'],
-            'students.*.academic_year' => ['nullable', 'integer', 'between:1,5'],
+            'students.*.academic_year' => ['nullable', 'integer', 'between:1,99'],
+            'students.*.student_type' => ['nullable', 'string', 'in:college,shs,tesda,dhrt'],
+            'students.*.lrn' => ['nullable', 'string', 'max:32'],
             'students.*.gender' => ['nullable', 'string', 'in:Male,Female,Other'],
             'students.*.status' => ['nullable', 'string'],
         ]);
@@ -429,10 +437,10 @@ final class ManageStudentTool extends Tool
                             'academic_year' => $sData['academic_year'] ?? null,
                             'status' => $sData['status'] ?? null,
                             'gender' => $sData['gender'] ?? null,
-                            'lrn' => $sData['lrn'] ?? null,
                         ], fn ($val) => $val !== null);
 
                         if (! empty($updates)) {
+                            app(\App\Services\StudentConfigurationService::class)->validatePartialUpdate($updates, $existing);
                             $existing->update($updates);
                         }
 
@@ -444,17 +452,20 @@ final class ManageStudentTool extends Tool
                             'status' => $existing->status,
                         ];
                     } else {
-                        $newStudentId = Student::generateNextId(StudentType::College);
+                        $newStudentId = app(\App\Services\IdentifierGenerator::class)->assignForNewStudent([
+                            ...$sData, 'student_type' => $sData['student_type'] ?? 'college', 'academic_year' => $sData['academic_year'] ?? 1,
+                        ], $school->id);
                         $newStudent = Student::query()->create([
                             'student_id' => $newStudentId,
                             'institution_id' => 1,
-                            'student_type' => StudentType::College->value,
+                            'student_type' => $sData['student_type'] ?? StudentType::College->value,
+                            'lrn' => app(\App\Services\StudentConfigurationService::class)->externalFor($sData['student_type'] ?? 'college', $school->id)['enabled'] ? ($sData['lrn'] ?? null) : null,
                             'first_name' => $sData['first_name'],
                             'last_name' => $sData['last_name'],
                             'email' => $sData['email'],
                             'course_id' => $courseId,
                             'academic_year' => $sData['academic_year'] ?? 1,
-                            'gender' => $sData['gender'] ?? 'Other',
+                            'gender' => $sData['gender'] ?? 'prefer_not_to_say',
                             'birth_date' => now()->subYears(18)->format('Y-m-d'),
                             'age' => 18,
                             'status' => $sData['status'] ?? StudentStatus::Applicant->value,
@@ -616,7 +627,7 @@ final class ManageStudentTool extends Tool
     {
         $query = $withTrashed ? Student::withTrashed() : Student::query();
 
-        if (is_numeric($identifier)) {
+        if (ctype_digit($identifier) && (string) (int) $identifier === $identifier) {
             $found = (clone $query)->find((int) $identifier);
             if ($found) {
                 return $found;

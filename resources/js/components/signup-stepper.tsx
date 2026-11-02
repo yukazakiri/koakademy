@@ -1,20 +1,6 @@
 import { Link, useForm } from "@inertiajs/react";
 import axios from "axios";
-import {
-    ArrowLeft,
-    ArrowRight,
-    BadgeCheck,
-    Check,
-    Eye,
-    EyeOff,
-    GraduationCap,
-    KeyRound,
-    Loader2,
-    Lock,
-    Mail,
-    ShieldAlert,
-    User,
-} from "lucide-react";
+import { ArrowLeft, ArrowRight, BadgeCheck, Check, Eye, EyeOff, GraduationCap, KeyRound, Loader2, Lock, Mail, ShieldAlert, User } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
@@ -26,7 +12,7 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "
 import { cn } from "@/lib/utils";
 
 type UserType = "faculty" | "student" | null;
-type StudentType = "college" | "shs" | null;
+type StudentType = "college" | "shs" | "tesda" | "dhrt" | null;
 
 interface EmailLookupResult {
     found: boolean;
@@ -38,7 +24,9 @@ interface EmailLookupResult {
     role?: string;
     student_type?: string;
     is_shs?: boolean;
-    student_id?: number;
+    student_id?: string;
+    identifier_field?: "lrn" | "student_id";
+    identifier_label?: string;
     lrn?: string;
     course?: string;
     academic_year?: number;
@@ -60,7 +48,7 @@ interface PersistedState {
     student_id: string;
     lrn: string;
     user_type: "" | "faculty" | "student";
-    student_type: "" | "college" | "shs";
+    student_type: "" | "college" | "shs" | "tesda" | "dhrt";
     record_id: string | number;
 }
 
@@ -110,6 +98,7 @@ export function SignupStepper({
     const [emailLookupResult, setEmailLookupResult] = useState<EmailLookupResult | null>(null);
     const [userType, setUserType] = useState<UserType>(saved.current?.userType ?? null);
     const [studentType, setStudentType] = useState<StudentType>(saved.current?.studentType ?? null);
+    const usesExternalIdentifier = emailLookupResult?.identifier_field === "lrn";
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
@@ -123,7 +112,7 @@ export function SignupStepper({
         lrn: saved.current?.lrn ?? "",
         otp: "",
         user_type: saved.current?.user_type ?? ("" as "faculty" | "student" | ""),
-        student_type: saved.current?.student_type ?? ("" as "college" | "shs" | ""),
+        student_type: saved.current?.student_type ?? ("" as "college" | "shs" | "tesda" | "dhrt" | ""),
         record_id: saved.current?.record_id ?? ("" as string | number),
     });
 
@@ -156,7 +145,7 @@ export function SignupStepper({
             setEmailLookupResult(
                 saved.current?.email?.length
                     ? { found: true, type: saved.current.userType ?? undefined, name: saved.current.name || undefined }
-                    : null
+                    : null,
             );
         }
         isRestored.current = false;
@@ -261,16 +250,16 @@ export function SignupStepper({
                     }));
                     toast.success("Faculty record found!");
                 } else if (result.type === "student") {
-                    const isShs = result.student_type === "shs" || result.is_shs;
+                    const category = (result.student_type ?? (result.is_shs ? "shs" : "college")) as Exclude<StudentType, null>;
                     setUserType("student");
-                    setStudentType(isShs ? "shs" : "college");
+                    setStudentType(category);
                     setData((prev) => ({
                         ...prev,
                         name: result.name || prev.name,
-                        student_id: result.student_id ? String(result.student_id) : prev.student_id,
-                        lrn: result.lrn || prev.lrn,
+                        student_id: "",
+                        lrn: "",
                         user_type: "student",
-                        student_type: isShs ? "shs" : "college",
+                        student_type: category,
                         record_id: result.record_id || "",
                     }));
                     toast.success("Student record found!");
@@ -309,35 +298,25 @@ export function SignupStepper({
         });
     };
 
-    const canProceedFromDetails =
-        data.name.trim().length > 0 && data.password.length >= 8 && passwordsMatch;
+    const canProceedFromDetails = data.name.trim().length > 0 && data.password.length >= 8 && passwordsMatch;
 
     return (
         <div className={cn("space-y-6", className)} {...props}>
             {/* Step Progress Header */}
-            <div className="rounded-2xl border border-border/70 bg-card/60 p-4 shadow-2xs backdrop-blur-xs">
+            <div className="border-border/70 bg-card/60 rounded-2xl border p-4 shadow-2xs backdrop-blur-xs">
                 <div className="mb-2.5 flex items-center justify-between text-xs">
-                    <span className="font-semibold text-foreground">
+                    <span className="text-foreground font-semibold">
                         Step {currentStep + 1} of {steps.length}
                     </span>
-                    <span className="font-bold text-primary">
-                        {steps[currentStep]?.label}
-                    </span>
+                    <span className="text-primary font-bold">{steps[currentStep]?.label}</span>
                 </div>
-                <div
-                    className="grid gap-1.5"
-                    style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}
-                >
+                <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
                     {steps.map((step, idx) => (
                         <div
                             key={step.id}
                             className={cn(
                                 "h-1.5 rounded-full transition-all duration-300",
-                                idx < currentStep
-                                    ? "bg-primary"
-                                    : idx === currentStep
-                                      ? "bg-primary shadow-xs ring-2 ring-primary/30"
-                                      : "bg-muted"
+                                idx < currentStep ? "bg-primary" : idx === currentStep ? "bg-primary ring-primary/30 shadow-xs ring-2" : "bg-muted",
                             )}
                         />
                     ))}
@@ -352,16 +331,16 @@ export function SignupStepper({
                             <SocialAuthButtons />
 
                             <Field>
-                                <FieldLabel htmlFor="email" className="text-xs font-semibold text-foreground">
+                                <FieldLabel htmlFor="email" className="text-foreground text-xs font-semibold">
                                     Institutional or Registered Email
                                 </FieldLabel>
                                 <InputGroup
                                     className={cn(
-                                        "h-11 rounded-xl border-border/80 bg-background/60 shadow-2xs transition-all duration-200 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20",
-                                        errors.email && "border-destructive focus-within:ring-destructive/20"
+                                        "border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl shadow-2xs transition-all duration-200 focus-within:ring-2",
+                                        errors.email && "border-destructive focus-within:ring-destructive/20",
                                     )}
                                 >
-                                    <InputGroupAddon align="inline-start" className="pl-3 text-muted-foreground/70">
+                                    <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
                                         <Mail className="size-4" />
                                     </InputGroupAddon>
                                     <InputGroupInput
@@ -385,7 +364,7 @@ export function SignupStepper({
                                     />
                                 </InputGroup>
                                 {errors.email && <FieldError errors={[{ message: errors.email }]} />}
-                                <FieldDescription className="text-xs text-muted-foreground">
+                                <FieldDescription className="text-muted-foreground text-xs">
                                     Enter your registered academic email to automatically locate your record.
                                 </FieldDescription>
                             </Field>
@@ -415,21 +394,18 @@ export function SignupStepper({
                                         "flex items-start gap-3 rounded-xl border p-4 text-xs shadow-2xs",
                                         emailLookupResult.found
                                             ? "border-success/30 bg-success/10 text-success-foreground"
-                                            : "border-destructive/30 bg-destructive/10 text-destructive-foreground"
+                                            : "border-destructive/30 bg-destructive/10 text-destructive-foreground",
                                     )}
                                 >
                                     <IconTile
                                         variant="soft"
                                         size="sm"
-                                        className={cn(
-                                            "rounded-lg shrink-0",
-                                            emailLookupResult.found ? "text-success" : "text-destructive"
-                                        )}
+                                        className={cn("shrink-0 rounded-lg", emailLookupResult.found ? "text-success" : "text-destructive")}
                                     >
                                         {emailLookupResult.found ? <Check className="size-4" /> : <ShieldAlert className="size-4" />}
                                     </IconTile>
                                     <div className="space-y-1">
-                                        <p className="font-semibold text-foreground">
+                                        <p className="text-foreground font-semibold">
                                             {emailLookupResult.found
                                                 ? `${emailLookupResult.type === "student" ? "Student" : "Faculty"} Record Identified`
                                                 : "No Record Found"}
@@ -449,11 +425,11 @@ export function SignupStepper({
                     {currentStep === 1 && (
                         <div className="space-y-4">
                             <Field>
-                                <FieldLabel htmlFor="name" className="text-xs font-semibold text-foreground">
+                                <FieldLabel htmlFor="name" className="text-foreground text-xs font-semibold">
                                     Full Legal Name
                                 </FieldLabel>
-                                <InputGroup className="h-11 rounded-xl border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
-                                    <InputGroupAddon align="inline-start" className="pl-3 text-muted-foreground/70">
+                                <InputGroup className="border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2">
+                                    <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
                                         <User className="size-4" />
                                     </InputGroupAddon>
                                     <InputGroupInput
@@ -471,11 +447,11 @@ export function SignupStepper({
                             </Field>
 
                             <Field>
-                                <FieldLabel htmlFor="email_display" className="text-xs font-semibold text-foreground">
+                                <FieldLabel htmlFor="email_display" className="text-foreground text-xs font-semibold">
                                     Verified Email
                                 </FieldLabel>
-                                <InputGroup className="h-11 rounded-xl border-border/80 bg-muted/40 opacity-90">
-                                    <InputGroupAddon align="inline-start" className="pl-3 text-muted-foreground/70">
+                                <InputGroup className="border-border/80 bg-muted/40 h-11 rounded-xl opacity-90">
+                                    <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
                                         <Mail className="size-4" />
                                     </InputGroupAddon>
                                     <InputGroupInput
@@ -483,17 +459,17 @@ export function SignupStepper({
                                         type="email"
                                         value={data.email}
                                         disabled
-                                        className="text-sm font-normal text-muted-foreground"
+                                        className="text-muted-foreground text-sm font-normal"
                                     />
                                 </InputGroup>
                             </Field>
 
                             <Field>
-                                <FieldLabel htmlFor="password" className="text-xs font-semibold text-foreground">
+                                <FieldLabel htmlFor="password" className="text-foreground text-xs font-semibold">
                                     Password
                                 </FieldLabel>
-                                <InputGroup className="h-11 rounded-xl border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
-                                    <InputGroupAddon align="inline-start" className="pl-3 text-muted-foreground/70">
+                                <InputGroup className="border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2">
+                                    <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
                                         <Lock className="size-4" />
                                     </InputGroupAddon>
                                     <InputGroupInput
@@ -524,15 +500,13 @@ export function SignupStepper({
                                                     key={lvl}
                                                     className={cn(
                                                         "h-full flex-1 rounded-full transition-colors",
-                                                        lvl <= passwordStrength.strength
-                                                            ? passwordStrength.color
-                                                            : "bg-muted"
+                                                        lvl <= passwordStrength.strength ? passwordStrength.color : "bg-muted",
                                                     )}
                                                 />
                                             ))}
                                         </div>
-                                        <p className="text-[11px] text-muted-foreground">
-                                            Strength: <span className="font-semibold text-foreground">{passwordStrength.label}</span>
+                                        <p className="text-muted-foreground text-[11px]">
+                                            Strength: <span className="text-foreground font-semibold">{passwordStrength.label}</span>
                                         </p>
                                     </div>
                                 )}
@@ -540,16 +514,16 @@ export function SignupStepper({
                             </Field>
 
                             <Field>
-                                <FieldLabel htmlFor="password_confirmation" className="text-xs font-semibold text-foreground">
+                                <FieldLabel htmlFor="password_confirmation" className="text-foreground text-xs font-semibold">
                                     Confirm Password
                                 </FieldLabel>
                                 <InputGroup
                                     className={cn(
-                                        "h-11 rounded-xl border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20",
-                                        passwordsMatch && "border-success focus-within:ring-success/20"
+                                        "border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2",
+                                        passwordsMatch && "border-success focus-within:ring-success/20",
                                     )}
                                 >
-                                    <InputGroupAddon align="inline-start" className="pl-3 text-muted-foreground/70">
+                                    <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
                                         <Lock className="size-4" />
                                     </InputGroupAddon>
                                     <InputGroupInput
@@ -584,17 +558,17 @@ export function SignupStepper({
                     {/* Step 2: Student ID Verification (Student) */}
                     {currentStep === 2 && userType === "student" && (
                         <div className="space-y-4">
-                            <div className="rounded-xl border border-primary/20 bg-primary/5 p-3.5 text-xs text-muted-foreground">
-                                Confirm your {studentType === "shs" ? "Learner Reference Number (LRN)" : "Official Student ID Number"} to verify your student account.
+                            <div className="border-primary/20 bg-primary/5 text-muted-foreground rounded-xl border p-3.5 text-xs">
+                                Confirm your {emailLookupResult?.identifier_label ?? "student number"} to verify your student account.
                             </div>
 
-                            {studentType === "shs" ? (
+                            {usesExternalIdentifier ? (
                                 <Field>
-                                    <FieldLabel htmlFor="lrn" className="text-xs font-semibold text-foreground">
-                                        12-Digit LRN
+                                    <FieldLabel htmlFor="lrn" className="text-foreground text-xs font-semibold">
+                                        {emailLookupResult?.identifier_label ?? "External identifier"}
                                     </FieldLabel>
-                                    <InputGroup className="h-11 rounded-xl border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
-                                        <InputGroupAddon align="inline-start" className="pl-3 text-muted-foreground/70">
+                                    <InputGroup className="border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2">
+                                        <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
                                             <BadgeCheck className="size-4" />
                                         </InputGroupAddon>
                                         <InputGroupInput
@@ -608,11 +582,11 @@ export function SignupStepper({
                                 </Field>
                             ) : (
                                 <Field>
-                                    <FieldLabel htmlFor="student_id" className="text-xs font-semibold text-foreground">
-                                        College Student ID
+                                    <FieldLabel htmlFor="student_id" className="text-foreground text-xs font-semibold">
+                                        {emailLookupResult?.identifier_label ?? "Student number"}
                                     </FieldLabel>
-                                    <InputGroup className="h-11 rounded-xl border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
-                                        <InputGroupAddon align="inline-start" className="pl-3 text-muted-foreground/70">
+                                    <InputGroup className="border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2">
+                                        <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
                                             <GraduationCap className="size-4" />
                                         </InputGroupAddon>
                                         <InputGroupInput
@@ -632,8 +606,8 @@ export function SignupStepper({
                     {currentStep === 2 && userType === "faculty" && (
                         <div className="space-y-4">
                             {emailLookupResult?.found && (
-                                <div className="rounded-xl border border-primary/20 bg-primary/5 p-3.5 text-xs text-muted-foreground">
-                                    <p className="font-semibold text-foreground">Academic rank taken from your institutional record</p>
+                                <div className="border-primary/20 bg-primary/5 text-muted-foreground rounded-xl border p-3.5 text-xs">
+                                    <p className="text-foreground font-semibold">Academic rank taken from your institutional record</p>
                                     <p className="mt-1">
                                         {emailLookupResult.position || emailLookupResult.role || "Instructor"}
                                         {emailLookupResult.department ? ` · ${emailLookupResult.department}` : ""}
@@ -641,11 +615,11 @@ export function SignupStepper({
                                 </div>
                             )}
                             <Field>
-                                <FieldLabel htmlFor="faculty_id_number" className="text-xs font-semibold text-foreground">
+                                <FieldLabel htmlFor="faculty_id_number" className="text-foreground text-xs font-semibold">
                                     Faculty ID Number (Optional)
                                 </FieldLabel>
-                                <InputGroup className="h-11 rounded-xl border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
-                                    <InputGroupAddon align="inline-start" className="pl-3 text-muted-foreground/70">
+                                <InputGroup className="border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2">
+                                    <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
                                         <BadgeCheck className="size-4" />
                                     </InputGroupAddon>
                                     <InputGroupInput
@@ -656,7 +630,7 @@ export function SignupStepper({
                                         className="text-sm font-normal uppercase"
                                     />
                                 </InputGroup>
-                                <FieldDescription className="text-xs text-muted-foreground">
+                                <FieldDescription className="text-muted-foreground text-xs">
                                     You may also complete this verification step later from your faculty profile.
                                 </FieldDescription>
                             </Field>
@@ -666,25 +640,24 @@ export function SignupStepper({
                     {/* Step Last: OTP Code */}
                     {currentStep === steps.length - 1 && (
                         <div className="space-y-4">
-                            <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs">
-                                <IconTile variant="soft" size="sm" className="rounded-lg shrink-0">
+                            <div className="border-primary/20 bg-primary/5 flex items-start gap-3 rounded-xl border p-4 text-xs">
+                                <IconTile variant="soft" size="sm" className="shrink-0 rounded-lg">
                                     <Mail className="size-4" />
                                 </IconTile>
                                 <div className="space-y-1">
-                                    <p className="font-semibold text-foreground">Verification Code Sent</p>
+                                    <p className="text-foreground font-semibold">Verification Code Sent</p>
                                     <p className="text-muted-foreground">
-                                        We sent a 6-digit confirmation code to{" "}
-                                        <span className="font-semibold text-foreground">{data.email}</span>.
+                                        We sent a 6-digit confirmation code to <span className="text-foreground font-semibold">{data.email}</span>.
                                     </p>
                                 </div>
                             </div>
 
                             <Field>
-                                <FieldLabel htmlFor="otp" className="text-xs font-semibold text-foreground">
+                                <FieldLabel htmlFor="otp" className="text-foreground text-xs font-semibold">
                                     6-Digit Verification Code
                                 </FieldLabel>
-                                <InputGroup className="h-12 rounded-xl border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
-                                    <InputGroupAddon align="inline-start" className="pl-3 text-muted-foreground/70">
+                                <InputGroup className="border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-12 rounded-xl focus-within:ring-2">
+                                    <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
                                         <KeyRound className="size-4" />
                                     </InputGroupAddon>
                                     <InputGroupInput
@@ -693,15 +666,11 @@ export function SignupStepper({
                                         maxLength={6}
                                         value={data.otp}
                                         onChange={(e) => setData("otp", e.target.value.toUpperCase())}
-                                        className="font-mono text-center text-lg tracking-widest uppercase"
+                                        className="text-center font-mono text-lg tracking-widest uppercase"
                                     />
                                 </InputGroup>
                                 <div className="flex justify-end pt-1">
-                                    <button
-                                        type="button"
-                                        onClick={sendOtp}
-                                        className="text-xs font-medium text-primary hover:underline"
-                                    >
+                                    <button type="button" onClick={sendOtp} className="text-primary text-xs font-medium hover:underline">
                                         Resend Code
                                     </button>
                                 </div>
@@ -712,12 +681,7 @@ export function SignupStepper({
                     {/* Navigation Buttons */}
                     {currentStep > 0 && (
                         <div className="flex items-center gap-3 pt-2">
-                            <Button
-                                type="button"
-                                variant="outline"
-                                onClick={handlePrev}
-                                className="h-11 rounded-xl px-4 font-medium"
-                            >
+                            <Button type="button" variant="outline" onClick={handlePrev} className="h-11 rounded-xl px-4 font-medium">
                                 <ArrowLeft className="mr-1.5 size-4" />
                                 <span>Back</span>
                             </Button>
@@ -736,10 +700,7 @@ export function SignupStepper({
                                 <Button
                                     type="button"
                                     onClick={sendOtp}
-                                    disabled={
-                                        userType === "student" &&
-                                        ((studentType === "shs" && !data.lrn) || (studentType === "college" && !data.student_id))
-                                    }
+                                    disabled={userType === "student" && (usesExternalIdentifier ? !data.lrn : !data.student_id)}
                                     className="h-11 flex-1 rounded-xl font-semibold shadow-md"
                                 >
                                     <span>Send Verification Code</span>
@@ -763,9 +724,9 @@ export function SignupStepper({
                         </div>
                     )}
 
-                    <div className="pt-2 text-center text-xs text-muted-foreground">
+                    <div className="text-muted-foreground pt-2 text-center text-xs">
                         Already have an institutional account?{" "}
-                        <Link href="/login" className="font-semibold text-primary underline-offset-4 hover:underline">
+                        <Link href="/login" className="text-primary font-semibold underline-offset-4 hover:underline">
                             Sign in here
                         </Link>
                     </div>

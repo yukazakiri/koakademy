@@ -116,12 +116,49 @@ it('repairs custom and missing constraints across all financial tables', functio
     }
 });
 
-it('does not discard or delete orphaned PostgreSQL tuition records', function (): void {
-    DB::table('student_tuition')->insert(['enrollment_id' => 987654, 'note' => 'review']);
+it('preserves PostgreSQL orphans while enforcing new and changed references', function (): void {
+    $orphanId = DB::table('student_tuition')->insertGetId(['enrollment_id' => 987654, 'note' => 'review']);
+    $enrollmentId = DB::table('student_enrollment')->insertGetId([]);
+    DB::table('student_tuition')->insert(['enrollment_id' => $enrollmentId, 'note' => 'valid']);
     $migration = require database_path('migrations/2026_10_26_000001_restrict_financial_and_audit_foreign_keys.php');
-    expect(fn () => $migration->up())->toThrow(RuntimeException::class, 'existing rows reference missing');
-    expect(postgresFinancialConstraint())->toBeNull()
-        ->and(DB::table('student_tuition')->value('note'))->toBe('review');
+    $migration->up();
+    $migration->up();
+    $constraint = postgresFinancialConstraint();
+    $validated = DB::selectOne('SELECT convalidated FROM pg_constraint WHERE conrelid = ?::regclass AND conname = ?', ['student_tuition', $constraint['name']])->convalidated;
+    expect($constraint['on_delete'])->toBe('restrict')
+        ->and($validated)->toBeFalse()
+        ->and(DB::table('student_tuition')->where('id', $orphanId)->value('enrollment_id'))->toBe(987654)
+        ->and(DB::table('student_tuition')->where('id', $orphanId)->value('note'))->toBe('review');
+    expect(fn () => DB::table('student_tuition')->insert(['enrollment_id' => 987655]))->toThrow(QueryException::class);
+    expect(fn () => DB::table('student_tuition')->where('id', $orphanId)->update(['enrollment_id' => 987655]))->toThrow(QueryException::class);
+    expect(fn () => DB::table('student_enrollment')->where('id', $enrollmentId)->delete())->toThrow(QueryException::class);
+    DB::table('student_tuition')->where('id', $orphanId)->update(['note' => 'unchanged reference']);
+    DB::table('student_tuition')->where('id', $orphanId)->update(['enrollment_id' => $enrollmentId]);
+    DB::statement('ALTER TABLE student_tuition VALIDATE CONSTRAINT '.$this->app['db']->connection()->getQueryGrammar()->wrap($constraint['name']));
+    expect(DB::selectOne('SELECT convalidated FROM pg_constraint WHERE conrelid = ?::regclass AND conname = ?', ['student_tuition', $constraint['name']])->convalidated)->toBeTrue();
+});
+
+it('preserves PostgreSQL orphans when replacing an unvalidated custom foreign key', function (): void {
+    DB::table('student_tuition')->insert(['enrollment_id' => 987654, 'note' => 'legacy']);
+    DB::statement('ALTER TABLE student_tuition ADD CONSTRAINT legacy_unvalidated_fk FOREIGN KEY (enrollment_id) REFERENCES student_enrollment(id) ON UPDATE CASCADE ON DELETE CASCADE NOT VALID');
+    $migration = require database_path('migrations/2026_10_26_000001_restrict_financial_and_audit_foreign_keys.php');
+    $migration->up();
+    $constraint = postgresFinancialConstraint();
+    expect($constraint['name'])->not->toBe('legacy_unvalidated_fk')
+        ->and($constraint['on_update'])->toBe('cascade')
+        ->and($constraint['on_delete'])->toBe('restrict')
+        ->and(DB::table('student_tuition')->value('note'))->toBe('legacy');
+    expect(fn () => DB::table('student_tuition')->insert(['enrollment_id' => 987655]))->toThrow(QueryException::class);
+});
+
+it('keeps an already-restrictive unvalidated foreign key unchanged', function (): void {
+    DB::table('student_tuition')->insert(['enrollment_id' => 987654, 'note' => 'legacy']);
+    DB::statement('ALTER TABLE student_tuition ADD CONSTRAINT protected_legacy_fk FOREIGN KEY (enrollment_id) REFERENCES student_enrollment(id) ON DELETE RESTRICT NOT VALID');
+    $migration = require database_path('migrations/2026_10_26_000001_restrict_financial_and_audit_foreign_keys.php');
+    $migration->up();
+    expect(postgresFinancialConstraint()['name'])->toBe('protected_legacy_fk')
+        ->and(DB::table('student_tuition')->value('note'))->toBe('legacy');
+    expect(fn () => DB::table('student_tuition')->insert(['enrollment_id' => 987655]))->toThrow(QueryException::class);
 });
 
 it('refuses a PostgreSQL foreign key that targets a different table', function (): void {

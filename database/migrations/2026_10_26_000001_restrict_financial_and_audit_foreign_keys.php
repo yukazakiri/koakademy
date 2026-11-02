@@ -82,25 +82,30 @@ return new class extends Migration
         }
         $onUpdate = $updateActions->first() ?? 'no action';
 
-        // PostgreSQL and SQLite DDL participates in transactions. This also
-        // restores the prior constraint if validation fails on existing orphan
-        // rows. MySQL DDL commits implicitly, so validate rows before dropping.
+        // PostgreSQL and SQLite DDL participates in transactions. MySQL DDL
+        // commits implicitly, so detect orphans before dropping a constraint.
         $orphans = DB::table($table)->whereNotNull($column)
             ->whereNotExists(fn ($query) => $query->selectRaw('1')->from($target)->whereColumn($target.'.id', $table.'.'.$column))
             ->exists();
-        if ($orphans) {
+        if ($orphans && DB::getDriverName() !== 'pgsql') {
             throw new RuntimeException("Cannot add protection for {$table}.{$column}: existing rows reference missing {$target} records. Back up and review the orphaned records before retrying; none were deleted.");
         }
+        // PostgreSQL can enforce new and changed references while leaving
+        // pre-existing orphans intact for an explicitly reviewed repair.
+        $notValid = $orphans && DB::getDriverName() === 'pgsql';
 
-        $change = function () use ($table, $column, $target, $onDelete, $onUpdate, $foreignKeys): void {
+        $change = function () use ($table, $column, $target, $onDelete, $onUpdate, $foreignKeys, $notValid): void {
             foreach ($foreignKeys as $foreignKey) {
                 Schema::table($table, function (Blueprint $blueprint) use ($column, $foreignKey): void {
                     // SQLite exposes no names and rebuilds the table by column.
                     $blueprint->dropForeign($foreignKey['name'] ?? [$column]);
                 });
             }
-            Schema::table($table, function (Blueprint $blueprint) use ($column, $target, $onDelete, $onUpdate): void {
-                $blueprint->foreign($column)->references('id')->on($target)->onUpdate($onUpdate)->onDelete($onDelete);
+            Schema::table($table, function (Blueprint $blueprint) use ($column, $target, $onDelete, $onUpdate, $notValid): void {
+                $constraint = $blueprint->foreign($column)->references('id')->on($target)->onUpdate($onUpdate)->onDelete($onDelete);
+                if ($notValid) {
+                    $constraint->notValid();
+                }
             });
         };
 

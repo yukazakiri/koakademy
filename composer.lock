@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "2c03ea22d084c8bfbd3770c818b3a0b7",
+    "content-hash": "52613a057160fd0621ca8a8688a3a3f1",
     "packages": [
         {
             "name": "achyutn/filament-log-viewer",
@@ -252,16 +252,16 @@
         },
         {
             "name": "astrophp/trail",
-            "version": "v0.3.2",
+            "version": "v1.0.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/astrophp/trail.git",
-                "reference": "d3244f5e55a22e0c8a16339896df21d5a9dc0cf7"
+                "reference": "cde151c832d06b8f81bc3129230c331bf168fb67"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/astrophp/trail/zipball/d3244f5e55a22e0c8a16339896df21d5a9dc0cf7",
-                "reference": "d3244f5e55a22e0c8a16339896df21d5a9dc0cf7",
+                "url": "https://api.github.com/repos/astrophp/trail/zipball/cde151c832d06b8f81bc3129230c331bf168fb67",
+                "reference": "cde151c832d06b8f81bc3129230c331bf168fb67",
                 "shasum": ""
             },
             "require": {
@@ -329,7 +329,7 @@
                 "issues": "https://github.com/astrophp/trail/issues",
                 "source": "https://github.com/astrophp/trail"
             },
-            "time": "2026-10-15T22:00:17+00:00"
+            "time": "2026-11-01T20:19:06+00:00"
         },
         {
             "name": "awcodes/filament-gravatar",

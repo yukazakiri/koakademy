@@ -72,7 +72,7 @@
         "marcelweidum/filament-passkeys": "^4.0.5",
         "meilisearch/meilisearch-php": "^1.16",
         "moataz-01/filament-notification-sound": "^1.0",
-        "mohammed-mojaly/laralyze": "^0.7.2",
+        "mohammed-mojaly/laralyze": "^0.8.0",
         "mozex/laravel-scout-bulk-actions": "^1.7",
         "predis/predis": "^3.2",
         "pusher/pusher-php-server": "^7.2",

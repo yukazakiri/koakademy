@@ -1,8 +1,4 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/reui/alert";
-import { Badge } from "@/components/reui/badge";
-import { Frame, FrameDescription, FramePanel, FrameTitle } from "@/components/reui/frame";
-import { IconTile } from "@/components/reui/icon-tile";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -13,6 +9,10 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/reui/alert-dialog";
+import { Badge } from "@/components/reui/badge";
+import { Frame, FrameDescription, FramePanel, FrameTitle } from "@/components/reui/frame";
+import { IconTile } from "@/components/reui/icon-tile";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -102,6 +102,7 @@ export default function StudentConfigurationPage({
     const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
     const [openTracks, setOpenTracks] = useState<string[]>([]);
     const errorSummaryRef = useRef<HTMLDivElement>(null);
+    const focusSummaryOnMount = useRef(false);
     const set = <K extends keyof StudentConfiguration>(key: K, value: StudentConfiguration[K]) =>
         form.setData((previous) => ({ ...previous, preset: "custom", [key]: value }));
     const external = form.data.external_identifier;
@@ -127,20 +128,34 @@ export default function StudentConfigurationPage({
             onSuccess: () => toast.success("Student configuration saved."),
             onError: (errors) => {
                 const first = Object.keys(errors)[0] ?? "";
+                const invalidTracks = Object.keys(errors)
+                    .filter((key) => key.startsWith("type_labels.") || key.startsWith("year_levels."))
+                    .map((key) => key.split(".")[1])
+                    .filter(Boolean);
+                if (invalidTracks.length > 0) {
+                    setOpenTracks((previous) => Array.from(new Set([...previous, ...invalidTracks])));
+                }
+
                 if (first.startsWith("custom_fields") || first.startsWith("fields.")) setSection("information");
                 else if (first.startsWith("external_identifier")) {
                     setSection("identifiers");
                     setDetailsOpen(true);
-                } else if (
-                    first.startsWith("default_type") ||
-                    first.startsWith("enabled_types") ||
-                    first.startsWith("type_labels") ||
-                    first.startsWith("year_levels")
-                )
+                } else if (first === "default_type") {
+                    if (errors.default_type?.toLowerCase().includes("enabled")) {
+                        setSection("categories");
+                    } else {
+                        setSection("defaults");
+                    }
+                } else if (first.startsWith("enabled_types") || first.startsWith("type_labels") || first.startsWith("year_levels"))
                     setSection("categories");
                 else if (first.startsWith("defaults") || first.startsWith("philippine_reporting")) setSection("defaults");
                 toast.error("Review the configuration errors.");
-                window.requestAnimationFrame(() => errorSummaryRef.current?.focus());
+                if (errorSummaryRef.current) {
+                    errorSummaryRef.current.focus();
+                    focusSummaryOnMount.current = false;
+                } else {
+                    focusSummaryOnMount.current = true;
+                }
             },
         });
     };
@@ -157,6 +172,11 @@ export default function StudentConfigurationPage({
         };
         window.addEventListener("keydown", keydown);
         return () => window.removeEventListener("keydown", keydown);
+    });
+    useEffect(() => {
+        if (!focusSummaryOnMount.current || !errorSummaryRef.current) return;
+        focusSummaryOnMount.current = false;
+        errorSummaryRef.current.focus();
     });
 
     return (
@@ -506,7 +526,7 @@ export default function StudentConfigurationPage({
                     <TabsContent value="identifiers">
                         <SettingsPanel
                             title="National & regional registries"
-                            description="An external registry number is optional and distinct from your institution’s student number."
+                            description="An external registry number is assigned outside your institution. Set whether it is required and whether it is the student number below."
                         >
                             <div className="grid gap-3 sm:grid-cols-2">
                                 <div className="flex gap-3">

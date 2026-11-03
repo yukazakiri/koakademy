@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "f858e38565db9e8e104b25606c331407",
+    "content-hash": "2c03ea22d084c8bfbd3770c818b3a0b7",
     "packages": [
         {
             "name": "achyutn/filament-log-viewer",
@@ -558,7 +558,7 @@
         },
         {
             "name": "backstage/laravel-mails",
-            "version": "v5.8.0",
+            "version": "v5.10.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/backstagephp/laravel-mails.git",
@@ -637,7 +637,7 @@
             ],
             "support": {
                 "issues": "https://github.com/backstagephp/laravel-mails/issues",
-                "source": "https://github.com/backstagephp/laravel-mails/tree/v5.8.0"
+                "source": "https://github.com/backstagephp/laravel-mails/tree/v5.10.0"
             },
             "funding": [
                 {
@@ -649,7 +649,7 @@
         },
         {
             "name": "backstage/mails",
-            "version": "v5.8.0",
+            "version": "v5.10.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/backstagephp/mails.git",
@@ -5026,16 +5026,16 @@
         },
         {
             "name": "inertiajs/inertia-laravel",
-            "version": "v3.5.1",
+            "version": "v3.7.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/inertiajs/inertia-laravel.git",
-                "reference": "35a27ea62b8a53ec40269c4c675db5d9d0e02426"
+                "reference": "9d3f9060c1614565eb4d3a3208015ed01de347bb"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/inertiajs/inertia-laravel/zipball/35a27ea62b8a53ec40269c4c675db5d9d0e02426",
-                "reference": "35a27ea62b8a53ec40269c4c675db5d9d0e02426",
+                "url": "https://api.github.com/repos/inertiajs/inertia-laravel/zipball/9d3f9060c1614565eb4d3a3208015ed01de347bb",
+                "reference": "9d3f9060c1614565eb4d3a3208015ed01de347bb",
                 "shasum": ""
             },
             "require": {
@@ -5092,9 +5092,9 @@
             ],
             "support": {
                 "issues": "https://github.com/inertiajs/inertia-laravel/issues",
-                "source": "https://github.com/inertiajs/inertia-laravel/tree/v3.5.1"
+                "source": "https://github.com/inertiajs/inertia-laravel/tree/v3.7.0"
             },
-            "time": "2026-10-01T10:38:10+00:00"
+            "time": "2026-11-02T10:29:10+00:00"
         },
         {
             "name": "jaybizzle/crawler-detect",
@@ -6321,16 +6321,16 @@
         },
         {
             "name": "laravel/ai",
-            "version": "v1.2.3",
+            "version": "v1.3.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/laravel/ai.git",
-                "reference": "23509ff5c6c5cdc77facd6ce784274c29c76c4db"
+                "reference": "6837b4c557f67e04e8a13d882fe7724032278c27"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/laravel/ai/zipball/23509ff5c6c5cdc77facd6ce784274c29c76c4db",
-                "reference": "23509ff5c6c5cdc77facd6ce784274c29c76c4db",
+                "url": "https://api.github.com/repos/laravel/ai/zipball/6837b4c557f67e04e8a13d882fe7724032278c27",
+                "reference": "6837b4c557f67e04e8a13d882fe7724032278c27",
                 "shasum": ""
             },
             "require": {
@@ -6399,7 +6399,7 @@
                 "issues": "https://github.com/laravel/ai/issues",
                 "source": "https://github.com/laravel/ai"
             },
-            "time": "2026-10-15T19:17:57+00:00"
+            "time": "2026-10-19T16:50:18+00:00"
         },
         {
             "name": "laravel/framework",
@@ -7717,16 +7717,16 @@
         },
         {
             "name": "laravel/telescope",
-            "version": "v5.26.0",
+            "version": "v5.27.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/laravel/telescope.git",
-                "reference": "bedfc50a3561c93cd89064643139a51c56bfd8a6"
+                "reference": "60ce9759dc9b0b8e5cb0c9280a78fb283bfaaf8e"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/laravel/telescope/zipball/bedfc50a3561c93cd89064643139a51c56bfd8a6",
-                "reference": "bedfc50a3561c93cd89064643139a51c56bfd8a6",
+                "url": "https://api.github.com/repos/laravel/telescope/zipball/60ce9759dc9b0b8e5cb0c9280a78fb283bfaaf8e",
+                "reference": "60ce9759dc9b0b8e5cb0c9280a78fb283bfaaf8e",
                 "shasum": ""
             },
             "require": {
@@ -7779,9 +7779,9 @@
                 "monitoring"
             ],
             "support": {
-                "source": "https://github.com/laravel/telescope/tree/v5.26.0"
+                "source": "https://github.com/laravel/telescope/tree/v5.27.0"
             },
-            "time": "2026-09-22T21:38:44+00:00"
+            "time": "2026-10-31T06:24:09+00:00"
         },
         {
             "name": "laravel/tinker",
@@ -9583,16 +9583,16 @@
         },
         {
             "name": "mohammed-mojaly/laralyze",
-            "version": "v0.7.7",
+            "version": "v0.8.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/Mohammed-Mojaly/laralyze.git",
-                "reference": "a2320846618aed3536192cfa78ceda49cbec9ad4"
+                "reference": "6ccd8ee6a18b1f9465846478d84be1bdd4144eb5"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Mohammed-Mojaly/laralyze/zipball/a2320846618aed3536192cfa78ceda49cbec9ad4",
-                "reference": "a2320846618aed3536192cfa78ceda49cbec9ad4",
+                "url": "https://api.github.com/repos/Mohammed-Mojaly/laralyze/zipball/6ccd8ee6a18b1f9465846478d84be1bdd4144eb5",
+                "reference": "6ccd8ee6a18b1f9465846478d84be1bdd4144eb5",
                 "shasum": ""
             },
             "require": {
@@ -9650,7 +9650,7 @@
                 "issues": "https://github.com/Mohammed-Mojaly/laralyze/issues",
                 "source": "https://github.com/Mohammed-Mojaly/laralyze"
             },
-            "time": "2026-10-13T00:14:22+00:00"
+            "time": "2026-10-19T00:23:26+00:00"
         },
         {
             "name": "monolog/monolog",
@@ -12949,16 +12949,16 @@
         },
         {
             "name": "resend/resend-laravel",
-            "version": "v1.6.0",
+            "version": "v1.7.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/resend/resend-laravel.git",
-                "reference": "56d09b18c8850396a36a7f81e3d98365fe51bc6b"
+                "reference": "7d046f4bdf13f4ffd16ee82a8a76c71c23b88015"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/resend/resend-laravel/zipball/56d09b18c8850396a36a7f81e3d98365fe51bc6b",
-                "reference": "56d09b18c8850396a36a7f81e3d98365fe51bc6b",
+                "url": "https://api.github.com/repos/resend/resend-laravel/zipball/7d046f4bdf13f4ffd16ee82a8a76c71c23b88015",
+                "reference": "7d046f4bdf13f4ffd16ee82a8a76c71c23b88015",
                 "shasum": ""
             },
             "require": {
@@ -13012,22 +13012,22 @@
             ],
             "support": {
                 "issues": "https://github.com/resend/resend-laravel/issues",
-                "source": "https://github.com/resend/resend-laravel/tree/v1.6.0"
+                "source": "https://github.com/resend/resend-laravel/tree/v1.7.0"
             },
-            "time": "2026-09-29T18:05:25+00:00"
+            "time": "2026-10-20T23:47:13+00:00"
         },
         {
             "name": "resend/resend-php",
-            "version": "v1.16.0",
+            "version": "v1.18.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/resend/resend-php.git",
-                "reference": "9ebdef978287dcd8cd17a399eebc977aa21cb402"
+                "reference": "f615aaa9bde31a0235dd2f9856cbbea63bf14ac9"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/resend/resend-php/zipball/9ebdef978287dcd8cd17a399eebc977aa21cb402",
-                "reference": "9ebdef978287dcd8cd17a399eebc977aa21cb402",
+                "url": "https://api.github.com/repos/resend/resend-php/zipball/f615aaa9bde31a0235dd2f9856cbbea63bf14ac9",
+                "reference": "f615aaa9bde31a0235dd2f9856cbbea63bf14ac9",
                 "shasum": ""
             },
             "require": {
@@ -13071,9 +13071,9 @@
             ],
             "support": {
                 "issues": "https://github.com/resend/resend-php/issues",
-                "source": "https://github.com/resend/resend-php/tree/v1.16.0"
+                "source": "https://github.com/resend/resend-php/tree/v1.18.0"
             },
-            "time": "2026-09-25T18:18:55+00:00"
+            "time": "2026-11-02T05:00:42+00:00"
         },
         {
             "name": "robertogallea/pulse-api",
@@ -13829,16 +13829,16 @@
         },
         {
             "name": "simplestats-io/laravel-client",
-            "version": "v5.1.0",
+            "version": "v5.2.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/simplestats-io/laravel-client.git",
-                "reference": "bf5142c08d42e0019ddb24f0084c60ddecb509d6"
+                "reference": "c390d56deeed2fa740afff969fa4055b3121381b"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/simplestats-io/laravel-client/zipball/bf5142c08d42e0019ddb24f0084c60ddecb509d6",
-                "reference": "bf5142c08d42e0019ddb24f0084c60ddecb509d6",
+                "url": "https://api.github.com/repos/simplestats-io/laravel-client/zipball/c390d56deeed2fa740afff969fa4055b3121381b",
+                "reference": "c390d56deeed2fa740afff969fa4055b3121381b",
                 "shasum": ""
             },
             "require": {
@@ -13849,7 +13849,7 @@
                 "illuminate/support": "^11.0 || ^12.0 || ^13.0",
                 "matomo/device-detector": "^6.0",
                 "php": "^8.2",
-                "spatie/laravel-package-tools": "^1.12.0 || ^1.13.0"
+                "spatie/laravel-package-tools": "^1.16"
             },
             "require-dev": {
                 "nunomaduro/larastan": "^2.0.1 || ^3.1",
@@ -13906,9 +13906,9 @@
             ],
             "support": {
                 "issues": "https://github.com/simplestats-io/laravel-client/issues",
-                "source": "https://github.com/simplestats-io/laravel-client/tree/v5.1.0"
+                "source": "https://github.com/simplestats-io/laravel-client/tree/v5.2.0"
             },
-            "time": "2026-07-31T12:11:23+00:00"
+            "time": "2026-10-27T21:09:11+00:00"
         },
         {
             "name": "smalot/pdfparser",
@@ -20339,26 +20339,27 @@
         },
         {
             "name": "driftingly/rector-laravel",
-            "version": "2.6.2",
+            "version": "2.7.3",
             "source": {
                 "type": "git",
                 "url": "https://github.com/driftingly/rector-laravel.git",
-                "reference": "c0f9a2ff7365cec45d4dc64223608e7cec74604a"
+                "reference": "699f25bda7efcbe98cf8ff9c9e687da76ce0d8c5"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/driftingly/rector-laravel/zipball/c0f9a2ff7365cec45d4dc64223608e7cec74604a",
-                "reference": "c0f9a2ff7365cec45d4dc64223608e7cec74604a",
+                "url": "https://api.github.com/repos/driftingly/rector-laravel/zipball/699f25bda7efcbe98cf8ff9c9e687da76ce0d8c5",
+                "reference": "699f25bda7efcbe98cf8ff9c9e687da76ce0d8c5",
                 "shasum": ""
             },
             "require": {
                 "php": ">=8.3",
-                "rector/rector": "^2.6.4",
+                "rector/rector": "^2.8",
                 "symplify/rule-doc-generator-contracts": "^11.2",
                 "webmozart/assert": "^1.11 || ^2.0"
             },
             "require-dev": {
-                "boundwize/structarmed": "^0.16",
+                "boundwize/structarmed": "^0.19",
+                "illuminate/support": "^13.0",
                 "nette/utils": "^4.0",
                 "nikic/php-parser": "^5.6",
                 "phpstan/extension-installer": "^1.3",
@@ -20370,6 +20371,9 @@
                 "symplify/rule-doc-generator": "^12.2",
                 "tightenco/duster": "^3.1",
                 "tracy/tracy": "^2.10"
+            },
+            "suggest": {
+                "illuminate/support": "Required by RelationTableStringToPivotClassRector, which uses Illuminate\\Support\\Str at runtime to resolve pivot models from table names (^8.0 || ^9.0 || ^10.0 || ^11.0 || ^12.0 || ^13.0)."
             },
             "type": "rector-extension",
             "extra": {
@@ -20389,11 +20393,18 @@
                 "MIT"
             ],
             "description": "Rector upgrades rules for Laravel Framework",
+            "keywords": [
+                "dev",
+                "laravel",
+                "rector",
+                "refactoring",
+                "upgrade"
+            ],
             "support": {
                 "issues": "https://github.com/driftingly/rector-laravel/issues",
-                "source": "https://github.com/driftingly/rector-laravel/tree/2.6.2"
+                "source": "https://github.com/driftingly/rector-laravel/tree/2.7.3"
             },
-            "time": "2026-08-29T21:42:57+00:00"
+            "time": "2026-10-27T12:37:16+00:00"
         },
         {
             "name": "fakerphp/faker",
@@ -22007,16 +22018,16 @@
         },
         {
             "name": "pestphp/pest-plugin-phpstan",
-            "version": "v5.2.2",
+            "version": "v5.3.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/pestphp/pest-plugin-phpstan.git",
-                "reference": "19afd92402be203788b73eba9fdb5f5185f66a25"
+                "reference": "a56d8e58dc8892ff89e15c4bca38e74f9f97ff99"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/pestphp/pest-plugin-phpstan/zipball/19afd92402be203788b73eba9fdb5f5185f66a25",
-                "reference": "19afd92402be203788b73eba9fdb5f5185f66a25",
+                "url": "https://api.github.com/repos/pestphp/pest-plugin-phpstan/zipball/a56d8e58dc8892ff89e15c4bca38e74f9f97ff99",
+                "reference": "a56d8e58dc8892ff89e15c4bca38e74f9f97ff99",
                 "shasum": ""
             },
             "require": {
@@ -22074,7 +22085,7 @@
                 "unit"
             ],
             "support": {
-                "source": "https://github.com/pestphp/pest-plugin-phpstan/tree/v5.2.2"
+                "source": "https://github.com/pestphp/pest-plugin-phpstan/tree/v5.3.1"
             },
             "funding": [
                 {
@@ -22094,7 +22105,7 @@
                     "type": "patreon"
                 }
             ],
-            "time": "2026-10-02T16:21:04+00:00"
+            "time": "2026-11-02T07:22:57+00:00"
         },
         {
             "name": "pestphp/pest-plugin-profanity",
@@ -22897,21 +22908,21 @@
         },
         {
             "name": "rector/rector",
-            "version": "2.7.0",
+            "version": "2.8.3",
             "source": {
                 "type": "git",
                 "url": "https://github.com/rectorphp/rector.git",
-                "reference": "4d6a39b7fff302cac0ce90cd959a53c2f6a32776"
+                "reference": "12ddb68d34acb91bcf3d00302bf1c7c1b5840bd6"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/rectorphp/rector/zipball/4d6a39b7fff302cac0ce90cd959a53c2f6a32776",
-                "reference": "4d6a39b7fff302cac0ce90cd959a53c2f6a32776",
+                "url": "https://api.github.com/repos/rectorphp/rector/zipball/12ddb68d34acb91bcf3d00302bf1c7c1b5840bd6",
+                "reference": "12ddb68d34acb91bcf3d00302bf1c7c1b5840bd6",
                 "shasum": ""
             },
             "require": {
                 "php": "^7.4|^8.0",
-                "phpstan/phpstan": "^2.3.0"
+                "phpstan/phpstan": "^2.3.4"
             },
             "conflict": {
                 "rector/rector-doctrine": "*",
@@ -22942,7 +22953,7 @@
             ],
             "support": {
                 "issues": "https://github.com/rectorphp/rector/issues",
-                "source": "https://github.com/rectorphp/rector/tree/2.7.0"
+                "source": "https://github.com/rectorphp/rector/tree/2.8.3"
             },
             "funding": [
                 {
@@ -22950,7 +22961,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-10-06T08:46:45+00:00"
+            "time": "2026-10-29T05:51:41+00:00"
         },
         {
             "name": "sebastian/cli-parser",

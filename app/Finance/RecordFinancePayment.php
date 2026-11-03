@@ -198,6 +198,7 @@ final readonly class RecordFinancePayment
             if (! $tuition instanceof StudentTuition || $amount > $this->billing->balanceDue($tuition) + 0.00001) {
                 $this->fail('items', 'A tuition payment cannot exceed its current balance.');
             }
+
         }
 
         foreach ($stockDeductions as $productId => $quantity) {

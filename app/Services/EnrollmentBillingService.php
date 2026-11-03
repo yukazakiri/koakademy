@@ -50,10 +50,8 @@ final class EnrollmentBillingService
      * allocation flow. Summing it understates collections and inflates the
      * outstanding balance and the collection efficiency ratio.
      *
-     * This applies the same precedence as `totalPaid()` per record, with the
-     * verified allocation totals fetched in one grouped query so a whole-term
-     * report does not run two queries per student. Records with no allocation
-     * fall back to the full per-record chain, which is the legacy path.
+     * Apply the same receipt and allocation precedence as `totalPaid()` to
+     * every record, including accounts with legacy enrollment receipts.
      *
      * @param  iterable<int, StudentTuition>  $tuition
      */
@@ -69,28 +67,10 @@ final class EnrollmentBillingService
             return 0.0;
         }
 
-        $allocated = PaymentAllocation::query()
-            ->whereIn('student_tuition_id', array_map(static fn (StudentTuition $r): int => (int) $r->id, $records))
-            ->where('target_type', 'assessment')
-            ->whereHas('transaction', fn ($query) => $query->whereIn('status', ['Paid', 'Completed', 'paid', 'completed']))
-            ->groupBy('student_tuition_id')
-            ->selectRaw('student_tuition_id, SUM(amount) as verified_total')
-            ->pluck('verified_total', 'student_tuition_id');
-
         $total = 0.0;
 
         foreach ($records as $record) {
-            $verified = $allocated->get($record->id);
-
-            $total += $verified === null
-                ? $this->totalPaid($record)
-                : $this->combinePaid(
-                    (float) ($record->getRawOriginal('paid') ?? 0),
-                    (float) $verified,
-                    $record->getRawOriginal('paid_transaction_baseline') === null
-                        ? null
-                        : (float) $record->getRawOriginal('paid_transaction_baseline'),
-                );
+            $total += $this->totalPaid($record);
         }
 
         return round($total, 2);
@@ -121,7 +101,18 @@ final class EnrollmentBillingService
                 ->whereHas('transaction', fn ($query) => $query->whereIn('status', ['Paid', 'Completed', 'paid', 'completed']))
                 ->sum('amount');
 
-            return round((float) $allocatedPaid, 2);
+            $legacyPaid = $tuition->enrollment_id
+                ? StudentTransaction::query()
+                    ->where('student_enrollment_id', $tuition->enrollment_id)
+                    ->whereIn('status', ['Paid', 'Completed', 'paid', 'completed'])
+                    ->whereHas('transaction', fn ($query) => $query->whereIn('status', ['Paid', 'Completed', 'paid', 'completed']))
+                    ->whereNotIn('transaction_id', PaymentAllocation::query()->select('transaction_id'))
+                    ->with('transaction')
+                    ->get()
+                    ->sum(fn (StudentTransaction $link): float => $this->tuitionPaymentFromSettlements($link->transaction))
+                : 0.0;
+
+            return round((float) $allocatedPaid + $legacyPaid, 2);
         }
 
         $enrollment = $tuition->relationLoaded('enrollment')
@@ -133,10 +124,12 @@ final class EnrollmentBillingService
                 : StudentTransaction::query()
                     ->where('student_enrollment_id', $enrollment->id)
                     ->whereIn('status', ['Paid', 'Completed', 'paid', 'completed'])
-                    ->get();
+                    ->with('transaction')->get();
             if ($linkedPayments->isNotEmpty()) {
-                $linkedPaid = $linkedPayments->sum(
-                    fn (StudentTransaction $link): float => (float) $link->amount,
+                $linkedPaid = $linkedPayments->sum(fn (StudentTransaction $link): float =>
+                    $link->transaction && in_array($link->transaction->status, ['Paid', 'Completed', 'paid', 'completed'], true)
+                        ? $this->tuitionPaymentFromSettlements($link->transaction)
+                        : 0.0
                 );
 
                 return (float) $linkedPaid;

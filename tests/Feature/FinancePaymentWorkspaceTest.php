@@ -140,6 +140,42 @@ it('adds later cashier payments after an audited opening paid baseline', functio
         ->and((float) $tuition->total_balance)->toBe(4500.0);
 });
 
+it('preserves enrollment receipts when the first and later cashier payments are recorded', function (): void {
+    $cashier = paymentWorkspaceCashier();
+    $student = Student::factory()->create();
+    ['enrollment' => $enrollment, 'tuition' => $tuition] = paymentWorkspaceTuition($student, 10000);
+    $receipt = Transaction::query()->create([
+        'description' => 'Enrollment downpayment',
+        'payment_method' => 'Cash',
+        'status' => 'paid',
+        'transaction_date' => now(),
+        'settlements' => ['tuition_fee' => 3500, 'others' => 1000],
+        'user_id' => $cashier->id,
+    ]);
+    StudentTransaction::query()->create([
+        'student_id' => $student->id,
+        'student_enrollment_id' => $enrollment->id,
+        'transaction_id' => $receipt->id,
+        'amount' => 4500,
+        'status' => 'paid',
+    ]);
+
+    foreach ([500, 250] as $amount) {
+        $this->actingAs($cashier)
+            ->post(portalUrlForAdministrators('/administrators/finance/payments'), tuitionPaymentPayload($student, $tuition, $amount))
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+    }
+
+    $tuition->refresh();
+    expect(app(App\Services\EnrollmentBillingService::class)->totalPaid($tuition))->toBe(4250.0)
+        ->and((float) $tuition->total_balance)->toBe(5750.0)
+        ->and(StudentTransaction::query()->count())->toBe(3);
+
+    $receipt->update(['status' => 'voided']);
+    expect(app(App\Services\EnrollmentBillingService::class)->totalPaid($tuition->refresh()))->toBe(750.0);
+});
+
 it('forbids finance ledger endpoints for administrative users without cashier permission', function (): void {
     $administrator = User::factory()->create(['role' => UserRole::Admin]);
 

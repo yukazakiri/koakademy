@@ -149,14 +149,14 @@ it('preserves enrollment receipts when the first and later cashier payments are 
         'payment_method' => 'Cash',
         'status' => 'paid',
         'transaction_date' => now(),
-        'settlements' => ['tuition_fee' => 3500],
+        'settlements' => ['tuition_fee' => 3500, 'others' => 1000],
         'user_id' => $cashier->id,
     ]);
     StudentTransaction::query()->create([
         'student_id' => $student->id,
         'student_enrollment_id' => $enrollment->id,
         'transaction_id' => $receipt->id,
-        'amount' => 3500,
+        'amount' => 4500,
         'status' => 'paid',
     ]);
 
@@ -171,6 +171,9 @@ it('preserves enrollment receipts when the first and later cashier payments are 
     expect(app(App\Services\EnrollmentBillingService::class)->totalPaid($tuition))->toBe(4250.0)
         ->and((float) $tuition->total_balance)->toBe(5750.0)
         ->and(StudentTransaction::query()->count())->toBe(3);
+
+    $receipt->update(['status' => 'voided']);
+    expect(app(App\Services\EnrollmentBillingService::class)->totalPaid($tuition->refresh()))->toBe(750.0);
 });
 
 it('forbids finance ledger endpoints for administrative users without cashier permission', function (): void {

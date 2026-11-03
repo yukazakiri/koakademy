@@ -199,14 +199,6 @@ final readonly class RecordFinancePayment
                 $this->fail('items', 'A tuition payment cannot exceed its current balance.');
             }
 
-            // The first allocation replaces the legacy receipt lookup. Capture its
-            // verified total before creating that allocation so older payments survive.
-            if ($tuition->paid_transaction_baseline === null && ! PaymentAllocation::query()->where('student_tuition_id', $tuitionId)->where('target_type', 'assessment')->exists() && $this->billing->verifiedPaid($tuition) > (float) $tuition->getRawOriginal('paid')) {
-                $tuition->forceFill([
-                    'paid' => $this->billing->totalPaid($tuition),
-                    'paid_transaction_baseline' => 0,
-                ])->save();
-            }
         }
 
         foreach ($stockDeductions as $productId => $quantity) {

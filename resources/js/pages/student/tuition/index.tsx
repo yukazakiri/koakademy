@@ -191,7 +191,7 @@ export default function TuitionIndex({ auth, tuition, transactions, filters, his
                             </div>
                         </div>
 
-                        <div className="flex w-full items-center gap-2 md:w-auto md:gap-3">
+                        <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center md:w-auto md:gap-3">
                             <div className="border-border/60 bg-background/65 flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border p-1 pl-2 shadow-sm md:gap-2 md:pl-3">
                                 <Calendar className="text-muted-foreground h-3.5 w-3.5 shrink-0 md:h-4 md:w-4" />
                                 <Select
@@ -240,12 +240,15 @@ export default function TuitionIndex({ auth, tuition, transactions, filters, his
                                     Print SOA
                                 </Button>
                             )}
-                            <Button variant="outline" size="sm" className="rounded-lg shadow-sm" asChild>
-                                <Link href={tuitionUpdateRequestsIndex.url({ query: filters })}>
-                                    <FileQuestion className="mr-2 h-4 w-4" />
-                                    <span className="hidden sm:inline">Report an issue</span>
-                                    <span className="sm:hidden">Report</span>
-                                </Link>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-10 w-full rounded-lg shadow-sm sm:h-7 sm:w-auto"
+                                nativeButton={false}
+                                render={<Link href={tuitionUpdateRequestsIndex.url({ query: filters })} />}
+                            >
+                                <FileQuestion className="mr-2 h-4 w-4" />
+                                Request a tuition update
                             </Button>
                         </div>
                     </CardContent>

@@ -8,6 +8,20 @@ use App\Models\StudentTuition;
 use App\Models\Transaction;
 use App\Services\EnrollmentBillingService;
 
+it('formats decimal tuition amounts returned as strings', function (string $field, string $formatted) {
+    $tuition = StudentTuition::make([$field => '1234.50']);
+
+    expect($tuition->{$field})->toBe('1234.50')
+        ->and($tuition->{$formatted})->toMatch('/^(₱|\$) 1,234\.50$/');
+})->with([
+    ['total_tuition', 'formatted_total_tuition'],
+    ['overall_tuition', 'formatted_overall_tuition'],
+    ['total_lectures', 'formatted_total_lectures'],
+    ['total_laboratory', 'formatted_total_laboratory'],
+    ['total_miscelaneous_fees', 'formatted_total_miscelaneous_fees'],
+    ['downpayment', 'formatted_downpayment'],
+]);
+
 it('returns zero total paid when school year is missing', function () {
     $student = Student::factory()->make();
 

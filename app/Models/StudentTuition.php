@@ -179,7 +179,7 @@ final class StudentTuition extends Model
      */
     protected function formattedOverallTuition(): Attribute
     {
-        return Attribute::make(get: fn (): string => $this->getCurrencySymbol().' '.number_format($this->overall_tuition, 2));
+        return Attribute::make(get: fn (): string => $this->getCurrencySymbol().' '.number_format((float) $this->overall_tuition, 2));
     }
 
     /**
@@ -187,7 +187,7 @@ final class StudentTuition extends Model
      */
     protected function formattedTotalTuition(): Attribute
     {
-        return Attribute::make(get: fn (): string => $this->getCurrencySymbol().' '.number_format($this->total_tuition, 2));
+        return Attribute::make(get: fn (): string => $this->getCurrencySymbol().' '.number_format((float) $this->total_tuition, 2));
     }
 
     /**
@@ -221,7 +221,7 @@ final class StudentTuition extends Model
      */
     protected function formattedTotalLectures(): Attribute
     {
-        return Attribute::make(get: fn (): string => $this->getCurrencySymbol().' '.number_format($this->total_lectures, 2));
+        return Attribute::make(get: fn (): string => $this->getCurrencySymbol().' '.number_format((float) $this->total_lectures, 2));
     }
 
     /**
@@ -229,7 +229,7 @@ final class StudentTuition extends Model
      */
     protected function formattedTotalLaboratory(): Attribute
     {
-        return Attribute::make(get: fn (): string => $this->getCurrencySymbol().' '.number_format($this->total_laboratory, 2));
+        return Attribute::make(get: fn (): string => $this->getCurrencySymbol().' '.number_format((float) $this->total_laboratory, 2));
     }
 
     /**
@@ -237,7 +237,7 @@ final class StudentTuition extends Model
      */
     protected function formattedTotalMiscelaneousFees(): Attribute
     {
-        return Attribute::make(get: fn (): string => $this->getCurrencySymbol().' '.number_format($this->total_miscelaneous_fees, 2));
+        return Attribute::make(get: fn (): string => $this->getCurrencySymbol().' '.number_format((float) $this->total_miscelaneous_fees, 2));
     }
 
     /**
@@ -245,7 +245,7 @@ final class StudentTuition extends Model
      */
     protected function formattedDownpayment(): Attribute
     {
-        return Attribute::make(get: fn (): string => $this->getCurrencySymbol().' '.number_format($this->downpayment, 2));
+        return Attribute::make(get: fn (): string => $this->getCurrencySymbol().' '.number_format((float) $this->downpayment, 2));
     }
 
     /**

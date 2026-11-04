@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "52613a057160fd0621ca8a8688a3a3f1",
+    "content-hash": "619317e49f1b7fb49ee16d6caff31cf3",
     "packages": [
         {
             "name": "achyutn/filament-log-viewer",
@@ -19174,6 +19174,87 @@
                 }
             ],
             "time": "2026-10-18T14:56:39+00:00"
+        },
+        {
+            "name": "tevkert/queue-prefork",
+            "version": "v1.0.4",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/tevkert/queue-prefork.git",
+                "reference": "a6a345b0f3e428b844d029badd3127159a9061fe"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/tevkert/queue-prefork/zipball/a6a345b0f3e428b844d029badd3127159a9061fe",
+                "reference": "a6a345b0f3e428b844d029badd3127159a9061fe",
+                "shasum": ""
+            },
+            "require": {
+                "illuminate/console": "^11.0|^12.0|^13.0",
+                "illuminate/support": "^11.0|^12.0|^13.0",
+                "php": "^8.2"
+            },
+            "require-dev": {
+                "laravel/horizon": "^5.23",
+                "phpunit/phpunit": "^11.0|^12.0"
+            },
+            "suggest": {
+                "ext-ffi": "queue:work workers keep their output in their own log; without it (Linux) they use the shared log.",
+                "ext-pcntl": "Needed to prefork anything; without it every worker runs stock.",
+                "ext-posix": "Needed to prefork anything; without it every worker runs stock.",
+                "laravel/horizon": "Horizon's master and workers are preforked too."
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Tevkert\\QueuePrefork\\QueuePreforkServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "files": [
+                    "src/hook.php"
+                ],
+                "psr-4": {
+                    "Tevkert\\QueuePrefork\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Ando Hakobyan",
+                    "homepage": "https://github.com/tevkert"
+                }
+            ],
+            "description": "Cut the memory of Laravel queue workers by up to 80 %: queue:work and Horizon workers run as forks of one template that shares compiled code through opcache. Drop-in, no code changes.",
+            "homepage": "https://github.com/tevkert/queue-prefork",
+            "keywords": [
+                "Opcache",
+                "fork",
+                "horizon",
+                "laravel",
+                "laravel-horizon",
+                "memory",
+                "memory-usage",
+                "performance",
+                "prefork",
+                "queue",
+                "queue-work",
+                "queue-workers",
+                "ram",
+                "supervisor",
+                "worker"
+            ],
+            "support": {
+                "issues": "https://github.com/tevkert/queue-prefork/issues",
+                "security": "https://github.com/tevkert/queue-prefork/security/advisories/new",
+                "source": "https://github.com/tevkert/queue-prefork"
+            },
+            "time": "2026-10-29T10:39:31+00:00"
         },
         {
             "name": "tightenco/ziggy",

@@ -136,6 +136,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libzip-dev \
     libicu-dev \
     libpq-dev \
+    libffi-dev \
     librsvg2-bin \
     mdbtools \
     postgresql-client && \
@@ -151,6 +152,7 @@ RUN docker-php-ext-configure gd --with-jpeg --with-freetype \
         zip \
         intl \
         gd \
+        ffi \
     && pecl install redis \
     && docker-php-ext-enable redis
 

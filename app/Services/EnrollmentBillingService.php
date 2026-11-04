@@ -126,8 +126,7 @@ final class EnrollmentBillingService
                     ->whereIn('status', ['Paid', 'Completed', 'paid', 'completed'])
                     ->with('transaction')->get();
             if ($linkedPayments->isNotEmpty()) {
-                $linkedPaid = $linkedPayments->sum(fn (StudentTransaction $link): float =>
-                    $link->transaction && in_array($link->transaction->status, ['Paid', 'Completed', 'paid', 'completed'], true)
+                $linkedPaid = $linkedPayments->sum(fn (StudentTransaction $link): float => $link->transaction && in_array($link->transaction->status, ['Paid', 'Completed', 'paid', 'completed'], true)
                         ? $this->tuitionPaymentFromSettlements($link->transaction)
                         : 0.0
                 );

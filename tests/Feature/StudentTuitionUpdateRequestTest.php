@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+uses(Tests\TestCase::class);
+
 use App\Enums\UserRole;
 use App\Features\Toggles\StudentTuition as StudentTuitionFeature;
 use App\Models\Course;
@@ -396,4 +398,149 @@ it('prevents non-finance users or pending requests from resending notifications'
     $this->actingAs($finance)
         ->post(route('administrators.finance.tuition-update-requests.resend-email', $request))
         ->assertStatus(422);
+});
+
+it('lets a student specify an amount and upload a receipt image', function (): void {
+    \Illuminate\Support\Facades\Storage::fake('public');
+    [$user, $student] = tuitionRequestStudent();
+
+    $file = \Illuminate\Http\UploadedFile::fake()->image('my_receipt.jpg', 600, 800);
+
+    $this->actingAs($user)
+        ->post(route('student.tuition.update-requests.store'), [
+            'school_year' => '2026 - 2027',
+            'semester' => 1,
+            'concern_type' => 'missing_payment',
+            'amount' => 5000.00,
+            'receipt_number' => 'OR-UPLOAD-100',
+            'receipt_image' => $file,
+            'details' => 'I paid 5,000 pesos at the counter, here is my receipt photo.',
+        ])->assertRedirect();
+
+    $request = StudentTuitionUpdateRequest::query()->with('receipts')->sole();
+    expect((float) $request->amount)->toBe(5000.00)
+        ->and($request->receipt_number)->toBe('OR-UPLOAD-100')
+        ->and($request->receipts)->toHaveCount(1);
+
+    $receipt = $request->receipts->first();
+    expect($receipt->receipt_number)->toBe('OR-UPLOAD-100')
+        ->and((float) $receipt->amount)->toBe(5000.00)
+        ->and($receipt->image_path)->not->toBeNull();
+
+    \Illuminate\Support\Facades\Storage::disk('public')->assertExists($receipt->image_path);
+});
+
+it('lets a student submit two receipts with photos and amounts', function (): void {
+    \Illuminate\Support\Facades\Storage::fake('public');
+    [$user, $student] = tuitionRequestStudent();
+
+    $file1 = \Illuminate\Http\UploadedFile::fake()->image('receipt1.png');
+    $file2 = \Illuminate\Http\UploadedFile::fake()->image('receipt2.png');
+
+    $this->actingAs($user)
+        ->post(route('student.tuition.update-requests.store'), [
+            'school_year' => '2026 - 2027',
+            'semester' => 1,
+            'concern_type' => 'missing_payment',
+            'details' => 'I made two separate payments of 5,000 each for my downpayment.',
+            'receipts' => [
+                ['receipt_number' => 'OR-224103', 'amount' => 5000.00, 'image' => $file1],
+                ['receipt_number' => 'OR-226432', 'amount' => 5000.00, 'image' => $file2],
+            ],
+        ])->assertRedirect();
+
+    $request = StudentTuitionUpdateRequest::query()->with('receipts')->sole();
+    expect((float) $request->amount)->toBe(10000.00)
+        ->and($request->receipts)->toHaveCount(2)
+        ->and($request->receipt_number)->toContain('OR-224103')
+        ->and($request->receipt_number)->toContain('OR-226432');
+
+    foreach ($request->receipts as $receipt) {
+        \Illuminate\Support\Facades\Storage::disk('public')->assertExists($receipt->image_path);
+    }
+});
+
+it('lets Finance adjust an existing transaction amount to correct downpayment error and reconciles balance', function (): void {
+    Notification::fake();
+    [$studentUser, $student, $enrollment, $tuition] = tuitionRequestStudent();
+    $finance = tuitionRequestFinanceUser();
+
+    // Student tuition overall is 15,970
+    $tuition->overall_tuition = 15970.00;
+    $tuition->total_tuition = 11750.00;
+    $tuition->total_lectures = 9750.00;
+    $tuition->total_laboratory = 2000.00;
+    $tuition->total_miscelaneous_fees = 3700.00;
+    $tuition->downpayment = 10000.00;
+    $tuition->paid = 10450.00;
+    $tuition->total_balance = 5520.00;
+    $tuition->status = 'Downpayment';
+    $tuition->save();
+
+    // Transaction was recorded as 10,450.00 instead of 10,000.00
+    $transaction = Transaction::query()->create([
+        'description' => 'Downpayment for student Tuition',
+        'status' => 'paid',
+        'transaction_date' => now(),
+        'settlements' => ['tuition_fee' => 10450.00],
+        'invoicenumber' => '226432',
+    ]);
+    $stTx = StudentTransaction::query()->create([
+        'student_id' => $student->id,
+        'student_enrollment_id' => $enrollment->id,
+        'transaction_id' => $transaction->id,
+        'amount' => 10450.00,
+        'status' => 'paid',
+    ]);
+    \App\Models\PaymentAllocation::query()->create([
+        'transaction_id' => $transaction->id,
+        'student_transaction_id' => $stTx->id,
+        'student_id' => $student->id,
+        'student_enrollment_id' => $enrollment->id,
+        'student_tuition_id' => $tuition->id,
+        'charge_category' => 'tuition',
+        'target_type' => 'assessment',
+        'amount' => 10450.00,
+        'notes' => 'Tuition downpayment',
+    ]);
+
+    $this->actingAs($studentUser)->post(route('student.tuition.update-requests.store'), [
+        'school_year' => '2026 - 2027',
+        'semester' => 1,
+        'concern_type' => 'missing_payment',
+        'amount' => 10000.00,
+        'receipt_number' => '226432',
+        'details' => 'My downpayment was recorded as 10,450 instead of 10,000.',
+    ]);
+    $request = StudentTuitionUpdateRequest::query()->sole();
+
+    $this->actingAs($finance)->post(route('administrators.finance.tuition-update-requests.claim', $request))->assertRedirect();
+
+    // Finance adjusts the transaction from 10450 to 10000
+    $this->actingAs($finance)->post(route('administrators.finance.tuition-update-requests.adjust-and-resolve-payment', $request), [
+        'transaction_id' => $transaction->id,
+        'amount' => 10000.00,
+        'reference_number' => '226432',
+        'resolution_note' => 'Adjusted cashier transaction #226432 from ₱10,450.00 to ₱10,000.00 to reflect exact downpayment.',
+    ])->assertRedirect();
+
+    $request->refresh();
+    expect($request->status)->toBe(StudentTuitionUpdateRequest::StatusResolved)
+        ->and($request->resolved_transaction_id)->toBe($transaction->id)
+        ->and($request->events()->where('event', 'resolved_with_adjusted_transaction')->count())->toBe(1);
+
+    // Verify transaction amount is 10,000
+    $transaction->refresh();
+    expect((float) $transaction->raw_total_amount)->toBe(10000.00);
+
+    // Verify student transaction amount is 10,000
+    $stTx->refresh();
+    expect((float) $stTx->amount)->toBe(10000.00);
+
+    // Verify ledger balance is 15,970 - 10,000 = 5,970
+    $tuition->refresh();
+    expect((float) $tuition->paid)->toBe(10000.00)
+        ->and((float) $tuition->total_balance)->toBe(5970.00);
+
+    Notification::assertSentTo($studentUser, StudentTuitionUpdateRequestReviewedNotification::class);
 });

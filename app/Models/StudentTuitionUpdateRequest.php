@@ -29,7 +29,7 @@ final class StudentTuitionUpdateRequest extends Model
 
     protected $fillable = [
         'submitted_by_user_id', 'student_id', 'student_enrollment_id', 'student_tuition_id',
-        'school_year', 'semester', 'concern_type', 'receipt_number', 'details', 'status',
+        'school_year', 'semester', 'concern_type', 'amount', 'receipt_number', 'details', 'status',
         'reviewed_by_user_id', 'reviewed_at', 'resolution_note', 'resolved_transaction_id',
         'tuition_adjustment_id', 'resolved_at', 'open_key',
     ];
@@ -88,6 +88,11 @@ final class StudentTuitionUpdateRequest extends Model
         return $this->hasMany(StudentTuitionUpdateRequestEvent::class)->orderBy('created_at');
     }
 
+    public function receipts(): HasMany
+    {
+        return $this->hasMany(StudentTuitionUpdateRequestReceipt::class)->orderBy('id');
+    }
+
     /** @param Builder<self> $query */
     public function scopeOpen(Builder $query): Builder
     {
@@ -96,6 +101,11 @@ final class StudentTuitionUpdateRequest extends Model
 
     protected function casts(): array
     {
-        return ['semester' => 'integer', 'reviewed_at' => 'datetime', 'resolved_at' => 'datetime'];
+        return [
+            'amount' => 'decimal:2',
+            'semester' => 'integer',
+            'reviewed_at' => 'datetime',
+            'resolved_at' => 'datetime',
+        ];
     }
 }

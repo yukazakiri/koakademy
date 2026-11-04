@@ -56,16 +56,32 @@ final class StudentTuitionUpdateRequestController extends Controller
             $selectedPeriod = ['school_year' => $availablePeriod['school_year'], 'semester' => $availablePeriod['semester']];
         }
 
+        $currentTuition = StudentTuition::query()
+            ->where('student_id', $student->id)
+            ->where('school_year', $selectedPeriod['school_year'])
+            ->where('semester', $selectedPeriod['semester'])
+            ->latest('id')
+            ->first();
+
+        $tuitionSummary = $currentTuition ? [
+            'overall_tuition' => (float) $currentTuition->overall_tuition,
+            'total_balance' => (float) $currentTuition->total_balance,
+            'paid' => (float) ($currentTuition->paid ?? 0),
+            'discount' => (int) $currentTuition->discount,
+            'status' => $currentTuition->status,
+        ] : null;
+
         return Inertia::render('student/tuition/update-requests', [
             'submitted_request_id' => $request->session()->get('tuition_request_id'),
             'requests' => StudentTuitionUpdateRequest::query()
                 ->where('student_id', $student->id)
-                ->with(['reviewer:id,name'])
+                ->with(['reviewer:id,name', 'receipts'])
                 ->latest('created_at')->latest('id')
                 ->get()
                 ->map(fn (StudentTuitionUpdateRequest $tuitionRequest): array => $this->serialize($tuitionRequest)),
             'periods' => $periods,
             'selected_period' => $selectedPeriod,
+            'current_tuition' => $tuitionSummary,
             'concerns' => $this->concerns(),
             'error' => null,
         ]);
@@ -75,7 +91,7 @@ final class StudentTuitionUpdateRequestController extends Controller
     {
         $user = $request->user();
         abort_unless($user instanceof User, 403);
-        $tuitionRequest = $requests->submit($user, $request->validated());
+        $tuitionRequest = $requests->submit($user, $request->validated(), $request->allFiles());
 
         return to_route('student.tuition.update-requests.index', [
             'school_year' => $tuitionRequest->school_year,
@@ -103,6 +119,7 @@ final class StudentTuitionUpdateRequestController extends Controller
             'school_year' => $request->school_year,
             'semester' => $request->semester,
             'concern_type' => $request->concern_type,
+            'amount' => $request->amount !== null ? (float) $request->amount : null,
             'receipt_number' => $request->receipt_number,
             'details' => $request->details,
             'status' => $request->status,
@@ -110,6 +127,13 @@ final class StudentTuitionUpdateRequestController extends Controller
             'reviewer_name' => $request->reviewer?->name,
             'submitted_at' => $request->created_at?->toIso8601String(),
             'resolved_at' => $request->resolved_at?->toIso8601String(),
+            'receipts' => $request->relationLoaded('receipts') ? $request->receipts->map(fn ($r): array => [
+                'id' => $r->id,
+                'receipt_number' => $r->receipt_number,
+                'amount' => $r->amount !== null ? (float) $r->amount : null,
+                'image_url' => $r->image_url,
+                'file_name' => $r->file_name,
+            ])->all() : [],
         ];
     }
 }

@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-uses(Tests\TestCase::class);
-
 use App\Enums\UserRole;
 use App\Features\Toggles\StudentTuition as StudentTuitionFeature;
 use App\Models\Course;
@@ -401,10 +399,10 @@ it('prevents non-finance users or pending requests from resending notifications'
 });
 
 it('lets a student specify an amount and upload a receipt image', function (): void {
-    \Illuminate\Support\Facades\Storage::fake('public');
+    Illuminate\Support\Facades\Storage::fake('public');
     [$user, $student] = tuitionRequestStudent();
 
-    $file = \Illuminate\Http\UploadedFile::fake()->image('my_receipt.jpg', 600, 800);
+    $file = Illuminate\Http\UploadedFile::fake()->image('my_receipt.jpg', 600, 800);
 
     $this->actingAs($user)
         ->post(route('student.tuition.update-requests.store'), [
@@ -427,15 +425,15 @@ it('lets a student specify an amount and upload a receipt image', function (): v
         ->and((float) $receipt->amount)->toBe(5000.00)
         ->and($receipt->image_path)->not->toBeNull();
 
-    \Illuminate\Support\Facades\Storage::disk('public')->assertExists($receipt->image_path);
+    Illuminate\Support\Facades\Storage::disk('public')->assertExists($receipt->image_path);
 });
 
 it('lets a student submit two receipts with photos and amounts', function (): void {
-    \Illuminate\Support\Facades\Storage::fake('public');
+    Illuminate\Support\Facades\Storage::fake('public');
     [$user, $student] = tuitionRequestStudent();
 
-    $file1 = \Illuminate\Http\UploadedFile::fake()->image('receipt1.png');
-    $file2 = \Illuminate\Http\UploadedFile::fake()->image('receipt2.png');
+    $file1 = Illuminate\Http\UploadedFile::fake()->image('receipt1.png');
+    $file2 = Illuminate\Http\UploadedFile::fake()->image('receipt2.png');
 
     $this->actingAs($user)
         ->post(route('student.tuition.update-requests.store'), [
@@ -456,7 +454,7 @@ it('lets a student submit two receipts with photos and amounts', function (): vo
         ->and($request->receipt_number)->toContain('OR-226432');
 
     foreach ($request->receipts as $receipt) {
-        \Illuminate\Support\Facades\Storage::disk('public')->assertExists($receipt->image_path);
+        Illuminate\Support\Facades\Storage::disk('public')->assertExists($receipt->image_path);
     }
 });
 
@@ -492,7 +490,7 @@ it('lets Finance adjust an existing transaction amount to correct downpayment er
         'amount' => 10450.00,
         'status' => 'paid',
     ]);
-    \App\Models\PaymentAllocation::query()->create([
+    App\Models\PaymentAllocation::query()->create([
         'transaction_id' => $transaction->id,
         'student_transaction_id' => $stTx->id,
         'student_id' => $student->id,

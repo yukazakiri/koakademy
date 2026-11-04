@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 const HOT_PATH_MIGRATION_PATH = 'database/migrations/2026_11_03_000001_add_hot_path_indexes.php';
@@ -156,4 +157,27 @@ it('restores the superseded keys on rollback', function (): void {
             expect(Schema::hasIndex($table, $name))->toBeTrue();
         }
     }
+});
+
+it('keeps an index that existed before the migration on rollback', function (): void {
+    $migration = require base_path(HOT_PATH_MIGRATION_PATH);
+
+    if (! $migration instanceof Migration) {
+        throw new RuntimeException('The hot path index migration did not return a migration.');
+    }
+
+    // A pre-existing key is never recorded as owned. Removing its registry
+    // row simulates that state: the index exists, but this migration only
+    // found it and never created it.
+    DB::table('migration_index_registry')
+        ->where('index_name', 'students_email_index')
+        ->delete();
+
+    $migration->down();
+
+    expect(Schema::hasIndex('students', 'students_email_index'))->toBeTrue();
+
+    $migration->up();
+
+    expect(Schema::hasIndex('students', 'students_email_index'))->toBeTrue();
 });

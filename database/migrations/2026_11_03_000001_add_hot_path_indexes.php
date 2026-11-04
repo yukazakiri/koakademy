@@ -23,11 +23,23 @@ use Illuminate\Support\Facades\Schema;
  * On PostgreSQL the keys are built with CREATE INDEX CONCURRENTLY so a
  * deployment does not block writes to the financial and enrollment tables
  * while a large index is built. CONCURRENTLY cannot run inside a
- * transaction, so this migration opts out of the transaction wrapper. The
- * statements use IF NOT EXISTS, which makes an interrupted run resumable.
+ * transaction, so this migration opts out of the transaction wrapper.
+ * Indexes left invalid by an interrupted build are removed before the
+ * retry, which makes a rerun resumable.
  */
 return new class extends Migration
 {
+    /**
+     * Internal registry of the indexes this migration created.
+     *
+     * Rollback must not remove an index that existed before the migration
+     * ran. The registry is written before each build and read in down(), so
+     * ownership survives the separate process a rollback runs in.
+     */
+    private const REGISTRY_TABLE = 'migration_index_registry';
+
+    private const MIGRATION_NAME = '2026_11_03_000001_add_hot_path_indexes';
+
     /**
      * Indexes to create, keyed by table and then by index name.
      *
@@ -146,18 +158,25 @@ return new class extends Migration
      */
     public function up(): void
     {
+        $this->ensureRegistry();
+
         foreach (self::INDEXES as $table => $indexes) {
             if (! Schema::hasTable($table)) {
                 continue;
             }
 
-            $this->dropInvalidPostgresIndexes($table);
+            $this->dropInvalidPostgresIndexes($table, array_keys($indexes));
 
             foreach ($indexes as $name => $columns) {
                 if ($this->missingColumns($table, $columns) !== []) {
                     continue;
                 }
 
+                if (Schema::hasIndex($table, $name) || Schema::hasIndex($table, $columns)) {
+                    continue;
+                }
+
+                $this->recordIndexOwnership($table, $name);
                 $this->createIndex($table, $name, $columns);
             }
         }
@@ -178,6 +197,8 @@ return new class extends Migration
      */
     public function down(): void
     {
+        $this->ensureRegistry();
+
         // Restore the single-column keys before removing their wider
         // replacements so no lookup is left without a usable key.
         foreach (self::SUPERSEDED as $table => $indexes) {
@@ -185,7 +206,7 @@ return new class extends Migration
                 continue;
             }
 
-            $this->dropInvalidPostgresIndexes($table);
+            $this->dropInvalidPostgresIndexes($table, array_keys($indexes));
 
             foreach ($indexes as $name => $columns) {
                 if ($this->missingColumns($table, $columns) !== []) {
@@ -202,25 +223,25 @@ return new class extends Migration
             }
 
             foreach ($indexes as $name => $columns) {
+                if (! $this->ownsIndex($name)) {
+                    continue;
+                }
+
                 $this->dropIndex($table, $name, $columns);
+                $this->forgetIndexOwnership($name);
             }
         }
     }
 
     /**
-     * Create an index unless an equivalent key already exists.
+     * Create an index. Callers have already checked that no equivalent key
+     * exists, so a name collision is a real schema problem and must fail
+     * loudly rather than leave the table without the intended key.
      *
      * @param  list<string>  $columns
      */
     private function createIndex(string $table, string $name, array $columns): void
     {
-        if (
-            Schema::hasIndex($table, $name)
-            || Schema::hasIndex($table, $columns)
-        ) {
-            return;
-        }
-
         if (DB::getDriverName() !== 'pgsql') {
             Schema::table($table, function (Blueprint $blueprint) use ($columns, $name): void {
                 $blueprint->index($columns, $name);
@@ -232,7 +253,7 @@ return new class extends Migration
         $grammar = DB::connection()->getQueryGrammar();
 
         DB::statement(sprintf(
-            'CREATE INDEX CONCURRENTLY IF NOT EXISTS %s ON %s (%s)',
+            'CREATE INDEX CONCURRENTLY %s ON %s (%s)',
             $grammar->wrap($name),
             $grammar->wrapTable($table),
             implode(', ', array_map($grammar->wrap(...), $columns)),
@@ -280,8 +301,14 @@ return new class extends Migration
      * PostgreSQL keeps a failed CREATE INDEX CONCURRENTLY as an invalid index,
      * and the schema inspector still reports it. Without this cleanup,
      * `hasIndex()` would see the invalid key and skip the rebuild for good.
+     *
+     * Only the names this migration manages are touched: another invalid
+     * index, in particular an invalid unique index, may belong to someone
+     * else and must keep its constraint.
+     *
+     * @param  list<string>  $names
      */
-    private function dropInvalidPostgresIndexes(string $table): void
+    private function dropInvalidPostgresIndexes(string $table, array $names): void
     {
         if (DB::getDriverName() !== 'pgsql') {
             return;
@@ -304,8 +331,65 @@ return new class extends Migration
         $grammar = DB::connection()->getQueryGrammar();
 
         foreach ($invalid as $index) {
-            DB::statement('DROP INDEX IF EXISTS '.$grammar->wrap($index->name));
+            if (! in_array($index->name, $names, true)) {
+                continue;
+            }
+
+            DB::statement('DROP INDEX CONCURRENTLY IF EXISTS '.$grammar->wrap($index->name));
         }
+    }
+
+    /**
+     * Create the ownership registry when this is the first run.
+     */
+    private function ensureRegistry(): void
+    {
+        if (Schema::hasTable(self::REGISTRY_TABLE)) {
+            return;
+        }
+
+        Schema::create(self::REGISTRY_TABLE, function (Blueprint $table): void {
+            $table->id();
+            $table->string('migration', 191);
+            $table->string('table_name', 191);
+            $table->string('index_name', 191);
+            $table->timestamps();
+
+            $table->unique(['migration', 'index_name']);
+        });
+    }
+
+    /**
+     * Mark an index as created by this migration before building it.
+     *
+     * Recording first means a build that fails halfway is still owned, so
+     * the next run and every rollback handle it.
+     */
+    private function recordIndexOwnership(string $table, string $name): void
+    {
+        DB::table(self::REGISTRY_TABLE)->insertOrIgnore([
+            'migration' => self::MIGRATION_NAME,
+            'table_name' => $table,
+            'index_name' => $name,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function ownsIndex(string $name): bool
+    {
+        return DB::table(self::REGISTRY_TABLE)
+            ->where('migration', self::MIGRATION_NAME)
+            ->where('index_name', $name)
+            ->exists();
+    }
+
+    private function forgetIndexOwnership(string $name): void
+    {
+        DB::table(self::REGISTRY_TABLE)
+            ->where('migration', self::MIGRATION_NAME)
+            ->where('index_name', $name)
+            ->delete();
     }
 
     /**

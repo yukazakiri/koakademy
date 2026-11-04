@@ -63,7 +63,9 @@ use Spatie\Permission\Traits\HasRoles;
  * @property-read Collection<int, AdminTransaction> $transactions
  * @property-read int|null $transactions_count
  * @property-read School|null $school
- * @property-read Department|null $department
+ * @property-read Department|null $departmentRecord
+ * @property-read Department|null $departmentRelation
+ * @property-read string|null $department_profile
  *
  * @method static UserFactory factory($count = null, $state = [])
  * @method static Builder<static>|User newModelQuery()
@@ -497,13 +499,37 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
     }
 
     /**
+     * The owning department record through the department_id foreign key.
+     */
+    public function departmentRecord(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Department::class, 'department_id', 'id');
+    }
+
+    /**
+     * Alias for departmentRecord() to safely access the relationship without column collision.
+     */
+    public function departmentRelation(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->departmentRecord();
+    }
+
+    /**
      * Get the department that this user belongs to
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo<Department, self>
      */
     public function department(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
-        return $this->belongsTo(Department::class, 'department_id', 'id');
+        return $this->departmentRecord();
+    }
+
+    /**
+     * Get the legacy free-text department attribute value from the users.department column.
+     */
+    public function getDepartmentProfileAttribute(): ?string
+    {
+        $raw = $this->attributes['department'] ?? null;
+
+        return is_string($raw) && filled($raw) ? $raw : null;
     }
 
     /**
@@ -572,7 +598,8 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
     }
 
     /**
-     * Get organizational context string
+     * Get the organizational context path (e.g. "School of Computing > Department of IT")
+     * resolving through the department relationship or legacy string attribute.
      */
     public function getOrganizationalContextAttribute(): string
     {
@@ -582,8 +609,11 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
             $context[] = $this->school->name;
         }
 
-        if ($this->department) {
-            $context[] = $this->department->name;
+        $department = $this->departmentRelation;
+        if ($department instanceof Department) {
+            $context[] = $department->name;
+        } elseif (is_string($this->getAttribute('department')) && filled($this->getAttribute('department'))) {
+            $context[] = $this->getAttribute('department');
         }
 
         return empty($context) ? 'No organizational assignment' : implode(' > ', $context);

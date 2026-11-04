@@ -5,6 +5,7 @@ import { Badge } from "@/components/reui/badge";
 import { Frame, FrameDescription, FrameFooter, FrameHeader, FramePanel, FrameTitle } from "@/components/reui/frame";
 import StudentLayout from "@/components/student/student-layout";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,28 +18,43 @@ import { Head, Link, useForm } from "@inertiajs/react";
 import {
     AlertCircle,
     ArrowLeft,
+    Camera,
     CheckCircle2,
     Clock,
     CreditCard,
+    ExternalLink,
     FileQuestion,
     HelpCircle,
     History,
+    ImageIcon,
     Loader2,
+    Plus,
     PlusCircle,
     Receipt,
     ReceiptText,
     Sparkles,
+    Trash2,
+    Upload,
     UserCheck,
+    ZoomIn,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 type Period = { school_year: string; semester: number; label: string };
 type Concern = { value: string; label: string; description: string };
+type ReceiptItem = {
+    id: number;
+    receipt_number: string;
+    amount: number | null;
+    image_url: string | null;
+    file_name: string | null;
+};
 type TuitionRequest = {
     id: number;
     school_year: string;
     semester: number;
     concern_type: string;
+    amount?: number | null;
     receipt_number: string | null;
     details: string;
     status: "pending" | "in_review" | "resolved" | "rejected";
@@ -46,12 +62,21 @@ type TuitionRequest = {
     reviewer_name: string | null;
     submitted_at: string | null;
     resolved_at: string | null;
+    receipts?: ReceiptItem[];
+};
+type TuitionSummary = {
+    overall_tuition: number;
+    total_balance: number;
+    paid: number;
+    discount: number;
+    status: string;
 };
 type Props = {
     auth: { user: User };
     requests: TuitionRequest[];
     periods: Period[];
     selected_period: { school_year: string; semester: number };
+    current_tuition?: TuitionSummary | null;
     concerns: Concern[];
     error: string | null;
     submitted_request_id?: number | null;
@@ -67,7 +92,7 @@ const statusConfig: Record<string, { label: string; variant: "warning-light" | "
 const concernMeta: Record<string, { label: string; hint: string; icon: typeof Receipt }> = {
     missing_payment: {
         label: "Payment not reflected",
-        hint: "Include payment date, amount, method (Cash, Bank, GCash), and official receipt / reference number. Example: 'Paid ₱3,500 at cashier counter on Oct 10, receipt OR-12345.'",
+        hint: "Include payment date, amount, method (Cash, Bank, GCash), and official receipt / reference number. Example: 'Paid ₱5,000 at cashier counter on Aug 25, receipt OR-226432.'",
         icon: CreditCard,
     },
     discount: {
@@ -91,7 +116,23 @@ function formatPeriod(period: { school_year: string; semester: number }) {
     return `${period.school_year} · ${period.semester === 1 ? "1st" : "2nd"} Semester`;
 }
 
-export default function TuitionUpdateRequests({ auth, requests, periods, selected_period, concerns, error, submitted_request_id }: Props) {
+type LocalReceiptEntry = {
+    receipt_number: string;
+    amount: string;
+    image: File | null;
+    preview: string | null;
+};
+
+export default function TuitionUpdateRequests({
+    auth,
+    requests,
+    periods,
+    selected_period,
+    current_tuition,
+    concerns,
+    error,
+    submitted_request_id,
+}: Props) {
     const initialPeriod =
         periods.find((period) => period.school_year === selected_period.school_year && period.semester === selected_period.semester) ?? periods[0];
 
@@ -99,12 +140,17 @@ export default function TuitionUpdateRequests({ auth, requests, periods, selecte
         school_year: initialPeriod?.school_year ?? "",
         semester: initialPeriod?.semester ?? 1,
         concern_type: concerns[0]?.value ?? "missing_payment",
+        amount: "",
         receipt_number: "",
         details: "",
+        receipts: [
+            { receipt_number: "", amount: "", image: null as File | null, preview: null as string | null },
+        ] as LocalReceiptEntry[],
     });
 
     const [activeTab, setActiveTab] = useState<string>(submitted_request_id && requests.length > 0 ? "history" : "new");
     const [submissionError, setSubmissionError] = useState<string | null>(null);
+    const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
     const errorSummaryRef = useRef<HTMLDivElement>(null);
     const confirmationRef = useRef<HTMLDivElement>(null);
 
@@ -132,19 +178,74 @@ export default function TuitionUpdateRequests({ auth, requests, periods, selecte
         }
     }, [submitted_request_id]);
 
+    function addReceiptSlot() {
+        form.setData("receipts", [
+            ...form.data.receipts,
+            { receipt_number: "", amount: "", image: null, preview: null },
+        ]);
+    }
+
+    function removeReceiptSlot(index: number) {
+        if (form.data.receipts.length <= 1) return;
+        const next = [...form.data.receipts];
+        next.splice(index, 1);
+        form.setData("receipts", next);
+    }
+
+    function handleReceiptImageChange(index: number, file: File | null) {
+        const next = [...form.data.receipts];
+        if (file) {
+            const previewUrl = URL.createObjectURL(file);
+            next[index].image = file;
+            next[index].preview = previewUrl;
+        } else {
+            next[index].image = null;
+            next[index].preview = null;
+        }
+        form.setData("receipts", next);
+    }
+
     function submit(event: React.FormEvent) {
         event.preventDefault();
         if (form.processing || existingRequest || !periods.length || !concerns.length) return;
         setSubmissionError(null);
+
+        // Auto-sum amount from receipts if empty
+        let totalAmount = form.data.amount.trim();
+        if (isPaymentConcern && !totalAmount && form.data.receipts.length > 0) {
+            const sum = form.data.receipts
+                .map((r) => parseFloat(r.amount) || 0)
+                .reduce((acc, curr) => acc + curr, 0);
+            if (sum > 0) {
+                totalAmount = String(sum);
+            }
+        }
+
+        // Primary receipt number
+        const primaryReceiptNum = form.data.receipt_number.trim() ||
+            form.data.receipts.map((r) => r.receipt_number.trim()).filter(Boolean).join(", ");
+
         form.transform((data) => ({
             ...data,
-            receipt_number: isPaymentConcern ? data.receipt_number.trim() : "",
+            amount: totalAmount ? Number(totalAmount) : null,
+            receipt_number: isPaymentConcern ? primaryReceiptNum : "",
             details: data.details.trim(),
+            receipts: isPaymentConcern
+                ? data.receipts
+                      .filter((r) => r.receipt_number.trim() || r.amount || r.image)
+                      .map((r) => ({
+                          receipt_number: r.receipt_number.trim() || undefined,
+                          amount: r.amount ? Number(r.amount) : undefined,
+                          image: r.image,
+                      }))
+                : [],
         }));
+
         form.post(storeTuitionUpdateRequest.url(), {
             preserveScroll: true,
+            forceFormData: true,
             onSuccess: () => {
-                form.reset("receipt_number", "details");
+                form.reset("amount", "receipt_number", "details", "receipts");
                 setActiveTab("history");
             },
             onNetworkError: () => {
@@ -240,7 +341,7 @@ export default function TuitionUpdateRequests({ auth, requests, periods, selecte
 
                         {/* TAB 1: NEW REQUEST FORM */}
                         <TabsPanel value="new" className="mt-4">
-                            <form onSubmit={submit} noValidate>
+                            <form onSubmit={submit} noValidate encType="multipart/form-data">
                                 <Frame>
                                     {/* Error Summary */}
                                     {(errors.length > 0 || submissionError) && (
@@ -260,39 +361,76 @@ export default function TuitionUpdateRequests({ auth, requests, periods, selecte
                                         </FramePanel>
                                     )}
 
-                                    {/* Step 1: Period Selection */}
+                                    {/* Step 1: Period Selection & Current Assessment Display */}
                                     <FramePanel>
                                         <FrameHeader>
                                             <FrameTitle>1. Select Academic Period</FrameTitle>
                                             <FrameDescription>Choose the school year and semester where the discrepancy appears.</FrameDescription>
                                         </FrameHeader>
-                                        <div className="mt-3 flex flex-col gap-2">
-                                            <Label htmlFor="period-selector">Academic period</Label>
-                                            <Select
-                                                value={currentPeriodValue}
-                                                onValueChange={(val) => {
-                                                    const [sy, sem] = val.split("|");
-                                                    form.setData((prev) => ({
-                                                        ...prev,
-                                                        school_year: sy,
-                                                        semester: Number(sem),
-                                                    }));
-                                                    form.clearErrors("school_year", "semester", "concern_type");
-                                                }}
-                                            >
-                                                <SelectTrigger id="period-selector" className="w-full">
-                                                    <SelectValue placeholder="Select academic period" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {periods.map((p) => (
-                                                        <SelectItem key={`${p.school_year}|${p.semester}`} value={`${p.school_year}|${p.semester}`}>
-                                                            {p.label}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                            {(form.errors.school_year || form.errors.semester) && (
-                                                <p className="text-destructive text-xs">{form.errors.school_year || form.errors.semester}</p>
+                                        <div className="mt-3 flex flex-col gap-4">
+                                            <div className="flex flex-col gap-2">
+                                                <Label htmlFor="period-selector">Academic period</Label>
+                                                <Select
+                                                    value={currentPeriodValue}
+                                                    onValueChange={(val) => {
+                                                        const [sy, sem] = val.split("|");
+                                                        form.setData((prev) => ({
+                                                            ...prev,
+                                                            school_year: sy,
+                                                            semester: Number(sem),
+                                                        }));
+                                                        form.clearErrors("school_year", "semester", "concern_type");
+                                                    }}
+                                                >
+                                                    <SelectTrigger id="period-selector" className="w-full">
+                                                        <SelectValue placeholder="Select academic period" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {periods.map((p) => (
+                                                            <SelectItem key={`${p.school_year}|${p.semester}`} value={`${p.school_year}|${p.semester}`}>
+                                                                {p.label}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                {(form.errors.school_year || form.errors.semester) && (
+                                                    <p className="text-destructive text-xs">{form.errors.school_year || form.errors.semester}</p>
+                                                )}
+                                            </div>
+
+                                            {/* Assessment Context Card */}
+                                            {current_tuition && (
+                                                <div className="rounded-md border border-border bg-muted/20 p-3.5">
+                                                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                                        Current Stored Ledger ({form.data.school_year} · Sem {form.data.semester})
+                                                    </span>
+                                                    <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                                                        <div>
+                                                            <span className="text-[11px] text-muted-foreground">Assessed Tuition</span>
+                                                            <p className="font-mono text-sm font-bold text-foreground tabular-nums">
+                                                                ₱{current_tuition.overall_tuition.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                            </p>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-[11px] text-muted-foreground">Total Paid</span>
+                                                            <p className="font-mono text-sm font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                                                                ₱{current_tuition.paid.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                            </p>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-[11px] text-muted-foreground">Current Balance</span>
+                                                            <p className="font-mono text-sm font-bold text-foreground tabular-nums">
+                                                                ₱{current_tuition.total_balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                            </p>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-[11px] text-muted-foreground">Discount Applied</span>
+                                                            <p className="font-mono text-sm font-bold text-foreground tabular-nums">
+                                                                {current_tuition.discount}%
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             )}
                                         </div>
                                     </FramePanel>
@@ -362,44 +500,166 @@ export default function TuitionUpdateRequests({ auth, requests, periods, selecte
                                                 <Clock aria-hidden="true" />
                                                 <AlertTitle>Active request already pending</AlertTitle>
                                                 <AlertDescription>
-                                                    Finance is currently reviewing request #{existingRequest.id} for this period and category. You can
-                                                    check its status in the "My Requests" tab.
+                                                    Finance is currently reviewing request #{existingRequest.id} for this period and category. You can check its status in the "My Requests" tab.
                                                 </AlertDescription>
                                             </Alert>
                                         )}
                                     </FramePanel>
 
-                                    {/* Step 3: Details & Receipt */}
+                                    {/* Step 3: Details, Amount & Multi-Receipt Photos */}
                                     <FramePanel>
                                         <FrameHeader>
-                                            <FrameTitle>3. Provide Details</FrameTitle>
+                                            <FrameTitle>3. Provide Details, Amount & Receipts</FrameTitle>
                                             <FrameDescription>
-                                                Share supporting information so Finance can verify your records quickly.
+                                                Specify the amount that needs adjustment, attach photos of your receipt(s), and explain the issue.
                                             </FrameDescription>
                                         </FrameHeader>
-                                        <div className="mt-3 flex flex-col gap-4">
+
+                                        <div className="mt-3 flex flex-col gap-5">
+                                            {/* Amount Field */}
+                                            <div className="flex flex-col gap-1.5">
+                                                <div className="flex items-center justify-between">
+                                                    <Label htmlFor="amount-input">Target / Adjustment Amount (₱)</Label>
+                                                    <span className="text-xs text-muted-foreground">What amount should be reflected or credited?</span>
+                                                </div>
+                                                <Input
+                                                    id="amount-input"
+                                                    type="number"
+                                                    step="0.01"
+                                                    min="0.01"
+                                                    value={form.data.amount}
+                                                    onChange={(e) => form.setData("amount", e.target.value)}
+                                                    placeholder="e.g. 10000.00"
+                                                />
+                                                <p className="text-xs text-muted-foreground">
+                                                    Enter the exact amount you paid or need adjusted on your tuition (e.g. ₱10,000.00 for total downpayment).
+                                                </p>
+                                                {form.errors.amount && <p className="text-destructive text-xs">{form.errors.amount}</p>}
+                                            </div>
+
+                                            {/* Receipts & Photo Upload Section */}
                                             {isPaymentConcern && (
-                                                <div className="flex flex-col gap-1.5">
-                                                    <Label htmlFor="receipt-input">Official Receipt / Reference No.</Label>
-                                                    <Input
-                                                        id="receipt-input"
-                                                        value={form.data.receipt_number}
-                                                        onChange={(e) => form.setData("receipt_number", e.target.value)}
-                                                        placeholder="e.g. OR-2026-001, BDO-REF-45892, or Counter Receipt #"
-                                                        maxLength={255}
-                                                        required
-                                                        autoComplete="off"
-                                                    />
-                                                    <p className="text-muted-foreground text-xs">
-                                                        Enter the official receipt (OR) number or bank/cashier payment reference. If you don't have an
-                                                        OR yet, write your payment transaction or deposit reference number.
-                                                    </p>
-                                                    {form.errors.receipt_number && (
-                                                        <p className="text-destructive text-xs">{form.errors.receipt_number}</p>
-                                                    )}
+                                                <div className="flex flex-col gap-3 rounded-md border border-border bg-muted/15 p-4">
+                                                    <div className="flex items-center justify-between">
+                                                        <div>
+                                                            <span className="text-sm font-semibold text-foreground">Official Receipts / Proof of Payment</span>
+                                                            <p className="text-xs text-muted-foreground">
+                                                                Upload pictures or take photos of your receipts (supports 2 or more receipts).
+                                                            </p>
+                                                        </div>
+                                                        <Button type="button" variant="outline" size="sm" onClick={addReceiptSlot} className="gap-1.5">
+                                                            <Plus className="size-3.5" />
+                                                            Add another receipt
+                                                        </Button>
+                                                    </div>
+
+                                                    <div className="flex flex-col gap-3">
+                                                        {form.data.receipts.map((slot, index) => (
+                                                            <div key={index} className="flex flex-col gap-3 rounded-md border border-border bg-card p-3 shadow-xs">
+                                                                <div className="flex items-center justify-between">
+                                                                    <span className="text-xs font-semibold text-foreground">
+                                                                        Receipt #{index + 1}
+                                                                    </span>
+                                                                    {form.data.receipts.length > 1 && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => removeReceiptSlot(index)}
+                                                                            className="text-xs text-destructive hover:underline inline-flex items-center gap-1"
+                                                                        >
+                                                                            <Trash2 className="size-3" />
+                                                                            Remove
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+
+                                                                <div className="grid gap-3 sm:grid-cols-2">
+                                                                    <div className="flex flex-col gap-1">
+                                                                        <Label className="text-xs" htmlFor={`receipt-num-${index}`}>
+                                                                            Official Receipt (OR) / Ref Number
+                                                                        </Label>
+                                                                        <Input
+                                                                            id={`receipt-num-${index}`}
+                                                                            value={slot.receipt_number}
+                                                                            onChange={(e) => {
+                                                                                const next = [...form.data.receipts];
+                                                                                next[index].receipt_number = e.target.value;
+                                                                                form.setData("receipts", next);
+                                                                            }}
+                                                                            placeholder="e.g. 226432 or OR-2026-001"
+                                                                            className="text-xs"
+                                                                            required
+                                                                        />
+                                                                    </div>
+
+                                                                    <div className="flex flex-col gap-1">
+                                                                        <Label className="text-xs" htmlFor={`receipt-amt-${index}`}>
+                                                                            Amount on this receipt (₱)
+                                                                        </Label>
+                                                                        <Input
+                                                                            id={`receipt-amt-${index}`}
+                                                                            type="number"
+                                                                            step="0.01"
+                                                                            min="0.01"
+                                                                            value={slot.amount}
+                                                                            onChange={(e) => {
+                                                                                const next = [...form.data.receipts];
+                                                                                next[index].amount = e.target.value;
+                                                                                form.setData("receipts", next);
+                                                                            }}
+                                                                            placeholder="e.g. 5000.00"
+                                                                            className="text-xs"
+                                                                        />
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Photo / Camera Upload */}
+                                                                <div className="flex flex-col gap-1.5">
+                                                                    <Label className="text-xs">Receipt Photo / Scan</Label>
+                                                                    <div className="flex flex-wrap items-center gap-3">
+                                                                        <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium shadow-xs hover:bg-muted/50">
+                                                                            <Camera className="size-3.5 text-primary" />
+                                                                            <span>Take Photo / Upload Image</span>
+                                                                            <input
+                                                                                type="file"
+                                                                                accept="image/*"
+                                                                                capture="environment"
+                                                                                onChange={(e) => handleReceiptImageChange(index, e.target.files?.[0] ?? null)}
+                                                                                className="sr-only"
+                                                                            />
+                                                                        </label>
+
+                                                                        {slot.image && (
+                                                                            <span className="text-xs text-muted-foreground truncate max-w-xs">
+                                                                                {slot.image.name}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+
+                                                                    {slot.preview && (
+                                                                        <div className="relative mt-1 h-28 w-28 overflow-hidden rounded-md border border-border bg-muted">
+                                                                            <img
+                                                                                src={slot.preview}
+                                                                                alt="Receipt Preview"
+                                                                                className="h-full w-full object-cover"
+                                                                            />
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleReceiptImageChange(index, null)}
+                                                                                className="absolute top-1 right-1 rounded-full bg-black/60 p-1 text-white hover:bg-black/80"
+                                                                                title="Remove picture"
+                                                                            >
+                                                                                <Trash2 className="size-3" />
+                                                                            </button>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
                                                 </div>
                                             )}
 
+                                            {/* Details Textarea */}
                                             <div className="flex flex-col gap-1.5">
                                                 <Label htmlFor="details-input">Explanation of discrepancy</Label>
                                                 <p className="text-muted-foreground text-xs">
@@ -450,8 +710,7 @@ export default function TuitionUpdateRequests({ auth, requests, periods, selecte
                                             <EmptyHeader>
                                                 <EmptyTitle>No tuition requests yet</EmptyTitle>
                                                 <EmptyDescription>
-                                                    Once you submit a request, its review status, assigned reviewer, and Finance’s official response
-                                                    will be tracked here.
+                                                    Once you submit a request, its review status, assigned reviewer, and Finance’s official response will be tracked here.
                                                 </EmptyDescription>
                                             </EmptyHeader>
                                             <Button variant="outline" size="sm" onClick={() => setActiveTab("new")}>
@@ -469,6 +728,7 @@ export default function TuitionUpdateRequests({ auth, requests, periods, selecte
                                             variant: "outline" as const,
                                         };
                                         const isTarget = req.id === submitted_request_id;
+                                        const reqReceipts = req.receipts ?? [];
 
                                         return (
                                             <Frame key={req.id} className={cn(isTarget && "ring-primary ring-2")}>
@@ -485,10 +745,18 @@ export default function TuitionUpdateRequests({ auth, requests, periods, selecte
                                                             <Badge variant={config.variant}>{config.label}</Badge>
                                                         </div>
 
-                                                        <div className="flex flex-col gap-1">
-                                                            <h3 className="text-foreground font-semibold">
-                                                                {concernMeta[req.concern_type]?.label ?? req.concern_type}
-                                                            </h3>
+                                                        <div className="flex flex-col gap-1.5">
+                                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                                                <h3 className="text-foreground font-semibold">
+                                                                    {concernMeta[req.concern_type]?.label ?? req.concern_type}
+                                                                </h3>
+                                                                {req.amount !== null && req.amount !== undefined && (
+                                                                    <Badge variant="outline" className="font-mono text-xs">
+                                                                        Target: ₱{Number(req.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                                    </Badge>
+                                                                )}
+                                                            </div>
+
                                                             {req.receipt_number && (
                                                                 <div className="text-muted-foreground flex items-center gap-1.5 text-xs">
                                                                     <Receipt className="size-3.5" />
@@ -499,6 +767,35 @@ export default function TuitionUpdateRequests({ auth, requests, periods, selecte
                                                                 </div>
                                                             )}
                                                         </div>
+
+                                                        {/* Attached Receipts & Photos */}
+                                                        {reqReceipts.length > 0 && (
+                                                            <div className="flex flex-wrap gap-2 pt-1">
+                                                                {reqReceipts.map((r, i) => (
+                                                                    <div key={r.id || i} className="flex items-center gap-2 rounded-md border border-border bg-muted/30 p-2 text-xs">
+                                                                        {r.image_url ? (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => setPreviewImage({ url: r.image_url!, title: `Receipt ${r.receipt_number}` })}
+                                                                                className="relative h-10 w-10 shrink-0 overflow-hidden rounded border border-border"
+                                                                            >
+                                                                                <img src={r.image_url} alt="Receipt thumbnail" className="h-full w-full object-cover" />
+                                                                            </button>
+                                                                        ) : (
+                                                                            <Receipt className="size-4 text-muted-foreground" />
+                                                                        )}
+                                                                        <div>
+                                                                            <span className="font-mono font-bold text-foreground">{r.receipt_number}</span>
+                                                                            {r.amount !== null && (
+                                                                                <span className="text-muted-foreground ml-1.5">
+                                                                                    (₱{Number(r.amount).toLocaleString()})
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
 
                                                         <p className="text-muted-foreground text-sm leading-relaxed whitespace-pre-wrap">
                                                             {req.details}
@@ -537,16 +834,10 @@ export default function TuitionUpdateRequests({ auth, requests, periods, selecte
                                                                 </p>
                                                             </div>
                                                         ) : (
-                                                            ["pending", "in_review"].includes(req.status) && (
-                                                                <div className="text-muted-foreground flex items-center gap-2 border-t pt-2.5 text-xs">
-                                                                    <Clock className="size-3.5" />
-                                                                    <span>
-                                                                        {req.status === "pending"
-                                                                            ? "Awaiting review by Finance officer."
-                                                                            : "Currently under active verification by Finance."}
-                                                                    </span>
-                                                                </div>
-                                                            )
+                                                            <div className="text-muted-foreground flex items-center gap-2 border-t pt-2 text-xs">
+                                                                <Clock className="size-3.5" />
+                                                                <span>Under review by Finance team.</span>
+                                                            </div>
                                                         )}
                                                     </div>
                                                 </FramePanel>
@@ -559,6 +850,20 @@ export default function TuitionUpdateRequests({ auth, requests, periods, selecte
                     </Tabs>
                 )}
             </main>
+
+            {/* Lightbox / Preview Dialog */}
+            {previewImage && (
+                <Dialog open={Boolean(previewImage)} onOpenChange={(open) => !open && setPreviewImage(null)}>
+                    <DialogContent className="max-w-2xl p-4">
+                        <DialogHeader>
+                            <DialogTitle className="text-sm font-semibold">{previewImage.title}</DialogTitle>
+                        </DialogHeader>
+                        <div className="mt-2 flex max-h-[70vh] items-center justify-center overflow-auto rounded bg-muted/30 p-2">
+                            <img src={previewImage.url} alt="Receipt preview" className="max-h-[65vh] w-auto rounded object-contain" />
+                        </div>
+                    </DialogContent>
+                </Dialog>
+            )}
         </StudentLayout>
     );
 }

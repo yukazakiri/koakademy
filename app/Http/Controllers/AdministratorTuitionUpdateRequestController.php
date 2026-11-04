@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\PaymentMethod;
 use App\Finance\RecordFinancePayment;
+use App\Http\Requests\Administrators\AdjustAndResolveStudentTuitionUpdatePaymentRequest;
 use App\Http\Requests\Administrators\ClaimStudentTuitionUpdateRequest;
 use App\Http\Requests\Administrators\RecordAndResolveStudentTuitionUpdatePaymentRequest;
 use App\Http\Requests\Administrators\RejectStudentTuitionUpdateRequest;
@@ -15,6 +16,7 @@ use App\Models\StudentTuitionUpdateRequest;
 use App\Models\Transaction;
 use App\Models\TuitionAdjustment;
 use App\Models\User;
+use App\Services\EnrollmentBillingService;
 use App\Services\StudentTuitionUpdateRequestService;
 use App\Support\Database\SqlDialect;
 use Illuminate\Http\RedirectResponse;
@@ -69,13 +71,31 @@ final class AdministratorTuitionUpdateRequestController extends Controller
         abort_unless($request->user()?->can('view_tuition_fees'), 403);
         $tuitionUpdateRequest->load([
             'student:id,student_id,first_name,middle_name,last_name,email', 'enrollment:id,student_id,school_year,semester',
-            'tuition:id,enrollment_id,overall_tuition,total_balance,discount', 'reviewer:id,name',
-            'resolvedTransaction:id,transaction_number,invoicenumber,status,transaction_date',
-            'tuitionAdjustment:id,reason,created_at', 'events.actor:id,name',
+            'tuition:id,enrollment_id,overall_tuition,total_balance,discount,paid', 'reviewer:id,name',
+            'resolvedTransaction:id,transaction_number,invoicenumber,status,transaction_date,settlements',
+            'tuitionAdjustment:id,reason,created_at', 'events.actor:id,name', 'receipts',
         ]);
 
+        $studentTransactions = Transaction::query()
+            ->select(['id', 'transaction_number', 'invoicenumber', 'status', 'transaction_date', 'settlements', 'payment_method'])
+            ->whereHas('studentTransactions', function ($transactions) use ($tuitionUpdateRequest): void {
+                $transactions->where('student_id', $tuitionUpdateRequest->student_id);
+            })
+            ->latest('transaction_date')->latest('id')
+            ->limit(30)
+            ->get()
+            ->map(fn (Transaction $transaction): array => [
+                'id' => $transaction->id,
+                'transaction_number' => $transaction->transaction_number,
+                'receipt_number' => $transaction->invoicenumber,
+                'status' => $transaction->status,
+                'payment_method' => $transaction->payment_method ?? 'Cash',
+                'amount' => (float) $transaction->raw_total_amount,
+                'date' => $transaction->transaction_date?->toIso8601String(),
+            ]);
+
         $matchingTransactions = Transaction::query()
-            ->select(['id', 'transaction_number', 'invoicenumber', 'status', 'transaction_date', 'settlements'])
+            ->select(['id', 'transaction_number', 'invoicenumber', 'status', 'transaction_date', 'settlements', 'payment_method'])
             ->whereHas('studentTransactions', function ($transactions) use ($tuitionUpdateRequest): void {
                 $transactions->where('student_id', $tuitionUpdateRequest->student_id)
                     ->when($tuitionUpdateRequest->student_enrollment_id !== null, fn ($query) => $query->where('student_enrollment_id', $tuitionUpdateRequest->student_enrollment_id));
@@ -89,6 +109,7 @@ final class AdministratorTuitionUpdateRequestController extends Controller
                 'transaction_number' => $transaction->transaction_number,
                 'receipt_number' => $transaction->invoicenumber,
                 'status' => $transaction->status,
+                'payment_method' => $transaction->payment_method ?? 'Cash',
                 'amount' => (float) $transaction->raw_total_amount,
                 'date' => $transaction->transaction_date?->toIso8601String(),
             ]);
@@ -104,7 +125,7 @@ final class AdministratorTuitionUpdateRequestController extends Controller
 
         $matchingIds = $matchingTransactions->pluck('id');
         $otherTransactions = Transaction::query()
-            ->select(['id', 'transaction_number', 'invoicenumber', 'status', 'transaction_date', 'settlements'])
+            ->select(['id', 'transaction_number', 'invoicenumber', 'status', 'transaction_date', 'settlements', 'payment_method'])
             ->whereHas('studentTransactions', function ($transactions) use ($tuitionUpdateRequest): void {
                 $transactions->where('student_id', $tuitionUpdateRequest->student_id);
             })
@@ -118,12 +139,14 @@ final class AdministratorTuitionUpdateRequestController extends Controller
                 'transaction_number' => $transaction->transaction_number,
                 'receipt_number' => $transaction->invoicenumber,
                 'status' => $transaction->status,
+                'payment_method' => $transaction->payment_method ?? 'Cash',
                 'amount' => (float) $transaction->raw_total_amount,
                 'date' => $transaction->transaction_date?->toIso8601String(),
             ]);
 
         return Inertia::render('administrators/finance/tuition-update-requests/show', [
             'request' => $this->serialize($tuitionUpdateRequest, true),
+            'student_transactions' => $studentTransactions,
             'matching_transactions' => $matchingTransactions,
             'other_transactions' => $otherTransactions,
             'matching_adjustments' => $matchingAdjustments,
@@ -176,6 +199,25 @@ final class AdministratorTuitionUpdateRequestController extends Controller
         );
 
         return back()->with('flash', ['success' => 'Verified payment was recorded and request resolved successfully.']);
+    }
+
+    public function adjustAndResolvePayment(
+        AdjustAndResolveStudentTuitionUpdatePaymentRequest $request,
+        StudentTuitionUpdateRequest $tuitionUpdateRequest,
+        StudentTuitionUpdateRequestService $requests,
+        EnrollmentBillingService $billing,
+    ): RedirectResponse {
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
+        $requests->adjustAndResolvePayment(
+            $tuitionUpdateRequest,
+            $user,
+            $request->validated(),
+            $request->string('resolution_note')->toString(),
+            $billing,
+        );
+
+        return back()->with('flash', ['success' => 'Payment transaction was adjusted and the request resolved successfully.']);
     }
 
     public function resolveAdjustment(ResolveStudentTuitionUpdateAdjustmentRequest $request, StudentTuitionUpdateRequest $tuitionUpdateRequest, StudentTuitionUpdateRequestService $requests): RedirectResponse
@@ -255,6 +297,7 @@ final class AdministratorTuitionUpdateRequestController extends Controller
             'school_year' => $request->school_year,
             'semester' => $request->semester,
             'concern_type' => $request->concern_type,
+            'amount' => $request->amount !== null ? (float) $request->amount : null,
             'receipt_number' => $request->receipt_number,
             'details' => $request->details,
             'status' => $request->status,
@@ -263,10 +306,18 @@ final class AdministratorTuitionUpdateRequestController extends Controller
             'submitted_at' => $request->created_at?->toIso8601String(),
             'reviewed_at' => $request->reviewed_at?->toIso8601String(),
             'resolved_at' => $request->resolved_at?->toIso8601String(),
+            'receipts' => $request->relationLoaded('receipts') ? $request->receipts->map(fn ($r): array => [
+                'id' => $r->id,
+                'receipt_number' => $r->receipt_number,
+                'amount' => $r->amount !== null ? (float) $r->amount : null,
+                'image_url' => $r->image_url,
+                'file_name' => $r->file_name,
+            ])->all() : [],
             'tuition' => $request->tuition ? [
                 'overall_tuition' => (float) $request->tuition->overall_tuition,
                 'balance' => (float) $request->tuition->total_balance,
                 'discount' => (int) $request->tuition->discount,
+                'paid' => (float) ($request->tuition->paid ?? 0),
             ] : null,
             'resolved_transaction' => $request->resolvedTransaction ? [
                 'id' => $request->resolvedTransaction->id,

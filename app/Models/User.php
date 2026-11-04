@@ -497,13 +497,73 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
     }
 
     /**
+     * The owning department record through the department_id foreign key.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo<Department, self>
+     */
+    public function departmentRecord(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Department::class, 'department_id', 'id');
+    }
+
+    /**
+     * Alias for departmentRecord() to safely access the relationship without column collision.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo<Department, self>
+     */
+    public function departmentRelation(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->departmentRecord();
+    }
+
+    /**
      * Get the department that this user belongs to
      *
      * @return \Illuminate\Database\Eloquent\Relations\BelongsTo<Department, self>
      */
     public function department(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
-        return $this->belongsTo(Department::class, 'department_id', 'id');
+        return $this->departmentRecord();
+    }
+
+    /**
+     * Access the department relation safely, resolving collision with the users.department string column.
+     */
+    public function getDepartmentAttribute(): ?Department
+    {
+        if ($this->relationLoaded('department')) {
+            $relation = $this->getRelation('department');
+
+            return $relation instanceof Department ? $relation : null;
+        }
+
+        if ($this->relationLoaded('departmentRelation')) {
+            $relation = $this->getRelation('departmentRelation');
+
+            return $relation instanceof Department ? $relation : null;
+        }
+
+        if ($this->relationLoaded('departmentRecord')) {
+            $relation = $this->getRelation('departmentRecord');
+
+            return $relation instanceof Department ? $relation : null;
+        }
+
+        if ($this->department_id) {
+            return $this->departmentRecord;
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the legacy free-text department attribute value from the users.department column.
+     */
+    public function getDepartmentProfileAttribute(): ?string
+    {
+        $raw = $this->attributes['department'] ?? null;
+
+        return is_string($raw) && filled($raw) ? $raw : null;
     }
 
     /**
@@ -582,8 +642,11 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
             $context[] = $this->school->name;
         }
 
-        if ($this->department) {
-            $context[] = $this->department->name;
+        $department = $this->department;
+        if ($department instanceof Department) {
+            $context[] = $department->name;
+        } elseif (is_string($this->attributes['department'] ?? null) && filled($this->attributes['department'])) {
+            $context[] = $this->attributes['department'];
         }
 
         return empty($context) ? 'No organizational assignment' : implode(' > ', $context);

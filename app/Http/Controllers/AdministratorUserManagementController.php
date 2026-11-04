@@ -139,7 +139,11 @@ final class AdministratorUserManagementController extends Controller
             'account' => [
                 'id' => $user->id, 'name' => $user->name, 'email' => $user->email,
                 'role' => $user->role->getLabel(),
-                'school' => $user->school?->name, 'department' => $user->department?->name,
+                'school' => $user->school?->name,
+                'department' => ($user->relationLoaded('department') ? $user->getRelation('department')?->name : null)
+                    ?? $user->departmentRelation?->name
+                    ?? $user->department?->name
+                    ?? (is_string($user->getRawOriginal('department')) && filled($user->getRawOriginal('department')) ? $user->getRawOriginal('department') : null),
                 'roles' => $user->roles->filter(fn (Role $role): bool => UserSystemRoleService::fromName($role->name) === null)->pluck('name')->values(),
                 'email_verified_at' => $user->email_verified_at?->toIso8601String(),
                 'created_at' => $user->created_at?->toIso8601String(),

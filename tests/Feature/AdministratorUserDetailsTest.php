@@ -470,3 +470,106 @@ it('keeps equal rank edits and dangerous self management actions forbidden', fun
         'suspended' => true, 'reason' => 'Must remain forbidden',
     ])->assertForbidden();
 });
+
+it('renders user details when user has a department string and department_id relation', function (): void {
+    $admin = userManagementAdmin(['View:User']);
+    $school = App\Models\School::factory()->create();
+    $department = App\Models\Department::factory()->forSchool($school)->create(['name' => 'College of Computing']);
+
+    $target = User::factory()->create([
+        'role' => UserRole::Instructor,
+        'school_id' => $school->id,
+        'department_id' => $department->id,
+        'department' => 'College of Computing String',
+    ]);
+
+    $response = $this->actingAs($admin)->get(portalUrlForAdministrators('/administrators/users/'.$target->id));
+    $response->assertOk();
+    expect($response->inertiaProps('account.department'))->toBe('College of Computing');
+});
+
+it('renders user details when user has string department without department_id', function (): void {
+    $admin = userManagementAdmin(['View:User']);
+    $target = User::factory()->create([
+        'role' => UserRole::Instructor,
+        'department_id' => null,
+        'department' => 'Legacy Computing Department',
+    ]);
+
+    $response = $this->actingAs($admin)->get(portalUrlForAdministrators('/administrators/users/'.$target->id));
+    $response->assertOk();
+    expect($response->inertiaProps('account.department'))->toBe('Legacy Computing Department');
+});
+
+it('renders user details when user has department_id without string department', function (): void {
+    $admin = userManagementAdmin(['View:User']);
+    $school = App\Models\School::factory()->create();
+    $department = App\Models\Department::factory()->forSchool($school)->create(['name' => 'Department of Science']);
+
+    $target = User::factory()->create([
+        'role' => UserRole::Instructor,
+        'school_id' => $school->id,
+        'department_id' => $department->id,
+        'department' => null,
+    ]);
+
+    $response = $this->actingAs($admin)->get(portalUrlForAdministrators('/administrators/users/'.$target->id));
+    $response->assertOk();
+    expect($response->inertiaProps('account.department'))->toBe('Department of Science');
+});
+
+it('resolves organizational context on user model with department string or relation without error', function (): void {
+    $school = App\Models\School::factory()->create(['name' => 'School of Engineering']);
+    $department = App\Models\Department::factory()->forSchool($school)->create(['name' => 'Civil Engineering']);
+
+    // Case 1: Both relation and string present
+    $userWithBoth = User::factory()->create([
+        'school_id' => $school->id,
+        'department_id' => $department->id,
+        'department' => 'Civil Engineering String',
+    ]);
+    expect($userWithBoth->organizational_context)->toBe('School of Engineering > Civil Engineering');
+
+    // Case 2: String only (no department_id)
+    $userWithStringOnly = User::factory()->create([
+        'school_id' => $school->id,
+        'department_id' => null,
+        'department' => 'Legacy Civil Dept',
+    ]);
+    expect($userWithStringOnly->organizational_context)->toBe('School of Engineering > Legacy Civil Dept');
+
+    // Case 3: Department ID only (no string department)
+    $userWithRelationOnly = User::factory()->create([
+        'school_id' => $school->id,
+        'department_id' => $department->id,
+        'department' => null,
+    ]);
+    expect($userWithRelationOnly->organizational_context)->toBe('School of Engineering > Civil Engineering');
+
+    // Case 4: Neither school nor department
+    $bareUser = User::factory()->create([
+        'school_id' => null,
+        'department_id' => null,
+        'department' => null,
+    ]);
+    expect($bareUser->organizational_context)->toBe('No organizational assignment');
+});
+
+it('safely exposes department relation aliases on user model', function (): void {
+    $school = App\Models\School::factory()->create();
+    $department = App\Models\Department::factory()->forSchool($school)->create(['name' => 'Computer Science']);
+
+    $user = User::factory()->create([
+        'school_id' => $school->id,
+        'department_id' => $department->id,
+        'department' => 'CS Free Text',
+    ]);
+
+    expect($user->departmentRecord)->toBeInstanceOf(App\Models\Department::class)
+        ->and($user->departmentRecord->id)->toBe($department->id)
+        ->and($user->departmentRelation)->toBeInstanceOf(App\Models\Department::class)
+        ->and($user->departmentRelation->id)->toBe($department->id)
+        ->and($user->department)->toBeInstanceOf(App\Models\Department::class)
+        ->and($user->department->id)->toBe($department->id)
+        ->and($user->department_profile)->toBe('CS Free Text');
+});

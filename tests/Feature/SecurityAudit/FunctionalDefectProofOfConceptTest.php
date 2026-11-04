@@ -58,12 +58,15 @@ it('PoC-A · BUG: the pgsql-only student_id type repair never runs on MySQL or S
     $studentTransactionsStudentIdType = Schema::getColumnType('student_transactions', 'student_id');
     expect($studentTransactionsStudentIdType)->toBeIn(['bigint', 'integer']);
 
-    // Check performance indexes
+    // Check performance indexes. The student_id keys on the enrollment
+    // tables were later widened (DCC-23) so they also cover the period and
+    // status filters; the single-column keys they replaced would be a
+    // redundant prefix of the wider key.
     expect(Schema::hasIndex('student_enrollment', 'student_enrollment_student_id_index'))->toBeTrue()
         ->and(Schema::hasIndex('student_enrollment', 'student_enrollment_course_id_index'))->toBeTrue()
-        ->and(Schema::hasIndex('class_enrollments', 'class_enrollments_student_id_index'))->toBeTrue()
-        ->and(Schema::hasIndex('subject_enrollments', 'subject_enrollments_student_id_index'))->toBeTrue()
-        ->and(Schema::hasIndex('student_tuition', 'student_tuition_student_id_index'))->toBeTrue()
+        ->and(Schema::hasIndex('class_enrollments', 'class_enrollments_student_id_status_index'))->toBeTrue()
+        ->and(Schema::hasIndex('subject_enrollments', 'subject_enrollments_student_id_school_year_semester_index'))->toBeTrue()
+        ->and(Schema::hasIndex('student_tuition', 'student_tuition_student_id_school_year_semester_index'))->toBeTrue()
         ->and(Schema::hasIndex('student_transactions', 'student_transactions_student_id_index'))->toBeTrue();
 
     // Verify model casts & relationships

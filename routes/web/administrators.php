@@ -227,6 +227,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/finance/tuition-update-requests/{tuitionUpdateRequest}', [AdministratorTuitionUpdateRequestController::class, 'show'])->whereNumber('tuitionUpdateRequest')->name('finance.tuition-update-requests.show');
         Route::post('/finance/tuition-update-requests/{tuitionUpdateRequest}/claim', [AdministratorTuitionUpdateRequestController::class, 'claim'])->whereNumber('tuitionUpdateRequest')->middleware('throttle:30,1')->name('finance.tuition-update-requests.claim');
         Route::post('/finance/tuition-update-requests/{tuitionUpdateRequest}/resolve-payment', [AdministratorTuitionUpdateRequestController::class, 'resolvePayment'])->whereNumber('tuitionUpdateRequest')->middleware('throttle:30,1')->name('finance.tuition-update-requests.resolve-payment');
+        Route::post('/finance/tuition-update-requests/{tuitionUpdateRequest}/adjust-and-resolve-payment', [AdministratorTuitionUpdateRequestController::class, 'adjustAndResolvePayment'])->whereNumber('tuitionUpdateRequest')->middleware('throttle:30,1')->name('finance.tuition-update-requests.adjust-and-resolve-payment');
         Route::post('/finance/tuition-update-requests/{tuitionUpdateRequest}/record-and-resolve-payment', [AdministratorTuitionUpdateRequestController::class, 'recordAndResolvePayment'])->whereNumber('tuitionUpdateRequest')->middleware('throttle:30,1')->name('finance.tuition-update-requests.record-and-resolve-payment');
         Route::post('/finance/tuition-update-requests/{tuitionUpdateRequest}/resolve-adjustment', [AdministratorTuitionUpdateRequestController::class, 'resolveAdjustment'])->whereNumber('tuitionUpdateRequest')->middleware('throttle:30,1')->name('finance.tuition-update-requests.resolve-adjustment');
         Route::post('/finance/tuition-update-requests/{tuitionUpdateRequest}/reject', [AdministratorTuitionUpdateRequestController::class, 'reject'])->whereNumber('tuitionUpdateRequest')->middleware('throttle:30,1')->name('finance.tuition-update-requests.reject');
@@ -442,10 +443,14 @@ Route::middleware(['auth', 'administrators.only'])
         // System Management
         Route::get('/system-management', [App\Http\Controllers\AdministratorSystemManagementController::class, 'index'])->name('system-management.index');
         Route::get('/module-marketplace', [AdministratorModuleMarketplaceController::class, 'index'])->name('module-marketplace.index');
-        Route::post('/enterprise/schools/{school}/license', [App\Http\Controllers\AdministratorEnterpriseLicenseController::class, 'store'])
-            ->middleware('throttle:10,1')->name('enterprise.licenses.store');
-        Route::put('/enterprise/schools/{school}/capabilities/{capability}', [App\Http\Controllers\AdministratorSchoolCapabilityController::class, 'update'])
-            ->name('enterprise.capabilities.update');
+        if (class_exists(App\Http\Controllers\AdministratorEnterpriseLicenseController::class)) {
+            Route::post('/enterprise/schools/{school}/license', [App\Http\Controllers\AdministratorEnterpriseLicenseController::class, 'store'])
+                ->middleware('throttle:10,1')->name('enterprise.licenses.store');
+        }
+        if (class_exists(App\Http\Controllers\AdministratorSchoolCapabilityController::class)) {
+            Route::put('/enterprise/schools/{school}/capabilities/{capability}', [App\Http\Controllers\AdministratorSchoolCapabilityController::class, 'update'])
+                ->name('enterprise.capabilities.update');
+        }
         Route::post('/module-marketplace/{module}/enable', [AdministratorModuleMarketplaceController::class, 'enable'])
             ->where('module', '[A-Za-z][A-Za-z0-9_-]*')
             ->name('module-marketplace.enable');

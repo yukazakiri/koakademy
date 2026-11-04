@@ -1,5 +1,6 @@
 import { index as tuitionAdjustmentsIndex } from "@/actions/App/Http/Controllers/AdministratorTuitionAdjustmentController";
 import {
+    adjustAndResolvePayment,
     claim,
     recordAndResolvePayment,
     reject,
@@ -13,6 +14,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/reui/alert";
 import { Badge } from "@/components/reui/badge";
 import { Frame, FrameDescription, FrameHeader, FramePanel, FrameTitle } from "@/components/reui/frame";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,7 +30,9 @@ import {
     ClipboardCheck,
     CreditCard,
     ExternalLink,
+    FileText,
     History,
+    ImageIcon,
     Info,
     Link2,
     Loader2,
@@ -37,9 +41,19 @@ import {
     Receipt,
     ReceiptText,
     ShieldAlert,
+    SlidersHorizontal,
     XCircle,
+    ZoomIn,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+
+type ReceiptItem = {
+    id: number;
+    receipt_number: string;
+    amount: number | null;
+    image_url: string | null;
+    file_name: string | null;
+};
 
 type ReviewRequest = {
     id: number;
@@ -48,6 +62,7 @@ type ReviewRequest = {
     school_year: string;
     semester: number;
     concern_type: string;
+    amount: number | null;
     receipt_number: string | null;
     details: string;
     status: "pending" | "in_review" | "resolved" | "rejected";
@@ -55,7 +70,8 @@ type ReviewRequest = {
     reviewer_name: string | null;
     submitted_at: string | null;
     resolved_at: string | null;
-    tuition: { overall_tuition: number; balance: number; discount: number } | null;
+    receipts?: ReceiptItem[];
+    tuition: { overall_tuition: number; balance: number; discount: number; paid?: number } | null;
     resolved_transaction: { id: number; receipt_number: string | null } | null;
     tuition_adjustment: { id: number; reason: string } | null;
     events: Array<{
@@ -74,6 +90,7 @@ type TransactionRow = {
     transaction_number: string | null;
     receipt_number: string | null;
     status: string;
+    payment_method?: string;
     amount: number;
     date: string | null;
 };
@@ -81,6 +98,7 @@ type TransactionRow = {
 type Props = {
     user: User;
     request: ReviewRequest;
+    student_transactions?: TransactionRow[];
     matching_transactions: TransactionRow[];
     other_transactions?: TransactionRow[];
     matching_adjustments: Array<{ id: number; reason: string; created_at: string | null }>;
@@ -106,6 +124,7 @@ const statusMeta: Record<string, { label: string; variant: "warning-light" | "in
 export default function TuitionUpdateRequestShow({
     user,
     request,
+    student_transactions = [],
     matching_transactions = [],
     other_transactions = [],
     matching_adjustments = [],
@@ -115,17 +134,52 @@ export default function TuitionUpdateRequestShow({
 }: Props) {
     const isPayment = request.concern_type === "missing_payment";
     const reviewing = request.status === "in_review" && is_current_reviewer;
+    const allAvailableTransactions = useMemo(() => {
+        if (student_transactions.length > 0) return student_transactions;
+        return [...matching_transactions, ...other_transactions];
+    }, [student_transactions, matching_transactions, other_transactions]);
 
-    // Form 1: Link Existing Transaction
+    // Form 1: Adjust Existing Transaction(s)
+    const adjustForm = useForm({
+        transaction_id: matching_transactions[0]?.id
+            ? String(matching_transactions[0].id)
+            : allAvailableTransactions[0]?.id
+              ? String(allAvailableTransactions[0].id)
+              : "",
+        amount: request.amount
+            ? String(request.amount)
+            : matching_transactions[0]?.amount
+              ? String(matching_transactions[0].amount)
+              : "",
+        reference_number: request.receipt_number ?? (matching_transactions[0]?.receipt_number ?? ""),
+        resolution_note: request.amount
+            ? `Adjusted payment transaction to reflect verified downpayment/tuition payment of ₱${Number(request.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}.`
+            : "Adjusted transaction to reflect verified amount.",
+        adjust_multiple: Boolean(request.receipts && request.receipts.length > 1),
+        adjustments: (request.receipts && request.receipts.length > 0
+            ? request.receipts
+            : [{ id: 1, receipt_number: request.receipt_number ?? "", amount: request.amount, image_url: null, file_name: null }]
+        ).map((r, i) => ({
+            transaction_id: allAvailableTransactions[i]?.id ? String(allAvailableTransactions[i].id) : "",
+            amount: r.amount ? String(r.amount) : "",
+            reference_number: r.receipt_number ?? "",
+        })),
+    });
+
+    // Form 2: Link Existing Transaction As-Is
     const paymentForm = useForm({
         transaction_id: matching_transactions[0]?.id ? String(matching_transactions[0].id) : "",
         allow_mismatch: false,
         resolution_note: "",
     });
 
-    // Form 2: Record & Resolve Missing Payment (THE DIRECT FIX)
+    // Form 3: Record & Resolve Missing Payment (Brand new transaction)
     const recordPaymentForm = useForm({
-        amount: request.tuition?.balance ? String(request.tuition.balance) : "",
+        amount: request.amount
+            ? String(request.amount)
+            : request.tuition?.balance
+              ? String(request.tuition.balance)
+              : "",
         payment_method: payment_methods[0]?.value ?? "Cash",
         reference_number: request.receipt_number ?? "",
         resolution_note: request.receipt_number
@@ -133,23 +187,51 @@ export default function TuitionUpdateRequestShow({
             : "Verified payment and recorded to student tuition account.",
     });
 
-    // Form 3: Resolve via Tuition Adjustment
+    // Form 4: Resolve via Tuition Adjustment
     const adjustmentForm = useForm({
         tuition_adjustment_id: matching_adjustments[0]?.id ? String(matching_adjustments[0].id) : "",
         resolution_note: "",
     });
 
-    // Form 4: Reject Request
+    // Form 5: Reject Request
     const rejectionForm = useForm({ resolution_note: "" });
 
-    // Resend Email Form
+    // Form 6: Resend Email Form
     const resendForm = useForm({});
 
-    // Active resolution tab: default to "record" if no matching transaction, else "link"
-    const [paymentResolveMode, setPaymentResolveMode] = useState<"link" | "record">(matching_transactions.length === 0 ? "record" : "link");
+    // Active resolution tab: default to "adjust" if transactions exist, else "record"
+    const [paymentResolveMode, setPaymentResolveMode] = useState<"adjust" | "record" | "link">(
+        allAvailableTransactions.length > 0 ? "adjust" : "record",
+    );
+
+    // Lightbox / Image Preview state
+    const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
 
     function claimRequest() {
         router.post(claim.url(request.id), {}, { preserveScroll: true });
+    }
+
+    function handleAdjustAndResolvePayment(event: React.FormEvent) {
+        event.preventDefault();
+        adjustForm.transform((data) => {
+            if (data.adjust_multiple) {
+                return {
+                    adjustments: data.adjustments.map((a) => ({
+                        transaction_id: Number(a.transaction_id),
+                        amount: Number(a.amount),
+                        reference_number: a.reference_number || undefined,
+                    })),
+                    resolution_note: data.resolution_note,
+                };
+            }
+            return {
+                transaction_id: Number(data.transaction_id),
+                amount: Number(data.amount),
+                reference_number: data.reference_number || undefined,
+                resolution_note: data.resolution_note,
+            };
+        });
+        adjustForm.post(adjustAndResolvePayment.url(request.id), { preserveScroll: true });
     }
 
     function handleResolvePayment(event: React.FormEvent) {
@@ -176,8 +258,17 @@ export default function TuitionUpdateRequestShow({
         resendForm.post(resendEmail.url(request.id), { preserveScroll: true });
     }
 
+    function quickSelectTransactionForAdjust(tx: TransactionRow) {
+        setPaymentResolveMode("adjust");
+        adjustForm.setData((prev) => ({
+            ...prev,
+            transaction_id: String(tx.id),
+            reference_number: tx.receipt_number ?? prev.reference_number,
+        }));
+    }
+
     const currentStatus = statusMeta[request.status] ?? { label: request.status, variant: "outline" as const };
-    const allAvailableTransactions = [...matching_transactions, ...other_transactions];
+    const receiptsList = request.receipts ?? [];
 
     return (
         <AdminLayout user={user} title="Tuition Update Request Details">
@@ -219,7 +310,7 @@ export default function TuitionUpdateRequestShow({
                 </header>
 
                 {/* Main 2-Column Grid */}
-                <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+                <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
                     {/* Left Column: Context & Actions */}
                     <div className="flex flex-col gap-6">
                         {/* Student Report Panel */}
@@ -227,7 +318,7 @@ export default function TuitionUpdateRequestShow({
                             <FramePanel>
                                 <FrameHeader>
                                     <FrameTitle>Student Report</FrameTitle>
-                                    <FrameDescription>Student's submitted explanation and official payment details.</FrameDescription>
+                                    <FrameDescription>Student's submitted explanation, claimed amounts, and official receipt documents.</FrameDescription>
                                 </FrameHeader>
 
                                 <div className="border-border bg-muted/30 mt-4 grid gap-4 rounded-md border p-4 sm:grid-cols-2">
@@ -248,6 +339,84 @@ export default function TuitionUpdateRequestShow({
                                     </div>
                                 </div>
 
+                                {/* Claimed / Requested Amount Display */}
+                                {request.amount !== null && (
+                                    <div className="mt-4 flex items-center justify-between rounded-md border border-primary/20 bg-primary/5 p-3.5">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="flex size-8 items-center justify-center rounded-md bg-primary/10 text-primary">
+                                                <CircleDollarSign className="size-4" />
+                                            </div>
+                                            <div>
+                                                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                                                    Claimed / Target Payment Amount
+                                                </span>
+                                                <p className="text-base font-bold text-foreground tabular-nums">
+                                                    ₱{request.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <Badge variant="primary-light">Student Specified</Badge>
+                                    </div>
+                                )}
+
+                                {/* Submitted Receipt Attachments (1 or multiple receipts supported) */}
+                                {receiptsList.length > 0 && (
+                                    <div className="mt-4 flex flex-col gap-2">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-xs font-semibold text-foreground uppercase tracking-wider">
+                                                Receipt Documents & Photos ({receiptsList.length})
+                                            </span>
+                                            <span className="text-xs text-muted-foreground">Click image to inspect</span>
+                                        </div>
+
+                                        <div className="grid gap-3 sm:grid-cols-2">
+                                            {receiptsList.map((rec, idx) => (
+                                                <div key={rec.id || idx} className="flex flex-col gap-2 rounded-md border border-border bg-card p-3 shadow-sm">
+                                                    <div className="flex items-start justify-between">
+                                                        <div>
+                                                            <span className="text-[10px] font-semibold text-muted-foreground uppercase">
+                                                                Receipt #{idx + 1}
+                                                            </span>
+                                                            <p className="font-mono text-sm font-bold text-foreground">
+                                                                {rec.receipt_number || "No OR Number"}
+                                                            </p>
+                                                        </div>
+                                                        {rec.amount !== null && (
+                                                            <Badge variant="outline" className="font-mono">
+                                                                ₱{rec.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                            </Badge>
+                                                        )}
+                                                    </div>
+
+                                                    {rec.image_url ? (
+                                                        <div
+                                                            onClick={() => setPreviewImage({ url: rec.image_url!, title: `Receipt ${rec.receipt_number || idx + 1}` })}
+                                                            className="group relative h-36 w-full cursor-pointer overflow-hidden rounded-md border border-border bg-muted"
+                                                        >
+                                                            <img
+                                                                src={rec.image_url}
+                                                                alt={`Receipt ${rec.receipt_number}`}
+                                                                className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                                                            />
+                                                            <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                                                                <span className="inline-flex items-center gap-1 rounded bg-black/75 px-2 py-1 text-xs text-white">
+                                                                    <ZoomIn className="size-3.5" />
+                                                                    View receipt
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex h-20 items-center justify-center rounded-md border border-dashed border-border bg-muted/20 text-xs text-muted-foreground">
+                                                            <FileText className="mr-1.5 size-4" />
+                                                            No image attached
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div className="mt-4 flex flex-col gap-1.5">
                                     <span className="text-foreground text-xs font-semibold">Statement of Discrepancy:</span>
                                     <p className="border-border bg-card text-muted-foreground rounded-md border p-3.5 text-sm leading-relaxed whitespace-pre-wrap">
@@ -257,22 +426,30 @@ export default function TuitionUpdateRequestShow({
 
                                 {/* Tuition Assessment Snapshot */}
                                 {request.tuition && (
-                                    <div className="border-border bg-muted/20 mt-4 grid grid-cols-3 gap-3 rounded-md border p-3.5 text-center">
+                                    <div className="border-border bg-muted/20 mt-4 grid grid-cols-4 gap-2 rounded-md border p-3.5 text-center">
                                         <div>
                                             <span className="text-muted-foreground text-xs">Assessed Tuition</span>
-                                            <p className="text-foreground mt-0.5 font-semibold tabular-nums">
+                                            <p className="text-foreground mt-0.5 font-semibold tabular-nums text-sm sm:text-base">
                                                 ₱{request.tuition.overall_tuition.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                             </p>
                                         </div>
                                         <div>
+                                            <span className="text-muted-foreground text-xs">Total Paid</span>
+                                            <p className="text-foreground mt-0.5 font-semibold tabular-nums text-sm sm:text-base">
+                                                ₱{(request.tuition.paid ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                            </p>
+                                        </div>
+                                        <div>
                                             <span className="text-muted-foreground text-xs">Current Balance</span>
-                                            <p className="text-foreground mt-0.5 font-semibold tabular-nums">
+                                            <p className="text-foreground mt-0.5 font-semibold tabular-nums text-sm sm:text-base">
                                                 ₱{request.tuition.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                             </p>
                                         </div>
                                         <div>
-                                            <span className="text-muted-foreground text-xs">Discount Applied</span>
-                                            <p className="text-foreground mt-0.5 font-semibold tabular-nums">{request.tuition.discount}%</p>
+                                            <span className="text-muted-foreground text-xs">Discount</span>
+                                            <p className="text-foreground mt-0.5 font-semibold tabular-nums text-sm sm:text-base">
+                                                {request.tuition.discount}%
+                                            </p>
                                         </div>
                                     </div>
                                 )}
@@ -291,31 +468,242 @@ export default function TuitionUpdateRequestShow({
                                                     <FrameTitle>Resolve Payment Request</FrameTitle>
                                                 </div>
                                                 <FrameDescription>
-                                                    If the student already paid but no transaction exists yet, record it directly. Otherwise, link an
-                                                    existing transaction.
+                                                    Adjust an existing recorded payment transaction (e.g. overpayment/underpayment correction), record a brand new payment, or link an existing transaction.
                                                 </FrameDescription>
                                             </FrameHeader>
 
-                                            <Tabs value={paymentResolveMode} onValueChange={(val) => setPaymentResolveMode(val as "link" | "record")}>
-                                                <TabsList className="grid w-full grid-cols-2">
-                                                    <TabsTab value="record" className="gap-2">
-                                                        <PlusCircle className="size-4" />
-                                                        <span>Record & Verify Payment</span>
+                                            <Tabs value={paymentResolveMode} onValueChange={(val) => setPaymentResolveMode(val as "adjust" | "record" | "link")}>
+                                                <TabsList className="grid w-full grid-cols-3">
+                                                    <TabsTab value="adjust" className="gap-1.5 text-xs sm:text-sm">
+                                                        <SlidersHorizontal className="size-3.5" />
+                                                        <span>Adjust Transaction</span>
                                                     </TabsTab>
-                                                    <TabsTab value="link" className="gap-2">
-                                                        <Link2 className="size-4" />
-                                                        <span>Link Existing Transaction ({allAvailableTransactions.length})</span>
+                                                    <TabsTab value="record" className="gap-1.5 text-xs sm:text-sm">
+                                                        <PlusCircle className="size-3.5" />
+                                                        <span>Record New</span>
+                                                    </TabsTab>
+                                                    <TabsTab value="link" className="gap-1.5 text-xs sm:text-sm">
+                                                        <Link2 className="size-3.5" />
+                                                        <span>Link As-Is</span>
                                                     </TabsTab>
                                                 </TabsList>
 
-                                                {/* MODE 1: RECORD NEW VERIFIED PAYMENT (Fixes missing payment transaction situation!) */}
+                                                {/* MODE 1: ADJUST EXISTING TRANSACTION (Reconciles Over/Underpayment e.g. 10450 -> 10000) */}
+                                                <TabsPanel value="adjust" className="mt-4 flex flex-col gap-4">
+                                                    <Alert variant="info">
+                                                        <Info aria-hidden="true" />
+                                                        <AlertTitle>Adjust posted transaction amount & reconcile ledger</AlertTitle>
+                                                        <AlertDescription>
+                                                            Updates the transaction amount, adjusts settlements, corrects student payments, and recalculates the balance due automatically without creating artificial duplicate charges.
+                                                        </AlertDescription>
+                                                    </Alert>
+
+                                                    {allAvailableTransactions.length === 0 ? (
+                                                        <Empty>
+                                                            <EmptyMedia variant="icon">
+                                                                <CreditCard aria-hidden="true" />
+                                                            </EmptyMedia>
+                                                            <EmptyHeader>
+                                                                <EmptyTitle>No existing transactions found to adjust</EmptyTitle>
+                                                                <EmptyDescription>
+                                                                    This student has no posted transactions. Use the "Record New" tab to create one.
+                                                                </EmptyDescription>
+                                                            </EmptyHeader>
+                                                            <Button variant="outline" size="sm" onClick={() => setPaymentResolveMode("record")}>
+                                                                Switch to Record Payment
+                                                            </Button>
+                                                        </Empty>
+                                                    ) : (
+                                                        <form onSubmit={handleAdjustAndResolvePayment} className="flex flex-col gap-4">
+                                                            {/* Multiple Adjustments Toggle for Dual Receipts */}
+                                                            {receiptsList.length > 1 && (
+                                                                <div className="flex items-center justify-between rounded-md border border-border bg-muted/40 p-3">
+                                                                    <div>
+                                                                        <span className="text-xs font-semibold text-foreground">Dual / Multiple Receipt Adjustment</span>
+                                                                        <p className="text-xs text-muted-foreground">Adjust multiple separate transactions for each receipt.</p>
+                                                                    </div>
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={adjustForm.data.adjust_multiple}
+                                                                        onChange={(e) => adjustForm.setData("adjust_multiple", e.target.checked)}
+                                                                        className="accent-primary size-4"
+                                                                    />
+                                                                </div>
+                                                            )}
+
+                                                            {!adjustForm.data.adjust_multiple ? (
+                                                                <>
+                                                                    <div className="grid gap-4 sm:grid-cols-2">
+                                                                        <div className="flex flex-col gap-1.5">
+                                                                            <Label htmlFor="adjust-tx-select">Select Transaction to Adjust</Label>
+                                                                            <Select
+                                                                                value={adjustForm.data.transaction_id}
+                                                                                onValueChange={(val) => {
+                                                                                    const found = allAvailableTransactions.find((t) => String(t.id) === val);
+                                                                                    adjustForm.setData((prev) => ({
+                                                                                        ...prev,
+                                                                                        transaction_id: val,
+                                                                                        reference_number: found?.receipt_number ?? prev.reference_number,
+                                                                                    }));
+                                                                                }}
+                                                                            >
+                                                                                <SelectTrigger id="adjust-tx-select" className="w-full">
+                                                                                    <SelectValue placeholder="Choose transaction" />
+                                                                                </SelectTrigger>
+                                                                                <SelectContent>
+                                                                                    {allAvailableTransactions.map((tx) => (
+                                                                                        <SelectItem key={tx.id} value={String(tx.id)}>
+                                                                                            Tx #{tx.transaction_number || tx.id} (OR: {tx.receipt_number || "None"}) — ₱{tx.amount.toLocaleString()}
+                                                                                        </SelectItem>
+                                                                                    ))}
+                                                                                </SelectContent>
+                                                                            </Select>
+                                                                            {adjustForm.errors.transaction_id && (
+                                                                                <p className="text-destructive text-xs">{adjustForm.errors.transaction_id}</p>
+                                                                            )}
+                                                                        </div>
+
+                                                                        <div className="flex flex-col gap-1.5">
+                                                                            <div className="flex items-center justify-between">
+                                                                                <Label htmlFor="adjust-amount">Corrected Amount (₱)</Label>
+                                                                                {request.amount !== null && (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => adjustForm.setData("amount", String(request.amount))}
+                                                                                        className="text-xs text-primary hover:underline"
+                                                                                    >
+                                                                                        Use student target (₱{request.amount.toLocaleString()})
+                                                                                    </button>
+                                                                                )}
+                                                                            </div>
+                                                                            <Input
+                                                                                id="adjust-amount"
+                                                                                type="number"
+                                                                                step="0.01"
+                                                                                min="0.01"
+                                                                                value={adjustForm.data.amount}
+                                                                                onChange={(e) => adjustForm.setData("amount", e.target.value)}
+                                                                                placeholder="e.g. 10000.00"
+                                                                                required
+                                                                            />
+                                                                            {adjustForm.errors.amount && (
+                                                                                <p className="text-destructive text-xs">{adjustForm.errors.amount}</p>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="flex flex-col gap-1.5">
+                                                                        <Label htmlFor="adjust-reference">Official Receipt / OR Reference Number</Label>
+                                                                        <Input
+                                                                            id="adjust-reference"
+                                                                            value={adjustForm.data.reference_number}
+                                                                            onChange={(e) => adjustForm.setData("reference_number", e.target.value)}
+                                                                            placeholder="e.g. 226432"
+                                                                        />
+                                                                        {adjustForm.errors.reference_number && (
+                                                                            <p className="text-destructive text-xs">{adjustForm.errors.reference_number}</p>
+                                                                        )}
+                                                                    </div>
+                                                                </>
+                                                            ) : (
+                                                                /* MULTI-RECEIPT ADJUSTMENT SECTION */
+                                                                <div className="flex flex-col gap-3">
+                                                                    <span className="text-xs font-semibold text-foreground">Adjust Each Receipt Transaction:</span>
+                                                                    {adjustForm.data.adjustments.map((item, idx) => (
+                                                                        <div key={idx} className="rounded-md border border-border p-3 flex flex-col gap-3 bg-muted/20">
+                                                                            <div className="flex items-center justify-between">
+                                                                                <span className="text-xs font-bold text-foreground">Receipt #{idx + 1} Adjustment</span>
+                                                                                <Badge variant="outline">Item {idx + 1}</Badge>
+                                                                            </div>
+                                                                            <div className="grid gap-3 sm:grid-cols-3">
+                                                                                <div className="flex flex-col gap-1">
+                                                                                    <Label className="text-xs">Transaction</Label>
+                                                                                    <Select
+                                                                                        value={item.transaction_id}
+                                                                                        onValueChange={(val) => {
+                                                                                            const next = [...adjustForm.data.adjustments];
+                                                                                            next[idx].transaction_id = val;
+                                                                                            adjustForm.setData("adjustments", next);
+                                                                                        }}
+                                                                                    >
+                                                                                        <SelectTrigger className="w-full text-xs">
+                                                                                            <SelectValue placeholder="Select Tx" />
+                                                                                        </SelectTrigger>
+                                                                                        <SelectContent>
+                                                                                            {allAvailableTransactions.map((tx) => (
+                                                                                                <SelectItem key={tx.id} value={String(tx.id)}>
+                                                                                                    #{tx.transaction_number || tx.id} (₱{tx.amount.toLocaleString()})
+                                                                                                </SelectItem>
+                                                                                            ))}
+                                                                                        </SelectContent>
+                                                                                    </Select>
+                                                                                </div>
+                                                                                <div className="flex flex-col gap-1">
+                                                                                    <Label className="text-xs">Corrected Amount (₱)</Label>
+                                                                                    <Input
+                                                                                        type="number"
+                                                                                        step="0.01"
+                                                                                        min="0.01"
+                                                                                        value={item.amount}
+                                                                                        onChange={(e) => {
+                                                                                            const next = [...adjustForm.data.adjustments];
+                                                                                            next[idx].amount = e.target.value;
+                                                                                            adjustForm.setData("adjustments", next);
+                                                                                        }}
+                                                                                        placeholder="5000.00"
+                                                                                        className="text-xs"
+                                                                                        required
+                                                                                    />
+                                                                                </div>
+                                                                                <div className="flex flex-col gap-1">
+                                                                                    <Label className="text-xs">OR / Ref Number</Label>
+                                                                                    <Input
+                                                                                        value={item.reference_number}
+                                                                                        onChange={(e) => {
+                                                                                            const next = [...adjustForm.data.adjustments];
+                                                                                            next[idx].reference_number = e.target.value;
+                                                                                            adjustForm.setData("adjustments", next);
+                                                                                        }}
+                                                                                        placeholder="OR-226432"
+                                                                                        className="text-xs"
+                                                                                    />
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+
+                                                            <div className="flex flex-col gap-1.5">
+                                                                <Label htmlFor="adjust-note">Resolution Note to Student</Label>
+                                                                <Textarea
+                                                                    id="adjust-note"
+                                                                    value={adjustForm.data.resolution_note}
+                                                                    onChange={(e) => adjustForm.setData("resolution_note", e.target.value)}
+                                                                    placeholder="Explain the correction applied to the student's payment and balance..."
+                                                                    className="min-h-24 resize-y"
+                                                                    required
+                                                                />
+                                                                {adjustForm.errors.resolution_note && (
+                                                                    <p className="text-destructive text-xs">{adjustForm.errors.resolution_note}</p>
+                                                                )}
+                                                            </div>
+
+                                                            <Button type="submit" disabled={adjustForm.processing} className="w-full sm:w-auto">
+                                                                {adjustForm.processing && <Loader2 className="mr-2 size-4 animate-spin" />}
+                                                                Adjust Transaction & Reconcile Balance
+                                                            </Button>
+                                                        </form>
+                                                    )}
+                                                </TabsPanel>
+
+                                                {/* MODE 2: RECORD NEW VERIFIED PAYMENT */}
                                                 <TabsPanel value="record" className="mt-4 flex flex-col gap-4">
                                                     <Alert variant="info">
                                                         <Info aria-hidden="true" />
                                                         <AlertTitle>Record missing cashier or bank payment</AlertTitle>
                                                         <AlertDescription>
-                                                            This records the official transaction, updates the student's tuition ledger and balance,
-                                                            and resolves this request in one atomic operation.
+                                                            This records the official transaction, updates the student's tuition ledger and balance, and resolves this request in one atomic operation.
                                                         </AlertDescription>
                                                     </Alert>
 
@@ -328,12 +716,9 @@ export default function TuitionUpdateRequestShow({
                                                                         <button
                                                                             type="button"
                                                                             onClick={() =>
-                                                                                recordPaymentForm.setData(
-                                                                                    "amount",
-                                                                                    String(request.tuition?.balance ?? ""),
-                                                                                )
+                                                                                recordPaymentForm.setData("amount", String(request.tuition?.balance ?? ""))
                                                                             }
-                                                                            className="text-primary text-xs hover:underline"
+                                                                            className="text-xs text-primary hover:underline"
                                                                         >
                                                                             Use balance (₱{request.tuition.balance.toLocaleString()})
                                                                         </button>
@@ -346,7 +731,7 @@ export default function TuitionUpdateRequestShow({
                                                                     min="0.01"
                                                                     value={recordPaymentForm.data.amount}
                                                                     onChange={(e) => recordPaymentForm.setData("amount", e.target.value)}
-                                                                    placeholder="e.g. 3500.00"
+                                                                    placeholder="e.g. 5000.00"
                                                                     required
                                                                 />
                                                                 {recordPaymentForm.errors.amount && (
@@ -372,9 +757,7 @@ export default function TuitionUpdateRequestShow({
                                                                     </SelectContent>
                                                                 </Select>
                                                                 {recordPaymentForm.errors.payment_method && (
-                                                                    <p className="text-destructive text-xs">
-                                                                        {recordPaymentForm.errors.payment_method}
-                                                                    </p>
+                                                                    <p className="text-destructive text-xs">{recordPaymentForm.errors.payment_method}</p>
                                                                 )}
                                                             </div>
                                                         </div>
@@ -388,13 +771,8 @@ export default function TuitionUpdateRequestShow({
                                                                 placeholder="e.g. OR-2026-00124"
                                                                 required
                                                             />
-                                                            <p className="text-muted-foreground text-xs">
-                                                                Recorded as the official receipt / invoice number on the ledger.
-                                                            </p>
                                                             {recordPaymentForm.errors.reference_number && (
-                                                                <p className="text-destructive text-xs">
-                                                                    {recordPaymentForm.errors.reference_number}
-                                                                </p>
+                                                                <p className="text-destructive text-xs">{recordPaymentForm.errors.reference_number}</p>
                                                             )}
                                                         </div>
 
@@ -420,26 +798,20 @@ export default function TuitionUpdateRequestShow({
                                                     </form>
                                                 </TabsPanel>
 
-                                                {/* MODE 2: LINK EXISTING TRANSACTION */}
+                                                {/* MODE 3: LINK EXISTING TRANSACTION */}
                                                 <TabsPanel value="link" className="mt-4 flex flex-col gap-4">
                                                     {allAvailableTransactions.length === 0 ? (
-                                                        <div className="flex flex-col gap-3 py-4">
-                                                            <Empty>
-                                                                <EmptyMedia variant="icon">
-                                                                    <CreditCard aria-hidden="true" />
-                                                                </EmptyMedia>
-                                                                <EmptyHeader>
-                                                                    <EmptyTitle>No existing transactions found</EmptyTitle>
-                                                                    <EmptyDescription>
-                                                                        There are no recorded transactions matching this student's account yet. Use
-                                                                        the "Record & Verify Payment" tab to record it now.
-                                                                    </EmptyDescription>
-                                                                </EmptyHeader>
-                                                                <Button variant="outline" size="sm" onClick={() => setPaymentResolveMode("record")}>
-                                                                    Switch to Record Payment
-                                                                </Button>
-                                                            </Empty>
-                                                        </div>
+                                                        <Empty>
+                                                            <EmptyMedia variant="icon">
+                                                                <CreditCard aria-hidden="true" />
+                                                            </EmptyMedia>
+                                                            <EmptyHeader>
+                                                                <EmptyTitle>No existing transactions found</EmptyTitle>
+                                                                <EmptyDescription>
+                                                                    There are no recorded transactions matching this student's account yet.
+                                                                </EmptyDescription>
+                                                            </EmptyHeader>
+                                                        </Empty>
                                                     ) : (
                                                         <form onSubmit={handleResolvePayment} className="flex flex-col gap-4">
                                                             <div className="flex flex-col gap-1.5">
@@ -452,26 +824,11 @@ export default function TuitionUpdateRequestShow({
                                                                         <SelectValue placeholder="Choose a transaction" />
                                                                     </SelectTrigger>
                                                                     <SelectContent>
-                                                                        {matching_transactions.length > 0 && (
-                                                                            <>
-                                                                                {matching_transactions.map((tx) => (
-                                                                                    <SelectItem key={tx.id} value={String(tx.id)}>
-                                                                                        ★ Matching OR: #{tx.transaction_number || tx.id} (OR:{" "}
-                                                                                        {tx.receipt_number || "None"}) — ₱{tx.amount.toLocaleString()}
-                                                                                    </SelectItem>
-                                                                                ))}
-                                                                            </>
-                                                                        )}
-                                                                        {other_transactions.length > 0 && (
-                                                                            <>
-                                                                                {other_transactions.map((tx) => (
-                                                                                    <SelectItem key={tx.id} value={String(tx.id)}>
-                                                                                        Other tx #{tx.transaction_number || tx.id} (OR:{" "}
-                                                                                        {tx.receipt_number || "None"}) — ₱{tx.amount.toLocaleString()}
-                                                                                    </SelectItem>
-                                                                                ))}
-                                                                            </>
-                                                                        )}
+                                                                        {allAvailableTransactions.map((tx) => (
+                                                                            <SelectItem key={tx.id} value={String(tx.id)}>
+                                                                                Tx #{tx.transaction_number || tx.id} (OR: {tx.receipt_number || "None"}) — ₱{tx.amount.toLocaleString()}
+                                                                            </SelectItem>
+                                                                        ))}
                                                                     </SelectContent>
                                                                 </Select>
                                                                 {paymentForm.errors.transaction_id && (
@@ -479,7 +836,6 @@ export default function TuitionUpdateRequestShow({
                                                                 )}
                                                             </div>
 
-                                                            {/* Option to allow OR mismatch */}
                                                             <div className="border-border bg-muted/30 flex items-start gap-2.5 rounded-md border p-3">
                                                                 <input
                                                                     type="checkbox"
@@ -489,16 +845,11 @@ export default function TuitionUpdateRequestShow({
                                                                     className="accent-primary mt-0.5 size-4"
                                                                 />
                                                                 <div className="flex flex-col">
-                                                                    <label
-                                                                        htmlFor="allow-mismatch"
-                                                                        className="text-foreground cursor-pointer text-xs font-semibold"
-                                                                    >
+                                                                    <label htmlFor="allow-mismatch" className="text-foreground cursor-pointer text-xs font-semibold">
                                                                         Allow receipt / OR number reconciliation
                                                                     </label>
                                                                     <span className="text-muted-foreground text-xs">
-                                                                        Check this if the student made a typo in their OR number or the cashier
-                                                                        entered a different format. The request will link and update to the verified
-                                                                        OR number.
+                                                                        Check this if the student made a typo in their OR number. The request will link and update to the verified OR number.
                                                                     </span>
                                                                 </div>
                                                             </div>
@@ -540,8 +891,7 @@ export default function TuitionUpdateRequestShow({
                                                     <FrameTitle>Resolve with Tuition Adjustment</FrameTitle>
                                                 </div>
                                                 <FrameDescription>
-                                                    Apply the approved scholarship, discount, or enrollment correction in the Tuition Adjustments
-                                                    ledger, then link the audit record below.
+                                                    Apply the approved scholarship, discount, or enrollment correction in the Tuition Adjustments ledger, then link the audit record below.
                                                 </FrameDescription>
                                             </FrameHeader>
 
@@ -572,8 +922,7 @@ export default function TuitionUpdateRequestShow({
                                                     <Info aria-hidden="true" />
                                                     <AlertTitle>No recorded adjustments found</AlertTitle>
                                                     <AlertDescription>
-                                                        Complete the assessment adjustment in the canonical Tuition Adjustments module first, then
-                                                        return here to link its record and notify the student.
+                                                        Complete the assessment adjustment in the canonical Tuition Adjustments module first, then return here to link its record and notify the student.
                                                     </AlertDescription>
                                                 </Alert>
                                             ) : (
@@ -683,8 +1032,68 @@ export default function TuitionUpdateRequestShow({
                         )}
                     </div>
 
-                    {/* Right Column: Timeline & Reject */}
+                    {/* Right Column: Transactions Sidebar, Timeline & Reject */}
                     <div className="flex flex-col gap-6">
+                        {/* SIDEBAR CARD: STUDENT TRANSACTIONS */}
+                        <Frame>
+                            <FramePanel>
+                                <FrameHeader>
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <CreditCard className="text-primary size-4" />
+                                            <FrameTitle>Student Transactions</FrameTitle>
+                                        </div>
+                                        <Badge variant="outline" className="text-xs tabular-nums">
+                                            {allAvailableTransactions.length}
+                                        </Badge>
+                                    </div>
+                                    <FrameDescription>All posted cashier & bank payments for this student.</FrameDescription>
+                                </FrameHeader>
+
+                                <div className="mt-4 flex flex-col divide-y divide-border">
+                                    {allAvailableTransactions.length === 0 ? (
+                                        <div className="py-6 text-center text-xs text-muted-foreground">
+                                            No recorded transactions found for this student.
+                                        </div>
+                                    ) : (
+                                        allAvailableTransactions.map((tx) => (
+                                            <div key={tx.id} className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="font-mono text-xs font-semibold text-foreground">
+                                                        {tx.receipt_number ? `OR #${tx.receipt_number}` : `Tx #${tx.transaction_number || tx.id}`}
+                                                    </span>
+                                                    <span className="font-mono text-sm font-bold text-foreground tabular-nums">
+                                                        ₱{tx.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                                                    <span>{tx.date ? new Date(tx.date).toLocaleDateString() : "—"} · {tx.payment_method ?? "Cash"}</span>
+                                                    <Badge
+                                                        variant={["paid", "completed"].includes(tx.status.toLowerCase()) ? "success-light" : "outline"}
+                                                        className="px-1.5 py-0 text-[10px]"
+                                                    >
+                                                        {tx.status}
+                                                    </Badge>
+                                                </div>
+                                                {can_manage && reviewing && (
+                                                    <div className="mt-1 flex justify-end">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => quickSelectTransactionForAdjust(tx)}
+                                                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline"
+                                                        >
+                                                            <SlidersHorizontal className="size-3" />
+                                                            Adjust this payment
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </FramePanel>
+                        </Frame>
+
                         {/* Review Timeline */}
                         <Frame>
                             <FramePanel>
@@ -757,6 +1166,26 @@ export default function TuitionUpdateRequestShow({
                     </div>
                 </div>
             </div>
+
+            {/* Lightbox Dialog for Receipt Image Inspection */}
+            {previewImage && (
+                <Dialog open={Boolean(previewImage)} onOpenChange={(open) => !open && setPreviewImage(null)}>
+                    <DialogContent className="max-w-3xl p-4">
+                        <DialogHeader>
+                            <DialogTitle className="text-sm font-semibold">{previewImage.title}</DialogTitle>
+                        </DialogHeader>
+                        <div className="mt-2 flex max-h-[75vh] items-center justify-center overflow-auto rounded-md bg-muted/40 p-2">
+                            <img src={previewImage.url} alt="Receipt preview" className="max-h-[70vh] w-auto rounded object-contain" />
+                        </div>
+                        <div className="mt-2 flex justify-end gap-2">
+                            <Button variant="outline" size="sm" onClick={() => window.open(previewImage.url, "_blank")}>
+                                <ExternalLink className="mr-1.5 size-3.5" />
+                                Open Full Size
+                            </Button>
+                        </div>
+                    </DialogContent>
+                </Dialog>
+            )}
         </AdminLayout>
     );
 }

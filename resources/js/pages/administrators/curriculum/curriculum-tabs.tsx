@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Tabs as TabsPrimitive } from "@animate-ui/react/primitives/base-ui/tabs";
+import { Tabs as TabsPrimitive } from "@base-ui/react/tabs";
 import type React from "react";
 
 export type TabsVariant = "default" | "underline";

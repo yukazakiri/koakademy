@@ -135,7 +135,7 @@ jobs:
           # Pinned to the first release that carries the CVE-2026-109618 and
           # CVE-2026-109619 fixes. Do not widen this back to "8.5".
           php-version: "8.5.12"
-          extensions: mbstring, bcmath, pcntl, intl, gd, zip, sqlite3
+          extensions: mbstring, bcmath, pcntl, intl, gd, zip, sqlite3, ffi, posix
           ini-values: memory_limit=1G
           coverage: none
           tools: composer:v2

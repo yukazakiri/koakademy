@@ -151,7 +151,8 @@ RUN install-php-extensions \
     zip \
     intl \
     gd \
-    redis
+    redis \
+    ffi
 
 # Install Supercronic
 RUN case "${TARGETARCH}" in \

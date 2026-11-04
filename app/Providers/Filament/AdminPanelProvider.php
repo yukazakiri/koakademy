@@ -13,6 +13,7 @@ use App\Filament\Pages\Backups;
 use App\Filament\Pages\GeneralSettings;
 use App\Filament\Plugins\DiscoveredModulesPlugin;
 use App\Filament\Plugins\PennantManagerPlugin;
+use App\Http\Middleware\ResetFeatureAccessState;
 use App\Services\AnalyticsSettingsService;
 use App\Settings\SiteSettings;
 use Awcodes\Gravatar\GravatarPlugin;
@@ -300,6 +301,7 @@ final class AdminPanelProvider extends PanelProvider
                 AccountWidget::class,
             ])
             ->middleware([
+                ResetFeatureAccessState::class,
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
                 StartSession::class,

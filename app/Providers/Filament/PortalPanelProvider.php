@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers\Filament;
 
+use App\Http\Middleware\ResetFeatureAccessState;
 use App\Settings\SiteSettings;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -65,6 +66,7 @@ final class PortalPanelProvider extends PanelProvider
                 UndoToastPlugin::make(),
             ])
             ->middleware([
+                ResetFeatureAccessState::class,
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
                 StartSession::class,

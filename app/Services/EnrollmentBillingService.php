@@ -109,7 +109,7 @@ final class EnrollmentBillingService
                     ->whereNotIn('transaction_id', PaymentAllocation::query()->select('transaction_id'))
                     ->with('transaction')
                     ->get()
-                    ->sum(fn (StudentTransaction $link): float => $this->tuitionPaymentFromSettlements($link->transaction))
+                    ->sum(fn (StudentTransaction $link): float => $this->tuitionPaymentFromSettlements($link->transaction, $tuition))
                 : 0.0;
 
             return round((float) $allocatedPaid + $legacyPaid, 2);
@@ -126,9 +126,8 @@ final class EnrollmentBillingService
                     ->whereIn('status', ['Paid', 'Completed', 'paid', 'completed'])
                     ->with('transaction')->get();
             if ($linkedPayments->isNotEmpty()) {
-                $linkedPaid = $linkedPayments->sum(fn (StudentTransaction $link): float =>
-                    $link->transaction && in_array($link->transaction->status, ['Paid', 'Completed', 'paid', 'completed'], true)
-                        ? $this->tuitionPaymentFromSettlements($link->transaction)
+                $linkedPaid = $linkedPayments->sum(fn (StudentTransaction $link): float => $link->transaction && in_array($link->transaction->status, ['Paid', 'Completed', 'paid', 'completed'], true)
+                        ? $this->tuitionPaymentFromSettlements($link->transaction, $tuition)
                         : 0.0
                 );
 
@@ -158,7 +157,7 @@ final class EnrollmentBillingService
             ->forAcademicPeriod($schoolYear, $semester)
             ->whereIn('transactions.status', ['Paid', 'Completed', 'paid', 'completed'])
             ->get()
-            ->sum(fn (Transaction $transaction): float => $this->tuitionPaymentFromSettlements($transaction));
+            ->sum(fn (Transaction $transaction): float => $this->tuitionPaymentFromSettlements($transaction, $tuition));
 
         return $transactionPaid;
     }
@@ -280,7 +279,7 @@ final class EnrollmentBillingService
         return max($openingPaid, $verifiedPaid);
     }
 
-    private function tuitionPaymentFromSettlements(Transaction $transaction): float
+    private function tuitionPaymentFromSettlements(Transaction $transaction, ?StudentTuition $tuition = null): float
     {
         $settlements = $transaction->settlements;
 
@@ -292,7 +291,30 @@ final class EnrollmentBillingService
             return 0.0;
         }
 
-        return (float) ($settlements['tuition_fee'] ?? 0);
+        $paid = (float) ($settlements['tuition_fee'] ?? 0);
+
+        if ($tuition instanceof StudentTuition) {
+            $enrollment = $tuition->relationLoaded('enrollment')
+                ? $tuition->enrollment
+                : $tuition->enrollment()->first();
+
+            if ($enrollment instanceof StudentEnrollment) {
+                $additionalFees = $enrollment->relationLoaded('additionalFees')
+                    ? $enrollment->additionalFees
+                    : $enrollment->additionalFees()->get();
+
+                $isAdditionalFeePayment = $additionalFees->contains(function ($fee) use ($transaction): bool {
+                    return (! empty($fee->transaction_number) && $fee->transaction_number === $transaction->invoicenumber)
+                        || $transaction->description === "Payment for {$fee->fee_name}";
+                });
+
+                if ($isAdditionalFeePayment) {
+                    $paid += (float) ($settlements['others'] ?? 0);
+                }
+            }
+        }
+
+        return $paid;
     }
 
     private function resolveStudent(StudentTuition $tuition): ?Student

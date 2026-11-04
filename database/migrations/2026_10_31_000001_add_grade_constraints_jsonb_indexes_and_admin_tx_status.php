@@ -142,6 +142,18 @@ return new class extends Migration
         }
 
         if (Schema::hasTable('admin_transactions') && Schema::hasColumn('admin_transactions', 'status')) {
+            // SQLite refuses to drop a column that an index still references,
+            // and a later migration adds an index on this status column.
+            foreach (Schema::getIndexes('admin_transactions') as $index) {
+                if ($index['primary'] || $index['unique'] || ! in_array('status', $index['columns'], true)) {
+                    continue;
+                }
+
+                Schema::table('admin_transactions', function (Blueprint $table) use ($index): void {
+                    $table->dropIndex($index['name']);
+                });
+            }
+
             Schema::table('admin_transactions', function (Blueprint $table): void {
                 $table->dropColumn('status');
             });

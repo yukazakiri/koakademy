@@ -569,7 +569,7 @@ it('safely exposes department relation aliases on user model', function (): void
         ->and($user->departmentRecord->id)->toBe($department->id)
         ->and($user->departmentRelation)->toBeInstanceOf(App\Models\Department::class)
         ->and($user->departmentRelation->id)->toBe($department->id)
-        ->and($user->department)->toBeInstanceOf(App\Models\Department::class)
-        ->and($user->department->id)->toBe($department->id)
+        ->and($user->department())->toBeInstanceOf(Illuminate\Database\Eloquent\Relations\BelongsTo::class)
+        ->and($user->department)->toBe('CS Free Text')
         ->and($user->department_profile)->toBe('CS Free Text');
 });

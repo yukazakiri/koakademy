@@ -38,7 +38,7 @@ final class ProfileController extends Controller
                     'postal_code' => $user->postal_code,
                     'bio' => $user->bio,
                     'website' => $user->website,
-                    'department' => $user->department,
+                    'department' => $user->department_profile ?? $user->department,
                     'position' => $user->position,
                 ],
                 'faculty' => $faculty ? [

@@ -442,6 +442,10 @@ final class AdministratorFacultyManagementController extends Controller
             ]);
     }
 
+    /**
+     * Create or repair a portal user account for the specified faculty member,
+     * synchronizing department foreign key and legacy department profile fields.
+     */
     public function managePortalAccount(ManageFacultyPortalAccountRequest $request, Faculty $faculty): RedirectResponse
     {
         $data = $request->validated();
@@ -471,7 +475,7 @@ final class AdministratorFacultyManagementController extends Controller
                 'role' => $data['role'],
                 'school_id' => $portalUser->school_id ?: $faculty->school_id,
                 'department_id' => $portalUser->department_id ?: $faculty->department_id,
-                'department' => $portalUser->department ?: $faculty->department,
+                'department' => $portalUser->department_profile ?: ($portalUser->getRawOriginal('department') ?: $faculty->department),
                 'faculty_id_number' => $faculty->faculty_id_number,
                 'record_id' => $faculty->id,
             ])->save();

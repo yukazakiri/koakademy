@@ -112,6 +112,10 @@ final class AdministratorUserManagementController extends Controller
         ]);
     }
 
+    /**
+     * Display the specified user's detail overview and security audit log,
+     * safely resolving school, department relationship or legacy string, and roles.
+     */
     public function show(Request $request, User $user): Response
     {
         $this->authorizeUserManagementAccess('View:User');
@@ -142,7 +146,7 @@ final class AdministratorUserManagementController extends Controller
                 'school' => $user->school?->name,
                 'department' => ($user->relationLoaded('department') ? $user->getRelation('department')?->name : null)
                     ?? $user->departmentRelation?->name
-                    ?? $user->department?->name
+                    ?? (is_string($user->department_profile) ? $user->department_profile : null)
                     ?? (is_string($user->getRawOriginal('department')) && filled($user->getRawOriginal('department')) ? $user->getRawOriginal('department') : null),
                 'roles' => $user->roles->filter(fn (Role $role): bool => UserSystemRoleService::fromName($role->name) === null)->pluck('name')->values(),
                 'email_verified_at' => $user->email_verified_at?->toIso8601String(),

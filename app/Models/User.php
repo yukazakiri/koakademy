@@ -63,7 +63,9 @@ use Spatie\Permission\Traits\HasRoles;
  * @property-read Collection<int, AdminTransaction> $transactions
  * @property-read int|null $transactions_count
  * @property-read School|null $school
- * @property-read Department|null $department
+ * @property-read Department|null $departmentRecord
+ * @property-read Department|null $departmentRelation
+ * @property-read string|null $department_profile
  *
  * @method static UserFactory factory($count = null, $state = [])
  * @method static Builder<static>|User newModelQuery()
@@ -498,8 +500,6 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
 
     /**
      * The owning department record through the department_id foreign key.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo<Department, self>
      */
     public function departmentRecord(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
@@ -508,8 +508,6 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
 
     /**
      * Alias for departmentRecord() to safely access the relationship without column collision.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo<Department, self>
      */
     public function departmentRelation(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
@@ -518,42 +516,10 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
 
     /**
      * Get the department that this user belongs to
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo<Department, self>
      */
     public function department(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
         return $this->departmentRecord();
-    }
-
-    /**
-     * Access the department relation safely, resolving collision with the users.department string column.
-     */
-    public function getDepartmentAttribute(): ?Department
-    {
-        if ($this->relationLoaded('department')) {
-            $relation = $this->getRelation('department');
-
-            return $relation instanceof Department ? $relation : null;
-        }
-
-        if ($this->relationLoaded('departmentRelation')) {
-            $relation = $this->getRelation('departmentRelation');
-
-            return $relation instanceof Department ? $relation : null;
-        }
-
-        if ($this->relationLoaded('departmentRecord')) {
-            $relation = $this->getRelation('departmentRecord');
-
-            return $relation instanceof Department ? $relation : null;
-        }
-
-        if ($this->department_id) {
-            return $this->departmentRecord;
-        }
-
-        return null;
     }
 
     /**
@@ -632,7 +598,8 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
     }
 
     /**
-     * Get organizational context string
+     * Get the organizational context path (e.g. "School of Computing > Department of IT")
+     * resolving through the department relationship or legacy string attribute.
      */
     public function getOrganizationalContextAttribute(): string
     {
@@ -642,11 +609,11 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
             $context[] = $this->school->name;
         }
 
-        $department = $this->department;
+        $department = $this->departmentRelation;
         if ($department instanceof Department) {
             $context[] = $department->name;
-        } elseif (is_string($this->attributes['department'] ?? null) && filled($this->attributes['department'])) {
-            $context[] = $this->attributes['department'];
+        } elseif (is_string($this->getAttribute('department')) && filled($this->getAttribute('department'))) {
+            $context[] = $this->getAttribute('department');
         }
 
         return empty($context) ? 'No organizational assignment' : implode(' > ', $context);

@@ -475,7 +475,7 @@ final class AdministratorFacultyManagementController extends Controller
                 'role' => $data['role'],
                 'school_id' => $portalUser->school_id ?: $faculty->school_id,
                 'department_id' => $portalUser->department_id ?: $faculty->department_id,
-                'department' => $portalUser->department_profile ?: ($portalUser->getRawOriginal('department') ?: $faculty->department),
+                'department' => $portalUser->department_profile ?: $faculty->department,
                 'faculty_id_number' => $faculty->faculty_id_number,
                 'record_id' => $faculty->id,
             ])->save();

@@ -294,10 +294,16 @@ final class AppServiceProvider extends ServiceProvider
             JobExceptionOccurred::class,
         ], $reset);
 
-        Event::listen(JobProcessing::class, static function (): void {
+        $resetPennant = static function (): void {
             Feature::flushCache();
-            app(\App\Services\FeatureAccessService::class)->reset();
-        });
+            if (app()->bound(\App\Services\FeatureAccessService::class)) {
+                app(\App\Services\FeatureAccessService::class)->reset();
+            }
+        };
+
+        $this->app->terminating($resetPennant);
+
+        Event::listen(JobProcessing::class, $resetPennant);
     }
 
     private function definePennantFeatures(): void

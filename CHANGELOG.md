@@ -1,5 +1,96 @@
 # Changelog
 
+## [1.30.0](https://github.com/yukazakiri/koakademy/compare/v1.29.0...v1.30.0) (2026-11-05)
+
+
+### Features
+
+* **ai:** gate AI and MCP surfaces with managed flags ([#472](https://github.com/yukazakiri/koakademy/issues/472)) ([ce8502b](https://github.com/yukazakiri/koakademy/commit/ce8502b93753cbfed47fa6ba783f0ca806c0d64d))
+* **ai:** revamp administrator AI floating widget with ReUI components ([#481](https://github.com/yukazakiri/koakademy/issues/481)) ([b01f196](https://github.com/yukazakiri/koakademy/commit/b01f1965001ddc97d979e227ec8cb85205dac0dc))
+* **classes:** revamp class creation wizard with live visualizer ([#479](https://github.com/yukazakiri/koakademy/issues/479)) ([948c041](https://github.com/yukazakiri/koakademy/commit/948c0413b844a844d20867593fa0e753c3891506))
+* **classes:** revamp edit modal and index page with visualizer & KPI strip ([#480](https://github.com/yukazakiri/koakademy/issues/480)) ([43cee25](https://github.com/yukazakiri/koakademy/commit/43cee256d4f766a10e97cfc4df885dd6c721ec9e))
+* **extensions:** add enterprise licensing and contributor SDK ([#486](https://github.com/yukazakiri/koakademy/issues/486)) ([ff3cae9](https://github.com/yukazakiri/koakademy/commit/ff3cae913b14b11737380446472f2119e3e60b28))
+* **finance:** separate tuition transaction adjustment from resolution for multi-transaction workflows ([#516](https://github.com/yukazakiri/koakademy/issues/516)) ([8cde3ec](https://github.com/yukazakiri/koakademy/commit/8cde3ecf46919aab7aedfbfd60c816d88606a963))
+* **finance:** support payment adjustment and multi-receipt photo uploads for tuition update requests ([#515](https://github.com/yukazakiri/koakademy/issues/515)) ([037eb56](https://github.com/yukazakiri/koakademy/commit/037eb56f85320ae834fa344dd0f6f8e1c9cc742f))
+* **modules:** prefer Packagist for public packages ([#488](https://github.com/yukazakiri/koakademy/issues/488)) ([2191d57](https://github.com/yukazakiri/koakademy/commit/2191d57e7200e749f7f25f400408d8863722cc11))
+* **scheduling:** revamp class workspace and delivery modes ([#477](https://github.com/yukazakiri/koakademy/issues/477)) ([4f89838](https://github.com/yukazakiri/koakademy/commit/4f89838bc5df60d172992868cefeab61e9342c14))
+* **scheduling:** unify conflict engine, cohort offering generator, and schedule planner UX ([#473](https://github.com/yukazakiri/koakademy/issues/473)) ([5f7db97](https://github.com/yukazakiri/koakademy/commit/5f7db975da2855d3188004c01d0c6f7418d74ccc))
+* **students:** configure student policies and identifiers ([#499](https://github.com/yukazakiri/koakademy/issues/499)) ([2cb02e4](https://github.com/yukazakiri/koakademy/commit/2cb02e450eec1737be8f450c8499fe800dbe94cb))
+* **students:** revamp student configuration UI with ReUI and Apple-style hierarchy ([#506](https://github.com/yukazakiri/koakademy/issues/506)) ([c9a4de6](https://github.com/yukazakiri/koakademy/commit/c9a4de6e153492655de98b989d5a177ff89ab7ba))
+* **students:** simplify configuration and add custom fields ([6e74308](https://github.com/yukazakiri/koakademy/commit/6e743088ba7e029565c76a84ecf00739895f768f))
+* **themes:** adopt Shadebridge and system color defaults ([b884bd5](https://github.com/yukazakiri/koakademy/commit/b884bd5f5082f887b432e0c27358fb460adca1f7))
+* **themes:** adopt Shadebridge and system color defaults ([#466](https://github.com/yukazakiri/koakademy/issues/466)) ([2ff2603](https://github.com/yukazakiri/koakademy/commit/2ff2603497dcd9a46bd30c1efcaa34776ee5acf3))
+
+
+### Bug Fixes
+
+* **ai:** prevent replay duplicates and harden AI widget reliability ([#474](https://github.com/yukazakiri/koakademy/issues/474)) ([c556f15](https://github.com/yukazakiri/koakademy/commit/c556f15a05123e80f11684bde0bd3437aff85dc6))
+* **database:** dynamically resolve school_id in student statuses migration ([#420](https://github.com/yukazakiri/koakademy/issues/420)) ([#496](https://github.com/yukazakiri/koakademy/issues/496)) ([75f5164](https://github.com/yukazakiri/koakademy/commit/75f51641dd1f592c4085f44858e28478b9487d6d))
+* **database:** migration hygiene, money precision, grade constraints, and JSON indexing ([#424](https://github.com/yukazakiri/koakademy/issues/424)) ([#492](https://github.com/yukazakiri/koakademy/issues/492)) ([06a34ca](https://github.com/yukazakiri/koakademy/commit/06a34ca6bd50a81826bcc6638b68f931dd056700))
+* **database:** normalize student_id across tables and make repairs cross-driver ([#417](https://github.com/yukazakiri/koakademy/issues/417)) ([#485](https://github.com/yukazakiri/koakademy/issues/485)) ([d4f21a0](https://github.com/yukazakiri/koakademy/commit/d4f21a0d103e7fe8028b68e6fd9e9d5e985c7174))
+* **database:** preserve defaults during PostgreSQL jsonb migration ([0e18b3b](https://github.com/yukazakiri/koakademy/commit/0e18b3bb46e01f3cd5d2e093f8d2a2568fae92c1))
+* **database:** preserve legacy financial orphans on PostgreSQL ([482faed](https://github.com/yukazakiri/koakademy/commit/482faedc457d5cfbca20a1b04c2184934e8466c2))
+* **database:** restrict cascading deletes on financial ledgers and signed documents ([#418](https://github.com/yukazakiri/koakademy/issues/418)) ([#484](https://github.com/yukazakiri/koakademy/issues/484)) ([f2da72f](https://github.com/yukazakiri/koakademy/commit/f2da72fce7f20c4f71151ee12292aea20e72afa4))
+* **database:** tolerate legacy financial foreign keys ([5391f2d](https://github.com/yukazakiri/koakademy/commit/5391f2dad5844fa4082494d22c83c08456b694c4))
+* **db:** restore missing model tables and drop dead models ([#419](https://github.com/yukazakiri/koakademy/issues/419)) ([#483](https://github.com/yukazakiri/koakademy/issues/483)) ([31e9def](https://github.com/yukazakiri/koakademy/commit/31e9defce7f2542d962ab810f2fbcb8ecb6663aa))
+* **docs:** stop tracking stale Astro content cache ([c45ed32](https://github.com/yukazakiri/koakademy/commit/c45ed321268867a144a58fc97ac70003e1b5503c))
+* **filament:** flush Pennant feature-flag cache on panel routes ([#511](https://github.com/yukazakiri/koakademy/issues/511)) ([e111593](https://github.com/yukazakiri/koakademy/commit/e111593c7e4efd7f48e5577a13fc02d3d24b29ff))
+* **finance:** preserve enrollment down payments ([#508](https://github.com/yukazakiri/koakademy/issues/508)) ([a59de81](https://github.com/yukazakiri/koakademy/commit/a59de81abfc210fa0f0429b3c60ac87252bdde49))
+* **modules:** recheck state table after a negative availability check ([#469](https://github.com/yukazakiri/koakademy/issues/469)) ([29ef13d](https://github.com/yukazakiri/koakademy/commit/29ef13d66cf5e555a6f107bd21aa1b639da73215))
+* **octane:** reset request-scoped state between requests ([#468](https://github.com/yukazakiri/koakademy/issues/468)) ([bec7253](https://github.com/yukazakiri/koakademy/commit/bec7253f7e40ba718a37bd586b191d4055a6f8e5))
+* **queue:** add supervisors for transfers and assessment exports, route PDF jobs to redis-pdf ([#471](https://github.com/yukazakiri/koakademy/issues/471)) ([88d2b96](https://github.com/yukazakiri/koakademy/commit/88d2b9610b3affe894c9a7761a5f17e3309ea7b7))
+* **queue:** keep retry_after above export job timeouts ([#490](https://github.com/yukazakiri/koakademy/issues/490)) ([eb42e2e](https://github.com/yukazakiri/koakademy/commit/eb42e2e577bd12a45703d63cbe7638db3eddf365))
+* **scheduling:** support mixed delivery per class meeting ([#478](https://github.com/yukazakiri/koakademy/issues/478)) ([6db7d77](https://github.com/yukazakiri/koakademy/commit/6db7d77765598f9452449f4936666f4e8cf69d1c))
+* **search:** make search SQL portable across database drivers ([#465](https://github.com/yukazakiri/koakademy/issues/465)) ([4780a14](https://github.com/yukazakiri/koakademy/commit/4780a148ec8aaafe0bc882c52b02979314a67149))
+* **security:** guard sensitive columns against API mass assignment ([#493](https://github.com/yukazakiri/koakademy/issues/493)) ([f158d26](https://github.com/yukazakiri/koakademy/commit/f158d269ea4652f940180627b3c9fa551685dc08))
+* **security:** harden SVG uploads, enforce API flag, and secure session defaults ([#415](https://github.com/yukazakiri/koakademy/issues/415)) ([#495](https://github.com/yukazakiri/koakademy/issues/495)) ([62f51fb](https://github.com/yukazakiri/koakademy/commit/62f51fbee4e2a23eb4b03a23acd6637858b01de6))
+* **security:** prevent stored XSS and redact secrets in settings API ([#401](https://github.com/yukazakiri/koakademy/issues/401)) ([#494](https://github.com/yukazakiri/koakademy/issues/494)) ([e1a70a9](https://github.com/yukazakiri/koakademy/commit/e1a70a982b1609af901f2adb887ca41b7239a9f0))
+* **student:** show tuition update request on mobile ([b551ade](https://github.com/yukazakiri/koakademy/commit/b551ade9e0e230e43693e78ee26d28dcd303fcbc))
+* **students:** prevent tuition formatting type errors ([d22081f](https://github.com/yukazakiri/koakademy/commit/d22081fa726a2d5a236baae3b60ea5db2a099e5b))
+* **tenancy:** prefix faculty cache keys with tenant school ID ([#482](https://github.com/yukazakiri/koakademy/issues/482)) ([18c94cf](https://github.com/yukazakiri/koakademy/commit/18c94cfcc614d4a63144db771aaedf992bfa4482))
+* **timetable:** scope conflict cache clearing to conflict keys ([#517](https://github.com/yukazakiri/koakademy/issues/517)) ([16424ad](https://github.com/yukazakiri/koakademy/commit/16424ad8cd50ff136d85dcd1e503de8269a831f1))
+* update Cashier to v1.1.1 for atomic payments ([#491](https://github.com/yukazakiri/koakademy/issues/491)) ([0e58152](https://github.com/yukazakiri/koakademy/commit/0e581524ffdca1b4510c06434423cdc9ef8a40e4))
+* **users:** resolve department attribute and relation name collision ([#513](https://github.com/yukazakiri/koakademy/issues/513)) ([#514](https://github.com/yukazakiri/koakademy/issues/514)) ([5254496](https://github.com/yukazakiri/koakademy/commit/525449629722307f3905292d2aeb12da730c9206))
+
+
+### Performance Improvements
+
+* **api:** cap per_page on API and admin endpoints ([#462](https://github.com/yukazakiri/koakademy/issues/462)) ([79bc6a5](https://github.com/yukazakiri/koakademy/commit/79bc6a5dce06e4dde8c8b1d446f33232cfbf979c))
+* **database:** add missing indexes on hot enrollment, schedule and finance tables ([#509](https://github.com/yukazakiri/koakademy/issues/509)) ([ced7910](https://github.com/yukazakiri/koakademy/commit/ced79109c8dbd2b6d8d0ccbb720b99f138f6cc27))
+* **db:** drop redundant and low-cardinality indexes ([#467](https://github.com/yukazakiri/koakademy/issues/467)) ([a433ea6](https://github.com/yukazakiri/koakademy/commit/a433ea650b10b95af700f524d36be7151287a560))
+* **queue:** adopt queue-prefork for horizon and worker memory savings ([#512](https://github.com/yukazakiri/koakademy/issues/512)) ([50ffc0e](https://github.com/yukazakiri/koakademy/commit/50ffc0e88ca37ea4820397723720b6310ef66104))
+
+
+### Build System
+
+* **deps:** bump astrophp/trail from 0.3.2 to 1.0.0 in the composer-major group ([#502](https://github.com/yukazakiri/koakademy/issues/502)) ([f5ffc04](https://github.com/yukazakiri/koakademy/commit/f5ffc04e4d9528049157a04d8cba7ef4e85e502f))
+* **deps:** bump the composer-minor group across 1 directory with 15 updates ([#507](https://github.com/yukazakiri/koakademy/issues/507)) ([bc459c8](https://github.com/yukazakiri/koakademy/commit/bc459c81b8430756403bfc0efe3a111b78fe2410))
+* **deps:** bump the composer-patch group across 1 directory with 12 updates ([#500](https://github.com/yukazakiri/koakademy/issues/500)) ([f9d9c20](https://github.com/yukazakiri/koakademy/commit/f9d9c20552ca929122ecf93f9bef07af8fb65904))
+* **deps:** bump the docker-base-images group in /docker with 2 updates ([#498](https://github.com/yukazakiri/koakademy/issues/498)) ([4857af4](https://github.com/yukazakiri/koakademy/commit/4857af45b078d4212c30509875777a8c0456e553))
+* **deps:** bump the github-actions group with 3 updates ([#497](https://github.com/yukazakiri/koakademy/issues/497)) ([2d36871](https://github.com/yukazakiri/koakademy/commit/2d3687112b592588dbba8dd12c0b9aca9e93554b))
+
+
+### Documentation
+
+* make KoAkademy README welcoming, scannable, and transparent ([#476](https://github.com/yukazakiri/koakademy/issues/476)) ([a0dd134](https://github.com/yukazakiri/koakademy/commit/a0dd134b2708dfd7349068b1af66afc8ae4a5ab5))
+* **themes:** add light and dark previews and fix overview slug ([6c841e0](https://github.com/yukazakiri/koakademy/commit/6c841e0f0317448ea863c8dbb033b174d6863aeb))
+
+
+### Code Refactoring
+
+* **modules:** install features from their dedicated repositories ([#487](https://github.com/yukazakiri/koakademy/issues/487)) ([93a638b](https://github.com/yukazakiri/koakademy/commit/93a638b3aef7bc6e1266d91384ab544f7a672caa))
+
+
+### Tests
+
+* **cashier:** cover mixed settlement balance allocation ([#510](https://github.com/yukazakiri/koakademy/issues/510)) ([55a43e1](https://github.com/yukazakiri/koakademy/commit/55a43e1efa135d33d5c5792761ed04dbf6129e1a))
+* revamp curriculum workspace and add global subject search ([#470](https://github.com/yukazakiri/koakademy/issues/470)) ([a163826](https://github.com/yukazakiri/koakademy/commit/a1638262c4b017a6d19b96e40ef532884690deee))
+
+
+### Maintenance
+
+* **modules:** lock released 1.1 packages ([#489](https://github.com/yukazakiri/koakademy/issues/489)) ([62ba77f](https://github.com/yukazakiri/koakademy/commit/62ba77fe1c59f3b88876f7011337bc737f0db712))
+
 ## [1.29.0](https://github.com/yukazakiri/koakademy/compare/v1.28.0...v1.29.0) (2026-10-22)
 
 

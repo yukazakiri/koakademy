@@ -1071,7 +1071,9 @@ final class Timetable extends Page implements HasForms, HasTable
     {
         $schoolId = app(TenantContext::class)->getCurrentSchoolId() ?? 0;
 
-        return "timetable_conflicts:{$schoolId}:{$this->selectedView}:{$this->selectedId}";
+        return TimetableConflictService::scopedKey(
+            "timetable_conflicts:{$schoolId}:{$this->selectedView}:{$this->selectedId}"
+        );
     }
 
     /**

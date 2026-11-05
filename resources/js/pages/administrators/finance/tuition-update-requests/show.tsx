@@ -154,12 +154,8 @@ export default function TuitionUpdateRequestShow({
               ? String(matching_transactions[0].amount)
               : "",
         reference_number: request.receipt_number ?? (matching_transactions[0]?.receipt_number ?? ""),
-        note: request.amount
-            ? `Adjusted payment transaction amount to ₱${Number(request.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}.`
-            : "Adjusted payment transaction amount.",
-        resolution_note: request.amount
-            ? `Adjusted payment transaction to reflect verified downpayment/tuition payment of ₱${Number(request.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}.`
-            : "Adjusted transaction to reflect verified amount.",
+        note: request.resolution_note || "Adjusted payment transaction amount.",
+        resolution_note: request.resolution_note || "Adjusted payment transaction to reflect verified downpayment/tuition payment on student tuition account.",
         adjust_multiple: Boolean(request.receipts && request.receipts.length > 1),
         adjustments: (request.receipts && request.receipts.length > 0
             ? request.receipts
@@ -173,13 +169,7 @@ export default function TuitionUpdateRequestShow({
 
     // Form 2: Finalize & Resolve Request (Once all adjustments are completed)
     const resolveForm = useForm({
-        resolution_note: request.resolution_note || (
-            request.amount
-                ? `Your tuition update request has been reviewed. Transactions and tuition balance have been adjusted to reflect ₱${Number(request.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}.`
-                : "Your tuition update request has been reviewed and verified. All payment and tuition fee adjustments have been applied."
-        ),
-        transaction_id: request.resolved_transaction?.id ? String(request.resolved_transaction.id) : "",
-        tuition_adjustment_id: request.tuition_adjustment?.id ? String(request.tuition_adjustment.id) : "",
+        resolution_note: request.resolution_note || "Your tuition update request has been reviewed and verified. All payment and tuition fee adjustments have been applied.",
     });
 
     // Form 3: Link Existing Transaction As-Is
@@ -230,6 +220,7 @@ export default function TuitionUpdateRequestShow({
     function handleAdjustPaymentOnly(event: React.FormEvent) {
         event.preventDefault();
         adjustForm.transform((data) => {
+            const memo = (data.resolution_note || data.note || "").trim();
             if (data.adjust_multiple) {
                 return {
                     adjustments: data.adjustments.map((a) => ({
@@ -237,14 +228,14 @@ export default function TuitionUpdateRequestShow({
                         amount: Number(a.amount),
                         reference_number: a.reference_number || undefined,
                     })),
-                    note: data.note || undefined,
+                    note: memo || undefined,
                 };
             }
             return {
                 transaction_id: Number(data.transaction_id),
                 amount: Number(data.amount),
                 reference_number: data.reference_number || undefined,
-                note: data.note || undefined,
+                note: memo || undefined,
             };
         });
         adjustForm.post(adjustPayment.url(request.id), { preserveScroll: true });
@@ -253,6 +244,8 @@ export default function TuitionUpdateRequestShow({
     function handleAdjustAndResolvePayment(event: React.FormEvent) {
         event.preventDefault();
         adjustForm.transform((data) => {
+            const finalNote = (data.resolution_note || data.note || "").trim() ||
+                "Adjusted payment transaction amount to reflect verified tuition payment.";
             if (data.adjust_multiple) {
                 return {
                     adjustments: data.adjustments.map((a) => ({
@@ -260,14 +253,14 @@ export default function TuitionUpdateRequestShow({
                         amount: Number(a.amount),
                         reference_number: a.reference_number || undefined,
                     })),
-                    resolution_note: data.resolution_note,
+                    resolution_note: finalNote,
                 };
             }
             return {
                 transaction_id: Number(data.transaction_id),
                 amount: Number(data.amount),
                 reference_number: data.reference_number || undefined,
-                resolution_note: data.resolution_note,
+                resolution_note: finalNote,
             };
         });
         adjustForm.post(adjustAndResolvePayment.url(request.id), { preserveScroll: true });
@@ -276,9 +269,8 @@ export default function TuitionUpdateRequestShow({
     function handleResolveRequest(event: React.FormEvent) {
         event.preventDefault();
         resolveForm.transform((data) => ({
-            resolution_note: data.resolution_note,
-            transaction_id: data.transaction_id ? Number(data.transaction_id) : undefined,
-            tuition_adjustment_id: data.tuition_adjustment_id ? Number(data.tuition_adjustment_id) : undefined,
+            resolution_note: data.resolution_note.trim() ||
+                "Your tuition update request has been reviewed and verified. All payment and tuition fee adjustments have been applied.",
         }));
         resolveForm.post(resolve.url(request.id), { preserveScroll: true });
     }
@@ -724,17 +716,27 @@ export default function TuitionUpdateRequestShow({
                                                             )}
 
                                                             <div className="flex flex-col gap-1.5">
-                                                                <Label htmlFor="adjust-note">Adjustment Note / Memo (Optional)</Label>
-                                                                <Input
+                                                                <Label htmlFor="adjust-note">Adjustment Note / Resolution Memo</Label>
+                                                                <Textarea
                                                                     id="adjust-note"
-                                                                    value={adjustForm.data.note}
-                                                                    onChange={(e) => adjustForm.setData("note", e.target.value)}
-                                                                    placeholder="e.g. Adjusted downpayment transaction amount..."
-                                                                    className="text-xs"
+                                                                    value={adjustForm.data.resolution_note}
+                                                                    onChange={(e) => {
+                                                                        const val = e.target.value;
+                                                                        adjustForm.setData((prev) => ({
+                                                                            ...prev,
+                                                                            resolution_note: val,
+                                                                            note: val,
+                                                                        }));
+                                                                    }}
+                                                                    placeholder="Explain the payment adjustment applied to the student's account..."
+                                                                    className="min-h-20 resize-y text-xs"
                                                                 />
                                                                 <p className="text-[11px] text-muted-foreground">
-                                                                    Recorded in the review audit timeline. You can adjust multiple transactions while keeping this request in review.
+                                                                    Recorded in the review audit timeline. If resolving in one step, this note is delivered to the student.
                                                                 </p>
+                                                                {adjustForm.errors.resolution_note && (
+                                                                    <p className="text-destructive text-xs">{adjustForm.errors.resolution_note}</p>
+                                                                )}
                                                                 {adjustForm.errors.note && (
                                                                     <p className="text-destructive text-xs">{adjustForm.errors.note}</p>
                                                                 )}
@@ -1107,7 +1109,7 @@ export default function TuitionUpdateRequestShow({
                                         </div>
 
                                         <div className="flex justify-end">
-                                            <Button type="submit" disabled={resolveForm.processing} className="w-full sm:w-auto">
+                                            <Button type="submit" disabled={resolveForm.processing || adjustForm.processing} className="w-full sm:w-auto">
                                                 {resolveForm.processing && <Loader2 className="mr-2 size-4 animate-spin" />}
                                                 <CheckCircle2 className="mr-2 size-4" />
                                                 Mark as Resolved & Notify Student

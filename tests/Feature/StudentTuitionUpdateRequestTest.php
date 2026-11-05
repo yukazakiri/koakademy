@@ -672,8 +672,106 @@ it('lets Finance adjust multiple transactions incrementally while keeping the re
     $request->refresh();
     expect($request->status)->toBe(StudentTuitionUpdateRequest::StatusResolved)
         ->and($request->resolved_at)->not->toBeNull()
+        ->and($request->resolved_transaction_id)->toBe($tx2->id)
         ->and($request->resolution_note)->toContain('Both receipts have been adjusted')
         ->and($request->events()->where('event', 'resolved')->count())->toBe(1);
 
     Notification::assertSentTo($studentUser, StudentTuitionUpdateRequestReviewedNotification::class);
+});
+
+it('lets Finance adjust multiple transactions in a single batch request and validates distinct transaction IDs', function (): void {
+    Notification::fake();
+    [$studentUser, $student, $enrollment, $tuition] = tuitionRequestStudent();
+    $finance = tuitionRequestFinanceUser();
+
+    $tuition->overall_tuition = 15970.00;
+    $tuition->downpayment = 10000.00;
+    $tuition->paid = 10450.00;
+    $tuition->total_balance = 5520.00;
+    $tuition->status = 'Downpayment';
+    $tuition->save();
+
+    $tx1 = Transaction::query()->create([
+        'description' => 'Downpayment 1',
+        'status' => 'paid',
+        'transaction_date' => now(),
+        'settlements' => ['tuition_fee' => 6000.00],
+        'invoicenumber' => 'OR-224103',
+    ]);
+    StudentTransaction::query()->create([
+        'student_id' => $student->id,
+        'student_enrollment_id' => $enrollment->id,
+        'transaction_id' => $tx1->id,
+        'amount' => 6000.00,
+        'status' => 'paid',
+    ]);
+    App\Models\PaymentAllocation::query()->create([
+        'transaction_id' => $tx1->id,
+        'student_id' => $student->id,
+        'student_enrollment_id' => $enrollment->id,
+        'student_tuition_id' => $tuition->id,
+        'charge_category' => 'tuition',
+        'target_type' => 'assessment',
+        'amount' => 6000.00,
+        'notes' => 'Tuition downpayment 1',
+    ]);
+
+    $tx2 = Transaction::query()->create([
+        'description' => 'Downpayment 2',
+        'status' => 'paid',
+        'transaction_date' => now(),
+        'settlements' => ['tuition_fee' => 4450.00],
+        'invoicenumber' => 'OR-226432',
+    ]);
+    StudentTransaction::query()->create([
+        'student_id' => $student->id,
+        'student_enrollment_id' => $enrollment->id,
+        'transaction_id' => $tx2->id,
+        'amount' => 4450.00,
+        'status' => 'paid',
+    ]);
+    App\Models\PaymentAllocation::query()->create([
+        'transaction_id' => $tx2->id,
+        'student_id' => $student->id,
+        'student_enrollment_id' => $enrollment->id,
+        'student_tuition_id' => $tuition->id,
+        'charge_category' => 'tuition',
+        'target_type' => 'assessment',
+        'amount' => 4450.00,
+        'notes' => 'Tuition downpayment 2',
+    ]);
+
+    $this->actingAs($studentUser)->post(route('student.tuition.update-requests.store'), [
+        'school_year' => '2026 - 2027',
+        'semester' => 1,
+        'concern_type' => 'missing_payment',
+        'amount' => 10000.00,
+        'receipt_number' => 'OR-224103, OR-226432',
+        'details' => 'Please adjust both transactions in batch.',
+    ]);
+    $request = StudentTuitionUpdateRequest::query()->sole();
+    $this->actingAs($finance)->post(route('administrators.finance.tuition-update-requests.claim', $request))->assertRedirect();
+
+    // Duplicate transaction ID in batch must fail validation
+    $this->actingAs($finance)->post(route('administrators.finance.tuition-update-requests.adjust-payment', $request), [
+        'adjustments' => [
+            ['transaction_id' => $tx1->id, 'amount' => 5000.00],
+            ['transaction_id' => $tx1->id, 'amount' => 5000.00],
+        ],
+    ])->assertSessionHasErrors('adjustments.0.transaction_id');
+
+    // Distinct valid batch succeeds
+    $this->actingAs($finance)->post(route('administrators.finance.tuition-update-requests.adjust-payment', $request), [
+        'adjustments' => [
+            ['transaction_id' => $tx1->id, 'amount' => 5000.00, 'reference_number' => 'OR-224103'],
+            ['transaction_id' => $tx2->id, 'amount' => 5000.00, 'reference_number' => 'OR-226432'],
+        ],
+        'note' => 'Adjusted both payments in a single batch.',
+    ])->assertRedirect();
+
+    expect((float) $tx1->refresh()->raw_total_amount)->toBe(5000.00)
+        ->and((float) $tx2->refresh()->raw_total_amount)->toBe(5000.00)
+        ->and((float) $tuition->refresh()->paid)->toBe(10000.00)
+        ->and((float) $tuition->refresh()->total_balance)->toBe(5970.00)
+        ->and($request->refresh()->status)->toBe(StudentTuitionUpdateRequest::StatusInReview);
 });

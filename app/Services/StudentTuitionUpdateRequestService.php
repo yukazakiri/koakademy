@@ -277,22 +277,22 @@ final class StudentTuitionUpdateRequestService
     }
 
     /**
-     * Adjust existing cashier payment transaction(s) and resolve the tuition update request.
-     * Supports single transaction or multiple transactions (e.g. for dual receipts).
+     * Adjust existing cashier payment transaction(s) without closing the tuition update request.
+     * Status remains in_review so the reviewer can make additional adjustments.
      *
      * @param  array{transaction_id?: int|string|null, amount?: float|int|string|null, reference_number?: string|null, adjustments?: array<int, array{transaction_id: int|string, amount: float|int|string, reference_number?: string|null}>|null}  $adjustmentData
      */
-    public function adjustAndResolvePayment(
+    public function adjustPayment(
         StudentTuitionUpdateRequest $request,
         User $actor,
         array $adjustmentData,
-        string $note,
+        ?string $note,
         EnrollmentBillingService $billing,
     ): StudentTuitionUpdateRequest {
         return DB::transaction(function () use ($request, $actor, $adjustmentData, $note, $billing): StudentTuitionUpdateRequest {
             $locked = $this->reviewable($request, $actor);
             if ($locked->concern_type !== StudentTuitionUpdateRequest::ConcernMissingPayment) {
-                throw ValidationException::withMessages(['transaction_id' => 'Only missing-payment requests can be resolved with transaction adjustment.']);
+                throw ValidationException::withMessages(['transaction_id' => 'Only missing-payment requests can be modified with transaction adjustment.']);
             }
 
             $adjustments = [];
@@ -406,11 +406,55 @@ final class StudentTuitionUpdateRequestService
             }
             $billing->syncTuitionBalance($tuition);
 
+            if ($primaryTxId !== null) {
+                $locked->forceFill([
+                    'resolved_transaction_id' => $primaryTxId,
+                ])->save();
+            }
+
+            $eventNote = filled($note) ? mb_trim((string) $note) : 'Adjusted transaction amount and reconciled tuition balance.';
+            $this->event(
+                $locked,
+                $actor,
+                'transaction_adjusted',
+                StudentTuitionUpdateRequest::StatusInReview,
+                StudentTuitionUpdateRequest::StatusInReview,
+                $eventNote,
+                [
+                    'adjusted_transactions' => $adjustedTransactionsMeta,
+                    'net_variance' => $totalNetVariance,
+                    'balance_before' => $oldBalance,
+                    'balance_after' => (float) $tuition->total_balance,
+                    'paid_after' => (float) $tuition->paid,
+                ],
+            );
+
+            return $locked->refresh();
+        });
+    }
+
+    /**
+     * Adjust existing cashier payment transaction(s) and resolve the tuition update request in one action.
+     * Supports single transaction or multiple transactions (e.g. for dual receipts).
+     *
+     * @param  array{transaction_id?: int|string|null, amount?: float|int|string|null, reference_number?: string|null, adjustments?: array<int, array{transaction_id: int|string, amount: float|int|string, reference_number?: string|null}>|null}  $adjustmentData
+     */
+    public function adjustAndResolvePayment(
+        StudentTuitionUpdateRequest $request,
+        User $actor,
+        array $adjustmentData,
+        string $note,
+        EnrollmentBillingService $billing,
+    ): StudentTuitionUpdateRequest {
+        return DB::transaction(function () use ($request, $actor, $adjustmentData, $note, $billing): StudentTuitionUpdateRequest {
+            $adjusted = $this->adjustPayment($request, $actor, $adjustmentData, $note, $billing);
+
+            $locked = $this->reviewable($adjusted, $actor);
             $from = $locked->status;
             $locked->forceFill([
                 'status' => StudentTuitionUpdateRequest::StatusResolved,
                 'resolution_note' => mb_trim($note),
-                'resolved_transaction_id' => $primaryTxId,
+                'resolved_transaction_id' => $adjusted->resolved_transaction_id,
                 'tuition_adjustment_id' => null,
                 'resolved_at' => now(),
                 'open_key' => null,
@@ -424,11 +468,47 @@ final class StudentTuitionUpdateRequestService
                 StudentTuitionUpdateRequest::StatusResolved,
                 $locked->resolution_note,
                 [
-                    'adjusted_transactions' => $adjustedTransactionsMeta,
-                    'net_variance' => $totalNetVariance,
-                    'balance_before' => $oldBalance,
-                    'balance_after' => (float) $tuition->total_balance,
-                    'paid_after' => (float) $tuition->paid,
+                    'resolved_transaction_id' => $locked->resolved_transaction_id,
+                ],
+            );
+            $this->notifyAfterCommit($locked);
+
+            return $locked->refresh();
+        });
+    }
+
+    /**
+     * Resolve a claimed request after all reviews and adjustments are complete.
+     */
+    public function resolve(
+        StudentTuitionUpdateRequest $request,
+        User $actor,
+        string $note,
+        ?int $transactionId = null,
+        ?int $tuitionAdjustmentId = null,
+    ): StudentTuitionUpdateRequest {
+        return DB::transaction(function () use ($request, $actor, $note, $transactionId, $tuitionAdjustmentId): StudentTuitionUpdateRequest {
+            $locked = $this->reviewable($request, $actor);
+            $from = $locked->status;
+            $locked->forceFill([
+                'status' => StudentTuitionUpdateRequest::StatusResolved,
+                'resolution_note' => mb_trim($note),
+                'resolved_transaction_id' => $transactionId ?? $locked->resolved_transaction_id,
+                'tuition_adjustment_id' => $tuitionAdjustmentId ?? $locked->tuition_adjustment_id,
+                'resolved_at' => now(),
+                'open_key' => null,
+            ])->save();
+
+            $this->event(
+                $locked,
+                $actor,
+                'resolved',
+                $from,
+                StudentTuitionUpdateRequest::StatusResolved,
+                $locked->resolution_note,
+                [
+                    'resolved_transaction_id' => $locked->resolved_transaction_id,
+                    'tuition_adjustment_id' => $locked->tuition_adjustment_id,
                 ],
             );
             $this->notifyAfterCommit($locked);

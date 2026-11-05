@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+uses(Tests\TestCase::class);
+
 use App\Enums\UserRole;
 use App\Features\Toggles\StudentTuition as StudentTuitionFeature;
 use App\Models\Course;
@@ -539,6 +541,139 @@ it('lets Finance adjust an existing transaction amount to correct downpayment er
     $tuition->refresh();
     expect((float) $tuition->paid)->toBe(10000.00)
         ->and((float) $tuition->total_balance)->toBe(5970.00);
+
+    Notification::assertSentTo($studentUser, StudentTuitionUpdateRequestReviewedNotification::class);
+});
+
+it('lets Finance adjust multiple transactions incrementally while keeping the request in review, then resolve explicitly', function (): void {
+    Notification::fake();
+    [$studentUser, $student, $enrollment, $tuition] = tuitionRequestStudent();
+    $finance = tuitionRequestFinanceUser();
+
+    $tuition->overall_tuition = 15970.00;
+    $tuition->total_tuition = 11750.00;
+    $tuition->total_lectures = 9750.00;
+    $tuition->total_laboratory = 2000.00;
+    $tuition->total_miscelaneous_fees = 3700.00;
+    $tuition->downpayment = 10000.00;
+    $tuition->paid = 10450.00;
+    $tuition->total_balance = 5520.00;
+    $tuition->status = 'Downpayment';
+    $tuition->save();
+
+    // Two existing transactions: Tx1 = 6000, Tx2 = 4450 (Total 10450)
+    $tx1 = Transaction::query()->create([
+        'description' => 'Downpayment 1',
+        'status' => 'paid',
+        'transaction_date' => now(),
+        'settlements' => ['tuition_fee' => 6000.00],
+        'invoicenumber' => 'OR-224103',
+    ]);
+    $stTx1 = StudentTransaction::query()->create([
+        'student_id' => $student->id,
+        'student_enrollment_id' => $enrollment->id,
+        'transaction_id' => $tx1->id,
+        'amount' => 6000.00,
+        'status' => 'paid',
+    ]);
+    App\Models\PaymentAllocation::query()->create([
+        'transaction_id' => $tx1->id,
+        'student_transaction_id' => $stTx1->id,
+        'student_id' => $student->id,
+        'student_enrollment_id' => $enrollment->id,
+        'student_tuition_id' => $tuition->id,
+        'charge_category' => 'tuition',
+        'target_type' => 'assessment',
+        'amount' => 6000.00,
+        'notes' => 'Tuition downpayment 1',
+    ]);
+
+    $tx2 = Transaction::query()->create([
+        'description' => 'Downpayment 2',
+        'status' => 'paid',
+        'transaction_date' => now(),
+        'settlements' => ['tuition_fee' => 4450.00],
+        'invoicenumber' => 'OR-226432',
+    ]);
+    $stTx2 = StudentTransaction::query()->create([
+        'student_id' => $student->id,
+        'student_enrollment_id' => $enrollment->id,
+        'transaction_id' => $tx2->id,
+        'amount' => 4450.00,
+        'status' => 'paid',
+    ]);
+    App\Models\PaymentAllocation::query()->create([
+        'transaction_id' => $tx2->id,
+        'student_transaction_id' => $stTx2->id,
+        'student_id' => $student->id,
+        'student_enrollment_id' => $enrollment->id,
+        'student_tuition_id' => $tuition->id,
+        'charge_category' => 'tuition',
+        'target_type' => 'assessment',
+        'amount' => 4450.00,
+        'notes' => 'Tuition downpayment 2',
+    ]);
+
+    $this->actingAs($studentUser)->post(route('student.tuition.update-requests.store'), [
+        'school_year' => '2026 - 2027',
+        'semester' => 1,
+        'concern_type' => 'missing_payment',
+        'amount' => 10000.00,
+        'receipt_number' => 'OR-224103, OR-226432',
+        'details' => 'Both receipts together should equal 10,000 total downpayment.',
+    ]);
+    $request = StudentTuitionUpdateRequest::query()->sole();
+
+    $this->actingAs($finance)->post(route('administrators.finance.tuition-update-requests.claim', $request))->assertRedirect();
+    expect($request->refresh()->status)->toBe(StudentTuitionUpdateRequest::StatusInReview);
+
+    // Step 1: Adjust Tx1 from 6000 to 5000 WITHOUT resolving
+    $this->actingAs($finance)->post(route('administrators.finance.tuition-update-requests.adjust-payment', $request), [
+        'transaction_id' => $tx1->id,
+        'amount' => 5000.00,
+        'reference_number' => 'OR-224103',
+        'note' => 'Corrected Tx1 downpayment from 6,000 to 5,000.',
+    ])->assertRedirect();
+
+    $request->refresh();
+    // Must remain in_review!
+    expect($request->status)->toBe(StudentTuitionUpdateRequest::StatusInReview)
+        ->and($request->resolved_at)->toBeNull()
+        ->and($request->events()->where('event', 'transaction_adjusted')->count())->toBe(1);
+
+    expect((float) $tx1->refresh()->raw_total_amount)->toBe(5000.00)
+        ->and((float) $tuition->refresh()->paid)->toBe(9450.00); // 10450 - 1000 = 9450
+
+    // Step 2: Adjust Tx2 from 4450 to 5000 WITHOUT resolving
+    $this->actingAs($finance)->post(route('administrators.finance.tuition-update-requests.adjust-payment', $request), [
+        'transaction_id' => $tx2->id,
+        'amount' => 5000.00,
+        'reference_number' => 'OR-226432',
+        'note' => 'Corrected Tx2 downpayment from 4,450 to 5,000.',
+    ])->assertRedirect();
+
+    $request->refresh();
+    // Still in_review!
+    expect($request->status)->toBe(StudentTuitionUpdateRequest::StatusInReview)
+        ->and($request->events()->where('event', 'transaction_adjusted')->count())->toBe(2);
+
+    expect((float) $tx2->refresh()->raw_total_amount)->toBe(5000.00)
+        ->and((float) $tuition->refresh()->paid)->toBe(10000.00)
+        ->and((float) $tuition->refresh()->total_balance)->toBe(5970.00);
+
+    // Student has NOT been notified yet of completion
+    Notification::assertNothingSent();
+
+    // Step 3: Now explicitly resolve the request with a final resolution note
+    $this->actingAs($finance)->post(route('administrators.finance.tuition-update-requests.resolve', $request), [
+        'resolution_note' => 'Both receipts have been adjusted to ₱5,000.00 each for an exact ₱10,000.00 total downpayment.',
+    ])->assertRedirect();
+
+    $request->refresh();
+    expect($request->status)->toBe(StudentTuitionUpdateRequest::StatusResolved)
+        ->and($request->resolved_at)->not->toBeNull()
+        ->and($request->resolution_note)->toContain('Both receipts have been adjusted')
+        ->and($request->events()->where('event', 'resolved')->count())->toBe(1);
 
     Notification::assertSentTo($studentUser, StudentTuitionUpdateRequestReviewedNotification::class);
 });

@@ -7,11 +7,13 @@ namespace App\Http\Controllers;
 use App\Enums\PaymentMethod;
 use App\Finance\RecordFinancePayment;
 use App\Http\Requests\Administrators\AdjustAndResolveStudentTuitionUpdatePaymentRequest;
+use App\Http\Requests\Administrators\AdjustStudentTuitionUpdatePaymentRequest;
 use App\Http\Requests\Administrators\ClaimStudentTuitionUpdateRequest;
 use App\Http\Requests\Administrators\RecordAndResolveStudentTuitionUpdatePaymentRequest;
 use App\Http\Requests\Administrators\RejectStudentTuitionUpdateRequest;
 use App\Http\Requests\Administrators\ResolveStudentTuitionUpdateAdjustmentRequest;
 use App\Http\Requests\Administrators\ResolveStudentTuitionUpdatePaymentRequest;
+use App\Http\Requests\Administrators\ResolveStudentTuitionUpdateRequest;
 use App\Models\StudentTuitionUpdateRequest;
 use App\Models\Transaction;
 use App\Models\TuitionAdjustment;
@@ -201,6 +203,25 @@ final class AdministratorTuitionUpdateRequestController extends Controller
         return back()->with('flash', ['success' => 'Verified payment was recorded and request resolved successfully.']);
     }
 
+    public function adjustPayment(
+        AdjustStudentTuitionUpdatePaymentRequest $request,
+        StudentTuitionUpdateRequest $tuitionUpdateRequest,
+        StudentTuitionUpdateRequestService $requests,
+        EnrollmentBillingService $billing,
+    ): RedirectResponse {
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
+        $requests->adjustPayment(
+            $tuitionUpdateRequest,
+            $user,
+            $request->validated(),
+            $request->filled('note') ? $request->string('note')->toString() : null,
+            $billing,
+        );
+
+        return back()->with('flash', ['success' => 'Payment transaction adjusted and balance recalculated. Request remains in review for further adjustments.']);
+    }
+
     public function adjustAndResolvePayment(
         AdjustAndResolveStudentTuitionUpdatePaymentRequest $request,
         StudentTuitionUpdateRequest $tuitionUpdateRequest,
@@ -218,6 +239,24 @@ final class AdministratorTuitionUpdateRequestController extends Controller
         );
 
         return back()->with('flash', ['success' => 'Payment transaction was adjusted and the request resolved successfully.']);
+    }
+
+    public function resolve(
+        ResolveStudentTuitionUpdateRequest $request,
+        StudentTuitionUpdateRequest $tuitionUpdateRequest,
+        StudentTuitionUpdateRequestService $requests,
+    ): RedirectResponse {
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
+        $requests->resolve(
+            $tuitionUpdateRequest,
+            $user,
+            $request->string('resolution_note')->toString(),
+            $request->filled('transaction_id') ? $request->integer('transaction_id') : null,
+            $request->filled('tuition_adjustment_id') ? $request->integer('tuition_adjustment_id') : null,
+        );
+
+        return back()->with('flash', ['success' => 'Request has been marked as resolved and the student was notified.']);
     }
 
     public function resolveAdjustment(ResolveStudentTuitionUpdateAdjustmentRequest $request, StudentTuitionUpdateRequest $tuitionUpdateRequest, StudentTuitionUpdateRequestService $requests): RedirectResponse

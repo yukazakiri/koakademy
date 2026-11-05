@@ -1,10 +1,12 @@
 import { index as tuitionAdjustmentsIndex } from "@/actions/App/Http/Controllers/AdministratorTuitionAdjustmentController";
 import {
     adjustAndResolvePayment,
+    adjustPayment,
     claim,
     recordAndResolvePayment,
     reject,
     resendEmail,
+    resolve,
     resolveAdjustment,
     resolvePayment,
     index as tuitionUpdateRequestsIndex,
@@ -152,6 +154,9 @@ export default function TuitionUpdateRequestShow({
               ? String(matching_transactions[0].amount)
               : "",
         reference_number: request.receipt_number ?? (matching_transactions[0]?.receipt_number ?? ""),
+        note: request.amount
+            ? `Adjusted payment transaction amount to ₱${Number(request.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}.`
+            : "Adjusted payment transaction amount.",
         resolution_note: request.amount
             ? `Adjusted payment transaction to reflect verified downpayment/tuition payment of ₱${Number(request.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}.`
             : "Adjusted transaction to reflect verified amount.",
@@ -166,14 +171,25 @@ export default function TuitionUpdateRequestShow({
         })),
     });
 
-    // Form 2: Link Existing Transaction As-Is
+    // Form 2: Finalize & Resolve Request (Once all adjustments are completed)
+    const resolveForm = useForm({
+        resolution_note: request.resolution_note || (
+            request.amount
+                ? `Your tuition update request has been reviewed. Transactions and tuition balance have been adjusted to reflect ₱${Number(request.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}.`
+                : "Your tuition update request has been reviewed and verified. All payment and tuition fee adjustments have been applied."
+        ),
+        transaction_id: request.resolved_transaction?.id ? String(request.resolved_transaction.id) : "",
+        tuition_adjustment_id: request.tuition_adjustment?.id ? String(request.tuition_adjustment.id) : "",
+    });
+
+    // Form 3: Link Existing Transaction As-Is
     const paymentForm = useForm({
         transaction_id: matching_transactions[0]?.id ? String(matching_transactions[0].id) : "",
         allow_mismatch: false,
         resolution_note: "",
     });
 
-    // Form 3: Record & Resolve Missing Payment (Brand new transaction)
+    // Form 4: Record & Resolve Missing Payment (Brand new transaction)
     const recordPaymentForm = useForm({
         amount: request.amount
             ? String(request.amount)
@@ -187,16 +203,16 @@ export default function TuitionUpdateRequestShow({
             : "Verified payment and recorded to student tuition account.",
     });
 
-    // Form 4: Resolve via Tuition Adjustment
+    // Form 5: Resolve via Tuition Adjustment
     const adjustmentForm = useForm({
         tuition_adjustment_id: matching_adjustments[0]?.id ? String(matching_adjustments[0].id) : "",
         resolution_note: "",
     });
 
-    // Form 5: Reject Request
+    // Form 6: Reject Request
     const rejectionForm = useForm({ resolution_note: "" });
 
-    // Form 6: Resend Email Form
+    // Form 7: Resend Email Form
     const resendForm = useForm({});
 
     // Active resolution tab: default to "adjust" if transactions exist, else "record"
@@ -209,6 +225,29 @@ export default function TuitionUpdateRequestShow({
 
     function claimRequest() {
         router.post(claim.url(request.id), {}, { preserveScroll: true });
+    }
+
+    function handleAdjustPaymentOnly(event: React.FormEvent) {
+        event.preventDefault();
+        adjustForm.transform((data) => {
+            if (data.adjust_multiple) {
+                return {
+                    adjustments: data.adjustments.map((a) => ({
+                        transaction_id: Number(a.transaction_id),
+                        amount: Number(a.amount),
+                        reference_number: a.reference_number || undefined,
+                    })),
+                    note: data.note || undefined,
+                };
+            }
+            return {
+                transaction_id: Number(data.transaction_id),
+                amount: Number(data.amount),
+                reference_number: data.reference_number || undefined,
+                note: data.note || undefined,
+            };
+        });
+        adjustForm.post(adjustPayment.url(request.id), { preserveScroll: true });
     }
 
     function handleAdjustAndResolvePayment(event: React.FormEvent) {
@@ -232,6 +271,16 @@ export default function TuitionUpdateRequestShow({
             };
         });
         adjustForm.post(adjustAndResolvePayment.url(request.id), { preserveScroll: true });
+    }
+
+    function handleResolveRequest(event: React.FormEvent) {
+        event.preventDefault();
+        resolveForm.transform((data) => ({
+            resolution_note: data.resolution_note,
+            transaction_id: data.transaction_id ? Number(data.transaction_id) : undefined,
+            tuition_adjustment_id: data.tuition_adjustment_id ? Number(data.tuition_adjustment_id) : undefined,
+        }));
+        resolveForm.post(resolve.url(request.id), { preserveScroll: true });
     }
 
     function handleResolvePayment(event: React.FormEvent) {
@@ -675,24 +724,47 @@ export default function TuitionUpdateRequestShow({
                                                             )}
 
                                                             <div className="flex flex-col gap-1.5">
-                                                                <Label htmlFor="adjust-note">Resolution Note to Student</Label>
-                                                                <Textarea
+                                                                <Label htmlFor="adjust-note">Adjustment Note / Memo (Optional)</Label>
+                                                                <Input
                                                                     id="adjust-note"
-                                                                    value={adjustForm.data.resolution_note}
-                                                                    onChange={(e) => adjustForm.setData("resolution_note", e.target.value)}
-                                                                    placeholder="Explain the correction applied to the student's payment and balance..."
-                                                                    className="min-h-24 resize-y"
-                                                                    required
+                                                                    value={adjustForm.data.note}
+                                                                    onChange={(e) => adjustForm.setData("note", e.target.value)}
+                                                                    placeholder="e.g. Adjusted downpayment transaction amount..."
+                                                                    className="text-xs"
                                                                 />
-                                                                {adjustForm.errors.resolution_note && (
-                                                                    <p className="text-destructive text-xs">{adjustForm.errors.resolution_note}</p>
+                                                                <p className="text-[11px] text-muted-foreground">
+                                                                    Recorded in the review audit timeline. You can adjust multiple transactions while keeping this request in review.
+                                                                </p>
+                                                                {adjustForm.errors.note && (
+                                                                    <p className="text-destructive text-xs">{adjustForm.errors.note}</p>
                                                                 )}
                                                             </div>
 
-                                                            <Button type="submit" disabled={adjustForm.processing} className="w-full sm:w-auto">
-                                                                {adjustForm.processing && <Loader2 className="mr-2 size-4 animate-spin" />}
-                                                                Adjust Transaction & Reconcile Balance
-                                                            </Button>
+                                                            <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:items-center sm:justify-between">
+                                                                <div className="flex flex-wrap items-center gap-2">
+                                                                    <Button
+                                                                        type="button"
+                                                                        disabled={adjustForm.processing}
+                                                                        onClick={handleAdjustPaymentOnly}
+                                                                        className="w-full sm:w-auto"
+                                                                    >
+                                                                        {adjustForm.processing && <Loader2 className="mr-2 size-4 animate-spin" />}
+                                                                        <SlidersHorizontal className="mr-1.5 size-4" />
+                                                                        Adjust Transaction (Keep In Review)
+                                                                    </Button>
+
+                                                                    <Button
+                                                                        type="button"
+                                                                        variant="outline"
+                                                                        disabled={adjustForm.processing}
+                                                                        onClick={handleAdjustAndResolvePayment}
+                                                                        className="w-full sm:w-auto"
+                                                                    >
+                                                                        <CheckCircle2 className="mr-1.5 size-4" />
+                                                                        Adjust & Resolve In One Step
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
                                                         </form>
                                                     )}
                                                 </TabsPanel>
@@ -976,6 +1048,72 @@ export default function TuitionUpdateRequestShow({
                                             )}
                                         </div>
                                     )}
+                                </FramePanel>
+                            </Frame>
+                        )}
+
+                        {/* FINALIZE & RESOLVE REQUEST (Dedicated action when all adjustments are complete) */}
+                        {can_manage && reviewing && (
+                            <Frame className="border-emerald-500/30 bg-emerald-500/5">
+                                <FramePanel>
+                                    <form onSubmit={handleResolveRequest} className="flex flex-col gap-4">
+                                        <FrameHeader>
+                                            <div className="flex items-center gap-2">
+                                                <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400" />
+                                                <FrameTitle>Finalize & Resolve Request</FrameTitle>
+                                            </div>
+                                            <FrameDescription>
+                                                Finished with all transaction adjustments and tuition reviews? Enter the official resolution note and mark this request as resolved.
+                                            </FrameDescription>
+                                        </FrameHeader>
+
+                                        {/* Assessment Snapshot Confirmation */}
+                                        {request.tuition && (
+                                            <div className="rounded-md border border-border bg-card p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+                                                <div>
+                                                    <span className="text-muted-foreground">Assessed Tuition:</span>
+                                                    <span className="ml-1.5 font-mono font-bold text-foreground">
+                                                        ₱{request.tuition.overall_tuition.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                    </span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-muted-foreground">Total Paid:</span>
+                                                    <span className="ml-1.5 font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                                                        ₱{(request.tuition.paid ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                    </span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-muted-foreground">Balance Due:</span>
+                                                    <span className="ml-1.5 font-mono font-bold text-foreground">
+                                                        ₱{request.tuition.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="flex flex-col gap-1.5">
+                                            <Label htmlFor="resolve-note">Final Resolution Note to Student</Label>
+                                            <Textarea
+                                                id="resolve-note"
+                                                value={resolveForm.data.resolution_note}
+                                                onChange={(e) => resolveForm.setData("resolution_note", e.target.value)}
+                                                placeholder="Provide the complete resolution explanation to the student..."
+                                                className="min-h-24 resize-y bg-background"
+                                                required
+                                            />
+                                            {resolveForm.errors.resolution_note && (
+                                                <p className="text-destructive text-xs">{resolveForm.errors.resolution_note}</p>
+                                            )}
+                                        </div>
+
+                                        <div className="flex justify-end">
+                                            <Button type="submit" disabled={resolveForm.processing} className="w-full sm:w-auto">
+                                                {resolveForm.processing && <Loader2 className="mr-2 size-4 animate-spin" />}
+                                                <CheckCircle2 className="mr-2 size-4" />
+                                                Mark as Resolved & Notify Student
+                                            </Button>
+                                        </div>
+                                    </form>
                                 </FramePanel>
                             </Frame>
                         )}

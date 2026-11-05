@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-uses(Tests\TestCase::class);
-
 use App\Enums\UserRole;
 use App\Features\Toggles\StudentTuition as StudentTuitionFeature;
 use App\Models\Course;

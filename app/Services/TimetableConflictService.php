@@ -14,6 +14,38 @@ use Illuminate\Support\Facades\Log;
 final class TimetableConflictService
 {
     /**
+     * Cache key that holds the global conflict-cache version.
+     *
+     * Conflict entries are stored under a versioned prefix
+     * (`timetable_conflicts:v{version}:…`). Clearing every conflict entry
+     * bumps this version instead of wiping the whole store: stale keys
+     * become unreachable and expire on their own TTL, while every other
+     * tenant's cached state and every distributed lock is left untouched.
+     * See DCC-34 / PERF-003 — never call `Cache::flush()` on a shared store.
+     */
+    public const VERSION_KEY = 'timetable_conflict_version';
+
+    /**
+     * Current conflict-cache version. Defaults to 1 when unset.
+     */
+    public static function currentVersion(): int
+    {
+        return max(1, (int) Cache::get(self::VERSION_KEY, 1));
+    }
+
+    /**
+     * Build a version-scoped conflict cache key.
+     */
+    public static function scopedKey(string $key): string
+    {
+        if (str_starts_with($key, 'timetable_conflicts:v')) {
+            return $key;
+        }
+
+        return 'timetable_conflicts:v'.self::currentVersion().':'.mb_ltrim($key, ':');
+    }
+
+    /**
      * Detect all types of conflicts for a given schedule or set of schedules
      */
     public function detectConflicts(Collection $schedules): array
@@ -267,7 +299,7 @@ final class TimetableConflictService
                 'schedule_count' => $schedules->count(),
             ]);
 
-            return Cache::remember($cacheKey, 300, fn (): array => $this->detectConflicts($schedules));
+            return Cache::remember(self::scopedKey($cacheKey), 300, fn (): array => $this->detectConflicts($schedules));
         } catch (Exception $exception) {
             Log::error('Error getting cached conflicts', [
                 'cache_key' => $cacheKey,
@@ -280,17 +312,30 @@ final class TimetableConflictService
     }
 
     /**
-     * Clear conflict cache
+     * Clear conflict cache.
+     *
+     * Passing a key removes only that conflict entry. Passing no key
+     * (null or empty) bumps the version epoch so every previously cached
+     * conflict entry becomes unreachable — without ever calling
+     * `Cache::flush()` on the shared cache database (DCC-34 / PERF-003).
      */
     public function clearConflictCache(?string $cacheKey = null): void
     {
         try {
-            if (! in_array($cacheKey, [null, '', '0'], true)) {
+            if ($cacheKey !== null && $cacheKey !== '' && $cacheKey !== '0') {
+                Cache::forget(self::scopedKey($cacheKey));
+                // Also drop the pre-versioned key so callers that stored
+                // entries directly with `Cache::put($cacheKey)` are covered.
                 Cache::forget($cacheKey);
                 Log::info('Conflict cache cleared', ['cache_key' => $cacheKey]);
             } else {
-                Cache::flush(); // Clear all cache - use with caution
-                Log::warning('All conflict cache flushed');
+                // Bump a version so all conflict keys become unreachable.
+                $version = self::currentVersion();
+                Cache::forever(self::VERSION_KEY, $version + 1);
+                Log::info('All conflict cache invalidated via version bump', [
+                    'previous_version' => $version,
+                    'version' => $version + 1,
+                ]);
             }
         } catch (Exception $exception) {
             Log::error('Error clearing conflict cache', [

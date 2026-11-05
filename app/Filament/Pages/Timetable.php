@@ -494,7 +494,7 @@ final class Timetable extends Page implements HasForms, HasTable
     public function clearConflictCache(): void
     {
         $conflictService = app(TimetableConflictService::class);
-        $cacheKey = $this->getConflictCacheKey();
+        $cacheKey = $this->getLegacyConflictCacheKey();
         $conflictService->clearConflictCache($cacheKey);
 
         // Re-detect conflicts
@@ -1067,7 +1067,18 @@ final class Timetable extends Page implements HasForms, HasTable
         $this->conflictSummary = $conflictService->getConflictSummary($this->conflicts);
     }
 
+    /**
+     * Build the versioned conflict cache key for the current timetable view.
+     */
     private function getConflictCacheKey(): string
+    {
+        return TimetableConflictService::scopedKey($this->getLegacyConflictCacheKey());
+    }
+
+    /**
+     * Build the pre-versioned conflict cache key used by historical entries.
+     */
+    private function getLegacyConflictCacheKey(): string
     {
         $schoolId = app(TenantContext::class)->getCurrentSchoolId() ?? 0;
 

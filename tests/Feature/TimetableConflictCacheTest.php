@@ -16,7 +16,7 @@ it('never calls Cache::flush in the conflict service', function (): void {
     $source = file_get_contents(base_path('app/Services/TimetableConflictService.php'));
 
     // Comments may mention flush as a prohibition; no executable call may exist.
-    $withoutComments = preg_replace('#/\*.*?\*/|//.*$#ms', '', $source);
+    $withoutComments = preg_replace('#/\*.*?\*/|//[^\n]*#s', '', $source);
 
     expect(preg_match('/Cache::flush\s*\(/', (string) $withoutComments))->toBe(0);
 });
@@ -87,6 +87,44 @@ it('bumps the version epoch so versioned keys become unreachable on a full clear
     expect($newKey)->not->toBe($oldKey)
         ->and(str_starts_with($newKey, 'timetable_conflicts:v2:'))->toBeTrue()
         ->and(Cache::get($newKey))->toBeNull('Bumped-epoch key must not return the stale value');
+});
+
+it('stores cached conflict lookups under the versioned key', function (): void {
+    $service = app(TimetableConflictService::class);
+    $rawKey = 'timetable_conflicts:room:1';
+
+    $first = $service->getCachedConflicts($rawKey, collect());
+    $scoped = TimetableConflictService::scopedKey($rawKey);
+
+    expect($scoped)->toStartWith('timetable_conflicts:v')
+        ->and(Cache::get($scoped))->toBe($first)
+        ->and(Cache::get($rawKey))->toBeNull();
+
+    $service->clearConflictCache(null);
+
+    $newScoped = TimetableConflictService::scopedKey($rawKey);
+    expect($newScoped)->not->toBe($scoped)
+        ->and(Cache::get($newScoped))->toBeNull();
+
+    $second = $service->getCachedConflicts($rawKey, collect());
+
+    expect($second)->toBe($first)
+        ->and(Cache::get($newScoped))->toBe($second)
+        ->and(Cache::get($rawKey))->toBeNull();
+});
+
+it('lets a page-triggered clear remove both legacy and versioned entries', function (): void {
+    $service = app(TimetableConflictService::class);
+    $legacyKey = 'timetable_conflicts:room:legacy';
+    $scoped = TimetableConflictService::scopedKey($legacyKey);
+
+    Cache::put($legacyKey, 'legacy-value', 300);
+    Cache::put($scoped, 'versioned-value', 300);
+
+    $service->clearConflictCache($legacyKey);
+
+    expect(Cache::get($legacyKey))->toBeNull()
+        ->and(Cache::get($scoped))->toBeNull();
 });
 
 it('versions cached conflict lookups and reuses them until cleared', function (): void {

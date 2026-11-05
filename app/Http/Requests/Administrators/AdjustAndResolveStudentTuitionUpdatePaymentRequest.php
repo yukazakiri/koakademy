@@ -23,7 +23,7 @@ final class AdjustAndResolveStudentTuitionUpdatePaymentRequest extends FormReque
             'reference_number' => ['nullable', 'string', 'max:255'],
             'resolution_note' => ['required', 'string', 'min:5', 'max:2000'],
             'adjustments' => ['nullable', 'array', 'max:10'],
-            'adjustments.*.transaction_id' => ['required_with:adjustments', 'integer', 'exists:transactions,id'],
+            'adjustments.*.transaction_id' => ['required_with:adjustments', 'integer', 'distinct', 'exists:transactions,id'],
             'adjustments.*.amount' => ['required_with:adjustments', 'numeric', 'min:0.01', 'max:9999999.99'],
             'adjustments.*.reference_number' => ['nullable', 'string', 'max:255'],
         ];

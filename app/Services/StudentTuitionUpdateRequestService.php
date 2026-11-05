@@ -277,22 +277,24 @@ final class StudentTuitionUpdateRequestService
     }
 
     /**
-     * Adjust existing cashier payment transaction(s) and resolve the tuition update request.
-     * Supports single transaction or multiple transactions (e.g. for dual receipts).
+     * Adjust existing cashier payment transaction(s) without closing the tuition update request.
+     * Status remains in_review so the reviewer can make additional adjustments.
      *
      * @param  array{transaction_id?: int|string|null, amount?: float|int|string|null, reference_number?: string|null, adjustments?: array<int, array{transaction_id: int|string, amount: float|int|string, reference_number?: string|null}>|null}  $adjustmentData
+     *
+     * @throws ValidationException
      */
-    public function adjustAndResolvePayment(
+    public function adjustPayment(
         StudentTuitionUpdateRequest $request,
         User $actor,
         array $adjustmentData,
-        string $note,
+        ?string $note,
         EnrollmentBillingService $billing,
     ): StudentTuitionUpdateRequest {
         return DB::transaction(function () use ($request, $actor, $adjustmentData, $note, $billing): StudentTuitionUpdateRequest {
             $locked = $this->reviewable($request, $actor);
             if ($locked->concern_type !== StudentTuitionUpdateRequest::ConcernMissingPayment) {
-                throw ValidationException::withMessages(['transaction_id' => 'Only missing-payment requests can be resolved with transaction adjustment.']);
+                throw ValidationException::withMessages(['transaction_id' => 'Only missing-payment requests can be modified with transaction adjustment.']);
             }
 
             $adjustments = [];
@@ -332,6 +334,10 @@ final class StudentTuitionUpdateRequestService
                     throw ValidationException::withMessages(["adjustments.{$idx}.transaction_id" => 'Transaction not found.']);
                 }
 
+                if (! in_array(mb_strtolower((string) $payment->status), ['paid', 'completed'], true)) {
+                    throw ValidationException::withMessages(["adjustments.{$idx}.transaction_id" => 'Only verified paid transactions can be adjusted.']);
+                }
+
                 $studentTx = StudentTransaction::query()
                     ->where('transaction_id', $payment->id)
                     ->where('student_id', $locked->student_id)
@@ -341,16 +347,25 @@ final class StudentTuitionUpdateRequestService
                     throw ValidationException::withMessages(["adjustments.{$idx}.transaction_id" => 'Transaction does not belong to this student.']);
                 }
 
+                if ($locked->student_enrollment_id !== null && $studentTx->student_enrollment_id !== null && (int) $studentTx->student_enrollment_id !== (int) $locked->student_enrollment_id) {
+                    throw ValidationException::withMessages(["adjustments.{$idx}.transaction_id" => 'The selected transaction belongs to a different enrollment period.']);
+                }
+
+                $allocatedOtherTuition = PaymentAllocation::query()
+                    ->where('transaction_id', $payment->id)
+                    ->where('target_type', 'assessment')
+                    ->whereNotNull('student_tuition_id')
+                    ->where('student_tuition_id', '!=', $tuition->id)
+                    ->exists();
+                if ($allocatedOtherTuition) {
+                    throw ValidationException::withMessages(["adjustments.{$idx}.transaction_id" => 'The selected transaction belongs to a different tuition assessment.']);
+                }
+
                 $newAmount = round((float) ($adj['amount'] ?? 0), 2);
                 if ($newAmount <= 0) {
                     throw ValidationException::withMessages(["adjustments.{$idx}.amount" => 'Adjusted amount must be greater than zero.']);
                 }
 
-                $oldAmount = (float) $payment->raw_total_amount;
-                $variance = round($newAmount - $oldAmount, 2);
-                $totalNetVariance += $variance;
-
-                // Update settlements
                 $settlements = $payment->settlements;
                 if (is_string($settlements)) {
                     $settlements = json_decode($settlements, true);
@@ -358,7 +373,24 @@ final class StudentTuitionUpdateRequestService
                 if (! is_array($settlements)) {
                     $settlements = [];
                 }
-                $settlements['tuition_fee'] = $newAmount;
+
+                $nonTuitionSettlementTotal = 0.0;
+                foreach ($settlements as $k => $v) {
+                    if ($k !== 'tuition_fee') {
+                        $nonTuitionSettlementTotal += round((float) $v, 2);
+                    }
+                }
+
+                if ($newAmount < $nonTuitionSettlementTotal) {
+                    throw ValidationException::withMessages(["adjustments.{$idx}.amount" => "The adjusted total (₱{$newAmount}) cannot be less than the retained non-tuition fees (₱{$nonTuitionSettlementTotal})."]);
+                }
+
+                $newTuitionFee = round($newAmount - $nonTuitionSettlementTotal, 2);
+                $oldTuitionFee = round((float) ($settlements['tuition_fee'] ?? $payment->raw_total_amount), 2);
+                $tuitionVariance = round($newTuitionFee - $oldTuitionFee, 2);
+                $totalNetVariance += $tuitionVariance;
+
+                $settlements['tuition_fee'] = $newTuitionFee;
                 $payment->settlements = $settlements;
 
                 // Update invoice number if supplied
@@ -371,11 +403,34 @@ final class StudentTuitionUpdateRequestService
                 $studentTx->amount = $newAmount;
                 $studentTx->save();
 
-                // Update PaymentAllocation
-                PaymentAllocation::query()
+                // Conserve allocations: update assessment allocation for this tuition
+                $allocations = PaymentAllocation::query()
                     ->where('transaction_id', $payment->id)
                     ->where('student_id', $locked->student_id)
-                    ->update(['amount' => $newAmount]);
+                    ->get();
+
+                $assessmentAllocations = $allocations->where('target_type', 'assessment');
+                if ($assessmentAllocations->count() > 1) {
+                    throw ValidationException::withMessages(["adjustments.{$idx}.transaction_id" => 'Transactions split across multiple tuition assessments cannot be adjusted automatically.']);
+                }
+
+                $matchingAssessmentAlloc = $assessmentAllocations->first(fn ($a) => (int) $a->student_tuition_id === (int) $tuition->id);
+                if ($matchingAssessmentAlloc instanceof PaymentAllocation) {
+                    $matchingAssessmentAlloc->amount = $newTuitionFee;
+                    $matchingAssessmentAlloc->save();
+                } elseif ($allocations->isEmpty()) {
+                    PaymentAllocation::query()->create([
+                        'transaction_id' => $payment->id,
+                        'student_transaction_id' => $studentTx->id,
+                        'student_id' => $locked->student_id,
+                        'student_enrollment_id' => $tuition->enrollment_id,
+                        'student_tuition_id' => $tuition->id,
+                        'charge_category' => 'tuition',
+                        'target_type' => 'assessment',
+                        'amount' => $newTuitionFee,
+                        'notes' => "Tuition: {$tuition->school_year} / Semester {$tuition->semester}",
+                    ]);
+                }
 
                 // Update AdminTransaction
                 AdminTransaction::query()
@@ -390,9 +445,9 @@ final class StudentTuitionUpdateRequestService
                     'transaction_id' => $payment->id,
                     'transaction_number' => $payment->transaction_number,
                     'invoicenumber' => $payment->invoicenumber,
-                    'old_amount' => $oldAmount,
+                    'old_amount' => (float) $payment->raw_total_amount,
                     'new_amount' => $newAmount,
-                    'variance' => $variance,
+                    'variance' => $tuitionVariance,
                 ];
             }
 
@@ -406,11 +461,57 @@ final class StudentTuitionUpdateRequestService
             }
             $billing->syncTuitionBalance($tuition);
 
+            if ($primaryTxId !== null) {
+                $locked->forceFill([
+                    'resolved_transaction_id' => $primaryTxId,
+                ])->save();
+            }
+
+            $eventNote = filled($note) ? mb_trim((string) $note) : 'Adjusted transaction amount and reconciled tuition balance.';
+            $this->event(
+                $locked,
+                $actor,
+                'transaction_adjusted',
+                StudentTuitionUpdateRequest::StatusInReview,
+                StudentTuitionUpdateRequest::StatusInReview,
+                $eventNote,
+                [
+                    'adjusted_transactions' => $adjustedTransactionsMeta,
+                    'net_variance' => $totalNetVariance,
+                    'balance_before' => $oldBalance,
+                    'balance_after' => (float) $tuition->total_balance,
+                    'paid_after' => (float) $tuition->paid,
+                ],
+            );
+
+            return $locked->refresh();
+        });
+    }
+
+    /**
+     * Adjust existing cashier payment transaction(s) and resolve the tuition update request in one action.
+     * Supports single transaction or multiple transactions (e.g. for dual receipts).
+     *
+     * @param  array{transaction_id?: int|string|null, amount?: float|int|string|null, reference_number?: string|null, adjustments?: array<int, array{transaction_id: int|string, amount: float|int|string, reference_number?: string|null}>|null}  $adjustmentData
+     *
+     * @throws ValidationException
+     */
+    public function adjustAndResolvePayment(
+        StudentTuitionUpdateRequest $request,
+        User $actor,
+        array $adjustmentData,
+        string $note,
+        EnrollmentBillingService $billing,
+    ): StudentTuitionUpdateRequest {
+        return DB::transaction(function () use ($request, $actor, $adjustmentData, $note, $billing): StudentTuitionUpdateRequest {
+            $adjusted = $this->adjustPayment($request, $actor, $adjustmentData, $note, $billing);
+
+            $locked = $this->reviewable($adjusted, $actor);
             $from = $locked->status;
             $locked->forceFill([
                 'status' => StudentTuitionUpdateRequest::StatusResolved,
                 'resolution_note' => mb_trim($note),
-                'resolved_transaction_id' => $primaryTxId,
+                'resolved_transaction_id' => $adjusted->resolved_transaction_id,
                 'tuition_adjustment_id' => null,
                 'resolved_at' => now(),
                 'open_key' => null,
@@ -424,11 +525,97 @@ final class StudentTuitionUpdateRequestService
                 StudentTuitionUpdateRequest::StatusResolved,
                 $locked->resolution_note,
                 [
-                    'adjusted_transactions' => $adjustedTransactionsMeta,
-                    'net_variance' => $totalNetVariance,
-                    'balance_before' => $oldBalance,
-                    'balance_after' => (float) $tuition->total_balance,
-                    'paid_after' => (float) $tuition->paid,
+                    'resolved_transaction_id' => $locked->resolved_transaction_id,
+                ],
+            );
+            $this->notifyAfterCommit($locked);
+
+            return $locked->refresh();
+        });
+    }
+
+    /**
+     * Resolve a claimed request after all reviews and adjustments are complete.
+     *
+     *
+     * @throws ValidationException
+     */
+    public function resolve(
+        StudentTuitionUpdateRequest $request,
+        User $actor,
+        string $note,
+        ?int $transactionId = null,
+        ?int $tuitionAdjustmentId = null,
+    ): StudentTuitionUpdateRequest {
+        return DB::transaction(function () use ($request, $actor, $note, $transactionId, $tuitionAdjustmentId): StudentTuitionUpdateRequest {
+            $locked = $this->reviewable($request, $actor);
+
+            $finalTxId = $transactionId ?? $locked->resolved_transaction_id;
+            $finalAdjId = $tuitionAdjustmentId ?? $locked->tuition_adjustment_id;
+
+            if ($locked->concern_type === StudentTuitionUpdateRequest::ConcernMissingPayment) {
+                if ($finalTxId === null) {
+                    throw ValidationException::withMessages(['transaction_id' => 'Missing-payment requests must be linked to a verified payment transaction before resolving.']);
+                }
+                if ($tuitionAdjustmentId !== null) {
+                    throw ValidationException::withMessages(['tuition_adjustment_id' => 'Missing-payment requests cannot be resolved with a tuition adjustment.']);
+                }
+            } else {
+                if ($transactionId !== null) {
+                    throw ValidationException::withMessages(['transaction_id' => 'Only missing-payment requests may be resolved with a payment transaction.']);
+                }
+            }
+
+            if ($finalTxId !== null) {
+                $payment = Transaction::query()->whereKey($finalTxId)->lockForUpdate()->first();
+                if (! $payment instanceof Transaction || ! in_array(mb_strtolower((string) $payment->status), ['paid', 'completed'], true)) {
+                    throw ValidationException::withMessages(['transaction_id' => 'The selected transaction is not a verified payment.']);
+                }
+                $matches = StudentTransaction::query()
+                    ->where('transaction_id', $payment->id)
+                    ->where('student_id', $locked->student_id)
+                    ->when(
+                        $locked->student_enrollment_id !== null,
+                        fn ($query) => $query->where('student_enrollment_id', $locked->student_enrollment_id),
+                    )
+                    ->whereIn('status', ['Paid', 'Completed', 'paid', 'completed'])
+                    ->exists();
+                if (! $matches) {
+                    throw ValidationException::withMessages(['transaction_id' => 'The selected transaction is not a verified payment for this student and academic period.']);
+                }
+            }
+
+            if ($finalAdjId !== null) {
+                $record = TuitionAdjustment::query()->whereKey($finalAdjId)->lockForUpdate()->first();
+                if (! $record instanceof TuitionAdjustment) {
+                    throw ValidationException::withMessages(['tuition_adjustment_id' => 'The selected adjustment could not be found.']);
+                }
+                if (($locked->student_enrollment_id !== null && $record->student_enrollment_id !== $locked->student_enrollment_id)
+                    || ($locked->student_tuition_id !== null && $record->student_tuition_id !== $locked->student_tuition_id)) {
+                    throw ValidationException::withMessages(['tuition_adjustment_id' => 'The selected adjustment does not belong to this tuition request.']);
+                }
+            }
+
+            $from = $locked->status;
+            $locked->forceFill([
+                'status' => StudentTuitionUpdateRequest::StatusResolved,
+                'resolution_note' => mb_trim($note),
+                'resolved_transaction_id' => $finalTxId,
+                'tuition_adjustment_id' => $finalAdjId,
+                'resolved_at' => now(),
+                'open_key' => null,
+            ])->save();
+
+            $this->event(
+                $locked,
+                $actor,
+                'resolved',
+                $from,
+                StudentTuitionUpdateRequest::StatusResolved,
+                $locked->resolution_note,
+                [
+                    'resolved_transaction_id' => $locked->resolved_transaction_id,
+                    'tuition_adjustment_id' => $locked->tuition_adjustment_id,
                 ],
             );
             $this->notifyAfterCommit($locked);

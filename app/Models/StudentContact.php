@@ -10,6 +10,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Override;
 
 /**
@@ -43,4 +44,9 @@ final class StudentContact extends Model
         'emergency_contact_relationship',
         'student_id',
     ];
+
+    public function student(): HasOne
+    {
+        return $this->hasOne(Student::class, 'student_contact_id');
+    }
 }

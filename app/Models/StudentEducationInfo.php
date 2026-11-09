@@ -10,6 +10,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Override;
 
 /**
@@ -52,6 +53,11 @@ final class StudentEducationInfo extends Model
         'vocational_course',
         'vocational_year_graduated',
     ];
+
+    public function student(): HasOne
+    {
+        return $this->hasOne(Student::class, 'student_education_id');
+    }
 
     protected function casts(): array
     {

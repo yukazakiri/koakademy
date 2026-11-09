@@ -10,6 +10,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\Storage;
 use Override;
 
@@ -42,6 +43,11 @@ final class DocumentLocation extends Model
 
     #[Override]
     protected $fillable = self::DOCUMENT_FIELDS;
+
+    public function student(): HasOne
+    {
+        return $this->hasOne(Student::class, 'document_location_id');
+    }
 
     public function resolveDocumentUrl(?string $path): ?string
     {

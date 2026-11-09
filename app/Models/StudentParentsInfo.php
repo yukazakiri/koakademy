@@ -10,6 +10,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Override;
 
 /**
@@ -44,4 +45,9 @@ final class StudentParentsInfo extends Model
         'guardian_email',
         'family_address',
     ];
+
+    public function student(): HasOne
+    {
+        return $this->hasOne(Student::class, 'student_parent_info');
+    }
 }

@@ -85,6 +85,14 @@ final class ShsStudent extends Model
         return $this->hasOne(Account::class, 'person_id', 'student_lrn');
     }
 
+    /**
+     * Get the primary student record associated with this SHS student.
+     */
+    public function student(): BelongsTo
+    {
+        return $this->belongsTo(Student::class, 'student_lrn', 'lrn');
+    }
+
     protected function casts(): array
     {
         return [

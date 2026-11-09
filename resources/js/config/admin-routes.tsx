@@ -670,7 +670,7 @@ export const ADMIN_ROUTES: AdminRoute[] = [
         icon: <IconShieldLock className="size-4" />,
         link: "/administrators/roles",
         section: "system",
-        requiredPermission: "ViewAny:User",
+        requiredPermission: "ViewAny:Role",
         allowedRoles: [UserRole.Developer, UserRole.SuperAdmin],
     },
     {

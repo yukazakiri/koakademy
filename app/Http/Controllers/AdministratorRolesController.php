@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\UserRole;
 use App\Models\User;
+use App\Services\UserSystemRoleService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -19,7 +20,7 @@ final class AdministratorRolesController extends Controller
 {
     public function index(): Response
     {
-        $this->authorizeRolesAccess();
+        $this->authorizeRolesAccess('ViewAny:Role');
 
         $user = Auth::user();
 
@@ -117,13 +118,26 @@ final class AdministratorRolesController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        $this->authorizeRolesAccess();
+        $this->authorizeRolesAccess('Create:Role');
+
+        $actor = Auth::user();
+        if (! $actor instanceof User) {
+            abort(403);
+        }
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255', 'unique:roles,name'],
             'permissions' => ['nullable', 'array'],
             'permissions.*' => ['string'],
         ]);
+
+        abort_if(UserSystemRoleService::fromName($validated['name']) !== null, 422, 'Cannot create role with reserved system role name.');
+
+        if (! empty($validated['permissions'])) {
+            foreach ($validated['permissions'] as $permissionName) {
+                abort_unless($this->userHasAnyPermission($actor, $permissionName), 403);
+            }
+        }
 
         $role = Role::create([
             'name' => $validated['name'],
@@ -141,13 +155,28 @@ final class AdministratorRolesController extends Controller
 
     public function update(Request $request, Role $role): RedirectResponse
     {
-        $this->authorizeRolesAccess();
+        $this->authorizeRolesAccess('Update:Role');
+
+        $actor = Auth::user();
+        if (! $actor instanceof User) {
+            abort(403);
+        }
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255', 'unique:roles,name,'.$role->id],
             'permissions' => ['nullable', 'array'],
             'permissions.*' => ['string'],
         ]);
+
+        if (UserSystemRoleService::fromName($role->name) !== null) {
+            abort_if($validated['name'] !== $role->name, 403, "Cannot rename system role '{$role->name}'.");
+        }
+
+        if (isset($validated['permissions'])) {
+            foreach ($validated['permissions'] as $permissionName) {
+                abort_unless($this->userHasAnyPermission($actor, $permissionName), 403);
+            }
+        }
 
         $role->update([
             'name' => $validated['name'],
@@ -164,7 +193,7 @@ final class AdministratorRolesController extends Controller
 
     public function edit(Role $role): Response
     {
-        $this->authorizeRolesAccess();
+        $this->authorizeRolesAccess('Update:Role');
 
         $user = Auth::user();
 
@@ -233,7 +262,9 @@ final class AdministratorRolesController extends Controller
 
     public function destroy(Role $role): RedirectResponse
     {
-        $this->authorizeRolesAccess();
+        $this->authorizeRolesAccess('Delete:Role');
+
+        abort_if(UserSystemRoleService::fromName($role->name) !== null, 403, "Cannot delete system role '{$role->name}'.");
 
         // Check if role has users
         $usersCount = DB::table('model_has_roles')
@@ -253,7 +284,12 @@ final class AdministratorRolesController extends Controller
 
     public function assignRole(Request $request): RedirectResponse
     {
-        $this->authorizeRolesAccess();
+        $this->authorizeRolesAccess('Assign:Role');
+
+        $actor = Auth::user();
+        if (! $actor instanceof User) {
+            abort(403);
+        }
 
         $validated = $request->validate([
             'user_id' => ['required', 'integer', 'exists:users,id'],
@@ -263,8 +299,23 @@ final class AdministratorRolesController extends Controller
         $user = User::findOrFail($validated['user_id']);
         $role = Role::where('name', $validated['role_name'])->firstOrFail();
 
-        // Remove existing role and assign new one
-        $user->syncRoles([$role]);
+        abort_unless($actor->hasHigherAuthorityThan($user), 403);
+
+        $systemRole = UserSystemRoleService::fromName($role->name);
+        if ($systemRole instanceof UserRole) {
+            abort_unless($actor->role !== null && in_array($systemRole, $actor->role->getManageableRoles(), true), 403);
+            app(UserSystemRoleService::class)->assign($user, $systemRole);
+        } else {
+            foreach ($role->permissions as $permission) {
+                abort_unless($this->userHasAnyPermission($actor, $permission->name), 403);
+            }
+
+            if ($user->role !== null) {
+                app(UserSystemRoleService::class)->assign($user, $user->role, [$role->id]);
+            } else {
+                $user->syncRoles([$role]);
+            }
+        }
 
         return redirect()->route('administrators.roles.index')
             ->with('success', "Role '{$role->name}' assigned to {$user->name}.");
@@ -272,7 +323,7 @@ final class AdministratorRolesController extends Controller
 
     public function createPermission(Request $request): RedirectResponse
     {
-        $this->authorizeRolesAccess();
+        $this->authorizeRolesAccess('Create:Permission');
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255', 'unique:permissions,name'],
@@ -290,7 +341,7 @@ final class AdministratorRolesController extends Controller
 
     public function destroyPermission(Permission $permission): RedirectResponse
     {
-        $this->authorizeRolesAccess();
+        $this->authorizeRolesAccess('Delete:Permission');
 
         $permission->delete();
 
@@ -319,11 +370,14 @@ final class AdministratorRolesController extends Controller
         ];
     }
 
-    private function authorizeRolesAccess(): void
+    /**
+     * @param  string|array<int, string>  $permission
+     */
+    private function authorizeRolesAccess(string|array $permission = 'ViewAny:Role'): void
     {
         $user = Auth::user();
 
-        $this->abortUnlessUserHasAnyPermission($user instanceof User ? $user : null, 'ViewAny:User');
+        $this->abortUnlessUserHasAnyPermission($user instanceof User ? $user : null, $permission);
     }
 
     private function getPermissionDescriptions(): array
@@ -341,6 +395,8 @@ final class AdministratorRolesController extends Controller
             'RestoreAny' => 'Restore any deleted records',
             'Replicate' => 'Duplicate records',
             'Reorder' => 'Change display order of records',
+            'Assign' => 'Assign records or roles',
+            'Assign:Role' => 'Assign roles to users',
             // Custom permissions
             'manage_settings' => 'Access and modify system settings',
             'manage_school' => 'Manage school information and configuration',

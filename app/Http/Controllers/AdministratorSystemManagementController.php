@@ -85,6 +85,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use InvalidArgumentException;
 use Laravel\Pennant\Feature;
 use RuntimeException;
 use Spatie\Permission\Models\Permission;
@@ -1127,7 +1128,13 @@ final class AdministratorSystemManagementController extends Controller
         return Redirect::back()->with('success', 'Brand settings updated successfully. Logo has been converted for all formats — favicon, PWA icons, and OG image.');
     }
 
-    public function updateSocialite(Request $request)
+    /**
+     * Update Socialite provider configuration and synchronize with environment.
+     *
+     *
+     * @throws ValidationException
+     */
+    public function updateSocialite(Request $request): RedirectResponse
     {
         $this->authorize('updateSocialite', GeneralSetting::class);
 
@@ -1172,28 +1179,37 @@ final class AdministratorSystemManagementController extends Controller
                 : url("/auth/{$provider}/callback");
         }
 
+        // Validate effective environment values before saving to database
+        $envUpdates = [
+            'FACEBOOK_CLIENT_ID' => $socialNetwork['facebook_client_id'] ?? null,
+            'FACEBOOK_CLIENT_SECRET' => $socialNetwork['facebook_client_secret'] ?? null,
+            'FACEBOOK_REDIRECT_URI' => $socialNetwork['facebook_redirect_uri'] ?? null,
+            'GOOGLE_CLIENT_ID' => $socialNetwork['google_client_id'] ?? null,
+            'GOOGLE_CLIENT_SECRET' => $socialNetwork['google_client_secret'] ?? null,
+            'GOOGLE_REDIRECT_URI' => $socialNetwork['google_redirect_uri'] ?? null,
+            'TWITTER_CLIENT_ID' => $socialNetwork['twitter_client_id'] ?? null,
+            'TWITTER_CLIENT_SECRET' => $socialNetwork['twitter_client_secret'] ?? null,
+            'TWITTER_REDIRECT_URI' => $socialNetwork['twitter_redirect_uri'] ?? null,
+            'GITHUB_CLIENT_ID' => $socialNetwork['github_client_id'] ?? null,
+            'GITHUB_CLIENT_SECRET' => $socialNetwork['github_client_secret'] ?? null,
+            'GITHUB_REDIRECT_URI' => $socialNetwork['github_redirect_uri'] ?? null,
+            'LINKEDIN_CLIENT_ID' => $socialNetwork['linkedin_client_id'] ?? null,
+            'LINKEDIN_CLIENT_SECRET' => $socialNetwork['linkedin_client_secret'] ?? null,
+            'LINKEDIN_REDIRECT_URI' => $socialNetwork['linkedin_redirect_uri'] ?? null,
+        ];
+
+        try {
+            app(EnvironmentFileWriter::class)->validate($envUpdates);
+        } catch (InvalidArgumentException $e) {
+            throw ValidationException::withMessages([
+                'socialite' => $e->getMessage(),
+            ]);
+        }
+
         // Save to Database
         $settings->update(['social_network' => $socialNetwork]);
 
         // Update .env file
-        $envUpdates = [
-            'FACEBOOK_CLIENT_ID' => $socialNetwork['facebook_client_id'],
-            'FACEBOOK_CLIENT_SECRET' => $socialNetwork['facebook_client_secret'],
-            'FACEBOOK_REDIRECT_URI' => $socialNetwork['facebook_redirect_uri'],
-            'GOOGLE_CLIENT_ID' => $socialNetwork['google_client_id'],
-            'GOOGLE_CLIENT_SECRET' => $socialNetwork['google_client_secret'],
-            'GOOGLE_REDIRECT_URI' => $socialNetwork['google_redirect_uri'],
-            'TWITTER_CLIENT_ID' => $socialNetwork['twitter_client_id'],
-            'TWITTER_CLIENT_SECRET' => $socialNetwork['twitter_client_secret'],
-            'TWITTER_REDIRECT_URI' => $socialNetwork['twitter_redirect_uri'],
-            'GITHUB_CLIENT_ID' => $socialNetwork['github_client_id'],
-            'GITHUB_CLIENT_SECRET' => $socialNetwork['github_client_secret'],
-            'GITHUB_REDIRECT_URI' => $socialNetwork['github_redirect_uri'],
-            'LINKEDIN_CLIENT_ID' => $socialNetwork['linkedin_client_id'],
-            'LINKEDIN_CLIENT_SECRET' => $socialNetwork['linkedin_client_secret'],
-            'LINKEDIN_REDIRECT_URI' => $socialNetwork['linkedin_redirect_uri'],
-        ];
-
         $this->updateEnvironmentFile($envUpdates);
 
         // Clear config cache to apply changes
@@ -1290,7 +1306,13 @@ final class AdministratorSystemManagementController extends Controller
         return Redirect::back()->with('success', 'Legacy enrollment settings updated successfully.');
     }
 
-    public function updateNotificationChannels(Request $request)
+    /**
+     * Update notification channels configuration and synchronize Pusher environment.
+     *
+     *
+     * @throws ValidationException
+     */
+    public function updateNotificationChannels(Request $request): RedirectResponse
     {
         $this->authorize('updateNotifications', GeneralSetting::class);
 
@@ -1310,20 +1332,8 @@ final class AdministratorSystemManagementController extends Controller
             'third_party_services' => ['nullable', 'array'],
         ]);
 
-        $moreConfigs = $settings->more_configs ?? [];
-
-        $notificationChannelsConfig = $validated;
-        unset($notificationChannelsConfig['third_party_services']);
-        $moreConfigs['notification_channels'] = $notificationChannelsConfig;
-
-        if (isset($validated['third_party_services'])) {
-            $moreConfigs['third_party_services'] = $validated['third_party_services'];
-        }
-
-        $settings->update(['more_configs' => $moreConfigs]);
-
-        // Update environment for Pusher if broadcast/pusher enabled
         $enabledChannels = $validated['enabled_channels'] ?? [];
+        $envUpdates = [];
         if (
             (in_array('broadcast', $enabledChannels) || in_array('pusher', $enabledChannels))
             && ! empty($validated['pusher'])
@@ -1337,6 +1347,28 @@ final class AdministratorSystemManagementController extends Controller
                 'PUSHER_APP_CLUSTER' => $pusher['cluster'] ?? null,
             ];
 
+            try {
+                app(EnvironmentFileWriter::class)->validate($envUpdates);
+            } catch (InvalidArgumentException $e) {
+                throw ValidationException::withMessages([
+                    'pusher' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        $moreConfigs = $settings->more_configs ?? [];
+
+        $notificationChannelsConfig = $validated;
+        unset($notificationChannelsConfig['third_party_services']);
+        $moreConfigs['notification_channels'] = $notificationChannelsConfig;
+
+        if (isset($validated['third_party_services'])) {
+            $moreConfigs['third_party_services'] = $validated['third_party_services'];
+        }
+
+        $settings->update(['more_configs' => $moreConfigs]);
+
+        if (! empty($envUpdates)) {
             $this->updateEnvironmentFile($envUpdates);
         }
 
@@ -1768,6 +1800,8 @@ final class AdministratorSystemManagementController extends Controller
 
     /**
      * Update .env file with given key-value pairs.
+     *
+     * @param  array<string, string|int|float|bool|null>  $values
      */
     private function updateEnvironmentFile(array $values): void
     {

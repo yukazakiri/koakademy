@@ -6,6 +6,7 @@ namespace App\Support;
 
 use Illuminate\Support\Facades\File;
 use InvalidArgumentException;
+use RuntimeException;
 
 final class EnvironmentFileWriter
 {
@@ -41,9 +42,12 @@ final class EnvironmentFileWriter
     ];
 
     /**
-     * Update an environment file with the given key-value pairs.
+     * Update an environment file with the given key-value pairs under an exclusive lock.
      *
      * @param  array<string, string|int|float|bool|null>  $values
+     *
+     * @throws InvalidArgumentException
+     * @throws RuntimeException
      */
     public function update(array $values, ?string $filePath = null): void
     {
@@ -52,17 +56,44 @@ final class EnvironmentFileWriter
         }
 
         $envPath = $filePath ?? base_path('.env');
-        $content = File::exists($envPath) ? (File::get($envPath) ?: '') : '';
 
-        $updatedContent = $this->updateContent($content, $values);
+        $directory = dirname($envPath);
+        if (! File::isDirectory($directory)) {
+            File::makeDirectory($directory, 0755, true);
+        }
 
-        File::put($envPath, $updatedContent, true);
+        $handle = fopen($envPath, 'c+');
+        if ($handle === false) {
+            throw new RuntimeException("Unable to open environment file [{$envPath}] for writing.");
+        }
+
+        try {
+            if (! flock($handle, LOCK_EX)) {
+                throw new RuntimeException("Unable to acquire exclusive lock on environment file [{$envPath}].");
+            }
+
+            $stat = fstat($handle);
+            $size = (int) ($stat['size'] ?? 0);
+            $content = $size > 0 ? (fread($handle, $size) ?: '') : '';
+
+            $updatedContent = $this->updateContent($content, $values);
+
+            rewind($handle);
+            ftruncate($handle, 0);
+            fwrite($handle, $updatedContent);
+            fflush($handle);
+        } finally {
+            flock($handle, LOCK_UN);
+            fclose($handle);
+        }
     }
 
     /**
      * Update environment file content with validated and sanitized key-value pairs.
      *
      * @param  array<string, string|int|float|bool|null>  $values
+     *
+     * @throws InvalidArgumentException
      */
     public function updateContent(string $content, array $values): string
     {
@@ -99,7 +130,29 @@ final class EnvironmentFileWriter
     }
 
     /**
+     * Validate key-value pairs without modifying any file.
+     *
+     * @param  array<string, string|int|float|bool|null>  $values
+     *
+     * @throws InvalidArgumentException
+     */
+    public function validate(array $values): void
+    {
+        foreach ($values as $key => $value) {
+            if ($value === null) {
+                continue;
+            }
+
+            $this->validateKey($key);
+            $this->validateValue($key, (string) $value);
+        }
+    }
+
+    /**
      * Validate that the key is in the allowed set.
+     *
+     *
+     * @throws InvalidArgumentException
      */
     public function validateKey(string $key): void
     {
@@ -110,6 +163,9 @@ final class EnvironmentFileWriter
 
     /**
      * Validate that the value contains no newline or null-byte characters.
+     *
+     *
+     * @throws InvalidArgumentException
      */
     public function validateValue(string $key, string $value): void
     {

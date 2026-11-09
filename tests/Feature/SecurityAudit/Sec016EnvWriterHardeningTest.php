@@ -121,7 +121,7 @@ it('appends new keys if they do not exist in the file', function (): void {
     expect($updatedContent)->toBe("APP_NAME=\"KoAkademy\"\nBROADCAST_CONNECTION=\"pusher\"\nPUSHER_APP_ID=\"123456\"\n");
 });
 
-it('writes updates to disk when a custom file path is provided', function (): void {
+it('writes updates to disk under exclusive lock when a custom file path is provided', function (): void {
     $writer = new EnvironmentFileWriter;
 
     $tempFile = tempnam(sys_get_temp_dir(), 'env_write_test_');
@@ -175,7 +175,34 @@ it('rejects newline injection in notification channels update endpoint', functio
     $response->assertSessionHasErrors(['pusher.app_id']);
 });
 
-it('accepts valid socialite and pusher settings without newlines', function (): void {
+it('aborts database save if inherited socialite settings contain invalid newline values', function (): void {
+    $settings = GeneralSetting::first();
+    $settings->update([
+        'social_network' => [
+            'facebook_client_id' => "pre_existing\nEVIL=1",
+            'facebook_client_secret' => 'some_secret',
+        ],
+    ]);
+
+    $superAdmin = User::factory()->create(['role' => UserRole::SuperAdmin]);
+
+    $response = $this->actingAs($superAdmin)
+        ->from(portalUrlForAdministrators('/administrators/system-management/socialite'))
+        ->put(portalUrlForAdministrators('/administrators/system-management/socialite'), [
+            'google_client_id' => 'valid_google_id',
+            'google_client_secret' => 'valid_google_secret',
+        ]);
+
+    $response->assertSessionHasErrors(['socialite']);
+
+    $settings->refresh();
+    expect($settings->social_network['google_client_id'] ?? null)->toBeNull();
+});
+
+it('accepts valid socialite settings, saves to database, and delegates to environment writer', function (): void {
+    $spy = Mockery::spy(new EnvironmentFileWriter);
+    $this->app->instance(EnvironmentFileWriter::class, $spy);
+
     $superAdmin = User::factory()->create(['role' => UserRole::SuperAdmin]);
 
     $response = $this->actingAs($superAdmin)
@@ -193,4 +220,44 @@ it('accepts valid socialite and pusher settings without newlines', function (): 
     $settings = GeneralSetting::first();
     expect($settings->social_network['facebook_client_id'])->toBe('valid_fb_id_123')
         ->and($settings->social_network['facebook_client_secret'])->toBe('valid_fb_secret_456');
+
+    $spy->shouldHaveReceived('validate');
+    $spy->shouldHaveReceived('update')->with(Mockery::on(function (array $updates): bool {
+        return ($updates['FACEBOOK_CLIENT_ID'] ?? null) === 'valid_fb_id_123'
+            && ($updates['FACEBOOK_CLIENT_SECRET'] ?? null) === 'valid_fb_secret_456'
+            && ($updates['FACEBOOK_REDIRECT_URI'] ?? null) === 'http://localhost/auth/facebook/callback';
+    }));
+});
+
+it('accepts valid notification settings, saves to database, and delegates to environment writer', function (): void {
+    $spy = Mockery::spy(new EnvironmentFileWriter);
+    $this->app->instance(EnvironmentFileWriter::class, $spy);
+
+    $superAdmin = User::factory()->create(['role' => UserRole::SuperAdmin]);
+
+    $response = $this->actingAs($superAdmin)
+        ->from(portalUrlForAdministrators('/administrators/system-management/notifications'))
+        ->put(portalUrlForAdministrators('/administrators/system-management/notifications'), [
+            'enabled_channels' => ['broadcast'],
+            'pusher' => [
+                'app_id' => '111222',
+                'key' => 'valid-key',
+                'secret' => 'valid-secret',
+                'cluster' => 'ap1',
+            ],
+            'sms' => [],
+        ]);
+
+    $response->assertRedirect();
+    $response->assertSessionHasNoErrors();
+
+    $settings = GeneralSetting::first();
+    expect($settings->more_configs['notification_channels']['pusher']['app_id'])->toBe('111222');
+
+    $spy->shouldHaveReceived('validate');
+    $spy->shouldHaveReceived('update')->with(Mockery::on(function (array $updates): bool {
+        return ($updates['BROADCAST_CONNECTION'] ?? null) === 'pusher'
+            && ($updates['PUSHER_APP_ID'] ?? null) === '111222'
+            && ($updates['PUSHER_APP_KEY'] ?? null) === 'valid-key';
+    }));
 });

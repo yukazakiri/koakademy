@@ -10,6 +10,7 @@ use Spatie\Permission\Models\Role;
 
 beforeEach(function (): void {
     Permission::findOrCreate('ViewAny:User', 'web');
+    Permission::findOrCreate('Update:User', 'web');
     Permission::findOrCreate('ViewAny:Role', 'web');
     Permission::findOrCreate('View:Role', 'web');
     Permission::findOrCreate('Create:Role', 'web');
@@ -23,6 +24,7 @@ beforeEach(function (): void {
     Role::findOrCreate('super_admin', 'web');
     Role::findOrCreate('admin', 'web');
     Role::findOrCreate('dean', 'web');
+    Role::findOrCreate('instructor', 'web');
     Role::findOrCreate('student', 'web');
 });
 
@@ -42,6 +44,32 @@ it('allows ViewAny:Role holders to view roles index', function (): void {
     $this->actingAs($admin)
         ->get(portalUrlForAdministrators('/administrators/roles'))
         ->assertOk();
+});
+
+it('excludes users_with_roles from roles index when actor lacks ViewAny:User', function (): void {
+    $actor = User::factory()->create(['role' => UserRole::Admin]);
+    $actor->givePermissionTo('ViewAny:Role');
+
+    User::factory()->create(['role' => UserRole::Student]);
+
+    $response = $this->actingAs($actor)
+        ->get(portalUrlForAdministrators('/administrators/roles'))
+        ->assertOk();
+
+    expect($response->inertiaProps('users_with_roles'))->toBe([]);
+});
+
+it('includes users_with_roles in roles index when actor has ViewAny:User', function (): void {
+    $actor = User::factory()->create(['role' => UserRole::Admin]);
+    $actor->givePermissionTo(['ViewAny:Role', 'ViewAny:User']);
+
+    User::factory()->create(['role' => UserRole::Student]);
+
+    $response = $this->actingAs($actor)
+        ->get(portalUrlForAdministrators('/administrators/roles'))
+        ->assertOk();
+
+    expect($response->inertiaProps('users_with_roles'))->not->toBeEmpty();
 });
 
 it('blocks ViewAny:User holders from assigning roles', function (): void {
@@ -140,6 +168,20 @@ it('blocks self-assignment of roles even with Assign:Role permission', function 
     expect($actor->fresh()->role)->toBe(UserRole::Admin);
 });
 
+it('blocks self-assignment of a manageable role', function (): void {
+    $actor = User::factory()->create(['role' => UserRole::Admin]);
+    $actor->givePermissionTo('Assign:Role');
+
+    $this->actingAs($actor)
+        ->post(portalUrlForAdministrators('/administrators/roles/assign'), [
+            'user_id' => $actor->id,
+            'role_name' => 'dean',
+        ])
+        ->assertForbidden();
+
+    expect($actor->fresh()->role)->toBe(UserRole::Admin);
+});
+
 it('blocks assigning super_admin when actor cannot manage super_admin', function (): void {
     $actor = User::factory()->create(['role' => UserRole::Admin]);
     $actor->givePermissionTo('Assign:Role');
@@ -205,6 +247,24 @@ it('allows assigning a manageable system role to a subordinate user', function (
         ->toContain(UserRole::Dean);
 });
 
+it('allows authorized administrator to assign shs_student role', function (): void {
+    Role::findOrCreate('shs_student', 'web');
+
+    $actor = User::factory()->create(['role' => UserRole::Admin]);
+    $actor->givePermissionTo('Assign:Role');
+
+    $target = User::factory()->create(['role' => UserRole::Student]);
+
+    $this->actingAs($actor)
+        ->post(portalUrlForAdministrators('/administrators/roles/assign'), [
+            'user_id' => $target->id,
+            'role_name' => 'shs_student',
+        ])
+        ->assertRedirect(route('administrators.roles.index'));
+
+    expect($target->fresh()->role)->toBe(UserRole::ShsStudent);
+});
+
 it('allows assigning a custom role when actor holds all its permissions', function (): void {
     $actor = User::factory()->create(['role' => UserRole::Admin]);
     $actor->givePermissionTo(['Assign:Role', 'some_privileged_perm']);
@@ -225,6 +285,27 @@ it('allows assigning a custom role when actor holds all its permissions', functi
     expect($target->fresh()->role)->toBe(UserRole::Student);
 });
 
+it('preserves permissions when assigning a legacy role label variant', function (): void {
+    $legacyRole = Role::findOrCreate('Dean', 'web');
+    $legacyRole->givePermissionTo('some_privileged_perm');
+
+    $actor = User::factory()->create(['role' => UserRole::Admin]);
+    $actor->givePermissionTo(['Assign:Role', 'some_privileged_perm']);
+
+    $target = User::factory()->create(['role' => UserRole::Student]);
+
+    $this->actingAs($actor)
+        ->post(portalUrlForAdministrators('/administrators/roles/assign'), [
+            'user_id' => $target->id,
+            'role_name' => 'Dean',
+        ])
+        ->assertRedirect(route('administrators.roles.index'));
+
+    expect($target->fresh()->role)->toBe(UserRole::Dean);
+    expect($target->fresh()->hasRole('Dean'))->toBeTrue();
+    expect($target->fresh()->hasPermissionTo('some_privileged_perm'))->toBeTrue();
+});
+
 it('blocks creating a role with unheld permissions', function (): void {
     $actor = User::factory()->create(['role' => UserRole::Admin]);
     $actor->givePermissionTo('Create:Role');
@@ -241,12 +322,15 @@ it('blocks creating a role with a reserved system role name', function (): void 
     $actor = User::factory()->create(['role' => UserRole::Admin]);
     $actor->givePermissionTo('Create:Role');
 
+    expect(Role::where('name', 'Super Administrator')->exists())->toBeFalse();
+
     $this->actingAs($actor)
         ->post(portalUrlForAdministrators('/administrators/roles'), [
-            'name' => 'super_admin',
+            'name' => 'Super Administrator',
         ])
-        ->assertStatus(302)
-        ->assertSessionHasErrors(['name']);
+        ->assertStatus(422);
+
+    expect(Role::where('name', 'Super Administrator')->exists())->toBeFalse();
 });
 
 it('blocks renaming a system role', function (): void {
@@ -262,6 +346,51 @@ it('blocks renaming a system role', function (): void {
         ->assertForbidden();
 
     expect($superAdminRole->fresh()->name)->toBe('super_admin');
+});
+
+it('blocks renaming a custom role to a reserved system role name', function (): void {
+    $actor = User::factory()->create(['role' => UserRole::Admin]);
+    $actor->givePermissionTo('Update:Role');
+
+    $customRole = Role::create(['name' => 'custom_support', 'guard_name' => 'web']);
+
+    $this->actingAs($actor)
+        ->put(portalUrlForAdministrators('/administrators/roles/'.$customRole->id), [
+            'name' => 'Super Administrator',
+        ])
+        ->assertStatus(422);
+
+    expect($customRole->fresh()->name)->toBe('custom_support');
+});
+
+it('blocks updating permissions of a system role actor cannot manage', function (): void {
+    $actor = User::factory()->create(['role' => UserRole::Dean]);
+    $actor->givePermissionTo('Update:Role');
+
+    $adminRole = Role::where('name', 'admin')->firstOrFail();
+
+    $this->actingAs($actor)
+        ->put(portalUrlForAdministrators('/administrators/roles/'.$adminRole->id), [
+            'name' => 'admin',
+            'permissions' => [],
+        ])
+        ->assertForbidden();
+});
+
+it('blocks updating permissions of a role assigned to users of equal or higher authority', function (): void {
+    $actor = User::factory()->create(['role' => UserRole::Dean]);
+    $actor->givePermissionTo('Update:Role');
+
+    $president = User::factory()->create(['role' => UserRole::President]);
+    $customRole = Role::create(['name' => 'executive_aid', 'guard_name' => 'web']);
+    $president->assignRole($customRole);
+
+    $this->actingAs($actor)
+        ->put(portalUrlForAdministrators('/administrators/roles/'.$customRole->id), [
+            'name' => 'executive_aid',
+            'permissions' => [],
+        ])
+        ->assertForbidden();
 });
 
 it('blocks deleting a system role', function (): void {
@@ -294,4 +423,61 @@ it('allows creating and deleting permissions with proper authorization', functio
         ->assertRedirect(route('administrators.roles.index'));
 
     expect(Permission::where('name', 'new_test_perm')->exists())->toBeFalse();
+});
+
+it('blocks changing roles in Filament user editor without Assign:Role permission', function (): void {
+    Filament\Facades\Filament::setCurrentPanel('admin');
+
+    $actor = User::factory()->create(['role' => UserRole::Dean]);
+    $actor->givePermissionTo(['ViewAny:User', 'Update:User']);
+
+    $target = User::factory()->create(['role' => UserRole::Student]);
+
+    $this->actingAs($actor);
+
+    Livewire\Livewire::test(App\Filament\Resources\Users\Pages\EditUser::class, ['record' => $target->getRouteKey()])
+        ->set('data.role', UserRole::Instructor->value)
+        ->set('data.feature_flags', [])
+        ->call('save')
+        ->assertStatus(403);
+
+    expect($target->fresh()->role)->toBe(UserRole::Student);
+});
+
+it('blocks changing roles in Filament user editor for users of equal or higher authority', function (): void {
+    Filament\Facades\Filament::setCurrentPanel('admin');
+
+    $actor = User::factory()->create(['role' => UserRole::Dean]);
+    $actor->givePermissionTo(['ViewAny:User', 'Update:User', 'Assign:Role']);
+
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+
+    $this->actingAs($actor);
+
+    Livewire\Livewire::test(App\Filament\Resources\Users\Pages\EditUser::class, ['record' => $admin->getRouteKey()])
+        ->set('data.role', UserRole::Instructor->value)
+        ->set('data.feature_flags', [])
+        ->call('save')
+        ->assertStatus(403);
+
+    expect($admin->fresh()->role)->toBe(UserRole::Admin);
+});
+
+it('allows updating profile in Filament user editor without Assign:Role when role is unchanged', function (): void {
+    Filament\Facades\Filament::setCurrentPanel('admin');
+
+    $actor = User::factory()->create(['role' => UserRole::Dean]);
+    $actor->givePermissionTo(['ViewAny:User', 'Update:User']);
+
+    $target = User::factory()->create(['role' => UserRole::Instructor]);
+
+    $this->actingAs($actor);
+
+    Livewire\Livewire::test(App\Filament\Resources\Users\Pages\EditUser::class, ['record' => $target->getRouteKey()])
+        ->set('data.name', 'Updated Instructor Name')
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    expect($target->fresh()->name)->toBe('Updated Instructor Name');
+    expect($target->fresh()->role)->toBe(UserRole::Instructor);
 });

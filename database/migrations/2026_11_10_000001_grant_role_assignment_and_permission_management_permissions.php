@@ -20,6 +20,9 @@ return new class extends Migration
         'Delete:Permission',
     ];
 
+    /**
+     * Run the migrations.
+     */
     public function up(): void
     {
         if (! Schema::hasTable('permissions') || ! Schema::hasTable('roles')) {
@@ -30,6 +33,7 @@ return new class extends Migration
             ->map(fn (string $name): Permission => Permission::findOrCreate($name, 'web'));
 
         Role::query()
+            ->where('guard_name', 'web')
             ->whereIn('name', $this->systemRoleNames())
             ->get()
             ->each(fn (Role $role) => $role->givePermissionTo($permissions));
@@ -37,6 +41,9 @@ return new class extends Migration
         app(PermissionRegistrar::class)->forgetCachedPermissions();
     }
 
+    /**
+     * Reverse the migrations.
+     */
     public function down(): void
     {
         if (! Schema::hasTable('permissions') || ! Schema::hasTable('roles')) {
@@ -44,6 +51,7 @@ return new class extends Migration
         }
 
         Role::query()
+            ->where('guard_name', 'web')
             ->whereIn('name', $this->systemRoleNames())
             ->get()
             ->each(function (Role $role): void {

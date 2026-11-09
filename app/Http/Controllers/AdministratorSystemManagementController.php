@@ -66,6 +66,7 @@ use App\Services\SocialiteProviderService;
 use App\Services\TuitionPaymentScheduleSettingsService;
 use App\Settings\SiteSettings;
 use App\Support\Analytics\AnalyticsProviderCatalog;
+use App\Support\EnvironmentFileWriter;
 use App\Support\IsoAlpha2CountryCodes;
 use App\Support\SystemManagementPermissions;
 use Exception;
@@ -1136,26 +1137,26 @@ final class AdministratorSystemManagementController extends Controller
 
         $socialiteProviders = app(SocialiteProviderService::class);
         $validated = $request->validate([
-            'facebook_client_id' => 'nullable|string',
-            'facebook_client_secret' => 'nullable|string',
-            'facebook_enabled' => 'nullable|boolean',
-            'facebook_redirect_uri' => 'nullable|url',
-            'google_client_id' => 'nullable|string',
-            'google_client_secret' => 'nullable|string',
-            'google_enabled' => 'nullable|boolean',
-            'google_redirect_uri' => 'nullable|url',
-            'twitter_client_id' => 'nullable|string',
-            'twitter_client_secret' => 'nullable|string',
-            'twitter_enabled' => 'nullable|boolean',
-            'twitter_redirect_uri' => 'nullable|url',
-            'github_client_id' => 'nullable|string',
-            'github_client_secret' => 'nullable|string',
-            'github_enabled' => 'nullable|boolean',
-            'github_redirect_uri' => 'nullable|url',
-            'linkedin_client_id' => 'nullable|string',
-            'linkedin_client_secret' => 'nullable|string',
-            'linkedin_enabled' => 'nullable|boolean',
-            'linkedin_redirect_uri' => 'nullable|url',
+            'facebook_client_id' => ['nullable', 'string', 'not_regex:/[\r\n]/'],
+            'facebook_client_secret' => ['nullable', 'string', 'not_regex:/[\r\n]/'],
+            'facebook_enabled' => ['nullable', 'boolean'],
+            'facebook_redirect_uri' => ['nullable', 'url', 'not_regex:/[\r\n]/'],
+            'google_client_id' => ['nullable', 'string', 'not_regex:/[\r\n]/'],
+            'google_client_secret' => ['nullable', 'string', 'not_regex:/[\r\n]/'],
+            'google_enabled' => ['nullable', 'boolean'],
+            'google_redirect_uri' => ['nullable', 'url', 'not_regex:/[\r\n]/'],
+            'twitter_client_id' => ['nullable', 'string', 'not_regex:/[\r\n]/'],
+            'twitter_client_secret' => ['nullable', 'string', 'not_regex:/[\r\n]/'],
+            'twitter_enabled' => ['nullable', 'boolean'],
+            'twitter_redirect_uri' => ['nullable', 'url', 'not_regex:/[\r\n]/'],
+            'github_client_id' => ['nullable', 'string', 'not_regex:/[\r\n]/'],
+            'github_client_secret' => ['nullable', 'string', 'not_regex:/[\r\n]/'],
+            'github_enabled' => ['nullable', 'boolean'],
+            'github_redirect_uri' => ['nullable', 'url', 'not_regex:/[\r\n]/'],
+            'linkedin_client_id' => ['nullable', 'string', 'not_regex:/[\r\n]/'],
+            'linkedin_client_secret' => ['nullable', 'string', 'not_regex:/[\r\n]/'],
+            'linkedin_enabled' => ['nullable', 'boolean'],
+            'linkedin_redirect_uri' => ['nullable', 'url', 'not_regex:/[\r\n]/'],
         ]);
 
         $socialNetwork = array_merge($socialiteProviders->config(), $validated);
@@ -1298,14 +1299,14 @@ final class AdministratorSystemManagementController extends Controller
             'enabled_channels' => ['required', 'array'],
             'enabled_channels.*' => ['string', 'in:'.implode(',', NotificationChannel::values())],
             'pusher' => ['nullable', 'array'],
-            'pusher.app_id' => ['nullable', 'string'],
-            'pusher.key' => ['nullable', 'string'],
-            'pusher.secret' => ['nullable', 'string'],
-            'pusher.cluster' => ['nullable', 'string'],
+            'pusher.app_id' => ['nullable', 'string', 'not_regex:/[\r\n]/'],
+            'pusher.key' => ['nullable', 'string', 'not_regex:/[\r\n]/'],
+            'pusher.secret' => ['nullable', 'string', 'not_regex:/[\r\n]/'],
+            'pusher.cluster' => ['nullable', 'string', 'not_regex:/[\r\n]/'],
             'sms' => ['nullable', 'array'],
-            'sms.provider' => ['nullable', 'string'],
-            'sms.api_key' => ['nullable', 'string'],
-            'sms.sender_id' => ['nullable', 'string'],
+            'sms.provider' => ['nullable', 'string', 'not_regex:/[\r\n]/'],
+            'sms.api_key' => ['nullable', 'string', 'not_regex:/[\r\n]/'],
+            'sms.sender_id' => ['nullable', 'string', 'not_regex:/[\r\n]/'],
             'third_party_services' => ['nullable', 'array'],
         ]);
 
@@ -1770,27 +1771,6 @@ final class AdministratorSystemManagementController extends Controller
      */
     private function updateEnvironmentFile(array $values): void
     {
-        if (app()->environment('testing')) {
-            return;
-        }
-
-        $envPath = base_path('.env');
-        $content = file_get_contents($envPath);
-
-        foreach ($values as $key => $value) {
-            if ($value === null) {
-                continue;
-            }
-
-            // If key exists, replace it
-            if (preg_match("/^{$key}=.*/m", $content)) {
-                $content = preg_replace("/^{$key}=.*/m", "{$key}={$value}", $content);
-            } else {
-                // Append if not exists
-                $content .= "\n{$key}={$value}";
-            }
-        }
-
-        file_put_contents($envPath, $content);
+        app(EnvironmentFileWriter::class)->update($values);
     }
 }

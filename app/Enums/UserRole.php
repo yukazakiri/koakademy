@@ -221,6 +221,8 @@ enum UserRole: string implements HasColor, HasLabel
 
     /**
      * Get roles that can be managed by the current role
+     *
+     * @return list<self>
      */
     public function getManageableRoles(): array
     {
@@ -233,7 +235,7 @@ enum UserRole: string implements HasColor, HasLabel
                 self::StudentAffairsOfficer, self::GuidanceCounselor, self::Librarian,
                 self::Cashier, self::AccountingOfficer, self::BursarOfficer, self::HRManager,
                 self::ITSupport, self::SecurityGuard, self::MaintenanceStaff,
-                self::AdministrativeAssistant, self::Student, self::GraduateStudent, self::User,
+                self::AdministrativeAssistant, self::Student, self::GraduateStudent, self::ShsStudent, self::User,
             ],
             self::SuperAdmin => [
                 self::Admin, self::President, self::VicePresident,
@@ -243,7 +245,7 @@ enum UserRole: string implements HasColor, HasLabel
                 self::StudentAffairsOfficer, self::GuidanceCounselor, self::Librarian,
                 self::Cashier, self::AccountingOfficer, self::BursarOfficer, self::HRManager,
                 self::ITSupport, self::SecurityGuard, self::MaintenanceStaff,
-                self::AdministrativeAssistant, self::Student, self::GraduateStudent, self::User,
+                self::AdministrativeAssistant, self::Student, self::GraduateStudent, self::ShsStudent, self::User,
             ],
             self::Admin => [
                 self::Admin, self::Dean, self::AssociateDean, self::DepartmentHead,
@@ -253,7 +255,7 @@ enum UserRole: string implements HasColor, HasLabel
                 self::GuidanceCounselor, self::Librarian, self::Cashier, self::AccountingOfficer,
                 self::BursarOfficer, self::HRManager, self::ITSupport, self::SecurityGuard,
                 self::MaintenanceStaff, self::AdministrativeAssistant, self::Student,
-                self::GraduateStudent, self::User,
+                self::GraduateStudent, self::ShsStudent, self::User,
             ],
             self::President => [
                 self::VicePresident, self::Dean, self::AssociateDean, self::DepartmentHead,

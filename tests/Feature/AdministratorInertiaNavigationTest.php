@@ -151,6 +151,8 @@ function administratorInertiaAuditUser(): User
         'ViewAny:Faculty',
         'ViewAny:Department',
         'ViewAny:StudentEnrollment',
+        'ViewAny:Role',
+        'Update:Role',
     ];
 
     foreach (SystemManagementPermissions::sectionKeys() as $section) {

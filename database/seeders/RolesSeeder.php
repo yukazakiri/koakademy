@@ -233,6 +233,7 @@ final class RolesSeeder extends Seeder
             // policy generates them, so they are registered here for Registrar roles to hold.
             'Cancel:StudentEnrollment',
             'Reopen:StudentEnrollment',
+            'Assign:Role',
             ...SystemManagementPermissions::all(),
         ];
     }

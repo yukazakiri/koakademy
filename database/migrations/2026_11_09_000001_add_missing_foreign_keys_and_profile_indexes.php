@@ -155,7 +155,6 @@ return new class extends Migration
                 'students_lrn_index' => ['lrn'],
             ],
             'medical_records' => [
-                'medical_records_student_id_index' => ['student_id'],
                 'medical_records_created_by_index' => ['created_by'],
                 'medical_records_updated_by_index' => ['updated_by'],
             ],
@@ -245,7 +244,6 @@ return new class extends Migration
                 'students_document_location_id_index',
             ],
             'medical_records' => [
-                'medical_records_student_id_index',
                 'medical_records_created_by_index',
                 'medical_records_updated_by_index',
             ],

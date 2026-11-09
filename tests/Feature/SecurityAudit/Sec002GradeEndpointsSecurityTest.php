@@ -27,13 +27,17 @@ beforeEach(function (): void {
     $this->faculty = Faculty::factory()->create();
     $this->facultyUser = User::factory()->create([
         'role' => UserRole::Instructor,
+        'email' => $this->faculty->email,
         'record_id' => $this->faculty->id,
+        'faculty_id_number' => $this->faculty->faculty_id_number,
     ]);
 
     $this->otherFaculty = Faculty::factory()->create();
     $this->otherFacultyUser = User::factory()->create([
         'role' => UserRole::Instructor,
+        'email' => $this->otherFaculty->email,
         'record_id' => $this->otherFaculty->id,
+        'faculty_id_number' => $this->otherFaculty->faculty_id_number,
     ]);
 
     $this->studentUser = User::factory()->create([
@@ -145,9 +149,148 @@ it('blocks faculty from writing to classes they do not teach', function (): void
         ->postJson("/api/class-enrollments/{$this->enrollment->id}/finalize")
         ->assertForbidden();
 
+    $this->enrollment->update([
+        'is_grades_finalized' => true,
+        'is_grades_verified' => false,
+        'verified_by' => null,
+        'verified_at' => null,
+        'verification_notes' => null,
+    ]);
+
+    $this->actingAs($this->otherFacultyUser, 'sanctum')
+        ->postJson("/api/class-enrollments/{$this->enrollment->id}/verify", [
+            'verification_notes' => 'Unauthorized verification',
+        ])
+        ->assertForbidden();
+
+    $fresh = $this->enrollment->fresh();
+    expect($fresh->is_grades_verified)->toBeFalse()
+        ->and($fresh->verified_by)->toBeNull()
+        ->and($fresh->verified_at)->toBeNull()
+        ->and($fresh->verification_notes)->toBeNull();
+
     $this->actingAs($this->otherFacultyUser, 'sanctum')
         ->deleteJson("/api/class-enrollments/{$this->enrollment->id}")
         ->assertForbidden();
+});
+
+it('blocks faculty from moving an enrollment to a class they do not teach', function (): void {
+    $otherClass = Classes::factory()->create([
+        'faculty_id' => $this->otherFaculty->id,
+    ]);
+
+    $this->actingAs($this->facultyUser, 'sanctum')
+        ->putJson("/api/class-enrollments/{$this->enrollment->id}", [
+            'class_id' => $otherClass->id,
+        ])
+        ->assertForbidden();
+
+    expect($this->enrollment->fresh()->class_id)->toBe($this->class->id);
+});
+
+it('rejects faculty whose record_id does not match their authentic email identity', function (): void {
+    $spoofedUser = User::factory()->create([
+        'role' => UserRole::Instructor,
+        'email' => 'attacker@example.com',
+        'record_id' => $this->faculty->id,
+    ]);
+
+    $this->actingAs($spoofedUser, 'sanctum')
+        ->patchJson("/api/class-enrollments/{$this->enrollment->id}/grades", [
+            'prelim_grade' => 95,
+        ])
+        ->assertForbidden();
+});
+
+it('reports enrollments belonging to another class as errors in bulk update', function (): void {
+    $otherClass = Classes::factory()->create([
+        'faculty_id' => $this->otherFaculty->id,
+    ]);
+    $otherEnrollment = ClassEnrollment::factory()->create([
+        'class_id' => $otherClass->id,
+        'prelim_grade' => null,
+    ]);
+
+    $response = $this->actingAs($this->facultyUser, 'sanctum')
+        ->patchJson("/api/class-enrollments/class/{$this->class->id}/bulk-grades", [
+            'grades' => [
+                [
+                    'enrollment_id' => $this->enrollment->id,
+                    'prelim_grade' => 88,
+                ],
+                [
+                    'enrollment_id' => $otherEnrollment->id,
+                    'prelim_grade' => 99,
+                ],
+            ],
+        ]);
+
+    $response->assertOk()
+        ->assertJsonPath('data.total_updated', 1)
+        ->assertJsonPath('data.total_errors', 1);
+
+    expect((float) $this->enrollment->fresh()->prelim_grade)->toBe(88.0)
+        ->and($otherEnrollment->fresh()->prelim_grade)->toBeNull();
+});
+
+it('blocks executive read-only roles and student affairs from grade writes', function (): void {
+    $president = User::factory()->create(['role' => UserRole::President]);
+    $vicePresident = User::factory()->create(['role' => UserRole::VicePresident]);
+    $studentAffairs = User::factory()->create(['role' => UserRole::StudentAffairsOfficer]);
+
+    foreach ([$president, $vicePresident, $studentAffairs] as $user) {
+        $this->actingAs($user, 'sanctum')
+            ->patchJson("/api/class-enrollments/{$this->enrollment->id}/grades", [
+                'prelim_grade' => 90,
+            ])
+            ->assertForbidden();
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson("/api/class-enrollments/{$this->enrollment->id}/finalize")
+            ->assertForbidden();
+
+        $this->actingAs($user, 'sanctum')
+            ->deleteJson("/api/class-enrollments/{$this->enrollment->id}/force")
+            ->assertForbidden();
+    }
+});
+
+it('blocks instructors and Update:ClassEnrollment holders from force delete and restore without dedicated permissions', function (): void {
+    $staff = User::factory()->create();
+    $staff->givePermissionTo('Update:ClassEnrollment');
+
+    $this->enrollment->delete();
+
+    $this->actingAs($this->facultyUser, 'sanctum')
+        ->postJson("/api/class-enrollments/{$this->enrollment->id}/restore")
+        ->assertForbidden();
+
+    $this->actingAs($this->facultyUser, 'sanctum')
+        ->deleteJson("/api/class-enrollments/{$this->enrollment->id}/force")
+        ->assertForbidden();
+
+    $this->actingAs($staff, 'sanctum')
+        ->postJson("/api/class-enrollments/{$this->enrollment->id}/restore")
+        ->assertForbidden();
+
+    $this->actingAs($staff, 'sanctum')
+        ->deleteJson("/api/class-enrollments/{$this->enrollment->id}/force")
+        ->assertForbidden();
+});
+
+it('allows callers with Create:ClassEnrollment to store an enrollment', function (): void {
+    Permission::findOrCreate('Create:ClassEnrollment', 'web');
+    $creator = User::factory()->create();
+    $creator->givePermissionTo('Create:ClassEnrollment');
+
+    $student = Student::factory()->create();
+
+    $this->actingAs($creator, 'sanctum')
+        ->postJson('/api/class-enrollments', [
+            'class_id' => $this->class->id,
+            'student_id' => $student->id,
+        ])
+        ->assertCreated();
 });
 
 it('allows assigned faculty to update and finalize grades for their class', function (): void {

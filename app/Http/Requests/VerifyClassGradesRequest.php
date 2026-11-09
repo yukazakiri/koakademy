@@ -10,15 +10,24 @@ use Illuminate\Foundation\Http\FormRequest;
 
 final class VerifyClassGradesRequest extends FormRequest
 {
+    /**
+     * Determine if the user is authorized to make this request.
+     *
+     * @return bool True if authorized, false otherwise.
+     */
     public function authorize(): bool
     {
         $user = $this->user();
 
         return $user instanceof User && (
             $user->can('Update:ClassEnrollment')
-            || $user->isAdministrative()
-            || $user->role === UserRole::Registrar
-            || $user->role === UserRole::AssistantRegistrar
+            || in_array($user->role, [
+                UserRole::Developer,
+                UserRole::SuperAdmin,
+                UserRole::Admin,
+                UserRole::Registrar,
+                UserRole::AssistantRegistrar,
+            ], true)
             || $user->role?->isFaculty()
         );
     }

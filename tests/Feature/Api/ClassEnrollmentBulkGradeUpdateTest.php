@@ -23,7 +23,9 @@ beforeEach(function (): void {
     ]);
     $this->user = User::factory()->create([
         'role' => UserRole::Instructor,
+        'email' => $this->faculty->email,
         'record_id' => $this->faculty->id,
+        'faculty_id_number' => $this->faculty->faculty_id_number,
     ]);
 });
 

@@ -546,6 +546,8 @@ final class RolesSeeder extends Seeder
             'ViewIdCard', 'VerifyIdCard',
             'ViewClearance', 'ManageClearance',
             'ViewDashboard',
+        ], [
+            'ClassEnrollment',
         ]);
     }
 

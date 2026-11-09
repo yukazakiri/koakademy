@@ -25,7 +25,7 @@ return new class extends Migration
         }
 
         $permissions = collect(self::PERMISSIONS)
-            ->map(fn (string $name): Permission => Permission::findOrCreate($name, 'web'));
+            ->map(fn (string $name): Spatie\Permission\Contracts\Permission => Permission::findOrCreate($name, 'web'));
 
         Role::query()
             ->where('guard_name', 'web')
@@ -60,7 +60,11 @@ return new class extends Migration
         app(PermissionRegistrar::class)->forgetCachedPermissions();
     }
 
-    /** @return list<string> */
+    /**
+     * Get the list of system role names authorized for enrollment updates.
+     *
+     * @return list<string>
+     */
     private function authorizedRoleNames(): array
     {
         return collect([

@@ -234,6 +234,7 @@ final class RolesSeeder extends Seeder
             'Cancel:StudentEnrollment',
             'Reopen:StudentEnrollment',
             'Assign:Role',
+            'Update:ClassEnrollment',
             ...SystemManagementPermissions::all(),
         ];
     }

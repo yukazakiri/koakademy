@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Requests;
 
+use App\Enums\UserRole;
+use App\Models\User;
 use App\Services\GradingSystemService;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -14,7 +16,16 @@ final class ClassEnrollmentFormRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return true;
+        $user = $this->user();
+
+        return $user instanceof User && (
+            $user->can('Update:ClassEnrollment')
+            || $user->can('Create:ClassEnrollment')
+            || $user->isAdministrative()
+            || $user->role === UserRole::Registrar
+            || $user->role === UserRole::AssistantRegistrar
+            || $user->role?->isFaculty()
+        );
     }
 
     /**
@@ -61,26 +72,6 @@ final class ClassEnrollmentFormRequest extends FormRequest
             ],
             'grading_components' => ['nullable', 'array'],
             'grading_components.*' => ['nullable', 'numeric', 'min:'.$min, 'max:'.$max],
-            'is_grades_finalized' => [
-                'nullable',
-                'boolean',
-            ],
-            'is_grades_verified' => [
-                'nullable',
-                'boolean',
-            ],
-            'verified_by' => [
-                'nullable',
-                'exists:users,id',
-            ],
-            'verified_at' => [
-                'nullable',
-                'date',
-            ],
-            'verification_notes' => [
-                'nullable',
-                'string',
-            ],
         ];
     }
 
@@ -108,11 +99,6 @@ final class ClassEnrollmentFormRequest extends FormRequest
             'total_average.numeric' => 'The total average must be a number.',
             'total_average.min' => 'The total average must be at least 0.',
             'total_average.max' => 'The total average must not be greater than 100.',
-            'is_grades_finalized.boolean' => 'The grades finalized field must be true or false.',
-            'is_grades_verified.boolean' => 'The grades verified field must be true or false.',
-            'verified_by.exists' => 'The verifier must be a valid user.',
-            'verified_at.date' => 'The verified date must be a valid date.',
-            'verification_notes.string' => 'The verification notes must be a string.',
         ];
     }
 
@@ -128,11 +114,6 @@ final class ClassEnrollmentFormRequest extends FormRequest
             'midterm_grade' => 'midterm grade',
             'finals_grade' => 'finals grade',
             'total_average' => 'total average',
-            'is_grades_finalized' => 'grades finalized',
-            'is_grades_verified' => 'grades verified',
-            'verified_by' => 'verified by',
-            'verified_at' => 'verified at',
-            'verification_notes' => 'verification notes',
         ];
     }
 }

@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ClassEnrollmentFormRequest;
 use App\Http\Requests\VerifyClassGradesRequest;
 use App\Http\Resources\ClassEnrollmentResource;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
+use App\Models\Faculty;
+use App\Models\User;
 use App\Services\BulkActivityLogger;
 use App\Services\GradeComputationService;
 use App\Services\GradeEvaluationService;
@@ -19,6 +22,7 @@ use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -102,6 +106,10 @@ final class ClassEnrollmentController extends Controller
      */
     public function store(ClassEnrollmentFormRequest $request): JsonResponse
     {
+        $classId = (int) $request->input('class_id');
+        $class = Classes::findOrFail($classId);
+        $this->authorizeGradeWrite($class);
+
         try {
             $validated = $request->validated();
 
@@ -171,8 +179,10 @@ final class ClassEnrollmentController extends Controller
      */
     public function update(ClassEnrollmentFormRequest $request, int $id, GradingSystemService $gradingSystem, GradeEvaluationService $gradeEvaluation): JsonResponse
     {
+        $enrollment = ClassEnrollment::with('class')->findOrFail($id);
+        $this->authorizeGradeWrite($enrollment);
+
         try {
-            $enrollment = ClassEnrollment::findOrFail($id);
             $validated = $request->validated();
 
             $policy = $gradingSystem->ensureConfig();
@@ -222,8 +232,10 @@ final class ClassEnrollmentController extends Controller
      */
     public function destroy(int $id): JsonResponse
     {
+        $enrollment = ClassEnrollment::with('class')->findOrFail($id);
+        $this->authorizeGradeWrite($enrollment);
+
         try {
-            $enrollment = ClassEnrollment::findOrFail($id);
             $enrollment->delete();
 
             return response()->json([
@@ -243,8 +255,10 @@ final class ClassEnrollmentController extends Controller
      */
     public function restore(int $id): JsonResponse
     {
+        $enrollment = ClassEnrollment::onlyTrashed()->with('class')->findOrFail($id);
+        $this->authorizeGradeWrite($enrollment);
+
         try {
-            $enrollment = ClassEnrollment::onlyTrashed()->findOrFail($id);
             $enrollment->restore();
             $enrollment->load(['class', 'student']);
 
@@ -266,8 +280,10 @@ final class ClassEnrollmentController extends Controller
      */
     public function forceDestroy(int $id): JsonResponse
     {
+        $enrollment = ClassEnrollment::withTrashed()->with('class')->findOrFail($id);
+        $this->authorizeGradeWrite($enrollment);
+
         try {
-            $enrollment = ClassEnrollment::withTrashed()->findOrFail($id);
             $enrollment->forceDelete();
 
             return response()->json([
@@ -287,9 +303,11 @@ final class ClassEnrollmentController extends Controller
      */
     public function updateGrades(ClassEnrollmentFormRequest $request, int $id, GradingSystemService $gradingSystem, GradeEvaluationService $gradeEvaluation): JsonResponse
     {
+        $enrollment = ClassEnrollment::with('class')->findOrFail($id);
+        $this->authorizeGradeWrite($enrollment);
+
         try {
-            $enrollment = ClassEnrollment::findOrFail($id);
-            $validated = $request->only([
+            $validated = Arr::only($request->validated(), [
                 'prelim_grade',
                 'midterm_grade',
                 'finals_grade',
@@ -337,9 +355,10 @@ final class ClassEnrollmentController extends Controller
      */
     public function finalizeGrades(int $id, GradeComputationService $gradeComputation): JsonResponse
     {
-        try {
-            $enrollment = ClassEnrollment::findOrFail($id);
+        $enrollment = ClassEnrollment::with('class')->findOrFail($id);
+        $this->authorizeGradeWrite($enrollment);
 
+        try {
             // Check if all required grades are present
             if ($enrollment->prelim_grade === null || $enrollment->midterm_grade === null || $enrollment->finals_grade === null) {
                 return response()->json([
@@ -379,9 +398,10 @@ final class ClassEnrollmentController extends Controller
      */
     public function verifyGrades(VerifyClassGradesRequest $request, int $id): JsonResponse
     {
-        try {
-            $enrollment = ClassEnrollment::findOrFail($id);
+        $enrollment = ClassEnrollment::with('class')->findOrFail($id);
+        $this->authorizeGradeWrite($enrollment);
 
+        try {
             // Check if grades are finalized
             if (! $enrollment->is_grades_finalized) {
                 return response()->json([
@@ -505,6 +525,9 @@ final class ClassEnrollmentController extends Controller
         GradeComputationService $gradeComputation,
         BulkActivityLogger $activityLogger,
     ): JsonResponse {
+        $class = Classes::findOrFail($classId);
+        $this->authorizeGradeWrite($class);
+
         $request->validate([
             'grades' => 'required|array',
             'grades.*.enrollment_id' => 'required|exists:class_enrollments,id',
@@ -662,5 +685,61 @@ final class ClassEnrollmentController extends Controller
         unset($attributes['id'], $attributes['created_at'], $attributes['updated_at']);
 
         return $attributes;
+    }
+
+    /**
+     * Authorize grade and class enrollment modifications.
+     */
+    private function authorizeGradeWrite(ClassEnrollment|Classes $subject): void
+    {
+        /** @var User|null $user */
+        $user = request()->user();
+
+        abort_unless($user instanceof User, 403);
+
+        if ($user->can('Update:ClassEnrollment')
+            || $user->isAdministrative()
+            || $user->role === UserRole::Registrar
+            || $user->role === UserRole::AssistantRegistrar
+        ) {
+            return;
+        }
+
+        abort_unless($user->role?->isFaculty(), 403);
+
+        $class = $subject instanceof Classes ? $subject : $subject->class;
+        $facultyId = $class?->faculty_id;
+        $userFacultyId = $this->resolveFacultyId($user);
+
+        abort_unless(
+            $facultyId !== null && $userFacultyId !== null && (string) $facultyId === (string) $userFacultyId,
+            403
+        );
+    }
+
+    /**
+     * Resolve the faculty ID backing the given user, if any.
+     */
+    private function resolveFacultyId(User $user): int|string|null
+    {
+        if (filled($user->record_id)) {
+            return (string) $user->record_id;
+        }
+
+        if (filled($user->faculty_id_number)) {
+            $faculty = Faculty::query()->where('faculty_id_number', $user->faculty_id_number)->first();
+            if ($faculty instanceof Faculty) {
+                return (string) $faculty->id;
+            }
+        }
+
+        if (filled($user->email)) {
+            $faculty = Faculty::query()->where('email', $user->email)->first();
+            if ($faculty instanceof Faculty) {
+                return (string) $faculty->id;
+            }
+        }
+
+        return null;
     }
 }

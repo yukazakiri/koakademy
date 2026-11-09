@@ -125,9 +125,14 @@ final class FixCollegeStudentIds extends Command
                     $nextAvailableId++;
 
                     // Check if the new ID already exists (extra safety check)
-                    if (Student::where('student_id', $newId)->exists()) {
+                    $schoolId = $student->school_id;
+                    $existsQuery = Student::withoutSchoolScope()->where('student_id', (string) $newId);
+                    if ($schoolId !== null) {
+                        $existsQuery->where('school_id', $schoolId);
+                    }
+                    if ($existsQuery->exists()) {
                         // Find next available ID
-                        $newId = $this->getNextAvailableId($nextAvailableId, 206999);
+                        $newId = $this->getNextAvailableId($nextAvailableId, 206999, $schoolId);
                         $nextAvailableId = $newId + 1;
                     }
 
@@ -199,10 +204,14 @@ final class FixCollegeStudentIds extends Command
     /**
      * Get the next available ID in the given range
      */
-    private function getNextAvailableId(int $startId, int $endId): int
+    private function getNextAvailableId(int $startId, int $endId, ?int $schoolId = null): int
     {
         for ($id = $startId; $id <= $endId; $id++) {
-            if (! Student::where('student_id', $id)->exists()) {
+            $query = Student::withoutSchoolScope()->where('student_id', (string) $id);
+            if ($schoolId !== null) {
+                $query->where('school_id', $schoolId);
+            }
+            if (! $query->exists()) {
                 return $id;
             }
         }

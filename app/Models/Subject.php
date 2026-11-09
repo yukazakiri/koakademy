@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\SubjectEnrolledEnum;
+use App\Models\Concerns\BelongsToSchool;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Collection;
@@ -41,6 +42,7 @@ use Override;
  */
 final class Subject extends Model
 {
+    use BelongsToSchool;
     use HasFactory;
     use Searchable;
 
@@ -59,6 +61,7 @@ final class Subject extends Model
         'academic_year',
         'semester',
         'course_id',
+        'school_id',
         'group',
         'is_credited',
     ];
@@ -151,8 +154,24 @@ final class Subject extends Model
         // self::observe(SubjectObserver::class);
 
         self::creating(function ($model): void {
-            $ids = self::all()->pluck('id')->toArray();
+            $ids = self::withoutSchoolScope()->pluck('id')->toArray();
             $model->id = empty($ids) ? 1 : max($ids) + 1;
+
+            if (empty($model->school_id) && $model->course_id) {
+                $courseSchoolId = Course::withoutSchoolScope()->where('id', $model->course_id)->value('school_id');
+                if ($courseSchoolId) {
+                    $model->school_id = $courseSchoolId;
+                }
+            }
+        });
+
+        self::saving(function ($model): void {
+            if (empty($model->school_id) && $model->course_id) {
+                $courseSchoolId = Course::withoutSchoolScope()->where('id', $model->course_id)->value('school_id');
+                if ($courseSchoolId) {
+                    $model->school_id = $courseSchoolId;
+                }
+            }
         });
     }
 

@@ -41,9 +41,14 @@ final class CourseForm
                                             ->label('Program code')
                                             ->required()
                                             ->maxLength(255)
-                                            ->unique(Course::class, 'code', ignoreRecord: true)
+                                            ->unique(
+                                                table: Course::class,
+                                                column: 'code',
+                                                ignoreRecord: true,
+                                                modifyRuleUsing: fn ($rule, $record) => $rule->where('school_id', $record?->school_id ?? app(TenantContext::class)->getCurrentSchoolId()),
+                                            )
                                             ->placeholder('e.g., BSIT')
-                                            ->helperText('Stored in uppercase. Must be unique.')
+                                            ->helperText('Stored in uppercase. Must be unique per school.')
                                             ->afterStateUpdated(function (mixed $state, callable $set): void {
                                                 if (is_string($state)) {
                                                     $set('code', mb_strtoupper($state));
@@ -66,7 +71,11 @@ final class CourseForm
                                                     ->label('Department code')
                                                     ->required()
                                                     ->maxLength(255)
-                                                    ->unique(Department::class, 'code')
+                                                    ->unique(
+                                                        table: Department::class,
+                                                        column: 'code',
+                                                        modifyRuleUsing: fn ($rule) => $rule->where('school_id', app(TenantContext::class)->getCurrentSchoolId()),
+                                                    )
                                                     ->placeholder('e.g., IT')
                                                     ->helperText('Stored in uppercase. Must be unique.')
                                                     ->afterStateUpdated(function (mixed $state, callable $set): void {

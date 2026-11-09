@@ -21,9 +21,18 @@ final class UpdateCurriculumSubjectRequest extends FormRequest
     {
         $courseId = $this->courseId();
         $subjectId = $this->subjectId();
+        $course = Course::withoutSchoolScope()->find($courseId);
+        $schoolId = $course?->school_id ?? (app()->bound(\App\Services\TenantContext::class)
+            ? app(\App\Services\TenantContext::class)->getCurrentSchoolId()
+            : null);
+
+        $uniqueRule = Rule::unique('subject', 'code')->where('school_id', $schoolId);
+        if ($subjectId) {
+            $uniqueRule->ignore($subjectId);
+        }
 
         return [
-            'code' => ['required', 'string', 'max:255'],
+            'code' => ['required', 'string', 'max:255', $uniqueRule],
             'title' => ['required', 'string', 'max:255'],
             'classification' => ['required', Rule::enum(SubjectEnrolledEnum::class)],
             'units' => ['required', 'integer', 'min:0'],

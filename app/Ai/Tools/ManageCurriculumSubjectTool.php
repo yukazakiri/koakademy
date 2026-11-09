@@ -7,6 +7,7 @@ namespace App\Ai\Tools;
 use App\Models\Course;
 use App\Models\Subject;
 use App\Models\User;
+use App\Services\TenantContext;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -156,18 +157,29 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
             'prerequisites' => 'nullable|array',
         ]);
 
+        $user = Auth::user();
+        $schoolId = $user?->school_id ?? (app()->bound(TenantContext::class) ? app(TenantContext::class)->getCurrentSchoolId() : null);
+
         $courseId = $validated['course_id'] ?? null;
         if (! $courseId && filled($validated['course_code'] ?? null)) {
-            $course = Course::query()->where('code', $validated['course_code'])->first();
+            $courseQuery = Course::query();
+            if ($schoolId !== null) {
+                $courseQuery->where('school_id', $schoolId);
+            }
+            $course = $courseQuery->where('code', $validated['course_code'])->first();
             $courseId = $course?->id;
         }
 
         if (! $courseId) {
-            $courseId = Course::query()->value('id') ?? 1;
+            $fallbackQuery = Course::query();
+            if ($schoolId !== null) {
+                $fallbackQuery->where('school_id', $schoolId);
+            }
+            $courseId = $fallbackQuery->value('id') ?? Course::query()->value('id') ?? 1;
         }
 
         try {
-            $subject = Subject::query()->create([
+            $subjectData = [
                 'code' => mb_strtoupper(mb_trim($validated['code'])),
                 'title' => mb_trim($validated['title']),
                 'units' => (int) $validated['units'],
@@ -179,7 +191,11 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
                 'classification' => \App\Enums\SubjectEnrolledEnum::INTERNAL->value,
                 'is_credited' => true,
                 'pre_riquisite' => $validated['prerequisites'] ?? [],
-            ]);
+            ];
+            if ($schoolId !== null) {
+                $subjectData['school_id'] = $schoolId;
+            }
+            $subject = Subject::query()->create($subjectData);
 
             return json_encode([
                 'success' => true,
@@ -220,9 +236,16 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
         $updated = [];
         $errors = [];
 
-        $defaultCourse = Course::query()->first();
+        $user = Auth::user();
+        $schoolId = $user?->school_id ?? (app()->bound(TenantContext::class) ? app(TenantContext::class)->getCurrentSchoolId() : null);
 
-        DB::transaction(function () use ($validated, $defaultCourse, &$created, &$updated, &$errors) {
+        $defaultCourseQuery = Course::query();
+        if ($schoolId !== null) {
+            $defaultCourseQuery->where('school_id', $schoolId);
+        }
+        $defaultCourse = $defaultCourseQuery->first() ?? Course::query()->first();
+
+        DB::transaction(function () use ($validated, $defaultCourse, $schoolId, &$created, &$updated, &$errors) {
             foreach ($validated['subjects'] as $idx => $sData) {
                 try {
                     $code = mb_strtoupper(mb_trim((string) $sData['code']));
@@ -235,14 +258,22 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
 
                     $courseId = $sData['course_id'] ?? null;
                     if (! $courseId && filled($sData['course_code'] ?? null)) {
-                        $c = Course::query()->where('code', $sData['course_code'])->first();
+                        $cQuery = Course::query();
+                        if ($schoolId !== null) {
+                            $cQuery->where('school_id', $schoolId);
+                        }
+                        $c = $cQuery->where('code', $sData['course_code'])->first();
                         $courseId = $c?->id;
                     }
                     if (! $courseId) {
                         $courseId = $defaultCourse?->id ?? 1;
                     }
 
-                    $existing = Subject::query()->where('code', $code)->first();
+                    $existingQuery = Subject::query();
+                    if ($schoolId !== null) {
+                        $existingQuery->where('school_id', $schoolId);
+                    }
+                    $existing = $existingQuery->where('code', $code)->first();
                     if ($existing instanceof Subject) {
                         $existing->update([
                             'title' => $title,
@@ -260,7 +291,7 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
                             'title' => $existing->title,
                         ];
                     } else {
-                        $newSub = Subject::query()->create([
+                        $newSubData = [
                             'code' => $code,
                             'title' => $title,
                             'units' => $units,
@@ -272,7 +303,11 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
                             'classification' => \App\Enums\SubjectEnrolledEnum::INTERNAL->value,
                             'is_credited' => true,
                             'pre_riquisite' => $sData['prerequisites'] ?? [],
-                        ]);
+                        ];
+                        if ($schoolId !== null) {
+                            $newSubData['school_id'] = $schoolId;
+                        }
+                        $newSub = Subject::query()->create($newSubData);
                         $created[] = [
                             'id' => $newSub->id,
                             'code' => $newSub->code,
@@ -391,9 +426,17 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
 
     private function resolveSubject(Request $request): ?Subject
     {
+        $user = Auth::user();
+        $schoolId = $user?->school_id ?? (app()->bound(TenantContext::class) ? app(TenantContext::class)->getCurrentSchoolId() : null);
+
+        $query = Subject::query();
+        if ($schoolId !== null) {
+            $query->where('school_id', $schoolId);
+        }
+
         $id = $request['subject_id'] ?? null;
         if ($id && is_numeric($id)) {
-            $found = Subject::query()->find((int) $id);
+            $found = (clone $query)->find((int) $id);
             if ($found) {
                 return $found;
             }
@@ -401,7 +444,7 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
 
         $code = $request['code'] ?? null;
         if ($code) {
-            return Subject::query()->where('code', mb_trim((string) $code))->first();
+            return (clone $query)->where('code', mb_trim((string) $code))->first();
         }
 
         return null;

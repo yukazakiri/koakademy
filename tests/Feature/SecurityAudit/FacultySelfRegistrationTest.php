@@ -215,7 +215,7 @@ it('refuses to send an api verification code to an email with no faculty record'
     Mail::assertNothingSent();
 });
 
-it('exposes the institutional position on the email lookup', function (): void {
+it('does not expose the institutional position on the email lookup', function (): void {
     Faculty::factory()->create([
         'email' => 'lookup.faculty@test.com',
         'position' => 'Associate Professor',
@@ -224,11 +224,9 @@ it('exposes the institutional position on the email lookup', function (): void {
 
     $this->postJson('/signup/email-lookup', ['email' => 'lookup.faculty@test.com'])
         ->assertOk()
-        ->assertJson([
+        ->assertExactJson([
             'found' => true,
             'type' => 'faculty',
-            'position' => 'Associate Professor',
-            'role' => UserRole::AssociateProfessor->value,
         ]);
 });
 

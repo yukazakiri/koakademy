@@ -44,12 +44,12 @@ return [
     |--------------------------------------------------------------------------
     |
     | This value controls the number of minutes until an issued token will be
-    | considered expired. This will override any values set in the token's
-    | "expires_at" attribute, but first-party sessions are not affected.
+    | considered expired. Tokens also expire at their individual expires_at
+    | when earlier. First-party sessions are not affected.
     |
     */
 
-    'expiration' => null,
+    'expiration' => max(1, (int) env('SANCTUM_EXPIRATION', env('API_TOKEN_EXPIRATION', 43200))),
 
     /*
     |--------------------------------------------------------------------------

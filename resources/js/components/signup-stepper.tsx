@@ -9,6 +9,7 @@ import { SocialAuthButtons } from "@/components/social-auth-buttons";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 type UserType = "faculty" | "student" | null;
@@ -17,20 +18,6 @@ type StudentType = "college" | "shs" | "tesda" | "dhrt" | null;
 interface EmailLookupResult {
     found: boolean;
     type?: "faculty" | "student";
-    name?: string;
-    faculty_id_number?: string;
-    department?: string;
-    position?: string;
-    role?: string;
-    student_type?: string;
-    is_shs?: boolean;
-    student_id?: string;
-    identifier_field?: "lrn" | "student_id";
-    identifier_label?: string;
-    lrn?: string;
-    course?: string;
-    academic_year?: number;
-    record_id?: string | number;
     message?: string;
 }
 
@@ -40,6 +27,7 @@ interface PersistedState {
     currentStep: number;
     userType: UserType;
     studentType: StudentType;
+    identifierField?: "lrn" | "student_id";
     name: string;
     email: string;
     password: string;
@@ -49,7 +37,6 @@ interface PersistedState {
     lrn: string;
     user_type: "" | "faculty" | "student";
     student_type: "" | "college" | "shs" | "tesda" | "dhrt";
-    record_id: string | number;
 }
 
 interface SocialiteSignup {
@@ -97,10 +84,13 @@ export function SignupStepper({
     const [isCheckingEmail, setIsCheckingEmail] = useState(false);
     const [emailLookupResult, setEmailLookupResult] = useState<EmailLookupResult | null>(null);
     const [userType, setUserType] = useState<UserType>(saved.current?.userType ?? null);
-    const [studentType, setStudentType] = useState<StudentType>(saved.current?.studentType ?? null);
-    const usesExternalIdentifier = emailLookupResult?.identifier_field === "lrn";
+    const initialIdentifierField: "lrn" | "student_id" = saved.current?.identifierField ?? (saved.current?.lrn ? "lrn" : "student_id");
+    const [identifierField, setIdentifierField] = useState<"lrn" | "student_id">(initialIdentifierField);
+    const usesExternalIdentifier = identifierField === "lrn";
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+    const initialStudentType = (saved.current?.student_type || saved.current?.studentType || "") as "" | "college" | "shs" | "tesda" | "dhrt";
 
     const { data, setData, post, processing, errors } = useForm({
         name: saved.current?.name ?? socialiteSignup?.name ?? "",
@@ -112,9 +102,10 @@ export function SignupStepper({
         lrn: saved.current?.lrn ?? "",
         otp: "",
         user_type: saved.current?.user_type ?? ("" as "faculty" | "student" | ""),
-        student_type: saved.current?.student_type ?? ("" as "college" | "shs" | "tesda" | "dhrt" | ""),
-        record_id: saved.current?.record_id ?? ("" as string | number),
+        student_type: initialStudentType,
     });
+
+    const studentType = (data.student_type || null) as StudentType;
 
     const isRestored = useRef(saved.current !== null);
 
@@ -123,6 +114,7 @@ export function SignupStepper({
             currentStep,
             userType,
             studentType,
+            identifierField,
             name: data.name,
             email: data.email,
             password: data.password,
@@ -132,9 +124,8 @@ export function SignupStepper({
             lrn: data.lrn,
             user_type: data.user_type,
             student_type: data.student_type,
-            record_id: data.record_id,
         });
-    }, [currentStep, userType, studentType, data]);
+    }, [currentStep, userType, studentType, identifierField, data]);
 
     useEffect(() => {
         persistFormState();
@@ -142,11 +133,7 @@ export function SignupStepper({
 
     useEffect(() => {
         if (isRestored.current && emailLookupResult === null) {
-            setEmailLookupResult(
-                saved.current?.email?.length
-                    ? { found: true, type: saved.current.userType ?? undefined, name: saved.current.name || undefined }
-                    : null,
-            );
+            setEmailLookupResult(saved.current?.email?.length ? { found: true, type: saved.current.userType ?? undefined } : null);
         }
         isRestored.current = false;
     }, []);
@@ -209,7 +196,6 @@ export function SignupStepper({
                 email: data.email,
                 user_type: data.user_type,
                 student_type: data.student_type,
-                record_id: data.record_id,
                 student_id: data.student_id,
                 lrn: data.lrn,
                 faculty_id_number: data.faculty_id_number,
@@ -238,32 +224,18 @@ export function SignupStepper({
             const result: EmailLookupResult = response.data;
             setEmailLookupResult(result);
 
-            if (result.found) {
-                if (result.type === "faculty") {
-                    setUserType("faculty");
-                    setData((prev) => ({
-                        ...prev,
-                        name: result.name || prev.name,
-                        faculty_id_number: result.faculty_id_number || prev.faculty_id_number,
-                        user_type: "faculty",
-                        record_id: result.record_id || "",
-                    }));
-                    toast.success("Faculty record found!");
-                } else if (result.type === "student") {
-                    const category = (result.student_type ?? (result.is_shs ? "shs" : "college")) as Exclude<StudentType, null>;
-                    setUserType("student");
-                    setStudentType(category);
-                    setData((prev) => ({
-                        ...prev,
-                        name: result.name || prev.name,
-                        student_id: "",
-                        lrn: "",
-                        user_type: "student",
-                        student_type: category,
-                        record_id: result.record_id || "",
-                    }));
-                    toast.success("Student record found!");
-                }
+            if (result.found && (result.type === "faculty" || result.type === "student")) {
+                setUserType(result.type);
+                setIdentifierField("student_id");
+                setData((prev) => ({
+                    ...prev,
+                    faculty_id_number: "",
+                    student_id: "",
+                    lrn: "",
+                    user_type: result.type!,
+                    student_type: "",
+                }));
+                toast.success(result.type === "faculty" ? "Faculty record found!" : "Student record found!");
                 setCurrentStep(1);
             } else {
                 toast.error(result.message || "Email address is not associated with an existing academic record.");
@@ -412,7 +384,7 @@ export function SignupStepper({
                                         </p>
                                         <p className="text-muted-foreground">
                                             {emailLookupResult.found
-                                                ? `Welcome, ${emailLookupResult.name}! Your academic records are linked.`
+                                                ? "Your academic record was found. Continue to verify your details."
                                                 : emailLookupResult.message || "Email address is not yet in the official roster."}
                                         </p>
                                     </div>
@@ -559,13 +531,58 @@ export function SignupStepper({
                     {currentStep === 2 && userType === "student" && (
                         <div className="space-y-4">
                             <div className="border-primary/20 bg-primary/5 text-muted-foreground rounded-xl border p-3.5 text-xs">
-                                Confirm your {emailLookupResult?.identifier_label ?? "student number"} to verify your student account.
+                                Select your student type and the identifier used by your school to verify your account.
                             </div>
+
+                            <Field>
+                                <FieldLabel htmlFor="student_type" className="text-foreground text-xs font-semibold">
+                                    Student Type
+                                </FieldLabel>
+                                <Select
+                                    value={data.student_type}
+                                    onValueChange={(value) => {
+                                        const category = value as Exclude<StudentType, null>;
+                                        setData((prev) => ({ ...prev, student_type: category }));
+                                    }}
+                                >
+                                    <SelectTrigger id="student_type">
+                                        <SelectValue placeholder="Select student type" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="college">College</SelectItem>
+                                        <SelectItem value="shs">Senior High School</SelectItem>
+                                        <SelectItem value="tesda">TESDA</SelectItem>
+                                        <SelectItem value="dhrt">DHRT</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                {errors.student_type && <FieldError errors={[{ message: errors.student_type }]} />}
+                            </Field>
+
+                            <Field>
+                                <FieldLabel htmlFor="identifier_type" className="text-foreground text-xs font-semibold">
+                                    Identifier Type
+                                </FieldLabel>
+                                <Select
+                                    value={identifierField}
+                                    onValueChange={(value) => {
+                                        setIdentifierField(value as "student_id" | "lrn");
+                                        setData((prev) => ({ ...prev, student_id: "", lrn: "" }));
+                                    }}
+                                >
+                                    <SelectTrigger id="identifier_type">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="student_id">Student number</SelectItem>
+                                        <SelectItem value="lrn">LRN / External identifier</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </Field>
 
                             {usesExternalIdentifier ? (
                                 <Field>
                                     <FieldLabel htmlFor="lrn" className="text-foreground text-xs font-semibold">
-                                        {emailLookupResult?.identifier_label ?? "External identifier"}
+                                        LRN / External identifier
                                     </FieldLabel>
                                     <InputGroup className="border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2">
                                         <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
@@ -583,7 +600,7 @@ export function SignupStepper({
                             ) : (
                                 <Field>
                                     <FieldLabel htmlFor="student_id" className="text-foreground text-xs font-semibold">
-                                        {emailLookupResult?.identifier_label ?? "Student number"}
+                                        Student number
                                     </FieldLabel>
                                     <InputGroup className="border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2">
                                         <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
@@ -605,15 +622,6 @@ export function SignupStepper({
                     {/* Step 2: Faculty ID (Optional) */}
                     {currentStep === 2 && userType === "faculty" && (
                         <div className="space-y-4">
-                            {emailLookupResult?.found && (
-                                <div className="border-primary/20 bg-primary/5 text-muted-foreground rounded-xl border p-3.5 text-xs">
-                                    <p className="text-foreground font-semibold">Academic rank taken from your institutional record</p>
-                                    <p className="mt-1">
-                                        {emailLookupResult.position || emailLookupResult.role || "Instructor"}
-                                        {emailLookupResult.department ? ` · ${emailLookupResult.department}` : ""}
-                                    </p>
-                                </div>
-                            )}
                             <Field>
                                 <FieldLabel htmlFor="faculty_id_number" className="text-foreground text-xs font-semibold">
                                     Faculty ID Number (Optional)
@@ -700,7 +708,10 @@ export function SignupStepper({
                                 <Button
                                     type="button"
                                     onClick={sendOtp}
-                                    disabled={userType === "student" && (usesExternalIdentifier ? !data.lrn : !data.student_id)}
+                                    disabled={
+                                        userType === "student" &&
+                                        (!data.student_type || !(usesExternalIdentifier ? data.lrn.trim() : data.student_id.trim()))
+                                    }
                                     className="h-11 flex-1 rounded-xl font-semibold shadow-md"
                                 >
                                     <span>Send Verification Code</span>

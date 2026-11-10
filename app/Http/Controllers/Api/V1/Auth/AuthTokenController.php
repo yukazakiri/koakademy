@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
+use Laravel\Sanctum\PersonalAccessToken;
 
 final class AuthTokenController extends Controller
 {
@@ -144,9 +145,14 @@ final class AuthTokenController extends Controller
         return response()->json(['data' => new UserResource(request()->user())]);
     }
 
+    /**
+     * Revoke the personal access token for the current authenticated device.
+     */
     public function logout(): JsonResponse
     {
-        request()->user()?->currentAccessToken()?->delete();
+        $token = request()->user()?->currentAccessToken();
+        abort_unless($token instanceof PersonalAccessToken, 403, 'A personal access token is required.');
+        $token->delete();
         app(UserSecurityActivityService::class)->record(request()->user(), 'signed_out', 'success', guard: 'sanctum');
 
         return response()->json(['message' => 'The device was signed out.']);
@@ -210,11 +216,19 @@ final class AuthTokenController extends Controller
         return response()->json(['message' => 'The password has been reset.']);
     }
 
+    /**
+     * Update account password and revoke other mobile access tokens.
+     */
     public function updatePassword(UpdateMobilePasswordRequest $request): JsonResponse
     {
         $user = $request->user();
+        $token = $user->currentAccessToken();
         $user->forceFill(['password' => Hash::make((string) $request->validated('password'))])->save();
-        $user->tokens()->whereKeyNot($user->currentAccessToken()?->getKey())->delete();
+        $tokens = $user->tokens();
+        if ($token instanceof PersonalAccessToken) {
+            $tokens->whereKeyNot($token->getKey());
+        }
+        $tokens->delete();
 
         return response()->json(['message' => 'The password has been updated.']);
     }
@@ -228,13 +242,16 @@ final class AuthTokenController extends Controller
         return $challenge;
     }
 
+    /**
+     * Issue a scoped Sanctum personal access token and build the authentication response.
+     */
     private function tokenResponse(User $user, string $deviceName): JsonResponse
     {
         abort_if($user->fresh()->suspended_at !== null, 403, 'Account access is unavailable.');
         $token = $user->createToken(
             $deviceName !== '' ? $deviceName : 'Flutter mobile app',
             [config('api.abilities.read'), config('api.abilities.write')],
-            now()->addMinutes((int) config('api.token_expiration', 43200)),
+            now()->addMinutes((int) config('sanctum.expiration')),
         );
 
         app(UserSecurityActivityService::class)->signedIn($user, 'sanctum');

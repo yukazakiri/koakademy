@@ -6,6 +6,7 @@ namespace App\Filament\Resources\Courses\RelationManagers;
 
 use App\Enums\SubjectEnrolledEnum;
 use App\Models\Subject;
+use App\Services\TenantContext;
 use Closure;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\CreateAction;
@@ -52,7 +53,19 @@ final class SubjectsRelationManager extends RelationManager
                                             ->required()
                                             ->maxLength(255)
                                             ->label('Subject Code')
-                                            ->helperText('Unique code for the subject (e.g., IT101).'),
+                                            ->helperText('Unique code for the subject (e.g., IT101).')
+                                            ->unique(
+                                                table: Subject::class,
+                                                column: 'code',
+                                                ignoreRecord: true,
+                                                modifyRuleUsing: function ($rule, $record) {
+                                                    $schoolId = $record?->school_id
+                                                        ?? $this->getOwnerRecord()?->school_id
+                                                        ?? app(TenantContext::class)->getCurrentSchoolId();
+
+                                                    return $rule->where('school_id', $schoolId);
+                                                },
+                                            ),
                                         TextInput::make('title')
                                             ->required()
                                             ->maxLength(255)

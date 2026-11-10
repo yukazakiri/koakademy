@@ -11,6 +11,7 @@ use App\Models\Student;
 use App\Models\StudentClearance;
 use App\Models\User;
 use App\Services\StudentDataTransferService;
+use App\Services\TenantContext;
 use Carbon\Carbon;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Facades\Auth;
@@ -253,7 +254,7 @@ final class ManageStudentTool implements Approvable, Tool
 
                 $student = Student::query()->create([
                     'student_id' => $newStudentId,
-                    'institution_id' => app(\App\Services\TenantContext::class)->getCurrentSchoolId(),
+                    'institution_id' => app(TenantContext::class)->getCurrentSchoolId(),
                     'student_type' => $studentType->value,
                     'lrn' => app(\App\Services\StudentConfigurationService::class)->externalFor($studentType->value)['enabled'] ? ($validated['lrn'] ?? null) : null,
                     'first_name' => $validated['first_name'],
@@ -466,7 +467,7 @@ final class ManageStudentTool implements Approvable, Tool
 
                         $newStudent = Student::query()->create([
                             'student_id' => $newStudentId,
-                            'institution_id' => app(\App\Services\TenantContext::class)->getCurrentSchoolId(),
+                            'institution_id' => app(TenantContext::class)->getCurrentSchoolId(),
                             'student_type' => $studentType->value,
                             'lrn' => app(\App\Services\StudentConfigurationService::class)->externalFor($studentType->value)['enabled'] ? ($sData['lrn'] ?? null) : null,
                             'first_name' => $sData['first_name'],
@@ -653,7 +654,13 @@ final class ManageStudentTool implements Approvable, Tool
 
     private function resolveStudent(string $identifier, bool $withTrashed = false): ?Student
     {
+        $user = Auth::user();
+        $schoolId = $user?->school_id ?? (app()->bound(TenantContext::class) ? app(TenantContext::class)->getCurrentSchoolId() : null);
+
         $query = $withTrashed ? Student::withTrashed() : Student::query();
+        if ($schoolId !== null) {
+            $query->where('school_id', $schoolId);
+        }
 
         if (ctype_digit($identifier) && (string) (int) $identifier === $identifier) {
             $found = (clone $query)->find((int) $identifier);
@@ -662,8 +669,9 @@ final class ManageStudentTool implements Approvable, Tool
             }
         }
 
-        return $query->where('student_id', $identifier)
-            ->orWhere('email', $identifier)
-            ->first();
+        return $query->where(function ($q) use ($identifier): void {
+            $q->where('student_id', $identifier)
+                ->orWhere('email', $identifier);
+        })->first();
     }
 }

@@ -19,9 +19,18 @@ final class UpdateCurriculumProgramRequest extends FormRequest
     {
         $kind = $this->input('curriculum_kind', 'program');
         $isDiploma = $kind === 'tesda_qualification' && $this->input('tesda_program_type') === 'diploma';
+        $course = $this->route('course');
+        $schoolId = $course?->school_id ?? (app()->bound(\App\Services\TenantContext::class)
+            ? app(\App\Services\TenantContext::class)->getCurrentSchoolId()
+            : null);
+
+        $uniqueRule = Rule::unique('courses', 'code')->where('school_id', $schoolId);
+        if ($course) {
+            $uniqueRule->ignore($course->id);
+        }
 
         return [
-            'code' => ['required', 'string', 'max:255'],
+            'code' => ['required', 'string', 'max:255', $uniqueRule],
             'title' => ['required', 'string', 'max:255'],
             'industry_course_code_id' => ['nullable', 'integer', 'exists:industry_course_codes,id'],
             'description' => ['nullable', 'string'],

@@ -625,7 +625,9 @@ final class ManageStudentTool extends Tool
 
     private function resolveStudent(string $identifier, bool $withTrashed = false): ?Student
     {
-        $query = $withTrashed ? Student::withTrashed() : Student::query();
+        $school = $this->school();
+        $query = ($withTrashed ? Student::withTrashed() : Student::query())
+            ->where('school_id', $school->id);
 
         if (ctype_digit($identifier) && (string) (int) $identifier === $identifier) {
             $found = (clone $query)->find((int) $identifier);
@@ -634,9 +636,10 @@ final class ManageStudentTool extends Tool
             }
         }
 
-        return $query->where('student_id', $identifier)
-            ->orWhere('email', $identifier)
-            ->first();
+        return $query->where(function ($q) use ($identifier): void {
+            $q->where('student_id', $identifier)
+                ->orWhere('email', $identifier);
+        })->first();
     }
 
     /** @return array<string, mixed>|null */

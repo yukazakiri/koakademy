@@ -19,9 +19,17 @@ final class StoreCurriculumProgramRequest extends FormRequest
     {
         $kind = $this->input('curriculum_kind', 'program');
         $isDiploma = $kind === 'tesda_qualification' && $this->input('tesda_program_type') === 'diploma';
+        $schoolId = app()->bound(\App\Services\TenantContext::class)
+            ? app(\App\Services\TenantContext::class)->getCurrentSchoolId()
+            : null;
 
         return [
-            'code' => ['required', 'string', 'max:255'],
+            'code' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('courses', 'code')->where('school_id', $schoolId),
+            ],
             'title' => ['required', 'string', 'max:255'],
             'industry_course_code_id' => ['nullable', 'integer', 'exists:industry_course_codes,id'],
             'description' => ['nullable', 'string'],

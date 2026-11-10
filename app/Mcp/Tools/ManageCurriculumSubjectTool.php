@@ -98,17 +98,19 @@ final class ManageCurriculumSubjectTool extends Tool
             'course_code' => ['nullable', 'string', 'max:50'],
         ]);
 
+        $school = $this->school();
         $courseId = $validated['course_id'] ?? null;
         if (! $courseId && filled($validated['course_code'] ?? null)) {
-            $course = Course::query()->where('code', $validated['course_code'])->first();
+            $course = Course::query()->where('school_id', $school->id)->where('code', $validated['course_code'])->first();
             $courseId = $course?->id;
         }
 
         if (! $courseId) {
-            $courseId = Course::query()->value('id') ?? 1;
+            $courseId = Course::query()->where('school_id', $school->id)->value('id') ?? Course::query()->value('id') ?? 1;
         }
 
         $subject = Subject::query()->create([
+            'school_id' => $school->id,
             'code' => mb_strtoupper(mb_trim($validated['code'])),
             'title' => mb_trim($validated['title']),
             'units' => (int) $validated['units'],
@@ -147,11 +149,12 @@ final class ManageCurriculumSubjectTool extends Tool
             'subjects.*.course_code' => ['nullable', 'string', 'max:50'],
         ]);
 
-        $defaultCourse = Course::query()->first();
+        $school = $this->school();
+        $defaultCourse = Course::query()->where('school_id', $school->id)->first() ?? Course::query()->first();
         $created = [];
         $updated = [];
 
-        DB::transaction(function () use ($validated, $defaultCourse, &$created, &$updated) {
+        DB::transaction(function () use ($validated, $defaultCourse, $school, &$created, &$updated) {
             foreach ($validated['subjects'] as $sData) {
                 $code = mb_strtoupper(mb_trim((string) $sData['code']));
                 $title = mb_trim((string) $sData['title']);
@@ -163,14 +166,14 @@ final class ManageCurriculumSubjectTool extends Tool
 
                 $courseId = null;
                 if (filled($sData['course_code'] ?? null)) {
-                    $c = Course::query()->where('code', $sData['course_code'])->first();
+                    $c = Course::query()->where('school_id', $school->id)->where('code', $sData['course_code'])->first();
                     $courseId = $c?->id;
                 }
                 if (! $courseId) {
                     $courseId = $defaultCourse?->id ?? 1;
                 }
 
-                $existing = Subject::query()->where('code', $code)->first();
+                $existing = Subject::query()->where('school_id', $school->id)->where('code', $code)->first();
                 if ($existing instanceof Subject) {
                     $existing->update([
                         'title' => $title,
@@ -188,6 +191,7 @@ final class ManageCurriculumSubjectTool extends Tool
                     ];
                 } else {
                     $newSub = Subject::query()->create([
+                        'school_id' => $school->id,
                         'code' => $code,
                         'title' => $title,
                         'units' => $units,
@@ -276,9 +280,10 @@ final class ManageCurriculumSubjectTool extends Tool
 
     private function resolveSubject(Request $request): ?Subject
     {
+        $school = $this->school();
         $id = $request->get('subject_id');
         if ($id && is_numeric($id)) {
-            $found = Subject::query()->find((int) $id);
+            $found = Subject::query()->where('school_id', $school->id)->find((int) $id);
             if ($found) {
                 return $found;
             }
@@ -286,7 +291,7 @@ final class ManageCurriculumSubjectTool extends Tool
 
         $code = $request->get('code');
         if ($code) {
-            return Subject::query()->where('code', mb_trim((string) $code))->first();
+            return Subject::query()->where('school_id', $school->id)->where('code', mb_trim((string) $code))->first();
         }
 
         return null;

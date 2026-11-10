@@ -35,7 +35,7 @@ final class SignupController extends Controller
 
     /**
      * Check if an email exists in the Student or Faculty tables
-     * and return the appropriate user type and details.
+     * and return the appropriate user type.
      */
     public function emailLookup(Request $request): JsonResponse
     {
@@ -79,12 +79,6 @@ final class SignupController extends Controller
                 return response()->json([
                     'found' => true,
                     'type' => 'faculty',
-                    'name' => $faculty->full_name,
-                    'faculty_id_number' => $faculty->faculty_id_number,
-                    'department' => $faculty->department,
-                    'position' => $faculty->position,
-                    'role' => $this->facultySignups->roleFor($faculty)->value,
-                    'record_id' => $faculty->id,
                 ]);
             }
 
@@ -99,19 +93,9 @@ final class SignupController extends Controller
                     ]);
                 }
 
-                $studentType = $student->student_type;
-                $isShs = $studentType === StudentType::SeniorHighSchool;
-
                 return response()->json([
                     'found' => true,
                     'type' => 'student',
-                    'student_type' => $studentType?->value ?? 'college',
-                    'is_shs' => $isShs,
-                    'identifier_field' => app(\App\Services\StudentConfigurationService::class)->usesExternal($studentType->value, $student->school_id) && (string) $student->student_id === (string) $student->lrn ? 'lrn' : 'student_id',
-                    'name' => $student->full_name,
-                    'course' => $student->Course?->name ?? null,
-                    'academic_year' => $student->academic_year,
-                    'record_id' => $students->count() === 1 ? $student->id : null,
                 ]);
             }
 
@@ -291,7 +275,11 @@ final class SignupController extends Controller
 
         Cache::forget($otpKey);
 
-        $token = $user->createToken('auth_token')->plainTextToken;
+        $token = $user->createToken(
+            'auth_token',
+            [config('api.abilities.read'), config('api.abilities.write')],
+            now()->addMinutes((int) config('sanctum.expiration')),
+        )->plainTextToken;
 
         return response()->json([
             'message' => 'Account created successfully.',
@@ -389,7 +377,11 @@ final class SignupController extends Controller
 
         Cache::forget($otpKey);
 
-        $token = $user->createToken('auth_token')->plainTextToken;
+        $token = $user->createToken(
+            'auth_token',
+            [config('api.abilities.read'), config('api.abilities.write')],
+            now()->addMinutes((int) config('sanctum.expiration')),
+        )->plainTextToken;
 
         return response()->json([
             'message' => 'Account created successfully.',

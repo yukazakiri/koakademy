@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
-use App\Enums\StudentType;
 use App\Models\User;
 use App\Services\FacultySignupService;
 use App\Services\StudentOrganizationAssignmentService;
@@ -23,7 +22,7 @@ final class SignupEmailLookupController extends Controller
 
     /**
      * Check if an email exists in the Student or Faculty tables
-     * and return the appropriate user type and details.
+     * and return the appropriate user type.
      */
     public function __invoke(Request $request): JsonResponse
     {
@@ -69,12 +68,6 @@ final class SignupEmailLookupController extends Controller
                 return response()->json([
                     'found' => true,
                     'type' => 'faculty',
-                    'name' => $faculty->full_name,
-                    'faculty_id_number' => $faculty->faculty_id_number,
-                    'department' => $faculty->department,
-                    'position' => $faculty->position,
-                    'role' => $this->facultySignups->roleFor($faculty)->value,
-                    'record_id' => $faculty->id,
                 ]);
             }
 
@@ -89,24 +82,9 @@ final class SignupEmailLookupController extends Controller
                     ]);
                 }
 
-                $studentType = $student->student_type;
-                $isShs = $studentType === StudentType::SeniorHighSchool;
-
                 return response()->json([
                     'found' => true,
                     'type' => 'student',
-                    'student_type' => $studentType?->value ?? 'college',
-                    'is_shs' => $isShs,
-                    'identifier_field' => app(\App\Services\StudentConfigurationService::class)->usesExternal($studentType->value, $student->school_id) && (string) $student->student_id === (string) $student->lrn ? 'lrn' : 'student_id',
-                    'identifier_label' => app(\App\Services\StudentConfigurationService::class)->usesExternal($studentType->value, $student->school_id) && (string) $student->student_id === (string) $student->lrn
-                        ? app(\App\Services\StudentConfigurationService::class)->externalFor($studentType->value, $student->school_id)['label']
-                        : app(\App\Services\IdentifierGenerator::class)->sequenceFor('student', schoolId: $student->school_id)->display_label,
-                    'name' => $student->full_name,
-                    // 'student_id' => $student->student_id, // Removed for security/verification
-                    // 'lrn' => $student->lrn, // Removed for security/verification
-                    'course' => $student->Course?->name ?? null,
-                    'academic_year' => $student->academic_year,
-                    'record_id' => $students->count() === 1 ? $student->id : null,
                 ]);
             }
 

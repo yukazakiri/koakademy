@@ -43,6 +43,9 @@ final class ApiKeyController extends Controller
         return response()->json(['tokens' => $tokens]);
     }
 
+    /**
+     * Create and issue a new API key with configured maximum expiration.
+     */
     public function store(ApiKeyRequest $request): JsonResponse
     {
         $validated = $request->validated();
@@ -62,9 +65,10 @@ final class ApiKeyController extends Controller
             $abilities = ['*'];
         }
 
+        $maximumExpiry = now()->addMinutes((int) config('sanctum.expiration'));
         $expiresAt = isset($validated['expires_at'])
-            ? Carbon::parse($validated['expires_at'])
-            : null;
+            ? Carbon::parse($validated['expires_at'])->min($maximumExpiry)
+            : $maximumExpiry;
 
         $plainTextToken = $user->createToken(
             $validated['name'],

@@ -109,6 +109,9 @@ final class AppServiceProvider extends ServiceProvider
         });
     }
 
+    /**
+     * Bootstrap application services, rate limiters, and route events.
+     */
     public function boot(): void
     {
         $this->guardAgainstUnpatchedRuntime();
@@ -129,14 +132,42 @@ final class AppServiceProvider extends ServiceProvider
                 ->by($request->user()?->getAuthIdentifier() ?? $request->ip());
         });
 
+        RateLimiter::for('signup-email-lookup', function (Request $request): Limit {
+            return Limit::perMinute(10)->by($request->ip());
+        });
+
+        RateLimiter::for('signup-send-otp', function (Request $request): array {
+            $normalizedEmail = mb_strtolower(mb_trim((string) $request->input('email')));
+            $limit = (int) config('api.otp_rate_limit', 5);
+
+            return [
+                Limit::perMinute($limit)->by('email:'.$normalizedEmail),
+                Limit::perMinute($limit)->by('ip:'.$request->ip()),
+            ];
+        });
+
+        RateLimiter::for('signup-attempt', function (Request $request): array {
+            $normalizedEmail = mb_strtolower(mb_trim((string) $request->input('email')));
+            $limit = (int) config('api.login_rate_limit', 5);
+
+            return [
+                Limit::perMinute($limit)->by('email:'.$normalizedEmail),
+                Limit::perMinute($limit)->by('ip:'.$request->ip()),
+            ];
+        });
+
         RateLimiter::for('api-login', function (Request $request): Limit {
             return Limit::perMinute((int) config('api.login_rate_limit', 5))
                 ->by(mb_strtolower((string) $request->input('email')).'|'.$request->ip());
         });
 
-        RateLimiter::for('api-otp', function (Request $request): Limit {
-            return Limit::perMinute((int) config('api.otp_rate_limit', 5))
-                ->by((string) $request->input('challenge_id', $request->ip()));
+        RateLimiter::for('api-otp', function (Request $request): array {
+            $limit = (int) config('api.otp_rate_limit', 5);
+
+            return [
+                Limit::perMinute($limit)->by('challenge:'.(string) $request->input('challenge_id')),
+                Limit::perMinute($limit)->by('ip:'.$request->ip()),
+            ];
         });
 
         RateLimiter::for('ai-chat', function (Request $request): Limit {

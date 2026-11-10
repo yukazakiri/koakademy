@@ -173,9 +173,8 @@ it('does not label an unconfigured MFA preference as configured protection', fun
 });
 
 it('records mobile token authentication without storing the issued token', function (): void {
-    Illuminate\Support\Facades\Route::post('/test/mobile-login', [App\Http\Controllers\Api\V1\Auth\AuthTokenController::class, 'login']);
     $user = User::factory()->create(['role' => UserRole::Student, 'security_two_factor_enabled' => false]);
-    $response = $this->postJson('/test/mobile-login', ['email' => $user->email, 'password' => 'password', 'device_name' => 'Test device'])->assertOk();
+    $response = $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password', 'device_name' => 'Test device'])->assertOk();
     expect($user->fresh()->last_login_at)->not->toBeNull()
         ->and($user->fresh()->last_active_at)->not->toBeNull();
     $log = Activity::query()->inLog('user-security')->forSubject($user)->firstOrFail();
@@ -185,9 +184,8 @@ it('records mobile token authentication without storing the issued token', funct
 });
 
 it('records failed mobile passwords without updating last sign in', function (): void {
-    Illuminate\Support\Facades\Route::post('/test/mobile-login', [App\Http\Controllers\Api\V1\Auth\AuthTokenController::class, 'login']);
     $user = User::factory()->create(['role' => UserRole::Student]);
-    $this->postJson('/test/mobile-login', ['email' => $user->email, 'password' => 'incorrect', 'device_name' => 'Test device'])->assertUnauthorized();
+    $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'incorrect', 'device_name' => 'Test device'])->assertUnauthorized();
     expect($user->fresh()->last_login_at)->toBeNull()
         ->and(Activity::query()->inLog('user-security')->forSubject($user)->firstOrFail()->event)->toBe('sign_in_failed');
 });

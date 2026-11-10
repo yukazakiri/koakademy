@@ -21,7 +21,7 @@ beforeEach(function () {
 });
 
 it('can lookup existing student email', function () {
-    $student = Student::factory()->create([
+    Student::factory()->create([
         'email' => 'student@test.com',
         'student_type' => StudentType::College,
         'course_id' => $this->course->id,
@@ -34,16 +34,14 @@ it('can lookup existing student email', function () {
     ]);
 
     $response->assertStatus(200)
-        ->assertJson([
+        ->assertExactJson([
             'found' => true,
             'type' => 'student',
-            'record_id' => $student->id,
-        ])
-        ->assertJsonMissing(['student_id', 'lrn']);
+        ]);
 });
 
 it('can lookup existing faculty email', function () {
-    $faculty = Faculty::factory()->create([
+    Faculty::factory()->create([
         'email' => 'Faculty@Test.com',
     ]);
 
@@ -52,10 +50,9 @@ it('can lookup existing faculty email', function () {
     ]);
 
     $response->assertStatus(200)
-        ->assertJson([
+        ->assertExactJson([
             'found' => true,
             'type' => 'faculty',
-            'record_id' => $faculty->id,
         ]);
 });
 
@@ -89,7 +86,7 @@ it('returns error for existing user account', function () {
 
 it('handles mixed-case records in the API signup lookup', function () {
     User::factory()->create(['email' => 'Api.Existing@Test.com']);
-    $faculty = Faculty::factory()->create(['email' => 'Api.Faculty@Test.com']);
+    Faculty::factory()->create(['email' => 'Api.Faculty@Test.com']);
 
     $this->postJson('/api/v1/auth/signup/email-lookup', [
         'email' => 'api.existing@test.com',
@@ -103,7 +100,6 @@ it('handles mixed-case records in the API signup lookup', function () {
     ])->assertOk()->assertJson([
         'found' => true,
         'type' => 'faculty',
-        'record_id' => $faculty->id,
     ]);
 });
 
@@ -382,7 +378,6 @@ it('uses student id to disambiguate the same email across organizations', functi
     ])->assertOk()->assertJson([
         'found' => true,
         'type' => 'student',
-        'record_id' => null,
     ]);
 
     $this->postJson(route('signup.send-otp'), [

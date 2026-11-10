@@ -97,9 +97,9 @@ Broadcast::routes(['middleware' => ['web', 'auth']]);
 
 // Signup
 Route::get('/signup', [AuthController::class, 'showSignupForm'])->name('signup');
-Route::post('/signup', [AuthController::class, 'signup']);
-Route::post('/signup/email-lookup', SignupEmailLookupController::class)->name('signup.email-lookup');
-Route::post('/signup/send-otp', [SignupOtpController::class, 'store'])->name('signup.send-otp');
+Route::post('/signup', [AuthController::class, 'signup'])->middleware('throttle:signup-attempt');
+Route::post('/signup/email-lookup', SignupEmailLookupController::class)->middleware('throttle:signup-email-lookup')->name('signup.email-lookup');
+Route::post('/signup/send-otp', [SignupOtpController::class, 'store'])->middleware('throttle:signup-send-otp')->name('signup.send-otp');
 
 // Password reset (public)
 Route::get('/forgot-password', [PasswordResetController::class, 'create'])->name('password.request');

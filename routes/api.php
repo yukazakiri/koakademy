@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Filament\Resources\StudentEnrollments\Api\StudentEnrollmentController;
 use App\Http\Controllers\Api\ActiveJobsController;
 use App\Http\Controllers\Api\OrganizationController;
+use App\Http\Controllers\Api\V1\Auth\AuthTokenController;
 use App\Http\Controllers\Api\V1\Auth\SignupController;
 use App\Http\Controllers\Api\V1\ClassEnrollmentController;
 use App\Http\Controllers\Api\V1\ClassPostController;
@@ -17,25 +18,40 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
-})->middleware('auth:sanctum');
+})->middleware(['auth:sanctum', 'api.ability']);
 
 Route::prefix('v1')->name('api.v1.')->group(function (): void {
     Route::prefix('public')->name('public.')->group(function (): void {
         Route::get('/settings', [GeneralSettingController::class, 'publicWebsiteSettings'])->name('settings');
     });
 
-    Route::middleware(['auth:sanctum'])->prefix('profile')->name('profile.')->group(function (): void {
+    Route::middleware(['auth:sanctum', 'api.ability'])->prefix('profile')->name('profile.')->group(function (): void {
         Route::get('/me', [ProfileController::class, 'show'])->name('me');
     });
     Route::prefix('auth')->name('auth.')->group(function (): void {
-        Route::post('/signup/email-lookup', [SignupController::class, 'emailLookup'])->name('signup.email-lookup');
-        Route::post('/signup/send-otp', [SignupController::class, 'sendOtp'])->name('signup.send-otp');
-        Route::post('/signup', [SignupController::class, 'signup'])->name('signup');
+        Route::post('/login', [AuthTokenController::class, 'login'])->middleware('throttle:api-login')->name('login');
+        Route::post('/challenge/email', [AuthTokenController::class, 'sendEmailChallenge'])->middleware('throttle:api-otp')->name('challenge.email');
+        Route::post('/challenge/verify', [AuthTokenController::class, 'verifyChallenge'])->middleware('throttle:api-otp')->name('challenge.verify');
+        Route::post('/forgot-password', [AuthTokenController::class, 'forgotPassword'])->middleware('throttle:api-login')->name('password.email');
+        Route::post('/reset-password', [AuthTokenController::class, 'resetPassword'])->middleware('throttle:api-login')->name('password.reset');
+
+        Route::middleware(['auth:sanctum', 'api.ability'])->group(function (): void {
+            Route::get('/me', [AuthTokenController::class, 'me'])->name('me');
+            Route::get('/tokens', [AuthTokenController::class, 'tokens'])->name('tokens');
+            Route::post('/logout', [AuthTokenController::class, 'logout'])->name('logout');
+            Route::post('/logout-all', [AuthTokenController::class, 'logoutAll'])->name('logout-all');
+            Route::delete('/tokens/{token}', [AuthTokenController::class, 'revokeToken'])->whereNumber('token')->name('tokens.destroy');
+            Route::put('/password', [AuthTokenController::class, 'updatePassword'])->name('password.update');
+        });
+
+        Route::post('/signup/email-lookup', [SignupController::class, 'emailLookup'])->middleware('throttle:signup-email-lookup')->name('signup.email-lookup');
+        Route::post('/signup/send-otp', [SignupController::class, 'sendOtp'])->middleware('throttle:signup-send-otp')->name('signup.send-otp');
+        Route::post('/signup', [SignupController::class, 'signup'])->middleware('throttle:signup-attempt')->name('signup');
     });
 });
 
 // General Settings API Routes
-Route::middleware(['auth:sanctum'])->prefix('settings')->name('api.settings.')->group(function (): void {
+Route::middleware(['auth:sanctum', 'api.ability'])->prefix('settings')->name('api.settings.')->group(function (): void {
     // Standard CRUD operations
     Route::get('/', [GeneralSettingController::class, 'index'])->name('index');
     Route::post('/', [GeneralSettingController::class, 'store'])->name('store');
@@ -62,7 +78,7 @@ Route::middleware(['auth:sanctum'])->prefix('settings')->name('api.settings.')->
 });
 
 // Student Enrollment API Routes
-Route::middleware(['auth:sanctum'])->prefix('enrollments')->name('api.enrollments.')->group(function (): void {
+Route::middleware(['auth:sanctum', 'api.ability'])->prefix('enrollments')->name('api.enrollments.')->group(function (): void {
     // Standard CRUD operations
     Route::get('/', [StudentEnrollmentController::class, 'index'])->name('index');
     Route::post('/', [StudentEnrollmentController::class, 'store'])->name('store');
@@ -84,7 +100,7 @@ Route::middleware(['auth:sanctum'])->prefix('enrollments')->name('api.enrollment
 });
 
 // Class Enrollment API Routes
-Route::middleware(['auth:sanctum'])->prefix('class-enrollments')->name('api.class-enrollments.')->group(function (): void {
+Route::middleware(['auth:sanctum', 'api.ability'])->prefix('class-enrollments')->name('api.class-enrollments.')->group(function (): void {
     // Standard CRUD operations
     Route::get('/', [ClassEnrollmentController::class, 'index'])->name('index');
     Route::post('/', [ClassEnrollmentController::class, 'store'])->name('store');
@@ -109,7 +125,7 @@ Route::middleware(['auth:sanctum'])->prefix('class-enrollments')->name('api.clas
 });
 
 // Class Posts API Routes
-Route::middleware(['auth:sanctum'])->prefix('class-posts')->name('api.class-posts.')->group(function (): void {
+Route::middleware(['auth:sanctum', 'api.ability'])->prefix('class-posts')->name('api.class-posts.')->group(function (): void {
     // Standard CRUD operations
     Route::get('/', [ClassPostController::class, 'index'])->name('index');
     Route::post('/', [ClassPostController::class, 'store'])->name('store');
@@ -148,12 +164,12 @@ Route::middleware(['web', 'auth'])->prefix('organizations')->name('api.organizat
 });
 
 // Student Verification API Routes
-Route::middleware(['auth:sanctum'])->prefix('students')->name('api.students.')->group(function (): void {
+Route::middleware(['auth:sanctum', 'api.ability'])->prefix('students')->name('api.students.')->group(function (): void {
     Route::post('/verify', [StudentVerificationController::class, 'verify'])->name('verify');
 });
 
 // Faculty Mobile App API Routes
-Route::middleware(['auth:sanctum'])->prefix('faculty')->name('api.faculty.')->group(function (): void {
+Route::middleware(['auth:sanctum', 'api.ability'])->prefix('faculty')->name('api.faculty.')->group(function (): void {
     Route::get('/profile', [FacultyController::class, 'profile'])->name('profile');
     Route::put('/profile', [FacultyController::class, 'updateProfile'])->name('update-profile');
 

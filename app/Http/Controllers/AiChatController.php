@@ -16,6 +16,7 @@ use App\Services\Ai\AiAgentAccess;
 use App\Services\Ai\AiAttachmentProcessor;
 use App\Services\Ai\AiChatRunService;
 use App\Services\Ai\AiDocumentGeneratorService;
+use App\Services\Ai\AiEndpointGuard;
 use App\Services\Ai\AiSettingsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -127,16 +128,16 @@ final class AiChatController extends Controller
             }
         }
 
+        if (! $this->providerEndpointIsAllowed($aiSettings, $selectedProvider)) {
+            abort(422, 'The selected AI provider endpoint is not allowed.');
+        }
+
         // If custom provider selected, ensure its runtime configuration is present
         if (filled($selectedProvider) && isset($aiSettings['custom_providers'][$selectedProvider])) {
             $custom = $aiSettings['custom_providers'][$selectedProvider];
             $chatModel = filled($selectedModel) ? $selectedModel : ($custom['default_chat_model'] ?: 'default');
 
-            $rawUrl = mb_trim((string) $custom['base_url']);
-            if (! str_starts_with($rawUrl, 'http://') && ! str_starts_with($rawUrl, 'https://')) {
-                $rawUrl = 'http://'.$rawUrl;
-            }
-            $cleanUrl = mb_rtrim($rawUrl, '/');
+            $cleanUrl = app(AiEndpointGuard::class)->normalize((string) $custom['base_url']);
             if (! str_ends_with($cleanUrl, '/v1')) {
                 $cleanUrl .= '/v1';
             }
@@ -238,6 +239,10 @@ final class AiChatController extends Controller
                     }
 
                     [$fallbackProvider, $fallbackModel] = $this->resolveFallbackTarget($aiSettings, $selectedProvider, $selectedModel);
+
+                    if (filled($fallbackProvider) && ! $this->providerEndpointIsAllowed($aiSettings, $fallbackProvider)) {
+                        throw new InvalidArgumentException('The fallback AI provider endpoint is not allowed.');
+                    }
 
                     if (filled($fallbackModel) && ($fallbackModel !== $selectedModel || $fallbackProvider !== $selectedProvider)) {
                         Log::warning("General AI model [{$selectedModel}] on provider [{$selectedProvider}] failed on init. Falling back to [{$fallbackModel}] on provider [{$fallbackProvider}].", [
@@ -725,6 +730,36 @@ final class AiChatController extends Controller
         $primary = (string) ($settings['primary_provider'] ?? config('ai.default', 'anthropic'));
 
         return $this->providerSupportsDocumentAttachments($primary, $model);
+    }
+
+    /**
+     * @param  array<string, mixed>  $aiSettings
+     */
+    private function providerEndpointIsAllowed(array $aiSettings, ?string $provider): bool
+    {
+        if (blank($provider)) {
+            return true;
+        }
+
+        $isCustom = isset($aiSettings['custom_providers'][$provider]);
+
+        $baseUrl = (string) (
+            $isCustom
+                ? ($aiSettings['custom_providers'][$provider]['base_url'] ?? '')
+                : ($aiSettings['providers'][$provider]['base_url'] ?? '')
+        );
+
+        if (blank($baseUrl)) {
+            return true;
+        }
+
+        $guard = app(AiEndpointGuard::class);
+
+        if (! $isCustom && $guard->isProviderDefaultUrl($provider, $baseUrl)) {
+            return true;
+        }
+
+        return $guard->isAllowed($baseUrl);
     }
 
     private function resolveAgent(string $key): Agent

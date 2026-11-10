@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\Administrators;
 
 use App\Models\GeneralSetting;
+use App\Rules\SafeAiBaseUrl;
 use Illuminate\Foundation\Http\FormRequest;
 
 final class TestAiConnectionRequest extends FormRequest
@@ -22,7 +23,7 @@ final class TestAiConnectionRequest extends FormRequest
         return [
             'provider' => ['required', 'string', 'max:64'],
             'api_key' => ['nullable', 'string', 'max:2048'],
-            'base_url' => ['nullable', 'string', 'max:500'],
+            'base_url' => ['nullable', 'string', 'max:500', new SafeAiBaseUrl],
             'headers' => ['nullable', 'array'],
         ];
     }

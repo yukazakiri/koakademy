@@ -234,6 +234,7 @@ final class RolesSeeder extends Seeder
             'Cancel:StudentEnrollment',
             'Reopen:StudentEnrollment',
             'Assign:Role',
+            'Update:ClassEnrollment',
             ...SystemManagementPermissions::all(),
         ];
     }
@@ -545,6 +546,8 @@ final class RolesSeeder extends Seeder
             'ViewIdCard', 'VerifyIdCard',
             'ViewClearance', 'ManageClearance',
             'ViewDashboard',
+        ], [
+            'ClassEnrollment',
         ]);
     }
 

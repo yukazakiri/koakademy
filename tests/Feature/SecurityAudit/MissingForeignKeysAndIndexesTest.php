@@ -68,7 +68,7 @@ it('enforces foreign key and index on students.user_id (DB-006)', function (): v
 
 it('enforces foreign keys and indexes on medical_records (DB-006)', function (): void {
     expect(Schema::hasTable('medical_records'))->toBeTrue()
-        ->and(Schema::hasIndex('medical_records', 'medical_records_student_id_index'))->toBeTrue()
+        ->and(Schema::hasIndex('medical_records', 'medical_records_student_id_record_type_index'))->toBeTrue()
         ->and(Schema::hasIndex('medical_records', 'medical_records_created_by_index'))->toBeTrue()
         ->and(Schema::hasIndex('medical_records', 'medical_records_updated_by_index'))->toBeTrue();
 

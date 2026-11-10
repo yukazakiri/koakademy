@@ -50,6 +50,20 @@ abstract class TestCase extends BaseTestCase
         $this->app->singleton(\Faker\Generator::class, function (): \Faker\Generator {
             return \Faker\Factory::create('en_US');
         });
+
+        \Illuminate\Support\Facades\Event::listen('eloquent.creating: Modules\StudentMedicalRecords\Models\MedicalRecord', function ($record): void {
+            if ($record->student_id && \Illuminate\Support\Facades\Schema::hasTable('students') && ! \Illuminate\Support\Facades\DB::table('students')->where('id', $record->student_id)->exists()) {
+                \Illuminate\Support\Facades\DB::table('students')->insert([
+                    'id' => $record->student_id,
+                    'first_name' => 'Test',
+                    'last_name' => 'Student',
+                    'birth_date' => '2000-01-01',
+                    'gender' => 'other',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+        });
     }
 
     protected function tearDown(): void

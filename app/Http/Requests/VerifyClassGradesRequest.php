@@ -4,13 +4,32 @@ declare(strict_types=1);
 
 namespace App\Http\Requests;
 
+use App\Enums\UserRole;
+use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 
 final class VerifyClassGradesRequest extends FormRequest
 {
+    /**
+     * Determine if the user is authorized to make this request.
+     *
+     * @return bool True if authorized, false otherwise.
+     */
     public function authorize(): bool
     {
-        return $this->user() !== null;
+        $user = $this->user();
+
+        return $user instanceof User && (
+            $user->can('Update:ClassEnrollment')
+            || in_array($user->role, [
+                UserRole::Developer,
+                UserRole::SuperAdmin,
+                UserRole::Admin,
+                UserRole::Registrar,
+                UserRole::AssistantRegistrar,
+            ], true)
+            || $user->role?->isFaculty()
+        );
     }
 
     /**

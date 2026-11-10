@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Enums\UserRole;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
+use App\Models\Faculty;
 use App\Models\Student;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -15,8 +17,16 @@ use Spatie\Activitylog\Models\Activity;
  * of 200 students turned into 600 statements in a single request.
  */
 beforeEach(function (): void {
-    $this->class = Classes::factory()->create();
-    $this->user = User::factory()->create();
+    $this->faculty = Faculty::factory()->create();
+    $this->class = Classes::factory()->create([
+        'faculty_id' => $this->faculty->id,
+    ]);
+    $this->user = User::factory()->create([
+        'role' => UserRole::Instructor,
+        'email' => $this->faculty->email,
+        'record_id' => $this->faculty->id,
+        'faculty_id_number' => $this->faculty->faculty_id_number,
+    ]);
 });
 
 /**

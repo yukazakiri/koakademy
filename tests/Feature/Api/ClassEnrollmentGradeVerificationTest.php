@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\UserRole;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
 use App\Models\Student;
@@ -29,7 +30,7 @@ beforeEach(function (): void {
 });
 
 it('verifies grades and returns the verifier instead of a 500', function (): void {
-    $verifier = User::factory()->create(['name' => 'Registrar One']);
+    $verifier = User::factory()->create(['name' => 'Registrar One', 'role' => UserRole::Registrar]);
 
     $response = $this->actingAs($verifier, 'sanctum')
         ->postJson("/api/class-enrollments/{$this->enrollment->id}/verify", [
@@ -52,7 +53,7 @@ it('verifies grades and returns the verifier instead of a 500', function (): voi
 });
 
 it('exposes the verifier on the enrollment detail endpoint', function (): void {
-    $verifier = User::factory()->create(['name' => 'Registrar Two']);
+    $verifier = User::factory()->create(['name' => 'Registrar Two', 'role' => UserRole::Registrar]);
 
     $this->enrollment->update([
         'is_grades_verified' => true,
@@ -74,7 +75,7 @@ it('leaves no partial write behind when verification fails', function (): void {
         throw new RuntimeException('simulated failure after the write');
     });
 
-    $verifier = User::factory()->create();
+    $verifier = User::factory()->create(['role' => UserRole::Registrar]);
 
     $response = $this->actingAs($verifier, 'sanctum')
         ->postJson("/api/class-enrollments/{$this->enrollment->id}/verify");
@@ -92,7 +93,7 @@ it('leaves no partial write behind when verification fails', function (): void {
 it('refuses to verify grades that were never finalized', function (): void {
     $this->enrollment->update(['is_grades_finalized' => false]);
 
-    $verifier = User::factory()->create();
+    $verifier = User::factory()->create(['role' => UserRole::Registrar]);
 
     $response = $this->actingAs($verifier, 'sanctum')
         ->postJson("/api/class-enrollments/{$this->enrollment->id}/verify");
@@ -104,7 +105,7 @@ it('refuses to verify grades that were never finalized', function (): void {
 });
 
 it('rejects a non-string verification note without touching the enrollment', function (): void {
-    $verifier = User::factory()->create();
+    $verifier = User::factory()->create(['role' => UserRole::Registrar]);
 
     $response = $this->actingAs($verifier, 'sanctum')
         ->postJson("/api/class-enrollments/{$this->enrollment->id}/verify", [

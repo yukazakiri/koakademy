@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ClassEnrollmentFormRequest;
 use App\Http\Requests\VerifyClassGradesRequest;
 use App\Http\Resources\ClassEnrollmentResource;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
+use App\Models\Faculty;
+use App\Models\User;
 use App\Services\BulkActivityLogger;
 use App\Services\GradeComputationService;
 use App\Services\GradeEvaluationService;
@@ -19,6 +22,7 @@ use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -97,11 +101,17 @@ final class ClassEnrollmentController extends Controller
     /**
      * Store a newly created class enrollment.
      *
+     * @param  ClassEnrollmentFormRequest  $request  The validated enrollment form request.
+     * @return JsonResponse JSON response with the created resource or error.
      *
      * @throws ValidationException
      */
     public function store(ClassEnrollmentFormRequest $request): JsonResponse
     {
+        $classId = (int) $request->input('class_id');
+        $class = Classes::findOrFail($classId);
+        $this->authorizeAction('create', $class);
+
         try {
             $validated = $request->validated();
 
@@ -166,15 +176,26 @@ final class ClassEnrollmentController extends Controller
     /**
      * Update the specified class enrollment.
      *
+     * @param  ClassEnrollmentFormRequest  $request  The validated enrollment form request.
+     * @param  int  $id  The class enrollment record ID.
+     * @param  GradingSystemService  $gradingSystem  Grading system configuration service.
+     * @param  GradeEvaluationService  $gradeEvaluation  Grade calculation service.
+     * @return JsonResponse JSON response with updated resource or error.
      *
      * @throws ValidationException
      */
     public function update(ClassEnrollmentFormRequest $request, int $id, GradingSystemService $gradingSystem, GradeEvaluationService $gradeEvaluation): JsonResponse
     {
-        try {
-            $enrollment = ClassEnrollment::findOrFail($id);
-            $validated = $request->validated();
+        $enrollment = ClassEnrollment::with('class')->findOrFail($id);
+        $this->authorizeAction('update', $enrollment);
+        $validated = $request->validated();
 
+        if (isset($validated['class_id']) && (int) $validated['class_id'] !== (int) $enrollment->class_id) {
+            $destinationClass = Classes::findOrFail((int) $validated['class_id']);
+            $this->authorizeAction('update', $destinationClass);
+        }
+
+        try {
             $policy = $gradingSystem->ensureConfig();
             if ($policy['input_type'] !== 'numeric') {
                 return response()->json([
@@ -219,11 +240,16 @@ final class ClassEnrollmentController extends Controller
 
     /**
      * Remove the specified class enrollment (soft delete).
+     *
+     * @param  int  $id  The class enrollment record ID.
+     * @return JsonResponse JSON confirmation of deletion or error.
      */
     public function destroy(int $id): JsonResponse
     {
+        $enrollment = ClassEnrollment::with('class')->findOrFail($id);
+        $this->authorizeAction('delete', $enrollment);
+
         try {
-            $enrollment = ClassEnrollment::findOrFail($id);
             $enrollment->delete();
 
             return response()->json([
@@ -240,11 +266,16 @@ final class ClassEnrollmentController extends Controller
 
     /**
      * Restore a soft-deleted class enrollment.
+     *
+     * @param  int  $id  The class enrollment record ID.
+     * @return JsonResponse JSON response with restored resource or error.
      */
     public function restore(int $id): JsonResponse
     {
+        $enrollment = ClassEnrollment::onlyTrashed()->with('class')->findOrFail($id);
+        $this->authorizeAction('restore', $enrollment);
+
         try {
-            $enrollment = ClassEnrollment::onlyTrashed()->findOrFail($id);
             $enrollment->restore();
             $enrollment->load(['class', 'student']);
 
@@ -263,11 +294,16 @@ final class ClassEnrollmentController extends Controller
 
     /**
      * Force delete a class enrollment permanently.
+     *
+     * @param  int  $id  The class enrollment record ID.
+     * @return JsonResponse JSON confirmation of permanent deletion or error.
      */
     public function forceDestroy(int $id): JsonResponse
     {
+        $enrollment = ClassEnrollment::withTrashed()->with('class')->findOrFail($id);
+        $this->authorizeAction('forceDelete', $enrollment);
+
         try {
-            $enrollment = ClassEnrollment::withTrashed()->findOrFail($id);
             $enrollment->forceDelete();
 
             return response()->json([
@@ -284,12 +320,20 @@ final class ClassEnrollmentController extends Controller
 
     /**
      * Update grades for a class enrollment.
+     *
+     * @param  ClassEnrollmentFormRequest  $request  The validated enrollment form request.
+     * @param  int  $id  The class enrollment record ID.
+     * @param  GradingSystemService  $gradingSystem  Grading system configuration service.
+     * @param  GradeEvaluationService  $gradeEvaluation  Grade calculation service.
+     * @return JsonResponse JSON response with updated grade data or error.
      */
     public function updateGrades(ClassEnrollmentFormRequest $request, int $id, GradingSystemService $gradingSystem, GradeEvaluationService $gradeEvaluation): JsonResponse
     {
+        $enrollment = ClassEnrollment::with('class')->findOrFail($id);
+        $this->authorizeGradeWrite($enrollment);
+
         try {
-            $enrollment = ClassEnrollment::findOrFail($id);
-            $validated = $request->only([
+            $validated = Arr::only($request->validated(), [
                 'prelim_grade',
                 'midterm_grade',
                 'finals_grade',
@@ -334,12 +378,17 @@ final class ClassEnrollmentController extends Controller
 
     /**
      * Finalize grades for a class enrollment.
+     *
+     * @param  int  $id  The class enrollment record ID.
+     * @param  GradeComputationService  $gradeComputation  Grade computation service.
+     * @return JsonResponse JSON response confirming grade finalization or error.
      */
     public function finalizeGrades(int $id, GradeComputationService $gradeComputation): JsonResponse
     {
-        try {
-            $enrollment = ClassEnrollment::findOrFail($id);
+        $enrollment = ClassEnrollment::with('class')->findOrFail($id);
+        $this->authorizeGradeWrite($enrollment);
 
+        try {
             // Check if all required grades are present
             if ($enrollment->prelim_grade === null || $enrollment->midterm_grade === null || $enrollment->finals_grade === null) {
                 return response()->json([
@@ -376,12 +425,17 @@ final class ClassEnrollmentController extends Controller
 
     /**
      * Verify grades for a class enrollment.
+     *
+     * @param  VerifyClassGradesRequest  $request  The verified grade request with optional notes.
+     * @param  int  $id  The class enrollment record ID.
+     * @return JsonResponse JSON response confirming grade verification or error.
      */
     public function verifyGrades(VerifyClassGradesRequest $request, int $id): JsonResponse
     {
-        try {
-            $enrollment = ClassEnrollment::findOrFail($id);
+        $enrollment = ClassEnrollment::with('class')->findOrFail($id);
+        $this->authorizeGradeWrite($enrollment);
 
+        try {
             // Check if grades are finalized
             if (! $enrollment->is_grades_finalized) {
                 return response()->json([
@@ -505,6 +559,9 @@ final class ClassEnrollmentController extends Controller
         GradeComputationService $gradeComputation,
         BulkActivityLogger $activityLogger,
     ): JsonResponse {
+        $class = Classes::findOrFail($classId);
+        $this->authorizeGradeWrite($class);
+
         $request->validate([
             'grades' => 'required|array',
             'grades.*.enrollment_id' => 'required|exists:class_enrollments,id',
@@ -662,5 +719,135 @@ final class ClassEnrollmentController extends Controller
         unset($attributes['id'], $attributes['created_at'], $attributes['updated_at']);
 
         return $attributes;
+    }
+
+    /**
+     * Authorize grade write operations.
+     *
+     * @param  ClassEnrollment|Classes  $subject  The enrollment or class record.
+     */
+    private function authorizeGradeWrite(ClassEnrollment|Classes $subject): void
+    {
+        $this->authorizeAction('update', $subject);
+    }
+
+    /**
+     * Authorize action-specific enrollment operations.
+     *
+     * @param  string  $action  The operation to authorize (create, update, delete, restore, forceDelete).
+     * @param  ClassEnrollment|Classes  $subject  The enrollment or class record.
+     */
+    private function authorizeAction(string $action, ClassEnrollment|Classes $subject): void
+    {
+        /** @var User|null $user */
+        $user = request()->user();
+
+        abort_unless($user instanceof User, 403);
+
+        $adminRoles = [
+            UserRole::Developer,
+            UserRole::SuperAdmin,
+            UserRole::Admin,
+        ];
+
+        $registrarRoles = [
+            UserRole::Developer,
+            UserRole::SuperAdmin,
+            UserRole::Admin,
+            UserRole::Registrar,
+            UserRole::AssistantRegistrar,
+        ];
+
+        if ($action === 'forceDelete') {
+            abort_unless($user->can('ForceDelete:ClassEnrollment') || in_array($user->role, $adminRoles, true), 403);
+
+            return;
+        }
+
+        if ($action === 'restore') {
+            abort_unless($user->can('Restore:ClassEnrollment') || in_array($user->role, $registrarRoles, true), 403);
+
+            return;
+        }
+
+        if ($action === 'create') {
+            if ($user->can('Create:ClassEnrollment') || in_array($user->role, $registrarRoles, true)) {
+                return;
+            }
+
+            $class = $subject instanceof Classes ? $subject : $subject->class;
+            abort_unless($class !== null && $this->ownsClass($user, $class), 403);
+
+            return;
+        }
+
+        if ($action === 'delete') {
+            if ($user->can('Delete:ClassEnrollment') || in_array($user->role, $registrarRoles, true)) {
+                return;
+            }
+
+            $class = $subject instanceof Classes ? $subject : $subject->class;
+            abort_unless($class !== null && $this->ownsClass($user, $class), 403);
+
+            return;
+        }
+
+        // Action is 'update' (grade modifications and enrollment updates)
+        if ($user->can('Update:ClassEnrollment') || in_array($user->role, $registrarRoles, true)) {
+            return;
+        }
+
+        $class = $subject instanceof Classes ? $subject : $subject->class;
+        abort_unless($class !== null && $this->ownsClass($user, $class), 403);
+    }
+
+    /**
+     * Determine whether the given user is the assigned faculty for the class.
+     *
+     * @param  User  $user  The user to verify.
+     * @param  Classes|null  $class  The class record.
+     * @return bool True if user is the assigned faculty, false otherwise.
+     */
+    private function ownsClass(User $user, ?Classes $class): bool
+    {
+        if (! $class || $class->faculty_id === null || ! $user->role?->isFaculty()) {
+            return false;
+        }
+
+        $faculty = $this->resolveAuthenticatedFaculty($user);
+
+        return $faculty instanceof Faculty && (string) $class->faculty_id === (string) $faculty->id;
+    }
+
+    /**
+     * Resolve the verified faculty member associated with the authenticated user.
+     *
+     * @param  User  $user  The user to resolve faculty profile for.
+     * @return Faculty|null The verified faculty model or null.
+     */
+    private function resolveAuthenticatedFaculty(User $user): ?Faculty
+    {
+        if (filled($user->email)) {
+            $faculty = Faculty::query()->where('email', $user->email)->first();
+            if ($faculty instanceof Faculty) {
+                return $faculty;
+            }
+        }
+
+        if (filled($user->record_id)) {
+            $faculty = Faculty::query()->find($user->record_id);
+            if ($faculty instanceof Faculty && (empty($faculty->email) || strcasecmp((string) $faculty->email, (string) $user->email) === 0)) {
+                return $faculty;
+            }
+        }
+
+        if (filled($user->faculty_id_number)) {
+            $faculty = Faculty::query()->where('faculty_id_number', $user->faculty_id_number)->first();
+            if ($faculty instanceof Faculty && (empty($faculty->email) || strcasecmp((string) $faculty->email, (string) $user->email) === 0)) {
+                return $faculty;
+            }
+        }
+
+        return null;
     }
 }

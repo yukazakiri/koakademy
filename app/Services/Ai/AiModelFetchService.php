@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\Ai;
 
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
+use Psr\Http\Message\ResponseInterface;
 use RuntimeException;
 use Throwable;
 
@@ -13,6 +16,7 @@ final class AiModelFetchService
 {
     public function __construct(
         private readonly AiSettingsService $settingsService,
+        private readonly AiEndpointGuard $endpointGuard,
     ) {}
 
     /**
@@ -133,9 +137,7 @@ final class AiModelFetchService
     {
         $endpoint = mb_rtrim($url ?: 'https://api.openai.com/v1', '/').'/models';
 
-        $response = Http::timeout(10)
-            ->withToken($key)
-            ->get($endpoint);
+        $response = $this->get($endpoint, token: $key);
 
         if (! $response->successful()) {
             throw new RuntimeException($this->formatHttpError($response));
@@ -161,12 +163,10 @@ final class AiModelFetchService
     {
         $endpoint = mb_rtrim($url ?: 'https://api.anthropic.com/v1', '/').'/models';
 
-        $response = Http::timeout(10)
-            ->withHeaders([
-                'x-api-key' => $key,
-                'anthropic-version' => '2023-06-01',
-            ])
-            ->get($endpoint);
+        $response = $this->get($endpoint, headers: [
+            'x-api-key' => $key,
+            'anthropic-version' => '2023-06-01',
+        ]);
 
         if (! $response->successful()) {
             throw new RuntimeException($this->formatHttpError($response));
@@ -192,7 +192,7 @@ final class AiModelFetchService
     {
         $endpoint = mb_rtrim($url ?: 'https://generativelanguage.googleapis.com/v1beta', '/').'/models';
 
-        $response = Http::timeout(10)->get($endpoint, ['key' => $key]);
+        $response = $this->get($endpoint, query: ['key' => $key]);
 
         if (! $response->successful()) {
             throw new RuntimeException($this->formatHttpError($response));
@@ -223,7 +223,7 @@ final class AiModelFetchService
     {
         $endpoint = mb_rtrim($url ?: 'https://api.groq.com/openai/v1', '/').'/models';
 
-        $response = Http::timeout(10)->withToken($key)->get($endpoint);
+        $response = $this->get($endpoint, token: $key);
 
         if (! $response->successful()) {
             throw new RuntimeException($this->formatHttpError($response));
@@ -249,7 +249,7 @@ final class AiModelFetchService
     {
         $endpoint = mb_rtrim($url ?: 'https://api.deepseek.com', '/').'/models';
 
-        $response = Http::timeout(10)->withToken($key)->get($endpoint);
+        $response = $this->get($endpoint, token: $key);
 
         if (! $response->successful()) {
             throw new RuntimeException($this->formatHttpError($response));
@@ -275,7 +275,7 @@ final class AiModelFetchService
     {
         $endpoint = mb_rtrim($url ?: 'https://api.mistral.ai/v1', '/').'/models';
 
-        $response = Http::timeout(10)->withToken($key)->get($endpoint);
+        $response = $this->get($endpoint, token: $key);
 
         if (! $response->successful()) {
             throw new RuntimeException($this->formatHttpError($response));
@@ -301,7 +301,7 @@ final class AiModelFetchService
     {
         $endpoint = mb_rtrim($url ?: 'https://openrouter.ai/api/v1', '/').'/models';
 
-        $response = Http::timeout(10)->withToken($key)->get($endpoint);
+        $response = $this->get($endpoint, token: $key);
 
         if (! $response->successful()) {
             throw new RuntimeException($this->formatHttpError($response));
@@ -328,7 +328,7 @@ final class AiModelFetchService
     {
         $endpoint = mb_rtrim($url ?: 'http://localhost:11434', '/').'/api/tags';
 
-        $response = Http::timeout(10)->get($endpoint);
+        $response = $this->get($endpoint);
 
         if (! $response->successful()) {
             throw new RuntimeException($this->formatHttpError($response));
@@ -360,21 +360,12 @@ final class AiModelFetchService
         $trimmed = mb_rtrim($url, '/');
         $endpoint = str_ends_with($trimmed, '/v1') ? $trimmed.'/models' : $trimmed.'/v1/models';
 
-        $request = Http::timeout(10);
-        if (filled($key)) {
-            $request = $request->withToken($key);
-        }
-
-        if (! empty($headers)) {
-            $request = $request->withHeaders($headers);
-        }
-
-        $response = $request->get($endpoint);
+        $response = $this->get($endpoint, token: $key, headers: $headers);
 
         // Try direct /models if /v1/models fails with 404
         if ($response->status() === 404) {
             $endpoint = $trimmed.'/models';
-            $response = $request->get($endpoint);
+            $response = $this->get($endpoint, token: $key, headers: $headers);
         }
 
         if (! $response->successful()) {
@@ -394,15 +385,109 @@ final class AiModelFetchService
             ->all();
     }
 
-    private function formatHttpError(\Illuminate\Http\Client\Response $response): string
+    /**
+     * @param  array<string, string>  $headers
+     * @param  array<string, string>  $query
+     */
+    private function get(string $endpoint, ?string $token = null, array $headers = [], array $query = []): Response
     {
-        $status = $response->status();
-        $error = $response->json('error.message') ?? $response->json('message') ?? $response->body();
+        $maxBytes = max(1, (int) config('ai.security.max_response_bytes', 2 * 1024 * 1024));
+        $addresses = $this->endpointGuard->isProviderDefaultEndpoint($endpoint)
+            ? []
+            : $this->endpointGuard->validatedAddresses($endpoint);
+        $resolved = $this->curlResolveOptions($endpoint, $addresses);
 
-        if (is_array($error)) {
-            $error = json_encode($error);
+        $request = Http::timeout(10)
+            ->withoutRedirecting()
+            ->withOptions([
+                'on_headers' => static function (ResponseInterface $response) use ($maxBytes): void {
+                    $length = $response->getHeaderLine('Content-Length');
+
+                    if ($length !== '' && (int) $length > $maxBytes) {
+                        throw new RuntimeException('The provider response exceeded the allowed size.');
+                    }
+                },
+                'progress' => static function (int $downloadTotal, int $downloaded) use ($maxBytes): void {
+                    if ($downloaded > $maxBytes) {
+                        throw new RuntimeException('The provider response exceeded the allowed size.');
+                    }
+                },
+            ]);
+
+        if ($resolved !== []) {
+            $request = $request->withOptions(['curl' => [CURLOPT_RESOLVE => $resolved]]);
         }
 
-        return "HTTP {$status}: ".(filled($error) ? (string) $error : 'Request failed.');
+        if (filled($token)) {
+            $request = $request->withToken($token);
+        }
+
+        if ($headers !== []) {
+            $request = $request->withHeaders($headers);
+        }
+
+        $response = $request->get($endpoint, $query);
+
+        if (mb_strlen($response->body(), '8bit') > $maxBytes) {
+            throw new RuntimeException('The provider response exceeded the allowed size.');
+        }
+
+        return $response;
+    }
+
+    /**
+     * Pin the already-validated addresses so DNS cannot be rebound between
+     * validation and the actual connection.
+     *
+     * @param  list<string>  $addresses
+     * @return list<string>
+     */
+    private function curlResolveOptions(string $endpoint, array $addresses): array
+    {
+        if ($addresses === [] || ! extension_loaded('curl') || ! defined('CURLOPT_RESOLVE')) {
+            return [];
+        }
+
+        $parts = parse_url($endpoint);
+
+        if (! is_array($parts)) {
+            return [];
+        }
+
+        $host = mb_trim((string) ($parts['host'] ?? ''), '[]');
+
+        if ($host === '' || filter_var($host, FILTER_VALIDATE_IP) !== false) {
+            return [];
+        }
+
+        $port = (int) ($parts['port'] ?? (mb_strtolower((string) ($parts['scheme'] ?? '')) === 'https' ? 443 : 80));
+
+        return array_map(
+            static fn (string $address): string => $host.':'.$port.':'.(str_contains($address, ':') ? '['.$address.']' : $address),
+            $addresses,
+        );
+    }
+
+    private function formatHttpError(Response $response): string
+    {
+        $status = $response->status();
+
+        Log::warning('AI provider model request failed.', [
+            'status' => $status,
+            'body' => mb_substr($response->body(), 0, 1000, '8bit'),
+        ]);
+
+        $reason = match (true) {
+            $status === 400, $status === 422 => 'the provider rejected the request',
+            $status === 401 => 'authentication failed',
+            $status === 403 => 'access forbidden',
+            $status === 404 => 'endpoint not found',
+            $status === 408 => 'the provider request timed out',
+            $status === 429 => 'the provider rate limit was reached',
+            $status >= 500 => 'the provider returned a server error',
+            default => 'the request failed',
+        };
+
+        return "HTTP {$status}: {$reason}.";
     }
 }

@@ -346,6 +346,7 @@ it('dynamically registers custom OpenAI-compatible providers in runtime config',
 });
 
 it('fetches models from custom OpenAI-compatible provider endpoint with custom headers', function (): void {
+    config(['ai.security.allowed_private_hosts' => ['gpu-cluster.internal']]);
     Http::preventStrayRequests();
     Http::fake([
         'http://gpu-cluster.internal:8000/v1/models' => function (Illuminate\Http\Client\Request $request) {

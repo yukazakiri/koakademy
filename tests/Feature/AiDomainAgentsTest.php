@@ -858,6 +858,8 @@ it('accepts custom model selection and streams response with diagnostics', funct
 });
 
 it('surfaces error diagnostics with provider context when AI streaming fails', function (): void {
+    config(['ai.security.allowed_private_hosts' => ['127.0.0.1']]);
+
     $admin = User::factory()->create(['role' => App\Enums\UserRole::SuperAdmin]);
 
     // Force an unconfigured/invalid provider to test error reporting
@@ -932,6 +934,8 @@ it('filters out unconfigured providers from model options in analyticsSummary', 
 });
 
 it('automatically falls back to configured custom provider on general ai chat endpoint', function (): void {
+    config(['ai.security.allowed_private_hosts' => ['localhost']]);
+
     StudentAdvisorAgent::fake([
         'Responding from custom provider fallback.',
     ]);

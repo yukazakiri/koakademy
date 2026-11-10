@@ -84,6 +84,7 @@ final class AppServiceProvider extends ServiceProvider
         // scoped = one instance per HTTP request, so Auth is always available when first used
         $this->app->scoped(NewsletterSettingsService::class);
         $this->app->scoped(NewsletterSubscriptionService::class);
+        $this->app->scoped(\App\Services\Ai\AiEndpointGuard::class);
         $this->app->scoped(\App\Services\Ai\AiSettingsService::class);
         $this->app->scoped(\App\Services\Ai\AiModelFetchService::class);
         $this->app->scoped(\App\Services\SentrySettingsService::class);

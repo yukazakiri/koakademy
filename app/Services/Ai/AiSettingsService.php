@@ -7,11 +7,16 @@ namespace App\Services\Ai;
 use App\Models\GeneralSetting;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 final class AiSettingsService
 {
     public const string CACHE_KEY = 'ai:settings:normalized';
+
+    public function __construct(
+        private readonly AiEndpointGuard $endpointGuard,
+    ) {}
 
     /**
      * @return array<string, array{label: string, driver: string, default_url: string|null, requires_key: bool, supports_model_fetch: bool}>
@@ -283,7 +288,7 @@ final class AiSettingsService
                 }
 
                 if (array_key_exists('base_url', $incoming)) {
-                    $existing['base_url'] = mb_trim((string) $incoming['base_url']);
+                    $existing['base_url'] = $this->endpointGuard->normalize((string) $incoming['base_url']);
                 }
 
                 if (array_key_exists('default_chat_model', $incoming)) {
@@ -332,7 +337,7 @@ final class AiSettingsService
                     'driver' => 'openai-compatible',
                     'enabled' => (bool) ($item['enabled'] ?? true),
                     'api_key' => $storedKey,
-                    'base_url' => mb_trim((string) ($item['base_url'] ?? ($prev['base_url'] ?? ''))),
+                    'base_url' => $this->endpointGuard->normalize((string) ($item['base_url'] ?? ($prev['base_url'] ?? ''))),
                     'headers' => is_array($item['headers'] ?? null) ? $item['headers'] : ($prev['headers'] ?? []),
                     'default_chat_model' => mb_trim((string) ($item['default_chat_model'] ?? ($prev['default_chat_model'] ?? ''))),
                     'default_fast_model' => mb_trim((string) ($item['default_fast_model'] ?? ($prev['default_fast_model'] ?? ''))),
@@ -425,7 +430,16 @@ final class AiSettingsService
                 }
 
                 if (filled($url)) {
-                    config(["ai.providers.{$providerKey}.url" => $url]);
+                    $normalizedUrl = $this->endpointGuard->normalize($url);
+
+                    if ($this->endpointGuard->isAllowed($normalizedUrl, resolveDns: false)
+                        || $this->endpointGuard->isProviderDefaultUrl($providerKey, $normalizedUrl)) {
+                        config(["ai.providers.{$providerKey}.url" => $normalizedUrl]);
+                    } else {
+                        Log::warning('Skipped unsafe AI provider base URL.', [
+                            'provider' => $providerKey,
+                        ]);
+                    }
                 }
 
                 if ($providerKey === 'openai-compatible' || filled($chatModel)) {
@@ -462,15 +476,20 @@ final class AiSettingsService
                     $modelsConfig['embeddings']['default'] = (string) $custom['default_embeddings_model'];
                 }
 
-                $rawUrl = mb_trim((string) $custom['base_url']);
-                if (! str_starts_with($rawUrl, 'http://') && ! str_starts_with($rawUrl, 'https://')) {
-                    $rawUrl = 'http://'.$rawUrl;
+                $normalizedUrl = $this->endpointGuard->normalize((string) $custom['base_url']);
+
+                if (! $this->endpointGuard->isAllowed($normalizedUrl, resolveDns: false)) {
+                    Log::warning('Skipped unsafe custom AI provider base URL.', [
+                        'provider' => $customKey,
+                    ]);
+
+                    continue;
                 }
 
                 config([
                     "ai.providers.{$customKey}" => [
                         'driver' => 'openai-compatible',
-                        'url' => mb_rtrim($rawUrl, '/'),
+                        'url' => $normalizedUrl,
                         'key' => (string) ($custom['api_key'] ?? ''),
                         'headers' => is_array($custom['headers'] ?? null) ? $custom['headers'] : [],
                         'models' => $modelsConfig,

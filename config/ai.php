@@ -43,6 +43,31 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Provider Endpoint Security
+    |--------------------------------------------------------------------------
+    |
+    | Administrator-configured base URLs are checked before the server makes a
+    | request. Public endpoints must use HTTPS and resolve only to public IP
+    | addresses. Self-hosted providers on a private network or a plain HTTP
+    | endpoint must be explicitly allowlisted by the deployment operator.
+    |
+    | AI_ALLOWED_PRIVATE_HOSTS is a comma-separated list of hostnames, IP
+    | addresses, or CIDR ranges. Wildcards such as *.internal.example are
+    | supported. Cloud metadata endpoints are always blocked.
+    |
+    */
+
+    'security' => [
+        'allowed_private_hosts' => array_values(array_filter(array_map(
+            static fn (string $host): string => mb_trim($host),
+            explode(',', (string) env('AI_ALLOWED_PRIVATE_HOSTS', '')),
+        ))),
+
+        'max_response_bytes' => (int) env('AI_MAX_RESPONSE_BYTES', 2 * 1024 * 1024),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | AI Providers
     |--------------------------------------------------------------------------
     |

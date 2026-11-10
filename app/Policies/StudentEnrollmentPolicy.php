@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use App\Enums\UserRole;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\User;
@@ -16,25 +15,22 @@ final class StudentEnrollmentPolicy
 {
     use HandlesAuthorization;
 
-    private const array ADMIN_OR_REGISTRAR_ROLES = [
-        UserRole::Developer,
-        UserRole::SuperAdmin,
-        UserRole::Admin,
-        UserRole::Registrar,
-        UserRole::AssistantRegistrar,
-    ];
-
     public function viewAny(AuthUser $authUser): bool
     {
-        return $authUser->can('ViewAny:StudentEnrollment')
-            || ($authUser instanceof User && ($authUser->isAdministrative() || $authUser->isStudentServices() || $authUser->isStudentRole()));
+        if ($authUser->can('ViewAny:StudentEnrollment')) {
+            return true;
+        }
+
+        if ($authUser instanceof User && $authUser->isStudentRole()) {
+            return true;
+        }
+
+        return false;
     }
 
     public function view(AuthUser $authUser, ?StudentEnrollment $enrollment = null): bool
     {
-        if ($authUser->can('View:StudentEnrollment')
-            || ($authUser instanceof User && ($authUser->isAdministrative() || $authUser->isStudentServices() || in_array($authUser->role, self::ADMIN_OR_REGISTRAR_ROLES, true)))
-        ) {
+        if ($authUser->can('View:StudentEnrollment')) {
             return true;
         }
 
@@ -50,28 +46,36 @@ final class StudentEnrollmentPolicy
         return $this->view($authUser);
     }
 
-    public function create(AuthUser $authUser): bool
+    public function create(AuthUser $authUser, ?int $studentId = null): bool
     {
-        return $authUser->can('Create:StudentEnrollment')
-            || ($authUser instanceof User && in_array($authUser->role, self::ADMIN_OR_REGISTRAR_ROLES, true));
+        if ($authUser->can('Create:StudentEnrollment')
+            || $authUser->can('Update:StudentEnrollment')
+        ) {
+            return true;
+        }
+
+        if ($studentId !== null && $authUser instanceof User && $authUser->isStudentRole()) {
+            $student = $this->resolveStudentForUser($authUser);
+
+            return $student instanceof Student && (int) $student->id === $studentId;
+        }
+
+        return false;
     }
 
     public function update(AuthUser $authUser, ?StudentEnrollment $enrollment = null): bool
     {
-        return $authUser->can('Update:StudentEnrollment')
-            || ($authUser instanceof User && in_array($authUser->role, self::ADMIN_OR_REGISTRAR_ROLES, true));
+        return $authUser->can('Update:StudentEnrollment');
     }
 
     public function delete(AuthUser $authUser, ?StudentEnrollment $enrollment = null): bool
     {
-        return $authUser->can('Delete:StudentEnrollment')
-            || ($authUser instanceof User && in_array($authUser->role, self::ADMIN_OR_REGISTRAR_ROLES, true));
+        return $authUser->can('Delete:StudentEnrollment');
     }
 
     public function restore(AuthUser $authUser, ?StudentEnrollment $enrollment = null): bool
     {
-        return $authUser->can('Restore:StudentEnrollment')
-            || ($authUser instanceof User && in_array($authUser->role, self::ADMIN_OR_REGISTRAR_ROLES, true));
+        return $authUser->can('Restore:StudentEnrollment');
     }
 
     public function forceDelete(AuthUser $authUser, ?StudentEnrollment $enrollment = null): bool
@@ -80,12 +84,7 @@ final class StudentEnrollmentPolicy
             return false;
         }
 
-        return $authUser->can('ForceDelete:StudentEnrollment')
-            || ($authUser instanceof User && in_array($authUser->role, [
-                UserRole::Developer,
-                UserRole::SuperAdmin,
-                UserRole::Admin,
-            ], true));
+        return $authUser->can('ForceDelete:StudentEnrollment');
     }
 
     public function forceDeleteAny(AuthUser $authUser): bool

@@ -155,9 +155,9 @@ it('applies retake_strategy and zero_is_dropped to checklist display', function 
         'zero_is_dropped' => false,
     ], author: $user);
 
-    $course = App\Models\Course::factory()->create();
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
     $student = App\Models\Student::factory()->create(['course_id' => $course->id, 'school_id' => $school->id]);
-    $subject = App\Models\Subject::factory()->create(['course_id' => $course->id, 'academic_year' => 1, 'semester' => 1]);
+    $subject = App\Models\Subject::factory()->create(['course_id' => $course->id, 'school_id' => $school->id, 'academic_year' => 1, 'semester' => 1]);
 
     $studentEnrollmentPast = App\Models\StudentEnrollment::factory()->create([
         'student_id' => $student->id,

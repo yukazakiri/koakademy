@@ -70,6 +70,24 @@ beforeEach(function (): void {
         'role' => UserRole::Registrar,
         'school_id' => $this->school->id,
     ]);
+    foreach ([
+        'ViewAny:StudentEnrollment',
+        'View:StudentEnrollment',
+        'ViewAny:ClassEnrollment',
+        'View:ClassEnrollment',
+        'ViewAny:ClassPost',
+        'View:ClassPost',
+    ] as $perm) {
+        Spatie\Permission\Models\Permission::findOrCreate($perm, 'web');
+    }
+    $this->userRegistrar->givePermissionTo([
+        'ViewAny:StudentEnrollment',
+        'View:StudentEnrollment',
+        'ViewAny:ClassEnrollment',
+        'View:ClassEnrollment',
+        'ViewAny:ClassPost',
+        'View:ClassPost',
+    ]);
     $this->userAdmin = User::factory()->create([
         'role' => UserRole::Admin,
         'school_id' => $this->school->id,

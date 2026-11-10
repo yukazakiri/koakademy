@@ -7,9 +7,13 @@ namespace App\Providers;
 use App\Enums\UserRole;
 use App\Models\Account;
 use App\Models\ClassEnrollment;
+use App\Models\ClassPost;
+use App\Models\StudentEnrollment;
 use App\Models\User;
 use App\Policies\AccountPolicy;
 use App\Policies\ClassEnrollmentPolicy;
+use App\Policies\ClassPostPolicy;
+use App\Policies\StudentEnrollmentPolicy;
 use Illuminate\Foundation\Support\Providers\AuthServiceProvider as ServiceProvider;
 use Illuminate\Support\Facades\Gate;
 use Override;
@@ -25,6 +29,8 @@ final class AuthServiceProvider extends ServiceProvider
     protected $policies = [
         Account::class => AccountPolicy::class,
         ClassEnrollment::class => ClassEnrollmentPolicy::class,
+        ClassPost::class => ClassPostPolicy::class,
+        StudentEnrollment::class => StudentEnrollmentPolicy::class,
     ];
 
     /**

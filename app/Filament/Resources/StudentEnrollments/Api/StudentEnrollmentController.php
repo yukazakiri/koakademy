@@ -6,6 +6,7 @@ namespace App\Filament\Resources\StudentEnrollments\Api;
 
 use App\Data\Enrollment\EnrollmentSubmissionData;
 use App\Enrollment\EnrollmentWorkflowCoordinator;
+use App\Enums\UserRole;
 use App\Exceptions\FinancialAuditLockException;
 use App\Filament\Resources\StudentEnrollments\Api\Transformers\StudentEnrollmentTransformer;
 use App\Http\Controllers\Api\V1\ApiPagination;
@@ -15,6 +16,7 @@ use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\User;
+use App\Policies\StudentEnrollmentPolicy;
 use App\Services\GeneralSettingsService;
 use Exception;
 use Illuminate\Http\JsonResponse;
@@ -61,9 +63,11 @@ final class StudentEnrollmentController extends Controller
         ]);
         $actor = $request->user();
         abort_unless($actor instanceof User, 403);
+        $enrollment = StudentEnrollment::query()->findOrFail($id);
+        $this->authorize('update', $enrollment);
 
         return response()->json($this->workflowCoordinator->reopen(
-            StudentEnrollment::query()->findOrFail($id),
+            $enrollment,
             $actor,
             $validated['target_step_key'] ?? null,
             $validated['reason'],
@@ -76,6 +80,11 @@ final class StudentEnrollmentController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection
     {
+        $this->authorize('viewAny', StudentEnrollment::class);
+
+        $actor = $request->user();
+        abort_unless($actor instanceof User, 401);
+
         $query = StudentEnrollment::query()
             ->with([
                 'student.course',
@@ -89,6 +98,15 @@ final class StudentEnrollmentController extends Controller
                 'policySnapshot',
                 'workflowEvents' => fn ($query) => $query->latest(),
             ]);
+
+        if (! $this->canViewAllEnrollments($actor)) {
+            $student = app(StudentEnrollmentPolicy::class)->resolveStudentForUser($actor);
+            if ($student instanceof Student) {
+                $query->where('student_id', $student->id);
+            } else {
+                $query->whereRaw('0 = 1');
+            }
+        }
 
         // Filter by current academic period if requested
         if ($request->boolean('current_period', false)) {
@@ -159,6 +177,8 @@ final class StudentEnrollmentController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        $this->authorize('create', StudentEnrollment::class);
+
         $validator = Validator::make($request->all(), [
             'student_id' => 'required|exists:students,id',
             'course_id' => 'required|exists:courses,id',
@@ -265,6 +285,7 @@ final class StudentEnrollmentController extends Controller
         }
 
         $enrollment = $query->findOrFail($id);
+        $this->authorize('view', $enrollment);
 
         // Load transactions if requested
         if ($request->boolean('with_transactions', false)) {
@@ -283,6 +304,7 @@ final class StudentEnrollmentController extends Controller
     public function update(Request $request, int $id): JsonResponse
     {
         $enrollment = StudentEnrollment::findOrFail($id);
+        $this->authorize('update', $enrollment);
 
         $validator = Validator::make($request->all(), [
             'student_id' => 'sometimes|exists:students,id',
@@ -346,8 +368,10 @@ final class StudentEnrollmentController extends Controller
      */
     public function destroy(int $id): JsonResponse
     {
+        $enrollment = StudentEnrollment::findOrFail($id);
+        $this->authorize('delete', $enrollment);
+
         try {
-            $enrollment = StudentEnrollment::findOrFail($id);
             $enrollment->delete();
 
             return response()->json([
@@ -367,8 +391,10 @@ final class StudentEnrollmentController extends Controller
      */
     public function restore(int $id): JsonResponse
     {
+        $enrollment = StudentEnrollment::onlyTrashed()->findOrFail($id);
+        $this->authorize('restore', $enrollment);
+
         try {
-            $enrollment = StudentEnrollment::onlyTrashed()->findOrFail($id);
             $enrollment->restore();
 
             return response()->json([
@@ -396,8 +422,10 @@ final class StudentEnrollmentController extends Controller
      */
     public function forceDestroy(int $id): JsonResponse
     {
+        $enrollment = StudentEnrollment::withTrashed()->findOrFail($id);
+        $this->authorize('forceDelete', $enrollment);
+
         try {
-            $enrollment = StudentEnrollment::withTrashed()->findOrFail($id);
             $enrollment->forceDelete();
 
             return response()->json([
@@ -422,6 +450,10 @@ final class StudentEnrollmentController extends Controller
      */
     public function statistics(Request $request): JsonResponse
     {
+        $this->authorize('viewAny', StudentEnrollment::class);
+        $actor = $request->user();
+        abort_unless($actor instanceof User && $this->canViewAllEnrollments($actor), 403);
+
         $query = StudentEnrollment::query();
 
         // Filter by current academic period if requested
@@ -453,10 +485,12 @@ final class StudentEnrollmentController extends Controller
     public function schedule(int $id): JsonResponse
     {
         $enrollment = StudentEnrollment::with([
+            'student',
             'subjectsEnrolled.subject',
             'subjectsEnrolled.class.schedule.room',
             'subjectsEnrolled.class.faculty',
         ])->findOrFail($id);
+        $this->authorize('view', $enrollment);
 
         $schedule = [];
 
@@ -494,10 +528,12 @@ final class StudentEnrollmentController extends Controller
     public function assessment(int $id): JsonResponse
     {
         $enrollment = StudentEnrollment::with([
+            'student',
             'studentTuition',
             'additionalFees',
             'subjectsEnrolled.subject',
         ])->findOrFail($id);
+        $this->authorize('view', $enrollment);
 
         $assessment = [
             'enrollment_id' => $enrollment->id,
@@ -530,5 +566,19 @@ final class StudentEnrollmentController extends Controller
         ];
 
         return response()->json($assessment);
+    }
+
+    private function canViewAllEnrollments(User $actor): bool
+    {
+        return $actor->can('ViewAny:StudentEnrollment')
+            || $actor->isAdministrative()
+            || $actor->isStudentServices()
+            || in_array($actor->role, [
+                UserRole::Developer,
+                UserRole::SuperAdmin,
+                UserRole::Admin,
+                UserRole::Registrar,
+                UserRole::AssistantRegistrar,
+            ], true);
     }
 }

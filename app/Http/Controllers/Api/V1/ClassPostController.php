@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ClassPostFormRequest;
 use App\Http\Resources\ClassPostResource;
+use App\Models\Classes;
 use App\Models\ClassPost;
+use App\Models\User;
+use App\Policies\ClassPostPolicy;
 use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -28,7 +32,42 @@ final class ClassPostController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection|JsonResponse
     {
+        $this->authorize('viewAny', ClassPost::class);
+
+        $user = $request->user();
+        abort_unless($user instanceof User, 401);
+
         $query = ClassPost::with(['class'])->orderBy('created_at', 'desc');
+
+        $isPrivileged = $user->can('ViewAny:ClassPost')
+            || in_array($user->role, [
+                UserRole::Developer,
+                UserRole::SuperAdmin,
+                UserRole::Admin,
+                UserRole::Registrar,
+                UserRole::AssistantRegistrar,
+            ], true);
+
+        if (! $isPrivileged) {
+            $policy = app(ClassPostPolicy::class);
+            if ($user->isFaculty()) {
+                $faculty = $policy->resolveAuthenticatedFaculty($user);
+                if ($faculty) {
+                    $query->whereHas('class', fn ($q) => $q->where('faculty_id', $faculty->id));
+                } else {
+                    $query->whereRaw('0 = 1');
+                }
+            } elseif ($user->isStudentRole()) {
+                $student = $policy->resolveAuthenticatedStudent($user);
+                if ($student) {
+                    $query->whereHas('class.class_enrollments', fn ($q) => $q->where('student_id', $student->id));
+                } else {
+                    $query->whereRaw('0 = 1');
+                }
+            } else {
+                $query->whereRaw('0 = 1');
+            }
+        }
 
         // Filter by class_id if provided
         if ($request->has('class_id')) {
@@ -60,11 +99,17 @@ final class ClassPostController extends Controller
     /**
      * Store a newly created class post.
      *
-     *
      * @throws ValidationException
      */
     public function store(ClassPostFormRequest $request): JsonResponse
     {
+        $user = $request->user();
+        abort_unless($user instanceof User, 401);
+
+        $classId = (int) $request->input('class_id');
+        $class = Classes::findOrFail($classId);
+        $this->authorize('create', [ClassPost::class, $class]);
+
         try {
             $validated = $request->validated();
 
@@ -133,6 +178,8 @@ final class ClassPostController extends Controller
             ], 404);
         }
 
+        $this->authorize('view', $post);
+
         return response()->json([
             'message' => 'Class post retrieved successfully',
             'data' => new ClassPostResource($post),
@@ -142,14 +189,20 @@ final class ClassPostController extends Controller
     /**
      * Update the specified class post.
      *
-     *
      * @throws ValidationException
      */
     public function update(ClassPostFormRequest $request, int $id): JsonResponse
     {
+        $post = ClassPost::with('class')->findOrFail($id);
+        $this->authorize('update', $post);
+
         try {
-            $post = ClassPost::findOrFail($id);
             $validated = $request->validated();
+
+            if (isset($validated['class_id']) && (int) $validated['class_id'] !== (int) $post->class_id) {
+                $destClass = Classes::findOrFail((int) $validated['class_id']);
+                $this->authorize('create', [ClassPost::class, $destClass]);
+            }
 
             // Handle new file uploads
             if ($request->hasFile('attachments')) {
@@ -190,9 +243,10 @@ final class ClassPostController extends Controller
      */
     public function destroy(int $id): JsonResponse
     {
-        try {
-            $post = ClassPost::findOrFail($id);
+        $post = ClassPost::with('class')->findOrFail($id);
+        $this->authorize('delete', $post);
 
+        try {
             // Delete associated attachment files
             if ($post->attachments) {
                 foreach ($post->attachments as $attachment) {
@@ -219,8 +273,10 @@ final class ClassPostController extends Controller
      */
     public function restore(int $id): JsonResponse
     {
+        $post = ClassPost::onlyTrashed()->with('class')->findOrFail($id);
+        $this->authorize('restore', $post);
+
         try {
-            $post = ClassPost::onlyTrashed()->findOrFail($id);
             $post->restore();
             $post->load(['class']);
 
@@ -242,9 +298,10 @@ final class ClassPostController extends Controller
      */
     public function forceDestroy(int $id): JsonResponse
     {
-        try {
-            $post = ClassPost::withTrashed()->findOrFail($id);
+        $post = ClassPost::withTrashed()->with('class')->findOrFail($id);
+        $this->authorize('forceDelete', $post);
 
+        try {
             // Delete associated attachment files
             if ($post->attachments) {
                 foreach ($post->attachments as $attachment) {
@@ -271,6 +328,28 @@ final class ClassPostController extends Controller
      */
     public function byClass(int $classId, Request $request): AnonymousResourceCollection
     {
+        $user = $request->user();
+        abort_unless($user instanceof User, 401);
+
+        $class = Classes::findOrFail($classId);
+        $policy = app(ClassPostPolicy::class);
+
+        $isPrivileged = $user->can('ViewAny:ClassPost')
+            || in_array($user->role, [
+                UserRole::Developer,
+                UserRole::SuperAdmin,
+                UserRole::Admin,
+                UserRole::Registrar,
+                UserRole::AssistantRegistrar,
+            ], true);
+
+        abort_unless(
+            $isPrivileged
+            || ($user->isFaculty() && $policy->ownsClass($user, $class))
+            || ($user->isStudentRole() && $policy->isEnrolledInClass($user, $classId)),
+            403
+        );
+
         $query = ClassPost::where('class_id', $classId)
             ->with(['class'])
             ->orderBy('created_at', 'desc');
@@ -293,13 +372,15 @@ final class ClassPostController extends Controller
      */
     public function uploadAttachment(Request $request, int $id): JsonResponse
     {
+        $post = ClassPost::with('class')->findOrFail($id);
+        $this->authorize('update', $post);
+
         $request->validate([
             'attachments' => 'required|array|max:10',
             'attachments.*' => 'file|max:10240|mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,txt,rtf,jpg,jpeg,png,gif,zip,rar',
         ]);
 
         try {
-            $post = ClassPost::findOrFail($id);
             $existingAttachments = $post->attachments ?? [];
 
             $newAttachments = [];
@@ -332,9 +413,10 @@ final class ClassPostController extends Controller
      */
     public function deleteAttachment(int $id, int $attachmentIndex): JsonResponse
     {
-        try {
-            $post = ClassPost::findOrFail($id);
+        $post = ClassPost::with('class')->findOrFail($id);
+        $this->authorize('update', $post);
 
+        try {
             if (! $post->attachments || ! isset($post->attachments[$attachmentIndex])) {
                 return response()->json([
                     'message' => 'Attachment not found',

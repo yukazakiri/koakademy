@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace App\Http\Requests;
 
 use App\Enums\ClassPostType;
+use App\Models\Classes;
+use App\Models\ClassPost;
+use App\Models\User;
+use App\Policies\ClassPostPolicy;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rules\Enum;
 
@@ -15,7 +19,28 @@ final class ClassPostFormRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return true;
+        $user = $this->user();
+        if (! $user instanceof User) {
+            return false;
+        }
+
+        $classId = $this->input('class_id');
+        if ($classId === null && $this->route('id') !== null) {
+            $classId = ClassPost::whereKey($this->route('id'))->value('class_id');
+        }
+
+        if (! $classId) {
+            return true;
+        }
+
+        $class = Classes::find($classId);
+        if (! $class) {
+            return true;
+        }
+
+        $policy = app(ClassPostPolicy::class);
+
+        return $policy->create($user, $class);
     }
 
     /**

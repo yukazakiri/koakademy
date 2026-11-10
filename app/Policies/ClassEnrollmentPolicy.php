@@ -8,9 +8,11 @@ use App\Enums\UserRole;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
 use App\Models\Faculty;
+use App\Models\Student;
 use App\Models\User;
 use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Authorization policy for ClassEnrollment operations.
@@ -39,7 +41,12 @@ final class ClassEnrollmentPolicy
     public function viewAny(AuthUser $authUser): bool
     {
         return $authUser->can('ViewAny:ClassEnrollment')
-            || ($authUser instanceof User && ($authUser->isAdministrative() || $authUser->isFaculty()));
+            || ($authUser instanceof User && (
+                $authUser->isAdministrative()
+                || $authUser->isFaculty()
+                || $authUser->isStudentRole()
+                || in_array($authUser->role, self::ADMIN_OR_REGISTRAR_ROLES, true)
+            ));
     }
 
     /**
@@ -51,12 +58,20 @@ final class ClassEnrollmentPolicy
      */
     public function view(AuthUser $authUser, ?ClassEnrollment $enrollment = null): bool
     {
-        if ($authUser->can('View:ClassEnrollment') || ($authUser instanceof User && $authUser->isAdministrative())) {
+        if ($authUser->can('View:ClassEnrollment')
+            || ($authUser instanceof User && ($authUser->isAdministrative() || in_array($authUser->role, self::ADMIN_OR_REGISTRAR_ROLES, true)))
+        ) {
             return true;
         }
 
-        if ($enrollment !== null && $authUser instanceof User && $authUser->isFaculty()) {
-            return $this->ownsClass($authUser, $enrollment->class);
+        if ($enrollment !== null && $authUser instanceof User) {
+            if ($authUser->isFaculty()) {
+                return $this->ownsClass($authUser, $enrollment->class);
+            }
+
+            if ($authUser->isStudentRole()) {
+                return $this->ownsEnrollment($authUser, $enrollment);
+            }
         }
 
         return false;
@@ -146,6 +161,39 @@ final class ClassEnrollmentPolicy
                 UserRole::SuperAdmin,
                 UserRole::Admin,
             ], true));
+    }
+
+    public function ownsEnrollment(User $user, ClassEnrollment $enrollment): bool
+    {
+        $student = $this->resolveAuthenticatedStudent($user);
+
+        return $student instanceof Student && (int) $enrollment->student_id === (int) $student->id;
+    }
+
+    public function resolveAuthenticatedStudent(User $user): ?Student
+    {
+        if (filled($user->record_id)) {
+            $student = Student::query()->find($user->record_id);
+            if ($student instanceof Student && (empty($student->email) || strcasecmp((string) $student->email, (string) $user->email) === 0)) {
+                return $student;
+            }
+        }
+
+        if (Schema::hasColumn('students', 'user_id')) {
+            $student = Student::query()->where('user_id', $user->id)->first();
+            if ($student instanceof Student) {
+                return $student;
+            }
+        }
+
+        if (filled($user->email)) {
+            $student = Student::query()->where('email', $user->email)->first();
+            if ($student instanceof Student) {
+                return $student;
+            }
+        }
+
+        return null;
     }
 
     /**

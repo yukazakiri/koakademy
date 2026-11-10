@@ -13,6 +13,7 @@ use App\Models\ClassEnrollment;
 use App\Models\Classes;
 use App\Models\Faculty;
 use App\Models\User;
+use App\Policies\ClassEnrollmentPolicy;
 use App\Services\BulkActivityLogger;
 use App\Services\GradeComputationService;
 use App\Services\GradeEvaluationService;
@@ -40,7 +41,42 @@ final class ClassEnrollmentController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection|JsonResponse
     {
+        $this->authorize('viewAny', ClassEnrollment::class);
+
+        $user = $request->user();
+        abort_unless($user instanceof User, 401);
+
         $query = ClassEnrollment::with(['class', 'student'])->orderBy('created_at', 'desc');
+
+        $isPrivileged = $user->can('ViewAny:ClassEnrollment')
+            || in_array($user->role, [
+                UserRole::Developer,
+                UserRole::SuperAdmin,
+                UserRole::Admin,
+                UserRole::Registrar,
+                UserRole::AssistantRegistrar,
+            ], true);
+
+        if (! $isPrivileged) {
+            $policy = app(ClassEnrollmentPolicy::class);
+            if ($user->isFaculty()) {
+                $faculty = $this->resolveAuthenticatedFaculty($user);
+                if ($faculty) {
+                    $query->whereHas('class', fn ($q) => $q->where('faculty_id', $faculty->id));
+                } else {
+                    $query->whereRaw('0 = 1');
+                }
+            } elseif ($user->isStudentRole()) {
+                $student = $policy->resolveAuthenticatedStudent($user);
+                if ($student) {
+                    $query->where('student_id', $student->id);
+                } else {
+                    $query->whereRaw('0 = 1');
+                }
+            } else {
+                $query->whereRaw('0 = 1');
+            }
+        }
 
         // Filter by class_id if provided
         if ($request->has('class_id')) {
@@ -166,6 +202,8 @@ final class ClassEnrollmentController extends Controller
                 'data' => null,
             ], 404);
         }
+
+        $this->authorize('view', $enrollment);
 
         return response()->json([
             'message' => 'Class enrollment retrieved successfully',
@@ -477,6 +515,22 @@ final class ClassEnrollmentController extends Controller
      */
     public function byClass(int $classId, Request $request): AnonymousResourceCollection
     {
+        $user = $request->user();
+        abort_unless($user instanceof User, 401);
+
+        $class = Classes::findOrFail($classId);
+
+        $isPrivileged = $user->can('ViewAny:ClassEnrollment')
+            || in_array($user->role, [
+                UserRole::Developer,
+                UserRole::SuperAdmin,
+                UserRole::Admin,
+                UserRole::Registrar,
+                UserRole::AssistantRegistrar,
+            ], true);
+
+        abort_unless($isPrivileged || ($user->isFaculty() && $this->ownsClass($user, $class)), 403);
+
         $query = ClassEnrollment::where('class_id', $classId)
             ->with(['class', 'student'])
             ->orderBy('created_at', 'desc');
@@ -499,9 +553,23 @@ final class ClassEnrollmentController extends Controller
      */
     public function gradeStatistics(int $classId): JsonResponse
     {
-        try {
-            $class = Classes::findOrFail($classId);
+        $user = request()->user();
+        abort_unless($user instanceof User, 401);
 
+        $class = Classes::findOrFail($classId);
+
+        $isPrivileged = $user->can('ViewAny:ClassEnrollment')
+            || in_array($user->role, [
+                UserRole::Developer,
+                UserRole::SuperAdmin,
+                UserRole::Admin,
+                UserRole::Registrar,
+                UserRole::AssistantRegistrar,
+            ], true);
+
+        abort_unless($isPrivileged || ($user->isFaculty() && $this->ownsClass($user, $class)), 403);
+
+        try {
             $enrollments = ClassEnrollment::where('class_id', $classId)
                 ->whereNotNull('total_average')
                 ->get();
@@ -521,8 +589,8 @@ final class ClassEnrollmentController extends Controller
                 'total_students' => $enrollments->count(),
                 'highest_grade' => $grades->max(),
                 'lowest_grade' => $grades->min(),
-                'average_grade' => round($grades->avg(), 2),
-                'median_grade' => round($grades->sort()->median(), 2),
+                'average_grade' => round((float) $grades->avg(), 2),
+                'median_grade' => round((float) $grades->sort()->median(), 2),
                 'grade_distribution' => [
                     'A (93-100)' => $grades->whereBetween('total_average', [93, 100])->count(),
                     'B (85-92)' => $grades->whereBetween('total_average', [85, 92])->count(),

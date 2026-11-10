@@ -59,7 +59,7 @@ return [
 
     'security' => [
         'allowed_private_hosts' => array_values(array_filter(array_map(
-            static fn (string $host): string => trim($host),
+            static fn (string $host): string => mb_trim($host),
             explode(',', (string) env('AI_ALLOWED_PRIVATE_HOSTS', '')),
         ))),
 

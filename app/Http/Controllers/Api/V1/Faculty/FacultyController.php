@@ -25,6 +25,10 @@ final class FacultyController extends Controller
      */
     public function profile(Request $request): JsonResponse
     {
+        /** @var User|null $user */
+        $user = $request->user();
+        abort_unless($user instanceof User && $user->isFaculty(), 403);
+
         $faculty = $this->getAuthenticatedFaculty($request);
 
         if (! $faculty instanceof Faculty) {
@@ -34,9 +38,6 @@ final class FacultyController extends Controller
                 'code' => 'NOT_FOUND',
             ], 404);
         }
-
-        /** @var User $user */
-        $user = $request->user();
 
         return response()->json([
             'data' => [
@@ -73,6 +74,10 @@ final class FacultyController extends Controller
      */
     public function updateProfile(Request $request): JsonResponse
     {
+        /** @var User|null $user */
+        $user = $request->user();
+        abort_unless($user instanceof User && $user->isFaculty(), 403);
+
         $faculty = $this->getAuthenticatedFaculty($request);
 
         if (! $faculty instanceof Faculty) {
@@ -122,6 +127,10 @@ final class FacultyController extends Controller
      */
     public function classes(Request $request): JsonResponse
     {
+        /** @var User|null $user */
+        $user = $request->user();
+        abort_unless($user instanceof User && $user->isFaculty(), 403);
+
         $faculty = $this->getAuthenticatedFaculty($request);
 
         if (! $faculty instanceof Faculty) {
@@ -205,6 +214,10 @@ final class FacultyController extends Controller
      */
     public function classDetails(Request $request, int|string $classId): JsonResponse
     {
+        /** @var User|null $user */
+        $user = $request->user();
+        abort_unless($user instanceof User && $user->isFaculty(), 403);
+
         $faculty = $this->getAuthenticatedFaculty($request);
 
         if (! $faculty instanceof Faculty) {
@@ -215,28 +228,34 @@ final class FacultyController extends Controller
             ], 404);
         }
 
-        $class = Classes::query()
-            ->where('id', $classId)
-            ->where('faculty_id', $faculty->id)
-            ->with([
-                'Subject:id,code,title',
-                'Room:id,name,class_code',
-                'schedules.room:id,name,class_code',
-                'class_enrollments' => function ($q): void {
-                    $q->with('student:id,student_id,first_name,last_name,middle_name,email,course_id')
-                        ->with('student.Course:id,code,title');
-                },
-            ])
-            ->withCount('class_enrollments')
-            ->first();
+        $class = Classes::query()->find($classId);
 
         if (! $class) {
             return response()->json([
                 'error' => true,
-                'message' => 'Class not found or does not belong to your account.',
+                'message' => 'Class not found.',
                 'code' => 'NOT_FOUND',
             ], 404);
         }
+
+        if ((string) $class->faculty_id !== (string) $faculty->id) {
+            return response()->json([
+                'error' => true,
+                'message' => 'You are not authorized to access this class.',
+                'code' => 'FORBIDDEN',
+            ], 403);
+        }
+
+        $class->load([
+            'Subject:id,code,title',
+            'Room:id,name,class_code',
+            'schedules.room:id,name,class_code',
+            'class_enrollments' => function ($q): void {
+                $q->with('student:id,student_id,first_name,last_name,middle_name,email,course_id')
+                    ->with('student.Course:id,code,title');
+            },
+        ]);
+        $class->loadCount('class_enrollments');
 
         return response()->json([
             'data' => [
@@ -298,6 +317,10 @@ final class FacultyController extends Controller
      */
     public function schedules(Request $request): JsonResponse
     {
+        /** @var User|null $user */
+        $user = $request->user();
+        abort_unless($user instanceof User && $user->isFaculty(), 403);
+
         $faculty = $this->getAuthenticatedFaculty($request);
 
         if (! $faculty instanceof Faculty) {
@@ -392,6 +415,10 @@ final class FacultyController extends Controller
      */
     public function students(Request $request): JsonResponse
     {
+        /** @var User|null $user */
+        $user = $request->user();
+        abort_unless($user instanceof User && $user->isFaculty(), 403);
+
         $faculty = $this->getAuthenticatedFaculty($request);
 
         if (! $faculty instanceof Faculty) {
@@ -486,6 +513,10 @@ final class FacultyController extends Controller
      */
     public function classStudents(Request $request, int|string $classId): JsonResponse
     {
+        /** @var User|null $user */
+        $user = $request->user();
+        abort_unless($user instanceof User && $user->isFaculty(), 403);
+
         $faculty = $this->getAuthenticatedFaculty($request);
 
         if (! $faculty instanceof Faculty) {
@@ -496,17 +527,22 @@ final class FacultyController extends Controller
             ], 404);
         }
 
-        $class = Classes::query()
-            ->where('id', $classId)
-            ->where('faculty_id', $faculty->id)
-            ->first();
+        $class = Classes::query()->find($classId);
 
         if (! $class) {
             return response()->json([
                 'error' => true,
-                'message' => 'Class not found or does not belong to your account.',
+                'message' => 'Class not found.',
                 'code' => 'NOT_FOUND',
             ], 404);
+        }
+
+        if ((string) $class->faculty_id !== (string) $faculty->id) {
+            return response()->json([
+                'error' => true,
+                'message' => 'You are not authorized to access this class.',
+                'code' => 'FORBIDDEN',
+            ], 403);
         }
 
         $enrollments = ClassEnrollment::query()
@@ -557,6 +593,10 @@ final class FacultyController extends Controller
      */
     public function attendanceSessions(Request $request, int|string $classId): JsonResponse
     {
+        /** @var User|null $user */
+        $user = $request->user();
+        abort_unless($user instanceof User && $user->isFaculty(), 403);
+
         $faculty = $this->getAuthenticatedFaculty($request);
 
         if (! $faculty instanceof Faculty) {
@@ -567,17 +607,22 @@ final class FacultyController extends Controller
             ], 404);
         }
 
-        $class = Classes::query()
-            ->where('id', $classId)
-            ->where('faculty_id', $faculty->id)
-            ->first();
+        $class = Classes::query()->find($classId);
 
         if (! $class) {
             return response()->json([
                 'error' => true,
-                'message' => 'Class not found or does not belong to your account.',
+                'message' => 'Class not found.',
                 'code' => 'NOT_FOUND',
             ], 404);
+        }
+
+        if ((string) $class->faculty_id !== (string) $faculty->id) {
+            return response()->json([
+                'error' => true,
+                'message' => 'You are not authorized to access this class.',
+                'code' => 'FORBIDDEN',
+            ], 403);
         }
 
         $sessions = ClassAttendanceSession::query()
@@ -625,6 +670,10 @@ final class FacultyController extends Controller
      */
     public function storeAttendanceSession(Request $request, int|string $classId): JsonResponse
     {
+        /** @var User|null $user */
+        $user = $request->user();
+        abort_unless($user instanceof User && $user->isFaculty(), 403);
+
         $faculty = $this->getAuthenticatedFaculty($request);
 
         if (! $faculty instanceof Faculty) {
@@ -635,17 +684,22 @@ final class FacultyController extends Controller
             ], 404);
         }
 
-        $class = Classes::query()
-            ->where('id', $classId)
-            ->where('faculty_id', $faculty->id)
-            ->first();
+        $class = Classes::query()->find($classId);
 
         if (! $class) {
             return response()->json([
                 'error' => true,
-                'message' => 'Class not found or does not belong to your account.',
+                'message' => 'Class not found.',
                 'code' => 'NOT_FOUND',
             ], 404);
+        }
+
+        if ((string) $class->faculty_id !== (string) $faculty->id) {
+            return response()->json([
+                'error' => true,
+                'message' => 'You are not authorized to access this class.',
+                'code' => 'FORBIDDEN',
+            ], 403);
         }
 
         $validator = Validator::make($request->all(), [
@@ -702,6 +756,10 @@ final class FacultyController extends Controller
      */
     public function updateAttendanceSession(Request $request, int|string $classId, int|string $sessionId): JsonResponse
     {
+        /** @var User|null $user */
+        $user = $request->user();
+        abort_unless($user instanceof User && $user->isFaculty(), 403);
+
         $faculty = $this->getAuthenticatedFaculty($request);
 
         if (! $faculty instanceof Faculty) {
@@ -712,23 +770,25 @@ final class FacultyController extends Controller
             ], 404);
         }
 
-        $class = Classes::query()
-            ->where('id', $classId)
-            ->where('faculty_id', $faculty->id)
-            ->first();
+        $class = Classes::query()->find($classId);
 
         if (! $class) {
             return response()->json([
                 'error' => true,
-                'message' => 'Class not found or does not belong to your account.',
+                'message' => 'Class not found.',
                 'code' => 'NOT_FOUND',
             ], 404);
         }
 
-        $session = ClassAttendanceSession::query()
-            ->where('id', $sessionId)
-            ->where('class_id', $classId)
-            ->first();
+        if ((string) $class->faculty_id !== (string) $faculty->id) {
+            return response()->json([
+                'error' => true,
+                'message' => 'You are not authorized to access this class.',
+                'code' => 'FORBIDDEN',
+            ], 403);
+        }
+
+        $session = ClassAttendanceSession::query()->find($sessionId);
 
         if (! $session) {
             return response()->json([
@@ -736,6 +796,14 @@ final class FacultyController extends Controller
                 'message' => 'Attendance session not found.',
                 'code' => 'NOT_FOUND',
             ], 404);
+        }
+
+        if ((int) $session->class_id !== (int) $classId) {
+            return response()->json([
+                'error' => true,
+                'message' => 'Attendance session does not belong to this class.',
+                'code' => 'FORBIDDEN',
+            ], 403);
         }
 
         if ($session->is_locked) {
@@ -797,6 +865,10 @@ final class FacultyController extends Controller
      */
     public function updateAttendanceRecords(Request $request, int|string $classId, int|string $sessionId): JsonResponse
     {
+        /** @var User|null $user */
+        $user = $request->user();
+        abort_unless($user instanceof User && $user->isFaculty(), 403);
+
         $faculty = $this->getAuthenticatedFaculty($request);
 
         if (! $faculty instanceof Faculty) {
@@ -807,23 +879,25 @@ final class FacultyController extends Controller
             ], 404);
         }
 
-        $class = Classes::query()
-            ->where('id', $classId)
-            ->where('faculty_id', $faculty->id)
-            ->first();
+        $class = Classes::query()->find($classId);
 
         if (! $class) {
             return response()->json([
                 'error' => true,
-                'message' => 'Class not found or does not belong to your account.',
+                'message' => 'Class not found.',
                 'code' => 'NOT_FOUND',
             ], 404);
         }
 
-        $session = ClassAttendanceSession::query()
-            ->where('id', $sessionId)
-            ->where('class_id', $classId)
-            ->first();
+        if ((string) $class->faculty_id !== (string) $faculty->id) {
+            return response()->json([
+                'error' => true,
+                'message' => 'You are not authorized to access this class.',
+                'code' => 'FORBIDDEN',
+            ], 403);
+        }
+
+        $session = ClassAttendanceSession::query()->find($sessionId);
 
         if (! $session) {
             return response()->json([
@@ -831,6 +905,14 @@ final class FacultyController extends Controller
                 'message' => 'Attendance session not found.',
                 'code' => 'NOT_FOUND',
             ], 404);
+        }
+
+        if ((int) $session->class_id !== (int) $classId) {
+            return response()->json([
+                'error' => true,
+                'message' => 'Attendance session does not belong to this class.',
+                'code' => 'FORBIDDEN',
+            ], 403);
         }
 
         if ($session->is_locked) {
@@ -863,7 +945,7 @@ final class FacultyController extends Controller
             if (! $enrollment) {
                 continue;
             }
-            if ($enrollment->class_id !== $classId) {
+            if ((int) $enrollment->class_id !== (int) $classId) {
                 continue;
             }
 
@@ -904,6 +986,10 @@ final class FacultyController extends Controller
      */
     public function updateGrades(Request $request, int|string $classId, int|string $enrollmentId, GradingSystemService $gradingSystem, GradeEvaluationService $gradeEvaluation): JsonResponse
     {
+        /** @var User|null $user */
+        $user = $request->user();
+        abort_unless($user instanceof User && $user->isFaculty(), 403);
+
         $faculty = $this->getAuthenticatedFaculty($request);
 
         if (! $faculty instanceof Faculty) {
@@ -914,30 +1000,40 @@ final class FacultyController extends Controller
             ], 404);
         }
 
-        $class = Classes::query()
-            ->where('id', $classId)
-            ->where('faculty_id', $faculty->id)
-            ->first();
+        $class = Classes::query()->find($classId);
 
         if (! $class) {
             return response()->json([
                 'error' => true,
-                'message' => 'Class not found or does not belong to your account.',
+                'message' => 'Class not found.',
                 'code' => 'NOT_FOUND',
             ], 404);
         }
 
-        $enrollment = ClassEnrollment::query()
-            ->where('id', $enrollmentId)
-            ->where('class_id', $classId)
-            ->first();
+        if ((string) $class->faculty_id !== (string) $faculty->id) {
+            return response()->json([
+                'error' => true,
+                'message' => 'You are not authorized to access this class.',
+                'code' => 'FORBIDDEN',
+            ], 403);
+        }
+
+        $enrollment = ClassEnrollment::query()->find($enrollmentId);
 
         if (! $enrollment) {
             return response()->json([
                 'error' => true,
-                'message' => 'Enrollment not found for this class.',
+                'message' => 'Enrollment not found.',
                 'code' => 'NOT_FOUND',
             ], 404);
+        }
+
+        if ((int) $enrollment->class_id !== (int) $class->id) {
+            return response()->json([
+                'error' => true,
+                'message' => 'Enrollment does not belong to this class.',
+                'code' => 'FORBIDDEN',
+            ], 403);
         }
 
         if ($enrollment->is_grades_finalized) {
@@ -1014,12 +1110,31 @@ final class FacultyController extends Controller
         /** @var User|null $user */
         $user = $request->user();
 
-        if (! $user) {
+        if (! $user instanceof User || ! $user->isFaculty()) {
             return null;
         }
 
-        return Faculty::query()
-            ->where('email', $user->email)
-            ->first();
+        if (filled($user->email)) {
+            $faculty = Faculty::query()->where('email', $user->email)->first();
+            if ($faculty instanceof Faculty) {
+                return $faculty;
+            }
+        }
+
+        if (filled($user->record_id)) {
+            $faculty = Faculty::query()->find($user->record_id);
+            if ($faculty instanceof Faculty && (empty($faculty->email) || strcasecmp((string) $faculty->email, (string) $user->email) === 0)) {
+                return $faculty;
+            }
+        }
+
+        if (filled($user->faculty_id_number)) {
+            $faculty = Faculty::query()->where('faculty_id_number', $user->faculty_id_number)->first();
+            if ($faculty instanceof Faculty && (empty($faculty->email) || strcasecmp((string) $faculty->email, (string) $user->email) === 0)) {
+                return $faculty;
+            }
+        }
+
+        return null;
     }
 }

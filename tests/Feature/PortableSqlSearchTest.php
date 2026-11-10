@@ -124,6 +124,11 @@ it('searches the enrollment and class feed APIs on sqlite', function (): void {
         'type' => 'announcement',
     ]);
 
+    Permission::findOrCreate('ViewAny:StudentEnrollment', 'web');
+    Permission::findOrCreate('ViewAny:ClassEnrollment', 'web');
+    Permission::findOrCreate('ViewAny:ClassPost', 'web');
+    $this->user->givePermissionTo(['ViewAny:StudentEnrollment', 'ViewAny:ClassEnrollment', 'ViewAny:ClassPost']);
+
     getJson(route('api.enrollments.index', ['search' => 'alicia']))
         ->assertOk()
         ->assertJsonPath('data.0.id', $enrollment->id);

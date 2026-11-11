@@ -46,6 +46,7 @@
         <server name="BROADCAST_CONNECTION" value="null" />
         <server name="SCOUT_DRIVER" value="database" />
         <server name="MODULE_SCAN_VENDOR" value="true" force="true" />
+        <server name="MODULES_COMPATIBILITY_PHP_VERSION" value="8.5.12" force="true" />
         <server name="PULSE_ENABLED" value="false" />
         <server name="PULSE_DB_CONNECTION" value="sqlite" />
         <server name="TELESCOPE_ENABLED" value="false" />

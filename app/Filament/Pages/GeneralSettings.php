@@ -21,6 +21,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Schema;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Override;
@@ -29,16 +30,17 @@ use Spatie\Permission\Models\Role;
 final class GeneralSettings extends Page
 {
     public ?array $data = [];
-    // public static function canAccess(): bool
-    // {
-    //     return Auth::user()->can('page_GeneralSetting');
-    // }
 
     #[Override]
     protected string $view = 'filament-general-settings::filament.pages.general-settings-page';
 
     #[Override]
     protected static bool $shouldRegisterNavigation = false;
+
+    public static function canAccess(): bool
+    {
+        return (bool) (Auth::user()?->can('page_GeneralSetting') || Auth::user()?->can('View:GeneralSettings'));
+    }
 
     public function getTitle(): string
     {
@@ -66,7 +68,7 @@ final class GeneralSettings extends Page
         if (config('filament-general-settings.show_school_portal_tab')) {
             $arrTabs[] = Tab::make('School Portal Tab')
                 ->label(__('School Portal'))
-                ->icon('fas-school')
+                ->icon('heroicon-o-academic-cap')
                 ->schema([
                     TextInput::make('school_portal_url')
                         ->label('School Portal URL')
@@ -147,7 +149,7 @@ final class GeneralSettings extends Page
 
         $arrTabs[] = Tab::make('Enrollment Settings Tab')
             ->label(__('Enrollment Settings'))
-            ->icon('fas-user-graduate')
+            ->icon('heroicon-o-user')
             ->schema([
                 DatePicker::make('school_starting_date')
                     ->label('School Starting Date')

@@ -240,10 +240,10 @@ describe('SEC-010 Migration grants page_Cashier to target roles', function (): v
 
         foreach ($targetRoles as $roleName) {
             $role = Role::findOrCreate($roleName, 'web');
-            if ($role->hasPermissionTo('page_Cashier')) {
+            if ($role->hasPermissionTo('page_Cashier', 'web')) {
                 $role->revokePermissionTo('page_Cashier');
             }
-            expect($role->hasPermissionTo('page_Cashier'))->toBeFalse();
+            expect($role->hasPermissionTo('page_Cashier', 'web'))->toBeFalse();
         }
 
         $migration = require database_path('migrations/2026_11_11_000001_grant_cashier_and_general_settings_page_permissions.php');
@@ -251,7 +251,7 @@ describe('SEC-010 Migration grants page_Cashier to target roles', function (): v
 
         foreach ($targetRoles as $roleName) {
             $role = Role::findByName($roleName, 'web');
-            expect($role->hasPermissionTo('page_Cashier'))->toBeTrue();
+            expect($role->hasPermissionTo('page_Cashier', 'web'))->toBeTrue();
         }
     });
 });

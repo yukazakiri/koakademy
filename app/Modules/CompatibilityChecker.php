@@ -20,7 +20,7 @@ final class CompatibilityChecker
     {
         $errors = [];
 
-        $phpVersion = (string) config('modules.compatibility.php_version', PHP_VERSION);
+        $phpVersion = (string) (config('modules.compatibility.php_version') ?: PHP_VERSION);
 
         $this->checkConstraint($errors, 'core', $manifest->requires['core'] ?? null, config()->string('app.version', '0.0.0'));
         $this->checkConstraint($errors, 'PHP', $manifest->requires['php'] ?? null, $phpVersion);

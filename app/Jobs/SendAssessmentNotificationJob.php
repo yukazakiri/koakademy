@@ -299,8 +299,8 @@ final class SendAssessmentNotificationJob implements ShouldQueue
         );
         $assessmentFilename = sprintf('assmt-%s-%s.pdf', $this->studentEnrollment->id, $randomChars);
 
-        // Use same storage as PDF jobs - use public disk and assessments directory
-        $storageDisk = config('filesystems.default');
+        // Use same storage as PDF jobs - use private disk and assessments directory
+        $storageDisk = 'private';
         $storageDirectory = 'assessments';
         $storage = Storage::disk($storageDisk);
 
@@ -341,8 +341,8 @@ final class SendAssessmentNotificationJob implements ShouldQueue
                 throw new Exception('PDF was not generated or is empty');
             }
 
-            // Upload to configured storage with public visibility
-            StreamedStorage::putFileFromPath($storageDisk, $relativePath, $temporaryFilePath, ['visibility' => 'public']);
+            // Upload to configured storage with private visibility
+            StreamedStorage::putFileFromPath($storageDisk, $relativePath, $temporaryFilePath, ['visibility' => 'private']);
         } finally {
             if (file_exists($temporaryFilePath)) {
                 unlink($temporaryFilePath);

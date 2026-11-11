@@ -220,8 +220,8 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
         $timestamp = $this->createNewFile ? '-'.now()->format('YmdHis') : '';
         $assessmentFileName = sprintf('assessment-%s%s-%s.pdf', $studentEnrollment->id, $timestamp, $randomChars);
 
-        // Use the configured filesystem disk
-        $storageDisk = config('filesystems.default');
+        // Use private filesystem disk
+        $storageDisk = 'private';
         $storageDirectory = 'assessments';
 
         // Ensure directory exists
@@ -252,8 +252,8 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
                 throw new Exception('PDF was not generated or is empty');
             }
 
-            // Upload to configured storage with public visibility
-            StreamedStorage::putFileFromPath($storageDisk, $storagePath, $temporaryFilePath, ['visibility' => 'public']);
+            // Upload to configured storage with private visibility
+            StreamedStorage::putFileFromPath($storageDisk, $storagePath, $temporaryFilePath, ['visibility' => 'private']);
         } finally {
             if (file_exists($temporaryFilePath)) {
                 unlink($temporaryFilePath);
@@ -279,10 +279,10 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
         $generalSettingsService = new GeneralSettingsService;
         $fileName = basename($pdfPath);
 
-        // File is already uploaded to the configured storage disk
-        Log::info('PDF already uploaded to configured storage', [
+        // File is already uploaded to private storage disk
+        Log::info('PDF already uploaded to private storage', [
             'filename' => $fileName,
-            'disk' => config('filesystems.default'),
+            'disk' => 'private',
         ]);
 
         // Save resource record - create new or update existing based on createNewFile flag
@@ -295,8 +295,8 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
                 'file_path' => $pdfPath,
                 'file_name' => $fileName,
                 'mime_type' => 'application/pdf',
-                'disk' => config('filesystems.default'),
-                'file_size' => Storage::disk(config('filesystems.default'))->size($pdfPath),
+                'disk' => 'private',
+                'file_size' => Storage::disk('private')->size($pdfPath),
                 'metadata' => [
                     'school_year' => mb_convert_encoding(
                         $generalSettingsService->getCurrentSchoolYearString() ?? '',
@@ -310,7 +310,7 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
                     ),
                     'generation_method' => 'pdf_generation_job',
                     'generated_at' => format_timestamp_now(),
-                    'storage_disk' => config('filesystems.default'),
+                    'storage_disk' => 'private',
                     'storage_key' => $pdfPath,
                     'is_new_version' => true,
                 ],
@@ -327,8 +327,8 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
                     'file_path' => $pdfPath,
                     'file_name' => $fileName,
                     'mime_type' => 'application/pdf',
-                    'disk' => config('filesystems.default'),
-                    'file_size' => Storage::disk(config('filesystems.default'))->size($pdfPath),
+                    'disk' => 'private',
+                    'file_size' => Storage::disk('private')->size($pdfPath),
                     'metadata' => [
                         'school_year' => mb_convert_encoding(
                             $generalSettingsService->getCurrentSchoolYearString() ?? '',

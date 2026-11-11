@@ -264,7 +264,7 @@ final class SendClassChangeNotificationJob implements ShouldQueue
         );
         $assessmentFilename = sprintf('assmt-%s-%s.pdf', $this->studentEnrollment->id, $randomChars);
 
-        $storageDisk = config('filesystems.default');
+        $storageDisk = 'private';
         $storageDirectory = 'assessments';
         $storage = Storage::disk($storageDisk);
 
@@ -295,7 +295,7 @@ final class SendClassChangeNotificationJob implements ShouldQueue
                 throw new Exception('PDF was not generated or is empty');
             }
 
-            StreamedStorage::putFileFromPath($storageDisk, $relativePath, $temporaryFilePath, ['visibility' => 'public']);
+            StreamedStorage::putFileFromPath($storageDisk, $relativePath, $temporaryFilePath, ['visibility' => 'private']);
         } finally {
             if (file_exists($temporaryFilePath)) {
                 unlink($temporaryFilePath);

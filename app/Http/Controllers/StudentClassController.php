@@ -151,7 +151,7 @@ final class StudentClassController extends Controller
             ->keyBy('class_post_id');
 
         // Add this student's submission state without querying once per assignment.
-        $classPosts = $classPosts->map(function (array $post) use ($submissionsByPost): array {
+        $classPosts = $classPosts->map(function (array $post) use ($submissionsByPost, $class): array {
             if ($post['type'] === 'assignment') {
                 $submission = $submissionsByPost->get($post['id']);
 
@@ -161,6 +161,21 @@ final class StudentClassController extends Controller
                     'status' => $submission->status,
                     'submitted_at' => $submission->submitted_at?->toDateTimeString(),
                     'graded_at' => $submission->graded_at?->toDateTimeString(),
+                    'attachments' => collect($submission->attachments ?? [])
+                        ->map(function ($attachment) use ($class, $post): array {
+                            $filename = basename((string) ($attachment['path'] ?? parse_url($attachment['url'] ?? '', PHP_URL_PATH) ?? ''));
+                            if ($filename !== '') {
+                                $attachment['url'] = route('classes.posts.submissions.attachments.download', [
+                                    'class' => $class->id,
+                                    'post' => $post['id'],
+                                    'file' => $filename,
+                                ]);
+                            }
+
+                            return $attachment;
+                        })
+                        ->values()
+                        ->all(),
                 ] : null;
             }
 
@@ -218,7 +233,11 @@ final class StudentClassController extends Controller
         $validated = $request->validate([
             'content' => ['nullable', 'string'],
             'files' => ['nullable', 'array'],
-            'files.*' => ['file', 'max:51200'],
+            'files.*' => [
+                'file',
+                'max:51200',
+                'mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,txt,rtf,jpg,jpeg,png,gif,zip,rar',
+            ],
         ]);
 
         // Check if already submitted
@@ -232,15 +251,18 @@ final class StudentClassController extends Controller
                 ->withErrors(['error' => 'You have already submitted this assignment.']);
         }
 
-        /** @var \Illuminate\Filesystem\FilesystemAdapter $storageDisk */
-        $storageDisk = \Illuminate\Support\Facades\Storage::disk();
-
         $attachments = [];
         foreach ($request->file('files', []) as $file) {
-            $path = $file->store('class-post-submissions');
+            $path = $file->store('class-post-submissions', 'private');
+            $filename = basename($path);
             $attachments[] = [
                 'name' => $file->getClientOriginalName() ?: $file->hashName(),
-                'url' => $storageDisk->url($path),
+                'path' => $path,
+                'url' => route('classes.posts.submissions.attachments.download', [
+                    'class' => $class->id,
+                    'post' => $post->id,
+                    'file' => $filename,
+                ]),
                 'kind' => 'file',
             ];
         }

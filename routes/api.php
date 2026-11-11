@@ -140,6 +140,7 @@ Route::middleware(['auth:sanctum', 'api.ability'])->prefix('class-posts')->name(
 
     // Additional endpoints
     Route::get('/class/{classId}', [ClassPostController::class, 'byClass'])->name('by-class');
+    Route::get('/{id}/attachments/{attachmentIndex}/download', [ClassPostController::class, 'downloadAttachment'])->name('download-attachment');
     Route::post('/{id}/attachments', [ClassPostController::class, 'uploadAttachment'])->name('upload-attachment');
     Route::delete('/{id}/attachments/{attachmentIndex}', [ClassPostController::class, 'deleteAttachment'])->name('delete-attachment');
 });

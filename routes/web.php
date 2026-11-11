@@ -367,6 +367,16 @@ Route::middleware(['auth'])->group(function () {
         return redirect()->route("{$prefix}.help.reply", ['helpTicket' => $helpTicket], 307);
     })->name('help.reply');
 
+    // Secure file downloads
+    Route::get('/help-tickets/{ticket}/attachments/{filename}', [App\Http\Controllers\HelpTicketAttachmentController::class, 'download'])
+        ->name('help-tickets.attachments.download');
+
+    Route::get('/classes/{class}/posts/attachments/{file}', [App\Http\Controllers\ClassPostAttachmentController::class, 'downloadPostAttachment'])
+        ->name('classes.posts.attachments.download');
+
+    Route::get('/classes/{class}/posts/{post}/submissions/attachments/{file}', [App\Http\Controllers\ClassPostAttachmentController::class, 'downloadSubmissionAttachment'])
+        ->name('classes.posts.submissions.attachments.download');
+
     // Profile Redirection
     Route::get('/profile', [App\Http\Controllers\ProfileController::class, 'redirect'])->name('profile.redirect');
     Route::put('/profile/beta-access', [App\Http\Controllers\ProfileController::class, 'updateBetaAccess'])->name('profile.beta-access.update');

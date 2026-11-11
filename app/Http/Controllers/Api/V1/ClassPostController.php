@@ -18,6 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Class Post API Controller
@@ -117,7 +118,7 @@ final class ClassPostController extends Controller
             $attachments = [];
             if ($request->hasFile('attachments')) {
                 foreach ($request->file('attachments') as $file) {
-                    $path = $file->store('class-post-attachments', 'public');
+                    $path = $file->store('class-post-attachments', 'private');
                     $attachments[] = $path;
                 }
             }
@@ -130,7 +131,7 @@ final class ClassPostController extends Controller
                         // Handle base64 encoded file
                         $decoded = base64_decode(preg_split('@;@', $attachment)[1] ?? '', flags: PREG_SPLIT_NO_EMPTY);
                         $filename = 'attachment_'.time().'_'.uniqid().'.bin';
-                        Storage::disk('public')->put("class-post-attachments/{$filename}", $decoded);
+                        Storage::disk('private')->put("class-post-attachments/{$filename}", $decoded);
                         $jsonAttachments[] = "class-post-attachments/{$filename}";
                     }
                 }
@@ -209,6 +210,7 @@ final class ClassPostController extends Controller
                 // Remove old attachments
                 if ($post->attachments) {
                     foreach ($post->attachments as $attachment) {
+                        Storage::disk('private')->delete($attachment);
                         Storage::disk('public')->delete($attachment);
                     }
                 }
@@ -216,7 +218,7 @@ final class ClassPostController extends Controller
                 // Upload new attachments
                 $attachments = [];
                 foreach ($request->file('attachments') as $file) {
-                    $path = $file->store('class-post-attachments', 'public');
+                    $path = $file->store('class-post-attachments', 'private');
                     $attachments[] = $path;
                 }
                 $validated['attachments'] = $attachments;
@@ -250,6 +252,7 @@ final class ClassPostController extends Controller
             // Delete associated attachment files
             if ($post->attachments) {
                 foreach ($post->attachments as $attachment) {
+                    Storage::disk('private')->delete($attachment);
                     Storage::disk('public')->delete($attachment);
                 }
             }
@@ -305,6 +308,7 @@ final class ClassPostController extends Controller
             // Delete associated attachment files
             if ($post->attachments) {
                 foreach ($post->attachments as $attachment) {
+                    Storage::disk('private')->delete($attachment);
                     Storage::disk('public')->delete($attachment);
                 }
             }
@@ -385,7 +389,7 @@ final class ClassPostController extends Controller
 
             $newAttachments = [];
             foreach ($request->file('attachments') as $file) {
-                $path = $file->store('class-post-attachments', 'public');
+                $path = $file->store('class-post-attachments', 'private');
                 $newAttachments[] = $path;
             }
 
@@ -425,6 +429,7 @@ final class ClassPostController extends Controller
             }
 
             // Delete the file from storage
+            Storage::disk('private')->delete($post->attachments[$attachmentIndex]);
             Storage::disk('public')->delete($post->attachments[$attachmentIndex]);
 
             // Remove from array
@@ -442,5 +447,43 @@ final class ClassPostController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Download a specific attachment from a post.
+     */
+    public function downloadAttachment(Request $request, int $id, int $attachmentIndex): StreamedResponse
+    {
+        $post = ClassPost::with('class')->findOrFail($id);
+        $this->authorize('view', $post);
+
+        $attachments = $post->attachments ?? [];
+        if (! isset($attachments[$attachmentIndex])) {
+            abort(404, 'Attachment not found');
+        }
+
+        $path = $attachments[$attachmentIndex];
+        if (is_array($path)) {
+            $path = $path['path'] ?? $path['url'] ?? '';
+        }
+
+        if (! is_string($path) || $path === '' || str_contains($path, '..')) {
+            abort(404, 'Invalid attachment');
+        }
+
+        $disk = 'private';
+        if (! Storage::disk('private')->exists($path)) {
+            if (Storage::disk('public')->exists($path)) {
+                $disk = 'public';
+            } elseif (Storage::disk(config('filesystems.default'))->exists($path)) {
+                $disk = config('filesystems.default');
+            } else {
+                abort(404, 'File not found on storage');
+            }
+        }
+
+        return Storage::disk($disk)->download($path, basename($path), [
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
     }
 }

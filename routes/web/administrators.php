@@ -285,8 +285,10 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/students/{student}/current-enrollment', [AdministratorStudentManagementController::class, 'currentEnrollment'])->name('students.current-enrollment')->withTrashed();
         Route::get('/students/{student}/tuition/soa', [AdministratorStudentManagementController::class, 'printSoa'])->name('students.tuition.soa');
         Route::get('/students/{student}/documents', [AdministratorStudentDocumentController::class, 'index'])->name('students.documents.index');
+        Route::get('/students/{student}/documents/fixed/{documentType}', [AdministratorStudentDocumentController::class, 'showFixed'])->name('students.documents.fixed.show');
         Route::post('/students/{student}/documents/fixed', [AdministratorStudentDocumentController::class, 'updateFixed'])->name('students.documents.fixed.update');
         Route::delete('/students/{student}/documents/fixed/{documentType?}', [AdministratorStudentDocumentController::class, 'destroyFixed'])->name('students.documents.fixed.destroy');
+        Route::get('/students/{student}/documents/dynamic/{resource}', [AdministratorStudentDocumentController::class, 'showDynamic'])->name('students.documents.dynamic.show');
         Route::post('/students/{student}/documents/dynamic', [AdministratorStudentDocumentController::class, 'storeDynamic'])->name('students.documents.dynamic.store');
         Route::delete('/students/{student}/documents/dynamic/{resource}', [AdministratorStudentDocumentController::class, 'destroyDynamic'])->name('students.documents.dynamic.destroy');
         Route::get('/students/{student}/edit', [AdministratorStudentManagementController::class, 'edit'])->name('students.edit')->withTrashed();

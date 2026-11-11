@@ -61,7 +61,11 @@ final class StoreClassPostRequest extends FormRequest
             'attachments.*.name' => ['required_with:attachments', 'string', 'max:255'],
             'attachments.*.url' => ['required_with:attachments', 'url'],
             'files' => ['nullable', 'array'],
-            'files.*' => ['file', 'max:51200'], // 50MB to match PHP upload_max_filesize
+            'files.*' => [
+                'file',
+                'max:51200', // 50MB to match PHP upload_max_filesize
+                'mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,txt,rtf,jpg,jpeg,png,gif,zip,rar',
+            ],
         ];
     }
 }

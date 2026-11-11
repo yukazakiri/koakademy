@@ -399,7 +399,7 @@ export default function StudentDocuments({ auth, student, fixed_documents, dynam
                                                     <TableCell className="text-right">
                                                         <div className="flex justify-end gap-2">
                                                             <a
-                                                                href={`/storage/${doc.file_path}`}
+                                                                href={doc.url ?? `/storage/${doc.file_path}`}
                                                                 target="_blank"
                                                                 rel="noopener noreferrer"
                                                                 className={buttonVariants({ variant: "ghost", size: "icon" })}

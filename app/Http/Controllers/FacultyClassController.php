@@ -29,7 +29,6 @@ use App\Services\TenantContext;
 use Carbon\Carbon;
 use Exception;
 use Filament\Actions\Action;
-use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -365,16 +364,18 @@ final class FacultyClassController extends Controller
                     'kind' => 'link',
                 ]);
 
-            /** @var FilesystemAdapter $storageDisk */
-            $storageDisk = Storage::disk();
-
             $fileAttachments = [];
 
             foreach ($request->file('files', []) as $file) {
-                $path = $file->store('class-post-attachments');
+                $path = $file->store('class-post-attachments', 'private');
+                $filename = basename($path);
                 $fileAttachments[] = [
                     'name' => $file->getClientOriginalName() ?: $file->hashName(),
-                    'url' => $storageDisk->url($path),
+                    'path' => $path,
+                    'url' => route('classes.posts.attachments.download', [
+                        'class' => $class->id,
+                        'file' => $filename,
+                    ]),
                     'kind' => 'file',
                 ];
             }
@@ -552,15 +553,17 @@ final class FacultyClassController extends Controller
                     'kind' => $attachment['kind'] ?? 'link',
                 ]);
 
-            /** @var FilesystemAdapter $storageDisk */
-            $storageDisk = Storage::disk();
-
             $fileAttachments = [];
             foreach ($request->file('files', []) as $file) {
-                $path = $file->store('class-post-attachments');
+                $path = $file->store('class-post-attachments', 'private');
+                $filename = basename($path);
                 $fileAttachments[] = [
                     'name' => $file->getClientOriginalName() ?: $file->hashName(),
-                    'url' => $storageDisk->url($path),
+                    'path' => $path,
+                    'url' => route('classes.posts.attachments.download', [
+                        'class' => $class->id,
+                        'file' => $filename,
+                    ]),
                     'kind' => 'file',
                 ];
             }
@@ -672,15 +675,31 @@ final class FacultyClassController extends Controller
         $submissions = $post->submissions()
             ->with(['student'])
             ->get()
-            ->map(function (ClassPostSubmission $submission): array {
+            ->map(function (ClassPostSubmission $submission) use ($class, $post): array {
                 $student = $submission->student;
+
+                $attachments = collect($submission->attachments ?? [])
+                    ->map(function ($attachment) use ($class, $post): array {
+                        $filename = basename((string) ($attachment['path'] ?? parse_url($attachment['url'] ?? '', PHP_URL_PATH) ?? ''));
+                        if ($filename !== '') {
+                            $attachment['url'] = route('classes.posts.submissions.attachments.download', [
+                                'class' => $class->id,
+                                'post' => $post->id,
+                                'file' => $filename,
+                            ]);
+                        }
+
+                        return $attachment;
+                    })
+                    ->values()
+                    ->all();
 
                 return [
                     'id' => $submission->id,
                     'student_name' => $student?->full_name ?? 'Unknown',
                     'student_id' => $student?->student_id ?? 'N/A',
                     'content' => $submission->content,
-                    'attachments' => $submission->attachments ?? [],
+                    'attachments' => $attachments,
                     'points' => $submission->points,
                     'status' => $submission->status,
                     'submitted_at' => $submission->submitted_at?->toDateTimeString(),
@@ -1832,10 +1851,11 @@ final class FacultyClassController extends Controller
 
     private function deleteAttachmentFromStorage(string $url): void
     {
-        $path = parse_url($url, PHP_URL_PATH) ?? '';
-        $path = Str::after($path, '/storage/');
-
-        if ($path !== '') {
+        $filename = basename(parse_url($url, PHP_URL_PATH) ?? '');
+        if ($filename !== '' && ! str_contains($filename, '..')) {
+            $path = "class-post-attachments/{$filename}";
+            Storage::disk('private')->delete($path);
+            Storage::disk('public')->delete($path);
             Storage::delete($path);
         }
     }

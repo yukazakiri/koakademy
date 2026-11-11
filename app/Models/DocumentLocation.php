@@ -69,13 +69,33 @@ final class DocumentLocation extends Model
     /**
      * @return array<string, string|null>
      */
-    public function toResolvedDocumentArray(): array
+    public function toResolvedDocumentArray(?Student $student = null): array
     {
+        $student = $student ?? $this->student;
         $documents = [];
 
         foreach (self::DOCUMENT_FIELDS as $field) {
             $value = $this->getAttribute($field);
-            $documents[$field] = is_string($value) ? $this->resolveDocumentUrl($value) : null;
+            if (! is_string($value) || mb_trim($value) === '') {
+                $documents[$field] = null;
+
+                continue;
+            }
+
+            if (filter_var($value, FILTER_VALIDATE_URL) || str_starts_with($value, '/')) {
+                $documents[$field] = $value;
+
+                continue;
+            }
+
+            if ($student) {
+                $documents[$field] = route('administrators.students.documents.fixed.show', [
+                    'student' => $student->id,
+                    'documentType' => $field,
+                ]);
+            } else {
+                $documents[$field] = $this->resolveDocumentUrl($value);
+            }
         }
 
         return $documents;

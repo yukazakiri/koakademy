@@ -29,11 +29,27 @@ final class ClassPostPayloadService
             'total_points' => $post->total_points,
             'assigned_faculty_id' => $post->assigned_faculty_id,
             'attachments' => collect($post->attachments ?? [])
-                ->map(fn ($attachment): array => [
-                    'name' => $attachment['name'] ?? basename((string) ($attachment['url'] ?? 'Attachment')),
-                    'url' => $attachment['url'] ?? '',
-                    'kind' => $attachment['kind'] ?? 'link',
-                ])
+                ->map(function ($attachment) use ($post): array {
+                    $name = $attachment['name'] ?? basename((string) ($attachment['url'] ?? 'Attachment'));
+                    $kind = $attachment['kind'] ?? 'link';
+                    $url = $attachment['url'] ?? '';
+
+                    if ($kind === 'file' && $post->class_id) {
+                        $filename = basename((string) ($attachment['path'] ?? parse_url($url, PHP_URL_PATH) ?? ''));
+                        if ($filename !== '') {
+                            $url = route('classes.posts.attachments.download', [
+                                'class' => $post->class_id,
+                                'file' => $filename,
+                            ]);
+                        }
+                    }
+
+                    return [
+                        'name' => $name,
+                        'url' => $url,
+                        'kind' => $kind,
+                    ];
+                })
                 ->values(),
             'assignment' => $postType === ClassPostType::Assignment->value ? [
                 'instruction' => $post->instruction,

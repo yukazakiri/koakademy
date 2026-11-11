@@ -137,5 +137,5 @@ it('stores assignment audience, instruction, rubric, and file attachments', func
         ->and($post?->attachments)->toBeArray()
         ->and($post?->attachments)->toHaveCount(1)
         ->and($post?->attachments[0]['kind'])->toBe('file')
-        ->and($post?->attachments[0]['url'])->toContain('/storage/class-post-attachments/');
+        ->and($post?->attachments[0]['url'])->toContain("/classes/{$class->id}/posts/attachments/");
 });

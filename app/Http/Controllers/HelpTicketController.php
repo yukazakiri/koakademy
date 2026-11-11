@@ -10,7 +10,6 @@ use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 
 final class HelpTicketController extends Controller
@@ -41,7 +40,13 @@ final class HelpTicketController extends Controller
             'subject' => ['required', 'string', 'max:255'],
             'message' => ['required', 'string'],
             'priority' => ['required', 'string', 'in:low,medium,high'],
-            'attachments.*' => ['nullable', 'file', 'max:10240'],
+            'attachments' => ['nullable', 'array'],
+            'attachments.*' => [
+                'nullable',
+                'file',
+                'max:10240',
+                'mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,txt,rtf,jpg,jpeg,png,gif,zip,rar',
+            ],
         ]);
 
         $ticket = HelpTicket::create([
@@ -55,16 +60,20 @@ final class HelpTicketController extends Controller
         if ($request->hasFile('attachments')) {
             $attachments = [];
             foreach ($request->file('attachments') as $file) {
-                $filename = time().'_'.$file->getClientOriginalName();
+                $filename = time().'_'.preg_replace('/[^a-zA-Z0-9._-]/', '_', $file->getClientOriginalName());
                 $path = $file->storeAs(
                     "help-tickets/{$ticket->user_id}/{$ticket->id}",
-                    $filename
+                    $filename,
+                    'private'
                 );
 
                 $attachments[] = [
                     'name' => $file->getClientOriginalName(),
                     'path' => $path,
-                    'url' => Storage::url($path),
+                    'url' => route('help-tickets.attachments.download', [
+                        'ticket' => $ticket->id,
+                        'filename' => $filename,
+                    ]),
                     'type' => $file->getClientMimeType(),
                 ];
             }
@@ -101,6 +110,7 @@ final class HelpTicketController extends Controller
         }
 
         $helpTicket->load(['user', 'replies.user']);
+        $this->secureAttachmentUrls($helpTicket);
 
         return Inertia::render('Help/Show', [
             'ticket' => $helpTicket,
@@ -121,22 +131,32 @@ final class HelpTicketController extends Controller
 
         $validated = $request->validate([
             'message' => 'required|string',
-            'attachments.*' => 'nullable|file|max:10240', // 10MB max
+            'attachments' => ['nullable', 'array'],
+            'attachments.*' => [
+                'nullable',
+                'file',
+                'max:10240', // 10MB max
+                'mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,txt,rtf,jpg,jpeg,png,gif,zip,rar',
+            ],
         ]);
 
         $attachments = [];
         if ($request->hasFile('attachments')) {
             foreach ($request->file('attachments') as $file) {
-                $filename = time().'_'.$file->getClientOriginalName();
+                $filename = time().'_'.preg_replace('/[^a-zA-Z0-9._-]/', '_', $file->getClientOriginalName());
                 $path = $file->storeAs(
                     "help-tickets/{$helpTicket->user_id}/{$helpTicket->id}",
-                    $filename
+                    $filename,
+                    'private'
                 );
 
                 $attachments[] = [
                     'name' => $file->getClientOriginalName(),
                     'path' => $path,
-                    'url' => Storage::url($path),
+                    'url' => route('help-tickets.attachments.download', [
+                        'ticket' => $helpTicket->id,
+                        'filename' => $filename,
+                    ]),
                     'type' => $file->getClientMimeType(),
                 ];
             }
@@ -170,5 +190,42 @@ final class HelpTicketController extends Controller
         }
 
         return back()->with('success', 'Reply sent successfully.');
+    }
+
+    private function secureAttachmentUrls(HelpTicket $ticket): void
+    {
+        if (is_array($ticket->attachments)) {
+            $ticket->attachments = array_map(function ($file) use ($ticket) {
+                if (is_array($file)) {
+                    $filename = basename((string) ($file['path'] ?? parse_url($file['url'] ?? '', PHP_URL_PATH) ?? ''));
+                    if ($filename !== '') {
+                        $file['url'] = route('help-tickets.attachments.download', [
+                            'ticket' => $ticket->id,
+                            'filename' => $filename,
+                        ]);
+                    }
+                }
+
+                return $file;
+            }, $ticket->attachments);
+        }
+
+        foreach ($ticket->replies as $reply) {
+            if (is_array($reply->attachments)) {
+                $reply->attachments = array_map(function ($file) use ($ticket) {
+                    if (is_array($file)) {
+                        $filename = basename((string) ($file['path'] ?? parse_url($file['url'] ?? '', PHP_URL_PATH) ?? ''));
+                        if ($filename !== '') {
+                            $file['url'] = route('help-tickets.attachments.download', [
+                                'ticket' => $ticket->id,
+                                'filename' => $filename,
+                            ]);
+                        }
+                    }
+
+                    return $file;
+                }, $reply->attachments);
+            }
+        }
     }
 }

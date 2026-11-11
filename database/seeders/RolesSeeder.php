@@ -228,6 +228,9 @@ final class RolesSeeder extends Seeder
             // the Action:Entity generator never produced it and every one of those call sites
             // 403'd for all non-super-admins. Registered here so the finance section works.
             'View:Cashier',
+            'page_Cashier',
+            'page_GeneralSetting',
+            'View:GeneralSettings',
             // Cancellation and reopening are separately authorized administrative operations on an
             // enrollment (EnrollmentCancellationService, EnrollmentTransitionEngine::reopen). No
             // policy generates them, so they are registered here for Registrar roles to hold.
@@ -572,37 +575,55 @@ final class RolesSeeder extends Seeder
         ]);
     }
 
+    /**
+     * Get permission list for the cashier role.
+     *
+     * @param  array<int, string>  $all
+     * @return array<int, string>
+     */
     private function getCashierPermissions(array $all): array
     {
         return $this->filterPermissions($all, [
             'Student',
             'view_tuition_fees', 'manage_tuition_fees',
             'ProcessPayments', 'ViewPayments',
-            'View:Cashier',
+            'View:Cashier', 'page_Cashier',
             'View:Announcement', 'View:Event',
             'ViewDashboard',
         ]);
     }
 
+    /**
+     * Get permission list for the accounting officer role.
+     *
+     * @param  array<int, string>  $all
+     * @return array<int, string>
+     */
     private function getAccountingOfficerPermissions(array $all): array
     {
         return $this->filterPermissions($all, [
             'Student',
             'view_tuition_fees', 'manage_tuition_fees',
             'ViewPayments', 'ProcessPayments',
-            'View:Cashier',
+            'View:Cashier', 'page_Cashier',
             'View:Announcement', 'View:Event',
             'ViewDashboard', 'GenerateReports',
         ]);
     }
 
+    /**
+     * Get permission list for the bursar officer role.
+     *
+     * @param  array<int, string>  $all
+     * @return array<int, string>
+     */
     private function getBursarOfficerPermissions(array $all): array
     {
         return $this->filterPermissions($all, [
             'Student',
             'view_tuition_fees', 'manage_tuition_fees',
             'ProcessPayments', 'ViewPayments',
-            'View:Cashier',
+            'View:Cashier', 'page_Cashier',
             'View:Announcement', 'View:Event',
             'ViewDashboard', 'GenerateReports', 'ExportData',
         ]);

@@ -31,6 +31,7 @@ function makeApplicant(array $requirements = [], array $overrides = []): Student
         'status' => StudentStatus::Applicant->value,
         'student_type' => 'college',
         'scholarship_type' => null,
+        'middle_name' => null,
     ], $overrides));
 
     if ($requirements === []) {

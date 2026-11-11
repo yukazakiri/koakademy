@@ -5808,16 +5808,16 @@
         },
         {
             "name": "koakademy/cashier",
-            "version": "v1.1.1",
+            "version": "v1.1.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/yukazakiri/koakademy-module-cashier.git",
-                "reference": "be54064e1127f297630a3c7b9002a75b1e19c374"
+                "reference": "b76132677d3a8fc3ae49a8b9f7fc1502ebac4563"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/yukazakiri/koakademy-module-cashier/zipball/be54064e1127f297630a3c7b9002a75b1e19c374",
-                "reference": "be54064e1127f297630a3c7b9002a75b1e19c374",
+                "url": "https://api.github.com/repos/yukazakiri/koakademy-module-cashier/zipball/b76132677d3a8fc3ae49a8b9f7fc1502ebac4563",
+                "reference": "b76132677d3a8fc3ae49a8b9f7fc1502ebac4563",
                 "shasum": ""
             },
             "require": {
@@ -5866,7 +5866,7 @@
                 "issues": "https://github.com/yukazakiri/koakademy-module-cashier/issues",
                 "source": "https://github.com/yukazakiri/koakademy-module-cashier"
             },
-            "time": "2026-10-31T03:34:10+00:00"
+            "time": "2026-11-11T02:40:29+00:00"
         },
         {
             "name": "koakademy/forms",

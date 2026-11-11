@@ -73,6 +73,8 @@ final class AdminPanelProvider extends PanelProvider
     // }
 
     /**
+     * Configure the administrative Filament panel.
+     *
      * @throws Exception
      */
     public function panel(Panel $panel): Panel
@@ -324,7 +326,8 @@ final class AdminPanelProvider extends PanelProvider
                 'System Settings' => Action::make('general-settings')
                     ->label('General Settings')
                     ->url(fn (): string => GeneralSettings::getUrl())
-                    ->icon(Heroicon::OutlinedCog),
+                    ->icon(Heroicon::OutlinedCog)
+                    ->visible(fn (): bool => GeneralSettings::canAccess()),
                 'AI Settings' => Action::make('ai-settings')
                     ->label('AI Providers & Models')
                     ->url(fn (): string => '/administrators/system-management/ai')

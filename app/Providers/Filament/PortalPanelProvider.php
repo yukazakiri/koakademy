@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Providers\Filament;
 
 use App\Http\Middleware\ResetFeatureAccessState;
+use App\Http\Middleware\SetApiTenantContext;
 use App\Settings\SiteSettings;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -62,7 +63,8 @@ final class PortalPanelProvider extends PanelProvider
                 FilamentInfoWidget::class,
             ])
             ->plugins([
-                ApiServicePlugin::make(),
+                ApiServicePlugin::make()
+                    ->middleware([SetApiTenantContext::class]),
                 UndoToastPlugin::make(),
             ])
             ->middleware([

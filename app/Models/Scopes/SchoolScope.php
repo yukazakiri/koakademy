@@ -16,9 +16,11 @@ use Illuminate\Database\Eloquent\Scope;
  * This scope automatically filters queries to only return records
  * belonging to the current tenant (school) context.
  *
- * The scope is bypassed when:
- * - No tenant context is set
- * - The current user can access all organizations (super admin)
+ * The scope intentionally fails closed: when an authenticated API request
+ * cannot resolve a tenant, no rows are returned instead of every school's
+ * rows. It is bypassed only when:
+ * - No tenant resolution is required (console commands, queued work, tests)
+ * - The current user can access all organizations (platform administrator)
  * - The query explicitly removes the scope with withoutSchoolScope()
  * - The application is not fully booted (during tests/console commands)
  */
@@ -46,9 +48,18 @@ final class SchoolScope implements Scope
 
         $schoolId = $tenantContext->getCurrentSchoolId();
 
-        // Only apply scope if we have a current school context
         if ($schoolId !== null) {
             $builder->where($model->getTable().'.school_id', $schoolId);
+
+            return;
         }
+
+        // A request that requires a tenant must never fall back to reading
+        // every school. Global administrators are the explicit exception.
+        if (! $tenantContext->requiresTenant() || $tenantContext->hasApiGlobalAccess()) {
+            return;
+        }
+
+        $builder->whereRaw('0 = 1');
     }
 }

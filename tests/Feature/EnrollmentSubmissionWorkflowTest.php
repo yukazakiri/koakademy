@@ -111,6 +111,7 @@ it('routes API enrollment creation through the typed policy submission flow', fu
         ->values()
         ->all();
     ($this->publishEnrollmentPolicy)($configuration, $school);
+    $this->actor->forceFill(['school_id' => $school->id])->save();
     Sanctum::actingAs($this->actor);
 
     $payload = [

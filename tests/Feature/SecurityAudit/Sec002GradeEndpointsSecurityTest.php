@@ -6,6 +6,7 @@ use App\Enums\UserRole;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
 use App\Models\Faculty;
+use App\Models\School;
 use App\Models\Student;
 use App\Models\User;
 use Spatie\Permission\Models\Permission;
@@ -24,34 +25,42 @@ use Spatie\Permission\Models\Permission;
 beforeEach(function (): void {
     Permission::findOrCreate('Update:ClassEnrollment', 'web');
 
-    $this->faculty = Faculty::factory()->create();
+    // API requests are tenant-scoped; every fixture belongs to this school.
+    $this->school = School::factory()->create();
+
+    $this->faculty = Faculty::factory()->create(['school_id' => $this->school->id]);
     $this->facultyUser = User::factory()->create([
         'role' => UserRole::Instructor,
         'email' => $this->faculty->email,
         'record_id' => $this->faculty->id,
         'faculty_id_number' => $this->faculty->faculty_id_number,
+        'school_id' => $this->school->id,
     ]);
 
-    $this->otherFaculty = Faculty::factory()->create();
+    $this->otherFaculty = Faculty::factory()->create(['school_id' => $this->school->id]);
     $this->otherFacultyUser = User::factory()->create([
         'role' => UserRole::Instructor,
         'email' => $this->otherFaculty->email,
         'record_id' => $this->otherFaculty->id,
         'faculty_id_number' => $this->otherFaculty->faculty_id_number,
+        'school_id' => $this->school->id,
     ]);
 
     $this->studentUser = User::factory()->create([
         'role' => UserRole::Student,
+        'school_id' => $this->school->id,
     ]);
 
     $this->class = Classes::factory()->create([
         'faculty_id' => $this->faculty->id,
+        'school_id' => $this->school->id,
     ]);
 
-    $this->student = Student::factory()->create();
+    $this->student = Student::factory()->create(['school_id' => $this->school->id]);
     $this->enrollment = ClassEnrollment::factory()->create([
         'class_id' => $this->class->id,
         'student_id' => $this->student->id,
+        'school_id' => $this->school->id,
         'prelim_grade' => null,
         'midterm_grade' => null,
         'finals_grade' => null,
@@ -177,6 +186,7 @@ it('blocks faculty from writing to classes they do not teach', function (): void
 it('blocks faculty from moving an enrollment to a class they do not teach', function (): void {
     $otherClass = Classes::factory()->create([
         'faculty_id' => $this->otherFaculty->id,
+        'school_id' => $this->school->id,
     ]);
 
     $this->actingAs($this->facultyUser, 'sanctum')
@@ -193,6 +203,7 @@ it('rejects faculty whose record_id does not match their authentic email identit
         'role' => UserRole::Instructor,
         'email' => 'attacker@example.com',
         'record_id' => $this->faculty->id,
+        'school_id' => $this->school->id,
     ]);
 
     $this->actingAs($spoofedUser, 'sanctum')
@@ -205,9 +216,11 @@ it('rejects faculty whose record_id does not match their authentic email identit
 it('reports enrollments belonging to another class as errors in bulk update', function (): void {
     $otherClass = Classes::factory()->create([
         'faculty_id' => $this->otherFaculty->id,
+        'school_id' => $this->school->id,
     ]);
     $otherEnrollment = ClassEnrollment::factory()->create([
         'class_id' => $otherClass->id,
+        'school_id' => $this->school->id,
         'prelim_grade' => null,
     ]);
 
@@ -234,9 +247,9 @@ it('reports enrollments belonging to another class as errors in bulk update', fu
 });
 
 it('blocks executive read-only roles and student affairs from grade writes', function (): void {
-    $president = User::factory()->create(['role' => UserRole::President]);
-    $vicePresident = User::factory()->create(['role' => UserRole::VicePresident]);
-    $studentAffairs = User::factory()->create(['role' => UserRole::StudentAffairsOfficer]);
+    $president = User::factory()->create(['role' => UserRole::President, 'school_id' => $this->school->id]);
+    $vicePresident = User::factory()->create(['role' => UserRole::VicePresident, 'school_id' => $this->school->id]);
+    $studentAffairs = User::factory()->create(['role' => UserRole::StudentAffairsOfficer, 'school_id' => $this->school->id]);
 
     foreach ([$president, $vicePresident, $studentAffairs] as $user) {
         $this->actingAs($user, 'sanctum')
@@ -256,7 +269,7 @@ it('blocks executive read-only roles and student affairs from grade writes', fun
 });
 
 it('blocks instructors and Update:ClassEnrollment holders from force delete and restore without dedicated permissions', function (): void {
-    $staff = User::factory()->create();
+    $staff = User::factory()->create(['school_id' => $this->school->id]);
     $staff->givePermissionTo('Update:ClassEnrollment');
 
     $this->enrollment->delete();
@@ -280,10 +293,10 @@ it('blocks instructors and Update:ClassEnrollment holders from force delete and 
 
 it('allows callers with Create:ClassEnrollment to store an enrollment', function (): void {
     Permission::findOrCreate('Create:ClassEnrollment', 'web');
-    $creator = User::factory()->create();
+    $creator = User::factory()->create(['school_id' => $this->school->id]);
     $creator->givePermissionTo('Create:ClassEnrollment');
 
-    $student = Student::factory()->create();
+    $student = Student::factory()->create(['school_id' => $this->school->id]);
 
     $this->actingAs($creator, 'sanctum')
         ->postJson('/api/class-enrollments', [
@@ -318,7 +331,7 @@ it('allows assigned faculty to update and finalize grades for their class', func
 });
 
 it('allows users holding Update:ClassEnrollment permission to update and verify grades', function (): void {
-    $staff = User::factory()->create();
+    $staff = User::factory()->create(['school_id' => $this->school->id]);
     $staff->givePermissionTo('Update:ClassEnrollment');
 
     $this->enrollment->update([

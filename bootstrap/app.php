@@ -64,11 +64,18 @@ return Application::configure(basePath: dirname(__DIR__))
             SetTenantContext::class,
         ]);
 
-        $middleware->api(prepend: [EnsureApiEnabled::class, App\Http\Middleware\EnsureModuleEnabled::class, App\Http\Middleware\ResetFeatureAccessState::class], append: [App\Http\Middleware\EnsureUserAccountAccess::class]);
+        $middleware->api(prepend: [EnsureApiEnabled::class, App\Http\Middleware\EnsureModuleEnabled::class, App\Http\Middleware\ResetFeatureAccessState::class], append: [App\Http\Middleware\EnsureUserAccountAccess::class, SetApiTenantContext::class]);
 
         $middleware->appendToPriorityList(
             Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests::class,
             App\Http\Middleware\EnsureUserAccountAccess::class,
+        );
+
+        // Tenant resolution must run after authentication so bearer-token
+        // requests are scoped instead of falling back to every school.
+        $middleware->appendToPriorityList(
+            App\Http\Middleware\EnsureUserAccountAccess::class,
+            SetApiTenantContext::class,
         );
 
         $middleware->alias([

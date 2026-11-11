@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\UserRole;
 use App\Models\GeneralSetting;
+use App\Models\School;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache;
 use Laravel\Sanctum\Sanctum;
@@ -18,7 +19,10 @@ use Spatie\Permission\Models\Permission;
  */
 function generalSettingApiManager(): User
 {
-    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $user = User::factory()->create([
+        'role' => UserRole::Admin,
+        'school_id' => School::factory()->create()->id,
+    ]);
 
     foreach (['View:SystemManagementSchool', 'Update:SystemManagementSchool'] as $permission) {
         Permission::firstOrCreate([
@@ -39,7 +43,10 @@ function generalSettingApiManager(): User
 
 function generalSettingApiStudent(): User
 {
-    $user = User::factory()->create(['role' => UserRole::Student]);
+    $user = User::factory()->create([
+        'role' => UserRole::Student,
+        'school_id' => School::factory()->create()->id,
+    ]);
 
     Sanctum::actingAs($user);
 

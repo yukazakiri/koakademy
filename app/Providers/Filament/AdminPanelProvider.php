@@ -14,6 +14,7 @@ use App\Filament\Pages\GeneralSettings;
 use App\Filament\Plugins\DiscoveredModulesPlugin;
 use App\Filament\Plugins\PennantManagerPlugin;
 use App\Http\Middleware\ResetFeatureAccessState;
+use App\Http\Middleware\SetApiTenantContext;
 use App\Services\AnalyticsSettingsService;
 use App\Settings\SiteSettings;
 use Awcodes\Gravatar\GravatarPlugin;
@@ -101,7 +102,8 @@ final class AdminPanelProvider extends PanelProvider
                 ->label('Activity Log')
                 ->pluralLabel('Activity Logs')
                 ->navigationGroup('System Tools'),
-            ApiServicePlugin::make(),
+            ApiServicePlugin::make()
+                ->middleware([SetApiTenantContext::class]),
             FilamentShieldPlugin::make()
                 ->navigationLabel('Roles and Permissions')
                 ->navigationGroup('Administration')

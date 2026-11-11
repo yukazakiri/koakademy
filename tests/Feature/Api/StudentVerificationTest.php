@@ -2,11 +2,16 @@
 
 declare(strict_types=1);
 
+use App\Models\School;
 use App\Models\Student;
 use App\Models\User;
 
+beforeEach(function (): void {
+    $this->school = School::factory()->create();
+});
+
 it('verifies an existing student by student_id and email', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->create(['school_id' => $this->school->id]);
     $student = Student::factory()->create([
         'student_id' => 2024001,
         'email' => 'student@example.com',
@@ -14,6 +19,7 @@ it('verifies an existing student by student_id and email', function () {
         'last_name' => 'Doe',
         'status' => 'enrolled',
         'student_type' => 'college',
+        'school_id' => $this->school->id,
     ]);
 
     $response = $this->actingAs($user, 'sanctum')
@@ -37,7 +43,7 @@ it('verifies an existing student by student_id and email', function () {
 });
 
 it('returns 404 when student does not exist', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->create(['school_id' => $this->school->id]);
 
     $response = $this->actingAs($user, 'sanctum')
         ->postJson('/api/students/verify', [
@@ -57,7 +63,7 @@ it('returns 404 when student does not exist', function () {
 });
 
 it('returns validation error when student_id is missing', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->create(['school_id' => $this->school->id]);
 
     $response = $this->actingAs($user, 'sanctum')
         ->postJson('/api/students/verify', [
@@ -69,7 +75,7 @@ it('returns validation error when student_id is missing', function () {
 });
 
 it('returns validation error when email is missing', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->create(['school_id' => $this->school->id]);
 
     $response = $this->actingAs($user, 'sanctum')
         ->postJson('/api/students/verify', [
@@ -81,7 +87,7 @@ it('returns validation error when email is missing', function () {
 });
 
 it('returns validation error when email is invalid', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->create(['school_id' => $this->school->id]);
 
     $response = $this->actingAs($user, 'sanctum')
         ->postJson('/api/students/verify', [
@@ -103,14 +109,16 @@ it('requires authentication', function () {
 });
 
 it('returns 404 when student_id does not match email', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->create(['school_id' => $this->school->id]);
     Student::factory()->create([
         'student_id' => 2024001,
         'email' => 'student1@example.com',
+        'school_id' => $this->school->id,
     ]);
     Student::factory()->create([
         'student_id' => 2024002,
         'email' => 'student2@example.com',
+        'school_id' => $this->school->id,
     ]);
 
     // Try to verify with correct student_id but wrong email

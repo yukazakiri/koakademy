@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\UserRole;
 use App\Features\Toggles\StudentDeveloperMode;
+use App\Models\School;
 use App\Models\User;
 use Laravel\Pennant\Feature;
 
@@ -30,7 +31,8 @@ it('rejects a bearer token with an earlier explicit expiry', function (): void {
 });
 
 it('checks the correct mobile ability on API requests', function (array $abilities, string $method, string $url, int $expected): void {
-    $user = User::factory()->create();
+    $school = School::factory()->create();
+    $user = User::factory()->create(['school_id' => $school->id]);
     $token = $user->createToken('scoped', $abilities)->plainTextToken;
 
     $this->withToken($token)->json($method, $url)->assertStatus($expected);
@@ -49,7 +51,8 @@ it('keeps first party sessions usable on sanctum routes', function (): void {
 });
 
 it('supports test callers using Sanctum actingAs with default abilities or explicit scopes', function (): void {
-    $user = User::factory()->create();
+    $school = School::factory()->create();
+    $user = User::factory()->create(['school_id' => $school->id]);
     Laravel\Sanctum\Sanctum::actingAs($user);
     $this->getJson('/api/user')->assertOk();
 
@@ -59,7 +62,8 @@ it('supports test callers using Sanctum actingAs with default abilities or expli
 });
 
 it('enforces abilities on sanctum API write routes in routes/api.php', function (): void {
-    $user = User::factory()->create();
+    $school = School::factory()->create();
+    $user = User::factory()->create(['school_id' => $school->id]);
     $token = $user->createToken('read only', ['mobile:read'])->plainTextToken;
 
     $this->withToken($token)->postJson('/api/students/verify')->assertForbidden();

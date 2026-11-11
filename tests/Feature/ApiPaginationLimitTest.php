@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\UserRole;
 use App\Http\Controllers\Api\V1\ApiPagination;
 use App\Models\GeneralSetting;
+use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\User;
@@ -17,6 +18,8 @@ beforeEach(function (): void {
         'api.default_per_page' => 20,
         'api.max_per_page' => 100,
     ]);
+
+    $this->school = School::factory()->create();
 
     GeneralSetting::create([
         'school_starting_date' => now()->startOfYear(),
@@ -60,15 +63,20 @@ it('caps the page size the students api returns', function (): void {
     $user = User::factory()->create([
         'role' => UserRole::Student,
         'email' => 'student@example.com',
+        'school_id' => $this->school->id,
     ]);
 
     Student::factory()->create([
         'user_id' => $user->id,
         'email' => $user->email,
         'document_location_id' => null,
+        'school_id' => $this->school->id,
     ]);
 
-    Student::factory()->count(7)->create(['document_location_id' => null]);
+    Student::factory()->count(7)->create([
+        'document_location_id' => null,
+        'school_id' => $this->school->id,
+    ]);
 
     $user->givePermissionTo('ViewAny:Student');
     Sanctum::actingAs($user);

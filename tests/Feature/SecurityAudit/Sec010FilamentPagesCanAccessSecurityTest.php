@@ -9,6 +9,7 @@ use Filament\Facades\Filament;
 use Illuminate\Support\Facades\Auth;
 use Modules\Cashier\Filament\Pages\Cashier;
 use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 /**
  * SEC-010 · Cashier and GeneralSettings Filament pages have canAccess() commented out.
@@ -58,7 +59,7 @@ describe('SEC-010 Cashier::canAccess() authorization', function (): void {
         'student' => UserRole::Student,
     ]);
 
-    it('allows access to super administrators and administrators', function (UserRole $role): void {
+    it('allows access to super administrators and developers', function (UserRole $role): void {
         $user = User::factory()->create([
             'role' => $role,
         ]);
@@ -69,6 +70,16 @@ describe('SEC-010 Cashier::canAccess() authorization', function (): void {
         'super_admin' => UserRole::SuperAdmin,
         'developer' => UserRole::Developer,
     ]);
+
+    it('allows access to administrators holding cashier page permission', function (): void {
+        $user = User::factory()->create([
+            'role' => UserRole::Admin,
+        ]);
+        $user->givePermissionTo('page_Cashier');
+        Auth::login($user);
+
+        expect(Cashier::canAccess())->toBeTrue();
+    });
 
     it('allows access to cashier role holding View:Cashier', function (): void {
         $user = User::factory()->create([
@@ -215,5 +226,32 @@ describe('SEC-010 User menu item visibility', function (): void {
         $userMenuItems = $panel->getUserMenuItems();
 
         expect(array_key_exists('general-settings', $userMenuItems))->toBeTrue();
+    });
+});
+
+describe('SEC-010 Migration grants page_Cashier to target roles', function (): void {
+    it('grants page_Cashier to target staff and administrator roles via migration', function (): void {
+        $targetRoles = [
+            UserRole::Admin->value,
+            UserRole::Cashier->value,
+            UserRole::AccountingOfficer->value,
+            UserRole::BursarOfficer->value,
+        ];
+
+        foreach ($targetRoles as $roleName) {
+            $role = Role::findOrCreate($roleName, 'web');
+            if ($role->hasPermissionTo('page_Cashier')) {
+                $role->revokePermissionTo('page_Cashier');
+            }
+            expect($role->hasPermissionTo('page_Cashier'))->toBeFalse();
+        }
+
+        $migration = require database_path('migrations/2026_11_11_000001_grant_cashier_and_general_settings_page_permissions.php');
+        $migration->up();
+
+        foreach ($targetRoles as $roleName) {
+            $role = Role::findByName($roleName, 'web');
+            expect($role->hasPermissionTo('page_Cashier'))->toBeTrue();
+        }
     });
 });

@@ -575,6 +575,12 @@ final class RolesSeeder extends Seeder
         ]);
     }
 
+    /**
+     * Get permission list for the cashier role.
+     *
+     * @param  array<int, string>  $all
+     * @return array<int, string>
+     */
     private function getCashierPermissions(array $all): array
     {
         return $this->filterPermissions($all, [
@@ -587,6 +593,12 @@ final class RolesSeeder extends Seeder
         ]);
     }
 
+    /**
+     * Get permission list for the accounting officer role.
+     *
+     * @param  array<int, string>  $all
+     * @return array<int, string>
+     */
     private function getAccountingOfficerPermissions(array $all): array
     {
         return $this->filterPermissions($all, [
@@ -599,6 +611,12 @@ final class RolesSeeder extends Seeder
         ]);
     }
 
+    /**
+     * Get permission list for the bursar officer role.
+     *
+     * @param  array<int, string>  $all
+     * @return array<int, string>
+     */
     private function getBursarOfficerPermissions(array $all): array
     {
         return $this->filterPermissions($all, [

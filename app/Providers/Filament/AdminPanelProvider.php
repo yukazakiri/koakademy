@@ -73,6 +73,8 @@ final class AdminPanelProvider extends PanelProvider
     // }
 
     /**
+     * Configure the administrative Filament panel.
+     *
      * @throws Exception
      */
     public function panel(Panel $panel): Panel

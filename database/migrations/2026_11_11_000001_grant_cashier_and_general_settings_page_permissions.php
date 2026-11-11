@@ -60,23 +60,16 @@ return new class extends Migration
             return;
         }
 
-        $allPermissions = [...self::SETTINGS_PERMISSIONS, ...self::CASHIER_PERMISSIONS];
-
-        Role::query()
-            ->where('guard_name', 'web')
-            ->get()
-            ->each(function (Role $role) use ($allPermissions): void {
-                foreach ($allPermissions as $permissionName) {
-                    if ($role->hasPermissionTo($permissionName)) {
-                        $role->revokePermissionTo($permissionName);
-                    }
-                }
-            });
+        // Keep grants because they may have existed before this migration.
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
     }
 
-    /** @return list<string> */
+    /**
+     * Get the role names authorized to access general settings.
+     *
+     * @return list<string>
+     */
     private function settingsRoleNames(): array
     {
         return [
@@ -86,7 +79,11 @@ return new class extends Migration
         ];
     }
 
-    /** @return list<string> */
+    /**
+     * Get the role names authorized to access cashier workflows.
+     *
+     * @return list<string>
+     */
     private function cashierRoleNames(): array
     {
         return [

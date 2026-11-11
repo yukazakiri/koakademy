@@ -16,6 +16,9 @@ final class CompatibilityChecker
         private readonly VersionConstraint $constraints = new VersionConstraint,
     ) {}
 
+    /**
+     * Check whether a module manifest satisfies core, runtime, and module dependencies.
+     */
     public function check(ModuleManifest $manifest): CompatibilityResult
     {
         $errors = [];

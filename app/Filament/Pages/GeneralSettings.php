@@ -37,16 +37,25 @@ final class GeneralSettings extends Page
     #[Override]
     protected static bool $shouldRegisterNavigation = false;
 
+    /**
+     * Determine whether the authenticated user can access the General Settings page.
+     */
     public static function canAccess(): bool
     {
         return (bool) (Auth::user()?->can('page_GeneralSetting') || Auth::user()?->can('View:GeneralSettings'));
     }
 
+    /**
+     * Get the title for the General Settings page.
+     */
     public function getTitle(): string
     {
         return 'School Settings';
     }
 
+    /**
+     * Initialize the page state.
+     */
     public function mount(): void
     {
         // Ensure you are fetching the first record or handle it according to your application logic.
@@ -59,6 +68,9 @@ final class GeneralSettings extends Page
 
     }
 
+    /**
+     * Configure the General Settings form schema.
+     */
     public function form(Schema $schema): Schema
     {
         $pipelineConfig = app(EnrollmentPipelineService::class)->getConfiguration();
@@ -450,6 +462,9 @@ final class GeneralSettings extends Page
             ->statePath('data');
     }
 
+    /**
+     * Persist updated general settings.
+     */
     public function update(): void
     {
         /** @var array<string, mixed> $data */

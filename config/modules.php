@@ -315,6 +315,6 @@ return [
     'activator' => env('MODULE_ACTIVATOR', 'database'),
 
     'compatibility' => [
-        'php_version' => env('MODULES_COMPATIBILITY_PHP_VERSION', PHP_VERSION),
+        'php_version' => env('MODULES_COMPATIBILITY_PHP_VERSION'),
     ],
 ];

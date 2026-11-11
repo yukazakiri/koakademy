@@ -1,4 +1,5 @@
 import { useBranding } from "@/lib/branding";
+import { escapeHtml } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -41,19 +42,7 @@ const sortLabels: Record<ExportSortOrder, string> = {
     name_desc: "Name Z-A",
 };
 
-function escapeHtml(value: string): string {
-    return value.replace(/[&<>'"]/g, (character) => {
-        const entities: Record<string, string> = {
-            "&": "&amp;",
-            "<": "&lt;",
-            ">": "&gt;",
-            "'": "&#039;",
-            '"': "&quot;",
-        };
-
-        return entities[character];
-    });
-}
+export { escapeHtml };
 
 function displayValue(value: ExportValue, emptyValue = ""): string {
     if (value === null || value === undefined || value === "") {

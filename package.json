@@ -16,7 +16,8 @@
         "test:browser:enrollment-workflow": "node --test tests/Browser/enrollment-workflow.mjs",
         "test:browser:email-canvas": "node --test tests/Browser/email-template-canvas.mjs",
         "test:browser:library-book": "node tests/Browser/library-book-create.mjs",
-        "test:grade-status-labels": "node --test tests/Unit/grade-status-labels.test.mjs"
+        "test:grade-status-labels": "node --test tests/Unit/grade-status-labels.test.mjs",
+        "test:print-schedule": "node --test tests/Unit/print-schedule-html.test.mjs"
     },
     "devDependencies": {
         "@eslint/js": "^9.39.5",

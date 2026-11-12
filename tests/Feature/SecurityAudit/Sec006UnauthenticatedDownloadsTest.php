@@ -4,15 +4,20 @@ declare(strict_types=1);
 
 namespace Tests\Feature\SecurityAudit;
 
+use App\Enums\EnrollStat;
 use App\Enums\UserRole;
+use App\Jobs\SendClassChangeNotificationJob;
+use App\Mail\ClassChangeNotification;
 use App\Models\Course;
 use App\Models\Department;
 use App\Models\Faculty;
+use App\Models\GeneralSetting;
 use App\Models\Resource;
 use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\User;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -28,10 +33,18 @@ use Spatie\Permission\Models\Role;
  * 5. GET /download/timetable-pdf/{filename} requires auth and is forbidden to students.
  * 6. Path traversal attempts on download routes are rejected with 400 Bad Request.
  * 7. Authorized faculty and administrators can download files from private storage with nosniff headers.
+ * 8. Exports are written to the private export disk, and legacy copies are relocated off the public disk.
+ * 9. The class change notification reads its attachment from the disk the PDF actually lives on.
  */
 beforeEach(function (): void {
     Storage::fake('private');
     Storage::fake('public');
+
+    GeneralSetting::factory()->create([
+        'school_starting_date' => '2026-06-01',
+        'school_ending_date' => '2027-03-31',
+        'semester' => 1,
+    ]);
 
     Permission::findOrCreate('View:StudentEnrollment', 'web');
     Permission::findOrCreate('ViewAny:StudentEnrollment', 'web');
@@ -158,7 +171,7 @@ it('allows authorized administrators to download assessment PDF from private sto
     expect($response->getContent())->toBe($pdfContent);
 });
 
-it('supports legacy assessment files stored on public storage with fallback', function (): void {
+it('relocates legacy assessment files off the web-exposed public disk when an authorized download reads them', function (): void {
     $pdfContent = '%PDF-1.4 Legacy Assessment PDF';
     $filePath = 'assessments/legacy-assessment.pdf';
     Storage::disk('public')->put($filePath, $pdfContent);
@@ -181,6 +194,33 @@ it('supports legacy assessment files stored on public storage with fallback', fu
         ->assertHeader('Content-Disposition', 'attachment; filename="legacy-assessment.pdf"')
         ->assertHeader('X-Content-Type-Options', 'nosniff');
 
+    expect($response->getContent())->toBe($pdfContent);
+
+    // The copy on the web-exposed disk is gone; the private disk holds it now.
+    Storage::disk('public')->assertMissing($filePath);
+    Storage::disk('private')->assertExists($filePath);
+    expect(Storage::disk('private')->get($filePath))->toBe($pdfContent);
+});
+
+it('honours a configured private export disk', function (): void {
+    config(['filesystems.private_disk' => 'private']);
+
+    expect(\App\Support\PrivateExportStorage::disk())->toBe('private');
+
+    config(['filesystems.private_disk' => 'shared-exports']);
+    Storage::fake('shared-exports');
+
+    expect(\App\Support\PrivateExportStorage::disk())->toBe('shared-exports');
+
+    $pdfContent = '%PDF-1.4 Shared Export';
+    $filename = 'shared-student-list.pdf';
+    $path = 'exports/student-lists/'.$filename;
+    Storage::disk('shared-exports')->put($path, $pdfContent);
+
+    $response = $this->actingAs($this->facultyUser)
+        ->get("/download/student-list/{$filename}");
+
+    $response->assertOk();
     expect($response->getContent())->toBe($pdfContent);
 });
 
@@ -288,21 +328,98 @@ it('allows faculty and administrators to download timetable PDF from private sto
     expect($adminResponse->getContent())->toBe($pdfContent);
 });
 
-it('verifies assessment, student list, and timetable PDF jobs target private storage', function (): void {
-    $assessmentJobCode = (string) file_get_contents(app_path('Jobs/GenerateAssessmentPdfJob.php'));
-    expect($assessmentJobCode)->toContain("\$storageDisk = 'private';")
-        ->and($assessmentJobCode)->toContain("['visibility' => 'private']")
-        ->and($assessmentJobCode)->toContain("'disk' => 'private'");
+it('verifies assessment, student list, and timetable PDF jobs write to the private export disk', function (): void {
+    $jobs = [
+        'Jobs/GenerateAssessmentPdfJob.php' => '$storageDisk = PrivateExportStorage::disk();',
+        'Jobs/GenerateStudentListPdfJob.php' => '$disk = PrivateExportStorage::disk();',
+        'Jobs/GenerateTimetablePdfJob.php' => '$disk = PrivateExportStorage::disk();',
+        'Jobs/GenerateStudentTimetablePdfJob.php' => '$disk = PrivateExportStorage::disk();',
+        'Jobs/SendAssessmentNotificationJob.php' => '$storageDisk = PrivateExportStorage::disk();',
+        'Jobs/SendClassChangeNotificationJob.php' => '$storageDisk = PrivateExportStorage::disk();',
+        'Notifications/MigrateToStudent.php' => '$storageDisk = PrivateExportStorage::disk();',
+    ];
 
-    $studentListJobCode = (string) file_get_contents(app_path('Jobs/GenerateStudentListPdfJob.php'));
-    expect($studentListJobCode)->toContain("\$disk = 'private';")
-        ->and($studentListJobCode)->toContain("['visibility' => 'private']");
+    foreach ($jobs as $relativePath => $expected) {
+        $code = (string) file_get_contents(app_path($relativePath));
 
-    $timetableJobCode = (string) file_get_contents(app_path('Jobs/GenerateTimetablePdfJob.php'));
-    expect($timetableJobCode)->toContain("\$disk = 'private';")
-        ->and($timetableJobCode)->toContain("['visibility' => 'private']");
+        expect($code)->toContain($expected)
+            ->and($code)->toContain("['visibility' => 'private']")
+            ->and($code)->not->toContain("['visibility' => 'public']");
+    }
+});
 
-    $studentTimetableJobCode = (string) file_get_contents(app_path('Jobs/GenerateStudentTimetablePdfJob.php'));
-    expect($studentTimetableJobCode)->toContain("\$disk = 'private';")
-        ->and($studentTimetableJobCode)->toContain("['visibility' => 'private']");
+it('verifies the export directories that must never stay on a web-exposed disk', function (): void {
+    expect(\App\Support\PrivateExportStorage::EXPORT_DIRECTORIES)
+        ->toContain('assessments')
+        ->toContain('exports/student-lists')
+        ->toContain('schedules');
+});
+
+it('reads the class change notification attachment from the disk the PDF lives on', function (): void {
+    config(['filesystems.default' => 'class-change-default']);
+    config(['filesystems.private_disk' => 'private']);
+    Storage::fake('class-change-default');
+    Storage::fake('private');
+
+    $course = Course::factory()->create();
+    $student = Student::factory()->create([
+        'course_id' => $course->id,
+        'email' => 'class-change@example.test',
+    ]);
+
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'status' => EnrollStat::VerifiedByCashier->value,
+    ]);
+
+    $pdfContent = '%PDF-1.4 Class Change Assessment';
+    $filePath = 'assessments/assmt-class-change.pdf';
+    Storage::disk('private')->put($filePath, $pdfContent);
+
+    Resource::create([
+        'resourceable_id' => $enrollment->id,
+        'resourceable_type' => StudentEnrollment::class,
+        'type' => 'assessment',
+        'file_path' => $filePath,
+        'file_name' => 'assmt-class-change.pdf',
+        'mime_type' => 'application/pdf',
+        'disk' => 'private',
+        'file_size' => mb_strlen($pdfContent),
+    ]);
+
+    Mail::fake();
+
+    $job = new SendClassChangeNotificationJob($enrollment, [], 'Section change');
+    $job->handle();
+
+    Mail::assertSent(ClassChangeNotification::class, function (ClassChangeNotification $mail) use ($pdfContent): bool {
+        return $mail->attachmentData !== null
+            && $mail->attachmentData['contents'] === $pdfContent
+            && $mail->attachmentData['name'] === 'assmt-class-change.pdf';
+    });
+});
+
+it('moves legacy exports off the public disk with the migration command', function (): void {
+    config(['filesystems.private_disk' => 'private']);
+    Storage::fake('private');
+    Storage::fake('public');
+
+    Storage::disk('public')->put('assessments/legacy-assessment.pdf', 'legacy-assessment');
+    Storage::disk('public')->put('exports/student-lists/legacy-roster.pdf', 'legacy-roster');
+    Storage::disk('public')->put('schedules/legacy-schedule.pdf', 'legacy-schedule');
+    Storage::disk('public')->put('avatars/keep-me.png', 'keep-me');
+
+    $this->artisan('exports:migrate-to-private')->assertSuccessful();
+
+    Storage::disk('public')->assertMissing('assessments/legacy-assessment.pdf');
+    Storage::disk('public')->assertMissing('exports/student-lists/legacy-roster.pdf');
+    Storage::disk('public')->assertMissing('schedules/legacy-schedule.pdf');
+
+    Storage::disk('private')->assertExists('assessments/legacy-assessment.pdf');
+    Storage::disk('private')->assertExists('exports/student-lists/legacy-roster.pdf');
+    Storage::disk('private')->assertExists('schedules/legacy-schedule.pdf');
+
+    // Unrelated public assets stay where they are.
+    Storage::disk('public')->assertExists('avatars/keep-me.png');
 });

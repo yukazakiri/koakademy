@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Jobs;
 
 use App\Services\PdfGenerationService;
+use App\Support\PrivateExportStorage;
 use App\Support\StreamedStorage;
 use Exception;
 use Filament\Notifications\Notification;
@@ -63,7 +64,7 @@ final class GenerateTimetablePdfJob implements ShouldQueue
                 default => 'pdf.timetable-export',
             };
 
-            $disk = 'private';
+            $disk = PrivateExportStorage::disk();
 
             $directory = 'schedules';
 

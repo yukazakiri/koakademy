@@ -7,6 +7,7 @@ namespace App\Jobs;
 use App\Models\Classes;
 use App\Models\User;
 use App\Services\PdfGenerationService;
+use App\Support\PrivateExportStorage;
 use App\Support\StreamedStorage;
 use Exception;
 use Filament\Actions\Action;
@@ -88,8 +89,8 @@ final class GenerateStudentListPdfJob implements ShouldQueue
                 str_replace('-', '_', (string) ($this->class->school_year ?? 'Unknown'))
             );
 
-            // Use private filesystem disk
-            $disk = 'private';
+            // Use the private export disk so the file is never web-accessible
+            $disk = PrivateExportStorage::disk();
             $directory = 'exports/student-lists';
 
             // Ensure directory exists

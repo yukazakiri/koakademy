@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\AssessmentFormDataService;
 use App\Services\PdfGenerationService;
 use App\Settings\SiteSettings;
+use App\Support\PrivateExportStorage;
 use App\Support\ResourceStorageLocator;
 use Exception;
 use Illuminate\Bus\Queueable;
@@ -364,7 +365,7 @@ final class MigrateToStudent extends Notification implements ShouldQueue
             );
         }
 
-        $addDiskPaths('private', $assessmentPath);
+        $addDiskPaths(PrivateExportStorage::disk(), $assessmentPath);
         $addDiskPaths((string) config('filesystems.default'), $assessmentPath);
 
         foreach ($diskPaths as [$storageDisk, $storagePath]) {
@@ -547,8 +548,8 @@ final class MigrateToStudent extends Notification implements ShouldQueue
         );
         $assessmentFilename = sprintf('assmt-%s-%s.pdf', $this->record->id, $randomChars);
 
-        // Use same storage as PDF jobs - use private disk and assessments directory
-        $storageDisk = 'private';
+        // Use same storage as PDF jobs - use the private export disk and assessments directory
+        $storageDisk = PrivateExportStorage::disk();
         $storageDirectory = 'assessments';
         $storage = Storage::disk($storageDisk);
 

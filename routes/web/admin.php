@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\StudentEnrollment;
+use App\Support\PrivateExportStorage;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 
@@ -50,18 +51,23 @@ $registerAdminRoutes = function () use ($adminHost): void {
             abort(404, 'Assessment file not found');
         }
 
-        // Check if file exists on disk (private first, legacy fallback)
+        // Check if file exists on disk (private export disk first, legacy fallback)
         $filePath = $resource->file_path;
-        $disk = 'private';
-        if (! Storage::disk('private')->exists($filePath)) {
-            $legacyDisk = $resource->disk ?? config('filesystems.default');
-            if ($legacyDisk !== 'private' && Storage::disk($legacyDisk)->exists($filePath)) {
-                $disk = $legacyDisk;
-            } elseif (Storage::disk('public')->exists($filePath)) {
-                $disk = 'public';
-            } else {
-                abort(404, 'File not found on disk');
-            }
+        $disk = PrivateExportStorage::locate(
+            $filePath,
+            PrivateExportStorage::candidateDisks(
+                is_string($resource->disk) ? $resource->disk : null
+            )
+        );
+
+        if ($disk === null) {
+            abort(404, 'File not found on disk');
+        }
+
+        // Copies written to the web-exposed public disk before the private
+        // export migration are moved onto the private disk on first read.
+        if ($disk === 'public' && PrivateExportStorage::relocateFromPublicDisk($filePath)) {
+            $disk = PrivateExportStorage::disk();
         }
 
         try {

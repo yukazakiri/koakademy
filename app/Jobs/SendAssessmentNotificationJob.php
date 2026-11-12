@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Notifications\MigrateToStudent;
 use App\Services\AssessmentFormDataService;
 use App\Services\PdfGenerationService;
+use App\Support\PrivateExportStorage;
 use App\Support\StreamedStorage;
 use Exception;
 use Filament\Notifications\Notification;
@@ -299,8 +300,8 @@ final class SendAssessmentNotificationJob implements ShouldQueue
         );
         $assessmentFilename = sprintf('assmt-%s-%s.pdf', $this->studentEnrollment->id, $randomChars);
 
-        // Use same storage as PDF jobs - use private disk and assessments directory
-        $storageDisk = 'private';
+        // Use same storage as PDF jobs - use the private export disk and assessments directory
+        $storageDisk = PrivateExportStorage::disk();
         $storageDirectory = 'assessments';
         $storage = Storage::disk($storageDisk);
 

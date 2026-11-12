@@ -11,6 +11,7 @@ use App\Notifications\PdfGenerationCompleted;
 use App\Services\AssessmentFormDataService;
 use App\Services\GeneralSettingsService;
 use App\Services\PdfGenerationService;
+use App\Support\PrivateExportStorage;
 use App\Support\ResourceStorageLocator;
 use App\Support\StreamedStorage;
 use Exception;
@@ -193,11 +194,17 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
 
     private function resourceExistsOnDisk(Resource $resource): bool
     {
-        $disk = is_string($resource->disk) && $resource->disk !== ''
+        $recordedDisk = is_string($resource->disk) && $resource->disk !== ''
             ? $resource->disk
-            : (string) config('filesystems.default');
+            : null;
 
-        return ResourceStorageLocator::exists($disk, (string) $resource->file_path);
+        foreach (PrivateExportStorage::candidateDisks($recordedDisk) as $disk) {
+            if (ResourceStorageLocator::exists($disk, (string) $resource->file_path)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -220,8 +227,8 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
         $timestamp = $this->createNewFile ? '-'.now()->format('YmdHis') : '';
         $assessmentFileName = sprintf('assessment-%s%s-%s.pdf', $studentEnrollment->id, $timestamp, $randomChars);
 
-        // Use private filesystem disk
-        $storageDisk = 'private';
+        // Use the private export disk so the file is never web-accessible
+        $storageDisk = PrivateExportStorage::disk();
         $storageDirectory = 'assessments';
 
         // Ensure directory exists
@@ -278,11 +285,12 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
     {
         $generalSettingsService = new GeneralSettingsService;
         $fileName = basename($pdfPath);
+        $storageDisk = PrivateExportStorage::disk();
 
-        // File is already uploaded to private storage disk
+        // File is already uploaded to the private export disk
         Log::info('PDF already uploaded to private storage', [
             'filename' => $fileName,
-            'disk' => 'private',
+            'disk' => $storageDisk,
         ]);
 
         // Save resource record - create new or update existing based on createNewFile flag
@@ -295,8 +303,8 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
                 'file_path' => $pdfPath,
                 'file_name' => $fileName,
                 'mime_type' => 'application/pdf',
-                'disk' => 'private',
-                'file_size' => Storage::disk('private')->size($pdfPath),
+                'disk' => $storageDisk,
+                'file_size' => Storage::disk($storageDisk)->size($pdfPath),
                 'metadata' => [
                     'school_year' => mb_convert_encoding(
                         $generalSettingsService->getCurrentSchoolYearString() ?? '',
@@ -310,7 +318,7 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
                     ),
                     'generation_method' => 'pdf_generation_job',
                     'generated_at' => format_timestamp_now(),
-                    'storage_disk' => 'private',
+                    'storage_disk' => $storageDisk,
                     'storage_key' => $pdfPath,
                     'is_new_version' => true,
                 ],
@@ -327,8 +335,8 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
                     'file_path' => $pdfPath,
                     'file_name' => $fileName,
                     'mime_type' => 'application/pdf',
-                    'disk' => 'private',
-                    'file_size' => Storage::disk('private')->size($pdfPath),
+                    'disk' => $storageDisk,
+                    'file_size' => Storage::disk($storageDisk)->size($pdfPath),
                     'metadata' => [
                         'school_year' => mb_convert_encoding(
                             $generalSettingsService->getCurrentSchoolYearString() ?? '',
@@ -342,7 +350,7 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
                         ),
                         'generation_method' => 'pdf_generation_job',
                         'generated_at' => format_timestamp_now(),
-                        'storage_disk' => config('filesystems.default'),
+                        'storage_disk' => $storageDisk,
                         'storage_key' => $pdfPath,
                     ],
                 ]

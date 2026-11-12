@@ -6,6 +6,7 @@ use App\Http\Controllers\AssessmentExportDownloadController;
 use App\Jobs\GenerateTimetablePdfJob;
 use App\Models\Faculty;
 use App\Models\Schedule;
+use App\Support\PrivateExportStorage;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -18,6 +19,10 @@ use Illuminate\Support\Facades\Storage;
 |
 | Routes for downloading files such as student lists, timetable PDFs,
 | and schedule exports.
+|
+| Every export is served from the private export disk. Copies that were
+| written to the web-exposed public disk before that migration are moved
+| onto the private disk the first time an authorized download reads them.
 |
 */
 
@@ -34,17 +39,14 @@ Route::get('/download/student-list/{filename}', function (string $filename) {
     }
 
     $path = 'exports/student-lists/'.$filename;
-    $disk = 'private';
+    $disk = PrivateExportStorage::locate($path, PrivateExportStorage::candidateDisks());
 
-    if (! Storage::disk('private')->exists($path)) {
-        $fallbackDisk = config('filesystems.default');
-        if ($fallbackDisk !== 'private' && Storage::disk($fallbackDisk)->exists($path)) {
-            $disk = $fallbackDisk;
-        } elseif (Storage::disk('public')->exists($path)) {
-            $disk = 'public';
-        } else {
-            abort(404, 'File not found');
-        }
+    if ($disk === null) {
+        abort(404, 'File not found');
+    }
+
+    if ($disk === 'public' && PrivateExportStorage::relocateFromPublicDisk($path)) {
+        $disk = PrivateExportStorage::disk();
     }
 
     $file = Storage::disk($disk)->get($path);
@@ -69,24 +71,21 @@ Route::get('/download/timetable-pdf/{filename}', function (string $filename) {
     }
 
     $path = 'schedules/'.$filename;
-    $disk = 'private';
+    $disk = PrivateExportStorage::locate($path, PrivateExportStorage::candidateDisks());
 
-    if (! Storage::disk('private')->exists($path)) {
-        $fallbackDisk = config('filesystems.default');
-        if ($fallbackDisk !== 'private' && Storage::disk($fallbackDisk)->exists($path)) {
-            $disk = $fallbackDisk;
-        } elseif (Storage::disk('public')->exists($path)) {
-            $disk = 'public';
-        } else {
-            return response()->json([
-                'error' => 'PDF not found. Please contact administrator to generate schedule PDF.',
-                'path' => $path,
-                'disk' => $disk,
-            ], 404);
-        }
+    if ($disk === null) {
+        return response()->json([
+            'error' => 'PDF not found. Please contact administrator to generate schedule PDF.',
+            'path' => $path,
+            'disk' => PrivateExportStorage::disk(),
+        ], 404);
     }
 
-    if ($disk !== 'private' && config("filesystems.disks.{$disk}.driver") === 's3') {
+    if ($disk === 'public' && PrivateExportStorage::relocateFromPublicDisk($path)) {
+        $disk = PrivateExportStorage::disk();
+    }
+
+    if ($disk !== PrivateExportStorage::disk() && config("filesystems.disks.{$disk}.driver") === 's3') {
         // Try to generate a temporary signed URL; fall back to direct download
         try {
             $temporaryUrl = Storage::disk($disk)->temporaryUrl(
@@ -221,17 +220,14 @@ Route::get('/download/attendance-report/{filename}', function (string $filename)
     }
 
     $path = 'exports/attendance/'.$user->id.'/'.$filename;
-    $disk = 'private';
+    $disk = PrivateExportStorage::locate($path, PrivateExportStorage::candidateDisks());
 
-    if (! Storage::disk('private')->exists($path)) {
-        $fallbackDisk = config('filesystems.default');
-        if ($fallbackDisk !== 'private' && Storage::disk($fallbackDisk)->exists($path)) {
-            $disk = $fallbackDisk;
-        } elseif (Storage::disk('public')->exists($path)) {
-            $disk = 'public';
-        } else {
-            abort(404, 'Attendance report not found.');
-        }
+    if ($disk === null) {
+        abort(404, 'Attendance report not found.');
+    }
+
+    if ($disk === 'public' && PrivateExportStorage::relocateFromPublicDisk($path)) {
+        $disk = PrivateExportStorage::disk();
     }
 
     return Storage::disk($disk)->download($path, $filename, [
@@ -251,17 +247,14 @@ Route::get('/download/student-soa/{filename}', function (string $filename) {
     }
 
     $path = 'exports/soa/'.$user->id.'/'.$filename;
-    $disk = 'private';
+    $disk = PrivateExportStorage::locate($path, PrivateExportStorage::candidateDisks());
 
-    if (! Storage::disk('private')->exists($path)) {
-        $fallbackDisk = config('filesystems.default');
-        if ($fallbackDisk !== 'private' && Storage::disk($fallbackDisk)->exists($path)) {
-            $disk = $fallbackDisk;
-        } elseif (Storage::disk('public')->exists($path)) {
-            $disk = 'public';
-        } else {
-            abort(404, 'SOA PDF not found.');
-        }
+    if ($disk === null) {
+        abort(404, 'SOA PDF not found.');
+    }
+
+    if ($disk === 'public' && PrivateExportStorage::relocateFromPublicDisk($path)) {
+        $disk = PrivateExportStorage::disk();
     }
 
     return Storage::disk($disk)->download($path, $filename, [
@@ -281,17 +274,14 @@ Route::get('/download/enrollment-report/{filename}', function (string $filename)
     }
 
     $path = 'exports/enrollment-reports/'.$user->id.'/'.$filename;
-    $disk = 'private';
+    $disk = PrivateExportStorage::locate($path, PrivateExportStorage::candidateDisks());
 
-    if (! Storage::disk('private')->exists($path)) {
-        $fallbackDisk = config('filesystems.default');
-        if ($fallbackDisk !== 'private' && Storage::disk($fallbackDisk)->exists($path)) {
-            $disk = $fallbackDisk;
-        } elseif (Storage::disk('public')->exists($path)) {
-            $disk = 'public';
-        } else {
-            abort(404, 'Enrollment report PDF not found.');
-        }
+    if ($disk === null) {
+        abort(404, 'Enrollment report PDF not found.');
+    }
+
+    if ($disk === 'public' && PrivateExportStorage::relocateFromPublicDisk($path)) {
+        $disk = PrivateExportStorage::disk();
     }
 
     return Storage::disk($disk)->download($path, $filename, [

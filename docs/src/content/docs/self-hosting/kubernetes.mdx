@@ -97,6 +97,13 @@ Apply config:
 kubectl apply -f koakademy-config.yaml
 ```
 
+:::note[One image for the job and the deployment]
+The migration job and the application deployment carry the same
+release-specific tag, and both are updated for every release. A floating
+`latest` lets a node keep an older image, so the job can report completion
+without running the migrations of the release the deployment starts.
+:::
+
 ---
 
 ## Step 3: Gotenberg PDF Service
@@ -175,7 +182,8 @@ spec:
       restartPolicy: Never
       containers:
         - name: migrate
-          image: ghcr.io/yukazakiri/koakademy:latest
+          # The same release-specific tag the application deployment uses.
+          image: ghcr.io/yukazakiri/koakademy:v1.30.0
           imagePullPolicy: IfNotPresent
           command: ["php", "artisan", "migrate", "--force", "--no-interaction"]
           envFrom:
@@ -214,7 +222,8 @@ spec:
     spec:
       containers:
         - name: koakademy
-          image: ghcr.io/yukazakiri/koakademy:latest
+          # The same release-specific tag the migration job uses.
+          image: ghcr.io/yukazakiri/koakademy:v1.30.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000

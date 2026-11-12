@@ -153,7 +153,8 @@ spec:
       restartPolicy: Never
       containers:
         - name: migrate
-          image: ghcr.io/yukazakiri/koakademy:latest
+          # The same release-specific tag the application deployment uses.
+          image: ghcr.io/yukazakiri/koakademy:v1.30.0
           imagePullPolicy: IfNotPresent
           command: ["php", "artisan", "migrate", "--force", "--no-interaction"]
           envFrom:
@@ -191,7 +192,8 @@ spec:
     spec:
       containers:
         - name: app
-          image: ghcr.io/yukazakiri/koakademy:latest
+          # The same release-specific tag the migration job uses.
+          image: ghcr.io/yukazakiri/koakademy:v1.30.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000

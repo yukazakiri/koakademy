@@ -255,6 +255,10 @@ network as the application:
 ```sh
 docker service rm koakademy_migrate >/dev/null 2>&1 || true
 
+# The job runs on the image the rollout starts, so the image is pulled
+# first. A cached image would run the migrations of an older release.
+docker pull ghcr.io/yukazakiri/koakademy:latest
+
 docker service create \
   --name koakademy_migrate \
   --mode replicated-job \
@@ -304,6 +308,10 @@ To update KoAkademy to a new release:
 # Run the release migrations first, with the application scaled down.
 docker service scale koakademy_app=0
 docker service rm koakademy_migrate >/dev/null 2>&1 || true
+
+# The job runs on the image the rollout starts, so the image is pulled
+# first. A cached image would run the migrations of an older release.
+docker pull ghcr.io/yukazakiri/koakademy:latest
 
 docker service create \
   --name koakademy_migrate \

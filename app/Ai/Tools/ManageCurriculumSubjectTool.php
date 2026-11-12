@@ -169,7 +169,7 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
         ]);
 
         $user = Auth::user();
-        $schoolId = $user?->school_id ?? (app()->bound(TenantContext::class) ? app(TenantContext::class)->getCurrentSchoolId() : null);
+        $schoolId = $this->schoolId($user);
 
         $courseId = $validated['course_id'] ?? null;
         if (! $courseId && filled($validated['course_code'] ?? null)) {
@@ -266,7 +266,7 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
         $errors = [];
 
         $user = Auth::user();
-        $schoolId = $user?->school_id ?? (app()->bound(TenantContext::class) ? app(TenantContext::class)->getCurrentSchoolId() : null);
+        $schoolId = $this->schoolId($user);
 
         $defaultCourseQuery = Course::query();
         if ($schoolId !== null) {
@@ -459,10 +459,27 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
+    /**
+     * The school the tool acts for.
+     *
+     * The selected tenant decides, the same way the rest of the application
+     * resolves its school. The school of the user is only the fallback for a
+     * request without a tenant, because a user who works for more than one
+     * school acts for the school they selected.
+     */
+    private function schoolId(?User $user): ?int
+    {
+        $schoolId = app()->bound(TenantContext::class)
+            ? app(TenantContext::class)->getCurrentSchoolId()
+            : null;
+
+        return $schoolId ?? $user?->school_id;
+    }
+
     private function resolveSubject(Request $request): ?Subject
     {
         $user = Auth::user();
-        $schoolId = $user?->school_id ?? (app()->bound(TenantContext::class) ? app(TenantContext::class)->getCurrentSchoolId() : null);
+        $schoolId = $this->schoolId($user);
 
         $query = Subject::query();
         if ($schoolId !== null) {

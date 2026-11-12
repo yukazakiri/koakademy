@@ -300,7 +300,12 @@ When pushing new code or pulling a new release image (such as `yukazaki/koakadem
    cannot reach the `pgsql` service.
 
    ```sh
-   docker compose -p <dokploy-app-name> --env-file .env -f docker-compose.yml run --rm app php artisan migrate --force --no-interaction
+   The image is pulled, so the migration runs on the image the rollout
+   starts. A cached image would run the migrations of an older release.
+
+   ```sh
+   docker compose -p <dokploy-app-name> --env-file .env -f docker-compose.yml run --rm --pull always app php artisan migrate --force --no-interaction
+   ```
    ```
 2. **Trigger Redeploy in Dokploy**: Click **Redeploy** in the Dokploy Compose service.
 3. **Start-First Rollout**:

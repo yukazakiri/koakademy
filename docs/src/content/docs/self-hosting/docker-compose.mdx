@@ -260,7 +260,7 @@ reaches an empty database:
 
 ```sh
 docker compose up -d postgres redis gotenberg
-docker compose run --rm app php artisan migrate --force --no-interaction
+docker compose run --rm --pull always app php artisan migrate --force --no-interaction
 docker compose up -d app
 ```
 
@@ -295,8 +295,9 @@ docker compose exec app php artisan optimize
 # Pull latest images
 docker compose pull
 
-# Run the release migrations once, before the new application serves traffic
-docker compose run --rm app php artisan migrate --force --no-interaction
+# Run the release migrations once, before the new application serves traffic.
+# The image is pulled, so the migration runs on the image the rollout starts.
+docker compose run --rm --pull always app php artisan migrate --force --no-interaction
 
 # Restart services with zero-downtime rolling restart
 docker compose up -d --remove-orphans

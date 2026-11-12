@@ -376,7 +376,10 @@ it('rejects html in class post submissions and stores files privately with secur
 it('rejects html in class post API uploads, stores on private disk, and serves securely', function (): void {
     $school = School::factory()->create();
     $department = Department::factory()->create(['school_id' => $school->id]);
-    $facultyUser = User::factory()->create(['role' => UserRole::Instructor]);
+    $facultyUser = User::factory()->create([
+        'role' => UserRole::Instructor,
+        'school_id' => $school->id,
+    ]);
     $faculty = Faculty::factory()->create([
         'school_id' => $school->id,
         'department_id' => $department->id,

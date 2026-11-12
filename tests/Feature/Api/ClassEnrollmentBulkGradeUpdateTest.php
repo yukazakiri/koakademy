@@ -6,6 +6,7 @@ use App\Enums\UserRole;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
 use App\Models\Faculty;
+use App\Models\School;
 use App\Models\Student;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -17,15 +18,18 @@ use Spatie\Activitylog\Models\Activity;
  * of 200 students turned into 600 statements in a single request.
  */
 beforeEach(function (): void {
-    $this->faculty = Faculty::factory()->create();
+    $this->school = School::factory()->create();
+    $this->faculty = Faculty::factory()->create(['school_id' => $this->school->id]);
     $this->class = Classes::factory()->create([
         'faculty_id' => $this->faculty->id,
+        'school_id' => $this->school->id,
     ]);
     $this->user = User::factory()->create([
         'role' => UserRole::Instructor,
         'email' => $this->faculty->email,
         'record_id' => $this->faculty->id,
         'faculty_id_number' => $this->faculty->faculty_id_number,
+        'school_id' => $this->school->id,
     ]);
 });
 
@@ -43,11 +47,12 @@ function enrollmentState(array $overrides = []): array
 }
 
 it('updates the grades of every student in one request', function (): void {
-    $students = Student::factory()->count(3)->create();
+    $students = Student::factory()->count(3)->create(['school_id' => $this->school->id]);
 
     $enrollments = $students->map(fn (Student $student): ClassEnrollment => ClassEnrollment::factory()->create([
         'class_id' => $this->class->id,
         'student_id' => $student->id,
+        'school_id' => $this->school->id,
         ...enrollmentState(),
     ]));
 
@@ -85,7 +90,8 @@ it('computes the total average with the configured weights', function (): void {
 
     $enrollment = ClassEnrollment::factory()->create([
         'class_id' => $this->class->id,
-        'student_id' => Student::factory()->create()->id,
+        'student_id' => Student::factory()->create(['school_id' => $this->school->id])->id,
+        'school_id' => $this->school->id,
         ...enrollmentState(),
     ]);
 
@@ -106,7 +112,8 @@ it('computes the total average with the configured weights', function (): void {
 it('keeps the stored total average when a grade is cleared', function (): void {
     $enrollment = ClassEnrollment::factory()->create([
         'class_id' => $this->class->id,
-        'student_id' => Student::factory()->create()->id,
+        'student_id' => Student::factory()->create(['school_id' => $this->school->id])->id,
+        'school_id' => $this->school->id,
         ...enrollmentState([
             'prelim_grade' => 80,
             'midterm_grade' => 90,
@@ -131,11 +138,12 @@ it('keeps the stored total average when a grade is cleared', function (): void {
 });
 
 it('reports enrollments that belong to another class as errors', function (): void {
-    $otherClass = Classes::factory()->create();
+    $otherClass = Classes::factory()->create(['school_id' => $this->school->id]);
 
     $enrollment = ClassEnrollment::factory()->create([
         'class_id' => $otherClass->id,
-        'student_id' => Student::factory()->create()->id,
+        'student_id' => Student::factory()->create(['school_id' => $this->school->id])->id,
+        'school_id' => $this->school->id,
         ...enrollmentState(),
     ]);
 
@@ -163,7 +171,8 @@ it('keeps the audit trail of a bulk grade update', function (): void {
 
     $enrollment = ClassEnrollment::factory()->create([
         'class_id' => $this->class->id,
-        'student_id' => Student::factory()->create()->id,
+        'student_id' => Student::factory()->create(['school_id' => $this->school->id])->id,
+        'school_id' => $this->school->id,
         ...enrollmentState(),
     ]);
 
@@ -192,11 +201,12 @@ it('keeps the audit trail of a bulk grade update', function (): void {
 });
 
 it('writes every grade with a single statement', function (): void {
-    $students = Student::factory()->count(25)->create();
+    $students = Student::factory()->count(25)->create(['school_id' => $this->school->id]);
 
     $enrollments = $students->map(fn (Student $student): ClassEnrollment => ClassEnrollment::factory()->create([
         'class_id' => $this->class->id,
         'student_id' => $student->id,
+        'school_id' => $this->school->id,
         ...enrollmentState(),
     ]));
 

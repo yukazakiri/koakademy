@@ -13,6 +13,22 @@ use Symfony\Component\HttpFoundation\Response;
 
 final readonly class SetApiTenantContext
 {
+    /**
+     * Endpoints that must stay usable before a tenant is resolved.
+     *
+     * Sign-in, profile, token management and organization switching all
+     * operate on the caller's own identity rather than tenant-scoped data,
+     * and organization switching is how a caller acquires a tenant.
+     */
+    private const array TENANT_FREE_PATHS = [
+        'api/user',
+        'api/auth/*',
+        'api/v1/auth/*',
+        'api/v1/profile/*',
+        'api/organizations',
+        'api/organizations/*',
+    ];
+
     public function __construct(private TenantContext $tenantContext) {}
 
     /**
@@ -26,13 +42,35 @@ final readonly class SetApiTenantContext
             return $next($request);
         }
 
-        $requestedSchoolId = $request->header('X-KoAkademy-School');
-        $school = $requestedSchoolId !== null
-            ? School::query()->find((int) $requestedSchoolId)
-            : $user->primaryOrganization();
+        if ($request->is(...self::TENANT_FREE_PATHS)) {
+            return $next($request);
+        }
 
-        if (! $school instanceof School || ! $user->hasAccessToOrganization($school)) {
-            abort(403, 'No accessible school context is available for this account.');
+        $this->tenantContext->requireTenant();
+
+        $requestedSchoolId = $request->header('X-KoAkademy-School');
+        $canAccessAll = $this->tenantContext->canAccessAllOrganizations();
+
+        if ($requestedSchoolId !== null) {
+            $school = School::query()->find((int) $requestedSchoolId);
+
+            if (! $school instanceof School || (! $canAccessAll && ! $user->hasAccessToOrganization($school))) {
+                abort(403, 'No accessible school context is available for this account.');
+            }
+        } else {
+            $school = $user->primaryOrganization();
+
+            if (! $school instanceof School && $canAccessAll) {
+                // Platform administrators with no primary school keep their
+                // deliberate cross-organization access.
+                $this->tenantContext->setApiGlobalAccess();
+
+                return $next($request);
+            }
+
+            if (! $school instanceof School || ! $user->hasAccessToOrganization($school)) {
+                abort(403, 'No accessible school context is available for this account.');
+            }
         }
 
         $this->tenantContext->setApiSchool($school);

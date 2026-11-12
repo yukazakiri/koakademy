@@ -6,6 +6,7 @@ namespace Tests\Feature\Api;
 
 use App\Http\Controllers\Api\V1\GeneralSettingController;
 use App\Models\GeneralSetting;
+use App\Models\School;
 use App\Models\User;
 use Laravel\Sanctum\Sanctum;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -26,7 +27,9 @@ final class GeneralSettingApiTest extends TestCase
             return;
         }
 
-        $this->user = User::factory()->create();
+        $this->user = User::factory()->create([
+            'school_id' => School::factory()->create()->id,
+        ]);
         $this->grantSchoolSettingsPermissions($this->user);
         Sanctum::actingAs($this->user);
     }

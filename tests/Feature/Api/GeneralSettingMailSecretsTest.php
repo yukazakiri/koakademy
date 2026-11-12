@@ -3,13 +3,18 @@
 declare(strict_types=1);
 
 use App\Models\GeneralSetting;
+use App\Models\School;
 use App\Models\User;
 use Spatie\Permission\Models\Permission;
 
 use function Pest\Laravel\actingAs;
 
+beforeEach(function (): void {
+    $this->school = School::factory()->create();
+});
+
 it('does not persist mail transport credentials through the generic settings API', function (): void {
-    $user = User::factory()->create();
+    $user = User::factory()->create(['school_id' => $this->school->id]);
 
     foreach (['View:SystemManagementSchool', 'Update:SystemManagementSchool'] as $permission) {
         Permission::firstOrCreate([
@@ -48,7 +53,7 @@ it('does not persist mail transport credentials through the generic settings API
 });
 
 it('does not persist oauth client secrets or more_configs through the generic settings API', function (): void {
-    $user = User::factory()->create();
+    $user = User::factory()->create(['school_id' => $this->school->id]);
 
     foreach (['View:SystemManagementSchool', 'Update:SystemManagementSchool'] as $permission) {
         Permission::firstOrCreate([
@@ -93,7 +98,7 @@ it('does not persist oauth client secrets or more_configs through the generic se
 });
 
 it('redacts oauth client secrets and more_configs secrets in GeneralSettingResource', function (): void {
-    $user = User::factory()->create();
+    $user = User::factory()->create(['school_id' => $this->school->id]);
 
     foreach (['View:SystemManagementSchool', 'Update:SystemManagementSchool'] as $permission) {
         Permission::firstOrCreate([
@@ -163,7 +168,7 @@ it('redacts oauth client secrets and more_configs secrets in GeneralSettingResou
 });
 
 it('redacts secrets when accessing individual settings by key', function (): void {
-    $user = User::factory()->create();
+    $user = User::factory()->create(['school_id' => $this->school->id]);
 
     foreach (['View:SystemManagementSchool'] as $permission) {
         Permission::firstOrCreate([

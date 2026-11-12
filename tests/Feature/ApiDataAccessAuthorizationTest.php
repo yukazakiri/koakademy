@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\UserRole;
 use App\Models\Faculty;
 use App\Models\GeneralSetting;
+use App\Models\School;
 use App\Models\Student;
 use App\Models\User;
 use Laravel\Sanctum\Sanctum;
@@ -12,6 +13,9 @@ use Spatie\Permission\Models\Permission;
 
 beforeEach(function (): void {
     config(['activitylog.enabled' => false]);
+
+    // API requests are tenant-scoped; every fixture belongs to this school.
+    $this->school = School::factory()->create();
 
     // Create GeneralSetting record for Student model methods
     GeneralSetting::create([
@@ -38,6 +42,7 @@ describe('API Data Access - Student Portal', function (): void {
         $this->studentUser = User::factory()->create([
             'role' => UserRole::Student,
             'email' => 'student1@example.com',
+            'school_id' => $this->school->id,
         ]);
 
         $this->studentRecord = Student::factory()->create([
@@ -46,12 +51,14 @@ describe('API Data Access - Student Portal', function (): void {
             'first_name' => 'John',
             'last_name' => 'Doe',
             'document_location_id' => null,
+            'school_id' => $this->school->id,
         ]);
 
         // Create another student user with associated Student record
         $this->otherStudentUser = User::factory()->create([
             'role' => UserRole::Student,
             'email' => 'student2@example.com',
+            'school_id' => $this->school->id,
         ]);
 
         $this->otherStudentRecord = Student::factory()->create([
@@ -60,6 +67,7 @@ describe('API Data Access - Student Portal', function (): void {
             'first_name' => 'Jane',
             'last_name' => 'Smith',
             'document_location_id' => null,
+            'school_id' => $this->school->id,
         ]);
     });
 
@@ -189,6 +197,7 @@ describe('API Data Access - Faculty Portal', function (): void {
             'role' => UserRole::Instructor,
             'email' => 'faculty1@example.com',
             'faculty_id_number' => 'FAC001',
+            'school_id' => $this->school->id,
         ]);
 
         // Create a Faculty record linked by email
@@ -197,6 +206,7 @@ describe('API Data Access - Faculty Portal', function (): void {
             'faculty_id_number' => 'FAC001',
             'first_name' => 'Robert',
             'last_name' => 'Johnson',
+            'school_id' => $this->school->id,
         ]);
 
         // Create another faculty user
@@ -204,6 +214,7 @@ describe('API Data Access - Faculty Portal', function (): void {
             'role' => UserRole::Professor,
             'email' => 'faculty2@example.com',
             'faculty_id_number' => 'FAC002',
+            'school_id' => $this->school->id,
         ]);
 
         // Create another Faculty record
@@ -212,6 +223,7 @@ describe('API Data Access - Faculty Portal', function (): void {
             'faculty_id_number' => 'FAC002',
             'first_name' => 'Sarah',
             'last_name' => 'Williams',
+            'school_id' => $this->school->id,
         ]);
 
         // Create some students for faculty to view
@@ -220,6 +232,7 @@ describe('API Data Access - Faculty Portal', function (): void {
             'first_name' => 'Alice',
             'last_name' => 'Brown',
             'document_location_id' => null,
+            'school_id' => $this->school->id,
         ]);
 
         $this->student2 = Student::factory()->create([
@@ -227,6 +240,7 @@ describe('API Data Access - Faculty Portal', function (): void {
             'first_name' => 'Bob',
             'last_name' => 'Davis',
             'document_location_id' => null,
+            'school_id' => $this->school->id,
         ]);
     });
 
@@ -457,6 +471,7 @@ describe('API Data Access - Administrative Users', function (): void {
         $this->adminUser = User::factory()->create([
             'role' => UserRole::Admin,
             'email' => 'admin@example.com',
+            'school_id' => $this->school->id,
         ]);
 
         $this->student = Student::factory()->create([
@@ -464,12 +479,14 @@ describe('API Data Access - Administrative Users', function (): void {
             'first_name' => 'Test',
             'last_name' => 'Student',
             'document_location_id' => null,
+            'school_id' => $this->school->id,
         ]);
 
         $this->faculty = Faculty::factory()->create([
             'email' => 'faculty@test.com',
             'first_name' => 'Test',
             'last_name' => 'Faculty',
+            'school_id' => $this->school->id,
         ]);
     });
 

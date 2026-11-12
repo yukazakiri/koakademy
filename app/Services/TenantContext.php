@@ -29,11 +29,61 @@ final class TenantContext
 
     private bool $apiRequest = false;
 
+    /**
+     * Whether the current request is required to resolve a tenant before
+     * tenant-scoped models may be queried.
+     */
+    private bool $tenantRequired = false;
+
+    /**
+     * Whether an API caller was granted cross-tenant access by role.
+     */
+    private bool $apiGlobalAccess = false;
+
     public function setApiSchool(School $school): void
     {
         $this->currentSchool = $school;
         $this->resolved = true;
         $this->apiRequest = true;
+        $this->apiGlobalAccess = false;
+    }
+
+    /**
+     * Grant the current API request explicit cross-tenant access.
+     *
+     * Only used for platform administrators who legitimately operate across
+     * schools and have no primary organization to scope to.
+     */
+    public function setApiGlobalAccess(): void
+    {
+        $this->currentSchool = null;
+        $this->resolved = true;
+        $this->apiRequest = true;
+        $this->apiGlobalAccess = true;
+    }
+
+    /**
+     * Mark the current request as requiring a resolved tenant.
+     */
+    public function requireTenant(): void
+    {
+        $this->tenantRequired = true;
+    }
+
+    /**
+     * Determine whether the current request requires a resolved tenant.
+     */
+    public function requiresTenant(): bool
+    {
+        return $this->tenantRequired;
+    }
+
+    /**
+     * Determine whether the current API request may access every organization.
+     */
+    public function hasApiGlobalAccess(): bool
+    {
+        return $this->apiGlobalAccess;
     }
 
     /**
@@ -230,6 +280,8 @@ final class TenantContext
         $this->currentSchool = null;
         $this->resolved = false;
         $this->apiRequest = false;
+        $this->tenantRequired = false;
+        $this->apiGlobalAccess = false;
         Session::forget(self::SESSION_KEY);
     }
 
@@ -241,5 +293,7 @@ final class TenantContext
         $this->resolved = false;
         $this->currentSchool = null;
         $this->apiRequest = false;
+        $this->tenantRequired = false;
+        $this->apiGlobalAccess = false;
     }
 }

@@ -44,7 +44,7 @@ services:
       APP_KEY: "${APP_KEY}"
       APP_PORT: 8000
       OCTANE_SERVER: "frankenphp"
-      AUTO_MIGRATE: "true"
+      AUTO_MIGRATE: "false"
       RUN_OPTIMIZE: "foreground"
       
       # Database
@@ -144,7 +144,7 @@ In Coolify's **Environment Variables** panel, set the following secrets:
 ### Step 5: Deploy the Application
 
 1. Click **Deploy**.
-2. Monitor build logs in real-time. Coolify will pull the images, run health checks on PostgreSQL, Redis, and Gotenberg, execute automatic migrations via `AUTO_MIGRATE=true`, and boot FrankenPHP.
+2. Monitor build logs in real-time. Coolify will pull the images, run health checks on PostgreSQL, Redis, and Gotenberg, run `php artisan migrate --force` as a release step before the application starts, and boot FrankenPHP.
 3. Once the deployment status turns green, visit `https://school.example.com/setup` to create the super administrator account and initialize your school institution.
 
 ---

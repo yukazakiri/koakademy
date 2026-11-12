@@ -62,7 +62,7 @@ APP_KEY=
 # Server & Runtime
 APP_PORT=8000
 OCTANE_SERVER=frankenphp
-AUTO_MIGRATE=true
+AUTO_MIGRATE=false
 RUN_OPTIMIZE=foreground
 
 # Database (PostgreSQL)
@@ -260,6 +260,13 @@ Start the stack in detached mode:
 docker compose up -d
 ```
 
+Migrations are a release step, not a container boot, so run them once against
+the started database before the application serves traffic:
+
+```sh
+docker compose exec app php artisan migrate --force --no-interaction
+```
+
 Monitor container startup and logs:
 
 ```sh
@@ -290,6 +297,9 @@ docker compose exec app php artisan optimize
 ```sh
 # Pull latest images
 docker compose pull
+
+# Run the release migrations once, before the new application serves traffic
+docker compose run --rm app php artisan migrate --force --no-interaction
 
 # Restart services with zero-downtime rolling restart
 docker compose up -d --remove-orphans

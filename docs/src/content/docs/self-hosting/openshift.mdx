@@ -51,7 +51,7 @@ data:
   APP_DEBUG: "false"
   APP_URL: "https://koakademy.apps.cluster.example.com"
   OCTANE_SERVER: "frankenphp"
-  AUTO_MIGRATE: "true"
+  AUTO_MIGRATE: "false"
   RUN_OPTIMIZE: "foreground"
   
   # DB & Redis
@@ -246,7 +246,16 @@ oc apply -f koakademy-route.yaml
 
 ---
 
-## Step 6: Verify Deployment
+## Step 6: Run the Migrations and Verify Deployment
+
+Migrations are a release step, not a container boot. Run them once, as a job
+against the same database, before the rollout:
+
+```sh
+oc -n koakademy create job koakademy-migrate --image=ghcr.io/yukazakiri/koakademy:latest \
+  -- /bin/sh -c 'php artisan migrate --force --no-interaction'
+oc -n koakademy wait --for=condition=complete job/koakademy-migrate
+```
 
 Check deployment status:
 

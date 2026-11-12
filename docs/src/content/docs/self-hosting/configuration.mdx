@@ -133,11 +133,40 @@ OCTANE_SERVER=frankenphp
 
 The wildcard proxy trust is valid because the app service is not published outside the overlay. If the topology is changed to expose the app directly, replace it with explicit proxy addresses or CIDRs.
 
+## Edge firewall rules
+
+The application refuses dotfile requests itself and never serves uploads from
+the document root. Operators who put the installation behind a CDN or a
+reverse proxy can add a layer of defence there as well. A Cloudflare WAF rule
+that rejects archive leaks, environment files and an old scanner signature:
+
+```text
+(http.request.uri.path matches r"^(web|main)/.*\.(zip|rar|tar|gz|7z|sql|bak)$")
+or (http.request.uri.path eq "/.env")
+or (lower(http.user_agent) contains "android 4.4.4")
+```
+
+Replace `web|main` with the path prefixes the installation serves, and test
+the expression in the provider's editor before enabling it. A rule that is
+too broad takes the application down with it.
+
 ## Manual Compose configuration
 
 `.env.production.example` remains the public interface for `compose.production.yaml`. Compose operators must create a protected `.env`, generate one `APP_KEY` per installation, configure a dedicated PostgreSQL/Redis password and external S3-compatible storage, then restart the app after any environment change. Under FrankenPHP, an environment or configuration change does not reach already booted workers until a restart.
 
-`AUTO_MIGRATE=true` is the default and runs pending application migrations when
-the container starts. The installer and `koakademy update` still run an
-explicit migration before rollout; set `AUTO_MIGRATE=false` only when your
-deployment process deliberately owns that startup behavior.
+`AUTO_MIGRATE=false` is the default. Database migrations belong to a release
+step, not to a container boot: a container that starts while the schema is out
+of date serves traffic against a schema it does not expect. The installer and
+`koakademy update` run `php artisan migrate --force` in a dedicated job before
+the application rollout, so the schema is current before any replica starts.
+
+Set `AUTO_MIGRATE=true` only when a single, controlled container owns the
+schema, such as a throwaway development box. A fleet that migrates from every
+replica races itself and can leave a half applied schema behind.
+
+Operators who run the application without the installer have to run the
+migration themselves, once, before starting the application:
+
+```sh
+docker compose --env-file .env -f compose.production.yaml run --rm app php artisan migrate --force --no-interaction
+```

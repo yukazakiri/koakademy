@@ -64,7 +64,7 @@ data:
   APP_DEBUG: "false"
   APP_URL: "https://school.example.com"
   OCTANE_SERVER: "frankenphp"
-  AUTO_MIGRATE: "true"
+  AUTO_MIGRATE: "false"
   RUN_OPTIMIZE: "foreground"
   
   # Database
@@ -279,6 +279,15 @@ Apply all resources:
 kubectl apply -f gotenberg.yaml
 kubectl apply -f koakademy-app.yaml
 kubectl apply -f ingress.yaml
+```
+
+Migrations are a release step, not a container boot. Run them once, as a job
+against the same database, before the rollout:
+
+```sh
+kubectl -n koakademy create job koakademy-migrate --image=ghcr.io/yukazakiri/koakademy:latest \
+  -- /bin/sh -c 'php artisan migrate --force --no-interaction'
+kubectl -n koakademy wait --for=condition=complete job/koakademy-migrate
 ```
 
 Monitor rollout:

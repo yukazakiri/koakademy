@@ -175,7 +175,7 @@ services:
       MODULE_STATUSES_FILE: ${MODULE_STATUSES_FILE:-/app/storage/app/modules_statuses.json}
       MODULE_ACTIVATOR: ${MODULE_ACTIVATOR:-database}
       MODULE_DEFAULT_STATUS: ${MODULE_DEFAULT_STATUS:-preserve}
-      AUTO_MIGRATE: ${AUTO_MIGRATE:-true}
+      AUTO_MIGRATE: ${AUTO_MIGRATE:-false}
       RUN_DOCKER_SCRIPTS: "false"
       RUN_SCOUT_SETTINGS: "false"
       RUN_OPTIMIZE: foreground

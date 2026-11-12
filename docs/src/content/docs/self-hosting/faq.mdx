@@ -101,10 +101,12 @@ Run migrations, start the app, then open `/setup`. The one-time wizard creates t
 
 ## Does KoAkademy run migrations automatically?
 
-Yes. `AUTO_MIGRATE=true` is the default, so the application also runs pending
-migrations when it starts. The installer and `koakademy update` still run
-`php artisan migrate --force` explicitly before rollout, after taking a backup
-and reviewing release notes.
+No. `AUTO_MIGRATE=false` is the default, because migrations belong to a
+release step rather than to a container boot. The installer and
+`koakademy update` run `php artisan migrate --force` in a dedicated job
+before rollout, after taking a backup and reviewing release notes. Operators
+who start the application themselves run the same command once, before the
+first replica starts.
 
 ## Which PDF library and renderer are used?
 

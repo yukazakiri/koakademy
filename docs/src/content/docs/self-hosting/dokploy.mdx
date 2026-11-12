@@ -289,15 +289,23 @@ Dokploy's environment editor sometimes persists strings with surrounding quotati
 
 When pushing new code or pulling a new release image (such as `yukazaki/koakademy:edge-frankenphp` or a tagged release `ghcr.io/yukazakiri/koakademy:v1.24.0`):
 
-1. **Trigger Redeploy in Dokploy**: Click **Redeploy** in the Dokploy Compose service.
-2. **Start-First Rollout**:
+1. **Run the migrations as a release step**: run the migration once, in a
+   one-off container against the same database, before the rollout starts.
+   Migrations are not part of the container boot, so the application never
+   serves traffic against a schema it does not expect.
+
+   ```sh
+   docker compose --env-file .env -f docker-compose.yml run --rm app php artisan migrate --force --no-interaction
+   ```
+2. **Trigger Redeploy in Dokploy**: Click **Redeploy** in the Dokploy Compose service.
+3. **Start-First Rollout**:
    - Docker Swarm starts the new `app` replica first.
-   - The new replica runs database migrations (`AUTO_MIGRATE=true`), warms caches, boots FrankenPHP and Inertia SSR.
+   - The new replica warms caches, boots FrankenPHP and Inertia SSR.
    - Swarm waits up to 60 seconds (`start_period`) for the health check endpoint `/health` to return HTTP `200`.
-3. **Route Traffic**:
+4. **Route Traffic**:
    - Once healthy, Traefik routes incoming connections to the new container.
    - The previous container is stopped gracefully (`stop_grace_period: 30s`).
-4. **Independent Worker Updates**:
+5. **Independent Worker Updates**:
    - The `horizon` and `scheduler` services update in parallel without causing web request downtime.
    - Horizon workers finish active jobs before terminating (`stop_grace_period: 30m`).
 

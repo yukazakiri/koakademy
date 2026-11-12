@@ -204,7 +204,11 @@ grep -Fq -- '--env DB_HOST=postgres' "$state_directory/docker.log"
 grep -Fq -- '--env REDIS_HOST=redis' "$state_directory/docker.log"
 grep -Fq -- '--env TELESCOPE_ENABLED=false' "$state_directory/docker.log"
 grep -Fq 'KOAKADEMY_NETWORK=koakademy_private' "$state_directory/runtime/runtime.env"
-grep -Fq 'AUTO_MIGRATE=true' "$state_directory/runtime/runtime.env"
+grep -Fq 'AUTO_MIGRATE=false' "$state_directory/runtime/runtime.env"
+# Migrations run in the release step, as a dedicated job before the
+# application rollout, and not while the application container boots.
+grep -Fq 'koakademy-migrate-' "$state_directory/docker.log"
+grep -Fq 'artisan migrate --force' "$state_directory/docker.log"
 test -f "$state_directory/networks/koakademy_private"
 if [[ "$channel" == edge ]]; then
     grep -Fq "RELEASE_TAG=edge-$source_sha" "$state_directory/runtime/runtime.env"

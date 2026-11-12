@@ -64,7 +64,7 @@ data:
   APP_DEBUG: "false"
   APP_URL: "https://school.example.com"
   OCTANE_SERVER: "frankenphp"
-  AUTO_MIGRATE: "true"
+  AUTO_MIGRATE: "false"
   RUN_OPTIMIZE: "foreground"
   
   # Database
@@ -96,6 +96,13 @@ Apply config:
 ```sh
 kubectl apply -f koakademy-config.yaml
 ```
+
+:::note[One image for the job and the deployment]
+The migration job and the application deployment carry the same
+release-specific tag, and both are updated for every release. A floating
+`latest` lets a node keep an older image, so the job can report completion
+without running the migrations of the release the deployment starts.
+:::
 
 ---
 
@@ -154,7 +161,41 @@ spec:
 
 ---
 
-## Step 4: Application Deployment & Service
+## Step 4: Release Migration Job
+
+Migrations are a release step, not a container boot. The application is only
+started after the schema is prepared.
+
+Create `koakademy-migrate-job.yaml`. The job reads the same configuration and
+the same secrets as the application, so it migrates the application database:
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: koakademy-migrate
+  namespace: koakademy
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          # The same release-specific tag the application deployment uses.
+          image: ghcr.io/yukazakiri/koakademy:v1.30.0
+          imagePullPolicy: IfNotPresent
+          command: ["php", "artisan", "migrate", "--force", "--no-interaction"]
+          envFrom:
+            - configMapRef:
+                name: koakademy-config
+            - secretRef:
+                name: koakademy-secrets
+```
+
+---
+
+## Step 5: Application Deployment & Service
 
 Create `koakademy-app.yaml`:
 
@@ -181,7 +222,8 @@ spec:
     spec:
       containers:
         - name: koakademy
-          image: ghcr.io/yukazakiri/koakademy:latest
+          # The same release-specific tag the migration job uses.
+          image: ghcr.io/yukazakiri/koakademy:v1.30.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
@@ -234,7 +276,7 @@ spec:
 
 ---
 
-## Step 5: Ingress with TLS (cert-manager)
+## Step 6: Ingress with TLS (cert-manager)
 
 Create `ingress.yaml`:
 
@@ -271,12 +313,20 @@ spec:
 
 ---
 
-## Step 6: Deploy & Verify
+## Step 7: Deploy & Verify
 
-Apply all resources:
+Prepare the schema before the application starts:
 
 ```sh
 kubectl apply -f gotenberg.yaml
+kubectl apply -f koakademy-migrate-job.yaml
+kubectl -n koakademy wait --for=condition=complete job/koakademy-migrate --timeout=10m
+```
+
+The application is only applied once the migration job completed, so no pod
+starts against a schema it does not expect:
+
+```sh
 kubectl apply -f koakademy-app.yaml
 kubectl apply -f ingress.yaml
 ```
@@ -289,3 +339,12 @@ kubectl -n koakademy get pods -w
 ```
 
 When pods are in `Running` status, visit `https://school.example.com/setup` to finish installation.
+
+A later release repeats the same step. Remove the finished job first, because
+a job name can only be used once:
+
+```sh
+kubectl -n koakademy delete job koakademy-migrate --ignore-not-found
+kubectl apply -f koakademy-migrate-job.yaml
+kubectl -n koakademy wait --for=condition=complete job/koakademy-migrate --timeout=10m
+```

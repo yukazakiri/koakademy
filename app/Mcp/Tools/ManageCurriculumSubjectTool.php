@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Mcp\Tools;
 
+use App\Exceptions\AmbiguousSubjectException;
 use App\Mcp\Concerns\AuthorizesMcpRequests;
 use App\Models\Course;
 use App\Models\Subject;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
+use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\ResponseFactory;
@@ -21,6 +24,42 @@ final class ManageCurriculumSubjectTool extends Tool
     use AuthorizesMcpRequests;
 
     public function handle(Request $request): ResponseFactory
+    {
+        try {
+            return $this->dispatch($request);
+        } catch (AmbiguousSubjectException $exception) {
+            return Response::structured(['error' => true, 'message' => $exception->getMessage()]);
+        }
+    }
+
+    /** @return array<string, Type> */
+    public function schema(JsonSchema $schema): array
+    {
+        return [
+            'action' => $schema->string()->enum(['create', 'update', 'batch_upsert', 'delete', 'get'])->required()->description('Operation: create, update, batch_upsert, delete, get.'),
+            'subjects' => $schema->array()->description('List of subjects for batch_upsert.')->items(
+                $schema->object(fn ($s) => [
+                    'code' => $s->string()->required()->description('Subject code (e.g. CS101).'),
+                    'title' => $s->string()->required()->description('Subject title.'),
+                    'units' => $s->integer()->required()->description('Credit units.'),
+                    'lecture' => $s->integer()->description('Lecture hours.'),
+                    'laboratory' => $s->integer()->description('Lab hours.'),
+                    'academic_year' => $s->integer()->description('Year level 1-5.'),
+                    'semester' => $s->integer()->description('Semester 1 or 2.'),
+                    'course_code' => $s->string()->description('Program code.'),
+                ])
+            ),
+            'subject_id' => $schema->integer()->description('Subject database ID.'),
+            'code' => $schema->string()->description('Subject code (e.g. CS101).'),
+            'title' => $schema->string()->description('Subject title.'),
+            'units' => $schema->integer()->description('Credit units.'),
+            'academic_year' => $schema->integer()->description('Year level (1-5).'),
+            'semester' => $schema->integer()->enum([1, 2])->description('Semester (1 or 2).'),
+            'course_code' => $schema->string()->description('Program code (e.g. BSCS).'),
+        ];
+    }
+
+    private function dispatch(Request $request): ResponseFactory
     {
         $action = mb_strtolower((string) $request->get('action'));
 
@@ -57,33 +96,6 @@ final class ManageCurriculumSubjectTool extends Tool
         };
     }
 
-    /** @return array<string, Type> */
-    public function schema(JsonSchema $schema): array
-    {
-        return [
-            'action' => $schema->string()->enum(['create', 'update', 'batch_upsert', 'delete', 'get'])->required()->description('Operation: create, update, batch_upsert, delete, get.'),
-            'subjects' => $schema->array()->description('List of subjects for batch_upsert.')->items(
-                $schema->object(fn ($s) => [
-                    'code' => $s->string()->required()->description('Subject code (e.g. CS101).'),
-                    'title' => $s->string()->required()->description('Subject title.'),
-                    'units' => $s->integer()->required()->description('Credit units.'),
-                    'lecture' => $s->integer()->description('Lecture hours.'),
-                    'laboratory' => $s->integer()->description('Lab hours.'),
-                    'academic_year' => $s->integer()->description('Year level 1-5.'),
-                    'semester' => $s->integer()->description('Semester 1 or 2.'),
-                    'course_code' => $s->string()->description('Program code.'),
-                ])
-            ),
-            'subject_id' => $schema->integer()->description('Subject database ID.'),
-            'code' => $schema->string()->description('Subject code (e.g. CS101).'),
-            'title' => $schema->string()->description('Subject title.'),
-            'units' => $schema->integer()->description('Credit units.'),
-            'academic_year' => $schema->integer()->description('Year level (1-5).'),
-            'semester' => $schema->integer()->enum([1, 2])->description('Semester (1 or 2).'),
-            'course_code' => $schema->string()->description('Program code (e.g. BSCS).'),
-        ];
-    }
-
     private function handleCreate(Request $request): ResponseFactory
     {
         $validated = $request->validate([
@@ -109,9 +121,27 @@ final class ManageCurriculumSubjectTool extends Tool
             $courseId = Course::query()->where('school_id', $school->id)->value('id') ?? Course::query()->value('id') ?? 1;
         }
 
+        // A subject may only be attached to a program of the current school.
+        if (! Course::query()->where('school_id', $school->id)->whereKey($courseId)->exists()) {
+            return Response::structured([
+                'error' => true,
+                'message' => "Program {$courseId} does not belong to this school.",
+            ]);
+        }
+
+        $code = mb_strtoupper(mb_trim($validated['code']));
+
+        // A subject code is unique inside the program it belongs to.
+        if (Subject::query()->where('course_id', $courseId)->where('code', $code)->exists()) {
+            return Response::structured([
+                'error' => true,
+                'message' => "Subject code {$code} already exists in this program.",
+            ]);
+        }
+
         $subject = Subject::query()->create([
             'school_id' => $school->id,
-            'code' => mb_strtoupper(mb_trim($validated['code'])),
+            'code' => $code,
             'title' => mb_trim($validated['title']),
             'units' => (int) $validated['units'],
             'lecture' => (int) ($validated['lecture'] ?? $validated['units']),
@@ -173,7 +203,13 @@ final class ManageCurriculumSubjectTool extends Tool
                     $courseId = $defaultCourse?->id ?? 1;
                 }
 
-                $existing = Subject::query()->where('school_id', $school->id)->where('code', $code)->first();
+                // A subject may only be attached to a program of the current
+                // school.
+                if (! Course::query()->where('school_id', $school->id)->whereKey($courseId)->exists()) {
+                    throw new InvalidArgumentException("Program {$courseId} does not belong to this school.");
+                }
+
+                $existing = Subject::query()->where('course_id', $courseId)->where('code', $code)->first();
                 if ($existing instanceof Subject) {
                     $existing->update([
                         'title' => $title,
@@ -291,7 +327,37 @@ final class ManageCurriculumSubjectTool extends Tool
 
         $code = $request->get('code');
         if ($code) {
-            return Subject::query()->where('school_id', $school->id)->where('code', mb_trim((string) $code))->first();
+            $query = Subject::query()->where('school_id', $school->id);
+
+            // A subject code is unique inside the program it belongs to, so
+            // a lookup by code is scoped to the program when the request
+            // names one.
+            $courseId = $request->get('course_id');
+            if ($courseId === null && filled($request->get('course_code'))) {
+                $courseId = Course::query()
+                    ->where('school_id', $school->id)
+                    ->where('code', (string) $request->get('course_code'))
+                    ->value('id');
+
+                // A program that does not resolve cannot narrow the lookup.
+                // Falling back to a school wide search would let the request
+                // reach a subject of a different program.
+                if ($courseId === null) {
+                    return null;
+                }
+            }
+
+            if ($courseId !== null) {
+                $query->where('course_id', (int) $courseId);
+            }
+
+            $matches = $query->where('code', mb_trim((string) $code))->limit(2)->get();
+
+            if ($matches->count() > 1) {
+                throw AmbiguousSubjectException::forCode(mb_trim((string) $code));
+            }
+
+            return $matches->first();
         }
 
         return null;

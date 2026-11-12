@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ai\Tools;
 
+use App\Exceptions\AmbiguousSubjectException;
 use App\Models\Classes;
 use App\Models\Faculty;
 use App\Models\Room;
@@ -49,53 +50,10 @@ final class ManageClassScheduleTool implements Approvable, Tool
 
     public function handle(Request $request): Stringable|string
     {
-        $user = Auth::user();
-        if (! $user instanceof User) {
-            return json_encode(['error' => true, 'message' => 'Authentication is required.']);
-        }
-
-        $action = mb_strtolower((string) $request['action']);
-
-        if ($action === 'get') {
-            if (! $user->hasRole('super_admin') && ! $user->can('View:Classes')) {
-                return json_encode(['error' => true, 'message' => 'You are not permitted to view classes.']);
-            }
-        } elseif ($action === 'create_class') {
-            if (! $user->hasRole('super_admin') && ! $user->can('Create:Classes')) {
-                return json_encode(['error' => true, 'message' => 'You are not permitted to create classes.']);
-            }
-        } elseif ($action === 'batch_create') {
-            if (! $user->hasRole('super_admin') && ! $user->can('Create:Classes') && ! $user->can('Update:Classes')) {
-                return json_encode(['error' => true, 'message' => 'You are not permitted to batch create class schedules.']);
-            }
-        } elseif ($action === 'delete_class') {
-            if (! $user->hasRole('super_admin') && ! $user->can('Delete:Classes')) {
-                return json_encode(['error' => true, 'message' => 'You are not permitted to delete classes.']);
-            }
-        } elseif (in_array($action, ['reschedule', 'update_schedule', 'assign_faculty', 'assign_room'], true)) {
-            if (! $user->hasRole('super_admin') && ! $user->can('Update:Classes')) {
-                return json_encode(['error' => true, 'message' => 'You are not permitted to update classes or schedules.']);
-            }
-        }
-
         try {
-            return match ($action) {
-                'create_class' => $this->handleCreateClass($request),
-                'batch_create' => $this->handleBatchCreate($request),
-                'reschedule', 'update_schedule' => $this->handleReschedule($request),
-                'assign_faculty' => $this->handleAssignFaculty($request),
-                'assign_room' => $this->handleAssignRoom($request),
-                'delete_class' => $this->handleDeleteClass($request),
-                'get' => $this->handleGet($request),
-                default => json_encode(['error' => true, 'message' => "Unknown action '{$action}'. Supported: create_class, batch_create, reschedule, assign_faculty, assign_room, delete_class, get."]),
-            };
-        } catch (EntityNotFoundException|AmbiguousEntityException $e) {
-            // Surface the resolution failure as a tool result the model can act
-            // on, instead of letting a driver-level error abort the chat turn.
-            return json_encode([
-                'error' => true,
-                'message' => $e->getMessage(),
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+            return $this->dispatch($request);
+        } catch (AmbiguousSubjectException $exception) {
+            return json_encode(['error' => true, 'message' => $exception->getMessage()]);
         }
     }
 
@@ -194,6 +152,58 @@ final class ManageClassScheduleTool implements Approvable, Tool
         return false;
     }
 
+    private function dispatch(Request $request): Stringable|string
+    {
+        $user = Auth::user();
+        if (! $user instanceof User) {
+            return json_encode(['error' => true, 'message' => 'Authentication is required.']);
+        }
+
+        $action = mb_strtolower((string) $request['action']);
+
+        if ($action === 'get') {
+            if (! $user->hasRole('super_admin') && ! $user->can('View:Classes')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to view classes.']);
+            }
+        } elseif ($action === 'create_class') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Create:Classes')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to create classes.']);
+            }
+        } elseif ($action === 'batch_create') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Create:Classes') && ! $user->can('Update:Classes')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to batch create class schedules.']);
+            }
+        } elseif ($action === 'delete_class') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Delete:Classes')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to delete classes.']);
+            }
+        } elseif (in_array($action, ['reschedule', 'update_schedule', 'assign_faculty', 'assign_room'], true)) {
+            if (! $user->hasRole('super_admin') && ! $user->can('Update:Classes')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to update classes or schedules.']);
+            }
+        }
+
+        try {
+            return match ($action) {
+                'create_class' => $this->handleCreateClass($request),
+                'batch_create' => $this->handleBatchCreate($request),
+                'reschedule', 'update_schedule' => $this->handleReschedule($request),
+                'assign_faculty' => $this->handleAssignFaculty($request),
+                'assign_room' => $this->handleAssignRoom($request),
+                'delete_class' => $this->handleDeleteClass($request),
+                'get' => $this->handleGet($request),
+                default => json_encode(['error' => true, 'message' => "Unknown action '{$action}'. Supported: create_class, batch_create, reschedule, assign_faculty, assign_room, delete_class, get."]),
+            };
+        } catch (EntityNotFoundException|AmbiguousEntityException $e) {
+            // Surface the resolution failure as a tool result the model can act
+            // on, instead of letting a driver-level error abort the chat turn.
+            return json_encode([
+                'error' => true,
+                'message' => $e->getMessage(),
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        }
+    }
+
     /**
      * Resolve a faculty reference supplied by a model.
      *
@@ -249,6 +259,31 @@ final class ManageClassScheduleTool implements Approvable, Tool
         return $school instanceof \App\Models\School ? $school : null;
     }
 
+    /**
+     * Find the subject a class belongs to.
+     *
+     * A subject code is unique inside the program it belongs to, so the same
+     * code can exist in more than one program of a school. A code that
+     * matches several subjects cannot identify one, and picking the first
+     * match would link the class to another program's subject.
+     */
+    private function resolveSubjectByCode(string $code): ?Subject
+    {
+        $code = mb_strtoupper(mb_trim($code));
+
+        if ($code === '') {
+            return null;
+        }
+
+        $matches = Subject::query()->where('code', $code)->limit(2)->get();
+
+        if ($matches->count() > 1) {
+            throw AmbiguousSubjectException::forClass($code);
+        }
+
+        return $matches->first();
+    }
+
     private function handleCreateClass(Request $request): string
     {
         $validated = $request->validate([
@@ -277,7 +312,7 @@ final class ManageClassScheduleTool implements Approvable, Tool
 
         $facultyId = $this->resolveOptionalFaculty($validated['faculty_id'] ?? null, $validated['faculty_name'] ?? null)?->id;
 
-        $subject = Subject::query()->where('code', $validated['subject_code'])->first();
+        $subject = $this->resolveSubjectByCode((string) $validated['subject_code']);
 
         try {
             return DB::transaction(function () use ($validated, $schoolYear, $semester, $roomId, $facultyId, $subject) {
@@ -370,7 +405,7 @@ final class ManageClassScheduleTool implements Approvable, Tool
 
                 $facultyId = $this->resolveOptionalFaculty($cData['faculty_id'] ?? null, $cData['faculty_name'] ?? null)?->id;
 
-                $subject = Subject::query()->where('code', $subjectCode)->first();
+                $subject = $this->resolveSubjectByCode($subjectCode);
 
                 $class = Classes::query()
                     ->where('subject_code', $subjectCode)

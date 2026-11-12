@@ -62,7 +62,7 @@ APP_KEY=
 # Server & Runtime
 APP_PORT=8000
 OCTANE_SERVER=frankenphp
-AUTO_MIGRATE=true
+AUTO_MIGRATE=false
 RUN_OPTIMIZE=foreground
 
 # Database (PostgreSQL)
@@ -254,10 +254,14 @@ server {
 
 ## Step 5: Start Services and Initialize
 
-Start the stack in detached mode:
+Migrations are a release step, not a container boot. Bring the dependencies
+up, prepare the schema, and only then start the application, so no request
+reaches an empty database:
 
 ```sh
-docker compose up -d
+docker compose up -d postgres redis gotenberg
+docker compose run --rm --pull always app php artisan migrate --force --no-interaction
+docker compose up -d app
 ```
 
 Monitor container startup and logs:
@@ -290,6 +294,10 @@ docker compose exec app php artisan optimize
 ```sh
 # Pull latest images
 docker compose pull
+
+# Run the release migrations once, before the new application serves traffic.
+# The image is pulled, so the migration runs on the image the rollout starts.
+docker compose run --rm --pull always app php artisan migrate --force --no-interaction
 
 # Restart services with zero-downtime rolling restart
 docker compose up -d --remove-orphans

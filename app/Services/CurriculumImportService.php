@@ -138,7 +138,9 @@ final readonly class CurriculumImportService
                     continue;
                 }
                 $code = mb_strtoupper(mb_trim($row['code']));
-                $subject = Subject::query()->where('code', $code)->first();
+                // A subject code is unique inside the program it belongs to,
+                // so the import has to look it up there.
+                $subject = Subject::query()->where('course_id', $course->id)->where('code', $code)->first();
                 $attributes = [
                     'title' => mb_trim($row['title']), 'units' => (int) $row['units'],
                     'lecture' => (int) $row['lecture'], 'laboratory' => (int) $row['laboratory'],
@@ -191,7 +193,8 @@ final readonly class CurriculumImportService
             $this->permit($actor, 'Update:Course');
         } else {
             $this->permit($actor, 'Create:Course');
-            if (Course::query()->where('code', $selection['code'])->exists()) {
+            // A program code is unique inside the school that owns it.
+            if (Course::query()->where('school_id', $import->school_id)->where('code', $selection['code'])->exists()) {
                 throw ValidationException::withMessages(['code' => 'Program code already exists. Select the existing program instead.']);
             }
             $normalize = static fn (string $text): string => mb_strtolower(mb_trim(preg_replace('/\s+/u', ' ', $text)));
@@ -229,10 +232,12 @@ final readonly class CurriculumImportService
                 throw ValidationException::withMessages(['rows' => "Duplicate subject code {$code} at row {$raw['row']}. Resolve or skip one row."]);
             }
             $codes[$code] = true;
-            $subject = Subject::query()->where('code', $code)->first();
-            if ($subject && ($course === null || $subject->course_id !== $course->id)) {
-                throw ValidationException::withMessages(['rows' => "Subject code {$code} belongs to a different program. Choose its program or change the code."]);
-            }
+            // A subject code is unique inside the program it belongs to. The
+            // same code in another program of the school is a different
+            // subject and no longer a conflict.
+            $subject = $course !== null
+                ? Subject::query()->where('course_id', $course->id)->where('code', $code)->first()
+                : null;
             $needsUpdate = $needsUpdate || $subject !== null;
             $needsCreate = $needsCreate || $subject === null;
             $included[$code] = $row;

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Tools;
 
+use App\Exceptions\AmbiguousSubjectException;
 use App\Mcp\Concerns\AuthorizesMcpRequests;
 use App\Models\Classes;
 use App\Models\Faculty;
@@ -37,6 +38,50 @@ final class ManageClassScheduleTool extends Tool
     }
 
     public function handle(Request $request): ResponseFactory
+    {
+        try {
+            return $this->dispatch($request);
+        } catch (AmbiguousSubjectException $exception) {
+            return Response::structured(['error' => true, 'message' => $exception->getMessage()]);
+        }
+    }
+
+    /** @return array<string, Type> */
+    public function schema(JsonSchema $schema): array
+    {
+        return [
+            'action' => $schema->string()->enum(['create_class', 'batch_create', 'reschedule', 'assign_faculty', 'assign_room', 'delete_class', 'get'])->required()->description('Operation.'),
+            'classes' => $schema->array()->description('List of class schedules to batch create.')->items(
+                $schema->object(fn ($s) => [
+                    'subject_code' => $s->string()->required()->description('Subject code.'),
+                    'section' => $s->string()->required()->description('Section code.'),
+                    'day_of_week' => $s->string()->description('Meeting day.'),
+                    'start_time' => $s->string()->description('Start time (HH:MM).'),
+                    'end_time' => $s->string()->description('End time (HH:MM).'),
+                    'delivery_mode' => $s->string()->enum(['face_to_face', 'online'])->description('Delivery type for this meeting.'),
+                    'room_id' => $s->integer()->description('Room ID.'),
+                    'room_name' => $s->string()->description('Room name or number.'),
+                    'faculty_id' => $s->string()->description('Faculty UUID or employee number.'),
+                    'faculty_name' => $s->string()->description('Faculty name.'),
+                ])
+            ),
+            'schedule_id' => $schema->integer()->description('Specific meeting ID to reschedule. Required to target one meeting of a mixed class.'),
+            'class_id' => $schema->integer()->description('Class ID.'),
+            'subject_code' => $schema->string()->description('Subject code (e.g. CS101).'),
+            'section' => $schema->string()->description('Section code.'),
+            'day_of_week' => $schema->string()->description('Meeting day.'),
+            'start_time' => $schema->string()->description('Start time (HH:MM).'),
+            'end_time' => $schema->string()->description('End time (HH:MM).'),
+            'delivery_mode' => $schema->string()->enum(['face_to_face', 'online'])->description('Delivery type of the meeting being created or rescheduled.'),
+            'room_id' => $schema->integer()->description('Room ID.'),
+            'room_name' => $schema->string()->description('Room name or number (e.g. "Room 501").'),
+            'faculty_id' => $schema->string()->description('Faculty reference: the internal UUID or the employee/faculty ID number (e.g. 800188). Do not assume it is a numeric database key.'),
+            'faculty_name' => $schema->string()->description('Faculty name, used when faculty_id is unavailable.'),
+            'faculty_email' => $schema->string()->description('Faculty email, used when faculty_id is unavailable.'),
+        ];
+    }
+
+    private function dispatch(Request $request): ResponseFactory
     {
         $action = mb_strtolower((string) $request->get('action'));
 
@@ -81,41 +126,6 @@ final class ManageClassScheduleTool extends Tool
             'delete_class' => $this->handleDeleteClass($request),
             default => Response::structured(['error' => true, 'message' => "Unsupported action '{$action}'."]),
         };
-    }
-
-    /** @return array<string, Type> */
-    public function schema(JsonSchema $schema): array
-    {
-        return [
-            'action' => $schema->string()->enum(['create_class', 'batch_create', 'reschedule', 'assign_faculty', 'assign_room', 'delete_class', 'get'])->required()->description('Operation.'),
-            'classes' => $schema->array()->description('List of class schedules to batch create.')->items(
-                $schema->object(fn ($s) => [
-                    'subject_code' => $s->string()->required()->description('Subject code.'),
-                    'section' => $s->string()->required()->description('Section code.'),
-                    'day_of_week' => $s->string()->description('Meeting day.'),
-                    'start_time' => $s->string()->description('Start time (HH:MM).'),
-                    'end_time' => $s->string()->description('End time (HH:MM).'),
-                    'delivery_mode' => $s->string()->enum(['face_to_face', 'online'])->description('Delivery type for this meeting.'),
-                    'room_id' => $s->integer()->description('Room ID.'),
-                    'room_name' => $s->string()->description('Room name or number.'),
-                    'faculty_id' => $s->string()->description('Faculty UUID or employee number.'),
-                    'faculty_name' => $s->string()->description('Faculty name.'),
-                ])
-            ),
-            'schedule_id' => $schema->integer()->description('Specific meeting ID to reschedule. Required to target one meeting of a mixed class.'),
-            'class_id' => $schema->integer()->description('Class ID.'),
-            'subject_code' => $schema->string()->description('Subject code (e.g. CS101).'),
-            'section' => $schema->string()->description('Section code.'),
-            'day_of_week' => $schema->string()->description('Meeting day.'),
-            'start_time' => $schema->string()->description('Start time (HH:MM).'),
-            'end_time' => $schema->string()->description('End time (HH:MM).'),
-            'delivery_mode' => $schema->string()->enum(['face_to_face', 'online'])->description('Delivery type of the meeting being created or rescheduled.'),
-            'room_id' => $schema->integer()->description('Room ID.'),
-            'room_name' => $schema->string()->description('Room name or number (e.g. "Room 501").'),
-            'faculty_id' => $schema->string()->description('Faculty reference: the internal UUID or the employee/faculty ID number (e.g. 800188). Do not assume it is a numeric database key.'),
-            'faculty_name' => $schema->string()->description('Faculty name, used when faculty_id is unavailable.'),
-            'faculty_email' => $schema->string()->description('Faculty email, used when faculty_id is unavailable.'),
-        ];
     }
 
     /**
@@ -173,6 +183,31 @@ final class ManageClassScheduleTool extends Tool
         return null;
     }
 
+    /**
+     * Find the subject a class belongs to.
+     *
+     * A subject code is unique inside the program it belongs to, so the same
+     * code can exist in more than one program of a school. A code that
+     * matches several subjects cannot identify one, and picking the first
+     * match would link the class to another program's subject.
+     */
+    private function resolveSubjectByCode(string $code): ?Subject
+    {
+        $code = mb_strtoupper(mb_trim($code));
+
+        if ($code === '') {
+            return null;
+        }
+
+        $matches = Subject::query()->where('code', $code)->limit(2)->get();
+
+        if ($matches->count() > 1) {
+            throw AmbiguousSubjectException::forClass($code);
+        }
+
+        return $matches->first();
+    }
+
     private function handleCreateClass(Request $request): ResponseFactory
     {
         $validated = $request->validate([
@@ -193,7 +228,7 @@ final class ManageClassScheduleTool extends Tool
 
         $schoolYear = $validated['school_year'] ?? $this->settings->getCurrentSchoolYearString();
         $semester = $validated['semester'] ?? $this->settings->getCurrentSemester();
-        $subject = Subject::query()->where('code', $validated['subject_code'])->first();
+        $subject = $this->resolveSubjectByCode((string) $validated['subject_code']);
 
         $roomId = ($validated['delivery_mode'] ?? null) === Classes::DELIVERY_ONLINE ? null : ($validated['room_id'] ?? null);
         if (($validated['delivery_mode'] ?? null) !== Classes::DELIVERY_ONLINE && ! $roomId && filled($validated['room_name'] ?? null)) {
@@ -287,7 +322,7 @@ final class ManageClassScheduleTool extends Tool
 
                 $facultyId = $this->resolveOptionalFaculty($cData['faculty_id'] ?? null, $cData['faculty_name'] ?? null);
 
-                $subject = Subject::query()->where('code', $subjectCode)->first();
+                $subject = $this->resolveSubjectByCode($subjectCode);
 
                 $class = Classes::query()
                     ->where('subject_code', $subjectCode)

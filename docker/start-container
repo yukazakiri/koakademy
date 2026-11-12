@@ -101,9 +101,14 @@ schedule_scout_settings_post_start() {
 }
 
 # Production deployment settings
-# AUTO_MIGRATE: Run application migrations on container start. Default "true".
+# AUTO_MIGRATE: Run application migrations on container start. Default "false".
+# Migrations belong to a release step, not to a container boot: a container
+# that starts while the schema is out of date serves traffic against a schema
+# it does not expect. Set AUTO_MIGRATE=true only for a single, controlled
+# container that owns the schema, such as a throwaway development box.
 # RUN_MIGRATIONS: Legacy alias used only when AUTO_MIGRATE is not set.
 # PRODUCTION_SEEDERS: Comma-separated list of production-safe seeders to run
+# on every container boot. They run whether or not migrations are enabled.
 # RUN_DOCKER_SCRIPTS: Set to "true" to run scripts in docker-scripts folder on container start
 # RUN_SCOUT_SETTINGS: Set to "true" to sync Scout index settings after services boot (post-start). Default "true".
 # Scout reindexing should be run out-of-band when needed.
@@ -113,7 +118,7 @@ schedule_scout_settings_post_start() {
 # PULSE_AUTO_CREATE_DATABASE: Create a missing PostgreSQL Pulse database. Default "true".
 # PULSE_RUN_MIGRATIONS: Run the Pulse migration against its own connection. Default "true".
 # PULSE_PURGE_ON_START: Drain pending ingest records and clear Pulse storage before boot. Default "true".
-auto_migrate=${AUTO_MIGRATE:-${RUN_MIGRATIONS:-"true"}}
+auto_migrate=${AUTO_MIGRATE:-${RUN_MIGRATIONS:-"false"}}
 auto_migrate=$(strip_optional_quotes "${auto_migrate}")
 production_seeders=${PRODUCTION_SEEDERS:-""}
 run_docker_scripts=${RUN_DOCKER_SCRIPTS:-"false"}
@@ -678,8 +683,14 @@ run_production_seeders() {
 }
 
 run_migrations_if_enabled() {
-    if ! is_truthy "${auto_migrate}"; then
+    # A demo installation is a single, throwaway container that owns its own
+    # schema, so it prepares itself no matter how the flag is set.
+    if [ "${app_env}" != "demo" ] && ! is_truthy "${auto_migrate}"; then
         echo "Database migrations disabled, skipping."
+        # The configured seeders are not part of a migration. They keep
+        # running on every boot, so an installation that seeds itself is
+        # not silently left without its seed data.
+        run_production_seeders
         return 0
     fi
 

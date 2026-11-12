@@ -88,7 +88,31 @@ it('allows two subjects with the same code in different schools', function (): v
         ->and($subjectB->school_id)->toBe($schoolB->id);
 });
 
-it('rejects duplicate subject code within the same school at database level', function (): void {
+it('allows two subjects with the same code in different programs of the same school', function (): void {
+    $school = School::factory()->create();
+    $programA = Course::factory()->create(['school_id' => $school->id]);
+    $programB = Course::factory()->create(['school_id' => $school->id]);
+
+    $subjectA = Subject::factory()->create([
+        'school_id' => $school->id,
+        'course_id' => $programA->id,
+        'code' => 'NSTP 1',
+        'title' => 'National Service Training Program I',
+    ]);
+
+    $subjectB = Subject::factory()->create([
+        'school_id' => $school->id,
+        'course_id' => $programB->id,
+        'code' => 'NSTP 1',
+        'title' => 'National Service Training Program I',
+    ]);
+
+    expect($subjectA->id)->not->toBe($subjectB->id)
+        ->and($subjectA->course_id)->toBe($programA->id)
+        ->and($subjectB->course_id)->toBe($programB->id);
+});
+
+it('rejects duplicate subject code within the same program at database level', function (): void {
     $school = School::factory()->create();
     $course = Course::factory()->create(['school_id' => $school->id]);
 
@@ -197,11 +221,12 @@ it('validates course code uniqueness scoped to school in curriculum program requ
     expect($validatorUpdate->passes())->toBeTrue();
 });
 
-it('validates subject code uniqueness scoped to school in curriculum subject requests', function (): void {
+it('validates subject code uniqueness scoped to program in curriculum subject requests', function (): void {
     $schoolA = School::factory()->create();
     $schoolB = School::factory()->create();
     $courseA = Course::factory()->create(['school_id' => $schoolA->id]);
     $courseB = Course::factory()->create(['school_id' => $schoolB->id]);
+    $programA2 = Course::factory()->create(['school_id' => $schoolA->id]);
 
     // Subject exists in School B
     Subject::factory()->create([
@@ -250,6 +275,28 @@ it('validates subject code uniqueness scoped to school in curriculum subject req
 
     expect($validatorDuplicate->fails())->toBeTrue()
         ->and($validatorDuplicate->errors()->has('code'))->toBeTrue();
+
+    // The same code in another program of the same school is a different
+    // subject and is allowed.
+    $otherProgramRequest = new StoreCurriculumSubjectRequest;
+    $otherProgramRequest->setRouteResolver(fn () => new class($programA2)
+    {
+        public function __construct(public $course) {}
+
+        public function parameter($name)
+        {
+            return $this->course;
+        }
+    });
+
+    $validatorOtherProgram = Validator::make([
+        'code' => 'BIO101',
+        'title' => 'General Biology For Another Program',
+        'classification' => SubjectEnrolledEnum::INTERNAL->value,
+        'units' => 3,
+    ], $otherProgramRequest->rules());
+
+    expect($validatorOtherProgram->passes())->toBeTrue();
 
     // Updating subject A with its own code should pass
     $updateRequest = new UpdateCurriculumSubjectRequest;
@@ -308,6 +355,96 @@ it('backfills missing school_id on courses and subjects', function (): void {
 
     expect($course->school_id)->toBe($school->id)
         ->and($subject->school_id)->toBe($school->id);
+});
+
+it('repairs a subject whose school no longer matches its program', function (): void {
+    $school = School::factory()->create();
+    $otherSchool = School::factory()->create();
+
+    $course = Course::factory()->create(['school_id' => $school->id]);
+
+    $subjectId = DB::table('subject')->insertGetId([
+        'classification' => 'internal',
+        'code' => 'STALE-SCHOOL',
+        'title' => 'Subject of a moved program',
+        'units' => 3,
+        'lecture' => 3,
+        'laboratory' => 0,
+        'semester' => 1,
+        'course_id' => $course->id,
+        'school_id' => $otherSchool->id,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $migration = require base_path('database/migrations/2026_11_09_000002_scope_course_and_subject_codes_to_school.php');
+    $migration->up();
+
+    expect(DB::table('subject')->where('id', $subjectId)->value('school_id'))->toBe($school->id);
+});
+
+it('reports the duplicated program codes instead of failing with a raw database error', function (): void {
+    $school = School::factory()->create();
+
+    // The school scoped key cannot hold the duplicated rows. Production
+    // reached that state because the global key was never applied there.
+    DB::statement('DROP INDEX IF EXISTS courses_school_id_code_unique');
+
+    foreach (['First', 'Second'] as $title) {
+        DB::table('courses')->insert([
+            'code' => 'DUP-CRS',
+            'title' => $title,
+            'school_id' => $school->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    $migration = require base_path('database/migrations/2026_11_09_000002_scope_course_and_subject_codes_to_school.php');
+
+    try {
+        $migration->up();
+        $this->fail('The migration should have refused the duplicated program code.');
+    } catch (RuntimeException $exception) {
+        expect($exception->getMessage())
+            ->toContain('program code(s) are still used twice in the same school')
+            ->toContain('DUP-CRS')
+            ->toContain('2026_11_08_000001_merge_duplicate_courses');
+    }
+});
+
+it('reports the duplicated subject codes instead of failing with a raw database error', function (): void {
+    $school = School::factory()->create();
+    $course = Course::factory()->create(['school_id' => $school->id]);
+
+    DB::statement('DROP INDEX IF EXISTS subject_school_id_course_id_code_unique');
+
+    foreach (['First', 'Second'] as $title) {
+        DB::table('subject')->insert([
+            'classification' => 'internal',
+            'code' => 'DUP-SUB',
+            'title' => $title,
+            'units' => 3,
+            'lecture' => 3,
+            'laboratory' => 0,
+            'semester' => 1,
+            'course_id' => $course->id,
+            'school_id' => $school->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    $migration = require base_path('database/migrations/2026_11_09_000002_scope_course_and_subject_codes_to_school.php');
+
+    try {
+        $migration->up();
+        $this->fail('The migration should have refused the duplicated subject code.');
+    } catch (RuntimeException $exception) {
+        expect($exception->getMessage())
+            ->toContain('subject code(s) are still used twice in the same program')
+            ->toContain('DUP-SUB');
+    }
 });
 
 it('scopes student lookup to authenticated school in ManageStudentTool', function (): void {

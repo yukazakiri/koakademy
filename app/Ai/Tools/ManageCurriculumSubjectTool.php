@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ai\Tools;
 
+use App\Exceptions\AmbiguousSubjectException;
 use App\Models\Course;
 use App\Models\Subject;
 use App\Models\User;
@@ -11,6 +12,7 @@ use App\Services\TenantContext;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 use Laravel\Ai\Approvals\Approval;
 use Laravel\Ai\Concerns\InteractsWithApprovals;
 use Laravel\Ai\Contracts\Approvable;
@@ -30,43 +32,11 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
 
     public function handle(Request $request): Stringable|string
     {
-        $user = Auth::user();
-        if (! $user instanceof User) {
-            return json_encode(['error' => true, 'message' => 'Authentication is required.']);
+        try {
+            return $this->dispatch($request);
+        } catch (AmbiguousSubjectException $exception) {
+            return json_encode(['error' => true, 'message' => $exception->getMessage()]);
         }
-
-        $action = mb_strtolower((string) $request['action']);
-
-        if ($action === 'get') {
-            if (! $user->hasRole('super_admin') && ! $user->can('View:Subject')) {
-                return json_encode(['error' => true, 'message' => 'You are not permitted to view curriculum subjects.']);
-            }
-        } elseif ($action === 'create') {
-            if (! $user->hasRole('super_admin') && ! $user->can('Create:Subject')) {
-                return json_encode(['error' => true, 'message' => 'You are not permitted to create curriculum subjects.']);
-            }
-        } elseif ($action === 'batch_upsert') {
-            if (! $user->hasRole('super_admin') && ! $user->can('Create:Subject') && ! $user->can('Update:Subject')) {
-                return json_encode(['error' => true, 'message' => 'You are not permitted to create or update curriculum subjects.']);
-            }
-        } elseif ($action === 'delete') {
-            if (! $user->hasRole('super_admin') && ! $user->can('Delete:Subject')) {
-                return json_encode(['error' => true, 'message' => 'You are not permitted to delete curriculum subjects.']);
-            }
-        } elseif ($action === 'update') {
-            if (! $user->hasRole('super_admin') && ! $user->can('Update:Subject')) {
-                return json_encode(['error' => true, 'message' => 'You are not permitted to update curriculum subjects.']);
-            }
-        }
-
-        return match ($action) {
-            'create' => $this->handleCreate($request),
-            'update' => $this->handleUpdate($request),
-            'batch_upsert' => $this->handleBatchUpsert($request),
-            'delete' => $this->handleDelete($request),
-            'get' => $this->handleGet($request),
-            default => json_encode(['error' => true, 'message' => "Unknown action '{$action}'. Supported: create, update, batch_upsert, delete, get."]),
-        };
     }
 
     public function schema(JsonSchema $schema): array
@@ -142,6 +112,47 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
         return false;
     }
 
+    private function dispatch(Request $request): Stringable|string
+    {
+        $user = Auth::user();
+        if (! $user instanceof User) {
+            return json_encode(['error' => true, 'message' => 'Authentication is required.']);
+        }
+
+        $action = mb_strtolower((string) $request['action']);
+
+        if ($action === 'get') {
+            if (! $user->hasRole('super_admin') && ! $user->can('View:Subject')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to view curriculum subjects.']);
+            }
+        } elseif ($action === 'create') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Create:Subject')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to create curriculum subjects.']);
+            }
+        } elseif ($action === 'batch_upsert') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Create:Subject') && ! $user->can('Update:Subject')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to create or update curriculum subjects.']);
+            }
+        } elseif ($action === 'delete') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Delete:Subject')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to delete curriculum subjects.']);
+            }
+        } elseif ($action === 'update') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Update:Subject')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to update curriculum subjects.']);
+            }
+        }
+
+        return match ($action) {
+            'create' => $this->handleCreate($request),
+            'update' => $this->handleUpdate($request),
+            'batch_upsert' => $this->handleBatchUpsert($request),
+            'delete' => $this->handleDelete($request),
+            'get' => $this->handleGet($request),
+            default => json_encode(['error' => true, 'message' => "Unknown action '{$action}'. Supported: create, update, batch_upsert, delete, get."]),
+        };
+    }
+
     private function handleCreate(Request $request): string
     {
         $validated = $request->validate([
@@ -158,7 +169,7 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
         ]);
 
         $user = Auth::user();
-        $schoolId = $user?->school_id ?? (app()->bound(TenantContext::class) ? app(TenantContext::class)->getCurrentSchoolId() : null);
+        $schoolId = $this->schoolId($user);
 
         $courseId = $validated['course_id'] ?? null;
         if (! $courseId && filled($validated['course_code'] ?? null)) {
@@ -178,9 +189,27 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
             $courseId = $fallbackQuery->value('id') ?? Course::query()->value('id') ?? 1;
         }
 
+        // A subject may only be attached to a program of the current school.
+        if ($schoolId !== null && ! Course::query()->where('school_id', $schoolId)->whereKey($courseId)->exists()) {
+            return json_encode([
+                'error' => true,
+                'message' => "Program {$courseId} does not belong to this school.",
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        }
+
+        $code = mb_strtoupper(mb_trim($validated['code']));
+
+        // A subject code is unique inside the program it belongs to.
+        if (Subject::query()->where('course_id', $courseId)->where('code', $code)->exists()) {
+            return json_encode([
+                'error' => true,
+                'message' => "Subject code {$code} already exists in this program.",
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        }
+
         try {
             $subjectData = [
-                'code' => mb_strtoupper(mb_trim($validated['code'])),
+                'code' => $code,
                 'title' => mb_trim($validated['title']),
                 'units' => (int) $validated['units'],
                 'lecture' => (int) ($validated['lecture'] ?? $validated['units']),
@@ -237,7 +266,7 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
         $errors = [];
 
         $user = Auth::user();
-        $schoolId = $user?->school_id ?? (app()->bound(TenantContext::class) ? app(TenantContext::class)->getCurrentSchoolId() : null);
+        $schoolId = $this->schoolId($user);
 
         $defaultCourseQuery = Course::query();
         if ($schoolId !== null) {
@@ -269,10 +298,16 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
                         $courseId = $defaultCourse?->id ?? 1;
                     }
 
-                    $existingQuery = Subject::query();
-                    if ($schoolId !== null) {
-                        $existingQuery->where('school_id', $schoolId);
+                    // A subject may only be attached to a program of the
+                    // current school.
+                    if ($schoolId !== null && ! Course::query()->where('school_id', $schoolId)->whereKey($courseId)->exists()) {
+                        throw new InvalidArgumentException("Program {$courseId} does not belong to this school.");
                     }
+
+                    $existingQuery = Subject::query();
+                    // A subject code is unique inside the program it belongs
+                    // to, so the upsert has to look the subject up there.
+                    $existingQuery->where('course_id', $courseId);
                     $existing = $existingQuery->where('code', $code)->first();
                     if ($existing instanceof Subject) {
                         $existing->update([
@@ -424,10 +459,27 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
+    /**
+     * The school the tool acts for.
+     *
+     * The selected tenant decides, the same way the rest of the application
+     * resolves its school. The school of the user is only the fallback for a
+     * request without a tenant, because a user who works for more than one
+     * school acts for the school they selected.
+     */
+    private function schoolId(?User $user): ?int
+    {
+        $schoolId = app()->bound(TenantContext::class)
+            ? app(TenantContext::class)->getCurrentSchoolId()
+            : null;
+
+        return $schoolId ?? $user?->school_id;
+    }
+
     private function resolveSubject(Request $request): ?Subject
     {
         $user = Auth::user();
-        $schoolId = $user?->school_id ?? (app()->bound(TenantContext::class) ? app(TenantContext::class)->getCurrentSchoolId() : null);
+        $schoolId = $this->schoolId($user);
 
         $query = Subject::query();
         if ($schoolId !== null) {
@@ -444,7 +496,38 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
 
         $code = $request['code'] ?? null;
         if ($code) {
-            return (clone $query)->where('code', mb_trim((string) $code))->first();
+            $codeQuery = clone $query;
+
+            // A subject code is unique inside the program it belongs to, so
+            // a lookup by code is scoped to the program when the request
+            // names one.
+            $courseId = $request['course_id'] ?? null;
+            if ($courseId === null && filled($request['course_code'] ?? null)) {
+                $courseQuery = Course::query();
+                if ($schoolId !== null) {
+                    $courseQuery->where('school_id', $schoolId);
+                }
+                $courseId = $courseQuery->where('code', (string) $request['course_code'])->value('id');
+
+                // A program that does not resolve cannot narrow the lookup.
+                // Falling back to a school wide search would let the request
+                // reach a subject of a different program.
+                if ($courseId === null) {
+                    return null;
+                }
+            }
+
+            if ($courseId !== null) {
+                $codeQuery->where('course_id', (int) $courseId);
+            }
+
+            $matches = $codeQuery->where('code', mb_trim((string) $code))->limit(2)->get();
+
+            if ($matches->count() > 1) {
+                throw AmbiguousSubjectException::forCode(mb_trim((string) $code));
+            }
+
+            return $matches->first();
         }
 
         return null;

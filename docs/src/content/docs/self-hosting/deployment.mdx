@@ -85,6 +85,38 @@ koakademy rollback
 
 Rollback changes application code only. It never runs `migrate:rollback` or restores a database automatically. If the deployed migration is incompatible with old code, restore the recorded database backup and previous image together during a maintenance window.
 
+## The migration release step
+
+Migrations are a release step, not a container boot. `AUTO_MIGRATE=false` is
+the default, so an application replica never migrates the database while it
+starts. A replica that boots against a schema it does not expect serves
+traffic it cannot serve correctly, and a fleet that migrates from every
+replica races itself.
+
+The release order is:
+
+1. Back up the database. `koakademy update` takes a PostgreSQL dump before it
+   migrates.
+2. Run `php artisan migrate --force` once, in a dedicated job against the
+   same database. The installer and `koakademy update` do this for you; a
+   manual deployment runs it in a one-off container.
+3. Roll out the application. The new replicas start against the migrated
+   schema.
+4. Verify the health endpoint.
+
+```sh
+docker compose --env-file .env -f compose.production.yaml run --rm app php artisan migrate --force --no-interaction
+```
+
+The installer runs the same command as a one-shot Swarm job before the
+application rollout, and `koakademy update` runs it before it replaces the
+application service.
+
+Rollback never reverses a migration. `koakademy rollback` restores the
+previous application image only. If a migration is not compatible with the
+previous code, restore the recorded database backup and the previous image
+together during a maintenance window.
+
 ## Module releases and upgrades
 
 The module registry and the application image have separate release lifecycles.

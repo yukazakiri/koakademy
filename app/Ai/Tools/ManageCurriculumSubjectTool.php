@@ -178,9 +178,19 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
             $courseId = $fallbackQuery->value('id') ?? Course::query()->value('id') ?? 1;
         }
 
+        $code = mb_strtoupper(mb_trim($validated['code']));
+
+        // A subject code is unique inside the program it belongs to.
+        if (Subject::query()->where('course_id', $courseId)->where('code', $code)->exists()) {
+            return json_encode([
+                'error' => true,
+                'message' => "Subject code {$code} already exists in this program.",
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        }
+
         try {
             $subjectData = [
-                'code' => mb_strtoupper(mb_trim($validated['code'])),
+                'code' => $code,
                 'title' => mb_trim($validated['title']),
                 'units' => (int) $validated['units'],
                 'lecture' => (int) ($validated['lecture'] ?? $validated['units']),
@@ -270,9 +280,9 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
                     }
 
                     $existingQuery = Subject::query();
-                    if ($schoolId !== null) {
-                        $existingQuery->where('school_id', $schoolId);
-                    }
+                    // A subject code is unique inside the program it belongs
+                    // to, so the upsert has to look the subject up there.
+                    $existingQuery->where('course_id', $courseId);
                     $existing = $existingQuery->where('code', $code)->first();
                     if ($existing instanceof Subject) {
                         $existing->update([
@@ -444,7 +454,25 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
 
         $code = $request['code'] ?? null;
         if ($code) {
-            return (clone $query)->where('code', mb_trim((string) $code))->first();
+            $codeQuery = clone $query;
+
+            // A subject code is unique inside the program it belongs to, so
+            // a lookup by code is scoped to the program when the request
+            // names one.
+            $courseId = $request['course_id'] ?? null;
+            if ($courseId === null && filled($request['course_code'] ?? null)) {
+                $courseQuery = Course::query();
+                if ($schoolId !== null) {
+                    $courseQuery->where('school_id', $schoolId);
+                }
+                $courseId = $courseQuery->where('code', (string) $request['course_code'])->value('id');
+            }
+
+            if ($courseId !== null) {
+                $codeQuery->where('course_id', (int) $courseId);
+            }
+
+            return $codeQuery->where('code', mb_trim((string) $code))->first();
         }
 
         return null;

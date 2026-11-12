@@ -6,7 +6,6 @@ namespace App\Filament\Resources\Courses\RelationManagers;
 
 use App\Enums\SubjectEnrolledEnum;
 use App\Models\Subject;
-use App\Services\TenantContext;
 use Closure;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\CreateAction;
@@ -59,11 +58,14 @@ final class SubjectsRelationManager extends RelationManager
                                                 column: 'code',
                                                 ignoreRecord: true,
                                                 modifyRuleUsing: function ($rule, $record) {
-                                                    $schoolId = $record?->school_id
-                                                        ?? $this->getOwnerRecord()?->school_id
-                                                        ?? app(TenantContext::class)->getCurrentSchoolId();
+                                                    // A subject code is unique inside the
+                                                    // program it belongs to. Every program
+                                                    // of a school repeats the generic codes
+                                                    // of its curriculum.
+                                                    $courseId = $record?->course_id
+                                                        ?? $this->getOwnerRecord()?->id;
 
-                                                    return $rule->where('school_id', $schoolId);
+                                                    return $rule->where('course_id', $courseId);
                                                 },
                                             ),
                                         TextInput::make('title')

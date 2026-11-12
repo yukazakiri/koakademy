@@ -21,12 +21,12 @@ final class UpdateCurriculumSubjectRequest extends FormRequest
     {
         $courseId = $this->courseId();
         $subjectId = $this->subjectId();
-        $course = Course::withoutSchoolScope()->find($courseId);
-        $schoolId = $course?->school_id ?? (app()->bound(\App\Services\TenantContext::class)
-            ? app(\App\Services\TenantContext::class)->getCurrentSchoolId()
-            : null);
 
-        $uniqueRule = Rule::unique('subject', 'code')->where('school_id', $schoolId);
+        // A subject code is unique inside the program it belongs to. Every
+        // program of a school repeats the generic codes of its curriculum,
+        // so a school wide key would reject the second program that follows
+        // the curriculum.
+        $uniqueRule = Rule::unique('subject', 'code')->where('course_id', $courseId);
         if ($subjectId) {
             $uniqueRule->ignore($subjectId);
         }

@@ -177,17 +177,24 @@ it('rejects prerequisite cycles rather than importing them', function (): void {
     expect(Course::query()->count())->toBe(0);
 });
 
-it('rejects a globally used subject code from a different program', function (): void {
+it('keeps a subject code that another program of the school already uses', function (): void {
     $dept = Department::factory()->create(['school_id' => $this->school->id]);
     $type = CourseType::factory()->create();
     $other = Course::factory()->create(['school_id' => $this->school->id, 'code' => 'OTHER-COURSE']);
-    Subject::factory()->for($other)->create(['code' => 'GE 1']);
+    Subject::factory()->for($other)->create(['code' => 'GE 1', 'title' => 'Mathematics in the Modern World']);
     $url = portalUrlForAdministrators('/administrators/ai/curriculum-imports');
     $draft = $this->postJson($url, ['file' => curriculumUpload()])->assertOk()->json();
     $selection = importSelection($draft['rows'], options: ['department_id' => $dept->id, 'course_type_id' => $type->id]);
     $selection['rows'][3]['skip'] = $selection['rows'][4]['skip'] = $selection['rows'][5]['skip'] = true;
-    $this->postJson("{$url}/{$draft['id']}/approve", $selection)->assertUnprocessable()->assertJsonValidationErrors('rows');
-    expect(Course::query()->count())->toBe(1);
+    $this->postJson("{$url}/{$draft['id']}/approve", $selection)->assertOk();
+    $this->postJson("{$url}/{$draft['id']}/apply")->assertOk();
+
+    // A subject code is unique inside the program it belongs to. The other
+    // program keeps its own subject, and the imported program gets a subject
+    // of its own with the same code.
+    expect(Subject::query()->where('code', 'GE 1')->where('course_id', $other->id)->count())->toBe(1)
+        ->and(Subject::query()->where('code', 'GE 1')->count())->toBe(2)
+        ->and(Course::query()->count())->toBe(2);
 });
 
 it('requires confirmed lecture and lab hours for every included row', function (): void {

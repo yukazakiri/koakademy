@@ -9,6 +9,7 @@ use App\Models\Course;
 use App\Models\Subject;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
+use Illuminate\Support\Facades\DB;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\ResponseFactory;
@@ -109,9 +110,19 @@ final class ManageCurriculumSubjectTool extends Tool
             $courseId = Course::query()->where('school_id', $school->id)->value('id') ?? Course::query()->value('id') ?? 1;
         }
 
+        $code = mb_strtoupper(mb_trim($validated['code']));
+
+        // A subject code is unique inside the program it belongs to.
+        if (Subject::query()->where('course_id', $courseId)->where('code', $code)->exists()) {
+            return Response::structured([
+                'error' => true,
+                'message' => "Subject code {$code} already exists in this program.",
+            ]);
+        }
+
         $subject = Subject::query()->create([
             'school_id' => $school->id,
-            'code' => mb_strtoupper(mb_trim($validated['code'])),
+            'code' => $code,
             'title' => mb_trim($validated['title']),
             'units' => (int) $validated['units'],
             'lecture' => (int) ($validated['lecture'] ?? $validated['units']),
@@ -173,7 +184,7 @@ final class ManageCurriculumSubjectTool extends Tool
                     $courseId = $defaultCourse?->id ?? 1;
                 }
 
-                $existing = Subject::query()->where('school_id', $school->id)->where('code', $code)->first();
+                $existing = Subject::query()->where('course_id', $courseId)->where('code', $code)->first();
                 if ($existing instanceof Subject) {
                     $existing->update([
                         'title' => $title,
@@ -291,7 +302,24 @@ final class ManageCurriculumSubjectTool extends Tool
 
         $code = $request->get('code');
         if ($code) {
-            return Subject::query()->where('school_id', $school->id)->where('code', mb_trim((string) $code))->first();
+            $query = Subject::query()->where('school_id', $school->id);
+
+            // A subject code is unique inside the program it belongs to, so
+            // a lookup by code is scoped to the program when the request
+            // names one.
+            $courseId = $request->get('course_id');
+            if ($courseId === null && filled($request->get('course_code'))) {
+                $courseId = Course::query()
+                    ->where('school_id', $school->id)
+                    ->where('code', (string) $request->get('course_code'))
+                    ->value('id');
+            }
+
+            if ($courseId !== null) {
+                $query->where('course_id', (int) $courseId);
+            }
+
+            return $query->where('code', mb_trim((string) $code))->first();
         }
 
         return null;

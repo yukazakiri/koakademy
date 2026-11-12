@@ -2489,6 +2489,50 @@ it('normalizes special equity aliases to canonical CHED categories', function ()
         ->and($value)->toBe('Region I');
 });
 
+it('keeps a subject code that another program of the school already uses', function (): void {
+    config(['api.mcp.write_enabled' => true]);
+    $this->staff->createToken('Staff Agent', ['mcp:read', 'mcp:write']);
+    $this->staff->givePermissionTo(['View:Subject', 'Update:Subject', 'Create:Subject']);
+
+    $program = Course::factory()->create(['school_id' => $this->school->id, 'code' => 'BSDS', 'title' => 'Data Science']);
+    $otherProgram = Course::factory()->create(['school_id' => $this->school->id, 'code' => 'BSIT', 'title' => 'Information Technology']);
+
+    $existing = Subject::factory()->for($otherProgram)->create([
+        'school_id' => $this->school->id,
+        'code' => 'NSTP 1',
+        'title' => 'National Service Training Program I',
+    ]);
+
+    // A subject code is unique inside the program it belongs to. The upsert
+    // has to leave the subject of the other program alone.
+    $response = KoAkademyServer::actingAs($this->staff)
+        ->tool(App\Mcp\Tools\ManageCurriculumSubjectTool::class, [
+            'action' => 'batch_upsert',
+            'subjects' => [[
+                'code' => 'NSTP 1',
+                'title' => 'National Service Training Program I',
+                'units' => 3,
+                'lecture' => 2,
+                'laboratory' => 1,
+                'academic_year' => 1,
+                'semester' => 1,
+                'course_code' => 'BSDS',
+            ]],
+        ]);
+
+    $response->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('success', true)
+                ->where('created_count', 1)
+                ->where('updated_count', 0)
+                ->etc();
+        });
+
+    expect($existing->fresh()->course_id)->toBe($otherProgram->id)
+        ->and($existing->fresh()->title)->toBe('National Service Training Program I')
+        ->and(Subject::query()->where('code', 'NSTP 1')->where('course_id', $program->id)->count())->toBe(1);
+});
+
 it('performs curriculum subject and class schedule management via MCP', function (): void {
     config(['api.mcp.write_enabled' => true]);
     $this->staff->createToken('Staff Agent', ['mcp:read', 'mcp:write']);

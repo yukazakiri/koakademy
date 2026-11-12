@@ -172,9 +172,18 @@ return new class extends Migration
         }
 
         if (Schema::hasColumn('subject', 'course_id')) {
+            // The course is the source of truth for the school of a subject.
+            // A subject keeps the school it was created with, so a course
+            // that changed school leaves its subjects behind, and a stale
+            // school would weaken the scoped key and filter the subject
+            // under the wrong school.
             DB::table('subject')
-                ->whereNull('school_id')
                 ->whereNotNull('course_id')
+                ->whereRaw(
+                    '(SELECT c.school_id FROM courses c WHERE c.id = subject.course_id) IS NOT NULL'
+                    .' AND (subject.school_id IS NULL'
+                    .' OR subject.school_id <> (SELECT c.school_id FROM courses c WHERE c.id = subject.course_id))'
+                )
                 ->update([
                     'school_id' => DB::raw('(SELECT c.school_id FROM courses c WHERE c.id = subject.course_id)'),
                 ]);
@@ -313,17 +322,20 @@ return new class extends Migration
             }
         }
 
-        $existing = $this->indexColumns($table, $name);
+        // A concurrent build that was interrupted leaves an invalid index
+        // under the expected name. The schema inspector still reports it, so
+        // it has to go before the rebuild, or the key is never created.
+        $this->dropInvalidPostgresIndexes($table, [$name]);
 
-        if ($existing === $columns) {
+        $existing = $this->indexDefinition($table, $name);
+
+        if ($existing !== null && $existing['columns'] === $columns && $existing['unique']) {
             return;
         }
 
         if ($existing !== null) {
             $this->dropUniqueIndex($table, $name);
         }
-
-        $this->dropInvalidPostgresIndexes($table, [$name]);
 
         $grammar = DB::connection()->getQueryGrammar();
 
@@ -369,15 +381,18 @@ return new class extends Migration
     }
 
     /**
-     * The columns of an index, or null when the index does not exist.
+     * The columns and uniqueness of an index, or null when it is absent.
      *
-     * @return list<string>|null
+     * @return array{columns: list<string>, unique: bool}|null
      */
-    private function indexColumns(string $table, string $name): ?array
+    private function indexDefinition(string $table, string $name): ?array
     {
         foreach (Schema::getIndexes($table) as $index) {
             if (mb_strtolower((string) $index['name']) === mb_strtolower($name)) {
-                return array_map('strval', $index['columns']);
+                return [
+                    'columns' => array_map('strval', $index['columns']),
+                    'unique' => (bool) $index['unique'],
+                ];
             }
         }
 

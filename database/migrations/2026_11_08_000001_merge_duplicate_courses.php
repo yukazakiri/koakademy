@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -30,16 +31,25 @@ use Illuminate\Support\Facades\Schema;
  *   - `enrollment_policies` move to the survivor course and their
  *     `scope_key` is recomputed, because the key hashes the course id. A
  *     policy whose recomputed key already exists covers the same scope as a
- *     policy that is already on the survivor course, so the redundant copy is
- *     removed instead of leaving two policies for one scope.
+ *     policy that is already on the survivor course. That copy is retired
+ *     rather than deleted: it keeps its published versions, it stops
+ *     resolving the scope, and the surviving policy is enabled when the
+ *     retired one was the enabled one.
  *   - `fee_schedule_versions` move to the survivor course. A version that
- *     collides with an existing version of the same scope describes the same
- *     schedule, so the redundant copy is removed.
+ *     collides with an existing version of the same scope describes the
+ *     same period, but not necessarily the same rates, so it continues as
+ *     the next revision of that scope instead of being deleted.
  *   - `classes.course_codes` and `classes.subject_ids` are JSON arrays of
  *     ids and are rewritten in place.
  *
  * Subjects that share a code inside a single course are merged first, so the
  * per-course subject code stays unique afterwards.
+ *
+ * The values that only the duplicate row carried cannot all survive the
+ * merge: one subject code, one program code and one scope can only be held
+ * once. Every such difference is written to the `migration_merge_conflicts`
+ * registry before the duplicate row is removed, so an operator can review
+ * what the merge kept and what it set aside.
  *
  * The merge is idempotent: a second run finds no duplicate codes and changes
  * nothing. It is not reversible, because the duplicate rows are deleted and
@@ -49,6 +59,37 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
+     * The registry of the values the merge could not carry over.
+     *
+     * The merge keeps the value that existed first. Every value that only
+     * the duplicate row carried is written here, so nothing is lost with the
+     * deleted row and an operator can review the differences afterwards.
+     */
+    private const CONFLICT_TABLE = 'migration_merge_conflicts';
+
+    private const MIGRATION_NAME = '2026_11_08_000001_merge_duplicate_courses';
+
+    /**
+     * The curriculum values of a subject that are compared before the
+     * duplicate row is removed.
+     *
+     * @var list<string>
+     */
+    private const SUBJECT_COMPARED_FIELDS = [
+        'title',
+        'units',
+        'lecture',
+        'laboratory',
+        'academic_year',
+        'semester',
+        'classification',
+        'is_credited',
+        'group',
+        'description',
+        'name',
+    ];
+
+    /**
      * Run the migrations.
      */
     public function up(): void
@@ -56,6 +97,8 @@ return new class extends Migration
         if (! Schema::hasTable('courses')) {
             return;
         }
+
+        $this->ensureConflictRegistry();
 
         $this->mergeDuplicateSubjectsWithinCourses();
         $this->mergeDuplicateCourses();
@@ -68,11 +111,59 @@ return new class extends Migration
      * The merge deletes the duplicate rows and repoints their references at
      * the surviving record. There is no way to tell which references used to
      * belong to which program, so a rollback restores the pre-release
-     * database backup instead of this method.
+     * database backup instead of this method. The conflict registry is kept
+     * for the same reason: it is the only record of the values the merge
+     * set aside.
      */
     public function down(): void
     {
         // Intentionally empty. See the note above.
+    }
+
+    /**
+     * Create the registry that records the values the merge kept.
+     */
+    private function ensureConflictRegistry(): void
+    {
+        if (Schema::hasTable(self::CONFLICT_TABLE)) {
+            return;
+        }
+
+        Schema::create(self::CONFLICT_TABLE, function (Blueprint $table): void {
+            $table->id();
+            $table->string('migration', 191);
+            $table->string('relation', 64);
+            $table->unsignedBigInteger('keeper_id')->nullable();
+            $table->unsignedBigInteger('duplicate_id')->nullable();
+            $table->string('scope', 191)->nullable();
+            $table->json('details')->nullable();
+            $table->timestamps();
+
+            $table->index(['migration', 'relation']);
+        });
+    }
+
+    /**
+     * Record a value that the merge could not carry over.
+     *
+     * @param  array<string, mixed>  $details
+     */
+    private function recordConflict(string $relation, ?int $keeperId, ?int $duplicateId, ?string $scope, array $details): void
+    {
+        if (! Schema::hasTable(self::CONFLICT_TABLE)) {
+            return;
+        }
+
+        DB::table(self::CONFLICT_TABLE)->insert([
+            'migration' => self::MIGRATION_NAME,
+            'relation' => $relation,
+            'keeper_id' => $keeperId,
+            'duplicate_id' => $duplicateId,
+            'scope' => $scope === null ? null : mb_substr($scope, 0, 191),
+            'details' => json_encode($details),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     /**
@@ -277,8 +368,49 @@ return new class extends Migration
         $this->remapJsonReferences('subject', 'pre_riquisite', $duplicateId, $keeperId);
 
         $this->mergeSubjectPrerequisites($duplicateId, $keeperId);
+        $this->recordSubjectConflict($duplicateId, $keeperId);
 
         DB::table('subject')->where('id', $duplicateId)->delete();
+    }
+
+    /**
+     * Record the curriculum values the duplicate subject carried.
+     *
+     * The keeper keeps its own values, because it is the row that existed
+     * first. The values that differed are written to the conflict registry,
+     * so a value that only the duplicate carried is still recoverable after
+     * the merge.
+     */
+    private function recordSubjectConflict(int $duplicateId, int $keeperId): void
+    {
+        $keeper = DB::table('subject')->where('id', $keeperId)->first();
+        $duplicate = DB::table('subject')->where('id', $duplicateId)->first();
+
+        if ($keeper === null || $duplicate === null) {
+            return;
+        }
+
+        $differences = [];
+
+        foreach (self::SUBJECT_COMPARED_FIELDS as $field) {
+            $keeperValue = $keeper->{$field} ?? null;
+            $duplicateValue = $duplicate->{$field} ?? null;
+
+            if ((string) $keeperValue === (string) $duplicateValue) {
+                continue;
+            }
+
+            $differences[$field] = [
+                'keeper' => $keeperValue,
+                'duplicate' => $duplicateValue,
+            ];
+        }
+
+        if ($differences === []) {
+            return;
+        }
+
+        $this->recordConflict('subject', $keeperId, $duplicateId, $duplicate->code, $differences);
     }
 
     /**
@@ -368,8 +500,12 @@ return new class extends Migration
      *
      * The scope key hashes the course id, so it has to be recomputed. Two
      * policies cannot share a scope key, and the survivor course may already
-     * carry a policy for the same scope; in that case the copy on the
-     * duplicate course is the redundant one and is removed.
+     * carry a policy for the same scope. The copy on the duplicate course is
+     * then retired rather than deleted: it keeps its published versions, it
+     * stops resolving the scope, and the difference between the two policies
+     * is written to the conflict registry. The scope keeps resolving
+     * through an enabled policy, so the surviving policy is enabled when the
+     * retired one was the enabled one.
      */
     private function moveEnrollmentPolicies(int $duplicateId, int $survivorId): void
     {
@@ -394,7 +530,7 @@ return new class extends Migration
                 ->first();
 
             if ($conflict !== null) {
-                DB::table('enrollment_policies')->where('id', $policy->id)->delete();
+                $this->retireEnrollmentPolicy($policy, $conflict, $scopeKey);
 
                 continue;
             }
@@ -403,6 +539,42 @@ return new class extends Migration
                 ->where('id', $policy->id)
                 ->update(['course_id' => $survivorId, 'scope_key' => $scopeKey]);
         }
+    }
+
+    /**
+     * Retire the policy of the duplicate course.
+     *
+     * The policy keeps its published versions and its history. It stops
+     * resolving the scope because it is disabled and because its scope key
+     * no longer collides with the policy that keeps the scope.
+     */
+    private function retireEnrollmentPolicy(object $policy, object $keeper, string $scopeKey): void
+    {
+        $duplicateEnabled = (bool) ($policy->is_enabled ?? false);
+        $keeperEnabled = (bool) ($keeper->is_enabled ?? false);
+
+        // The scope keeps resolving through an enabled policy.
+        if ($duplicateEnabled && ! $keeperEnabled) {
+            DB::table('enrollment_policies')->where('id', $keeper->id)->update(['is_enabled' => true]);
+        }
+
+        $this->recordConflict('enrollment_policy', (int) $keeper->id, (int) $policy->id, $policy->name, [
+            'scope_key' => $scopeKey,
+            'retired_scope_key' => 'retired:'.$scopeKey,
+            'duplicate_is_enabled' => $duplicateEnabled,
+            'keeper_is_enabled' => $keeperEnabled,
+            'student_type' => $policy->student_type,
+            'school_year' => $policy->school_year,
+            'semester' => $policy->semester,
+        ]);
+
+        DB::table('enrollment_policies')
+            ->where('id', $policy->id)
+            ->update([
+                'is_enabled' => false,
+                'course_id' => null,
+                'scope_key' => mb_substr('retired:'.$scopeKey, 0, 255),
+            ]);
     }
 
     /**
@@ -432,8 +604,11 @@ return new class extends Migration
      *
      * A version is unique per course, school year, semester, academic year
      * and version number. A version of the duplicate course that collides
-     * with one of the survivor describes the same schedule, so the redundant
-     * copy is removed rather than left to break the key.
+     * with one of the survivor describes the same scope, but not necessarily
+     * the same schedule: the rates, the fees and the rules can differ. The
+     * colliding version is therefore kept as a later revision of the
+     * surviving scope instead of being deleted, and the difference between
+     * the two schedules is written to the conflict registry.
      */
     private function moveFeeScheduleVersions(int $duplicateId, int $survivorId): void
     {
@@ -454,7 +629,7 @@ return new class extends Migration
                     ->first();
 
                 if ($conflict !== null) {
-                    DB::table('fee_schedule_versions')->where('id', $version->id)->delete();
+                    $this->renumberFeeScheduleVersion($version, $conflict, $survivorId);
 
                     continue;
                 }
@@ -464,6 +639,58 @@ return new class extends Migration
                 ->where('id', $version->id)
                 ->update(['course_id' => $survivorId]);
         }
+    }
+
+    /**
+     * Keep a colliding fee schedule version as a later revision.
+     *
+     * The version number is what makes the scope unique, so the colliding
+     * version continues as the next revision of the same scope. Its rates,
+     * fees and rules stay untouched, and the assessments that reference it
+     * keep their reference.
+     */
+    private function renumberFeeScheduleVersion(object $version, object $conflict, int $survivorId): void
+    {
+        $query = DB::table('fee_schedule_versions')
+            ->where('course_id', $survivorId)
+            ->where('school_year', $version->school_year)
+            ->where('semester', $version->semester);
+
+        $version->academic_year === null
+            ? $query->whereNull('academic_year')
+            : $query->where('academic_year', $version->academic_year);
+
+        $nextVersion = max((int) $query->max('version'), (int) $version->version) + 1;
+
+        $this->recordConflict('fee_schedule_version', (int) $conflict->id, (int) $version->id, $version->public_id ?? null, [
+            'school_year' => $version->school_year,
+            'semester' => $version->semester,
+            'academic_year' => $version->academic_year,
+            'previous_version' => $version->version,
+            'version' => $nextVersion,
+            'keeper_rates' => [
+                'lecture_rate_per_unit' => $conflict->lecture_rate_per_unit ?? null,
+                'laboratory_rate_per_unit' => $conflict->laboratory_rate_per_unit ?? null,
+                'miscellaneous_fee' => $conflict->miscellaneous_fee ?? null,
+                'modular_fee' => $conflict->modular_fee ?? null,
+                'nstp_multiplier' => $conflict->nstp_multiplier ?? null,
+                'modular_lab_multiplier' => $conflict->modular_lab_multiplier ?? null,
+                'is_active' => $conflict->is_active ?? null,
+            ],
+            'duplicate_rates' => [
+                'lecture_rate_per_unit' => $version->lecture_rate_per_unit ?? null,
+                'laboratory_rate_per_unit' => $version->laboratory_rate_per_unit ?? null,
+                'miscellaneous_fee' => $version->miscellaneous_fee ?? null,
+                'modular_fee' => $version->modular_fee ?? null,
+                'nstp_multiplier' => $version->nstp_multiplier ?? null,
+                'modular_lab_multiplier' => $version->modular_lab_multiplier ?? null,
+                'is_active' => $version->is_active ?? null,
+            ],
+        ]);
+
+        DB::table('fee_schedule_versions')
+            ->where('id', $version->id)
+            ->update(['course_id' => $survivorId, 'version' => $nextVersion]);
     }
 
     /**

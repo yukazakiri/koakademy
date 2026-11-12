@@ -82,6 +82,7 @@ afterEach(function (): void {
         Schema::dropIfExists('subject');
         Schema::dropIfExists('courses');
         Schema::dropIfExists('schools');
+        Schema::dropIfExists('migration_merge_conflicts');
         DB::setDefaultConnection('sqlite');
         DB::purge('scope_codes_test');
     }
@@ -172,6 +173,26 @@ it('merges the duplicated programs and builds the school scoped keys', function 
     );
 
     expect($invalid)->toBeNull();
+});
+
+it('replaces a non-unique key that carries the expected name', function (): void {
+    seedDuplicatedPrograms();
+
+    $merge = require database_path('migrations/2026_11_08_000001_merge_duplicate_courses.php');
+    $merge->up();
+
+    // A non-unique key under the expected name does not enforce anything.
+    // The migration has to notice and replace it.
+    DB::statement('CREATE INDEX courses_school_id_code_unique ON courses (school_id, code)');
+
+    $scope = require database_path('migrations/2026_11_09_000002_scope_course_and_subject_codes_to_school.php');
+    $scope->up();
+
+    $index = collect(Schema::getIndexes('courses'))->firstWhere('name', 'courses_school_id_code_unique');
+
+    expect($index)->not->toBeNull()
+        ->and($index['unique'])->toBeTrue()
+        ->and($index['columns'])->toBe(['school_id', 'code']);
 });
 
 it('rejects a duplicate program code in the same school', function (): void {

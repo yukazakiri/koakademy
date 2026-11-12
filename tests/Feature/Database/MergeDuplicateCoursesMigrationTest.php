@@ -182,7 +182,7 @@ it('repoints every reference of a merged program at the surviving program', func
         ->and(DB::table('library_research_papers')->where('id', $paperId)->value('course_id'))->toBe($survivor->id);
 });
 
-it('removes the enrollment policy and fee schedule version that duplicate the surviving program scope', function (): void {
+it('retires the enrollment policy and fee schedule version that duplicate the surviving program scope', function (): void {
     $school = School::factory()->create();
 
     $survivor = Course::factory()->create([
@@ -202,6 +202,7 @@ it('removes the enrollment policy and fee schedule version that duplicate the su
         'course_id' => $survivor->id,
         'school_year' => '2026-2027',
         'semester' => 1,
+        'is_enabled' => false,
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -213,6 +214,7 @@ it('removes the enrollment policy and fee schedule version that duplicate the su
         'course_id' => $duplicate->id,
         'school_year' => '2026-2027',
         'semester' => 1,
+        'is_enabled' => true,
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -237,6 +239,7 @@ it('removes the enrollment policy and fee schedule version that duplicate the su
         'semester' => 1,
         'academic_year' => 1,
         'version' => 1,
+        'lecture_rate_per_unit' => 100,
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -248,6 +251,7 @@ it('removes the enrollment policy and fee schedule version that duplicate the su
         'semester' => 1,
         'academic_year' => 1,
         'version' => 1,
+        'lecture_rate_per_unit' => 150,
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -265,15 +269,91 @@ it('removes the enrollment policy and fee schedule version that duplicate the su
 
     mergeDuplicateCoursesMigration()->up();
 
-    expect(DB::table('enrollment_policies')->where('id', $survivorPolicyId)->exists())->toBeTrue()
-        ->and(DB::table('enrollment_policies')->where('id', $duplicatePolicyId)->exists())->toBeFalse()
+    // The policy of the duplicate program keeps its row and its history. It
+    // stops resolving the scope, and the scope keeps resolving through an
+    // enabled policy.
+    $retiredPolicy = DB::table('enrollment_policies')->where('id', $duplicatePolicyId)->first();
+
+    expect($retiredPolicy)->not->toBeNull()
+        ->and((bool) $retiredPolicy->is_enabled)->toBeFalse()
+        ->and($retiredPolicy->course_id)->toBeNull()
+        ->and($retiredPolicy->scope_key)->toStartWith('retired:')
+        ->and((bool) DB::table('enrollment_policies')->where('id', $survivorPolicyId)->value('is_enabled'))->toBeTrue()
         ->and(DB::table('enrollment_policies')->where('id', $movedPolicyId)->value('course_id'))->toBe($survivor->id)
         ->and(DB::table('enrollment_policies')->where('id', $movedPolicyId)->value('scope_key'))
         ->toBe(enrollmentPolicyScopeKey($school->id, $survivor->id, '2025-2026', 2));
 
-    expect(DB::table('fee_schedule_versions')->where('id', $survivorFeeId)->exists())->toBeTrue()
-        ->and(DB::table('fee_schedule_versions')->where('id', $duplicateFeeId)->exists())->toBeFalse()
+    // The colliding fee schedule version keeps its rates and continues as
+    // the next revision of the same scope.
+    $renumberedFee = DB::table('fee_schedule_versions')->where('id', $duplicateFeeId)->first();
+
+    expect($renumberedFee)->not->toBeNull()
+        ->and($renumberedFee->course_id)->toBe($survivor->id)
+        ->and((int) $renumberedFee->version)->toBe(2)
+        ->and((int) $renumberedFee->lecture_rate_per_unit)->toBe(150)
+        ->and(DB::table('fee_schedule_versions')->where('id', $survivorFeeId)->exists())->toBeTrue()
         ->and(DB::table('fee_schedule_versions')->where('id', $movedFeeId)->value('course_id'))->toBe($survivor->id);
+});
+
+it('records the values the merge could not carry over', function (): void {
+    $school = School::factory()->create();
+
+    $survivor = Course::factory()->create([
+        'school_id' => $school->id,
+        'code' => 'BSHRM (2009 - 2010)',
+    ]);
+
+    $duplicate = Course::factory()->create([
+        'school_id' => $school->id,
+        'code' => 'BSHRM (2009 - 2010)',
+    ]);
+
+    $keeperSubjectId = DB::table('subject')->insertGetId([
+        'classification' => SubjectEnrolledEnum::INTERNAL->value,
+        'code' => 'HOS101',
+        'title' => 'Front Office Procedures',
+        'units' => 3,
+        'lecture' => 2,
+        'laboratory' => 1,
+        'semester' => 1,
+        'course_id' => $survivor->id,
+        'school_id' => $school->id,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $duplicateSubjectId = DB::table('subject')->insertGetId([
+        'classification' => SubjectEnrolledEnum::INTERNAL->value,
+        'code' => 'HOS101',
+        'title' => 'Front Office Procedures (revised)',
+        'units' => 4,
+        'lecture' => 2,
+        'laboratory' => 1,
+        'semester' => 1,
+        'course_id' => $duplicate->id,
+        'school_id' => $school->id,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    mergeDuplicateCoursesMigration()->up();
+
+    $conflict = DB::table('migration_merge_conflicts')
+        ->where('relation', 'subject')
+        ->where('duplicate_id', $duplicateSubjectId)
+        ->first();
+
+    expect($conflict)->not->toBeNull()
+        ->and((int) $conflict->keeper_id)->toBe($keeperSubjectId)
+        ->and(json_decode((string) $conflict->details, true))
+        ->toMatchArray([
+            'title' => ['keeper' => 'Front Office Procedures', 'duplicate' => 'Front Office Procedures (revised)'],
+            'units' => ['keeper' => 3, 'duplicate' => 4],
+        ]);
+
+    // The keeper keeps its own values.
+    expect(DB::table('subject')->where('id', $keeperSubjectId)->value('title'))->toBe('Front Office Procedures')
+        ->and((int) DB::table('subject')->where('id', $keeperSubjectId)->value('units'))->toBe(3);
 });
 
 it('repoints class, enrollment and prerequisite references of a merged subject', function (): void {

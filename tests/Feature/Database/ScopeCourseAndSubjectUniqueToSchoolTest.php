@@ -357,6 +357,32 @@ it('backfills missing school_id on courses and subjects', function (): void {
         ->and($subject->school_id)->toBe($school->id);
 });
 
+it('repairs a subject whose school no longer matches its program', function (): void {
+    $school = School::factory()->create();
+    $otherSchool = School::factory()->create();
+
+    $course = Course::factory()->create(['school_id' => $school->id]);
+
+    $subjectId = DB::table('subject')->insertGetId([
+        'classification' => 'internal',
+        'code' => 'STALE-SCHOOL',
+        'title' => 'Subject of a moved program',
+        'units' => 3,
+        'lecture' => 3,
+        'laboratory' => 0,
+        'semester' => 1,
+        'course_id' => $course->id,
+        'school_id' => $otherSchool->id,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $migration = require base_path('database/migrations/2026_11_09_000002_scope_course_and_subject_codes_to_school.php');
+    $migration->up();
+
+    expect(DB::table('subject')->where('id', $subjectId)->value('school_id'))->toBe($school->id);
+});
+
 it('reports the duplicated program codes instead of failing with a raw database error', function (): void {
     $school = School::factory()->create();
 

@@ -249,6 +249,34 @@ final class ManageClassScheduleTool implements Approvable, Tool
         return $school instanceof \App\Models\School ? $school : null;
     }
 
+    /**
+     * Find the subject a class belongs to.
+     *
+     * A subject code is unique inside the program it belongs to, so the same
+     * code can exist in more than one program of a school. A code that
+     * matches several subjects cannot identify one, and picking the first
+     * match would link the class to another program's subject.
+     */
+    private function resolveSubjectByCode(string $code): ?Subject
+    {
+        $code = mb_strtoupper(mb_trim($code));
+
+        if ($code === '') {
+            return null;
+        }
+
+        $matches = Subject::query()->where('code', $code)->limit(2)->get();
+
+        if ($matches->count() > 1) {
+            throw new InvalidArgumentException(sprintf(
+                'Subject code %s exists in more than one program. Pass a program to identify the subject.',
+                $code,
+            ));
+        }
+
+        return $matches->first();
+    }
+
     private function handleCreateClass(Request $request): string
     {
         $validated = $request->validate([
@@ -277,7 +305,7 @@ final class ManageClassScheduleTool implements Approvable, Tool
 
         $facultyId = $this->resolveOptionalFaculty($validated['faculty_id'] ?? null, $validated['faculty_name'] ?? null)?->id;
 
-        $subject = Subject::query()->where('code', $validated['subject_code'])->first();
+        $subject = $this->resolveSubjectByCode((string) $validated['subject_code']);
 
         try {
             return DB::transaction(function () use ($validated, $schoolYear, $semester, $roomId, $facultyId, $subject) {
@@ -370,7 +398,7 @@ final class ManageClassScheduleTool implements Approvable, Tool
 
                 $facultyId = $this->resolveOptionalFaculty($cData['faculty_id'] ?? null, $cData['faculty_name'] ?? null)?->id;
 
-                $subject = Subject::query()->where('code', $subjectCode)->first();
+                $subject = $this->resolveSubjectByCode($subjectCode);
 
                 $class = Classes::query()
                     ->where('subject_code', $subjectCode)

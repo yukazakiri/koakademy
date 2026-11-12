@@ -173,6 +173,34 @@ final class ManageClassScheduleTool extends Tool
         return null;
     }
 
+    /**
+     * Find the subject a class belongs to.
+     *
+     * A subject code is unique inside the program it belongs to, so the same
+     * code can exist in more than one program of a school. A code that
+     * matches several subjects cannot identify one, and picking the first
+     * match would link the class to another program's subject.
+     */
+    private function resolveSubjectByCode(string $code): ?Subject
+    {
+        $code = mb_strtoupper(mb_trim($code));
+
+        if ($code === '') {
+            return null;
+        }
+
+        $matches = Subject::query()->where('code', $code)->limit(2)->get();
+
+        if ($matches->count() > 1) {
+            throw new InvalidArgumentException(sprintf(
+                'Subject code %s exists in more than one program. Pass a program to identify the subject.',
+                $code,
+            ));
+        }
+
+        return $matches->first();
+    }
+
     private function handleCreateClass(Request $request): ResponseFactory
     {
         $validated = $request->validate([
@@ -193,7 +221,7 @@ final class ManageClassScheduleTool extends Tool
 
         $schoolYear = $validated['school_year'] ?? $this->settings->getCurrentSchoolYearString();
         $semester = $validated['semester'] ?? $this->settings->getCurrentSemester();
-        $subject = Subject::query()->where('code', $validated['subject_code'])->first();
+        $subject = $this->resolveSubjectByCode((string) $validated['subject_code']);
 
         $roomId = ($validated['delivery_mode'] ?? null) === Classes::DELIVERY_ONLINE ? null : ($validated['room_id'] ?? null);
         if (($validated['delivery_mode'] ?? null) !== Classes::DELIVERY_ONLINE && ! $roomId && filled($validated['room_name'] ?? null)) {
@@ -287,7 +315,7 @@ final class ManageClassScheduleTool extends Tool
 
                 $facultyId = $this->resolveOptionalFaculty($cData['faculty_id'] ?? null, $cData['faculty_name'] ?? null);
 
-                $subject = Subject::query()->where('code', $subjectCode)->first();
+                $subject = $this->resolveSubjectByCode($subjectCode);
 
                 $class = Classes::query()
                     ->where('subject_code', $subjectCode)

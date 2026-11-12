@@ -2489,6 +2489,127 @@ it('normalizes special equity aliases to canonical CHED categories', function ()
         ->and($value)->toBe('Region I');
 });
 
+it('refuses to attach a subject to a program of another school', function (): void {
+    config(['api.mcp.write_enabled' => true]);
+    $this->staff->createToken('Staff Agent', ['mcp:read', 'mcp:write']);
+    $this->staff->givePermissionTo(['View:Subject', 'Update:Subject', 'Create:Subject']);
+
+    $otherSchool = School::factory()->create();
+    $otherProgram = Course::factory()->create(['school_id' => $otherSchool->id, 'code' => 'OTHER-SCHOOL']);
+
+    $response = KoAkademyServer::actingAs($this->staff)
+        ->tool(App\Mcp\Tools\ManageCurriculumSubjectTool::class, [
+            'action' => 'create',
+            'code' => 'CROSS-SCHOOL',
+            'title' => 'Subject of another school',
+            'units' => 3,
+            'academic_year' => 1,
+            'semester' => 1,
+            'course_id' => $otherProgram->id,
+        ]);
+
+    $response->assertOk()
+        ->assertStructuredContent(function ($json) use ($otherProgram): void {
+            $json->where('error', true)
+                ->where('message', "Program {$otherProgram->id} does not belong to this school.")
+                ->etc();
+        });
+
+    expect(Subject::query()->where('code', 'CROSS-SCHOOL')->count())->toBe(0);
+});
+
+it('refuses to resolve a subject code that more than one program uses', function (): void {
+    config(['api.mcp.write_enabled' => true]);
+    $this->staff->createToken('Staff Agent', ['mcp:read', 'mcp:write']);
+    $this->staff->givePermissionTo(['View:Subject', 'Update:Subject']);
+
+    $programA = Course::factory()->create(['school_id' => $this->school->id, 'code' => 'BSDS']);
+    $programB = Course::factory()->create(['school_id' => $this->school->id, 'code' => 'BSIT']);
+
+    $subjectA = Subject::factory()->for($programA)->create([
+        'school_id' => $this->school->id,
+        'code' => 'NSTP 1',
+        'title' => 'National Service Training Program I',
+    ]);
+    Subject::factory()->for($programB)->create([
+        'school_id' => $this->school->id,
+        'code' => 'NSTP 1',
+        'title' => 'National Service Training Program I',
+    ]);
+
+    $response = KoAkademyServer::actingAs($this->staff)
+        ->tool(App\Mcp\Tools\ManageCurriculumSubjectTool::class, [
+            'action' => 'update',
+            'code' => 'NSTP 1',
+            'title' => 'Renamed without a program',
+        ]);
+
+    $response->assertHasErrors(['Subject code NSTP 1 exists in more than one program. Pass course_id or course_code to identify the program.']);
+
+    expect($subjectA->fresh()->title)->toBe('National Service Training Program I');
+});
+
+it('refuses to resolve a subject code when the named program does not exist', function (): void {
+    config(['api.mcp.write_enabled' => true]);
+    $this->staff->createToken('Staff Agent', ['mcp:read', 'mcp:write']);
+    $this->staff->givePermissionTo(['View:Subject', 'Update:Subject']);
+
+    $program = Course::factory()->create(['school_id' => $this->school->id, 'code' => 'BSDS']);
+    $subject = Subject::factory()->for($program)->create([
+        'school_id' => $this->school->id,
+        'code' => 'NSTP 1',
+        'title' => 'National Service Training Program I',
+    ]);
+
+    $response = KoAkademyServer::actingAs($this->staff)
+        ->tool(App\Mcp\Tools\ManageCurriculumSubjectTool::class, [
+            'action' => 'update',
+            'code' => 'NSTP 1',
+            'course_code' => 'DOES-NOT-EXIST',
+            'title' => 'Renamed through a program that does not exist',
+        ]);
+
+    $response->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('error', true)
+                ->where('message', 'Subject not found.')
+                ->etc();
+        });
+
+    expect($subject->fresh()->title)->toBe('National Service Training Program I');
+});
+
+it('refuses to create a class for a subject code that more than one program uses', function (): void {
+    config(['api.mcp.write_enabled' => true]);
+    $this->staff->createToken('Staff Agent', ['mcp:read', 'mcp:write']);
+    $this->staff->givePermissionTo(['View:Subject', 'View:Classes', 'Update:Classes']);
+
+    $programA = Course::factory()->create(['school_id' => $this->school->id, 'code' => 'BSDS']);
+    $programB = Course::factory()->create(['school_id' => $this->school->id, 'code' => 'BSIT']);
+
+    Subject::factory()->for($programA)->create([
+        'school_id' => $this->school->id,
+        'code' => 'NSTP 1',
+        'title' => 'National Service Training Program I',
+    ]);
+    Subject::factory()->for($programB)->create([
+        'school_id' => $this->school->id,
+        'code' => 'NSTP 1',
+        'title' => 'National Service Training Program I',
+    ]);
+
+    $response = KoAkademyServer::actingAs($this->staff)
+        ->tool(App\Mcp\Tools\ManageClassScheduleTool::class, [
+            'action' => 'create_class',
+            'subject_code' => 'NSTP 1',
+            'section' => 'NSTP-1A',
+        ]);
+
+    $response->assertHasErrors(['Subject code NSTP 1 exists in more than one program. Pass a program to identify the subject.']);
+
+    expect(Classes::query()->where('section', 'NSTP-1A')->count())->toBe(0);
+});
+
 it('keeps a subject code that another program of the school already uses', function (): void {
     config(['api.mcp.write_enabled' => true]);
     $this->staff->createToken('Staff Agent', ['mcp:read', 'mcp:write']);

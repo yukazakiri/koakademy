@@ -10,6 +10,7 @@ use App\Models\Subject;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\ResponseFactory;
@@ -110,6 +111,14 @@ final class ManageCurriculumSubjectTool extends Tool
             $courseId = Course::query()->where('school_id', $school->id)->value('id') ?? Course::query()->value('id') ?? 1;
         }
 
+        // A subject may only be attached to a program of the current school.
+        if (! Course::query()->where('school_id', $school->id)->whereKey($courseId)->exists()) {
+            return Response::structured([
+                'error' => true,
+                'message' => "Program {$courseId} does not belong to this school.",
+            ]);
+        }
+
         $code = mb_strtoupper(mb_trim($validated['code']));
 
         // A subject code is unique inside the program it belongs to.
@@ -182,6 +191,12 @@ final class ManageCurriculumSubjectTool extends Tool
                 }
                 if (! $courseId) {
                     $courseId = $defaultCourse?->id ?? 1;
+                }
+
+                // A subject may only be attached to a program of the current
+                // school.
+                if (! Course::query()->where('school_id', $school->id)->whereKey($courseId)->exists()) {
+                    throw new InvalidArgumentException("Program {$courseId} does not belong to this school.");
                 }
 
                 $existing = Subject::query()->where('course_id', $courseId)->where('code', $code)->first();
@@ -313,13 +328,29 @@ final class ManageCurriculumSubjectTool extends Tool
                     ->where('school_id', $school->id)
                     ->where('code', (string) $request->get('course_code'))
                     ->value('id');
+
+                // A program that does not resolve cannot narrow the lookup.
+                // Falling back to a school wide search would let the request
+                // reach a subject of a different program.
+                if ($courseId === null) {
+                    return null;
+                }
             }
 
             if ($courseId !== null) {
                 $query->where('course_id', (int) $courseId);
             }
 
-            return $query->where('code', mb_trim((string) $code))->first();
+            $matches = $query->where('code', mb_trim((string) $code))->limit(2)->get();
+
+            if ($matches->count() > 1) {
+                throw new InvalidArgumentException(sprintf(
+                    'Subject code %s exists in more than one program. Pass course_id or course_code to identify the program.',
+                    mb_trim((string) $code),
+                ));
+            }
+
+            return $matches->first();
         }
 
         return null;

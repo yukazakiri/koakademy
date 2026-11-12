@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ai\Tools;
 
+use App\Exceptions\AmbiguousSubjectException;
 use App\Models\Course;
 use App\Models\Subject;
 use App\Models\User;
@@ -31,43 +32,11 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
 
     public function handle(Request $request): Stringable|string
     {
-        $user = Auth::user();
-        if (! $user instanceof User) {
-            return json_encode(['error' => true, 'message' => 'Authentication is required.']);
+        try {
+            return $this->dispatch($request);
+        } catch (AmbiguousSubjectException $exception) {
+            return json_encode(['error' => true, 'message' => $exception->getMessage()]);
         }
-
-        $action = mb_strtolower((string) $request['action']);
-
-        if ($action === 'get') {
-            if (! $user->hasRole('super_admin') && ! $user->can('View:Subject')) {
-                return json_encode(['error' => true, 'message' => 'You are not permitted to view curriculum subjects.']);
-            }
-        } elseif ($action === 'create') {
-            if (! $user->hasRole('super_admin') && ! $user->can('Create:Subject')) {
-                return json_encode(['error' => true, 'message' => 'You are not permitted to create curriculum subjects.']);
-            }
-        } elseif ($action === 'batch_upsert') {
-            if (! $user->hasRole('super_admin') && ! $user->can('Create:Subject') && ! $user->can('Update:Subject')) {
-                return json_encode(['error' => true, 'message' => 'You are not permitted to create or update curriculum subjects.']);
-            }
-        } elseif ($action === 'delete') {
-            if (! $user->hasRole('super_admin') && ! $user->can('Delete:Subject')) {
-                return json_encode(['error' => true, 'message' => 'You are not permitted to delete curriculum subjects.']);
-            }
-        } elseif ($action === 'update') {
-            if (! $user->hasRole('super_admin') && ! $user->can('Update:Subject')) {
-                return json_encode(['error' => true, 'message' => 'You are not permitted to update curriculum subjects.']);
-            }
-        }
-
-        return match ($action) {
-            'create' => $this->handleCreate($request),
-            'update' => $this->handleUpdate($request),
-            'batch_upsert' => $this->handleBatchUpsert($request),
-            'delete' => $this->handleDelete($request),
-            'get' => $this->handleGet($request),
-            default => json_encode(['error' => true, 'message' => "Unknown action '{$action}'. Supported: create, update, batch_upsert, delete, get."]),
-        };
     }
 
     public function schema(JsonSchema $schema): array
@@ -141,6 +110,47 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
         }
 
         return false;
+    }
+
+    private function dispatch(Request $request): Stringable|string
+    {
+        $user = Auth::user();
+        if (! $user instanceof User) {
+            return json_encode(['error' => true, 'message' => 'Authentication is required.']);
+        }
+
+        $action = mb_strtolower((string) $request['action']);
+
+        if ($action === 'get') {
+            if (! $user->hasRole('super_admin') && ! $user->can('View:Subject')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to view curriculum subjects.']);
+            }
+        } elseif ($action === 'create') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Create:Subject')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to create curriculum subjects.']);
+            }
+        } elseif ($action === 'batch_upsert') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Create:Subject') && ! $user->can('Update:Subject')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to create or update curriculum subjects.']);
+            }
+        } elseif ($action === 'delete') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Delete:Subject')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to delete curriculum subjects.']);
+            }
+        } elseif ($action === 'update') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Update:Subject')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to update curriculum subjects.']);
+            }
+        }
+
+        return match ($action) {
+            'create' => $this->handleCreate($request),
+            'update' => $this->handleUpdate($request),
+            'batch_upsert' => $this->handleBatchUpsert($request),
+            'delete' => $this->handleDelete($request),
+            'get' => $this->handleGet($request),
+            default => json_encode(['error' => true, 'message' => "Unknown action '{$action}'. Supported: create, update, batch_upsert, delete, get."]),
+        };
     }
 
     private function handleCreate(Request $request): string
@@ -497,10 +507,7 @@ final class ManageCurriculumSubjectTool implements Approvable, Tool
             $matches = $codeQuery->where('code', mb_trim((string) $code))->limit(2)->get();
 
             if ($matches->count() > 1) {
-                throw new InvalidArgumentException(sprintf(
-                    'Subject code %s exists in more than one program. Pass course_id or course_code to identify the program.',
-                    mb_trim((string) $code),
-                ));
+                throw AmbiguousSubjectException::forCode(mb_trim((string) $code));
             }
 
             return $matches->first();

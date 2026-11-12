@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Tools;
 
+use App\Exceptions\AmbiguousSubjectException;
 use App\Mcp\Concerns\AuthorizesMcpRequests;
 use App\Models\Course;
 use App\Models\Subject;
@@ -23,6 +24,42 @@ final class ManageCurriculumSubjectTool extends Tool
     use AuthorizesMcpRequests;
 
     public function handle(Request $request): ResponseFactory
+    {
+        try {
+            return $this->dispatch($request);
+        } catch (AmbiguousSubjectException $exception) {
+            return Response::structured(['error' => true, 'message' => $exception->getMessage()]);
+        }
+    }
+
+    /** @return array<string, Type> */
+    public function schema(JsonSchema $schema): array
+    {
+        return [
+            'action' => $schema->string()->enum(['create', 'update', 'batch_upsert', 'delete', 'get'])->required()->description('Operation: create, update, batch_upsert, delete, get.'),
+            'subjects' => $schema->array()->description('List of subjects for batch_upsert.')->items(
+                $schema->object(fn ($s) => [
+                    'code' => $s->string()->required()->description('Subject code (e.g. CS101).'),
+                    'title' => $s->string()->required()->description('Subject title.'),
+                    'units' => $s->integer()->required()->description('Credit units.'),
+                    'lecture' => $s->integer()->description('Lecture hours.'),
+                    'laboratory' => $s->integer()->description('Lab hours.'),
+                    'academic_year' => $s->integer()->description('Year level 1-5.'),
+                    'semester' => $s->integer()->description('Semester 1 or 2.'),
+                    'course_code' => $s->string()->description('Program code.'),
+                ])
+            ),
+            'subject_id' => $schema->integer()->description('Subject database ID.'),
+            'code' => $schema->string()->description('Subject code (e.g. CS101).'),
+            'title' => $schema->string()->description('Subject title.'),
+            'units' => $schema->integer()->description('Credit units.'),
+            'academic_year' => $schema->integer()->description('Year level (1-5).'),
+            'semester' => $schema->integer()->enum([1, 2])->description('Semester (1 or 2).'),
+            'course_code' => $schema->string()->description('Program code (e.g. BSCS).'),
+        ];
+    }
+
+    private function dispatch(Request $request): ResponseFactory
     {
         $action = mb_strtolower((string) $request->get('action'));
 
@@ -57,33 +94,6 @@ final class ManageCurriculumSubjectTool extends Tool
             'delete' => $this->handleDelete($request),
             default => Response::structured(['error' => true, 'message' => "Unsupported action '{$action}'."]),
         };
-    }
-
-    /** @return array<string, Type> */
-    public function schema(JsonSchema $schema): array
-    {
-        return [
-            'action' => $schema->string()->enum(['create', 'update', 'batch_upsert', 'delete', 'get'])->required()->description('Operation: create, update, batch_upsert, delete, get.'),
-            'subjects' => $schema->array()->description('List of subjects for batch_upsert.')->items(
-                $schema->object(fn ($s) => [
-                    'code' => $s->string()->required()->description('Subject code (e.g. CS101).'),
-                    'title' => $s->string()->required()->description('Subject title.'),
-                    'units' => $s->integer()->required()->description('Credit units.'),
-                    'lecture' => $s->integer()->description('Lecture hours.'),
-                    'laboratory' => $s->integer()->description('Lab hours.'),
-                    'academic_year' => $s->integer()->description('Year level 1-5.'),
-                    'semester' => $s->integer()->description('Semester 1 or 2.'),
-                    'course_code' => $s->string()->description('Program code.'),
-                ])
-            ),
-            'subject_id' => $schema->integer()->description('Subject database ID.'),
-            'code' => $schema->string()->description('Subject code (e.g. CS101).'),
-            'title' => $schema->string()->description('Subject title.'),
-            'units' => $schema->integer()->description('Credit units.'),
-            'academic_year' => $schema->integer()->description('Year level (1-5).'),
-            'semester' => $schema->integer()->enum([1, 2])->description('Semester (1 or 2).'),
-            'course_code' => $schema->string()->description('Program code (e.g. BSCS).'),
-        ];
     }
 
     private function handleCreate(Request $request): ResponseFactory
@@ -344,10 +354,7 @@ final class ManageCurriculumSubjectTool extends Tool
             $matches = $query->where('code', mb_trim((string) $code))->limit(2)->get();
 
             if ($matches->count() > 1) {
-                throw new InvalidArgumentException(sprintf(
-                    'Subject code %s exists in more than one program. Pass course_id or course_code to identify the program.',
-                    mb_trim((string) $code),
-                ));
+                throw AmbiguousSubjectException::forCode(mb_trim((string) $code));
             }
 
             return $matches->first();

@@ -2544,7 +2544,12 @@ it('refuses to resolve a subject code that more than one program uses', function
             'title' => 'Renamed without a program',
         ]);
 
-    $response->assertHasErrors(['Subject code NSTP 1 exists in more than one program. Pass course_id or course_code to identify the program.']);
+    $response->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('error', true)
+                ->where('message', 'Subject code NSTP 1 exists in more than one program. Pass course_id or course_code to identify the program.')
+                ->etc();
+        });
 
     expect($subjectA->fresh()->title)->toBe('National Service Training Program I');
 });
@@ -2605,7 +2610,12 @@ it('refuses to create a class for a subject code that more than one program uses
             'section' => 'NSTP-1A',
         ]);
 
-    $response->assertHasErrors(['Subject code NSTP 1 exists in more than one program. Pass a program to identify the subject.']);
+    $response->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('error', true)
+                ->where('message', 'Subject code NSTP 1 exists in more than one program. Pass a program to identify the subject.')
+                ->etc();
+        });
 
     expect(Classes::query()->where('section', 'NSTP-1A')->count())->toBe(0);
 });

@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Notifications\MigrateToStudent;
 use App\Services\AssessmentFormDataService;
 use App\Services\PdfGenerationService;
+use App\Support\PrivateExportStorage;
 use App\Support\StreamedStorage;
 use Exception;
 use Filament\Notifications\Notification;
@@ -299,8 +300,8 @@ final class SendAssessmentNotificationJob implements ShouldQueue
         );
         $assessmentFilename = sprintf('assmt-%s-%s.pdf', $this->studentEnrollment->id, $randomChars);
 
-        // Use same storage as PDF jobs - use public disk and assessments directory
-        $storageDisk = config('filesystems.default');
+        // Use same storage as PDF jobs - use the private export disk and assessments directory
+        $storageDisk = PrivateExportStorage::disk();
         $storageDirectory = 'assessments';
         $storage = Storage::disk($storageDisk);
 
@@ -341,8 +342,8 @@ final class SendAssessmentNotificationJob implements ShouldQueue
                 throw new Exception('PDF was not generated or is empty');
             }
 
-            // Upload to configured storage with public visibility
-            StreamedStorage::putFileFromPath($storageDisk, $relativePath, $temporaryFilePath, ['visibility' => 'public']);
+            // Upload to configured storage with private visibility
+            StreamedStorage::putFileFromPath($storageDisk, $relativePath, $temporaryFilePath, ['visibility' => 'private']);
         } finally {
             if (file_exists($temporaryFilePath)) {
                 unlink($temporaryFilePath);

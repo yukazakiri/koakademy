@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Jobs;
 
 use App\Services\PdfGenerationService;
+use App\Support\PrivateExportStorage;
 use App\Support\StreamedStorage;
 use Exception;
 use Filament\Notifications\Notification;
@@ -63,7 +64,7 @@ final class GenerateTimetablePdfJob implements ShouldQueue
                 default => 'pdf.timetable-export',
             };
 
-            $disk = config('filesystems.default');
+            $disk = PrivateExportStorage::disk();
 
             $directory = 'schedules';
 
@@ -78,7 +79,7 @@ final class GenerateTimetablePdfJob implements ShouldQueue
                 $this->pdfService->generatePdfFromView($viewName, $this->scheduleData, $tempPath);
 
                 // Upload to configured storage
-                StreamedStorage::putFileFromPath($disk, $storagePath, $tempPath);
+                StreamedStorage::putFileFromPath($disk, $storagePath, $tempPath, ['visibility' => 'private']);
             } finally {
                 // Clean up temporary file
                 if (file_exists($tempPath)) {

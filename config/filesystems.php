@@ -19,6 +19,24 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Private Export Disk
+    |--------------------------------------------------------------------------
+    |
+    | Generated exports (assessment forms, student lists, timetable PDFs) must
+    | never be written to a disk that is linked into the document root, or the
+    | files become reachable without authentication. They are written to this
+    | disk instead.
+    |
+    | The built-in "private" disk is local, so a deployment running more than
+    | one application replica has to point this at a shared volume or at an
+    | object storage disk (s3/r2) that every replica can read.
+    |
+    */
+
+    'private_disk' => env('FILESYSTEM_PRIVATE_DISK', 'private'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Filesystem Disks
     |--------------------------------------------------------------------------
     |

@@ -48,6 +48,24 @@ koakademy configure storage library-r2
 
 Never expose that bucket through a public URL. Limit credentials to its bucket, retain the existing reader/download authorization controls, and configure exact-origin CORS for PDF range requests.
 
+### Private export disk
+
+Generated exports (assessment forms, student lists, timetable PDFs) are written to a separate disk instead of `FILESYSTEM_DISK`, so they are never reachable through the public `/storage` path without authentication:
+
+```dotenv
+FILESYSTEM_PRIVATE_DISK=private
+```
+
+The built-in `private` disk is local. A deployment running more than one application replica has to point this at a shared volume or at an object storage disk that every replica can read, otherwise a worker on one replica writes a file the web tier on another replica cannot find.
+
+Exports written by earlier versions may still sit on the public disk. Move them off it with:
+
+```sh
+php artisan exports:migrate-to-private
+```
+
+The command is idempotent. Authorized downloads also relocate a legacy file onto the private disk the first time it is read, so the migration is not required for correctness.
+
 ## Mail
 
 First boot uses Laravel's `log` mailer. Configure external delivery only through the operator command:

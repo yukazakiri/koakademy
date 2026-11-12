@@ -587,6 +587,7 @@ it('renders full subject and room names in the assessment PDF view', function ()
 
 it('regenerates a fresh assessment PDF when resending assessment emails', function (): void {
     config(['filesystems.default' => 'assessment-resend-test']);
+    config(['filesystems.private_disk' => 'assessment-resend-test']);
     Storage::fake('assessment-resend-test');
 
     $student = Student::factory()->create(['email' => 'student@example.test']);

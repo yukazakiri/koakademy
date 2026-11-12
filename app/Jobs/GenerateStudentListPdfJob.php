@@ -7,6 +7,7 @@ namespace App\Jobs;
 use App\Models\Classes;
 use App\Models\User;
 use App\Services\PdfGenerationService;
+use App\Support\PrivateExportStorage;
 use App\Support\StreamedStorage;
 use Exception;
 use Filament\Actions\Action;
@@ -82,14 +83,14 @@ final class GenerateStudentListPdfJob implements ShouldQueue
             // Generate filename
             $filename = sprintf(
                 'student_list_%s_%s_%s_%s.pdf',
-                str_replace(' ', '_', $this->class->subject_code ?? 'Unknown'),
-                str_replace(' ', '_', $this->class->section ?? 'Unknown'),
-                str_replace(' ', '_', $this->class->semester ?? 'Unknown'),
-                str_replace('-', '_', $this->class->school_year ?? 'Unknown')
+                str_replace(' ', '_', (string) ($this->class->subject_code ?? 'Unknown')),
+                str_replace(' ', '_', (string) ($this->class->section ?? 'Unknown')),
+                str_replace(' ', '_', (string) ($this->class->semester ?? 'Unknown')),
+                str_replace('-', '_', (string) ($this->class->school_year ?? 'Unknown'))
             );
 
-            // Use the configured filesystem disk
-            $disk = config('filesystems.default');
+            // Use the private export disk so the file is never web-accessible
+            $disk = PrivateExportStorage::disk();
             $directory = 'exports/student-lists';
 
             // Ensure directory exists
@@ -126,7 +127,7 @@ final class GenerateStudentListPdfJob implements ShouldQueue
                 $pdfService->generatePdfFromHtml($html, $tempPath, $pdfOptions);
 
                 // Upload to configured storage
-                StreamedStorage::putFileFromPath($disk, $path, $tempPath);
+                StreamedStorage::putFileFromPath($disk, $path, $tempPath, ['visibility' => 'private']);
             } finally {
                 // Clean up temporary file
                 if (file_exists($tempPath)) {

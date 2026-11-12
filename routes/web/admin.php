@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\StudentEnrollment;
+use App\Support\PrivateExportStorage;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 
@@ -31,38 +32,54 @@ $registerAdminRoutes = function () use ($adminHost): void {
 
     // Assessment download route - accessible from admin domain
     Route::get('assessment/download/{record}', function ($record) {
-        // Find the student enrollment record
-        $student = StudentEnrollment::withTrashed()->where('id', $record)->first();
-        if (! $student) {
-            abort(404, 'Student enrollment record not found');
-        }
+        abort_unless(Auth::check(), 401);
+
+        // Find the active student enrollment record (excluding soft-deleted)
+        $student = StudentEnrollment::where('id', $record)->firstOrFail();
+
+        $user = Auth::user();
+        abort_unless($user && ($user->can('View:StudentEnrollment') || $user->can('view', $student)), 403);
 
         // Get the assessment resource
         $resource = $student
             ->resources()
             ->where('type', 'assessment')
-            ->latest()
+            ->latest('id')
             ->first();
 
         if (! $resource) {
             abort(404, 'Assessment file not found');
         }
 
-        // Check if file exists on disk
-        $disk = $resource->disk ?? config('filesystems.default');
-        if (! Storage::disk($disk)->exists($resource->file_path)) {
+        // Check if file exists on disk (private export disk first, legacy fallback)
+        $filePath = $resource->file_path;
+        $disk = PrivateExportStorage::locate(
+            $filePath,
+            PrivateExportStorage::candidateDisks(
+                is_string($resource->disk) ? $resource->disk : null
+            )
+        );
+
+        if ($disk === null) {
             abort(404, 'File not found on disk');
+        }
+
+        // Copies written to the web-exposed public disk before the private
+        // export migration are moved onto the private disk on first read.
+        if ($disk === 'public' && PrivateExportStorage::relocateFromPublicDisk($filePath)) {
+            $disk = PrivateExportStorage::disk();
         }
 
         try {
             // Get the file content
-            $fileContent = Storage::disk($disk)->get($resource->file_path);
-            $mimeType = Storage::disk($disk)->mimeType($resource->file_path) ?: 'application/pdf';
+            $fileContent = Storage::disk($disk)->get($filePath);
+            $mimeType = Storage::disk($disk)->mimeType($filePath) ?: 'application/pdf';
 
             // Return file as download
             return response($fileContent)
                 ->header('Content-Type', $mimeType)
-                ->header('Content-Disposition', 'attachment; filename="'.$resource->file_name.'"');
+                ->header('Content-Disposition', 'attachment; filename="'.$resource->file_name.'"')
+                ->header('X-Content-Type-Options', 'nosniff');
         } catch (Exception $e) {
             Log::error('Error accessing assessment file', [
                 'enrollment_id' => $record,
@@ -71,7 +88,7 @@ $registerAdminRoutes = function () use ($adminHost): void {
             ]);
             abort(500, 'Error accessing the file');
         }
-    })->name('assessment.download');
+    })->middleware(['auth', 'administrators.only'])->name('assessment.download');
 };
 
 $isLocalAdminHost = in_array($adminHost, ['localhost', '127.0.0.1', ''], true);

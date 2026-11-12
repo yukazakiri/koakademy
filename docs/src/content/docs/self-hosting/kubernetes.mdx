@@ -89,6 +89,12 @@ data:
   AWS_BUCKET: "koakademy-uploads"
   AWS_DEFAULT_REGION: "auto"
   AWS_ENDPOINT: "https://<account-id>.r2.cloudflarestorage.com"
+
+  # Generated exports (assessment forms, student lists, timetable PDFs) are
+  # written to their own disk so they are never reachable through /storage.
+  # The built-in "private" disk is local, so replicas need a shared volume or
+  # an object storage disk every replica can read.
+  FILESYSTEM_PRIVATE_DISK: "private"
 ```
 
 Apply config:

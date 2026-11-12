@@ -6,6 +6,7 @@ use App\Http\Controllers\AssessmentExportDownloadController;
 use App\Jobs\GenerateTimetablePdfJob;
 use App\Models\Faculty;
 use App\Models\Schedule;
+use App\Support\PrivateExportStorage;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -19,15 +20,33 @@ use Illuminate\Support\Facades\Storage;
 | Routes for downloading files such as student lists, timetable PDFs,
 | and schedule exports.
 |
+| Every export is served from the private export disk. Copies that were
+| written to the web-exposed public disk before that migration are moved
+| onto the private disk the first time an authorized download reads them.
+|
 */
 
 // Student list download
 Route::get('/download/student-list/{filename}', function (string $filename) {
-    $disk = config('filesystems.default');
-    $path = 'exports/student-lists/'.$filename;
+    $user = Auth::user();
 
-    if (! Storage::disk($disk)->exists($path)) {
-        abort(404, 'File not found on '.$disk.' storage: '.$path);
+    if (! $user || (! $user->canAccessAdminPortal() && ! $user->isFaculty())) {
+        abort(403, 'Unauthorized');
+    }
+
+    if (basename($filename) !== $filename || str_contains($filename, '..') || str_contains($filename, '/') || str_contains($filename, '\\')) {
+        abort(400, 'Invalid filename.');
+    }
+
+    $path = 'exports/student-lists/'.$filename;
+    $disk = PrivateExportStorage::locate($path, PrivateExportStorage::candidateDisks());
+
+    if ($disk === null) {
+        abort(404, 'File not found');
+    }
+
+    if ($disk === 'public' && PrivateExportStorage::relocateFromPublicDisk($path)) {
+        $disk = PrivateExportStorage::disk();
     }
 
     $file = Storage::disk($disk)->get($path);
@@ -35,42 +54,59 @@ Route::get('/download/student-list/{filename}', function (string $filename) {
 
     return response($file)
         ->header('Content-Type', $mimeType)
-        ->header('Content-Disposition', 'attachment; filename="'.$filename.'"');
-})->name('download.student-list');
+        ->header('Content-Disposition', 'attachment; filename="'.$filename.'"')
+        ->header('X-Content-Type-Options', 'nosniff');
+})->where('filename', '.*')->middleware(['auth'])->name('download.student-list');
 
 // Timetable PDF download
 Route::get('/download/timetable-pdf/{filename}', function (string $filename) {
-    $disk = config('filesystems.default');
+    $user = Auth::user();
+
+    if (! $user || (! $user->canAccessAdminPortal() && ! $user->isFaculty())) {
+        abort(403, 'Unauthorized');
+    }
+
+    if (basename($filename) !== $filename || str_contains($filename, '..') || str_contains($filename, '/') || str_contains($filename, '\\')) {
+        abort(400, 'Invalid filename.');
+    }
 
     $path = 'schedules/'.$filename;
+    $disk = PrivateExportStorage::locate($path, PrivateExportStorage::candidateDisks());
 
-    if (! Storage::disk($disk)->exists($path)) {
-        // If file doesn't exist, return a simple response
+    if ($disk === null) {
         return response()->json([
             'error' => 'PDF not found. Please contact administrator to generate schedule PDF.',
             'path' => $path,
-            'disk' => $disk,
+            'disk' => PrivateExportStorage::disk(),
         ], 404);
     }
 
-    // Try to generate a temporary signed URL; fall back to direct download
-    try {
-        $temporaryUrl = Storage::disk($disk)->temporaryUrl(
-            $path,
-            now()->addMinutes(5)
-        );
-
-        return redirect($temporaryUrl);
-    } catch (RuntimeException) {
-        // For disks that do not support temporary URLs, serve the file directly
+    if ($disk === 'public' && PrivateExportStorage::relocateFromPublicDisk($path)) {
+        $disk = PrivateExportStorage::disk();
     }
+
+    if ($disk !== PrivateExportStorage::disk() && config("filesystems.disks.{$disk}.driver") === 's3') {
+        // Try to generate a temporary signed URL; fall back to direct download
+        try {
+            $temporaryUrl = Storage::disk($disk)->temporaryUrl(
+                $path,
+                now()->addMinutes(5)
+            );
+
+            return redirect($temporaryUrl);
+        } catch (RuntimeException) {
+            // For disks that do not support temporary URLs, serve the file directly
+        }
+    }
+
     $file = Storage::disk($disk)->get($path);
     $mimeType = Storage::disk($disk)->mimeType($path) ?: 'application/pdf';
 
     return response($file)
         ->header('Content-Type', $mimeType)
-        ->header('Content-Disposition', 'attachment; filename="'.$filename.'"');
-})->name('download.timetable-pdf');
+        ->header('Content-Disposition', 'attachment; filename="'.$filename.'"')
+        ->header('X-Content-Type-Options', 'nosniff');
+})->where('filename', '.*')->middleware(['auth'])->name('download.timetable-pdf');
 
 // Schedule PDF download (authenticated)
 Route::get('/download/schedule', function () {
@@ -179,15 +215,25 @@ Route::get('/download/attendance-report/{filename}', function (string $filename)
         abort(403, 'Unauthorized');
     }
 
-    $disk = config('filesystems.default');
-    $path = 'exports/attendance/'.$user->id.'/'.$filename;
+    if (basename($filename) !== $filename || str_contains($filename, '..') || str_contains($filename, '/') || str_contains($filename, '\\')) {
+        abort(400, 'Invalid filename.');
+    }
 
-    if (! Storage::disk($disk)->exists($path)) {
+    $path = 'exports/attendance/'.$user->id.'/'.$filename;
+    $disk = PrivateExportStorage::locate($path, PrivateExportStorage::candidateDisks());
+
+    if ($disk === null) {
         abort(404, 'Attendance report not found.');
     }
 
-    return Storage::disk($disk)->download($path, $filename);
-})->name('download.attendance-report');
+    if ($disk === 'public' && PrivateExportStorage::relocateFromPublicDisk($path)) {
+        $disk = PrivateExportStorage::disk();
+    }
+
+    return Storage::disk($disk)->download($path, $filename, [
+        'X-Content-Type-Options' => 'nosniff',
+    ]);
+})->middleware(['auth'])->name('download.attendance-report');
 
 Route::get('/download/student-soa/{filename}', function (string $filename) {
     $user = Auth::user();
@@ -196,15 +242,25 @@ Route::get('/download/student-soa/{filename}', function (string $filename) {
         abort(403, 'Unauthorized');
     }
 
-    $disk = config('filesystems.default');
-    $path = 'exports/soa/'.$user->id.'/'.$filename;
+    if (basename($filename) !== $filename || str_contains($filename, '..') || str_contains($filename, '/') || str_contains($filename, '\\')) {
+        abort(400, 'Invalid filename.');
+    }
 
-    if (! Storage::disk($disk)->exists($path)) {
+    $path = 'exports/soa/'.$user->id.'/'.$filename;
+    $disk = PrivateExportStorage::locate($path, PrivateExportStorage::candidateDisks());
+
+    if ($disk === null) {
         abort(404, 'SOA PDF not found.');
     }
 
-    return Storage::disk($disk)->download($path, $filename);
-})->name('download.student-soa');
+    if ($disk === 'public' && PrivateExportStorage::relocateFromPublicDisk($path)) {
+        $disk = PrivateExportStorage::disk();
+    }
+
+    return Storage::disk($disk)->download($path, $filename, [
+        'X-Content-Type-Options' => 'nosniff',
+    ]);
+})->middleware(['auth'])->name('download.student-soa');
 
 Route::get('/download/enrollment-report/{filename}', function (string $filename) {
     $user = Auth::user();
@@ -213,15 +269,25 @@ Route::get('/download/enrollment-report/{filename}', function (string $filename)
         abort(403, 'Unauthorized');
     }
 
-    $disk = config('filesystems.default');
-    $path = 'exports/enrollment-reports/'.$user->id.'/'.$filename;
+    if (basename($filename) !== $filename || str_contains($filename, '..') || str_contains($filename, '/') || str_contains($filename, '\\')) {
+        abort(400, 'Invalid filename.');
+    }
 
-    if (! Storage::disk($disk)->exists($path)) {
+    $path = 'exports/enrollment-reports/'.$user->id.'/'.$filename;
+    $disk = PrivateExportStorage::locate($path, PrivateExportStorage::candidateDisks());
+
+    if ($disk === null) {
         abort(404, 'Enrollment report PDF not found.');
     }
 
-    return Storage::disk($disk)->download($path, $filename);
-})->name('download.enrollment-report');
+    if ($disk === 'public' && PrivateExportStorage::relocateFromPublicDisk($path)) {
+        $disk = PrivateExportStorage::disk();
+    }
+
+    return Storage::disk($disk)->download($path, $filename, [
+        'X-Content-Type-Options' => 'nosniff',
+    ]);
+})->middleware(['auth'])->name('download.enrollment-report');
 
 Route::get('/download/bulk-assessment/{assessmentExport}', [AssessmentExportDownloadController::class, 'download'])
     ->name('download.bulk-assessment');

@@ -11,6 +11,7 @@ use App\Services\AssessmentFormDataService;
 use App\Services\GeneralSettingsService;
 use App\Services\PdfGenerationService;
 use App\Settings\SiteSettings;
+use App\Support\PrivateExportStorage;
 use App\Support\StreamedStorage;
 use Exception;
 use Filament\Notifications\Notification;
@@ -76,7 +77,8 @@ final class SendClassChangeNotificationJob implements ShouldQueue
             }
 
             // Ensure assessment PDF is available
-            $assessmentPath = $this->ensurePdfIsAvailable();
+            $assessment = $this->ensurePdfIsAvailable();
+            $assessmentPath = $assessment['path'];
 
             // Resolve class details for the changes
             $classChanges = $this->resolveClassChangeDetails();
@@ -102,7 +104,7 @@ final class SendClassChangeNotificationJob implements ShouldQueue
 
             // Read PDF attachment data
             $pdfAttached = false;
-            $attachmentData = $this->resolveAssessmentAttachment($assessmentPath);
+            $attachmentData = $this->resolveAssessmentAttachment($assessmentPath, $assessment['disk']);
 
             // Send email with class change details
             Mail::to($student->email)
@@ -203,8 +205,10 @@ final class SendClassChangeNotificationJob implements ShouldQueue
 
     /**
      * Ensure assessment PDF is available, generate if needed.
+     *
+     * @return array{path: string, disk: string}
      */
-    private function ensurePdfIsAvailable(): string
+    private function ensurePdfIsAvailable(): array
     {
         $existingResource = $this->studentEnrollment
             ->resources()
@@ -213,7 +217,7 @@ final class SendClassChangeNotificationJob implements ShouldQueue
             ->first();
 
         if ($existingResource) {
-            $disk = $existingResource->disk ?: config('filesystems.default');
+            $disk = $existingResource->disk ?: PrivateExportStorage::disk();
             $relativePath = $existingResource->file_path;
 
             try {
@@ -223,7 +227,7 @@ final class SendClassChangeNotificationJob implements ShouldQueue
                         'resource_id' => $existingResource->id,
                     ]);
 
-                    return $relativePath;
+                    return ['path' => $relativePath, 'disk' => $disk];
                 }
             } catch (Exception $exception) {
                 Log::warning('Could not verify existing assessment resource.', [
@@ -252,8 +256,10 @@ final class SendClassChangeNotificationJob implements ShouldQueue
 
     /**
      * Generate PDF synchronously (reuses logic from SendAssessmentNotificationJob).
+     *
+     * @return array{path: string, disk: string}
      */
-    private function generatePdfSynchronously(): string
+    private function generatePdfSynchronously(): array
     {
         $data = app(AssessmentFormDataService::class)->buildViewData($this->studentEnrollment);
 
@@ -264,7 +270,7 @@ final class SendClassChangeNotificationJob implements ShouldQueue
         );
         $assessmentFilename = sprintf('assmt-%s-%s.pdf', $this->studentEnrollment->id, $randomChars);
 
-        $storageDisk = config('filesystems.default');
+        $storageDisk = PrivateExportStorage::disk();
         $storageDirectory = 'assessments';
         $storage = Storage::disk($storageDisk);
 
@@ -295,7 +301,7 @@ final class SendClassChangeNotificationJob implements ShouldQueue
                 throw new Exception('PDF was not generated or is empty');
             }
 
-            StreamedStorage::putFileFromPath($storageDisk, $relativePath, $temporaryFilePath, ['visibility' => 'public']);
+            StreamedStorage::putFileFromPath($storageDisk, $relativePath, $temporaryFilePath, ['visibility' => 'private']);
         } finally {
             if (file_exists($temporaryFilePath)) {
                 unlink($temporaryFilePath);
@@ -332,13 +338,19 @@ final class SendClassChangeNotificationJob implements ShouldQueue
             ]);
         }
 
-        return $relativePath;
+        return ['path' => $relativePath, 'disk' => $storageDisk];
     }
 
     /**
+     * Read the assessment PDF so it can be attached to the notification email.
+     *
+     * The disk the PDF is known to live on is tried first, because the export
+     * may sit on the private export disk while the default disk still holds an
+     * older copy of the same path.
+     *
      * @return array{contents: string, name: string}|null
      */
-    private function resolveAssessmentAttachment(?string $assessmentPath): ?array
+    private function resolveAssessmentAttachment(?string $assessmentPath, ?string $assessmentDisk = null): ?array
     {
         if (in_array($assessmentPath, [null, '', '0'], true)) {
             return null;
@@ -352,21 +364,35 @@ final class SendClassChangeNotificationJob implements ShouldQueue
             ];
         }
 
-        // Try as storage-relative path
-        $disk = config('filesystems.default');
-        try {
-            if (Storage::disk($disk)->exists($assessmentPath)) {
+        // Try as storage-relative path, starting on the disk the PDF is known
+        // to live on and falling back to the recorded and default disks.
+        $resourceDisk = $this->studentEnrollment
+            ->resources()
+            ->where('type', 'assessment')
+            ->latest('id')
+            ->value('disk');
+
+        $candidateDisks = PrivateExportStorage::candidateDisks(
+            $assessmentDisk ?? (is_string($resourceDisk) ? $resourceDisk : null)
+        );
+
+        foreach ($candidateDisks as $disk) {
+            try {
+                if (! Storage::disk($disk)->exists($assessmentPath)) {
+                    continue;
+                }
+
                 return [
                     'contents' => Storage::disk($disk)->get($assessmentPath),
                     'name' => basename($assessmentPath),
                 ];
+            } catch (Exception $exception) {
+                Log::warning('Could not read assessment from storage.', [
+                    'path' => $assessmentPath,
+                    'disk' => $disk,
+                    'error' => $exception->getMessage(),
+                ]);
             }
-        } catch (Exception $exception) {
-            Log::warning('Could not read assessment from storage.', [
-                'path' => $assessmentPath,
-                'disk' => $disk,
-                'error' => $exception->getMessage(),
-            ]);
         }
 
         return null;

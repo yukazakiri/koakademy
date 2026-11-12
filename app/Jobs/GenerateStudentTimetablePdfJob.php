@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Notifications\TimetablePdfFailedNotification;
 use App\Notifications\TimetablePdfGeneratedNotification;
 use App\Services\PdfGenerationService;
+use App\Support\PrivateExportStorage;
 use App\Support\StreamedStorage;
 use Exception;
 use Illuminate\Bus\Queueable;
@@ -195,8 +196,8 @@ final class GenerateStudentTimetablePdfJob implements ShouldQueue
         $studentName = preg_replace('/[^a-zA-Z0-9]/', '_', (string) $student->full_name);
         $filename = "timetable_{$studentName}_".date('Y-m-d_H-i-s').'.pdf';
 
-        // Use the configured filesystem disk
-        $disk = config('filesystems.default');
+        // Use the private export disk so the file is never web-accessible
+        $disk = PrivateExportStorage::disk();
         $directory = 'schedules';
 
         // Ensure directory exists
@@ -210,7 +211,7 @@ final class GenerateStudentTimetablePdfJob implements ShouldQueue
             $this->pdfService->generatePdfFromView('pdf.student-timetable', $viewData, $tempPath);
 
             // Upload to configured storage
-            StreamedStorage::putFileFromPath($disk, $storagePath, $tempPath);
+            StreamedStorage::putFileFromPath($disk, $storagePath, $tempPath, ['visibility' => 'private']);
         } finally {
             // Clean up temporary file
             if (file_exists($tempPath)) {

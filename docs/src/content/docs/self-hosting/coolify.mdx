@@ -33,9 +33,48 @@ description: Deploy KoAkademy on Coolify v4 using Docker Compose or standalone D
 version: "3.8"
 
 services:
+  # The release step. It prepares the schema once, and the application starts
+  # only after it completed successfully. Coolify deploys this Compose
+  # definition as it is written, so the step has to be part of it.
+  migrate:
+    image: ghcr.io/yukazakiri/koakademy:latest
+    restart: "no"
+    entrypoint: ["php", "artisan", "migrate", "--force", "--no-interaction"]
+    environment:
+      APP_NAME: "KoAkademy"
+      APP_ENV: "production"
+      APP_DEBUG: "false"
+      APP_KEY: "${APP_KEY}"
+      OCTANE_SERVER: "frankenphp"
+      AUTO_MIGRATE: "false"
+
+      # Database
+      DB_CONNECTION: "pgsql"
+      DB_HOST: "postgres"
+      DB_PORT: 5432
+      DB_DATABASE: "koakademy"
+      DB_USERNAME: "koakademy"
+      DB_PASSWORD: "${DB_PASSWORD}"
+
+      # Redis Cache & Queues
+      CACHE_STORE: "redis"
+      SESSION_DRIVER: "redis"
+      QUEUE_CONNECTION: "redis"
+      REDIS_HOST: "redis"
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: "${REDIS_PASSWORD}"
+    volumes:
+      - app_storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   app:
     image: ghcr.io/yukazakiri/koakademy:latest
     restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     environment:
       APP_NAME: "KoAkademy"
       APP_ENV: "production"
@@ -144,7 +183,7 @@ In Coolify's **Environment Variables** panel, set the following secrets:
 ### Step 5: Deploy the Application
 
 1. Click **Deploy**.
-2. Monitor build logs in real-time. Coolify will pull the images, run health checks on PostgreSQL, Redis, and Gotenberg, run `php artisan migrate --force` as a release step before the application starts, and boot FrankenPHP.
+2. Monitor build logs in real-time. Coolify will pull the images, run health checks on PostgreSQL, Redis, and Gotenberg, run the `migrate` service of the Compose definition as the release step, and start the application once that service completed successfully.
 3. Once the deployment status turns green, visit `https://school.example.com/setup` to create the super administrator account and initialize your school institution.
 
 ---

@@ -131,7 +131,41 @@ oc apply -f dependencies.yaml
 
 ---
 
-## Step 4: Deploy KoAkademy Application
+## Step 4: Release Migration Job
+
+Migrations are a release step, not a container boot. The application is only
+started after the schema is prepared.
+
+Create `koakademy-migrate-job.yaml`. The job reads the same configuration and
+the same secrets as the application, so it migrates the application database:
+
+```yaml
+# koakademy-migrate-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: koakademy-migrate
+  namespace: koakademy
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: ghcr.io/yukazakiri/koakademy:latest
+          imagePullPolicy: IfNotPresent
+          command: ["php", "artisan", "migrate", "--force", "--no-interaction"]
+          envFrom:
+            - configMapRef:
+                name: koakademy-config
+            - secretRef:
+                name: koakademy-secrets
+```
+
+---
+
+## Step 5: Deploy KoAkademy Application
 
 ```yaml
 # koakademy-deployment.yaml
@@ -203,15 +237,12 @@ spec:
       targetPort: 8000
 ```
 
-Apply application deployment:
-
-```sh
-oc apply -f koakademy-deployment.yaml
-```
+The application deployment is applied in the next step, after the migration
+job completed.
 
 ---
 
-## Step 5: Expose OpenShift Route with TLS
+## Step 6: Expose OpenShift Route with TLS
 
 Create an edge-terminated OpenShift Route:
 
@@ -246,15 +277,20 @@ oc apply -f koakademy-route.yaml
 
 ---
 
-## Step 6: Run the Migrations and Verify Deployment
+## Step 7: Run the Migrations and Verify Deployment
 
-Migrations are a release step, not a container boot. Run them once, as a job
-against the same database, before the rollout:
+Prepare the schema before the application starts:
 
 ```sh
-oc -n koakademy create job koakademy-migrate --image=ghcr.io/yukazakiri/koakademy:latest \
-  -- /bin/sh -c 'php artisan migrate --force --no-interaction'
-oc -n koakademy wait --for=condition=complete job/koakademy-migrate
+oc apply -f koakademy-migrate-job.yaml
+oc -n koakademy wait --for=condition=complete job/koakademy-migrate --timeout=10m
+```
+
+The application deployment is only applied once the migration job completed,
+so no pod starts against a schema it does not expect:
+
+```sh
+oc apply -f koakademy-deployment.yaml
 ```
 
 Check deployment status:
@@ -265,3 +301,12 @@ oc logs -f deployment/koakademy -n koakademy
 ```
 
 Open the OpenShift Route URL (`https://koakademy.apps.cluster.example.com/setup`) in your browser to complete installation.
+
+A later release repeats the same step. Remove the finished job first, because
+a job name can only be used once:
+
+```sh
+oc -n koakademy delete job koakademy-migrate --ignore-not-found
+oc apply -f koakademy-migrate-job.yaml
+oc -n koakademy wait --for=condition=complete job/koakademy-migrate --timeout=10m
+```

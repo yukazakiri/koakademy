@@ -154,7 +154,40 @@ spec:
 
 ---
 
-## Step 4: Application Deployment & Service
+## Step 4: Release Migration Job
+
+Migrations are a release step, not a container boot. The application is only
+started after the schema is prepared.
+
+Create `koakademy-migrate-job.yaml`. The job reads the same configuration and
+the same secrets as the application, so it migrates the application database:
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: koakademy-migrate
+  namespace: koakademy
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: ghcr.io/yukazakiri/koakademy:latest
+          imagePullPolicy: IfNotPresent
+          command: ["php", "artisan", "migrate", "--force", "--no-interaction"]
+          envFrom:
+            - configMapRef:
+                name: koakademy-config
+            - secretRef:
+                name: koakademy-secrets
+```
+
+---
+
+## Step 5: Application Deployment & Service
 
 Create `koakademy-app.yaml`:
 
@@ -234,7 +267,7 @@ spec:
 
 ---
 
-## Step 5: Ingress with TLS (cert-manager)
+## Step 6: Ingress with TLS (cert-manager)
 
 Create `ingress.yaml`:
 
@@ -271,23 +304,22 @@ spec:
 
 ---
 
-## Step 6: Deploy & Verify
+## Step 7: Deploy & Verify
 
-Apply all resources:
+Prepare the schema before the application starts:
 
 ```sh
 kubectl apply -f gotenberg.yaml
-kubectl apply -f koakademy-app.yaml
-kubectl apply -f ingress.yaml
+kubectl apply -f koakademy-migrate-job.yaml
+kubectl -n koakademy wait --for=condition=complete job/koakademy-migrate --timeout=10m
 ```
 
-Migrations are a release step, not a container boot. Run them once, as a job
-against the same database, before the rollout:
+The application is only applied once the migration job completed, so no pod
+starts against a schema it does not expect:
 
 ```sh
-kubectl -n koakademy create job koakademy-migrate --image=ghcr.io/yukazakiri/koakademy:latest \
-  -- /bin/sh -c 'php artisan migrate --force --no-interaction'
-kubectl -n koakademy wait --for=condition=complete job/koakademy-migrate
+kubectl apply -f koakademy-app.yaml
+kubectl apply -f ingress.yaml
 ```
 
 Monitor rollout:
@@ -298,3 +330,12 @@ kubectl -n koakademy get pods -w
 ```
 
 When pods are in `Running` status, visit `https://school.example.com/setup` to finish installation.
+
+A later release repeats the same step. Remove the finished job first, because
+a job name can only be used once:
+
+```sh
+kubectl -n koakademy delete job koakademy-migrate --ignore-not-found
+kubectl apply -f koakademy-migrate-job.yaml
+kubectl -n koakademy wait --for=condition=complete job/koakademy-migrate --timeout=10m
+```

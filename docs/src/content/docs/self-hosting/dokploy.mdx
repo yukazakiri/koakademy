@@ -294,8 +294,13 @@ When pushing new code or pulling a new release image (such as `yukazaki/koakadem
    Migrations are not part of the container boot, so the application never
    serves traffic against a schema it does not expect.
 
+   Dokploy runs Compose with `-p {appName}`, so the project name is given
+   explicitly. Without it, Compose derives the name from the working
+   directory and the one-off container joins a different network, where it
+   cannot reach the `pgsql` service.
+
    ```sh
-   docker compose --env-file .env -f docker-compose.yml run --rm app php artisan migrate --force --no-interaction
+   docker compose -p <dokploy-app-name> --env-file .env -f docker-compose.yml run --rm app php artisan migrate --force --no-interaction
    ```
 2. **Trigger Redeploy in Dokploy**: Click **Redeploy** in the Dokploy Compose service.
 3. **Start-First Rollout**:

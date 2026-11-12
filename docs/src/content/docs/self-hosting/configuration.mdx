@@ -141,7 +141,7 @@ reverse proxy can add a layer of defence there as well. A Cloudflare WAF rule
 that rejects archive leaks, environment files and an old scanner signature:
 
 ```text
-(http.request.uri.path matches r"^(web|main)/.*\.(zip|rar|tar|gz|7z|sql|bak)$")
+(http.request.uri.path matches r"^/(web|main)/.*\.(zip|rar|tar|gz|7z|sql|bak)$")
 or (http.request.uri.path eq "/.env")
 or (lower(http.user_agent) contains "android 4.4.4")
 ```

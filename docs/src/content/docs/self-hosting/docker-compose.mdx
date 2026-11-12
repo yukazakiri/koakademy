@@ -254,17 +254,14 @@ server {
 
 ## Step 5: Start Services and Initialize
 
-Start the stack in detached mode:
+Migrations are a release step, not a container boot. Bring the dependencies
+up, prepare the schema, and only then start the application, so no request
+reaches an empty database:
 
 ```sh
-docker compose up -d
-```
-
-Migrations are a release step, not a container boot, so run them once against
-the started database before the application serves traffic:
-
-```sh
-docker compose exec app php artisan migrate --force --no-interaction
+docker compose up -d postgres redis gotenberg
+docker compose run --rm app php artisan migrate --force --no-interaction
+docker compose up -d app
 ```
 
 Monitor container startup and logs:

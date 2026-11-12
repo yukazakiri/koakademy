@@ -68,6 +68,41 @@ openssl rand -base64 32 | docker secret create koakademy_redis_password -
 
 ## Step 2: Define `stack.yaml`
 
+Create `/opt/koakademy/app.env`. The application and the release migration
+job share this file, so both talk to the same database:
+
+```sh
+cat >/opt/koakademy/app.env <<'ENV'
+APP_NAME="KoAkademy"
+APP_ENV="production"
+APP_DEBUG="false"
+APP_URL="https://school.example.com"
+OCTANE_SERVER="frankenphp"
+AUTO_MIGRATE="false"
+RUN_OPTIMIZE="foreground"
+
+# Database Connection
+DB_CONNECTION="pgsql"
+DB_HOST="postgres"
+DB_PORT="5432"
+DB_DATABASE="koakademy"
+DB_USERNAME="koakademy"
+DB_PASSWORD_FILE="/run/secrets/koakademy_db_password"
+
+# Redis Connection
+CACHE_STORE="redis"
+SESSION_DRIVER="redis"
+QUEUE_CONNECTION="redis"
+REDIS_HOST="redis"
+REDIS_PORT="6379"
+REDIS_PASSWORD_FILE="/run/secrets/koakademy_redis_password"
+
+# PDF Engine
+GOTENBERG_URL="http://gotenberg:3000"
+FILESYSTEM_DISK="public"
+ENV
+```
+
 Create `/opt/koakademy/stack.yaml`:
 
 ```yaml
@@ -99,34 +134,8 @@ services:
 
   app:
     image: ghcr.io/yukazakiri/koakademy:latest
-    environment:
-      APP_NAME: "KoAkademy"
-      APP_ENV: "production"
-      APP_DEBUG: "false"
-      APP_URL: "https://school.example.com"
-      OCTANE_SERVER: "frankenphp"
-      AUTO_MIGRATE: "false"
-      RUN_OPTIMIZE: "foreground"
-      
-      # Database Connection
-      DB_CONNECTION: "pgsql"
-      DB_HOST: "postgres"
-      DB_PORT: 5432
-      DB_DATABASE: "koakademy"
-      DB_USERNAME: "koakademy"
-      DB_PASSWORD_FILE: "/run/secrets/koakademy_db_password"
-      
-      # Redis Connection
-      CACHE_STORE: "redis"
-      SESSION_DRIVER: "redis"
-      QUEUE_CONNECTION: "redis"
-      REDIS_HOST: "redis"
-      REDIS_PORT: 6379
-      REDIS_PASSWORD_FILE: "/run/secrets/koakademy_redis_password"
-      
-      # PDF Engine
-      GOTENBERG_URL: "http://gotenberg:3000"
-      FILESYSTEM_DISK: "public"
+    env_file:
+      - /opt/koakademy/app.env
     secrets:
       - koakademy_app_key
       - koakademy_db_password
@@ -136,7 +145,7 @@ services:
     networks:
       - koakademy_overlay
     deploy:
-      replicas: 2
+      replicas: ${APP_REPLICAS:-2}
       update_config:
         parallelism: 1
         delay: 15s
@@ -230,12 +239,52 @@ school.example.com {
 
 ---
 
-## Step 4: Deploy Stack
+## Step 4: Run the Release Migrations
 
-Deploy the stack to the Swarm:
+Migrations are a release step, not a container boot. The application starts
+only after the schema is prepared, so the application service is deployed
+without replicas first.
 
 ```sh
-docker stack deploy -c /opt/koakademy/stack.yaml koakademy
+APP_REPLICAS=0 docker stack deploy -c /opt/koakademy/stack.yaml koakademy
+```
+
+Run the migration as a one-shot job with the same environment, secrets and
+network as the application:
+
+```sh
+docker service rm koakademy_migrate >/dev/null 2>&1 || true
+
+docker service create \
+  --name koakademy_migrate \
+  --mode replicated-job \
+  --restart-condition on-failure \
+  --restart-max-attempts 3 \
+  --network koakademy_overlay \
+  --env-file /opt/koakademy/app.env \
+  --secret koakademy_app_key \
+  --secret koakademy_db_password \
+  --secret koakademy_redis_password \
+  --mount type=volume,source=koakademy_app_storage,target=/app/storage \
+  ghcr.io/yukazakiri/koakademy:latest \
+  php artisan migrate --force --no-interaction
+```
+
+Wait for the job to finish, and check that it completed successfully:
+
+```sh
+docker service ps koakademy_migrate
+docker service logs koakademy_migrate
+```
+
+---
+
+## Step 5: Deploy Stack
+
+Deploy the stack to the Swarm with the application replicas:
+
+```sh
+APP_REPLICAS=2 docker stack deploy -c /opt/koakademy/stack.yaml koakademy
 ```
 
 Check the status of running tasks:
@@ -252,6 +301,28 @@ docker service logs -f koakademy_app
 To update KoAkademy to a new release:
 
 ```sh
+# Run the release migrations first, with the application scaled down.
+docker service scale koakademy_app=0
+docker service rm koakademy_migrate >/dev/null 2>&1 || true
+
+docker service create \
+  --name koakademy_migrate \
+  --mode replicated-job \
+  --restart-condition on-failure \
+  --restart-max-attempts 3 \
+  --network koakademy_overlay \
+  --env-file /opt/koakademy/app.env \
+  --secret koakademy_app_key \
+  --secret koakademy_db_password \
+  --secret koakademy_redis_password \
+  --mount type=volume,source=koakademy_app_storage,target=/app/storage \
+  ghcr.io/yukazakiri/koakademy:latest \
+  php artisan migrate --force --no-interaction
+
+docker service ps koakademy_migrate
+docker service logs koakademy_migrate
+
+# Bring the new image up once the schema is ready.
 docker service update \
   --image ghcr.io/yukazakiri/koakademy:v1.2.0 \
   --update-order start-first \

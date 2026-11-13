@@ -146,7 +146,9 @@ it('gives the models that had no allowlist one of their own columns', function (
 
     expect($fillable)->not->toBeEmpty();
 
-    $column = (string) array_key_first($fillable);
+    $column = $fillable[array_key_first($fillable)];
+
+    expect(fn () => $model->fill([$column => 'value']))->not->toThrow(MassAssignmentException::class);
 
     expect(fn () => $model->fill([$column => 'value', 'not_a_column' => 'injected']))
         ->toThrow(MassAssignmentException::class);

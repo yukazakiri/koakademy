@@ -1155,11 +1155,15 @@ final class Student extends Model implements RecordsActivity
 
     public function StudentTransact($type, $amount, $description): void
     {
-        // `student_transactions` stores the type in `status`; it has no
-        // `type`, `description`, `balance` or `date` column, so those are not
-        // part of the payload.
+        $transaction = Transaction::query()->create([
+            'description' => (string) $description,
+            'status' => (string) $type,
+            'transaction_date' => now(),
+        ]);
+
         StudentTransaction::query()->create([
             'student_id' => $this->id,
+            'transaction_id' => $transaction->id,
             'amount' => $amount,
             'status' => $type,
         ]);

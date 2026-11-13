@@ -63,11 +63,11 @@ Route::middleware('auth')->get('/dashboard', function () {
 
 // Login/Logout
 Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
-Route::post('/login', [AuthController::class, 'login']);
+Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login');
 
 // Passwordless Magic Link
 Route::get('/magic-link', [App\Http\Controllers\MagicLinkAuthController::class, 'show'])->name('magic-link.request');
-Route::post('/magic-link/send', [App\Http\Controllers\MagicLinkAuthController::class, 'send'])->middleware('throttle:5,1')->name('magic-link.send');
+Route::post('/magic-link/send', [App\Http\Controllers\MagicLinkAuthController::class, 'send'])->middleware('throttle:magic-link')->name('magic-link.send');
 Route::get('/magic-link/verify/{user}', [App\Http\Controllers\MagicLinkAuthController::class, 'verify'])->name('magic-link.verify');
 
 Route::get('/auth/{provider}/redirect', [SocialAuthController::class, 'redirect'])->name('social.auth.redirect');
@@ -87,10 +87,10 @@ Route::middleware('auth')->group(function (): void {
 
 // Two Factor Challenge
 Route::get('/two-factor-challenge', [App\Http\Controllers\TwoFactorChallengeController::class, 'create'])->name('two-factor.login');
-Route::post('/two-factor-challenge', [App\Http\Controllers\TwoFactorChallengeController::class, 'store']);
-Route::post('/two-factor-challenge/send-email', [App\Http\Controllers\TwoFactorChallengeController::class, 'sendEmailCode'])->name('two-factor.send-email');
-Route::post('/two-factor-challenge/passkey-options', [App\Http\Controllers\TwoFactorChallengeController::class, 'passkeyOptions'])->name('two-factor.passkey-options');
-Route::post('/two-factor-challenge/passkey-verify', [App\Http\Controllers\TwoFactorChallengeController::class, 'passkeyVerify'])->name('two-factor.passkey-verify');
+Route::post('/two-factor-challenge', [App\Http\Controllers\TwoFactorChallengeController::class, 'store'])->middleware('throttle:two-factor');
+Route::post('/two-factor-challenge/send-email', [App\Http\Controllers\TwoFactorChallengeController::class, 'sendEmailCode'])->middleware('throttle:two-factor-email')->name('two-factor.send-email');
+Route::post('/two-factor-challenge/passkey-options', [App\Http\Controllers\TwoFactorChallengeController::class, 'passkeyOptions'])->middleware('throttle:two-factor')->name('two-factor.passkey-options');
+Route::post('/two-factor-challenge/passkey-verify', [App\Http\Controllers\TwoFactorChallengeController::class, 'passkeyVerify'])->middleware('throttle:two-factor')->name('two-factor.passkey-verify');
 
 // Broadcasting authentication (required for private channels)
 Broadcast::routes(['middleware' => ['web', 'auth']]);
@@ -103,9 +103,9 @@ Route::post('/signup/send-otp', [SignupOtpController::class, 'store'])->middlewa
 
 // Password reset (public)
 Route::get('/forgot-password', [PasswordResetController::class, 'create'])->name('password.request');
-Route::post('/forgot-password', [PasswordResetController::class, 'store'])->name('password.email');
+Route::post('/forgot-password', [PasswordResetController::class, 'store'])->middleware('throttle:password-reset')->name('password.email');
 Route::get('/reset-password/{token}', [PasswordResetController::class, 'edit'])->name('password.reset');
-Route::post('/reset-password', [PasswordResetController::class, 'update'])->name('password.update');
+Route::post('/reset-password', [PasswordResetController::class, 'update'])->middleware('throttle:password-reset')->name('password.update');
 
 // Legal pages (public)
 Route::get('/terms-of-service', fn () => Inertia::render('terms-of-service'))->name('terms-of-service');

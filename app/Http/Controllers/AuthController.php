@@ -9,6 +9,8 @@ use App\Enums\UserRole;
 use App\Models\ConnectedAccount;
 use App\Models\Faculty;
 use App\Models\User;
+use App\Services\Auth\LoginAttemptService;
+use App\Services\Auth\SignupOtpService;
 use App\Services\FacultySignupService;
 use App\Services\SocialiteProviderService;
 use App\Services\StudentOrganizationAssignmentService;
@@ -16,7 +18,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
@@ -31,6 +32,8 @@ final class AuthController extends Controller
     public function __construct(
         private readonly StudentOrganizationAssignmentService $studentOrganizations,
         private readonly FacultySignupService $facultySignups,
+        private readonly LoginAttemptService $loginAttempts,
+        private readonly SignupOtpService $signupOtps,
     ) {}
 
     public function showLoginForm(): Response
@@ -55,6 +58,16 @@ final class AuthController extends Controller
             ]);
         }
 
+        $email = mb_strtolower(mb_trim((string) $request->email));
+        $ip = (string) $request->ip();
+
+        // A rate limiter alone only slows guessing down for the length of one
+        // window. The lockout is what actually bounds the number of passwords
+        // that can be tried against a single account.
+        if ($this->loginAttempts->tooManyAttempts($email, $ip)) {
+            return $this->lockedOutResponse($email, $ip);
+        }
+
         $remember = $request->boolean('remember');
 
         // Get only the credentials for authentication (email and password)
@@ -65,6 +78,8 @@ final class AuthController extends Controller
         ];
 
         if (Auth::attempt($credentials, $remember)) {
+            $this->loginAttempts->recordSuccess($email, $ip);
+
             $request->session()->regenerate();
 
             /** @var User|null $user */
@@ -84,6 +99,8 @@ final class AuthController extends Controller
 
             return redirect()->intended($defaultRedirect);
         }
+
+        $this->loginAttempts->recordFailure($email, $ip);
 
         return Inertia::render('login', [
             'errors' => ['email' => 'The provided credentials do not match our records.'],
@@ -163,6 +180,19 @@ final class AuthController extends Controller
     }
 
     /**
+     * Report a locked account without revealing whether the account exists.
+     */
+    private function lockedOutResponse(string $email, string $ip): Response
+    {
+        $minutes = max(1, (int) ceil($this->loginAttempts->availableIn($email, $ip) / 60));
+
+        return Inertia::render('login', [
+            'errors' => ['email' => "Too many failed sign-in attempts. Please try again in {$minutes} minute(s)."],
+            'status' => 'Authentication failed',
+        ]);
+    }
+
+    /**
      * Handle student signup
      */
     private function signupStudent(Request $request)
@@ -200,12 +230,9 @@ final class AuthController extends Controller
         }
 
         // Verify OTP
-        $otpKey = 'signup_otp_'.$email;
-        $cachedOtp = Cache::get($otpKey);
-
-        if (! $cachedOtp || (string) $cachedOtp !== (string) $request->otp) {
+        if (! $this->signupOtps->verify($email, (string) $request->otp)) {
             return back()
-                ->withErrors(['otp' => 'Invalid or expired verification code.'])
+                ->withErrors(['otp' => $this->signupOtpError($email)])
                 ->withInput($request->except(['password', 'password_confirmation']));
         }
 
@@ -243,7 +270,7 @@ final class AuthController extends Controller
             return $user;
         });
 
-        Cache::forget($otpKey);
+        $this->signupOtps->forget($email);
 
         $this->linkPendingSocialiteSignup($request, $user);
 
@@ -281,12 +308,9 @@ final class AuthController extends Controller
         }
 
         // Verify OTP
-        $otpKey = 'signup_otp_'.$email;
-        $cachedOtp = Cache::get($otpKey);
-
-        if (! $cachedOtp || (string) $cachedOtp !== (string) $request->otp) {
+        if (! $this->signupOtps->verify($email, (string) $request->otp)) {
             return back()
-                ->withErrors(['otp' => 'Invalid or expired verification code.'])
+                ->withErrors(['otp' => $this->signupOtpError($email)])
                 ->withInput($request->except(['password', 'password_confirmation']));
         }
 
@@ -332,7 +356,7 @@ final class AuthController extends Controller
         }
 
         // Clear OTP after successful verification
-        Cache::forget($otpKey);
+        $this->signupOtps->forget($email);
 
         $this->linkPendingSocialiteSignup($request, $user);
 
@@ -340,6 +364,18 @@ final class AuthController extends Controller
         $request->session()->regenerate();
 
         return redirect('/faculty/dashboard');
+    }
+
+    /**
+     * The message shown when a signup verification code is not accepted.
+     */
+    private function signupOtpError(string $email): string
+    {
+        if ($this->signupOtps->exhausted($email)) {
+            return 'Too many incorrect verification codes. Please request a new code.';
+        }
+
+        return 'Invalid or expired verification code.';
     }
 
     /**

@@ -23,8 +23,8 @@ require __DIR__.'/web/admin.php';
 | Passkey Authentication Routes (Global - not domain-specific)
 |--------------------------------------------------------------------------
 */
-Route::post('/passkeys/options', [App\Http\Controllers\PasskeyAuthController::class, 'generateAuthenticationOptions'])->name('passkeys.login.options');
-Route::post('/passkeys/login', [App\Http\Controllers\PasskeyAuthController::class, 'verifyAuthentication'])->name('passkeys.login.verify');
+Route::post('/passkeys/options', [App\Http\Controllers\PasskeyAuthController::class, 'generateAuthenticationOptions'])->middleware('throttle:passkey')->name('passkeys.login.options');
+Route::post('/passkeys/login', [App\Http\Controllers\PasskeyAuthController::class, 'verifyAuthentication'])->middleware('throttle:passkey')->name('passkeys.login.verify');
 
 /*
 |--------------------------------------------------------------------------

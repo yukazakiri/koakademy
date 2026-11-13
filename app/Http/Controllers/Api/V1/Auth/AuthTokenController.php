@@ -14,6 +14,7 @@ use App\Http\Requests\Api\V1\UpdateMobilePasswordRequest;
 use App\Http\Resources\Api\V1\UserResource;
 use App\Models\User;
 use App\Notifications\FilamentEmailAuthenticationCode;
+use App\Services\Auth\LoginAttemptService;
 use App\Services\OnlineUserPresenceService;
 use App\Services\UserSecurityActivityService;
 use Illuminate\Auth\Events\PasswordReset;
@@ -28,13 +29,29 @@ final class AuthTokenController extends Controller
 {
     private const string CHALLENGE_PREFIX = 'mobile-api-auth-challenge:';
 
-    public function __construct(private readonly SecurityAwareAppAuthentication $appAuthentication) {}
+    public function __construct(
+        private readonly SecurityAwareAppAuthentication $appAuthentication,
+        private readonly LoginAttemptService $loginAttempts,
+    ) {}
 
     public function login(MobileLoginRequest $request): JsonResponse
     {
-        $user = User::query()->where('email', mb_strtolower((string) $request->validated('email')))->first();
+        $email = mb_strtolower((string) $request->validated('email'));
+        $ip = (string) $request->ip();
+
+        if ($this->loginAttempts->tooManyAttempts($email, $ip)) {
+            return response()->json([
+                'error' => true,
+                'message' => 'Too many failed sign-in attempts. Please try again later.',
+                'code' => 'AUTHENTICATION_LOCKED',
+            ], 429);
+        }
+
+        $user = User::query()->where('email', $email)->first();
 
         if (! $user instanceof User || ! Hash::check((string) $request->validated('password'), $user->password)) {
+            $this->loginAttempts->recordFailure($email, $ip);
+
             if ($user instanceof User) {
                 app(UserSecurityActivityService::class)->record($user, 'sign_in_failed', 'failure', guard: 'sanctum');
             }
@@ -45,6 +62,8 @@ final class AuthTokenController extends Controller
                 'code' => 'AUTHENTICATION_FAILED',
             ], 401);
         }
+
+        $this->loginAttempts->recordSuccess($email, $ip);
 
         abort_if($user->suspended_at !== null, 403, 'Account access is unavailable.');
 

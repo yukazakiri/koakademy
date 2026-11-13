@@ -20,13 +20,22 @@ test('passkey options endpoint returns options without email (discoverable crede
     expect($options['allowCredentials'])->toBeEmpty();
 });
 
-test('passkey options endpoint returns 404 for non-existent user when email provided', function () {
+test('passkey options endpoint does not reveal whether an account exists', function () {
     $response = $this->postJson('/passkeys/options', [
         'email' => 'nonexistent@example.com',
     ]);
 
-    $response->assertNotFound()
-        ->assertJson(['error' => 'User not found.']);
+    // Answering 404 for unknown addresses turned this endpoint into an
+    // account existence oracle, so unknown and known addresses get the same
+    // answer.
+    $response->assertOk()
+        ->assertJsonStructure([
+            'options' => [
+                'challenge',
+            ],
+        ]);
+
+    expect($response->json('options.allowCredentials'))->toBeEmpty();
 });
 
 test('passkey options endpoint uses configured app url for production origin', function () {

@@ -157,6 +157,56 @@ final class AppServiceProvider extends ServiceProvider
             ];
         });
 
+        RateLimiter::for('login', function (Request $request): array {
+            $limit = (int) config('security.login_rate_limit', 5);
+            $ipLimit = (int) config('security.login_ip_rate_limit', 30);
+            $normalizedEmail = mb_strtolower(mb_trim((string) $request->input('email')));
+
+            return [
+                Limit::perMinute($limit)->by('email:'.$normalizedEmail),
+                Limit::perMinute($ipLimit)->by('ip:'.$request->ip()),
+            ];
+        });
+
+        RateLimiter::for('two-factor', function (Request $request): Limit {
+            $userId = $request->session()->get('auth.2fa.id');
+
+            return Limit::perMinute((int) config('security.two_factor_rate_limit', 10))
+                ->by($userId ? 'user:'.$userId : 'ip:'.$request->ip());
+        });
+
+        RateLimiter::for('two-factor-email', function (Request $request): Limit {
+            $userId = $request->session()->get('auth.2fa.id');
+
+            return Limit::perMinute((int) config('security.two_factor_email_rate_limit', 3))
+                ->by($userId ? 'user:'.$userId : 'ip:'.$request->ip());
+        });
+
+        RateLimiter::for('passkey', function (Request $request): Limit {
+            return Limit::perMinute((int) config('security.passkey_rate_limit', 10))
+                ->by($request->ip());
+        });
+
+        RateLimiter::for('magic-link', function (Request $request): array {
+            $limit = (int) config('security.magic_link_rate_limit', 5);
+            $normalizedEmail = mb_strtolower(mb_trim((string) $request->input('email')));
+
+            return [
+                Limit::perMinute($limit)->by('email:'.$normalizedEmail),
+                Limit::perMinute($limit)->by('ip:'.$request->ip()),
+            ];
+        });
+
+        RateLimiter::for('password-reset', function (Request $request): array {
+            $limit = (int) config('security.password_reset_rate_limit', 5);
+            $normalizedEmail = mb_strtolower(mb_trim((string) $request->input('email')));
+
+            return [
+                Limit::perMinute($limit)->by('email:'.$normalizedEmail),
+                Limit::perMinute($limit)->by('ip:'.$request->ip()),
+            ];
+        });
+
         RateLimiter::for('api-login', function (Request $request): Limit {
             return Limit::perMinute((int) config('api.login_rate_limit', 5))
                 ->by(mb_strtolower((string) $request->input('email')).'|'.$request->ip());

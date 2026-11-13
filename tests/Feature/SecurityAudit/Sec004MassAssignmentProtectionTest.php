@@ -180,3 +180,15 @@ it('does not let a request payload reach a column outside the allowlist', functi
     expect($faculty->first_name)->toBe('Original')
         ->and($faculty->getAttributes())->not->toHaveKey('not_a_column');
 });
+
+it('allows virtual first_name and last_name on User and maps to name', function (): void {
+    $user = new App\Models\User([
+        'first_name' => 'John',
+        'last_name' => 'Doe',
+        'email' => 'john.doe@example.com',
+    ]);
+
+    expect($user->first_name)->toBe('John')
+        ->and($user->last_name)->toBe('Doe')
+        ->and($user->name)->toBe('John Doe');
+});

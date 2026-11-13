@@ -187,17 +187,22 @@ final class StudentEnrollmentSeeder extends Seeder
             ->values();
 
         foreach ($courseIds as $courseId) {
-            Course::query()->firstOrCreate(
-                ['id' => $courseId],
-                [
-                    'code' => "COURSE-{$courseId}",
-                    'title' => "Seeded Course {$courseId}",
-                    'department' => 'General',
-                    'year_level' => 1,
-                    'semester' => 1,
-                    'is_active' => true,
-                ]
-            );
+            if (Course::query()->whereKey($courseId)->exists()) {
+                continue;
+            }
+
+            $course = new Course([
+                'code' => "COURSE-{$courseId}",
+                'title' => "Seeded Course {$courseId}",
+                'department' => 'General',
+                'year_level' => 1,
+                'semester' => 1,
+                'is_active' => true,
+            ]);
+
+            // The primary key is not mass assignable, so it is written directly.
+            $course->id = $courseId;
+            $course->save();
         }
 
         foreach ($enrollments as $enrollment) {

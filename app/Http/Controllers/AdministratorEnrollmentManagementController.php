@@ -2238,8 +2238,22 @@ final class AdministratorEnrollmentManagementController extends Controller
                         continue;
                     }
 
-                    // Restore the subject enrollment
-                    SubjectEnrollment::query()->create($oldData);
+                    // Restore the subject enrollment. The activity log stores the
+                    // whole row, including the primary key and the timestamps,
+                    // so the payload is narrowed to the model's allowlist first.
+                    $restorable = array_intersect_key(
+                        $oldData,
+                        array_flip((new SubjectEnrollment)->getFillable()),
+                    );
+
+                    $restored = new SubjectEnrollment($restorable);
+
+                    if (isset($oldData['id'])) {
+                        $restored->id = $oldData['id'];
+                    }
+
+                    $restored->save();
+
                     $restoredCount++;
 
                     // Also restore class enrollment if needed

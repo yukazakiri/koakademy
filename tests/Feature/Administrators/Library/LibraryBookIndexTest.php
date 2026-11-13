@@ -143,8 +143,12 @@ it('sorts books by recently added', function (): void {
     $oldBook = Book::factory()->create(['title' => 'First Book']);
     $newBook = Book::factory()->create(['title' => 'Second Book']);
 
-    $oldBook->update(['created_at' => now()->subDays(7)]);
-    $newBook->update(['created_at' => now()->subDay()]);
+    // Timestamps are not mass assignable, so they are written directly.
+    $oldBook->created_at = now()->subDays(7);
+    $oldBook->save();
+
+    $newBook->created_at = now()->subDay();
+    $newBook->save();
 
     actingAs($admin)
         ->get(route('administrators.library.books.index', ['sort' => 'created_at', 'direction' => 'desc']))

@@ -239,10 +239,13 @@ it('sets general_settings.school_id to null when school is deleted instead of ca
         'code' => 'TA-01',
     ]);
 
-    $setting = GeneralSetting::create([
-        'school_id' => $school->id,
+    $setting = new GeneralSetting([
         'site_name' => 'Test Academy',
     ]);
+
+    // The tenant column is not mass assignable, so it is written directly.
+    $setting->school_id = $school->id;
+    $setting->save();
 
     // School creation also installs a restrict-on-delete student policy. Remove
     // that independent dependency so this test isolates general_settings.

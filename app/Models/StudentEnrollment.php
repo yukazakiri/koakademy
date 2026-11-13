@@ -89,6 +89,7 @@ final class StudentEnrollment extends Model
         'submission_channel',
         'submission_idempotency_key',
         'intake_category',
+        'workflow_runtime',
     ];
 
     #[Override]

@@ -80,7 +80,13 @@ final class CreateHandler extends Handlers
                 throw ValidationException::withMessages(['subjectsEnrolled' => $assignedClasses->message]);
             }
             foreach ($fees as $fee) {
-                $enrollment->additionalFees()->create($fee);
+                // `additional_fees` has no `description` column, so the payload
+                // is narrowed to the columns the table actually stores.
+                $enrollment->additionalFees()->create([
+                    'fee_name' => $fee['fee_name'],
+                    'amount' => $fee['amount'],
+                    'is_separate_transaction' => (bool) ($fee['is_separate_transaction'] ?? false),
+                ]);
             }
             $form = [
                 'subjectsEnrolled' => $enrollment->subjectsEnrolled()->get()->toArray(),

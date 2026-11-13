@@ -808,16 +808,12 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
     {
         self::saving(function (User $user): void {
             if (array_key_exists('first_name', $user->attributes)) {
-                if (empty($user->attributes['name'])) {
-                    $user->attributes['name'] = mb_trim((string) $user->attributes['first_name'].' '.(string) ($user->attributes['last_name'] ?? ''));
-                }
+                $user->syncCompositeName();
                 unset($user->attributes['first_name']);
             }
 
             if (array_key_exists('last_name', $user->attributes)) {
-                if (empty($user->attributes['name'])) {
-                    $user->attributes['name'] = mb_trim((string) ($user->attributes['first_name'] ?? '').' '.(string) $user->attributes['last_name']);
-                }
+                $user->syncCompositeName();
                 unset($user->attributes['last_name']);
             }
         });
@@ -975,16 +971,23 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
     protected function setFirstNameAttribute(mixed $value): void
     {
         $this->attributes['first_name'] = $value;
-        if (blank($this->attributes['name'] ?? null)) {
-            $this->attributes['name'] = mb_trim((string) $value.' '.(string) ($this->attributes['last_name'] ?? ''));
-        }
+        $this->syncCompositeName();
     }
 
     protected function setLastNameAttribute(mixed $value): void
     {
         $this->attributes['last_name'] = $value;
-        if (blank($this->attributes['name'] ?? null)) {
-            $this->attributes['name'] = mb_trim((string) ($this->attributes['first_name'] ?? '').' '.(string) $value);
+        $this->syncCompositeName();
+    }
+
+    private function syncCompositeName(): void
+    {
+        $firstName = $this->attributes['first_name'] ?? '';
+        $lastName = $this->attributes['last_name'] ?? '';
+        $fullName = mb_trim("{$firstName} {$lastName}");
+
+        if ($fullName !== '') {
+            $this->attributes['name'] = $fullName;
         }
     }
 }

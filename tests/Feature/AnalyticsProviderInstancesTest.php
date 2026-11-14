@@ -262,8 +262,7 @@ final class AnalyticsProviderInstancesTest extends TestCase
 
     private function makeInstance(array $attributes = []): AnalyticsProviderInstance
     {
-        return AnalyticsProviderInstance::query()->create(array_merge([
-            'general_setting_id' => $this->settings->id,
+        $instance = new AnalyticsProviderInstance(array_merge([
             'provider' => 'umami',
             'enabled' => true,
             'settings' => [
@@ -271,5 +270,12 @@ final class AnalyticsProviderInstancesTest extends TestCase
                 'website_id' => 'site-123',
             ],
         ], $attributes));
+
+        // The owning settings row is server-side state, so it is written
+        // directly instead of being mass-assigned.
+        $instance->general_setting_id = $this->settings->id;
+        $instance->save();
+
+        return $instance;
     }
 }

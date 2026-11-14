@@ -111,6 +111,8 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
     #[Override]
     protected $fillable = [
         'name',
+        'first_name',
+        'last_name',
         'email',
         'email_verified_at',
         'password',
@@ -790,6 +792,33 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
         })();
     }
 
+    public function getFirstNameAttribute(): ?string
+    {
+        return $this->attributes['first_name']
+            ?? (filled($this->name) ? explode(' ', (string) $this->name, 2)[0] : null);
+    }
+
+    public function getLastNameAttribute(): ?string
+    {
+        return $this->attributes['last_name']
+            ?? (filled($this->name) ? (explode(' ', (string) $this->name, 2)[1] ?? null) : null);
+    }
+
+    protected static function booted(): void
+    {
+        self::saving(function (User $user): void {
+            if (array_key_exists('first_name', $user->attributes)) {
+                $user->syncCompositeName();
+                unset($user->attributes['first_name']);
+            }
+
+            if (array_key_exists('last_name', $user->attributes)) {
+                $user->syncCompositeName();
+                unset($user->attributes['last_name']);
+            }
+        });
+    }
+
     /**
      * Get the attributes that should be cast.
      *
@@ -937,5 +966,28 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
 
             return 'Limited Access';
         });
+    }
+
+    protected function setFirstNameAttribute(mixed $value): void
+    {
+        $this->attributes['first_name'] = $value;
+        $this->syncCompositeName();
+    }
+
+    protected function setLastNameAttribute(mixed $value): void
+    {
+        $this->attributes['last_name'] = $value;
+        $this->syncCompositeName();
+    }
+
+    private function syncCompositeName(): void
+    {
+        $firstName = $this->attributes['first_name'] ?? '';
+        $lastName = $this->attributes['last_name'] ?? '';
+        $fullName = mb_trim("{$firstName} {$lastName}");
+
+        if ($fullName !== '') {
+            $this->attributes['name'] = $fullName;
+        }
     }
 }

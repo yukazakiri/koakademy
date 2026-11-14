@@ -1155,14 +1155,17 @@ final class Student extends Model implements RecordsActivity
 
     public function StudentTransact($type, $amount, $description): void
     {
+        $transaction = Transaction::query()->create([
+            'description' => (string) $description,
+            'status' => (string) $type,
+            'transaction_date' => now(),
+        ]);
+
         StudentTransaction::query()->create([
             'student_id' => $this->id,
-            'type' => $type,
+            'transaction_id' => $transaction->id,
             'amount' => $amount,
-            'description' => $description,
-            'balance' => $this->StudentTuition->balance +
-                ($type === 'credit' ? $amount : -$amount),
-            'date' => now(),
+            'status' => $type,
         ]);
     }
 

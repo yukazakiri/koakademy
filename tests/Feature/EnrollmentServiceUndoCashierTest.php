@@ -156,16 +156,19 @@ it('undo cashier verification reverses linked transactions and recalculates tuit
 
     Bus::fake();
     Mail::fake();
-    $transaction = Transaction::query()->create([
+    $transaction = new Transaction([
         'description' => 'Downpayment for student Tuition',
         'payment_method' => 'Cash',
         'settlements' => ['tuition_fee' => 500],
         'status' => 'Paid',
         'invoicenumber' => 'INV-UNDO-001',
         'transaction_date' => '2026-04-15 12:00:00',
-        'created_at' => '2026-04-15 12:00:00',
-        'updated_at' => '2026-04-15 12:00:00',
     ]);
+
+    // Timestamps are not mass assignable, so they are written directly.
+    $transaction->created_at = '2026-04-15 12:00:00';
+    $transaction->updated_at = '2026-04-15 12:00:00';
+    $transaction->save();
 
     StudentTransaction::query()->create([
         'student_id' => $student->id,

@@ -231,7 +231,7 @@ final class AppServiceProvider extends ServiceProvider
                 ->by($request->user()?->getAuthIdentifier() ?? $request->ip());
         });
 
-        Model::unguard();
+        $this->guardMassAssignment();
         StudentTransaction::observe(StudentTransactionObserver::class);
 
         Passkeys::useUserModel(User::class);
@@ -306,6 +306,35 @@ final class AppServiceProvider extends ServiceProvider
         if (! config('horizon.dev_command')) {
             DevCommands::except('horizon');
         }
+    }
+
+    /**
+     * Keep Eloquent's mass-assignment protection switched on.
+     *
+     * `Model::unguard()` used to be called here, which turned every
+     * `$fillable` array in the codebase into decoration: `isFillable()`
+     * answered `true` for every attribute and `fillableFromArray()`
+     * handed back the whole payload. Any handler that passed request data
+     * to `fill()` could therefore write any column of the model, including
+     * `password`, `role`, `user_id` and `school_id`.
+     *
+     * The allowlists on the models are now the only thing standing between
+     * a request payload and a column, so they have to be honoured:
+     *
+     * - `preventSilentlyDiscardingAttributes()` makes a mass-assignment
+     *   attempt against a non-fillable attribute raise instead of quietly
+     *   dropping the value. That turns a silent data-loss bug into a loud
+     *   failure, which is what we want everywhere the code is developed and
+     *   tested. It stays off in production so that a stray extra key cannot
+     *   turn a working request into a 500; the attribute is discarded either
+     *   way, so the protection itself does not depend on this switch.
+     *
+     * Laravel 13 has no `preventSilentlyDroppingAttributes()` counterpart,
+     * so there is nothing else to configure here.
+     */
+    private function guardMassAssignment(): void
+    {
+        Model::preventSilentlyDiscardingAttributes(! $this->app->environment('production'));
     }
 
     /**

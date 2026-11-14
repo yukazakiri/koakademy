@@ -64,6 +64,7 @@ final class Account extends Authenticatable implements FilamentUser
         'password',
         'role',
         'is_active',
+        'is_notification_active',
         'person_id',
         'person_type',
     ];

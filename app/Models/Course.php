@@ -84,6 +84,9 @@ final class Course extends Model
         'code',
         'title',
         'description',
+        // Legacy virtual attribute: `setDepartmentAttribute()` resolves it to
+        // `department_id` and never stores it as a column.
+        'department',
         'department_id',
         'course_type_id',
         'units',

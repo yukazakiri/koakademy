@@ -56,6 +56,7 @@ final class Transaction extends Model
         'status',
         'transaction_date',
         'transaction_number',
+        'transaction_type',
         'settlements',
         'invoicenumber',
         'signature',

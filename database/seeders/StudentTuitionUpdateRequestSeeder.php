@@ -151,15 +151,20 @@ final class StudentTuitionUpdateRequestSeeder extends Seeder
                     'open_key' => in_array($example['status'], StudentTuitionUpdateRequest::openStatuses(), true)
                         ? hash('sha256', implode('|', [$student->id, $schoolYear, $semester, $example['concern_type']]))
                         : null,
-                    'created_at' => match ($example['status']) {
-                        StudentTuitionUpdateRequest::StatusPending => now()->subHours(2),
-                        StudentTuitionUpdateRequest::StatusInReview => now()->subDays(2),
-                        default => now()->subDays(5),
-                    },
                 ],
             );
 
-            StudentTuitionUpdateRequestEvent::query()->firstOrCreate(
+            if ($request->wasRecentlyCreated) {
+                // Timestamps are not mass assignable, so they are written directly.
+                $request->created_at = match ($example['status']) {
+                    StudentTuitionUpdateRequest::StatusPending => now()->subHours(2),
+                    StudentTuitionUpdateRequest::StatusInReview => now()->subDays(2),
+                    default => now()->subDays(5),
+                };
+                $request->save();
+            }
+
+            $event = StudentTuitionUpdateRequestEvent::query()->firstOrCreate(
                 [
                     'student_tuition_update_request_id' => $request->id,
                     'event' => $example['event'],
@@ -169,9 +174,13 @@ final class StudentTuitionUpdateRequestSeeder extends Seeder
                     'from_status' => $example['event'] === 'claimed' ? StudentTuitionUpdateRequest::StatusPending : null,
                     'to_status' => $example['status'],
                     'note' => $example['note'] ?? $example['resolution_note'],
-                    'created_at' => $example['reviewed_at'] ?? $request->created_at,
                 ],
             );
+
+            if ($event->wasRecentlyCreated) {
+                $event->created_at = $example['reviewed_at'] ?? $request->created_at;
+                $event->save();
+            }
         }
 
         $this->command?->info("Seeded sample tuition update requests for student {$student->id} ({$schoolYear}, semester {$semester}).");

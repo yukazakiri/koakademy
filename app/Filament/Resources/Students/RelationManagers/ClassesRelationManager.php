@@ -37,7 +37,10 @@ final class ClassesRelationManager extends RelationManager
             ->components([
                 TextInput::make('id')
                     ->required()
-                    ->maxLength(255),
+                    ->maxLength(255)
+                    // The primary key is not mass assignable, so the field must
+                    // never reach the model as part of the form state.
+                    ->dehydrated(false),
 
             ]);
     }

@@ -1461,7 +1461,6 @@ final class AdministratorSystemManagementController extends Controller
             $settingsPayload = is_array($provider['settings'] ?? null) ? $provider['settings'] : [];
 
             $attributes = [
-                'general_setting_id' => $settings->id,
                 'provider' => $key,
                 'label' => filled($provider['label'] ?? null) ? $provider['label'] : null,
                 'enabled' => (bool) $provider['enabled'],
@@ -1483,7 +1482,13 @@ final class AdministratorSystemManagementController extends Controller
                 continue;
             }
 
-            $keptIds[] = AnalyticsProviderInstance::query()->create($attributes)->id;
+            // The owning settings row is server-side state, so it is written
+            // directly rather than mass-assigned from a request payload.
+            $created = new AnalyticsProviderInstance($attributes);
+            $created->general_setting_id = $settings->id;
+            $created->save();
+
+            $keptIds[] = $created->id;
         }
 
         AnalyticsProviderInstance::query()

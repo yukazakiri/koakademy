@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Models\Passkey;
 use App\Models\User;
+use App\Services\UserSecurityActivityService;
 use App\Support\ConfiguresPasskeysForRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,6 +15,7 @@ use Illuminate\Validation\ValidationException;
 use Laravel\Passkeys\Actions\GenerateVerificationOptions;
 use Laravel\Passkeys\Actions\VerifyPasskey;
 use Laravel\Passkeys\Support\WebAuthn;
+use ParagonIE\ConstantTime\Base64UrlSafe;
 use Throwable;
 use Webauthn\PublicKeyCredential;
 use Webauthn\PublicKeyCredentialRequestOptions;
@@ -27,20 +30,12 @@ final class PasskeyAuthController extends Controller
     {
         $this->configurePasskeysForRequest($request);
 
-        $email = $request->input('email');
-        $user = null;
-
-        if ($email) {
-            $user = User::where('email', $email)->first();
-
-            if (! $user) {
-                return response()->json(['error' => 'User not found.'], 404);
-            }
-
-            $request->session()->put('passkey-authentication-user-id', $user->id);
-        }
-
-        $options = $generate($user);
+        // Discoverable credential options are returned for every request, no
+        // matter which address was submitted. Looking the address up first
+        // and answering 404 for unknown ones turned this endpoint into an
+        // account existence oracle, and the bound credential list leaked
+        // which accounts had a passkey registered.
+        $options = $generate(null);
 
         $request->session()->put(self::VERIFICATION_OPTIONS_SESSION_KEY, WebAuthn::toJson($options));
 
@@ -64,9 +59,11 @@ final class PasskeyAuthController extends Controller
             return response()->json(['error' => 'Authentication options not found or expired.'], 400);
         }
 
+        $credential = $this->credentialFromRequest($request);
+
         try {
             $passkey = $verify(
-                $this->credentialFromRequest($request),
+                $credential,
                 WebAuthn::fromJson($serializedOptions, PublicKeyCredentialRequestOptions::class),
             );
 
@@ -86,8 +83,33 @@ final class PasskeyAuthController extends Controller
         } catch (ValidationException $exception) {
             throw $exception;
         } catch (Throwable $exception) {
+            $this->recordFailedSignIn($credential);
+
             return response()->json(['error' => 'Passkey verification failed: '.$exception->getMessage()], 400);
         }
+    }
+
+    /**
+     * Record a failed passkey sign-in against the account that owns the
+     * credential, so repeated guesses show up in the security activity log.
+     */
+    private function recordFailedSignIn(PublicKeyCredential $credential): void
+    {
+        $passkey = Passkey::query()
+            ->where('credential_id', Base64UrlSafe::encodeUnpadded($credential->rawId))
+            ->first();
+
+        if (! $passkey instanceof Passkey) {
+            return;
+        }
+
+        $user = $passkey->user;
+
+        if (! $user instanceof User) {
+            return;
+        }
+
+        app(UserSecurityActivityService::class)->record($user, 'sign_in_failed', 'failure');
     }
 
     private function getRedirectForUser(User $user): string

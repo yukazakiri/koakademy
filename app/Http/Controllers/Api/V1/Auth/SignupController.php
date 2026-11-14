@@ -9,12 +9,12 @@ use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Mail\SignupOtpMail;
 use App\Models\User;
+use App\Services\Auth\SignupOtpService;
 use App\Services\FacultySignupService;
 use App\Services\StudentOrganizationAssignmentService;
 use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -31,6 +31,7 @@ final class SignupController extends Controller
     public function __construct(
         private readonly StudentOrganizationAssignmentService $studentOrganizations,
         private readonly FacultySignupService $facultySignups,
+        private readonly SignupOtpService $signupOtps,
     ) {}
 
     /**
@@ -157,7 +158,7 @@ final class SignupController extends Controller
 
         $otp = mb_strtoupper(Str::random(6));
 
-        Cache::put('signup_otp_'.$email, $otp, 600);
+        $this->signupOtps->issue($email, $otp);
 
         try {
             Mail::to($email)->send(new SignupOtpMail($otp));
@@ -231,13 +232,10 @@ final class SignupController extends Controller
             ], 422);
         }
 
-        $otpKey = 'signup_otp_'.$email;
-        $cachedOtp = Cache::get($otpKey);
-
-        if (! $cachedOtp || (string) $cachedOtp !== (string) $request->otp) {
+        if (! $this->signupOtps->verify($email, (string) $request->otp)) {
             return response()->json([
-                'message' => 'Invalid or expired verification code.',
-                'errors' => ['otp' => ['Invalid or expired verification code.']],
+                'message' => $this->signupOtpError($email),
+                'errors' => ['otp' => [$this->signupOtpError($email)]],
             ], 422);
         }
 
@@ -273,7 +271,7 @@ final class SignupController extends Controller
             return $user;
         });
 
-        Cache::forget($otpKey);
+        $this->signupOtps->forget($email);
 
         $token = $user->createToken(
             'auth_token',
@@ -326,13 +324,10 @@ final class SignupController extends Controller
             ], 422);
         }
 
-        $otpKey = 'signup_otp_'.$email;
-        $cachedOtp = Cache::get($otpKey);
-
-        if (! $cachedOtp || (string) $cachedOtp !== (string) $request->otp) {
+        if (! $this->signupOtps->verify($email, (string) $request->otp)) {
             return response()->json([
-                'message' => 'Invalid or expired verification code.',
-                'errors' => ['otp' => ['Invalid or expired verification code.']],
+                'message' => $this->signupOtpError($email),
+                'errors' => ['otp' => [$this->signupOtpError($email)]],
             ], 422);
         }
 
@@ -375,7 +370,7 @@ final class SignupController extends Controller
             ], 422);
         }
 
-        Cache::forget($otpKey);
+        $this->signupOtps->forget($email);
 
         $token = $user->createToken(
             'auth_token',
@@ -397,6 +392,18 @@ final class SignupController extends Controller
                 'token_type' => 'Bearer',
             ],
         ], 201);
+    }
+
+    /**
+     * The message shown when a signup verification code is not accepted.
+     */
+    private function signupOtpError(string $email): string
+    {
+        if ($this->signupOtps->exhausted($email)) {
+            return 'Too many incorrect verification codes. Please request a new code.';
+        }
+
+        return 'Invalid or expired verification code.';
     }
 
     /**

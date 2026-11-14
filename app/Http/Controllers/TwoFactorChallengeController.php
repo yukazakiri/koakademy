@@ -7,9 +7,11 @@ namespace App\Http\Controllers;
 use App\Filament\Auth\MultiFactor\SecurityAwareAppAuthentication;
 use App\Filament\Auth\MultiFactor\SecurityAwareEmailAuthentication;
 use App\Models\User;
+use App\Services\Auth\TwoFactorAttemptService;
 use App\Services\UserSecurityActivityService;
 use App\Support\ConfiguresPasskeysForRequest;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
@@ -30,6 +32,7 @@ final class TwoFactorChallengeController extends Controller
     public function __construct(
         private readonly SecurityAwareAppAuthentication $appAuthentication,
         private readonly SecurityAwareEmailAuthentication $emailAuthentication,
+        private readonly TwoFactorAttemptService $attempts,
     ) {}
 
     public function create(Request $request)
@@ -68,14 +71,24 @@ final class TwoFactorChallengeController extends Controller
             return redirect()->route('login');
         }
 
+        $challenge = $this->challengeKey($user);
+
+        // A six digit code has a million possible values, so the challenge
+        // itself has to be the thing that is bounded.
+        if ($this->attempts->tooManyAttempts($challenge)) {
+            return $this->destroyChallenge($request);
+        }
+
         if ($request->filled('recovery_code')) {
             if ($this->appAuthentication->isEnabled($user) && $this->verifyRecoveryCode($user, $request->recovery_code)) {
+                $this->attempts->recordSuccess($challenge);
+
                 return $this->loginUser($request, $user);
             }
 
             app(UserSecurityActivityService::class)->record($user, 'mfa_failed', 'failure');
 
-            return back()->withErrors(['recovery_code' => 'The provided recovery code was invalid.']);
+            return $this->failedAttempt($request, $challenge, 'recovery_code', 'The provided recovery code was invalid.');
         }
 
         $code = $request->code;
@@ -88,17 +101,21 @@ final class TwoFactorChallengeController extends Controller
             $secret = $user->getAppAuthenticationSecret();
 
             if (filled($secret) && $this->appAuthentication->verifyCode($code, $secret, shouldPreventCodeReuse: true)) {
+                $this->attempts->recordSuccess($challenge);
+
                 return $this->loginUser($request, $user);
             }
         }
 
         if ($this->emailAuthentication->isEnabled($user) && $this->emailAuthentication->verifyCode($code)) {
+            $this->attempts->recordSuccess($challenge);
+
             return $this->loginUser($request, $user);
         }
 
         app(UserSecurityActivityService::class)->record($user, 'mfa_failed', 'failure');
 
-        return back()->withErrors(['code' => 'The provided authentication code was invalid.']);
+        return $this->failedAttempt($request, $challenge, 'code', 'The provided authentication code was invalid.');
     }
 
     public function sendEmailCode(Request $request)
@@ -197,6 +214,47 @@ final class TwoFactorChallengeController extends Controller
         } catch (Throwable $exception) {
             return response()->json(['error' => 'Passkey verification failed: '.$exception->getMessage()], 400);
         }
+    }
+
+    /**
+     * Record a wrong code and end the challenge once the attempts run out.
+     */
+    private function failedAttempt(Request $request, string $challenge, string $field, string $message): RedirectResponse
+    {
+        $this->attempts->recordFailure($challenge);
+
+        if ($this->attempts->tooManyAttempts($challenge)) {
+            return $this->destroyChallenge($request);
+        }
+
+        return back()->withErrors([$field => $message]);
+    }
+
+    /**
+     * End a challenge that used up its attempts.
+     */
+    private function destroyChallenge(Request $request): RedirectResponse
+    {
+        $request->session()->forget('auth.2fa.id');
+        $request->session()->forget('auth.2fa.remember');
+        $request->session()->regenerate();
+
+        return redirect()->route('login')->withErrors([
+            'code' => 'Too many incorrect verification attempts. Please sign in again.',
+        ]);
+    }
+
+    /**
+     * The counter key for a challenge.
+     *
+     * The counter follows the account rather than the challenge, because a
+     * new challenge can be started as soon as the password is known. Keying
+     * it on the session would hand the attacker a fresh set of guesses every
+     * time they started a challenge.
+     */
+    private function challengeKey(User $user): string
+    {
+        return (string) $user->getKey();
     }
 
     private function verifyRecoveryCode(User $user, string $recoveryCode): bool

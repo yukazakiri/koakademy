@@ -7,12 +7,12 @@ namespace App\Http\Controllers;
 use App\Enums\StudentType;
 use App\Mail\SignupOtpMail;
 use App\Models\User;
+use App\Services\Auth\SignupOtpService;
 use App\Services\FacultySignupService;
 use App\Services\StudentOrganizationAssignmentService;
 use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
@@ -23,6 +23,7 @@ final class SignupOtpController extends Controller
     public function __construct(
         private readonly StudentOrganizationAssignmentService $studentOrganizations,
         private readonly FacultySignupService $facultySignups,
+        private readonly SignupOtpService $signupOtps,
     ) {}
 
     public function store(Request $request): JsonResponse
@@ -68,7 +69,7 @@ final class SignupOtpController extends Controller
         $otp = mb_strtoupper(Str::random(6));
 
         // Store in cache for 10 minutes
-        Cache::put('signup_otp_'.$email, $otp, 600);
+        $this->signupOtps->issue($email, $otp);
 
         // Send Email
         try {

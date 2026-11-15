@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.30.1](https://github.com/yukazakiri/koakademy/compare/v1.30.0...v1.30.1) (2026-11-14)
+
+
+### Bug Fixes
+
+* **ai:** block SSRF via configured provider URLs ([#527](https://github.com/yukazakiri/koakademy/issues/527)) ([8ce7dd8](https://github.com/yukazakiri/koakademy/commit/8ce7dd8b0b85301ef0ba8852300df895cdaf9fec))
+* **api:** enforce tenant scope on bearer-token requests (SEC-005) ([#532](https://github.com/yukazakiri/koakademy/issues/532)) ([582112e](https://github.com/yukazakiri/koakademy/commit/582112e422aa27a69714b93b6fdcf98ce261ad67))
+* **database:** enforce foreign keys on students, medical records, and profile tables (DB-006) ([#519](https://github.com/yukazakiri/koakademy/issues/519)) ([eb86067](https://github.com/yukazakiri/koakademy/commit/eb86067db76c2cfb5f933a4a607425959350921c))
+* **database:** scope course and subject codes to school and harden multi-tenant student lookup (DB-007) ([#524](https://github.com/yukazakiri/koakademy/issues/524)) ([97eb46b](https://github.com/yukazakiri/koakademy/commit/97eb46bd633580b91c5ca335d4179c9e175ebcaf))
+* **database:** scope curriculum codes per school and per program ([#534](https://github.com/yukazakiri/koakademy/issues/534)) ([ab31295](https://github.com/yukazakiri/koakademy/commit/ab31295664ba53152695f56ecf9662f3c02f2d80))
+* **security:** authorize grade endpoints and restrict enrollment writes (SEC-002) ([#523](https://github.com/yukazakiri/koakademy/issues/523)) ([78d5120](https://github.com/yukazakiri/koakademy/commit/78d5120ab1ddaa43a008c83dbfd216c90ca31554))
+* **security:** enforce canAccess() authorization on Cashier and GeneralSettings pages (SEC-010) ([#531](https://github.com/yukazakiri/koakademy/issues/531)) ([a1f9689](https://github.com/yukazakiri/koakademy/commit/a1f9689d53aabe66fd3fab5d3b287e7423a13780))
+* **security:** enforce Sanctum token expiration, mobile abilities, and restrict signup lookup (SEC-014) ([#526](https://github.com/yukazakiri/koakademy/issues/526)) ([165fc17](https://github.com/yukazakiri/koakademy/commit/165fc17dae0e1acb3de5274328e02b2eff2e901c))
+* **security:** escape student data in print schedule dialog and null opener (SEC-012) ([#529](https://github.com/yukazakiri/koakademy/issues/529)) ([c3428d7](https://github.com/yukazakiri/koakademy/commit/c3428d7eb5b3b72a7b36bb4905ceb0869418283c))
+* **security:** guard assessment and export download routes and move to private disk (SEC-006) ([#533](https://github.com/yukazakiri/koakademy/issues/533)) ([177445b](https://github.com/yukazakiri/koakademy/commit/177445bece6ef68255e12f2bd3823ede5eeafad0))
+* **security:** harden .env writer against newline injection and backreference expansion (SEC-016) ([#518](https://github.com/yukazakiri/koakademy/issues/518)) ([826668f](https://github.com/yukazakiri/koakademy/commit/826668f0e929975bc898e6986c31bf163ffed5a2))
+* **security:** prevent cross-student and cross-faculty API data exposure (SEC-013) ([#528](https://github.com/yukazakiri/koakademy/issues/528)) ([488465e](https://github.com/yukazakiri/koakademy/commit/488465ea1b4bccb68a5e2366633584809fa2be93))
+* **security:** prevent privilege escalation and restrict role assignment (SEC-007) ([#520](https://github.com/yukazakiri/koakademy/issues/520)) ([0e0e92a](https://github.com/yukazakiri/koakademy/commit/0e0e92a116a5453356ee4778f63e2a295f56d4d3))
+* **security:** rate limit auth endpoints and enforce lockout (SEC-009) ([#536](https://github.com/yukazakiri/koakademy/issues/536)) ([eaba212](https://github.com/yukazakiri/koakademy/commit/eaba212a21d521a4dc27cd6aff9441e20d1e2106))
+* **security:** restore mass-assignment protection and model allowlists (SEC-004) ([#535](https://github.com/yukazakiri/koakademy/issues/535)) ([fc6a03e](https://github.com/yukazakiri/koakademy/commit/fc6a03e965eaf168753bc3fc217247e300db0a74))
+* **security:** restrict upload MIME types and secure file storage (SEC-011) ([#530](https://github.com/yukazakiri/koakademy/issues/530)) ([3ddd608](https://github.com/yukazakiri/koakademy/commit/3ddd608288dbf00b42d8d5e5d0412918f39f96e2))
+
+
+### Build System
+
+* **deps:** bump the composer-minor group with 7 updates ([#522](https://github.com/yukazakiri/koakademy/issues/522)) ([21ac1e2](https://github.com/yukazakiri/koakademy/commit/21ac1e2a1513364597d1dca09413ce2293098eaa))
+* **deps:** bump the composer-patch group with 6 updates ([#521](https://github.com/yukazakiri/koakademy/issues/521)) ([1d01ebd](https://github.com/yukazakiri/koakademy/commit/1d01ebd4e600b39cb2bfa6ab12b6ea158dceb9ea))
+
 ## [1.30.0](https://github.com/yukazakiri/koakademy/compare/v1.29.0...v1.30.0) (2026-11-05)
 
 

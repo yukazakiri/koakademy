@@ -14,10 +14,10 @@ final class StudentClearanceStatusChart extends ChartWidget
     protected static ?int $sort = 5;
 
     #[Override]
-    protected ?string $heading = 'Student Clearance Status';
+    protected ?string $heading = 'Grade-release Clearance Status';
 
     #[Override]
-    protected ?string $description = 'Overview of student clearance completion status';
+    protected ?string $description = 'Current semester grade-release clearance';
 
     #[Override]
     protected string $color = 'warning';
@@ -38,12 +38,17 @@ final class StudentClearanceStatusChart extends ChartWidget
     {
         // One statement resolves all three counters instead of one COUNT per
         // clearance state.
+        $settings = app(\App\Services\GeneralSettingsService::class)->getGlobalSettingsModel();
         $row = Student::query()
-            ->leftJoin('student_clearances', 'student_clearances.student_id', '=', 'students.id')
+            ->leftJoin('grade_release_clearances', function ($join) use ($settings): void {
+                $join->on('grade_release_clearances.student_id', '=', 'students.id')
+                    ->where('grade_release_clearances.school_year', $settings?->getSchoolYearString())
+                    ->where('grade_release_clearances.semester', $settings?->semester);
+            })
             ->whereNull('students.deleted_at')
-            ->selectRaw('count(distinct case when student_clearances.is_cleared = 1 then students.id end) as cleared')
-            ->selectRaw('count(distinct case when student_clearances.is_cleared = 0 then students.id end) as not_cleared')
-            ->selectRaw('count(distinct case when student_clearances.id is null then students.id end) as no_clearance')
+            ->selectRaw('count(distinct case when grade_release_clearances.is_cleared = ? then students.id end) as cleared', [true])
+            ->selectRaw('count(distinct case when grade_release_clearances.is_cleared = ? then students.id end) as not_cleared', [false])
+            ->selectRaw('count(distinct case when grade_release_clearances.id is null then students.id end) as no_clearance')
             ->first();
 
         $attributes = $row?->getAttributes() ?? [];

@@ -7,7 +7,6 @@ namespace App\Services;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
 use App\Models\Student;
-use App\Models\StudentClearance;
 use App\Models\StudentEnrollment;
 use App\Models\StudentTransaction;
 use App\Models\StudentTuition;
@@ -240,23 +239,23 @@ final class StudentInvestigationService
             ];
         }
 
-        // 4. Clearance holds check for active student
+        // 4. Grade-release clearance is independent of enrollment eligibility.
         $currentSy = (string) ($schoolYear ?: $this->settingsService->getCurrentSchoolYearString());
         $currentSem = (int) ($semester ?: $this->settingsService->getCurrentSemester());
 
-        $clearance = StudentClearance::query()
+        $clearance = \App\Models\GradeReleaseClearance::query()
             ->where('student_id', $student->id)
-            ->where('academic_year', $currentSy)
+            ->where('school_year', GeneralSettingsService::normalizeSchoolYear($currentSy))
             ->where('semester', $currentSem)
             ->first();
 
-        if ($student->status === 'enrolled' && $clearance instanceof StudentClearance && ! $clearance->is_cleared) {
+        if ($student->status === 'enrolled' && $clearance instanceof \App\Models\GradeReleaseClearance && ! $clearance->is_cleared) {
             $findings[] = [
                 'category' => 'clearance_hold',
                 'severity' => 'warning',
-                'record_type' => 'student_clearance',
+                'record_type' => 'grade_release_clearance',
                 'record_id' => $clearance->id,
-                'issue' => "Student is marked enrolled for {$currentSy} Sem {$currentSem}, but has an unresolved clearance hold ({$clearance->remarks}).",
+                'issue' => "Grade-release clearance for {$currentSy} Sem {$currentSem} is not cleared ({$clearance->remarks}).",
                 'evidence' => ['is_cleared' => false, 'remarks' => $clearance->remarks],
                 'suggested_action' => 'Resolve clearance hold with the registrar/department.',
             ];

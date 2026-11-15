@@ -8,9 +8,7 @@ use App\Enums\StudentStatus;
 use App\Enums\StudentType;
 use App\Mcp\Concerns\AuthorizesMcpRequests;
 use App\Models\Course;
-use App\Models\GeneralSetting;
 use App\Models\Student;
-use App\Models\StudentClearance;
 use App\Services\StudentDataTransferService;
 use App\Support\RegistrarStudentProfileWorkbook;
 use Carbon\Carbon;
@@ -301,11 +299,6 @@ final class ManageStudentTool extends Tool
                 ...$equity,
             ]);
 
-            $generalSetting = GeneralSetting::query()->first();
-            if ($generalSetting instanceof GeneralSetting) {
-                StudentClearance::createForCurrentSemester($newStudent, $generalSetting);
-            }
-
             if ($idempotencyKey) {
                 \Illuminate\Support\Facades\Cache::put("mcp:create-student:{$school->id}:{$idempotencyKey}", $newStudent->id, now()->addDays(7));
             }
@@ -402,10 +395,9 @@ final class ManageStudentTool extends Tool
         $updated = [];
         $errors = [];
 
-        $generalSetting = GeneralSetting::query()->first();
         $defaultCourse = Course::query()->first();
 
-        DB::transaction(function () use ($validated, &$created, &$updated, &$errors, $generalSetting, $defaultCourse) {
+        DB::transaction(function () use ($validated, &$created, &$updated, &$errors, $defaultCourse) {
             foreach ($validated['students'] as $idx => $sData) {
                 try {
                     $existing = null;
@@ -471,10 +463,6 @@ final class ManageStudentTool extends Tool
                             'status' => $sData['status'] ?? StudentStatus::Applicant->value,
                             'lrn' => $sData['lrn'] ?? null,
                         ]);
-
-                        if ($generalSetting instanceof GeneralSetting) {
-                            StudentClearance::createForCurrentSemester($newStudent, $generalSetting);
-                        }
 
                         $created[] = [
                             'id' => $newStudent->id,

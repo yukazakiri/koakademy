@@ -38,7 +38,7 @@ test('student can calculate previous academic period for 1st semester', function
     ]);
 });
 
-test('student passes enrollment validation when previous semester is cleared', function (): void {
+test('legacy cleared records remain readable without controlling enrollment', function (): void {
     $student = Student::factory()->create();
 
     // Create previous semester clearance (1st semester of 2024-2025)
@@ -54,11 +54,11 @@ test('student passes enrollment validation when previous semester is cleared', f
     $validation = $student->validateEnrollmentClearance('2024 - 2025', 2);
 
     expect($validation['allowed'])->toBeTrue()
-        ->and($validation['clearance'])->toBeInstanceOf(StudentClearance::class)
-        ->and($validation['clearance']->is_cleared)->toBeTrue();
+        ->and($validation['clearance'])->toBeNull()
+        ->and($student->getPreviousSemesterClearance('2024 - 2025', 2)->is_cleared)->toBeTrue();
 });
 
-test('student fails enrollment validation when previous semester is not cleared', function (): void {
+test('legacy uncleared records no longer block enrollment', function (): void {
     $student = Student::factory()->create();
 
     // Create previous semester clearance but not cleared
@@ -71,9 +71,9 @@ test('student fails enrollment validation when previous semester is not cleared'
 
     $validation = $student->validateEnrollmentClearance('2024 - 2025', 2);
 
-    expect($validation['allowed'])->toBeFalse()
-        ->and($validation['message'])->toContain('not cleared')
-        ->and($validation['clearance'])->toBeInstanceOf(StudentClearance::class);
+    expect($validation['allowed'])->toBeTrue()
+        ->and($validation['message'])->toContain('retired')
+        ->and($validation['clearance'])->toBeNull();
 });
 
 test('student passes enrollment validation when no previous clearance record exists', function (): void {
@@ -83,7 +83,7 @@ test('student passes enrollment validation when no previous clearance record exi
     $validation = $student->validateEnrollmentClearance('2024 - 2025', 2);
 
     expect($validation['allowed'])->toBeTrue()
-        ->and($validation['message'])->toContain('No clearance record found')
+        ->and($validation['message'])->toContain('retired')
         ->and($validation['clearance'])->toBeNull();
 });
 
@@ -104,7 +104,7 @@ test('student passes enrollment validation when clearance checking is disabled',
     $validation = $student->validateEnrollmentClearance('2024 - 2025', 2);
 
     expect($validation['allowed'])->toBeTrue()
-        ->and($validation['message'])->toContain('disabled');
+        ->and($validation['message'])->toContain('retired');
 });
 
 test('student can get previous semester clearance record', function (): void {
@@ -164,7 +164,7 @@ test('hasPreviousSemesterClearance returns false when no record exists', functio
     expect($student->hasPreviousSemesterClearance('2024 - 2025', 2))->toBeFalse();
 });
 
-test('enrollment validation works across academic years', function (): void {
+test('legacy records remain readable across academic years', function (): void {
     $student = Student::factory()->create();
 
     // Create previous year's 2nd semester clearance
@@ -179,11 +179,11 @@ test('enrollment validation works across academic years', function (): void {
     $validation = $student->validateEnrollmentClearance('2024 - 2025', 1);
 
     expect($validation['allowed'])->toBeTrue()
-        ->and($validation['clearance']->academic_year)->toBe('2023 - 2024')
-        ->and($validation['clearance']->semester)->toBe(2);
+        ->and($student->getPreviousSemesterClearance('2024 - 2025', 1)->academic_year)->toBe('2023 - 2024')
+        ->and($student->getPreviousSemesterClearance('2024 - 2025', 1)->semester)->toBe(2);
 });
 
-test('validation message is descriptive for blocked enrollment', function (): void {
+test('validation message explains that legacy clearance no longer blocks enrollment', function (): void {
     $student = Student::factory()->create();
 
     StudentClearance::query()->create([
@@ -195,11 +195,7 @@ test('validation message is descriptive for blocked enrollment', function (): vo
 
     $validation = $student->validateEnrollmentClearance('2024 - 2025', 2);
 
-    expect($validation['message'])
-        ->toContain('2024 - 2025')
-        ->toContain('Semester 1')
-        ->toContain('not cleared')
-        ->toContain('Please clear previous semester');
+    expect($validation['message'])->toContain('retired')->toContain('does not affect enrollment');
 });
 
 test('validation message is descriptive for allowed enrollment', function (): void {
@@ -214,8 +210,5 @@ test('validation message is descriptive for allowed enrollment', function (): vo
 
     $validation = $student->validateEnrollmentClearance('2024 - 2025', 2);
 
-    expect($validation['message'])
-        ->toContain('cleared')
-        ->toContain('2024 - 2025')
-        ->toContain('Semester 1');
+    expect($validation['message'])->toContain('retired')->toContain('does not affect enrollment');
 });

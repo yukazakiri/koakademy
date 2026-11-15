@@ -202,8 +202,6 @@ INSTRUCTIONS;
             new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\InvestigateStudentFinancesTool),
             new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\GetStudentChecklistTool),
             new \App\Ai\Tools\AuditStudentProfileImportTool,
-            new \App\Ai\Tools\AuditGraduationClearanceTool,
-            new \App\Ai\Tools\BatchUpdateClearanceTool,
             new \App\Ai\Tools\ExplainStatementOfAccountTool,
             new \App\Ai\Tools\ValidateAdjustmentSpreadsheetTool,
             new \App\Ai\Tools\SimulateScholarshipAdjustmentTool,

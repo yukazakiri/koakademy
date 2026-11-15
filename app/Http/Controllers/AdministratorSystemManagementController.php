@@ -1639,6 +1639,7 @@ final class AdministratorSystemManagementController extends Controller
                     ? app(GradingSystemService::class)->activeConfigurationForSchool($activeSchool, createWhenMissing: false)
                     : app(GradingSystemService::class)->getConfig())
                 : ($settings->more_configs['grading'] ?? app(GradingSystemService::class)->getConfig()),
+            'grade_release_clearance_required' => app(\App\Services\GradeReleaseService::class)->requiresClearance(),
             'id_sequences' => $activeSection === 'identifiers'
                 ? app(IdentifierGenerator::class)->configuration()
                 : null,

@@ -156,8 +156,12 @@ final class StudentInfolist
                                         'studentContactsInfo.facebook_contact',
                                     )->label('Facebook Contact'),
                                 ]),
-                                Tab::make('Clearance Status')->schema([
+                                Tab::make('Legacy Clearance History')->schema([
+                                    TextEntry::make('legacy_clearance_notice')
+                                        ->state('Enrollment clearance has been retired. Manage grade-release clearance on the administrator student page.')
+                                        ->columnSpanFull(),
                                     Section::make('Current Semester Clearance')
+                                        ->visible(false)
                                         ->description('Clearance status for the current academic period')
                                         ->schema([
                                             TextEntry::make('clearances')
@@ -242,6 +246,7 @@ final class StudentInfolist
                                         ->columns(2),
 
                                     Section::make('Previous Semester Clearance')
+                                        ->visible(false)
                                         ->description('Required clearance check for enrollment eligibility')
                                         ->schema([
                                             TextEntry::make('previous_clearance_status')
@@ -295,7 +300,7 @@ final class StudentInfolist
                                         ->collapsible(),
 
                                     RepeatableEntry::make('clearances')
-                                        ->label('Clearance History')
+                                        ->label('Legacy Enrollment Clearance History (read only)')
                                         ->schema([
                                             TextEntry::make('academic_year')
                                                 ->label('Academic Year')

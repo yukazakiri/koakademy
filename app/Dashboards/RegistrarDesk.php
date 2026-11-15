@@ -6,7 +6,6 @@ namespace App\Dashboards;
 
 use App\Dashboards\Contracts\Dashboard;
 use App\Enums\UserRole;
-use App\Models\StudentClearance;
 use App\Models\StudentEnrollment;
 use App\Models\User;
 use App\Services\EnrollmentPipelineService;
@@ -121,10 +120,10 @@ final class RegistrarDesk implements Dashboard
                 ],
                 [
                     'id' => 'clearance',
-                    'title' => 'Uncleared students',
-                    'description' => 'Students this term still holding a clearance requirement.',
-                    'count' => StudentClearance::query()
-                        ->where('academic_year', $context->schoolYear)
+                    'title' => 'Grade-release clearances pending',
+                    'description' => 'Recorded grade-release clearances not yet cleared for this term.',
+                    'count' => \App\Models\GradeReleaseClearance::query()
+                        ->where('school_year', $context->schoolYear)
                         ->where('semester', $context->semester)
                         ->where('is_cleared', false)
                         ->count(),

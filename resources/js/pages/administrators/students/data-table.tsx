@@ -129,7 +129,7 @@ const studentExportColumns: ExportColumn<Student>[] = [
     { key: "type", label: "Student Type", getValue: (student) => readableLabel(student.type) },
     {
         key: "previous_sem_clearance",
-        label: "Clearance",
+        label: "Current grade clearance",
         defaultSelected: false,
         getValue: (student) =>
             student.previous_sem_clearance === "cleared" ? "Cleared" : student.previous_sem_clearance === "not_cleared" ? "Pending" : "No record",
@@ -499,12 +499,12 @@ export function DataTable<TData extends Student, TValue>({
                                 render={
                                     <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" disabled={isSubmitting}>
                                         <CheckCircle className="size-3.5" />
-                                        Clearance
+                                        Grade clearance
                                     </Button>
                                 }
                             />
                             <DropdownMenuContent align="end" className="w-48">
-                                <DropdownMenuLabel className="text-xs">Update Clearance</DropdownMenuLabel>
+                                <DropdownMenuLabel className="text-xs">Update current semester</DropdownMenuLabel>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem onClick={() => handleBulkClearanceSubmit(true)}>
                                     <CheckCircle className="mr-2 size-3.5 text-emerald-600 dark:text-emerald-400" />
@@ -927,7 +927,7 @@ export function DataTable<TData extends Student, TValue>({
 
                                             <div className="text-muted-foreground space-y-1 border-t pt-2 text-xs">
                                                 <div className="flex items-center justify-between">
-                                                    <span>Clearance:</span>
+                                                    <span>Current grade clearance:</span>
                                                     <div className="flex items-center gap-1">
                                                         {student.previous_sem_clearance === "cleared" ? (
                                                             <span className="inline-flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400">

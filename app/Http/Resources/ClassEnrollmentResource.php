@@ -16,36 +16,43 @@ final class ClassEnrollmentResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $isStudent = $request->user()?->isStudentRole() === true;
+        $published = null;
+        if ($isStudent && $this->student) {
+            $service = app(\App\Services\GradeReleaseService::class);
+            $published = $service->publishedClass($this->resource, $service->releases($this->student));
+        }
+
         return [
             'id' => $this->id,
             'class_id' => $this->class_id,
             'student_id' => $this->student_id,
             'completion_date' => $this->completion_date,
             'status' => $this->status,
-            'remarks' => $this->remarks,
+            'remarks' => $isStudent ? null : $this->remarks,
 
             // Grades
             'prelim_grade' => $this->prelim_grade,
             'midterm_grade' => $this->midterm_grade,
-            'finals_grade' => $this->finals_grade,
-            'total_average' => $this->total_average,
-            'is_grades_finalized' => $this->is_grades_finalized,
-            'is_grades_verified' => $this->is_grades_verified,
-            'verified_by' => $this->verified_by,
-            'verified_at' => $this->verified_at,
-            'verification_notes' => $this->verification_notes,
+            'finals_grade' => $isStudent ? ($published['finals_grade'] ?? null) : $this->finals_grade,
+            'total_average' => $isStudent ? ($published['total_average'] ?? null) : $this->total_average,
+            'is_grades_finalized' => $isStudent ? null : $this->is_grades_finalized,
+            'is_grades_verified' => $isStudent ? null : $this->is_grades_verified,
+            'verified_by' => $isStudent ? null : $this->verified_by,
+            'verified_at' => $isStudent ? null : $this->verified_at,
+            'verification_notes' => $isStudent ? null : $this->verification_notes,
 
             // Evaluated from the immutable policy version assigned when grades are saved.
-            'grade_symbol' => $this->grade_symbol,
-            'grade_outcome' => $this->grade_outcome,
-            'grade_quality_points' => $this->grade_quality_points,
-            'grading_components' => $this->grading_components,
-            'grading_policy_version_id' => $this->grading_policy_version_id,
-            'letter_grade' => $this->grade_symbol,
-            'grade_point' => $this->grade_quality_points,
-            'is_passing' => $this->when($this->grade_outcome !== null, fn (): bool => $this->grade_outcome === 'pass'),
+            'grade_symbol' => $isStudent ? ($published['grade_symbol'] ?? null) : $this->grade_symbol,
+            'grade_outcome' => $isStudent ? ($published['grade_outcome'] ?? null) : $this->grade_outcome,
+            'grade_quality_points' => $isStudent ? ($published['grade_quality_points'] ?? null) : $this->grade_quality_points,
+            'grading_components' => $isStudent ? ($published['grading_components'] ?? null) : $this->grading_components,
+            'grading_policy_version_id' => $isStudent ? null : $this->grading_policy_version_id,
+            'letter_grade' => $isStudent ? ($published['grade_symbol'] ?? null) : $this->grade_symbol,
+            'grade_point' => $isStudent ? ($published['grade_quality_points'] ?? null) : $this->grade_quality_points,
+            'is_passing' => $isStudent ? (isset($published['grade_outcome']) ? $published['grade_outcome'] === 'pass' : null) : $this->when($this->grade_outcome !== null, fn (): bool => $this->grade_outcome === 'pass'),
             'has_all_grades' => $this->when(
-                $this->prelim_grade !== null || $this->midterm_grade !== null || $this->finals_grade !== null,
+                ! $isStudent && ($this->prelim_grade !== null || $this->midterm_grade !== null || $this->finals_grade !== null),
                 fn (): bool => $this->prelim_grade !== null && $this->midterm_grade !== null && $this->finals_grade !== null
             ),
 
@@ -72,7 +79,7 @@ final class ClassEnrollmentResource extends JsonResource
                 ]
             ),
             'verifier' => $this->when(
-                $this->verified_by,
+                ! $isStudent && $this->verified_by,
                 fn (): array => [
                     'id' => $this->verifier?->id,
                     'name' => $this->verifier?->name,
@@ -98,7 +105,7 @@ final class ClassEnrollmentResource extends JsonResource
                 fn () => $this->completion_date->format('Y-m-d')
             ),
             'verified_at_formatted' => $this->when(
-                $this->verified_at,
+                ! $isStudent && $this->verified_at,
                 fn () => $this->verified_at->format('Y-m-d H:i:s')
             ),
         ];

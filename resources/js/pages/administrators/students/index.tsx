@@ -453,7 +453,7 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
             },
             {
                 key: "previous_semester_cleared",
-                label: "Clearance Status",
+                label: "Current grade clearance",
                 type: "select",
                 icon: <CheckCircle className="size-4" />,
                 options: [

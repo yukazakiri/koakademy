@@ -46,6 +46,11 @@ final class ClassEnrollmentController extends Controller
         $user = $request->user();
         abort_unless($user instanceof User, 401);
 
+        // Filtering on unreleased grade state would reveal draft information.
+        if ($user->isStudentRole()) {
+            abort_if($request->hasAny(['has_grades', 'is_finalized', 'is_verified']), 403);
+        }
+
         $query = ClassEnrollment::with(['class', 'student'])->orderBy('created_at', 'desc');
 
         $isPrivileged = $user->can('ViewAny:ClassEnrollment')

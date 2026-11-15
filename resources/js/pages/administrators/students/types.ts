@@ -91,6 +91,23 @@ export interface ChecklistYearGroup {
     semesters: ChecklistSemesterGroup[];
 }
 
+export interface GradeReleasePeriod {
+    school_year: string;
+    semester: number;
+    is_current: boolean;
+    clearance_required: boolean;
+    clearance: { is_cleared: boolean; remarks: string | null; cleared_by: string | null; cleared_at: string | null } | null;
+    total: number;
+    missing: number;
+    missing_items: string[];
+    published_at: string | null;
+    revision: number | null;
+    needs_correction_reason: boolean;
+    has_changes: boolean;
+    notification_status: { mail: string; database: string; warnings: string[] } | null;
+    events: Array<{ id: number; event: string; actor: string | null; at: string | null; revision: number | null; reason: string | null }>;
+}
+
 export type StudentDetail = {
     year_level_options?: Array<{ value: number; label: string }>;
     id: number;
@@ -121,9 +138,11 @@ export type StudentDetail = {
     personal_info: any;
     documents: any;
     signature_url: string | null;
-    current_clearance: any;
-    previous_clearance_validation: any;
-    clearance_history: any[];
+    grade_release_periods: GradeReleasePeriod[];
+    grade_release_clearance_required: boolean;
+    can_manage_grade_clearance: boolean;
+    can_publish_grades: boolean;
+    can_view_grade_release: boolean;
     tuition: any;
     current_school_year: string;
     current_semester: number;

@@ -401,6 +401,7 @@ final class StudentEnrollmentForm
                             ->columns(2)
                             ->schema([
                                 Placeholder::make('clearance_status')
+                                    ->visible(false)
                                     ->label('Previous Semester Clearance Status')
                                     ->helperText('Student must be cleared from the previous semester before enrolling')
                                     ->hintActions([

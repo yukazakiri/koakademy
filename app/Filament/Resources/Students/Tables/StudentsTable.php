@@ -58,6 +58,7 @@ final class StudentsTable
                     isToggledHiddenByDefault: true,
                 ),
                 IconSelectColumn::make('previous_sem_clearance')
+                    ->visible(false)
                     ->label('Previous Sem Clearance')
                     ->options([
                         'cleared' => 'Cleared',
@@ -217,6 +218,7 @@ final class StudentsTable
                     ]),
 
                 TernaryFilter::make('previous_semester_cleared')
+                    ->visible(false)
                     ->label('Previous Semester Clearance')
                     ->placeholder('All students')
                     ->trueLabel('Cleared for enrollment')
@@ -298,6 +300,7 @@ final class StudentsTable
             ->toolbarActions([
                 BulkActionGroup::make([
                     BulkAction::make('bulkClearPreviousSemester')
+                        ->visible(false)
                         ->label('Mark as Cleared (Previous Sem)')
                         ->icon('heroicon-o-check-circle')
                         ->color('success')
@@ -352,6 +355,7 @@ final class StudentsTable
                         }),
 
                     BulkAction::make('bulkNotClearPreviousSemester')
+                        ->visible(false)
                         ->label('Mark as Not Cleared (Previous Sem)')
                         ->icon('heroicon-o-x-circle')
                         ->color('danger')

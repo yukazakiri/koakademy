@@ -661,6 +661,7 @@ export interface SystemManagementPageProps {
     enrollment_stats: EnrollmentStatsSettings;
     api_management: ApiManagementConfig;
     grading_config: GradingConfigPayload;
+    grade_release_clearance_required: boolean;
     id_sequences: {
         student: IdSequenceConfig;
         staff: IdSequenceConfig;

@@ -12,6 +12,7 @@ use App\Models\ClassPost;
 use App\Models\ClassPostSubmission;
 use App\Models\Student;
 use App\Services\ClassPostPayloadService;
+use App\Services\GradeReleaseService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -102,11 +103,19 @@ final class StudentClassController extends Controller
             ->values();
 
         // Student's own grades
+        $gradeReleases = app(GradeReleaseService::class);
+        $enrollment->setRelation('class', $class);
+        $published = $gradeReleases->publishedClass($enrollment, $gradeReleases->releases($student));
         $grades = [
             'prelim' => $enrollment->prelim_grade,
             'midterm' => $enrollment->midterm_grade,
-            'final' => $enrollment->finals_grade,
-            'average' => $enrollment->total_average,
+            'final' => $published['finals_grade'] ?? null,
+            'average' => $published['total_average'] ?? null,
+            'final_status' => $published && ($published['total_average'] !== null || $published['grade_symbol'] !== null)
+                ? 'released'
+                : ($class->school_year && $gradeReleases->requiresClearance() && $gradeReleases->clearanceApplies((string) $class->school_year, (int) $class->semester)
+                    && ! \App\Models\GradeReleaseClearance::query()->where('student_id', $student->id)->where('school_year', $gradeReleases->normalizeYear((string) $class->school_year))->where('semester', $class->semester)->where('is_cleared', true)->exists()
+                        ? 'clearance_required' : 'not_released'),
         ];
 
         // Student's own attendance

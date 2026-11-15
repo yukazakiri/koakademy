@@ -20,6 +20,10 @@ final class StudentTransformer extends JsonResource
      */
     public function toArray($request)
     {
+        $studentView = $request->user()?->isStudentRole() === true;
+        $releaseService = app(\App\Services\GradeReleaseService::class);
+        $publishedGrades = $studentView ? $releaseService->releases($this->resource) : collect();
+
         return [
             'id' => $this->resource->id,
             'student_id' => $this->resource->student_id,
@@ -94,25 +98,14 @@ final class StudentTransformer extends JsonResource
                 'senior_high_address' => $this->resource->studentEducationInfo?->senior_high_address,
             ],
 
-            // Clearance Information
-            'clearance_information' => [
-                'current_clearance' => [
-                    'status' => $this->resource->hasCurrentClearance() ? 'Cleared' : 'Not Cleared',
-                    'is_cleared' => $this->resource->hasCurrentClearance(),
-                    'cleared_by' => $this->resource->getCurrentClearanceModel()?->cleared_by,
-                    'cleared_at' => $this->resource->getCurrentClearanceModel()?->cleared_at?->format('F j, Y g:i A'),
-                    'remarks' => $this->resource->getCurrentClearanceModel()?->remarks,
-                    'academic_year' => $this->resource->getCurrentClearanceModel()?->academic_year,
-                    'semester' => $this->resource->getCurrentClearanceModel()?->semester,
-                    'formatted_semester' => $this->resource->getCurrentClearanceModel()?->formatted_semester,
-                ],
-                'previous_clearance' => $this->getPreviousClearanceData(),
+            // Enrollment clearance is retired; do not present legacy records as grade clearance.
+            'clearance_information' => $studentView ? null : [
+                'type' => 'legacy_enrollment_clearance',
+                'retired' => true,
                 'clearance_history' => $this->when($this->resource->clearances, fn () => $this->resource->clearances->map(fn ($clearance): array => [
                     'academic_year' => $clearance->academic_year,
                     'semester' => $clearance->semester,
-                    'formatted_semester' => $clearance->formatted_semester,
                     'is_cleared' => $clearance->is_cleared,
-                    'status' => $clearance->is_cleared ? 'Cleared' : 'Not Cleared',
                     'cleared_by' => $clearance->cleared_by,
                     'cleared_at' => $clearance->cleared_at?->format('M j, Y g:i A'),
                     'remarks' => $clearance->remarks,
@@ -140,7 +133,9 @@ final class StudentTransformer extends JsonResource
                 'subject_title' => $enrollment->subject?->title,
                 'units' => $enrollment->subject?->units,
                 'section' => $enrollment->class?->section,
-                'grade' => $enrollment->grade,
+                'grade' => $studentView
+                    ? ($releaseService->publishedSubject($enrollment, $publishedGrades)['grade'] ?? null)
+                    : $enrollment->grade,
                 'academic_year' => $enrollment->academic_year,
                 'semester' => $enrollment->semester,
             ])),

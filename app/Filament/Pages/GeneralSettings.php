@@ -94,11 +94,6 @@ final class GeneralSettings extends Page
                         'Enable Online Enrollment'
                     )->boolean()
                         ->grouped(),
-                    ToggleButtons::make('enable_clearance_check')->label(
-                        'Enable Clearance Checking'
-                    )->boolean()
-                        ->grouped(),
-
                     ToggleButtons::make('enable_support_page')->label(
                         'Enable Support Page'
                     )->boolean()

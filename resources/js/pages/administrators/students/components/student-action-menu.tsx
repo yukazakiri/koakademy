@@ -20,7 +20,6 @@ import {
     GraduationCap,
     RotateCcw,
     Settings,
-    ShieldCheck,
     Trash2,
     UserCog,
     Zap,
@@ -105,13 +104,6 @@ export function StudentActionMenu({ student, options, setActionDialog, setDelete
                     <DropdownMenuLabel className="text-muted-foreground px-2 py-1 text-xs font-normal">Financial</DropdownMenuLabel>
                     <DropdownMenuItem onClick={() => router.visit(tuitionAdjustments.url({ query: { student: student.id } }))}>
                         <CreditCard className="mr-2 h-4 w-4" /> Manage Tuition
-                    </DropdownMenuItem>
-                </DropdownMenuGroup>
-                <DropdownMenuSeparator />
-                <DropdownMenuGroup>
-                    <DropdownMenuLabel className="text-muted-foreground px-2 py-1 text-xs font-normal">Administrative</DropdownMenuLabel>
-                    <DropdownMenuItem onClick={() => setActionDialog("clearance")}>
-                        <ShieldCheck className="mr-2 h-4 w-4" /> Manage Clearance
                     </DropdownMenuItem>
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />

@@ -29,6 +29,7 @@ interface StudentChecklistSectionProps {
     onAddNonCreditedSubject: () => void;
     onSubjectClick: (subject: ChecklistSubject) => void;
     classificationBadgeVariant: (classification: string | null | undefined) => "info-light" | "success-light" | "warning-light";
+    onManageReleases: () => void;
 }
 
 function getYearLabel(year: number): string {
@@ -71,12 +72,7 @@ function collectYearSubjects(yearGroup: ChecklistYearGroup): ChecklistSubject[] 
     return yearGroup.semesters.flatMap((sem: ChecklistSemesterGroup) => sem.subjects);
 }
 
-function gradePasses(
-    grade: number | string | null,
-    config: GradingConfig,
-    outcome?: string | null,
-    classification?: string | null,
-): boolean {
+function gradePasses(grade: number | string | null, config: GradingConfig, outcome?: string | null, classification?: string | null): boolean {
     if (outcome) {
         return isPassingOutcome(outcome);
     }
@@ -147,6 +143,7 @@ export function StudentChecklistSection({
     onAddNonCreditedSubject,
     onSubjectClick,
     classificationBadgeVariant,
+    onManageReleases,
 }: StudentChecklistSectionProps) {
     const gradingConfig = useGradingConfig();
 
@@ -178,9 +175,12 @@ export function StudentChecklistSection({
 
     return (
         <div className="space-y-4">
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
                 <h3 className="text-lg font-bold">Checklist</h3>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                    <Button type="button" variant="outline" onClick={onManageReleases}>
+                        Grade releases &amp; clearance
+                    </Button>
                     <Button type="button" variant="outline" className="gap-2" onClick={onPrintTranscript}>
                         <FileText className="h-4 w-4" />
                         Transcript of Records
@@ -297,7 +297,12 @@ export function StudentChecklistSection({
                                                                                 <div className="flex flex-col">
                                                                                     <span
                                                                                         className={`font-mono font-bold ${
-                                                                                            gradePasses(subject.grade, gradingConfig, subject.grade_outcome, subject.classification)
+                                                                                            gradePasses(
+                                                                                                subject.grade,
+                                                                                                gradingConfig,
+                                                                                                subject.grade_outcome,
+                                                                                                subject.classification,
+                                                                                            )
                                                                                                 ? "text-green-600"
                                                                                                 : "text-destructive"
                                                                                         }`}
@@ -305,13 +310,19 @@ export function StudentChecklistSection({
                                                                                         {subject.grade}
                                                                                     </span>
                                                                                     {parseNumericGrade(subject.grade) !== null &&
-                                                                                        isTransfereeDecimalGrade(subject.grade, gradingConfig, subject.classification) && (
-                                                                                            <span className="text-[10px] text-muted-foreground">
+                                                                                        isTransfereeDecimalGrade(
+                                                                                            subject.grade,
+                                                                                            gradingConfig,
+                                                                                            subject.classification,
+                                                                                        ) && (
+                                                                                            <span className="text-muted-foreground text-[10px]">
                                                                                                 Eq:{" "}
-                                                                                                {convertTransfereePointToPercentage(
-                                                                                                    parseNumericGrade(subject.grade)!,
-                                                                                                    gradingConfig,
-                                                                                                ).equivalent}
+                                                                                                {
+                                                                                                    convertTransfereePointToPercentage(
+                                                                                                        parseNumericGrade(subject.grade)!,
+                                                                                                        gradingConfig,
+                                                                                                    ).equivalent
+                                                                                                }
                                                                                                 %
                                                                                             </span>
                                                                                         )}
@@ -336,7 +347,12 @@ export function StudentChecklistSection({
                                                                                 !isDropped &&
                                                                                 (history.grade_outcome
                                                                                     ? isPassingOutcome(history.grade_outcome)
-                                                                                    : gradePasses(history.grade, gradingConfig, null, history.classification));
+                                                                                    : gradePasses(
+                                                                                          history.grade,
+                                                                                          gradingConfig,
+                                                                                          null,
+                                                                                          history.classification,
+                                                                                      ));
 
                                                                             return (
                                                                                 <TableRow
@@ -391,13 +407,19 @@ export function StudentChecklistSection({
                                                                                                     {history.grade}
                                                                                                 </span>
                                                                                                 {historyNumeric !== null &&
-                                                                                                    isTransfereeDecimalGrade(history.grade, gradingConfig, history.classification) && (
-                                                                                                        <span className="text-[10px] text-muted-foreground">
+                                                                                                    isTransfereeDecimalGrade(
+                                                                                                        history.grade,
+                                                                                                        gradingConfig,
+                                                                                                        history.classification,
+                                                                                                    ) && (
+                                                                                                        <span className="text-muted-foreground text-[10px]">
                                                                                                             Eq:{" "}
-                                                                                                            {convertTransfereePointToPercentage(
-                                                                                                                historyNumeric,
-                                                                                                                gradingConfig,
-                                                                                                            ).equivalent}
+                                                                                                            {
+                                                                                                                convertTransfereePointToPercentage(
+                                                                                                                    historyNumeric,
+                                                                                                                    gradingConfig,
+                                                                                                                ).equivalent
+                                                                                                            }
                                                                                                             %
                                                                                                         </span>
                                                                                                     )}

@@ -6,6 +6,7 @@ use App\Enums\StudentStatus;
 use App\Enums\UserRole;
 use App\Models\DocumentLocation;
 use App\Models\GeneralSetting;
+use App\Models\GradeReleaseClearance;
 use App\Models\Student;
 use App\Models\StudentClearance;
 use App\Models\StudentStatusRecord;
@@ -20,7 +21,7 @@ beforeEach(function (): void {
     config(['inertia.testing.ensure_pages_exist' => false]);
 });
 
-it('shows previous semester clearance status for listed students', function (): void {
+it('shows current semester grade-release clearance status for listed students', function (): void {
     GeneralSetting::factory()->create([
         'semester' => 2,
         'school_starting_date' => '2024-08-01',
@@ -43,16 +44,16 @@ it('shows previous semester clearance status for listed students', function (): 
         'last_name' => 'Gamma',
     ]);
 
-    StudentClearance::query()->create([
+    GradeReleaseClearance::query()->create([
         'student_id' => $studentCleared->id,
-        'academic_year' => '2024 - 2025',
+        'school_year' => '2024 - 2025',
         'semester' => 2,
         'is_cleared' => true,
     ]);
 
-    StudentClearance::query()->create([
+    GradeReleaseClearance::query()->create([
         'student_id' => $studentPending->id,
-        'academic_year' => '2024 - 2025',
+        'school_year' => '2024 - 2025',
         'semester' => 2,
         'is_cleared' => false,
     ]);
@@ -73,7 +74,7 @@ it('shows previous semester clearance status for listed students', function (): 
         );
 });
 
-it('returns no_record when clearance checks are disabled', function (): void {
+it('does not treat retired enrollment-clearance records as grade-release clearance', function (): void {
     GeneralSetting::factory()->create([
         'semester' => 2,
         'school_starting_date' => '2024-08-01',

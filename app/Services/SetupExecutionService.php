@@ -142,7 +142,7 @@ final class SetupExecutionService
             $generalSetting->curriculum_year = $curriculumYear;
             $generalSetting->school_portal_enabled = (bool) ($input['school_portal_enabled'] ?? true);
             $generalSetting->online_enrollment_enabled = (bool) ($input['online_enrollment_enabled'] ?? true);
-            $generalSetting->enable_clearance_check = (bool) ($input['enable_clearance_check'] ?? true);
+            $generalSetting->enable_clearance_check = false;
             $generalSetting->enable_signatures = (bool) ($input['enable_signatures'] ?? false);
             $generalSetting->enable_qr_codes = (bool) ($input['enable_qr_codes'] ?? false);
             $generalSetting->enable_public_transactions = (bool) ($input['enable_public_transactions'] ?? false);

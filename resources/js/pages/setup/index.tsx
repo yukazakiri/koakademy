@@ -1485,13 +1485,6 @@ export default function Setup() {
                                             />
                                         </div>
                                         <div className="flex items-center justify-between py-2">
-                                            <span className="text-[11px]">Clearance Verification</span>
-                                            <Switch
-                                                checked={data.enable_clearance_check}
-                                                onCheckedChange={(v) => setData("enable_clearance_check", v)}
-                                            />
-                                        </div>
-                                        <div className="flex items-center justify-between py-2">
                                             <span className="text-[11px]">QR Code Verification</span>
                                             <Switch checked={data.enable_qr_codes} onCheckedChange={(v) => setData("enable_qr_codes", v)} />
                                         </div>

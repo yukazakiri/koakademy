@@ -254,7 +254,7 @@ export function createColumns(handlers?: ColumnActionHandlers): ColumnDef<Studen
         },
         {
             accessorKey: "previous_sem_clearance",
-            header: "Clearance",
+            header: "Current grade clearance",
             cell: ({ row }) => {
                 const status = row.original.previous_sem_clearance;
                 if (status === "cleared") {

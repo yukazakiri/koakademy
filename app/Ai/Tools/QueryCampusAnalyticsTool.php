@@ -9,7 +9,6 @@ use App\Models\Classes;
 use App\Models\Faculty;
 use App\Models\GeneralSetting;
 use App\Models\Student;
-use App\Models\StudentClearance;
 use App\Models\StudentTuition;
 use App\Services\EnrollmentBillingService;
 use App\Services\GeneralSettingsService;
@@ -104,7 +103,7 @@ final class QueryCampusAnalyticsTool implements Tool
             ->whereIn('school_year', [$period['school_year'], str_replace(' ', '', $period['school_year'])])
             ->where('semester', $period['semester'])
             ->count();
-        $pendingClearances = StudentClearance::query()->where('is_cleared', false)->count();
+        $pendingClearances = \App\Models\GradeReleaseClearance::query()->where('is_cleared', false)->count();
 
         return [
             'academic_period' => $period,
@@ -203,8 +202,8 @@ final class QueryCampusAnalyticsTool implements Tool
      */
     private function clearance(array $period): array
     {
-        $current = StudentClearance::query()
-            ->whereIn('academic_year', [$period['school_year'], str_replace(' ', '', $period['school_year'])])
+        $current = \App\Models\GradeReleaseClearance::query()
+            ->where('school_year', GeneralSettingsService::normalizeSchoolYear($period['school_year']))
             ->where('semester', $period['semester']);
 
         $cleared = (clone $current)->where('is_cleared', true)->count();
@@ -238,7 +237,7 @@ final class QueryCampusAnalyticsTool implements Tool
             'pending_count' => $pending,
             'completion_rate_percent' => $total > 0 ? round(($cleared / $total) * 100, 1) : null,
             'top_pending_reasons' => $reasons,
-            'pending_reason_source' => 'Free-text remarks on uncleared clearance records for this term, split on ; , and newlines.',
+            'pending_reason_source' => 'Free-text remarks on uncleared grade-release records for this term, split on ; , and newlines.',
             'unavailable' => $reasons === []
                 ? ['top_pending_reasons' => 'No remarks are recorded on uncleared clearance records for this term, so no reason can be ranked.']
                 : [],

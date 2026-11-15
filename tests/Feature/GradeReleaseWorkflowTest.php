@@ -311,3 +311,22 @@ it('scopes grade-release clearance counts in QueryCampusAnalyticsTool to the act
     expect($overview['headline_metrics']['pending_clearances'])->toBe(0)
         ->and($clearance['clearances_recorded_this_term'])->toBe(0);
 });
+
+it('marks terminal queue failures on the matching release revision so retry can resend', function (): void {
+    GeneralSetting::query()->first()->update(['more_configs' => ['grade_release' => ['require_clearance' => false], 'notification_channels' => ['enabled_channels' => ['mail', 'database']]]]);
+    $service = app(GradeReleaseService::class);
+    $release = $service->publish($this->student, '2025 - 2026', 2, $this->admin)['release'];
+    app(App\Services\GradeReleaseNotificationService::class)->send($release, $this->student);
+
+    $notification = new StudentGradesPublishedNotification('2025 - 2026', 2, 'mail', $release->id, $release->revision);
+    $notification->failed(new RuntimeException('SMTP connection refused'));
+
+    expect($release->fresh()->notification_status['mail'])->toBe('failed');
+});
+
+it('matches asymmetrically spaced school years accepted by the baseline migration', function (): void {
+    $this->subjectEnrollment->update(['school_year' => '2025- 2026']);
+    GeneralSetting::query()->first()->update(['more_configs' => ['grade_release' => ['require_clearance' => false]]]);
+    $release = app(GradeReleaseService::class)->publish($this->student, '2025 - 2026', 2, $this->admin)['release'];
+    expect($release->snapshot['subjects'])->toHaveKey((string) $this->subjectEnrollment->id);
+});

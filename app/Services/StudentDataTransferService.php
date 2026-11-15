@@ -178,7 +178,7 @@ final class StudentDataTransferService
         $reason = (string) ($options['reason'] ?? 'Reassigned via administrative assistant.');
 
         return DB::transaction(function () use ($source, $target, $actor, $scopeEnrollmentId, $reason): array {
-            Student::withoutSchoolScope()->whereKey($source->id)->lockForUpdate()->firstOrFail();
+            Student::withoutSchoolScope()->withTrashed()->whereKey($source->id)->lockForUpdate()->firstOrFail();
 
             if (\App\Models\GradeRelease::query()->where('student_id', $source->id)->exists()
                 || \App\Models\GradeReleaseClearance::query()->where('student_id', $source->id)->exists()) {

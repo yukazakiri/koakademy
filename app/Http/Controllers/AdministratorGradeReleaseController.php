@@ -22,10 +22,14 @@ final class AdministratorGradeReleaseController extends Controller
     {
         abort_unless($request->user()?->can('updateGrading', GeneralSetting::class), 403);
         $data = $request->validate(['require_clearance' => ['required', 'boolean']]);
-        $settings = GeneralSetting::firstOrCreateGlobal();
-        $config = $settings->more_configs ?? [];
-        data_set($config, 'grade_release.require_clearance', (bool) $data['require_clearance']);
-        $settings->update(['more_configs' => $config]);
+
+        DB::transaction(function () use ($data): void {
+            $settings = GeneralSetting::firstOrCreateGlobal();
+            $locked = GeneralSetting::query()->whereKey($settings->id)->lockForUpdate()->firstOrFail();
+            $config = is_array($locked->more_configs) ? $locked->more_configs : [];
+            data_set($config, 'grade_release.require_clearance', (bool) $data['require_clearance']);
+            $locked->update(['more_configs' => $config]);
+        });
 
         return back()->with('success', 'Grade-release clearance requirement updated.');
     }

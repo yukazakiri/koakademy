@@ -194,6 +194,7 @@ export default function SystemManagementGradingPage({
                                 <Switch
                                     id="grade-release-clearance"
                                     checked={releaseForm.data.require_clearance}
+                                    disabled={releaseForm.processing}
                                     onCheckedChange={(value) => releaseForm.setData("require_clearance", value)}
                                 />
                                 <Label htmlFor="grade-release-clearance">Require grade-release clearance</Label>

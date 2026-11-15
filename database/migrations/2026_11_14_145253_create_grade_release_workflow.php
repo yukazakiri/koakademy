@@ -66,6 +66,7 @@ return new class extends Migration
             foreach ($students as $student) {
                 $periods = [];
                 $subjects = $subjectsByStudent->get($student->id, collect());
+                $classes = $classesByStudent->get($student->id, collect());
                 foreach ($subjects as $subject) {
                     $period = $this->period($subject->school_year, $subject->semester, 'subject enrollment #'.$subject->id);
                     if ($period === null) {
@@ -74,13 +75,17 @@ return new class extends Migration
                     [$year, $semester] = $period;
                     $key = $year.'|'.$semester;
                     $periods[$key] ??= ['year' => $year, 'semester' => $semester, 'subjects' => [], 'classes' => []];
+                    $matchingClass = $subject->class_id ? $classes->firstWhere('class_id', $subject->class_id) : null;
+                    $useClassResult = $subject->grade === null && $subject->grade_symbol === null && $matchingClass !== null;
                     $periods[$key]['subjects'][(string) $subject->id] = [
-                        'grade' => $subject->grade, 'grade_symbol' => $subject->grade_symbol,
-                        'grade_outcome' => $subject->grade_outcome, 'grade_quality_points' => $subject->grade_quality_points,
-                        'remarks' => $subject->remarks, 'is_credited' => (bool) $subject->is_credited,
+                        'grade' => $useClassResult ? $matchingClass->total_average : $subject->grade,
+                        'grade_symbol' => $useClassResult ? $matchingClass->grade_symbol : $subject->grade_symbol,
+                        'grade_outcome' => $useClassResult ? $matchingClass->grade_outcome : $subject->grade_outcome,
+                        'grade_quality_points' => $useClassResult ? $matchingClass->grade_quality_points : $subject->grade_quality_points,
+                        'remarks' => $subject->remarks,
+                        'is_credited' => (bool) $subject->is_credited,
                     ];
                 }
-                $classes = $classesByStudent->get($student->id, collect());
                 foreach ($classes as $class) {
                     $period = $this->period($class->period_year, $class->period_semester, 'class enrollment #'.$class->id);
                     if ($period === null) {

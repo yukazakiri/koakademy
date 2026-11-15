@@ -35,6 +35,15 @@ final class GradeReleaseService
     /** @return list<string> */
     public function yearVariants(string $year): array
     {
+        if (preg_match('/^\s*(\d{4})\s*-\s*(\d{4})\s*$/', $year, $matches) === 1) {
+            return [
+                "{$matches[1]} - {$matches[2]}",
+                "{$matches[1]}-{$matches[2]}",
+                "{$matches[1]}- {$matches[2]}",
+                "{$matches[1]} -{$matches[2]}",
+            ];
+        }
+
         $year = $this->normalizeYear($year);
 
         return array_values(array_unique([$year, str_replace(' ', '', $year)]));

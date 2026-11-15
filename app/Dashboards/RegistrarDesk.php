@@ -123,6 +123,7 @@ final class RegistrarDesk implements Dashboard
                     'title' => 'Grade-release clearances pending',
                     'description' => 'Recorded grade-release clearances not yet cleared for this term.',
                     'count' => \App\Models\GradeReleaseClearance::query()
+                        ->whereIn('student_id', \App\Models\Student::query()->select('id'))
                         ->where('school_year', $context->schoolYear)
                         ->where('semester', $context->semester)
                         ->where('is_cleared', false)

@@ -29,7 +29,7 @@ final class GradeReleaseNotificationService
                 $status['database'] = 'queued';
             } elseif ($user) {
                 try {
-                    $user->notify(new StudentGradesPublishedNotification($release->school_year, $release->semester, 'database'));
+                    $user->notify(new StudentGradesPublishedNotification($release->school_year, $release->semester, 'database', $release->id, $release->revision));
                     $status['database'] = 'queued';
                 } catch (Throwable $exception) {
                     report($exception);
@@ -47,7 +47,7 @@ final class GradeReleaseNotificationService
                 $status['mail'] = 'queued';
             } elseif (filter_var($student->email, FILTER_VALIDATE_EMAIL)) {
                 try {
-                    Notification::route('mail', $student->email)->notify(new StudentGradesPublishedNotification($release->school_year, $release->semester, 'mail'));
+                    Notification::route('mail', $student->email)->notify(new StudentGradesPublishedNotification($release->school_year, $release->semester, 'mail', $release->id, $release->revision));
                     $status['mail'] = 'queued';
                 } catch (Throwable $exception) {
                     report($exception);

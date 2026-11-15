@@ -240,7 +240,7 @@ export function GradeReleaseSection({ student }: { student: StudentDetail }) {
                             will be sent through supported configured channels.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
-                    {publishing?.needs_correction_reason && (
+                    {(publishing?.needs_correction_reason || Boolean(publishForm.errors.correction_reason)) && (
                         <div className="flex flex-col gap-2">
                             <Label htmlFor="grade-correction-reason">Reason for correction</Label>
                             <Textarea

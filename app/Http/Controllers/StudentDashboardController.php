@@ -6,7 +6,6 @@ namespace App\Http\Controllers;
 
 use App\Features\Toggles\StudentInformationUpdates;
 use App\Models\GeneralSetting;
-use App\Models\GradeReleaseClearance;
 use App\Models\Student;
 use App\Models\User;
 use App\Services\DigitalIdCardService;
@@ -101,11 +100,9 @@ final class StudentDashboardController extends Controller
             $studentData['tuition_balance'] = $currentTuition?->total_balance ?? 0;
 
             // Get clearance status
-            $clearance = GradeReleaseClearance::query()
-                ->where('student_id', $student->id)
-                ->where('school_year', $gradeReleases->normalizeYear($settings?->getSchoolYearString() ?? ''))
-                ->where('semester', $settings?->semester)->first();
-            $studentData['clearance_status'] = $clearance?->is_cleared;
+            $studentData['clearance_status'] = $settings !== null
+                ? $gradeReleases->isClearedForPeriod($student, $settings->getSchoolYearString(), (int) $settings->semester)
+                : null;
         }
 
         $studentData['announcements'] = app(AnnouncementDataService::class)->getDashboardItems();

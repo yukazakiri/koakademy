@@ -8,6 +8,7 @@ use App\Enums\StudentStatus;
 use App\Models\Classes;
 use App\Models\Faculty;
 use App\Models\GeneralSetting;
+use App\Models\GradeReleaseClearance;
 use App\Models\Student;
 use App\Models\StudentTuition;
 use App\Services\EnrollmentBillingService;
@@ -103,7 +104,10 @@ final class QueryCampusAnalyticsTool implements Tool
             ->whereIn('school_year', [$period['school_year'], str_replace(' ', '', $period['school_year'])])
             ->where('semester', $period['semester'])
             ->count();
-        $pendingClearances = \App\Models\GradeReleaseClearance::query()->where('is_cleared', false)->count();
+        $pendingClearances = GradeReleaseClearance::query()
+            ->where('is_cleared', false)
+            ->whereIn('student_id', Student::query()->select('id'))
+            ->count();
 
         return [
             'academic_period' => $period,
@@ -202,9 +206,10 @@ final class QueryCampusAnalyticsTool implements Tool
      */
     private function clearance(array $period): array
     {
-        $current = \App\Models\GradeReleaseClearance::query()
+        $current = GradeReleaseClearance::query()
             ->where('school_year', GeneralSettingsService::normalizeSchoolYear($period['school_year']))
-            ->where('semester', $period['semester']);
+            ->where('semester', $period['semester'])
+            ->whereIn('student_id', Student::query()->select('id'));
 
         $cleared = (clone $current)->where('is_cleared', true)->count();
         $pending = (clone $current)->where('is_cleared', false)->count();

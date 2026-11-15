@@ -262,3 +262,52 @@ it('preserves legacy records without letting them block enrollment or clear fina
 it('does not let students publish their own grades', function (): void {
     $this->actingAs($this->studentUser)->post(portalUrlForAdministrators("/administrators/students/{$this->student->id}/grade-releases"), ['school_year' => '2025 - 2026', 'semester' => 2])->assertForbidden();
 });
+
+it('treats snapshots with reordered JSON keys as unchanged', function (): void {
+    GeneralSetting::query()->first()->update(['more_configs' => ['grade_release' => ['require_clearance' => false]]]);
+    $service = app(GradeReleaseService::class);
+    $release = $service->publish($this->student, '2025 - 2026', 2, $this->admin)['release'];
+
+    $reordered = [
+        'classes' => $release->snapshot['classes'],
+        'subjects' => collect($release->snapshot['subjects'])->map(fn (array $row): array => array_reverse($row, true))->all(),
+    ];
+    $release->update(['snapshot' => $reordered]);
+
+    expect($service->publish($this->student, '2025 - 2026', 2, $this->admin)['changed'])->toBeFalse();
+    $period = collect($service->periods($this->student))->firstWhere('school_year', '2025 - 2026');
+    expect($period['has_changes'])->toBeFalse();
+});
+
+it('resolves symbolic grades using stored outcome in student checklist', function (): void {
+    config(['inertia.testing.ensure_pages_exist' => false]);
+    $this->withoutMiddleware();
+    GeneralSetting::query()->first()->update(['more_configs' => ['grade_release' => ['require_clearance' => false]]]);
+    $this->subjectEnrollment->update(['grade' => null, 'grade_symbol' => 'A', 'grade_outcome' => 'pass']);
+    app(GradeReleaseService::class)->publish($this->student, '2025 - 2026', 2, $this->admin);
+
+    $this->actingAs($this->studentUser)->get('/student/classes')->assertOk()->assertInertia(fn (AssertableInertia $page) => $page
+        ->where('curriculum.'.$this->subject->academic_year.'.'.$this->subject->semester.'.0.grade', 'A')
+        ->where('curriculum.'.$this->subject->academic_year.'.'.$this->subject->semester.'.0.status', 'completed'));
+
+    $this->subjectEnrollment->update(['grade' => null, 'grade_symbol' => 'F', 'grade_outcome' => 'fail']);
+    app(GradeReleaseService::class)->publish($this->student, '2025 - 2026', 2, $this->admin, 'Updated to fail');
+
+    $this->actingAs($this->studentUser)->get('/student/classes')->assertOk()->assertInertia(fn (AssertableInertia $page) => $page
+        ->where('curriculum.'.$this->subject->academic_year.'.'.$this->subject->semester.'.0.status', 'failed'));
+});
+
+it('scopes grade-release clearance counts in QueryCampusAnalyticsTool to the active school', function (): void {
+    $otherSchool = School::factory()->create();
+    $otherStudent = Student::factory()->create(['school_id' => $otherSchool->id, 'institution_id' => $otherSchool->id]);
+    app(GradeReleaseService::class)->updateClearance($otherStudent, '2025 - 2026', 2, false, 'Other school hold', $this->admin);
+
+    app(App\Services\TenantContext::class)->setCurrentSchoolId((int) $this->student->school_id);
+    $this->actingAs($this->admin);
+
+    $overview = json_decode((string) (new App\Ai\Tools\QueryCampusAnalyticsTool)->handle(new Laravel\Ai\Tools\Request(['category' => 'overview'])), true);
+    $clearance = json_decode((string) (new App\Ai\Tools\QueryCampusAnalyticsTool)->handle(new Laravel\Ai\Tools\Request(['category' => 'clearance'])), true);
+
+    expect($overview['headline_metrics']['pending_clearances'])->toBe(0)
+        ->and($clearance['clearances_recorded_this_term'])->toBe(0);
+});

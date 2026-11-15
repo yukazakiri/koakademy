@@ -114,7 +114,7 @@ final class StudentClassController extends Controller
             'final_status' => $published && ($published['total_average'] !== null || $published['grade_symbol'] !== null)
                 ? 'released'
                 : ($class->school_year && $gradeReleases->requiresClearance() && $gradeReleases->clearanceApplies((string) $class->school_year, (int) $class->semester)
-                    && ! \App\Models\GradeReleaseClearance::query()->where('student_id', $student->id)->where('school_year', $gradeReleases->normalizeYear((string) $class->school_year))->where('semester', $class->semester)->where('is_cleared', true)->exists()
+                    && $gradeReleases->isClearedForPeriod($student, (string) $class->school_year, (int) $class->semester) !== true
                         ? 'clearance_required' : 'not_released'),
         ];
 

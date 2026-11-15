@@ -189,15 +189,23 @@ export default function SystemManagementGradingPage({
                             releaseForm.put(updateGradeReleaseSettings.url(), { preserveScroll: true });
                         }}
                     >
-                        <div className="flex items-center gap-3">
-                            <Switch
-                                id="grade-release-clearance"
-                                checked={releaseForm.data.require_clearance}
-                                onCheckedChange={(value) => releaseForm.setData("require_clearance", value)}
-                            />
-                            <Label htmlFor="grade-release-clearance">Require grade-release clearance</Label>
+                        <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-3">
+                                <Switch
+                                    id="grade-release-clearance"
+                                    checked={releaseForm.data.require_clearance}
+                                    onCheckedChange={(value) => releaseForm.setData("require_clearance", value)}
+                                />
+                                <Label htmlFor="grade-release-clearance">Require grade-release clearance</Label>
+                            </div>
+                            {releaseForm.errors.require_clearance && (
+                                <p className="text-destructive text-xs" role="alert">
+                                    {releaseForm.errors.require_clearance}
+                                </p>
+                            )}
                         </div>
-                        <Button type="submit" disabled={releaseForm.processing || !releaseForm.isDirty}>
+                        <Button type="submit" disabled={releaseForm.processing || !releaseForm.isDirty} className="gap-2">
+                            {releaseForm.processing && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
                             Save release setting
                         </Button>
                     </form>

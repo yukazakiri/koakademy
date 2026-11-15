@@ -94,16 +94,21 @@ final class StudentClassesController extends Controller
 
             // Determine status
             $published = $gradeReleases->publishedSubject($enrollment, $publishedGrades);
-            $grade = $published['grade_symbol'] ?? $published['grade'] ?? null;
+            $numericGrade = $published['grade'] ?? null;
+            $grade = $published['grade_symbol'] ?? $numericGrade;
             $outcome = $published['grade_outcome'] ?? null;
             $status = 'ongoing'; // Default if enrolled in current sem
 
             if (($published['is_credited'] ?? false) || $outcome === 'pass') {
                 $status = 'completed';
-            } elseif (in_array($outcome, ['withdrawn', 'dropped'], true) || (is_numeric($grade) && (float) $grade === 0.0)) {
+            } elseif (in_array($outcome, ['withdrawn', 'dropped'], true) || (is_numeric($numericGrade) && (float) $numericGrade === 0.0)) {
                 $status = 'dropped';
-            } elseif ($grade !== null) {
-                if ($this->gradingSystem->isPassingGrade($grade)) {
+            } elseif ($outcome === 'fail') {
+                $status = 'failed';
+            } elseif ($outcome === 'incomplete') {
+                $status = 'ongoing';
+            } elseif (is_numeric($numericGrade)) {
+                if ($this->gradingSystem->isPassingGrade($numericGrade)) {
                     $status = 'completed';
                 } else {
                     $status = 'failed';

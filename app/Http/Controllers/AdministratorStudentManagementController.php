@@ -2340,16 +2340,33 @@ final class AdministratorStudentManagementController extends Controller
         $actor = $request->user();
         $settings = app(GeneralSettingsService::class)->getGlobalSettingsModel();
         abort_unless($actor instanceof User && $settings, 403);
-        $students = Student::query()->whereIn('id', $validated['student_ids'])->get();
-        foreach ($students as $student) {
-            $studentSchoolId = $student->school_id ?: $student->institution_id;
-            abort_if($studentSchoolId && ! app(\App\Services\TenantContext::class)->canAccessOrganization((int) $studentSchoolId), 404);
-        }
-        foreach ($students as $student) {
-            app(GradeReleaseService::class)->updateClearance($student, $settings->getSchoolYearString(), (int) $settings->semester, (bool) $validated['is_cleared'], $validated['remarks'] ?? null, $actor);
-        }
 
-        return back()->with('success', "Updated grade-release clearance for {$students->count()} student(s).");
+        $gradeReleaseService = app(GradeReleaseService::class);
+        $tenantContext = app(\App\Services\TenantContext::class);
+        $schoolYear = $settings->getSchoolYearString();
+        $semester = (int) $settings->semester;
+        $updatedCount = 0;
+
+        DB::transaction(function () use ($validated, $actor, $gradeReleaseService, $tenantContext, $schoolYear, $semester, &$updatedCount): void {
+            foreach (BulkChunk::of($validated['student_ids']) as $chunk) {
+                $students = Student::query()->whereIn('id', $chunk)->get();
+                foreach ($students as $student) {
+                    $studentSchoolId = $student->school_id ?: $student->institution_id;
+                    abort_if($studentSchoolId && ! $tenantContext->canAccessOrganization((int) $studentSchoolId), 404);
+                    $gradeReleaseService->updateClearance(
+                        $student,
+                        $schoolYear,
+                        $semester,
+                        (bool) $validated['is_cleared'],
+                        $validated['remarks'] ?? null,
+                        $actor,
+                    );
+                    $updatedCount++;
+                }
+            }
+        });
+
+        return back()->with('success', "Updated grade-release clearance for {$updatedCount} student(s).");
     }
 
     public function bulkSendEmail(BulkEmailStudentsRequest $request): RedirectResponse

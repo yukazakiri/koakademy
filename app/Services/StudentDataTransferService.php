@@ -173,15 +173,17 @@ final class StudentDataTransferService
     public function transfer(Student $source, Student $target, User $actor, array $options = []): array
     {
         $this->validateStudents($source, $target);
-        if (\App\Models\GradeRelease::query()->where('student_id', $source->id)->exists()
-            || \App\Models\GradeReleaseClearance::query()->where('student_id', $source->id)->exists()) {
-            throw new InvalidArgumentException('Cannot transfer a student with grade-release or grade-clearance records until those records are reconciled.');
-        }
 
         $scopeEnrollmentId = isset($options['enrollment_id']) ? (int) $options['enrollment_id'] : null;
         $reason = (string) ($options['reason'] ?? 'Reassigned via administrative assistant.');
 
         return DB::transaction(function () use ($source, $target, $actor, $scopeEnrollmentId, $reason): array {
+            Student::withoutSchoolScope()->whereKey($source->id)->lockForUpdate()->firstOrFail();
+
+            if (\App\Models\GradeRelease::query()->where('student_id', $source->id)->exists()
+                || \App\Models\GradeReleaseClearance::query()->where('student_id', $source->id)->exists()) {
+                throw new InvalidArgumentException('Cannot transfer a student with grade-release or grade-clearance records until those records are reconciled.');
+            }
             $enrollmentsQuery = StudentEnrollment::withTrashed()
                 ->where(function ($q) use ($source): void {
                     $q->where('student_id', (string) $source->id)

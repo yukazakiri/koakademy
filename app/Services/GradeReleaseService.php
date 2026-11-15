@@ -126,7 +126,7 @@ final class GradeReleaseService
             $snapshot = $this->snapshot($student, $year, $semester, true);
             $existing = GradeRelease::query()->where('student_id', $student->id)->where('school_year', $year)->where('semester', $semester)->lockForUpdate()->first();
 
-            if ($existing && $existing->published_by !== null && $existing->snapshot === $snapshot) {
+            if ($existing && $existing->published_by !== null && $this->canonical($existing->snapshot) === $this->canonical($snapshot)) {
                 return ['release' => $existing, 'changed' => false];
             }
 
@@ -253,7 +253,7 @@ final class GradeReleaseService
                 'published_at' => $release?->published_at?->toIso8601String(),
                 'revision' => $release?->revision,
                 'needs_correction_reason' => $release !== null && $release->published_by !== null,
-                'has_changes' => $release ? $release->published_by === null || $release->snapshot !== $snapshot : false,
+                'has_changes' => $release ? $release->published_by === null || $this->canonical($release->snapshot) !== $this->canonical($snapshot) : false,
                 'notification_status' => $release?->notification_status,
                 'events' => $events->map(fn (GradeReleaseEvent $event): array => [
                     'id' => $event->id, 'event' => $event->event, 'actor' => $actors->get($event->actor_id),
@@ -263,6 +263,22 @@ final class GradeReleaseService
                 ])->all(),
             ];
         })->values()->all();
+    }
+
+    public function isClearedForPeriod(Student $student, string $year, int $semester): ?bool
+    {
+        $normalized = $this->normalizeYear($year);
+        if (preg_match('/^\d{4} - \d{4}$/', $normalized) !== 1 || $semester < 1) {
+            return null;
+        }
+
+        $clearance = GradeReleaseClearance::query()
+            ->where('student_id', $student->id)
+            ->where('school_year', $normalized)
+            ->where('semester', $semester)
+            ->first();
+
+        return $clearance?->is_cleared;
     }
 
     public function key(?string $year, int|string|null $semester): string
@@ -300,5 +316,22 @@ final class GradeReleaseService
         }
 
         return $published;
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $value
+     * @return array<array-key, mixed>
+     */
+    private function canonical(array $value): array
+    {
+        ksort($value);
+
+        foreach ($value as $key => $item) {
+            if (is_array($item)) {
+                $value[$key] = $this->canonical($item);
+            }
+        }
+
+        return $value;
     }
 }

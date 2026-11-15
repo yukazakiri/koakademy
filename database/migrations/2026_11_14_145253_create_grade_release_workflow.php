@@ -75,7 +75,10 @@ return new class extends Migration
                     [$year, $semester] = $period;
                     $key = $year.'|'.$semester;
                     $periods[$key] ??= ['year' => $year, 'semester' => $semester, 'subjects' => [], 'classes' => []];
-                    $matchingClass = $subject->class_id ? $classes->firstWhere('class_id', $subject->class_id) : null;
+                    $matchingClass = $subject->class_id
+                        ? $classes->first(fn ($class): bool => (int) $class->class_id === (int) $subject->class_id
+                            && $this->sameAcademicPeriod($class->period_year, $class->period_semester, $key))
+                        : null;
                     $useClassResult = $subject->grade === null && $subject->grade_symbol === null && $matchingClass !== null;
                     $periods[$key]['subjects'][(string) $subject->id] = [
                         'grade' => $useClassResult ? $matchingClass->total_average : $subject->grade,
@@ -135,5 +138,13 @@ return new class extends Migration
         }
 
         return [$matches[1].' - '.$matches[2], (int) $semester];
+    }
+
+    /** A class result only applies to a subject from the same academic period. */
+    private function sameAcademicPeriod(?string $year, mixed $semester, string $key): bool
+    {
+        $period = $this->period($year, $semester, 'class enrollment period');
+
+        return $period !== null && $key === $period[0].'|'.$period[1];
     }
 };

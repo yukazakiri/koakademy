@@ -330,3 +330,19 @@ it('matches asymmetrically spaced school years accepted by the baseline migratio
     $release = app(GradeReleaseService::class)->publish($this->student, '2025 - 2026', 2, $this->admin)['release'];
     expect($release->snapshot['subjects'])->toHaveKey((string) $this->subjectEnrollment->id);
 });
+
+it('does not copy a class grade from another academic period into the baseline', function (): void {
+    $laterClass = Classes::factory()->create(['school_id' => $this->student->school_id, 'school_year' => '2026 - 2027', 'semester' => 1]);
+    $classEnrollment = ClassEnrollment::factory()->create(['school_id' => $this->student->school_id, 'student_id' => $this->student->id, 'class_id' => $laterClass->id, 'total_average' => 95, 'grade_symbol' => null]);
+    $this->subjectEnrollment->update(['grade' => null, 'grade_symbol' => null, 'class_id' => $laterClass->id, 'school_year' => '2025 - 2026', 'semester' => 2]);
+
+    $migration = require database_path('migrations/2026_11_14_145253_create_grade_release_workflow.php');
+    $migration->down();
+    $migration->up();
+
+    $release = GradeRelease::query()->where('student_id', $this->student->id)->where('school_year', '2025 - 2026')->where('semester', 2)->firstOrFail();
+    $laterRelease = GradeRelease::query()->where('student_id', $this->student->id)->where('school_year', '2026 - 2027')->where('semester', 1)->firstOrFail();
+    expect($release->snapshot['subjects'][(string) $this->subjectEnrollment->id]['grade'])->toBeNull()
+        ->and($release->snapshot['classes'])->not->toHaveKey((string) $classEnrollment->id)
+        ->and((float) $laterRelease->snapshot['classes'][(string) $classEnrollment->id]['total_average'])->toBe(95.0);
+});

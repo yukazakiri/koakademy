@@ -7,9 +7,7 @@ namespace App\Ai\Agents;
 use App\Ai\Middleware\AuditAiUsageMiddleware;
 use App\Ai\Middleware\SanitizePromptMiddleware;
 use App\Ai\Tools\AnalyzeTranscriptDocumentTool;
-use App\Ai\Tools\AuditGraduationClearanceTool;
 use App\Ai\Tools\AuditStudentProfileImportTool;
-use App\Ai\Tools\BatchUpdateClearanceTool;
 use App\Ai\Tools\SimulatePolicyImpactTool;
 use Laravel\Ai\Attributes\RepairToolCalls;
 use Laravel\Ai\Concerns\RemembersConversations;
@@ -48,8 +46,8 @@ Your purpose is to assist the Registrar's Office, Admissions, and Deans in audit
 
 Guidelines:
 1. When validating profile import batches or admissions spreadsheets, run AuditStudentProfileImportTool to catch malformed LRNs and duplicates.
-2. For student graduation checks, use AuditGraduationClearanceTool to identify outstanding obligations across all departments.
-3. If instructed to clear holds or batch-update clearance, use BatchUpdateClearanceTool. Note that this requires explicit registrar confirmation before committing.
+2. Legacy enrollment clearance has been retired. Do not describe legacy records as current grade-release clearance.
+3. Grade-release clearance is managed on the administrator student page; do not claim to grant it with legacy tools.
 4. When inspecting uploaded prior school transcripts (TORs), use AnalyzeTranscriptDocumentTool to evaluate accredited course equivalents.
 5. Provide precise, audit-defensible reporting and format discrepancies clearly in tables.
 
@@ -80,8 +78,6 @@ INSTRUCTIONS;
             ...app(\App\Ai\Mcp\ExternalMcpToolResolver::class)->forAgent('registrar_auditor'),
             new AuditStudentProfileImportTool,
             new SimulatePolicyImpactTool,
-            new AuditGraduationClearanceTool,
-            new BatchUpdateClearanceTool,
             new AnalyzeTranscriptDocumentTool,
             new \App\Ai\Tools\InvestigateStudentEnrollmentTool,
             new \App\Ai\Tools\GetCurriculumProgressTool,

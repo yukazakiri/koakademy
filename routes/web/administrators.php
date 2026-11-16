@@ -17,6 +17,7 @@ use App\Http\Controllers\AdministratorFacultyManagementController;
 use App\Http\Controllers\AdministratorFinanceController;
 use App\Http\Controllers\AdministratorGlobalSearchController;
 use App\Http\Controllers\AdministratorGlobalSearchResultsController;
+use App\Http\Controllers\AdministratorGradeReleaseController;
 use App\Http\Controllers\AdministratorIndustryCodeController;
 use App\Http\Controllers\AdministratorModuleMarketplaceController;
 use App\Http\Controllers\AdministratorRegistrarDocumentController;
@@ -281,6 +282,9 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/students/field-values', [AdministratorStudentManagementController::class, 'fieldValues'])->name('students.field-values');
         Route::get('/students/education-school-options', [AdministratorStudentManagementController::class, 'educationSchoolOptions'])->name('students.education-school-options');
         Route::patch('/students/{student}/quick-update', [AdministratorStudentManagementController::class, 'quickUpdate'])->name('students.quick-update')->withTrashed();
+        Route::post('/students/{student}/grade-release-clearance', [AdministratorGradeReleaseController::class, 'clearance'])->name('students.grade-release-clearance');
+        Route::post('/students/{student}/grade-releases', [AdministratorGradeReleaseController::class, 'publish'])->name('students.grade-releases.publish');
+        Route::post('/students/{student}/grade-releases/retry-notifications', [AdministratorGradeReleaseController::class, 'retryNotifications'])->middleware('throttle:12,1')->name('students.grade-releases.retry-notifications');
         Route::get('/students/{student}', [AdministratorStudentManagementController::class, 'show'])->name('students.show')->withTrashed();
         Route::get('/students/{student}/current-enrollment', [AdministratorStudentManagementController::class, 'currentEnrollment'])->name('students.current-enrollment')->withTrashed();
         Route::get('/students/{student}/tuition/soa', [AdministratorStudentManagementController::class, 'printSoa'])->name('students.tuition.soa');
@@ -534,6 +538,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::put('/system-management/tuition-payment-schedule', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateTuitionPaymentSchedule'])->name('system-management.tuition_payment_schedule.update');
         Route::get('/system-management/grading', [App\Http\Controllers\AdministratorSystemManagementController::class, 'grading'])->name('system-management.grading.index');
         Route::put('/system-management/grading', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateGrading'])->name('system-management.grading.update');
+        Route::put('/system-management/grade-release', [AdministratorGradeReleaseController::class, 'settings'])->name('system-management.grade-release.update');
         Route::put('/system-management/identifiers', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateIdentifiers'])->name('system-management.identifiers.update');
         Route::post('/system-management/faculty-fields', [AdministratorFacultyCustomFieldController::class, 'store'])->name('system-management.faculty-fields.store');
         Route::put('/system-management/faculty-fields/{facultyCustomFieldDefinition}', [AdministratorFacultyCustomFieldController::class, 'update'])->name('system-management.faculty-fields.update');

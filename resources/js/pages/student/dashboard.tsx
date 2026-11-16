@@ -85,7 +85,8 @@ interface StudentDashboardProps {
         announcements: AnnouncementInfo[];
         total_units: number;
         tuition_balance: number;
-        clearance_status: boolean;
+        clearance_status: boolean | null;
+        grade_clearance_required: boolean;
     };
     id_card: {
         card_data: IdCardData;
@@ -819,9 +820,9 @@ function MobileStudentDashboard({
                     />
                     <MobileMetricCard
                         icon={CheckCircle2}
-                        label="Clearance"
-                        value={studentData.clearance_status ? "Cleared" : "Pending"}
-                        detail={studentData.clearance_status ? "No requirement flagged" : "Requirements needed"}
+                        label="Grade clearance"
+                        value={studentData.clearance_status === null ? "No record" : studentData.clearance_status ? "Cleared" : "Pending"}
+                        detail={studentData.grade_clearance_required ? "Required for finals" : "Not required for finals"}
                         tone={studentData.clearance_status ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"}
                     />
                     <MobileMetricCard
@@ -1171,9 +1172,9 @@ export default function StudentDashboard({ user, is_new_user, student_data, id_c
                     />
                     <StatTile
                         icon={CheckCircle2}
-                        label="Clearance"
-                        value={student_data.clearance_status ? "Cleared" : "Pending"}
-                        detail={student_data.clearance_status ? "No requirement flagged" : "Requirements needed"}
+                        label="Grade clearance"
+                        value={student_data.clearance_status === null ? "No record" : student_data.clearance_status ? "Cleared" : "Pending"}
+                        detail={student_data.grade_clearance_required ? "Required for finals" : "Not required for finals"}
                         tone={student_data.clearance_status ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"}
                     />
                     <StatTile

@@ -13,18 +13,16 @@ import {
     BookOpen,
     Calendar as CalendarIcon,
     CheckCircle,
-    Clock,
     ExternalLink,
     FileText,
     GraduationCap,
     Printer,
     ShieldCheck,
-    User as UserIcon,
-    XCircle,
 } from "lucide-react";
 import { Cell, Legend, Pie, PieChart, Tooltip as RechartsTooltip, ResponsiveContainer } from "recharts";
 import { toast } from "sonner";
 import type { Branding, StudentDetail } from "../types";
+import { GradeReleaseSection } from "./grade-release-section";
 import { StudentSignaturePad } from "./student-signature-pad";
 import { TextEntry } from "./text-entry";
 
@@ -36,9 +34,11 @@ interface StudentTabsProps {
         statuses?: { value: string; label: string }[];
     };
     onAdjustTuition?: () => void;
+    selectedTab: string;
+    onTabChange: (tab: string) => void;
 }
 
-export function StudentTabs({ student, options, onAdjustTuition }: StudentTabsProps) {
+export function StudentTabs({ student, options, onAdjustTuition, selectedTab, onTabChange }: StudentTabsProps) {
     const { props } = usePage<{ branding?: Branding }>();
     const flags = useFeatureFlags();
     const currency = props.branding?.currency || "PHP";
@@ -50,7 +50,7 @@ export function StudentTabs({ student, options, onAdjustTuition }: StudentTabsPr
     });
 
     return (
-        <Tabs defaultValue="academic" className="w-full">
+        <Tabs value={selectedTab} onValueChange={onTabChange} className="w-full">
             <TabsList className="grid h-auto w-full grid-cols-2 lg:grid-cols-7">
                 <TabsTrigger value="academic">Academic</TabsTrigger>
                 <TabsTrigger value="parents">Parents</TabsTrigger>
@@ -137,12 +137,12 @@ export function StudentTabs({ student, options, onAdjustTuition }: StudentTabsPr
                                                     <div>
                                                         <Link
                                                             href={
-                                                                student.current_enrollment_url
-                                                                || (student.current_enrollment_id
+                                                                student.current_enrollment_url ||
+                                                                (student.current_enrollment_id
                                                                     ? `/administrators/enrollments/${student.current_enrollment_id}`
                                                                     : `/administrators/students/${student.id}/current-enrollment`)
                                                             }
-                                                            className="text-primary hover:underline inline-flex items-center gap-1 text-xs font-medium"
+                                                            className="text-primary inline-flex items-center gap-1 text-xs font-medium hover:underline"
                                                         >
                                                             View Enrollment Record
                                                             <ExternalLink className="h-3 w-3" />
@@ -569,73 +569,7 @@ export function StudentTabs({ student, options, onAdjustTuition }: StudentTabsPr
                     )}
                 </TabsContent>
                 <TabsContent value="clearance">
-                    <div className="space-y-6">
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Current Semester Clearance</CardTitle>
-                            </CardHeader>
-                            <CardContent className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                                <div className="flex flex-col gap-1">
-                                    <dt className="text-muted-foreground text-xs font-medium tracking-wider uppercase">Status</dt>
-                                    <dd className="mt-1">
-                                        {student.current_clearance?.is_cleared ? (
-                                            <Badge className="bg-green-500 hover:bg-green-600">
-                                                <CheckCircle className="mr-1 h-3 w-3" /> Cleared
-                                            </Badge>
-                                        ) : (
-                                            <Badge variant="destructive">
-                                                <XCircle className="mr-1 h-3 w-3" /> Not Cleared
-                                            </Badge>
-                                        )}
-                                    </dd>
-                                </div>
-                                {student.current_clearance?.is_cleared && (
-                                    <>
-                                        <TextEntry
-                                            label="Cleared By"
-                                            value={student.current_clearance.cleared_by}
-                                            icon={<UserIcon className="h-4 w-4" />}
-                                        />
-                                        <TextEntry
-                                            label="Cleared At"
-                                            value={new Date(student.current_clearance.cleared_at).toLocaleString()}
-                                            icon={<Clock className="h-4 w-4" />}
-                                        />
-                                    </>
-                                )}
-                                {student.current_clearance?.remarks && (
-                                    <div className="md:col-span-2">
-                                        <TextEntry label="Remarks" value={student.current_clearance.remarks} />
-                                    </div>
-                                )}
-                            </CardContent>
-                        </Card>
-
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Previous Semester Clearance</CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                                    <div className="flex flex-col gap-1">
-                                        <dt className="text-muted-foreground text-xs font-medium tracking-wider uppercase">Status</dt>
-                                        <dd className="mt-1">
-                                            {student.previous_clearance_validation.allowed ? (
-                                                <Badge className="bg-green-500 hover:bg-green-600">
-                                                    <CheckCircle className="mr-1 h-3 w-3" /> Cleared
-                                                </Badge>
-                                            ) : (
-                                                <Badge variant="destructive">
-                                                    <XCircle className="mr-1 h-3 w-3" /> Not Cleared
-                                                </Badge>
-                                            )}
-                                        </dd>
-                                    </div>
-                                    <TextEntry label="Enrollment Eligibility" value={student.previous_clearance_validation.message} />
-                                </div>
-                            </CardContent>
-                        </Card>
-                    </div>
+                    <GradeReleaseSection student={student} />
                 </TabsContent>
             </div>
         </Tabs>

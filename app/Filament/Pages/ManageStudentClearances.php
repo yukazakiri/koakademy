@@ -49,6 +49,16 @@ final class ManageStudentClearances extends Page implements HasTable
     #[Override]
     protected static ?string $navigationLabel = 'Clearances';
 
+    public static function canAccess(): bool
+    {
+        return false;
+    }
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return false;
+    }
+
     public function table(Table $table): Table
     {
         $settingsService = app(GeneralSettingsService::class);

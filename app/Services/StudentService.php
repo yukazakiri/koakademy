@@ -7,7 +7,6 @@ namespace App\Services;
 use App\Enums\StudentStatus;
 use App\Enums\StudentType;
 use App\Models\Student;
-use App\Models\StudentClearance;
 use App\Models\User; // Import User model
 use Carbon\Carbon;
 use Exception;
@@ -76,9 +75,6 @@ final class StudentService
                 // 'student_education_id' => $educationInfo->id ?? null,
                 // 'student_personal_id' => $personalInfo->id ?? null,
             ]);
-
-            // Create a clearance record for the new student
-            StudentClearance::createForCurrentSemester($student);
 
             DB::commit();
 

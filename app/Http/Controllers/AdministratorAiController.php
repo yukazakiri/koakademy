@@ -12,8 +12,8 @@ use App\Ai\Mcp\ExternalMcpTool;
 use App\Ai\Mcp\ResilientMcpServerTool;
 use App\Models\AiChatRun;
 use App\Models\GeneralSetting;
+use App\Models\GradeReleaseClearance;
 use App\Models\Student;
-use App\Models\StudentClearance;
 use App\Models\User;
 use App\Services\Ai\AiAgentAccess;
 use App\Services\Ai\AiAttachmentProcessor;
@@ -644,7 +644,10 @@ final class AdministratorAiController extends Controller
 
         $totalStudents = Student::query()->count();
         $enrolledStudents = Student::query()->where('status', 'enrolled')->count();
-        $pendingClearances = StudentClearance::query()->where('is_cleared', false)->count();
+        $pendingClearances = GradeReleaseClearance::query()
+            ->where('is_cleared', false)
+            ->whereIn('student_id', Student::query()->select('id'))
+            ->count();
 
         // Retrieve model options from configured providers ONLY
         $aiSettings = app(AiSettingsService::class)->get();
@@ -821,7 +824,7 @@ final class AdministratorAiController extends Controller
                 ['label' => 'Total Students', 'value' => $totalStudents, 'change' => '+6.2%'],
                 ['label' => 'Enrolled', 'value' => $enrolledStudents ?: $totalStudents, 'change' => '+4.8%'],
                 ['label' => 'Retention Rate', 'value' => '94.8%', 'change' => '+1.2%'],
-                ['label' => 'Pending Clearances', 'value' => $pendingClearances, 'change' => '-14%'],
+                ['label' => 'Recorded Uncleared Clearances', 'value' => $pendingClearances, 'change' => '-14%'],
             ],
             'quick_prompts' => [
                 'Analyze enrollment demographics and plot a bar chart',

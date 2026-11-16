@@ -1,3 +1,4 @@
+import { settings as updateGradeReleaseSettings } from "@/actions/App/Http/Controllers/AdministratorGradeReleaseController";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -58,6 +59,7 @@ function createComponent(index: number): GradingComponentPayload {
 export default function SystemManagementGradingPage({
     user,
     grading_config,
+    grade_release_clearance_required,
     courses_with_subjects,
     active_school,
     access,
@@ -65,6 +67,7 @@ export default function SystemManagementGradingPage({
     const courses: CourseWithSubjects[] = courses_with_subjects ?? [];
     const [keywordDraft, setKeywordDraft] = useState("");
     const [courseSearch, setCourseSearch] = useState("");
+    const releaseForm = useForm({ require_clearance: grade_release_clearance_required });
 
     const gradingForm = useForm<GradingFormData>({
         name: grading_config.name,
@@ -170,6 +173,45 @@ export default function SystemManagementGradingPage({
                     <AlertDescription>Select a school in System Management before publishing a school-specific grading policy.</AlertDescription>
                 </Alert>
             )}
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>Final grade release</CardTitle>
+                    <CardDescription>
+                        This installation-wide setting applies to current and future semester finals. Past semesters do not require clearance.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <form
+                        className="flex flex-wrap items-center justify-between gap-4"
+                        onSubmit={(event) => {
+                            event.preventDefault();
+                            releaseForm.put(updateGradeReleaseSettings.url(), { preserveScroll: true });
+                        }}
+                    >
+                        <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-3">
+                                <Switch
+                                    id="grade-release-clearance"
+                                    checked={releaseForm.data.require_clearance}
+                                    disabled={releaseForm.processing}
+                                    onCheckedChange={(value) => releaseForm.setData("require_clearance", value)}
+                                />
+                                <Label htmlFor="grade-release-clearance">Require grade-release clearance</Label>
+                            </div>
+                            {releaseForm.errors.require_clearance && (
+                                <p className="text-destructive text-xs" role="alert">
+                                    {releaseForm.errors.require_clearance}
+                                </p>
+                            )}
+                        </div>
+                        <Button type="submit" disabled={releaseForm.processing || !releaseForm.isDirty} className="gap-2">
+                            {releaseForm.processing && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
+                            Save release setting
+                        </Button>
+                    </form>
+                </CardContent>
+            </Card>
 
             <Card className="overflow-hidden">
                 <CardHeader className="bg-muted/25 border-b">
@@ -298,8 +340,8 @@ export default function SystemManagementGradingPage({
                         <div>
                             <CardTitle>Transferee & Alternate Scales</CardTitle>
                             <CardDescription>
-                                Automatically recognize and convert decimal point scale grades (e.g. 1.0–5.0) from transferee student records
-                                when your institution uses percentage or other scales.
+                                Automatically recognize and convert decimal point scale grades (e.g. 1.0–5.0) from transferee student records when
+                                your institution uses percentage or other scales.
                             </CardDescription>
                         </div>
                     </div>
@@ -309,8 +351,8 @@ export default function SystemManagementGradingPage({
                         <div>
                             <Label className="text-sm font-medium">Auto-detect and convert transferee decimal grades</Label>
                             <p className="text-muted-foreground mt-1 text-xs">
-                                When students transfer from institutions with 1.0–5.0 point grading, evaluate their passing/failing status
-                                correctly and compute institutional percentage equivalents for checklist GWA.
+                                When students transfer from institutions with 1.0–5.0 point grading, evaluate their passing/failing status correctly
+                                and compute institutional percentage equivalents for checklist GWA.
                             </p>
                         </div>
                         <Switch
@@ -356,9 +398,7 @@ export default function SystemManagementGradingPage({
                                     <Label>Conversion Method</Label>
                                     <Select
                                         value={gradingForm.data.transferee_conversion_method ?? "formula"}
-                                        onValueChange={(val) =>
-                                            gradingForm.setData("transferee_conversion_method", val as "formula" | "table")
-                                        }
+                                        onValueChange={(val) => gradingForm.setData("transferee_conversion_method", val as "formula" | "table")}
                                     >
                                         <SelectTrigger>
                                             <SelectValue />

@@ -290,51 +290,12 @@ it('loads the student and course of every enrollment in one query', function ():
         ->and(tableRelationQueriesMatching($queries, 'from "courses" where "courses"."id" in'))->toHaveCount(1);
 });
 
-it('clears the previous semester of the selected students with one clearance query', function (): void {
-    $students = Student::factory()->count(6)->create();
+it('hides the retired enrollment clearance bulk actions on the students table', function (): void {
+    Student::factory()->count(2)->create();
 
-    $queries = tableRelationQueries(function () use ($students): void {
-        Livewire::test(App\Filament\Resources\Students\Pages\ListStudents::class)
-            ->callTableBulkAction('bulkClearPreviousSemester', $students, ['confirm' => true, 'remarks' => 'Bulk cleared'])
-            ->assertHasNoActionErrors();
-    });
-
-    expect(tableRelationQueriesMatching($queries, 'from "student_clearances" where "student_clearances"."student_id" = ?'))->toBe([])
-        ->and(tableRelationQueriesMatching($queries, 'from "student_clearances" where "student_clearances"."student_id" in'))->not->toBeEmpty();
-
-    expect(StudentClearance::query()
-        ->where('academic_year', '2024 - 2025')
-        ->where('semester', 1)
-        ->where('is_cleared', true)
-        ->count())->toBe(6);
-});
-
-it('marks the selected students as not cleared with one clearance query', function (): void {
-    $students = Student::factory()->count(6)->create();
-
-    foreach ($students as $student) {
-        StudentClearance::query()->create([
-            'student_id' => $student->id,
-            'academic_year' => '2024 - 2025',
-            'semester' => 1,
-            'is_cleared' => true,
-        ]);
-    }
-
-    $queries = tableRelationQueries(function () use ($students): void {
-        Livewire::test(App\Filament\Resources\Students\Pages\ListStudents::class)
-            ->callTableBulkAction('bulkNotClearPreviousSemester', $students, ['confirm' => true, 'remarks' => 'Bulk not cleared'])
-            ->assertHasNoActionErrors();
-    });
-
-    expect(tableRelationQueriesMatching($queries, 'from "student_clearances" where "student_clearances"."student_id" = ?'))->toBe([])
-        ->and(tableRelationQueriesMatching($queries, 'from "student_clearances" where "student_clearances"."student_id" in'))->not->toBeEmpty();
-
-    expect(StudentClearance::query()
-        ->where('academic_year', '2024 - 2025')
-        ->where('semester', 1)
-        ->where('is_cleared', false)
-        ->count())->toBe(6);
+    Livewire::test(App\Filament\Resources\Students\Pages\ListStudents::class)
+        ->assertTableBulkActionHidden('bulkClearPreviousSemester')
+        ->assertTableBulkActionHidden('bulkNotClearPreviousSemester');
 });
 
 it('shows the roles assigned to the account of a faculty member', function (): void {

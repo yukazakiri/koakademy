@@ -59,6 +59,7 @@ final class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->scoped(GeneralSettingsService::class);
+        $this->app->scoped(\App\Services\GradeReleaseService::class);
         $this->app->singleton(ExportFailureHandler::class);
         $this->app->scoped(ModuleManifestRepository::class);
         $this->app->scoped(ModuleStateRepository::class);

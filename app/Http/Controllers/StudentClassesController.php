@@ -8,6 +8,7 @@ use App\Models\Student;
 use App\Models\Subject;
 use App\Models\SubjectEnrollment;
 use App\Models\User;
+use App\Services\GradeReleaseService;
 use App\Services\GradingSystemService;
 use App\Services\SchoolBrandingService;
 use Illuminate\Http\Request;
@@ -70,6 +71,8 @@ final class StudentClassesController extends Controller
         // We handle multiple enrollments (retakes) by taking the "best" or "latest" one
         // For status checking, we prioritize: Passed > Enrolled > Failed
         $enrollmentMap = [];
+        $gradeReleases = app(GradeReleaseService::class);
+        $publishedGrades = $gradeReleases->releases($student);
 
         foreach ($enrollments as $enrollment) {
             $subjectId = $enrollment->subject_id;
@@ -90,15 +93,22 @@ final class StudentClassesController extends Controller
                 ?? 0;
 
             // Determine status
-            $grade = $enrollment->grade;
+            $published = $gradeReleases->publishedSubject($enrollment, $publishedGrades);
+            $numericGrade = $published['grade'] ?? null;
+            $grade = $published['grade_symbol'] ?? $numericGrade;
+            $outcome = $published['grade_outcome'] ?? null;
             $status = 'ongoing'; // Default if enrolled in current sem
 
-            if ($enrollment->is_credited || $enrollment->grade_outcome === 'pass') {
+            if (($published['is_credited'] ?? false) || $outcome === 'pass') {
                 $status = 'completed';
-            } elseif (in_array($enrollment->grade_outcome, ['withdrawn', 'dropped'], true) || ($grade !== null && (float) $grade === 0.0)) {
+            } elseif (in_array($outcome, ['withdrawn', 'dropped'], true) || (is_numeric($numericGrade) && (float) $numericGrade === 0.0)) {
                 $status = 'dropped';
-            } elseif ($grade !== null) {
-                if ($this->gradingSystem->isPassingGrade($grade)) {
+            } elseif ($outcome === 'fail') {
+                $status = 'failed';
+            } elseif ($outcome === 'incomplete') {
+                $status = 'ongoing';
+            } elseif (is_numeric($numericGrade)) {
+                if ($this->gradingSystem->isPassingGrade($numericGrade)) {
                     $status = 'completed';
                 } else {
                     $status = 'failed';
@@ -114,7 +124,7 @@ final class StudentClassesController extends Controller
                 'enrollment_id' => $enrollment->id,
                 'grade' => $grade,
                 'status' => $status,
-                'remarks' => $enrollment->remarks,
+                'remarks' => $published['remarks'] ?? null,
                 'school_year' => $enrollment->school_year,
                 'semester' => $enrollment->semester,
                 'code' => $subjectCode,

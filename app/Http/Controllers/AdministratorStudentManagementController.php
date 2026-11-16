@@ -23,7 +23,6 @@ use App\Models\ClassAttendanceRecord;
 use App\Models\ClassEnrollment;
 use App\Models\Course;
 use App\Models\Department;
-use App\Models\GeneralSetting;
 use App\Models\ShsStrand;
 use App\Models\ShsStudent;
 use App\Models\Student;
@@ -40,6 +39,7 @@ use App\Services\BulkActivityLogger;
 use App\Services\CurriculumCapabilityResolver;
 use App\Services\GeneralSettingsService;
 use App\Services\GradeEvaluationService;
+use App\Services\GradeReleaseService;
 use App\Services\GradingSystemService;
 use App\Services\IdentifierGenerator;
 use App\Services\StudentIdUpdateService;
@@ -86,11 +86,15 @@ final class AdministratorStudentManagementController extends Controller
         $generalSettingsService = app(GeneralSettingsService::class);
         $currentSchoolYear = $generalSettingsService->getCurrentSchoolYearString();
         $currentSemester = $generalSettingsService->getCurrentSemester();
+        $systemSettings = $generalSettingsService->getGlobalSettingsModel();
         $currentPeriod = [
             'academic_year' => $currentSchoolYear,
             'semester' => $currentSemester,
         ];
-        $clearanceCheckEnabled = $generalSettingsService->getGlobalSettingsModel()?->enable_clearance_check ?? true;
+        $gradeClearancePeriod = [
+            'school_year' => $systemSettings?->getSchoolYearString() ?? $currentSchoolYear,
+            'semester' => (int) ($systemSettings?->semester ?? $currentSemester),
+        ];
 
         $search = $request->input('search');
         $type = $request->input('type');
@@ -143,10 +147,10 @@ final class AdministratorStudentManagementController extends Controller
             ->with([
                 'Course:id,department_id,code,title',
                 'DocumentLocation:id,picture_1x1',
-                'clearances' => function ($query) use ($currentPeriod): void {
-                    $query->select(['id', 'student_id', 'academic_year', 'semester', 'is_cleared'])
-                        ->where('academic_year', $currentPeriod['academic_year'])
-                        ->where('semester', $currentPeriod['semester']);
+                'gradeReleaseClearances' => function ($query) use ($gradeClearancePeriod): void {
+                    $query->select(['id', 'student_id', 'school_year', 'semester', 'is_cleared'])
+                        ->where('school_year', $gradeClearancePeriod['school_year'])
+                        ->where('semester', $gradeClearancePeriod['semester']);
                 },
                 'statusRecords' => function ($query) use ($currentPeriod): void {
                     $query->select(['student_id', 'academic_year', 'semester', 'status'])
@@ -250,22 +254,12 @@ final class AdministratorStudentManagementController extends Controller
             $studentsQuery->where('students.region_of_origin', $regionOfOrigin);
         }
 
-        if ($clearanceCheckEnabled) {
-            if ($previousSemesterCleared === 'true') {
-                $studentsQuery->whereHas('clearances', function (Builder $clearanceQuery) use ($currentPeriod): void {
-                    $clearanceQuery->where('academic_year', $currentPeriod['academic_year'])
-                        ->where('semester', $currentPeriod['semester'])
-                        ->where('is_cleared', true);
-                });
-            } elseif ($previousSemesterCleared === 'false') {
-                $studentsQuery->whereHas('clearances', function (Builder $clearanceQuery) use ($currentPeriod): void {
-                    $clearanceQuery->where('academic_year', $currentPeriod['academic_year'])
-                        ->where('semester', $currentPeriod['semester'])
-                        ->where('is_cleared', false);
-                });
-            }
-        } elseif ($previousSemesterCleared === 'true' || $previousSemesterCleared === 'false') {
-            $studentsQuery->whereRaw('1 = 0');
+        if (in_array($previousSemesterCleared, ['true', 'false'], true)) {
+            $studentsQuery->whereHas('gradeReleaseClearances', function (Builder $clearanceQuery) use ($gradeClearancePeriod, $previousSemesterCleared): void {
+                $clearanceQuery->where('school_year', $gradeClearancePeriod['school_year'])
+                    ->where('semester', $gradeClearancePeriod['semester'])
+                    ->where('is_cleared', $previousSemesterCleared === 'true');
+            });
         }
 
         if ($sort === 'name') {
@@ -298,7 +292,7 @@ final class AdministratorStudentManagementController extends Controller
 
         $studentsQuery->orderBy('students.id', $direction);
 
-        $studentTransform = function (Student $student) use ($clearanceCheckEnabled): array {
+        $studentTransform = function (Student $student): array {
             $studentType = $student->student_type;
             $currentStatusRecord = $student->statusRecords->first();
             $currentStatus = $currentStatusRecord?->status;
@@ -307,11 +301,9 @@ final class AdministratorStudentManagementController extends Controller
 
             // Get current semester clearance status
             $currentClearanceStatus = 'no_record';
-            if ($clearanceCheckEnabled) {
-                $currentClearance = $student->clearances->first();
-                if ($currentClearance) {
-                    $currentClearanceStatus = $currentClearance->is_cleared ? 'cleared' : 'not_cleared';
-                }
+            $currentClearance = $student->gradeReleaseClearances->first();
+            if ($currentClearance) {
+                $currentClearanceStatus = $currentClearance->is_cleared ? 'cleared' : 'not_cleared';
             }
 
             return [
@@ -507,6 +499,8 @@ final class AdministratorStudentManagementController extends Controller
 
     public function show(Student $student): Response
     {
+        $studentSchoolId = $student->school_id ?: $student->institution_id;
+        abort_if($studentSchoolId && ! app(\App\Services\TenantContext::class)->canAccessOrganization((int) $studentSchoolId), 404);
         $student->loadMissing([
             'Course',
             'studentContactsInfo',
@@ -514,7 +508,6 @@ final class AdministratorStudentManagementController extends Controller
             'studentEducationInfo',
             'personalInfo',
             'DocumentLocation',
-            'clearances',
             'subjectEnrolled.subject', // For checklist
             'subjects', // For checklist
         ]);
@@ -701,10 +694,6 @@ final class AdministratorStudentManagementController extends Controller
 
         $previousPeriod = $student->getPreviousAcademicPeriod();
 
-        // Get Current Clearance
-        $currentClearance = $student->getCurrentClearanceRecord()->first();
-        $previousClearanceValidation = $student->validateEnrollmentClearance();
-
         // Get current enrollment and tuition (including trashed records)
         // $generalSettingsService and current years already initialized at top
         $activeEnrollment = $this->findCurrentEnrollmentForStudent($student, $currentSchoolYear, $currentSemester, includeTrashed: false);
@@ -800,6 +789,12 @@ final class AdministratorStudentManagementController extends Controller
             ->filter()
             ->values();
 
+        $actor = Auth::user();
+        $isGradeReleaseAdmin = in_array($actor?->role, [UserRole::Developer, UserRole::SuperAdmin, UserRole::Admin], true);
+        $canManageGradeClearance = $isGradeReleaseAdmin || (bool) $actor?->can('manage_clearance');
+        $canPublishGrades = $isGradeReleaseAdmin || (($actor?->isAdministrative() || in_array($actor?->role, [UserRole::Registrar, UserRole::AssistantRegistrar], true)) && $actor?->can('Update:Student'));
+        $canViewGradeRelease = $canManageGradeClearance || $canPublishGrades || (bool) $actor?->can('view_clearance');
+
         return Inertia::render('administrators/students/show', [
             'user' => $this->getUserProps(),
             'options' => [
@@ -857,9 +852,11 @@ final class AdministratorStudentManagementController extends Controller
                 'personal_info' => $student->personalInfo,
                 'documents' => $student->DocumentLocation?->toResolvedDocumentArray(),
                 'signature_url' => $this->resolveStoredFileUrl($student->signature_path),
-                'current_clearance' => $currentClearance,
-                'previous_clearance_validation' => $previousClearanceValidation,
-                'clearance_history' => $student->clearances()->orderBy('created_at', 'desc')->get(),
+                'grade_release_periods' => $canViewGradeRelease ? app(GradeReleaseService::class)->periods($student) : [],
+                'grade_release_clearance_required' => app(GradeReleaseService::class)->requiresClearance(),
+                'can_manage_grade_clearance' => $canManageGradeClearance,
+                'can_publish_grades' => $canPublishGrades,
+                'can_view_grade_release' => $canViewGradeRelease,
                 'tuition' => $tuitionData,
                 'current_school_year' => $currentSchoolYear,
                 'current_semester' => $currentSemester,
@@ -2172,48 +2169,7 @@ final class AdministratorStudentManagementController extends Controller
 
     public function manageClearance(Request $request, Student $student): RedirectResponse
     {
-        $user = $request->user();
-        abort_unless($user && ($user->hasRole('super_admin') || $user->can('manage_clearance')), 403);
-
-        $validated = $request->validate([
-            'is_cleared' => ['required', 'boolean'],
-            'remarks' => ['nullable', 'string'],
-            'academic_year' => ['nullable', 'string'],
-            'semester' => ['nullable', 'integer'],
-            'cleared_at' => ['nullable', 'date'],
-        ]);
-
-        $settings = GeneralSetting::first();
-
-        $academicYear = $validated['academic_year'] ?? $settings->getSchoolYearString();
-        $semester = $validated['semester'] ?? $settings->getSemester();
-
-        $clearance = StudentClearance::firstOrCreate(
-            [
-                'student_id' => $student->id,
-                'academic_year' => $academicYear,
-                'semester' => $semester,
-            ],
-            ['is_cleared' => false]
-        );
-
-        $isCleared = $validated['is_cleared'];
-        $user = Auth::user();
-        $clearedBy = $user ? $user->name : 'System';
-
-        $updateData = [
-            'is_cleared' => $isCleared,
-            'remarks' => $validated['remarks'],
-        ];
-
-        if ($isCleared) {
-            $updateData['cleared_by'] = $clearedBy;
-            $updateData['cleared_at'] = $validated['cleared_at'] ?? now();
-        }
-
-        $clearance->update($updateData);
-
-        return back()->with('success', 'Clearance updated successfully.');
+        abort(410, 'Enrollment clearance has been retired. Use grade-release clearance on the student page.');
     }
 
     /**
@@ -2381,78 +2337,36 @@ final class AdministratorStudentManagementController extends Controller
     public function bulkManageClearance(BulkUpdateStudentClearanceRequest $request): RedirectResponse
     {
         $validated = $request->validated();
-        $studentIds = $validated['student_ids'];
-        $isCleared = $validated['is_cleared'];
-        $remarks = $validated['remarks'] ?? null;
+        $actor = $request->user();
+        $settings = app(GeneralSettingsService::class)->getGlobalSettingsModel();
+        abort_unless($actor instanceof User && $settings, 403);
 
-        $generalSettingsService = app(GeneralSettingsService::class);
-        $academicYear = $generalSettingsService->getCurrentSchoolYearString();
-        $semester = $generalSettingsService->getCurrentSemester();
-
-        $user = Auth::user();
-        $clearedBy = $user ? $user->name : 'System';
+        $gradeReleaseService = app(GradeReleaseService::class);
+        $tenantContext = app(\App\Services\TenantContext::class);
+        $schoolYear = $settings->getSchoolYearString();
+        $semester = (int) $settings->semester;
         $updatedCount = 0;
 
-        foreach (BulkChunk::of($studentIds) as $chunk) {
-            $students = Student::query()->whereIn('id', $chunk)->get();
-
-            if ($students->isEmpty()) {
-                continue;
-            }
-
-            $chunkStudentIds = $students->pluck('id')->all();
-
-            // Read the existing clearance records once per chunk so the write
-            // below can be a single upsert instead of a lookup per student.
-            $existingClearances = StudentClearance::query()
-                ->whereIn('student_id', $chunkStudentIds)
-                ->where('academic_year', $academicYear)
-                ->where('semester', $semester)
-                ->get()
-                ->keyBy('student_id');
-
-            DB::transaction(function () use ($students, $existingClearances, $isCleared, $remarks, $clearedBy, $academicYear, $semester): void {
-                $now = now();
-
-                $updateData = [
-                    'is_cleared' => $isCleared,
-                    'remarks' => $remarks,
-                ];
-
-                if ($isCleared) {
-                    $updateData['cleared_by'] = $clearedBy;
-                    $updateData['cleared_at'] = $now;
-                }
-
-                $rows = [];
-
+        DB::transaction(function () use ($validated, $actor, $gradeReleaseService, $tenantContext, $schoolYear, $semester, &$updatedCount): void {
+            foreach (BulkChunk::of($validated['student_ids']) as $chunk) {
+                $students = Student::query()->whereIn('id', $chunk)->get();
                 foreach ($students as $student) {
-                    $clearance = $existingClearances->get($student->id);
-
-                    $rows[] = [
-                        'student_id' => $student->id,
-                        'academic_year' => $academicYear,
-                        'semester' => $semester,
-                        'is_cleared' => $updateData['is_cleared'],
-                        'remarks' => $updateData['remarks'],
-                        'cleared_by' => $updateData['cleared_by'] ?? $clearance?->cleared_by,
-                        'cleared_at' => $updateData['cleared_at'] ?? $clearance?->cleared_at,
-                        'created_at' => $now,
-                        'updated_at' => $now,
-                    ];
+                    $studentSchoolId = $student->school_id ?: $student->institution_id;
+                    abort_if($studentSchoolId && ! $tenantContext->canAccessOrganization((int) $studentSchoolId), 404);
+                    $gradeReleaseService->updateClearance(
+                        $student,
+                        $schoolYear,
+                        $semester,
+                        (bool) $validated['is_cleared'],
+                        $validated['remarks'] ?? null,
+                        $actor,
+                    );
+                    $updatedCount++;
                 }
+            }
+        });
 
-                StudentClearance::upsert(
-                    $rows,
-                    ['student_id', 'academic_year', 'semester'],
-                    ['is_cleared', 'remarks', 'cleared_by', 'cleared_at', 'updated_at'],
-                );
-            });
-
-            $updatedCount += $students->count();
-        }
-
-        return back()->with('success', "Updated clearance for {$updatedCount} student(s).");
+        return back()->with('success', "Updated grade-release clearance for {$updatedCount} student(s).");
     }
 
     public function bulkSendEmail(BulkEmailStudentsRequest $request): RedirectResponse

@@ -8,9 +8,9 @@ use App\Enums\StudentType;
 use App\Enums\UserRole;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\GeneralSetting;
+use App\Models\GradeReleaseClearance;
 use App\Models\School;
 use App\Models\Student;
-use App\Models\StudentClearance;
 use App\Models\User;
 use App\Services\TenantContext;
 use Illuminate\Database\Eloquent\Factories\Sequence;
@@ -263,16 +263,16 @@ it('filters students on the server by clearance status', function (): void {
     $clearedStudent = Student::factory()->create(['school_id' => $this->school->id]);
     $pendingStudent = Student::factory()->create(['school_id' => $this->school->id]);
 
-    StudentClearance::query()->create([
+    GradeReleaseClearance::query()->create([
         'student_id' => $clearedStudent->id,
-        'academic_year' => '2024 - 2025',
+        'school_year' => '2024 - 2025',
         'semester' => 2,
         'is_cleared' => true,
     ]);
 
-    StudentClearance::query()->create([
+    GradeReleaseClearance::query()->create([
         'student_id' => $pendingStudent->id,
-        'academic_year' => '2024 - 2025',
+        'school_year' => '2024 - 2025',
         'semester' => 2,
         'is_cleared' => false,
     ]);

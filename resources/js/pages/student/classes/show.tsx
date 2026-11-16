@@ -31,7 +31,13 @@ interface StudentClassShowProps {
     teacher: TeacherEntry;
     posts: ClassPostEntry[];
     schedule: ScheduleEntry[];
-    my_grades: { prelim?: number; midterm?: number; final?: number; average?: number };
+    my_grades: {
+        prelim?: number;
+        midterm?: number;
+        final?: number;
+        average?: number;
+        final_status?: "released" | "clearance_required" | "not_released";
+    };
     my_attendance: {
         stats: { present: number; late: number; absent: number; excused: number };
         history: Array<{ id: number; date: string; status: string; remarks: string; topic: string }>;

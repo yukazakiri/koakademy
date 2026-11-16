@@ -8,6 +8,7 @@ interface StudentGradesTabProps {
         midterm?: number;
         final?: number;
         average?: number;
+        final_status?: "released" | "clearance_required" | "not_released";
     };
 }
 
@@ -19,6 +20,10 @@ export function StudentGradesTab({ grades }: StudentGradesTabProps) {
     ];
     const available = terms.filter((term) => term.value !== null && term.value !== undefined);
     const average = grades.average;
+    const finalStatus =
+        grades.final_status === "clearance_required"
+            ? "Clearance required before final grades can be released."
+            : "Final grades have not yet been released.";
 
     return (
         <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
@@ -54,6 +59,9 @@ export function StudentGradesTab({ grades }: StudentGradesTabProps) {
                         <Award className="mb-3 size-7" />
                         Your instructor has not published grades yet.
                     </div>
+                )}
+                {grades.final_status && grades.final_status !== "released" && (
+                    <p className="text-muted-foreground px-4 pb-4 text-sm">{finalStatus}</p>
                 )}
             </Card>
         </div>

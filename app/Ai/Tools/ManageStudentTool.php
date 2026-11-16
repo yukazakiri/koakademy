@@ -8,7 +8,6 @@ use App\Enums\StudentStatus;
 use App\Enums\StudentType;
 use App\Models\Course;
 use App\Models\Student;
-use App\Models\StudentClearance;
 use App\Models\User;
 use App\Services\StudentDataTransferService;
 use App\Services\TenantContext;
@@ -269,11 +268,6 @@ final class ManageStudentTool implements Approvable, Tool
                     'status' => $validated['status'] ?? StudentStatus::Applicant->value,
                 ]);
 
-                $generalSetting = \App\Models\GeneralSetting::query()->first();
-                if ($generalSetting instanceof \App\Models\GeneralSetting) {
-                    StudentClearance::createForCurrentSemester($student, $generalSetting);
-                }
-
                 return json_encode([
                     'success' => true,
                     'action' => 'create',
@@ -404,10 +398,9 @@ final class ManageStudentTool implements Approvable, Tool
         $updated = [];
         $errors = [];
 
-        $generalSetting = \App\Models\GeneralSetting::query()->first();
         $defaultCourse = Course::query()->first();
 
-        DB::transaction(function () use ($validated, &$created, &$updated, &$errors, $generalSetting, $defaultCourse) {
+        DB::transaction(function () use ($validated, &$created, &$updated, &$errors, $defaultCourse) {
             foreach ($validated['students'] as $idx => $sData) {
                 try {
                     $existing = null;
@@ -482,10 +475,6 @@ final class ManageStudentTool implements Approvable, Tool
                             'status' => $sData['status'] ?? StudentStatus::Applicant->value,
                             'lrn' => $sData['lrn'] ?? null,
                         ]);
-
-                        if ($generalSetting instanceof \App\Models\GeneralSetting) {
-                            StudentClearance::createForCurrentSemester($newStudent, $generalSetting);
-                        }
 
                         $created[] = [
                             'id' => $newStudent->id,

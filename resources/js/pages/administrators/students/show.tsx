@@ -31,14 +31,7 @@ import { StudentTabs } from "./components/student-tabs";
 import { SubjectEnrollmentDialog } from "./components/subject-enrollment-dialog";
 import type { ChecklistHistoryRecord, ChecklistSubject, ChecklistYearGroup } from "./types";
 
-import {
-    ChangeCourseDialog,
-    ManageClearanceDialog,
-    RetryEnrollmentDialog,
-    UndoIdDialog,
-    UpdateIdDialog,
-    UpdateStatusDialog,
-} from "./components/student-action-dialogs";
+import { ChangeCourseDialog, RetryEnrollmentDialog, UndoIdDialog, UpdateIdDialog, UpdateStatusDialog } from "./components/student-action-dialogs";
 import type { PrintOption, StudentShowProps, SubjectEnrollmentFormData } from "./types";
 
 declare const route: (name: string, params?: Record<string, unknown> | string | number | Array<string | number>) => string;
@@ -66,6 +59,7 @@ export default function AdministratorStudentShow({ user, student, options }: Stu
     const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
     const [printDialogOption, setPrintDialogOption] = useState<PrintOption>("both");
     const [studentDeleteAction, setStudentDeleteAction] = useState<"softDelete" | "forceDelete" | "restore" | null>(null);
+    const [selectedStudentTab, setSelectedStudentTab] = useState("academic");
     const fallbackSubject =
         student.checklist.flatMap((yearGroup: ChecklistYearGroup) => yearGroup.semesters.flatMap((semesterGroup) => semesterGroup.subjects))[0] ??
         null;
@@ -264,7 +258,6 @@ export default function AdministratorStudentShow({ user, student, options }: Stu
             {actionDialog === "retryEnrollment" && (
                 <RetryEnrollmentDialog open={true} onOpenChange={() => setActionDialog(null)} student={student} options={options} />
             )}
-            {actionDialog === "clearance" && <ManageClearanceDialog open={true} onOpenChange={() => setActionDialog(null)} student={student} />}
 
             <StudentDeleteDialogs student={student} action={studentDeleteAction} onClose={() => setStudentDeleteAction(null)} />
 
@@ -356,11 +349,15 @@ export default function AdministratorStudentShow({ user, student, options }: Stu
                             </Card>
                         )}
 
-                        <StudentTabs
-                            student={student}
-                            options={options}
-                            onAdjustTuition={() => router.visit(tuitionAdjustments.url({ query: { student: student.id } }))}
-                        />
+                        <div id="student-detail-tabs">
+                            <StudentTabs
+                                student={student}
+                                options={options}
+                                selectedTab={selectedStudentTab}
+                                onTabChange={setSelectedStudentTab}
+                                onAdjustTuition={() => router.visit(tuitionAdjustments.url({ query: { student: student.id } }))}
+                            />
+                        </div>
 
                         <AcademicScheduleDashboard
                             student={student}
@@ -377,6 +374,10 @@ export default function AdministratorStudentShow({ user, student, options }: Stu
                             onAddNonCreditedSubject={handleAddNonCreditedSubject}
                             onSubjectClick={handleSubjectClick}
                             classificationBadgeVariant={classificationBadgeVariant}
+                            onManageReleases={() => {
+                                setSelectedStudentTab("clearance");
+                                document.getElementById("student-detail-tabs")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                            }}
                         />
                     </div>
 

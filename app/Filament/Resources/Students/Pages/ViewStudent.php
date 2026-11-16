@@ -563,7 +563,7 @@ final class ViewStudent extends ViewRecord
                     ->label('Quick Clear Previous Semester')
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
-                    ->visible(fn (): bool => (bool) GeneralSetting::query()->first()->enable_clearance_check)
+                    ->visible(false)
                     ->fillForm(function ($record): array {
                         $previous = $record->getPreviousAcademicPeriod();
                         $clearance = $record->clearances()
@@ -634,7 +634,7 @@ final class ViewStudent extends ViewRecord
                     ->label('Manage Current Semester Clearance')
                     ->icon('heroicon-o-clipboard-document-check')
                     ->color('info')
-                    ->visible(fn (): bool => (bool) GeneralSetting::query()->first()->enable_clearance_check)
+                    ->visible(false)
                     ->schema([
                         Toggle::make('is_cleared')
                             ->label('Is Cleared')

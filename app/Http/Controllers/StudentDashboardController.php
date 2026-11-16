@@ -10,6 +10,7 @@ use App\Models\Student;
 use App\Models\User;
 use App\Services\DigitalIdCardService;
 use App\Services\GeneralSettingsService;
+use App\Services\GradeReleaseService;
 use App\Services\StudentProfileCompletionService;
 use DateTimeInterface;
 use Illuminate\Http\Request;
@@ -45,10 +46,13 @@ final class StudentDashboardController extends Controller
             'announcements' => [],
             'total_units' => 0,
             'tuition_balance' => 0,
-            'clearance_status' => false,
+            'clearance_status' => null,
+            'grade_clearance_required' => app(GradeReleaseService::class)->requiresClearance(),
         ];
 
         if ($student) {
+            $gradeReleases = app(GradeReleaseService::class);
+            $publishedGrades = $gradeReleases->releases($student);
             // Get enrolled classes for current semester
             $currentClasses = $student->getCurrentClasses();
             $enrolledClasses = [];
@@ -68,6 +72,7 @@ final class StudentDashboardController extends Controller
 
                 // Format schedule
                 $schedule = $this->formatSchedule($class);
+                $published = $gradeReleases->publishedClass($enrollment, $publishedGrades);
 
                 $enrolledClasses[] = [
                     'id' => $class->id,
@@ -81,8 +86,8 @@ final class StudentDashboardController extends Controller
                     'grades' => [
                         'prelim' => $enrollment->prelim_grade,
                         'midterm' => $enrollment->midterm_grade,
-                        'finals' => $enrollment->finals_grade,
-                        'average' => $enrollment->total_average,
+                        'finals' => $published['finals_grade'] ?? null,
+                        'average' => $published['total_average'] ?? null,
                     ],
                 ];
             }
@@ -95,7 +100,9 @@ final class StudentDashboardController extends Controller
             $studentData['tuition_balance'] = $currentTuition?->total_balance ?? 0;
 
             // Get clearance status
-            $studentData['clearance_status'] = $student->hasCurrentClearance();
+            $studentData['clearance_status'] = $settings !== null
+                ? $gradeReleases->isClearedForPeriod($student, $settings->getSchoolYearString(), (int) $settings->semester)
+                : null;
         }
 
         $studentData['announcements'] = app(AnnouncementDataService::class)->getDashboardItems();

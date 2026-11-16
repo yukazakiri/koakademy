@@ -6,8 +6,8 @@ use App\Enums\StudentStatus;
 use App\Enums\UserRole;
 use App\Mail\StudentBulkMessage;
 use App\Models\GeneralSetting;
+use App\Models\GradeReleaseClearance;
 use App\Models\Student;
-use App\Models\StudentClearance;
 use App\Models\StudentStatusRecord;
 use App\Models\User;
 use App\Services\GeneralSettingsService;
@@ -75,9 +75,9 @@ it('bulk updates student clearance for current semester', function (): void {
     $currentSemester = $settingsService->getCurrentSemester();
 
     foreach ($students as $student) {
-        $clearance = StudentClearance::query()
+        $clearance = GradeReleaseClearance::query()
             ->where('student_id', $student->id)
-            ->where('academic_year', $currentYear)
+            ->where('school_year', $currentYear)
             ->where('semester', $currentSemester)
             ->first();
 
@@ -99,9 +99,9 @@ it('denies bulk student clearance updates without the manage clearance permissio
 
     $settingsService = app(GeneralSettingsService::class);
 
-    $clearances = StudentClearance::query()
+    $clearances = GradeReleaseClearance::query()
         ->whereIn('student_id', $students->pluck('id')->all())
-        ->where('academic_year', $settingsService->getCurrentSchoolYearString())
+        ->where('school_year', $settingsService->getCurrentSchoolYearString())
         ->where('semester', $settingsService->getCurrentSemester())
         ->get();
 

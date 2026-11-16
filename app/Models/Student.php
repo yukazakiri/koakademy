@@ -374,6 +374,11 @@ final class Student extends Model implements RecordsActivity
         return $this->hasMany(StudentClearance::class);
     }
 
+    public function gradeReleaseClearances()
+    {
+        return $this->hasMany(GradeReleaseClearance::class);
+    }
+
     /**
      * Get the current semester clearance for the student.
      */
@@ -578,43 +583,10 @@ final class Student extends Model implements RecordsActivity
      */
     public function validateEnrollmentClearance(?string $currentYear = null, ?int $currentSemester = null): array
     {
-        $settings = app(GeneralSettingsService::class)->getGlobalSettingsModel();
-
-        // Check if clearance checking is enabled
-        if (! $settings?->enable_clearance_check) {
-            return [
-                'allowed' => true,
-                'message' => 'Clearance checking is disabled.',
-                'clearance' => null,
-            ];
-        }
-
-        $clearance = $this->getPreviousSemesterClearance($currentYear, $currentSemester);
-        $previous = $this->getPreviousAcademicPeriod($currentYear, $currentSemester);
-
-        // If no clearance record exists for previous semester
-        if (! $clearance instanceof StudentClearance) {
-            return [
-                'allowed' => true,
-                'message' => "No clearance record found for {$previous['academic_year']} Semester {$previous['semester']}. Student may proceed.",
-                'clearance' => null,
-            ];
-        }
-
-        // If clearance exists but is not cleared
-        if (! $clearance->is_cleared) {
-            return [
-                'allowed' => false,
-                'message' => "Student has not cleared requirements for {$previous['academic_year']} Semester {$previous['semester']}. Please clear previous semester before enrolling.",
-                'clearance' => $clearance,
-            ];
-        }
-
-        // Clearance is approved
         return [
             'allowed' => true,
-            'message' => "Student is cleared for {$previous['academic_year']} Semester {$previous['semester']}.",
-            'clearance' => $clearance,
+            'message' => 'Enrollment clearance checking has been retired. Grade-release clearance does not affect enrollment.',
+            'clearance' => null,
         ];
     }
 

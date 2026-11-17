@@ -17,23 +17,33 @@ final class ApproveMcpAuthorizationController extends ApproveAuthorizationContro
     public function approve(Request $request, ResponseInterface $psrResponse): Response
     {
         $validated = $request->validate(['allow_write' => ['sometimes', 'boolean']]);
-        $authRequest = $this->getAuthRequestFromSession($request);
-        $user = $request->user();
-        $userId = $authRequest->getUser()?->getIdentifier();
 
-        abort_unless($user instanceof User && $userId !== null && (string) $user->getAuthIdentifier() === (string) $userId, 403);
+        // Serialize consent and account-wide revocation on the user row. The
+        // transaction also covers persistence of the new authorization code.
+        return (new User)->getConnection()->transaction(function () use ($request, $psrResponse, $validated): Response {
+            $authRequest = $this->getAuthRequestFromSession($request);
+            $userId = $authRequest->getUser()?->getIdentifier();
+            $connection = (new User)->getConnection();
+            if ($connection->getDriverName() === 'sqlite') {
+                $connection->table((new User)->getTable())->where('id', -1)->update(['session_version' => 0]);
+            }
+            $user = $userId !== null ? User::query()->whereKey($userId)->lockForUpdate()->first() : null;
 
-        $scopes = [new Scope(McpOAuth::READ)];
+            abort_unless($user instanceof User && (string) $request->user()?->getAuthIdentifier() === (string) $userId, 403);
+            abort_if($user->suspended_at !== null || (int) $request->session()->get('user_session_version', 0) !== $user->session_version, 403);
 
-        if (($validated['allow_write'] ?? false) && McpOAuth::writeGrantable($user)) {
-            $scopes[] = new Scope(McpOAuth::WRITE);
-        }
+            $scopes = [new Scope(McpOAuth::READ)];
 
-        $authRequest->setScopes($scopes);
-        $authRequest->setAuthorizationApproved(true);
+            if (($validated['allow_write'] ?? false) && McpOAuth::writeGrantable($user)) {
+                $scopes[] = new Scope(McpOAuth::WRITE);
+            }
 
-        return $this->withErrorHandling(fn () => $this->convertResponse(
-            $this->server->completeAuthorizationRequest($authRequest, $psrResponse)
-        ), $authRequest->getGrantTypeId() === 'implicit');
+            $authRequest->setScopes($scopes);
+            $authRequest->setAuthorizationApproved(true);
+
+            return $this->withErrorHandling(fn () => $this->convertResponse(
+                $this->server->completeAuthorizationRequest($authRequest, $psrResponse)
+            ), $authRequest->getGrantTypeId() === 'implicit');
+        });
     }
 }

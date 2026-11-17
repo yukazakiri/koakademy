@@ -127,6 +127,7 @@ test('passkey sign in returns to the oauth consent request or the default dashbo
         ->postJson('/passkeys/login', ['credential' => oauthTestPasskeyCredential()])
         ->assertOk()
         ->assertJsonPath('redirect', $expected);
+    $this->assertAuthenticatedAs($user);
 })->with([
     'oauth consent' => ['http://localhost/oauth/authorize?client_id=test', 'http://localhost/oauth/authorize?client_id=test'],
     'default dashboard' => [null, '/faculty/dashboard'],
@@ -147,4 +148,5 @@ test('passkey two factor returns to the oauth consent request', function () {
         ->postJson('/two-factor-challenge/passkey-verify', ['credential' => oauthTestPasskeyCredential()])
         ->assertOk()
         ->assertJsonPath('redirect', 'http://localhost/oauth/authorize?client_id=test');
+    $this->assertAuthenticatedAs($user);
 });

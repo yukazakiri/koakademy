@@ -28,14 +28,16 @@ Do not substitute a fictional shared KoAkademy API hostname; self-hosted install
 
 ## Authentication
 
-Protected routes use Laravel Sanctum. Clients with a token provisioned by their operator send:
+Protected REST API routes use Laravel Sanctum. Clients using a Sanctum API key send:
 
 ```http
 Authorization: Bearer YOUR_TOKEN
 Accept: application/json
 ```
 
-Token issuance and revocation are deployment responsibilities. No public token-creation endpoint is documented in this release. Never put tokens in source code, browser logs, URLs, or public issue reports.
+Sanctum API-key issuance and revocation are deployment responsibilities. No public token-creation endpoint is documented in this release. Never put tokens in source code, browser logs, URLs, or public issue reports.
+
+MCP clients may instead use browser-based OAuth authorization, including optional write consent for eligible users. See the [MCP authentication guide](./mcp/#authentication--token-abilities).
 
 ## Stability and errors
 

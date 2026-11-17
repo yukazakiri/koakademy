@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\UserRole;
 use App\Features\Toggles\McpServerAccess;
+use App\Mcp\OAuth\CoordinatedRefreshTokenGrant;
 use App\Models\GeneralSetting;
 use App\Models\Room;
 use App\Models\School;
@@ -12,10 +13,19 @@ use App\Models\StudentEnrollment;
 use App\Models\User;
 use App\Services\AdministratorUserAccessService;
 use App\Services\GeneralSettingsService;
+use Illuminate\Contracts\Encryption\Encrypter;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
+use Laravel\Passport\Bridge\ClientRepository;
+use Laravel\Passport\Bridge\RefreshTokenRepository;
+use Laravel\Passport\Events\AccessTokenRevoked;
+use Laravel\Passport\Passport;
 use Laravel\Pennant\Feature;
+use League\OAuth2\Server\Exception\OAuthServerException;
+use League\OAuth2\Server\ResponseTypes\BearerTokenResponse;
 use Spatie\Permission\Models\Permission;
+use Symfony\Bridge\PsrHttpMessage\Factory\PsrHttpFactory;
 
 function authorizeMcpClientForTest($test, User $user, bool $allowWrite, string $scope = 'mcp:use'): array
 {
@@ -130,6 +140,159 @@ it('requires pkce for public client authorization', function (): void {
     ]);
 
     $this->get('/oauth/authorize?'.$query)->assertBadRequest()->assertJsonPath('hint', 'Code challenge must be provided for public clients');
+});
+
+it('revokes only the target users credentials on the configured passport connection', function (): void {
+    config(['database.connections.passport_test' => array_replace(config('database.connections.sqlite'), ['database' => ':memory:'])]);
+    $connection = DB::connection('passport_test');
+    foreach (['oauth_auth_codes', 'oauth_access_tokens', 'oauth_refresh_tokens', 'oauth_device_codes'] as $table) {
+        $create = DB::connection('sqlite')->selectOne('SELECT sql FROM sqlite_master WHERE type = ? AND name = ?', ['table', $table]);
+        $connection->statement($create->sql);
+    }
+    config(['passport.connection' => 'passport_test']);
+
+    $user = User::factory()->create();
+    $other = User::factory()->create();
+    foreach ([$user, $other] as $owner) {
+        $id = (string) $owner->id;
+        $connection->table('oauth_access_tokens')->insert(['id' => 'access-'.$id, 'user_id' => $owner->id, 'client_id' => 'client', 'revoked' => false]);
+        $connection->table('oauth_refresh_tokens')->insert(['id' => 'refresh-'.$id, 'access_token_id' => 'access-'.$id, 'revoked' => false]);
+        $connection->table('oauth_auth_codes')->insert(['id' => 'code-'.$id, 'user_id' => $owner->id, 'client_id' => 'client', 'revoked' => false]);
+        $connection->table('oauth_device_codes')->insert(['id' => 'device-'.$id, 'user_id' => $owner->id, 'client_id' => 'client', 'user_code' => mb_str_pad($id, 8, '0', STR_PAD_LEFT), 'scopes' => '[]', 'revoked' => false]);
+    }
+
+    app(AdministratorUserAccessService::class)->revokeAll($user);
+
+    foreach (['oauth_access_tokens' => 'access-', 'oauth_refresh_tokens' => 'refresh-', 'oauth_auth_codes' => 'code-', 'oauth_device_codes' => 'device-'] as $table => $prefix) {
+        expect((bool) $connection->table($table)->where('id', $prefix.$user->id)->value('revoked'))->toBeTrue()
+            ->and((bool) $connection->table($table)->where('id', $prefix.$other->id)->value('revoked'))->toBeFalse();
+    }
+});
+
+it('keeps refresh token validation and replacement in the revocation transaction', function (): void {
+    $school = School::factory()->create();
+    $user = User::factory()->create(['role' => UserRole::Instructor, 'school_id' => $school->id]);
+    $tokens = authorizeMcpClientForTest($this, $user, false);
+    $levels = [];
+    Event::listen(AccessTokenRevoked::class, function () use (&$levels): void {
+        $levels[] = Passport::refreshToken()->getConnection()->transactionLevel();
+    });
+
+    $this->post('/oauth/token', [
+        'grant_type' => 'refresh_token',
+        'client_id' => $tokens['client_id'],
+        'refresh_token' => $tokens['refresh_token'],
+    ])->assertOk();
+
+    // RefreshDatabase already has one test transaction; issuance must add its own.
+    expect($levels)->not->toBeEmpty()->each->toBeGreaterThan(1);
+});
+
+it('rejects a refresh revoked after its initial validation but before it is locked', function (): void {
+    $school = School::factory()->create();
+    $user = User::factory()->create(['role' => UserRole::Instructor, 'school_id' => $school->id]);
+    $tokens = authorizeMcpClientForTest($this, $user, false);
+    $repository = new class(app('events'), $user) extends RefreshTokenRepository
+    {
+        public bool $revokedDuringValidation = false;
+
+        public function __construct($events, private User $user)
+        {
+            parent::__construct($events);
+        }
+
+        public function isRefreshTokenRevoked(string $tokenId): bool
+        {
+            $result = parent::isRefreshTokenRevoked($tokenId);
+            if (! $this->revokedDuringValidation) {
+                $this->revokedDuringValidation = true;
+                app(AdministratorUserAccessService::class)->revokeAll($this->user);
+            }
+
+            return $result;
+        }
+    };
+    $grant = new CoordinatedRefreshTokenGrant($repository);
+    $grant->setEncryptionKey(Passport::tokenEncryptionKey(app(Encrypter::class)));
+    $grant->setClientRepository(app(ClientRepository::class));
+    $request = (new PsrHttpFactory)->createRequest(Illuminate\Http\Request::create('/oauth/token', 'POST', [
+        'grant_type' => 'refresh_token',
+        'client_id' => $tokens['client_id'],
+        'refresh_token' => $tokens['refresh_token'],
+    ]));
+
+    expect(fn () => $grant->respondToAccessTokenRequest($request, new BearerTokenResponse, new DateInterval('PT1H')))
+        ->toThrow(OAuthServerException::class);
+    expect($repository->revokedDuringValidation)->toBeTrue();
+    expect(Passport::token()->newQuery()->where('user_id', $user->id)->count())->toBe(1);
+});
+
+it('refuses authorization-code exchange after an account-wide revocation', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Instructor]);
+    $clientId = $this->postJson('/oauth/register', [
+        'client_name' => 'Revocation test',
+        'redirect_uris' => ['http://127.0.0.1:52817/callback'],
+    ])->assertCreated()->json('client_id');
+    $verifier = str_repeat('v', 64);
+    $query = http_build_query([
+        'client_id' => $clientId,
+        'redirect_uri' => 'http://127.0.0.1:52817/callback',
+        'response_type' => 'code',
+        'code_challenge' => mb_rtrim(strtr(base64_encode(hash('sha256', $verifier, true)), '+/', '-_'), '='),
+        'code_challenge_method' => 'S256',
+    ]);
+    $this->actingAs($user)->get('/oauth/authorize?'.$query)->assertOk();
+    $authorization = $this->post('/oauth/authorize', [
+        'client_id' => $clientId,
+        'auth_token' => session('authToken'),
+    ])->assertRedirect();
+    parse_str((string) parse_url($authorization->headers->get('Location'), PHP_URL_QUERY), $callback);
+
+    app(AdministratorUserAccessService::class)->revokeAll($user);
+    $this->post('/oauth/token', [
+        'grant_type' => 'authorization_code',
+        'client_id' => $clientId,
+        'redirect_uri' => 'http://127.0.0.1:52817/callback',
+        'code_verifier' => $verifier,
+        'code' => $callback['code'],
+    ])->assertBadRequest()->assertJsonPath('error', 'invalid_grant');
+    expect(Passport::token()->newQuery()->where('user_id', $user->id)->count())->toBe(0);
+});
+
+it('rejects a stale consent submission after account-wide revocation', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Instructor]);
+    $clientId = $this->postJson('/oauth/register', [
+        'client_name' => 'Pending consent',
+        'redirect_uris' => ['http://127.0.0.1:52817/callback'],
+    ])->assertCreated()->json('client_id');
+    $query = http_build_query([
+        'client_id' => $clientId,
+        'redirect_uri' => 'http://127.0.0.1:52817/callback',
+        'response_type' => 'code',
+        'code_challenge' => str_repeat('a', 43),
+        'code_challenge_method' => 'S256',
+    ]);
+    $this->actingAs($user)->get('/oauth/authorize?'.$query)->assertOk();
+    $authToken = session('authToken');
+
+    app(AdministratorUserAccessService::class)->revokeAll($user);
+    $this->post('/oauth/authorize', ['client_id' => $clientId, 'auth_token' => $authToken])
+        ->assertForbidden();
+
+    expect(Passport::authCode()->newQuery()->where('user_id', $user->id)->count())->toBe(0);
+});
+
+it('refuses access-token rotation when the prior access token is revoked', function (): void {
+    $school = School::factory()->create();
+    $user = User::factory()->create(['role' => UserRole::Instructor, 'school_id' => $school->id]);
+    $tokens = authorizeMcpClientForTest($this, $user, false);
+    Passport::token()->newQuery()->where('user_id', $user->id)->update(['revoked' => true]);
+
+    $this->post('/oauth/token', [
+        'grant_type' => 'refresh_token',
+        'client_id' => $tokens['client_id'],
+        'refresh_token' => $tokens['refresh_token'],
+    ])->assertBadRequest()->assertJsonPath('error', 'invalid_grant');
 });
 
 it('grants write access only when approved and keeps it through token refresh', function (): void {

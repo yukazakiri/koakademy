@@ -64,8 +64,8 @@
             @endif
 
             <div class="flex gap-3 pt-2">
-                <button type="submit" form="denyForm" class="hover:bg-muted focus-visible:ring-primary h-11 flex-1 rounded-md border px-4 text-sm font-medium focus-visible:ring-2 focus-visible:ring-offset-2">Cancel</button>
-                <button type="submit" class="bg-primary text-primary-foreground hover:opacity-90 focus-visible:ring-primary h-11 flex-1 rounded-md px-4 text-sm font-medium focus-visible:ring-2 focus-visible:ring-offset-2">Authorize</button>
+                <button type="submit" form="denyForm" class="hover:bg-muted active:bg-muted active:brightness-90 focus-visible:ring-primary h-11 flex-1 rounded-md border px-4 text-sm font-medium focus-visible:ring-2 focus-visible:ring-offset-2">Cancel</button>
+                <button type="submit" class="bg-primary text-primary-foreground hover:opacity-90 active:brightness-75 focus-visible:ring-primary h-11 flex-1 rounded-md px-4 text-sm font-medium focus-visible:ring-2 focus-visible:ring-offset-2">Authorize</button>
             </div>
         </form>
 

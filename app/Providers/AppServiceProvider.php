@@ -11,6 +11,8 @@ use App\Filament\Plugins\Widgets\PennantFeatureAdoptionWidget;
 use App\Http\Controllers\ApproveMcpAuthorizationController;
 use App\Http\Controllers\McpAuthorizationController;
 use App\Mcp\McpOAuth;
+use App\Mcp\OAuth\CoordinatedAuthCodeGrant;
+use App\Mcp\OAuth\CoordinatedRefreshTokenGrant;
 use App\Models\Passkey;
 use App\Models\StudentTransaction;
 use App\Models\User;
@@ -29,6 +31,7 @@ use App\Services\Newsletter\NewsletterSubscriptionService;
 use App\Services\VersionService;
 use App\Support\HostingSecurity;
 use App\Support\RuntimeSecurity;
+use DateInterval;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Auth\StatefulGuard;
 use Illuminate\Database\Eloquent\Model;
@@ -48,11 +51,14 @@ use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\View\FileViewFinder;
 use Laravel\Passkeys\Passkeys;
+use Laravel\Passport\Bridge\AuthCodeRepository;
+use Laravel\Passport\Bridge\RefreshTokenRepository;
 use Laravel\Passport\Http\Controllers\ApproveAuthorizationController;
 use Laravel\Passport\Http\Controllers\AuthorizationController;
 use Laravel\Passport\Passport;
 use Laravel\Pennant\Feature;
 use Laravel\Scout\EngineManager;
+use League\OAuth2\Server\AuthorizationServer;
 use Livewire\Livewire;
 use PhpOffice\PhpSpreadsheet\Cell\Cell;
 use PhpOffice\PhpSpreadsheet\Cell\DefaultValueBinder;
@@ -256,6 +262,23 @@ final class AppServiceProvider extends ServiceProvider
         Passport::tokensExpireIn(now()->addHour());
         Passport::refreshTokensExpireIn(now()->addDays(30));
         Passport::authorizationView('mcp.authorize');
+
+        // Validate and consume one-time credentials under the same database
+        // row locks used by account-wide revocation, including across replicas.
+        $this->app->afterResolving(AuthorizationServer::class, function (AuthorizationServer $server): void {
+            $authCodeGrant = new CoordinatedAuthCodeGrant(
+                $this->app->make(AuthCodeRepository::class),
+                $this->app->make(RefreshTokenRepository::class),
+                new DateInterval('PT10M'),
+            );
+            $authCodeGrant->setRefreshTokenTTL(Passport::refreshTokensExpireIn());
+            $server->enableGrantType($authCodeGrant, Passport::tokensExpireIn());
+
+            $refreshGrant = new CoordinatedRefreshTokenGrant($this->app->make(RefreshTokenRepository::class));
+            $refreshGrant->setRefreshTokenTTL(Passport::refreshTokensExpireIn());
+            $server->enableGrantType($refreshGrant, Passport::tokensExpireIn());
+            $server->revokeRefreshTokens(Passport::$revokeRefreshTokenAfterUse);
+        });
 
         $this->guardMassAssignment();
         StudentTransaction::observe(StudentTransactionObserver::class);

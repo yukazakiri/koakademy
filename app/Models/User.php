@@ -32,6 +32,7 @@ use Laravel\Ai\Concerns\HasConversations;
 use Laravel\Passkeys\Contracts\PasskeyUser;
 use Laravel\Passkeys\PasskeyAuthenticatable;
 use Laravel\Passport\AccessToken;
+use Laravel\Passport\Passport;
 use Laravel\Sanctum\Contracts\HasAbilities;
 use Laravel\Sanctum\HasApiTokens;
 use Laravel\Scout\Searchable;
@@ -168,11 +169,16 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
 
     public function revokeMcpOAuthTokens(): void
     {
-        $tokens = DB::table('oauth_access_tokens')->where('user_id', $this->getKey());
+        $connection = Passport::token()->getConnection();
 
-        DB::table('oauth_refresh_tokens')->whereIn('access_token_id', (clone $tokens)->select('id'))->update(['revoked' => true]);
-        $tokens->update(['revoked' => true]);
-        DB::table('oauth_auth_codes')->where('user_id', $this->getKey())->update(['revoked' => true]);
+        $connection->transaction(function (): void {
+            $tokens = Passport::token()->newQuery()->where('user_id', $this->getKey());
+
+            Passport::refreshToken()->newQuery()->whereIn('access_token_id', (clone $tokens)->select('id'))->update(['revoked' => true]);
+            $tokens->update(['revoked' => true]);
+            Passport::authCode()->newQuery()->where('user_id', $this->getKey())->update(['revoked' => true]);
+            Passport::deviceCode()->newQuery()->where('user_id', $this->getKey())->update(['revoked' => true]);
+        });
     }
 
     /**

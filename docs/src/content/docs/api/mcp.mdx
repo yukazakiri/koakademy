@@ -21,7 +21,7 @@ POST /mcp/koakademy
 
 | Header | Description | Required |
 | --- | --- | --- |
-| `Authorization` | `Bearer <sanctum_personal_access_token>` | **Yes** |
+| `Authorization` | `Bearer <oauth_access_token>` or `Bearer <sanctum_personal_access_token>` | **Yes** |
 | `Content-Type` | `application/json` | **Yes** |
 | `Accept` | `application/json` | **Yes** |
 | `X-KoAkademy-School` | ID of the school to scope operations to | Optional (defaults to caller's primary school) |
@@ -34,7 +34,25 @@ The MCP endpoint is rate-limited by default to **30 requests per minute** per us
 
 ## Authentication & Token Abilities
 
-MCP requests require personal access tokens issued via Laravel Sanctum from the user's **Profile / Accounts & Security** settings under **Developer API & MCP Keys**.
+MCP clients may authenticate in either of two ways:
+
+- **OAuth:** Add the MCP URL to your client and sign in through the browser. Read access is granted on approval. Staff and administrators may explicitly check **Allow write access** to permit mutations across available MCP tools, subject to the account's permissions, school access, and the global write switch. Leave it unchecked for read-only access. Existing read-only connections must be reauthorized to add write access.
+- **API key:** Create a Sanctum personal access token from **Profile / Accounts & Security** with the desired MCP abilities, then send it as an `Authorization: Bearer` header. Developer Mode must be enabled. An `mcp:write` key is required for permitted modifications.
+
+The write checkbox applies to all write-capable tools currently exposed by the MCP server; it does not add tools for other models or bypass their authorization rules. OAuth access tokens expire after one hour. Refresh tokens expire after 30 days and are rotated when used. An administrator can invalidate a user's OAuth connections by revoking all sessions and tokens in user management. Existing API keys remain separate from OAuth connections.
+
+### OAuth deployment setup
+
+After installing this version, run the migrations and generate Passport signing keys **once**:
+
+```bash
+php artisan migrate --force
+php artisan passport:keys
+```
+
+Keep `storage/oauth-private.key` and `storage/oauth-public.key` secure and persistent across releases. Do not regenerate them on every deploy: doing so invalidates existing OAuth access tokens. Multi-server installations must share the same key pair securely, or supply `PASSPORT_PRIVATE_KEY` and `PASSPORT_PUBLIC_KEY` as environment secrets on every server. Set `APP_URL` to the public HTTPS URL and configure trusted proxies and session cookies for your deployment. If your login page and MCP endpoint use different hosts, ensure the session cookie is shared between those hosts.
+
+Dynamic registration is limited to 10 requests per minute per IP. HTTPS, loopback HTTP, and the `cursor`, `vscode`, and `claude` native callback schemes are supported. Use a shared cache store for consistent rate limiting across replicas.
 
 ### Dedicated MCP Abilities
 
@@ -47,7 +65,7 @@ A token with `mcp:write` alone without `mcp:read` is automatically rejected. Wil
 
 ### Administrative & Role Gating
 
-1. **User Role Gating:** Staff, faculty, and administrative accounts with Developer Mode enabled can issue both `mcp:read` and `mcp:write` keys. Students in Developer Mode can issue `mcp:read` tokens to query their personal academic records; student accounts are prevented from issuing `mcp:write` keys.
+1. **User Role Gating:** Staff, faculty, and administrative accounts with Developer Mode enabled can issue both `mcp:read` and `mcp:write` keys. Students in Developer Mode can issue `mcp:read` tokens to query their personal academic records; student accounts are prevented from issuing `mcp:write` keys or granting OAuth write access.
 2. **Global MCP Switch:** Administrators can disable the MCP server entirely via **Settings -> API & Integrations -> Model Context Protocol (MCP)** or via `MCP_ENABLED=false` in `.env`.
 3. **Global Mutation Switch:** Administrators can allow or disallow mutating tools globally (`mcp_write_enabled`). When disabled, write tools return an actionable error without executing changes, and `get_my_context` reports `mcp.can_write: false`.
 4. **Tool-Level RBAC:** Even with an `mcp:write` token, an agent cannot perform actions that the issuing staff account does not have permission to execute (e.g., verifying requirements or enrolling subjects requires `Update:StudentEnrollment`; viewing billing requires `View:Cashier` or `view_tuition_fees`).
@@ -281,16 +299,33 @@ KoAkademy registers 22 core tools across five domain categories.
 
 ### 1. OpenCode
 
-Add the server to your OpenCode configuration (e.g. `opencode.json` or `.opencode/settings.json`):
+Add the server to your OpenCode configuration (e.g. `opencode.json`). OpenCode uses OAuth by default; after adding it, open `/mcps` and sign in:
 
 ```json
 {
   "mcp": {
     "servers": {
       "koakademy": {
+        "type": "remote",
+        "url": "https://your-school.edu/mcp/koakademy"
+      }
+    }
+  }
+}
+```
+
+To use a scoped API key instead (including a key with write access), disable OAuth and provide the token in a header. Store the key in an environment variable available to OpenCode:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "koakademy": {
+        "type": "remote",
         "url": "https://your-school.edu/mcp/koakademy",
+        "oauth": false,
         "headers": {
-          "Authorization": "Bearer 3|xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "Authorization": "Bearer {env:KOAKADEMY_MCP_TOKEN}",
           "X-KoAkademy-School": "1"
         }
       }
@@ -301,7 +336,7 @@ Add the server to your OpenCode configuration (e.g. `opencode.json` or `.opencod
 
 ### 2. Claude Desktop
 
-In `claude_desktop_config.json`:
+Use your client's remote MCP configuration and complete OAuth sign-in when prompted. If your Claude Desktop version supports custom headers, the existing API-key configuration remains available in `claude_desktop_config.json`:
 
 ```json
 {

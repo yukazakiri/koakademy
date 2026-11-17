@@ -53,6 +53,7 @@ final class AdministratorUserAccessService
         // Version enforcement covers Redis/file/cookie sessions and in-flight DB writes.
         $user->forceFill(['session_version' => $user->session_version + 1, 'remember_token' => Str::random(60)])->save();
         $user->tokens()->delete();
+        $user->revokeMcpOAuthTokens();
         if (config('session.driver') === 'database') {
             $this->sessionQuery($user)->delete();
         }

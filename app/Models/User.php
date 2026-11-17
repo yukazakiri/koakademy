@@ -31,6 +31,8 @@ use Illuminate\Support\Facades\Storage;
 use Laravel\Ai\Concerns\HasConversations;
 use Laravel\Passkeys\Contracts\PasskeyUser;
 use Laravel\Passkeys\PasskeyAuthenticatable;
+use Laravel\Passport\AccessToken;
+use Laravel\Sanctum\Contracts\HasAbilities;
 use Laravel\Sanctum\HasApiTokens;
 use Laravel\Scout\Searchable;
 use Override;
@@ -94,7 +96,9 @@ use Spatie\Permission\Traits\HasRoles;
 final class User extends Authenticatable implements FilamentUser, HasAppAuthentication, HasAppAuthenticationRecovery, HasAvatar, HasEmailAuthentication, PasskeyUser, TrackablePerson
 {
     use BroadcastsEvents;
-    use HasApiTokens;
+    use HasApiTokens {
+        currentAccessToken as private sanctumAccessToken;
+    }
     use HasConversations;
     use HasFactory;
     use HasRoles;
@@ -156,6 +160,20 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
 
     /** @var array<int, string>|null */
     protected ?array $allPermissionNamesCache = null;
+
+    public function currentAccessToken(): HasAbilities|AccessToken|null
+    {
+        return $this->sanctumAccessToken();
+    }
+
+    public function revokeMcpOAuthTokens(): void
+    {
+        $tokens = DB::table('oauth_access_tokens')->where('user_id', $this->getKey());
+
+        DB::table('oauth_refresh_tokens')->whereIn('access_token_id', (clone $tokens)->select('id'))->update(['revoked' => true]);
+        $tokens->update(['revoked' => true]);
+        DB::table('oauth_auth_codes')->where('user_id', $this->getKey())->update(['revoked' => true]);
+    }
 
     /**
      * Get the channels that event should broadcast on.
@@ -817,6 +835,13 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
                 unset($user->attributes['last_name']);
             }
         });
+    }
+
+    // User roles and permissions are defined on the web guard, including when
+    // the same user authenticates with the dedicated MCP OAuth guard.
+    protected function getDefaultGuardName(): string
+    {
+        return 'web';
     }
 
     /**

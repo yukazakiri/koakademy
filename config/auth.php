@@ -44,6 +44,10 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+        'mcp-oauth' => [
+            'driver' => 'passport',
+            'provider' => 'users',
+        ],
         'portal' => [
             'driver' => 'session',
             'provider' => 'accounts',

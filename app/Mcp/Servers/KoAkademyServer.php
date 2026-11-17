@@ -38,7 +38,7 @@ use Laravel\Mcp\Server\Attributes\Version;
 #[Instructions(<<<'MARKDOWN'
     KoAkademy exposes authorized school administration data to internal AI agents.
 
-    Every tool operates only within the school selected for the authenticated API key. Use get_my_context before other tools to understand the caller and selected school. Search results and IDs are school-scoped. Read tools require an MCP read key and the caller's normal application permissions. Mutations require an MCP write key, the caller's normal application permissions, and an explicit idempotency key.
+    Every tool operates only within the school selected for the authenticated caller. Use get_my_context before other tools to understand the caller and selected school. Search results and IDs are school-scoped. Read tools require read access and the caller's normal application permissions. Mutations require write access explicitly granted on the OAuth consent screen or an MCP write key, the caller's normal application permissions, and an explicit idempotency key.
 
     Do not infer or invent student, enrollment, financial, or requirement data. When a tool returns an access error, explain that the connected staff account lacks the required access rather than attempting another school's data.
     MARKDOWN)]

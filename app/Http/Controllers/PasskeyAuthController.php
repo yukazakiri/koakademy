@@ -75,11 +75,12 @@ final class PasskeyAuthController extends Controller
 
             Auth::login($user);
             $request->session()->regenerate();
+            $defaultRedirect = $this->getRedirectForUser($user);
+            $redirect = redirect()->intended($defaultRedirect)->getTargetUrl();
+            $redirect = $redirect === url($defaultRedirect) ? $defaultRedirect : $redirect;
             $request->session()->save();
 
-            $defaultRedirect = $this->getRedirectForUser($user);
-
-            return response()->json(['url' => $defaultRedirect, 'redirect' => $defaultRedirect]);
+            return response()->json(['url' => $redirect, 'redirect' => $redirect]);
         } catch (ValidationException $exception) {
             throw $exception;
         } catch (Throwable $exception) {

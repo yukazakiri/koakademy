@@ -57,6 +57,7 @@
         "laravel/mcp": "^1.0",
         "laravel/nightwatch": "^1.22",
         "laravel/octane": "^2.13",
+        "laravel/passport": "^13.0",
         "laravel/pennant": "^1.18",
         "laravel/pulse": "^1.4",
         "laravel/sail": "^1.46",

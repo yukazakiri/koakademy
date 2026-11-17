@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Concerns;
 
+use App\Mcp\McpOAuth;
 use App\Models\School;
 use App\Models\User;
 use App\Services\TenantContext;
@@ -12,6 +13,8 @@ use Illuminate\Auth\AuthenticationException;
 use Illuminate\Support\Facades\Auth;
 use InvalidArgumentException;
 use Laravel\Mcp\Request;
+use Laravel\Passport\AccessToken;
+use Laravel\Sanctum\PersonalAccessToken;
 
 trait AuthorizesMcpRequests
 {
@@ -31,7 +34,7 @@ trait AuthorizesMcpRequests
 
         $this->currentCaller = $user;
 
-        // MCP HTTP requests always arrive with a Sanctum token. The testing
+        // MCP HTTP requests arrive with a Sanctum or Passport token. The testing
         // harness authenticates the user directly, so only tests may resolve
         // the latest fixture token as a convenience.
         if (app()->environment('testing') && $user->currentAccessToken() === null) {
@@ -196,7 +199,24 @@ trait AuthorizesMcpRequests
     protected function tokenHasExplicitAbility(User $user, string $ability): bool
     {
         $token = $user->currentAccessToken();
-        $abilities = $token?->abilities;
+
+        if ($token instanceof AccessToken) {
+            $scopes = $token->toArray()['oauth_scopes'] ?? [];
+
+            if (! is_array($scopes) || in_array('*', $scopes, true) || ! in_array(McpOAuth::READ, $scopes, true)) {
+                return false;
+            }
+
+            if ($ability === (string) config('api.mcp.abilities.read', 'mcp:read')) {
+                return true;
+            }
+
+            return $ability === (string) config('api.mcp.abilities.write', 'mcp:write')
+                && McpOAuth::userMayWrite($user)
+                && in_array(McpOAuth::WRITE, $scopes, true);
+        }
+
+        $abilities = $token instanceof PersonalAccessToken ? $token->abilities : null;
 
         return is_array($abilities)
             && ! in_array('*', $abilities, true)

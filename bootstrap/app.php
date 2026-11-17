@@ -91,6 +91,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'api.tenant' => SetApiTenantContext::class,
             'api.enabled' => EnsureApiEnabled::class,
             'mcp.enabled' => EnsureMcpEnabled::class,
+            'auth.mcp' => App\Http\Middleware\AuthenticateMcp::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

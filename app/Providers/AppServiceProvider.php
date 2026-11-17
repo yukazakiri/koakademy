@@ -8,6 +8,11 @@ use App\Contracts\AssessmentFormPdfRenderer;
 use App\Enums\UserRole;
 use App\Filament\Handlers\ExportFailureHandler;
 use App\Filament\Plugins\Widgets\PennantFeatureAdoptionWidget;
+use App\Http\Controllers\ApproveMcpAuthorizationController;
+use App\Http\Controllers\McpAuthorizationController;
+use App\Mcp\McpOAuth;
+use App\Mcp\OAuth\CoordinatedAuthCodeGrant;
+use App\Mcp\OAuth\CoordinatedRefreshTokenGrant;
 use App\Models\Passkey;
 use App\Models\StudentTransaction;
 use App\Models\User;
@@ -26,7 +31,9 @@ use App\Services\Newsletter\NewsletterSubscriptionService;
 use App\Services\VersionService;
 use App\Support\HostingSecurity;
 use App\Support\RuntimeSecurity;
+use DateInterval;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Contracts\Auth\StatefulGuard;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Foundation\DevCommands;
@@ -35,6 +42,7 @@ use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
@@ -43,8 +51,14 @@ use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\View\FileViewFinder;
 use Laravel\Passkeys\Passkeys;
+use Laravel\Passport\Bridge\AuthCodeRepository;
+use Laravel\Passport\Bridge\RefreshTokenRepository;
+use Laravel\Passport\Http\Controllers\ApproveAuthorizationController;
+use Laravel\Passport\Http\Controllers\AuthorizationController;
+use Laravel\Passport\Passport;
 use Laravel\Pennant\Feature;
 use Laravel\Scout\EngineManager;
+use League\OAuth2\Server\AuthorizationServer;
 use Livewire\Livewire;
 use PhpOffice\PhpSpreadsheet\Cell\Cell;
 use PhpOffice\PhpSpreadsheet\Cell\DefaultValueBinder;
@@ -58,6 +72,12 @@ final class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->bind(AuthorizationController::class, McpAuthorizationController::class);
+        $this->app->bind(ApproveAuthorizationController::class, ApproveMcpAuthorizationController::class);
+        $this->app->when(McpAuthorizationController::class)
+            ->needs(StatefulGuard::class)
+            ->give(fn () => Auth::guard(config('passport.guard', 'web')));
+
         $this->app->scoped(GeneralSettingsService::class);
         $this->app->scoped(\App\Services\GradeReleaseService::class);
         $this->app->singleton(ExportFailureHandler::class);
@@ -230,6 +250,34 @@ final class AppServiceProvider extends ServiceProvider
         RateLimiter::for('mcp', function (Request $request): Limit {
             return Limit::perMinute((int) config('api.mcp.rate_limit', 30))
                 ->by($request->user()?->getAuthIdentifier() ?? $request->ip());
+        });
+
+        RateLimiter::for('mcp-registration', fn (Request $request): Limit => Limit::perMinute(10)->by($request->ip()));
+
+        Passport::tokensCan([
+            McpOAuth::READ => 'Read data available to your account through MCP.',
+            McpOAuth::WRITE => 'Create, update, or delete data through available MCP tools, within your existing permissions.',
+        ]);
+        Passport::defaultScopes([McpOAuth::READ]);
+        Passport::tokensExpireIn(now()->addHour());
+        Passport::refreshTokensExpireIn(now()->addDays(30));
+        Passport::authorizationView('mcp.authorize');
+
+        // Validate and consume one-time credentials under the same database
+        // row locks used by account-wide revocation, including across replicas.
+        $this->app->afterResolving(AuthorizationServer::class, function (AuthorizationServer $server): void {
+            $authCodeGrant = new CoordinatedAuthCodeGrant(
+                $this->app->make(AuthCodeRepository::class),
+                $this->app->make(RefreshTokenRepository::class),
+                new DateInterval('PT10M'),
+            );
+            $authCodeGrant->setRefreshTokenTTL(Passport::refreshTokensExpireIn());
+            $server->enableGrantType($authCodeGrant, Passport::tokensExpireIn());
+
+            $refreshGrant = new CoordinatedRefreshTokenGrant($this->app->make(RefreshTokenRepository::class));
+            $refreshGrant->setRefreshTokenTTL(Passport::refreshTokensExpireIn());
+            $server->enableGrantType($refreshGrant, Passport::tokensExpireIn());
+            $server->revokeRefreshTokens(Passport::$revokeRefreshTokenAfterUse);
         });
 
         $this->guardMassAssignment();

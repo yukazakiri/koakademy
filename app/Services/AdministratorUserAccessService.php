@@ -50,12 +50,18 @@ final class AdministratorUserAccessService
 
     public function revokeAll(User $user): void
     {
-        // Version enforcement covers Redis/file/cookie sessions and in-flight DB writes.
-        $user->forceFill(['session_version' => $user->session_version + 1, 'remember_token' => Str::random(60)])->save();
-        $user->tokens()->delete();
-        if (config('session.driver') === 'database') {
-            $this->sessionQuery($user)->delete();
-        }
+        $user->getConnection()->transaction(function () use ($user): void {
+            if ($user->getConnection()->getDriverName() === 'sqlite') {
+                $user->getConnection()->table($user->getTable())->where('id', -1)->update(['session_version' => 0]);
+            }
+            $locked = User::query()->whereKey($user->getKey())->lockForUpdate()->firstOrFail();
+            $locked->forceFill(['session_version' => $locked->session_version + 1, 'remember_token' => Str::random(60)])->save();
+            $locked->tokens()->delete();
+            $locked->revokeMcpOAuthTokens();
+            if (config('session.driver') === 'database') {
+                $this->sessionQuery($locked)->delete();
+            }
+        });
     }
 
     private function sessionQuery(User $user): \Illuminate\Database\Query\Builder

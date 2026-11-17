@@ -4,6 +4,19 @@ declare(strict_types=1);
 
 use App\Models\User;
 use Illuminate\Support\Facades\Route;
+use Laravel\Passkeys\Actions\VerifyPasskey;
+
+function oauthTestPasskeyCredential(): array
+{
+    return [
+        'id' => 'Y3JlZGVudGlhbA', 'rawId' => 'Y3JlZGVudGlhbA', 'type' => 'public-key',
+        'response' => [
+            'clientDataJSON' => mb_rtrim(strtr(base64_encode(json_encode(['type' => 'webauthn.get', 'challenge' => 'Y2hhbGxlbmdl', 'origin' => 'http://localhost'])), '+/', '-_'), '='),
+            'authenticatorData' => base64_encode(str_repeat('a', 32).chr(1).pack('N', 0)),
+            'signature' => base64_encode('signature'),
+        ],
+    ];
+}
 
 test('passkey options endpoint returns options without email (discoverable credentials)', function () {
     $response = $this->postJson('/passkeys/options', []);
@@ -98,4 +111,42 @@ test('passkey routes are accessible without domain restriction', function () {
 
     expect($routes)->not->toContain(null);
     $routes->each(fn ($route) => expect($route->getDomain())->toBeNull());
+});
+
+test('passkey sign in returns to the oauth consent request or the default dashboard', function (?string $intended, string $expected) {
+    $user = User::factory()->create();
+    $passkey = $user->passkeys()->create([
+        'name' => 'Test passkey',
+        'credential_id' => 'Y3JlZGVudGlhbA',
+        'credential' => [],
+    ]);
+    $this->mock(VerifyPasskey::class)->shouldReceive('__invoke')->once()->andReturn($passkey);
+
+    $this->postJson('/passkeys/options', [])->assertOk();
+    $this->withSession($intended ? ['url.intended' => $intended] : [])
+        ->postJson('/passkeys/login', ['credential' => oauthTestPasskeyCredential()])
+        ->assertOk()
+        ->assertJsonPath('redirect', $expected);
+    $this->assertAuthenticatedAs($user);
+})->with([
+    'oauth consent' => ['http://localhost/oauth/authorize?client_id=test', 'http://localhost/oauth/authorize?client_id=test'],
+    'default dashboard' => [null, '/faculty/dashboard'],
+]);
+
+test('passkey two factor returns to the oauth consent request', function () {
+    $user = User::factory()->create();
+    $passkey = $user->passkeys()->create([
+        'name' => 'Test passkey',
+        'credential_id' => 'Y3JlZGVudGlhbA',
+        'credential' => [],
+    ]);
+    $this->mock(VerifyPasskey::class)->shouldReceive('__invoke')->once()->andReturn($passkey);
+
+    $this->withSession(['auth.2fa.id' => $user->id])
+        ->postJson('/two-factor-challenge/passkey-options', [])->assertOk();
+    $this->withSession(['url.intended' => 'http://localhost/oauth/authorize?client_id=test'])
+        ->postJson('/two-factor-challenge/passkey-verify', ['credential' => oauthTestPasskeyCredential()])
+        ->assertOk()
+        ->assertJsonPath('redirect', 'http://localhost/oauth/authorize?client_id=test');
+    $this->assertAuthenticatedAs($user);
 });

@@ -929,6 +929,46 @@ it('allows student to retrieve their own profile without student_id argument', f
         });
 });
 
+it('withholds student mcp grades until the posted semester is cleared while staff retain access', function (): void {
+    $this->settings->update(['more_configs' => ['grade_release' => ['require_clearance' => true]]]);
+    $year = $this->settings->getSchoolYearString();
+    $studentUser = User::factory()->create(['role' => UserRole::Student, 'school_id' => $this->school->id]);
+    $student = Student::factory()->create(['user_id' => $studentUser->id, 'email' => $studentUser->email, 'school_id' => $this->school->id]);
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id, 'school_id' => $this->school->id, 'course_id' => $student->course_id,
+        'school_year' => $year, 'semester' => 1,
+    ]);
+    $subject = Subject::factory()->create(['course_id' => $student->course_id, 'school_id' => $this->school->id]);
+    $subjectEnrollment = SubjectEnrollment::factory()->create([
+        'student_id' => $student->id, 'enrollment_id' => $enrollment->id, 'subject_id' => $subject->id,
+        'school_id' => $this->school->id, 'school_year' => $year, 'semester' => 1, 'grade' => 87,
+        'grade_symbol' => null, 'grade_outcome' => 'pass', 'remarks' => 'Passed',
+    ]);
+    $studentUser->createToken('Student Agent', ['mcp:read']);
+    $this->staff->createToken('Staff Agent', ['mcp:read']);
+    $this->staff->givePermissionTo('View:StudentEnrollment');
+
+    KoAkademyServer::actingAs($studentUser)->tool(GetStudentSubjectEnrollmentsTool::class, ['enrollment_id' => $enrollment->id])
+        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('subjects.0.grade', null)->where('subjects.0.remarks', null)->etc());
+    KoAkademyServer::actingAs($this->staff)->tool(GetStudentSubjectEnrollmentsTool::class, ['enrollment_id' => $enrollment->id])
+        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('subjects.0.grade', 87)->etc());
+
+    $service = app(App\Services\GradeReleaseService::class);
+    $service->publish($student, $year, 1, $this->admin);
+    KoAkademyServer::actingAs($studentUser)->tool(GetStudentSubjectEnrollmentsTool::class, ['enrollment_id' => $enrollment->id])
+        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('subjects.0.grade', null)->etc());
+
+    $service->updateClearance($student, $year, 1, true, null, $this->admin);
+    KoAkademyServer::actingAs($studentUser)->tool(GetStudentSubjectEnrollmentsTool::class, ['enrollment_id' => $enrollment->id])
+        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('subjects.0.grade', 87)->where('subjects.0.remarks', 'Passed')->etc());
+    $subjectEnrollment->update(['grade' => 92, 'remarks' => 'Edited draft']);
+    KoAkademyServer::actingAs($studentUser)->tool(GetStudentSubjectEnrollmentsTool::class, ['enrollment_id' => $enrollment->id])
+        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('subjects.0.grade', 87)->where('subjects.0.remarks', 'Passed')->etc());
+    $service->updateClearance($student, $year, 1, false, null, $this->admin);
+    KoAkademyServer::actingAs($studentUser)->tool(GetStudentSubjectEnrollmentsTool::class, ['enrollment_id' => $enrollment->id])
+        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('subjects.0.grade', null)->where('subjects.0.remarks', null)->etc());
+});
+
 it('lists all student enrollments across academic history', function (): void {
     $this->staff->createToken('Staff Agent', ['mcp:read']);
     $this->staff->givePermissionTo('View:StudentEnrollment');

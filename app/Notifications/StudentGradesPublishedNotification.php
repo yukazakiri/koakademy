@@ -68,6 +68,36 @@ final class StudentGradesPublishedNotification extends Notification implements S
         return [$this->channel];
     }
 
+    public function shouldSend(object $notifiable, string $channel): bool
+    {
+        if ($this->releaseId === null || $this->revision === null) {
+            return true;
+        }
+
+        $release = GradeRelease::query()->whereKey($this->releaseId)->where('revision', $this->revision)->first();
+        $student = $release ? \App\Models\Student::withoutSchoolScope()->find($release->student_id) : null;
+
+        $visible = $student !== null && app(\App\Services\GradeReleaseService::class)->canViewPeriodFresh($student, $release->school_year, $release->semester);
+        if (! $visible && $release instanceof GradeRelease) {
+            DB::transaction(function () use ($release, $channel): void {
+                $current = GradeRelease::query()->whereKey($release->id)->where('revision', $release->revision)->lockForUpdate()->first();
+                $student = $current ? \App\Models\Student::withoutSchoolScope()->find($current->student_id) : null;
+                $stillHidden = $student && ! app(\App\Services\GradeReleaseService::class)->canViewPeriodFresh($student, $current->school_year, $current->semester);
+                if ($current && $stillHidden && ($current->notification_status[$channel] ?? null) === 'queued') {
+                    $status = $current->notification_status;
+                    $status[$channel] = 'deferred';
+                    $current->update(['notification_status' => $status]);
+                }
+
+                if ($current && ! $stillHidden && $student) {
+                    DB::afterCommit(fn () => app(\App\Services\GradeReleaseNotificationService::class)->send($current, $student, retry: true));
+                }
+            });
+        }
+
+        return $visible;
+    }
+
     public function toMail(object $notifiable): MailMessage
     {
         return (new MailMessage)

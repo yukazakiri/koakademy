@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Ai\Tools\GetCurriculumProgressTool;
 use App\Enums\UserRole;
 use App\Mcp\Servers\KoAkademyServer;
+use App\Mcp\Tools\GetAvailableSubjectsTool;
 use App\Mcp\Tools\GetStudentChecklistTool;
 use App\Models\Course;
 use App\Models\Department;
@@ -52,6 +53,42 @@ beforeEach(function (): void {
 
     Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
     $this->admin->assignRole('super_admin');
+});
+
+it('prevents student checklist and eligibility tools from inferring hidden finals', function (): void {
+    $this->settings->update(['more_configs' => ['grade_release' => ['require_clearance' => true]]]);
+    $year = $this->settings->getSchoolYearString();
+    $user = User::factory()->create(['role' => UserRole::Student, 'school_id' => $this->school->id]);
+    $course = Course::factory()->create(['school_id' => $this->school->id]);
+    $student = Student::factory()->create(['user_id' => $user->id, 'email' => $user->email, 'school_id' => $this->school->id, 'course_id' => $course->id, 'academic_year' => 1]);
+    $subject = Subject::factory()->create(['school_id' => $this->school->id, 'course_id' => $course->id, 'academic_year' => 1, 'semester' => 1, 'units' => 3]);
+    $enrollment = StudentEnrollment::factory()->create(['student_id' => $student->id, 'school_id' => $this->school->id, 'course_id' => $course->id, 'school_year' => $year, 'semester' => 1]);
+    $subjectEnrollment = SubjectEnrollment::factory()->create([
+        'student_id' => $student->id, 'enrollment_id' => $enrollment->id, 'subject_id' => $subject->id,
+        'school_id' => $this->school->id, 'school_year' => $year, 'semester' => 1,
+        'grade' => 87, 'grade_symbol' => null, 'grade_outcome' => 'pass', 'remarks' => 'Passed',
+    ]);
+    $user->createToken('Student Agent', ['mcp:read']);
+    $service = app(App\Services\GradeReleaseService::class);
+    $service->publish($student, $year, 1, $this->admin);
+
+    KoAkademyServer::actingAs($user)->tool(GetStudentChecklistTool::class, [])
+        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('checklist.0.grade', null)->where('checklist.0.grade_outcome', null)
+        ->where('checklist.0.status', 'In Progress')->where('academic_summary.cumulative_gwa', null)->etc());
+    KoAkademyServer::actingAs($user)->tool(GetAvailableSubjectsTool::class, ['year_level' => 1, 'semester' => 1])
+        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('subjects.0.status', 'currently_enrolled')->etc());
+    $this->actingAs($user);
+    $ai = json_decode(app(GetCurriculumProgressTool::class)->handle(new AiRequest([])), true);
+    expect($ai['checklist'][0]['grade'])->toBeNull()
+        ->and($ai['academic_summary']['cumulative_gwa'])->toBeNull();
+
+    $service->updateClearance($student, $year, 1, true, null, $this->admin);
+    KoAkademyServer::actingAs($user)->tool(GetStudentChecklistTool::class, [])
+        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('checklist.0.grade', '87.00')->where('checklist.0.grade_outcome', 'pass')->etc());
+    $subjectEnrollment->update(['grade' => 92]);
+    KoAkademyServer::actingAs($user)->tool(GetStudentChecklistTool::class, [])
+        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('checklist.0.grade', '87.00')->etc());
+    expect((float) $subjectEnrollment->fresh()->grade)->toBe(92.0);
 });
 
 it('evaluates student curriculum checklist and computes real GWA and deficiencies via MCP', function (): void {

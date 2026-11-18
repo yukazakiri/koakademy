@@ -31,6 +31,8 @@ final class AdministratorGradeReleaseController extends Controller
             $locked->update(['more_configs' => $config]);
         });
 
+        app(\App\Services\GeneralSettingsService::class)->replaceGlobalSettings(null);
+
         return back()->with('success', 'Grade-release clearance requirement updated.');
     }
 
@@ -43,7 +45,18 @@ final class AdministratorGradeReleaseController extends Controller
             'is_cleared' => ['required', 'boolean'],
             'remarks' => ['nullable', 'string', 'max:5000'],
         ]);
-        $service->updateClearance($student, $data['school_year'], (int) $data['semester'], (bool) $data['is_cleared'], $data['remarks'] ?? null, $request->user());
+        DB::transaction(function () use ($student, $data, $service, $request): void {
+            $wasVisible = $service->canViewPeriod($student, $data['school_year'], (int) $data['semester']);
+            $service->updateClearance($student, $data['school_year'], (int) $data['semester'], (bool) $data['is_cleared'], $data['remarks'] ?? null, $request->user());
+            if ($data['is_cleared'] && ! $wasVisible) {
+                $release = GradeRelease::query()->where('student_id', $student->id)
+                    ->whereIn('school_year', $service->yearVariants($data['school_year']))
+                    ->where('semester', (int) $data['semester'])->whereNotNull('published_by')->orderByDesc('updated_at')->orderByDesc('id')->first();
+                if ($release) {
+                    DB::afterCommit(fn () => app(GradeReleaseNotificationService::class)->send($release, $student, retry: true));
+                }
+            }
+        });
 
         return back()->with('success', 'Grade-release clearance updated.');
     }
@@ -58,7 +71,7 @@ final class AdministratorGradeReleaseController extends Controller
         ]);
         $result = DB::transaction(function () use ($student, $data, $service, $request, $notifications): array {
             $result = $service->publish($student, $data['school_year'], (int) $data['semester'], $request->user(), $data['correction_reason'] ?? null);
-            if ($result['changed']) {
+            if ($result['changed'] && $service->canViewPeriod($student, $data['school_year'], (int) $data['semester'])) {
                 DB::afterCommit(fn () => $notifications->send($result['release'], $student));
             }
 
@@ -68,7 +81,9 @@ final class AdministratorGradeReleaseController extends Controller
             return back()->with('success', 'These grades are already published.');
         }
 
-        return back()->with('success', 'Grades published. Notification delivery is queued after the publication is committed.');
+        return back()->with('success', $service->canViewPeriod($student, $data['school_year'], (int) $data['semester'])
+            ? 'Grades published. Notification delivery is queued after the publication is committed.'
+            : 'Grades posted. They will be visible after the student is cleared for this semester.');
     }
 
     public function retryNotifications(Request $request, Student $student, GradeReleaseNotificationService $notifications): RedirectResponse
@@ -79,8 +94,9 @@ final class AdministratorGradeReleaseController extends Controller
             'semester' => ['required', 'integer', 'between:1,3'],
         ]);
         $release = GradeRelease::query()->where('student_id', $student->id)
-            ->where('school_year', app(GradeReleaseService::class)->normalizeYear($data['school_year']))
-            ->where('semester', $data['semester'])->whereNotNull('published_by')->firstOrFail();
+            ->whereIn('school_year', app(GradeReleaseService::class)->yearVariants($data['school_year']))
+            ->where('semester', $data['semester'])->whereNotNull('published_by')->orderByDesc('updated_at')->orderByDesc('id')->firstOrFail();
+        abort_unless(app(GradeReleaseService::class)->canViewPeriod($student, $release->school_year, $release->semester), 403, 'The student must be cleared before grade notifications can be sent.');
         $status = $notifications->send($release, $student, retry: true);
 
         return back()->with('success', $status['warnings'] ? 'Notification retry completed with warnings.' : 'Notification retry queued.');

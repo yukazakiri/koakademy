@@ -134,7 +134,7 @@ final class StudentTransformer extends JsonResource
                 'units' => $enrollment->subject?->units,
                 'section' => $enrollment->class?->section,
                 'grade' => $studentView
-                    ? ($releaseService->publishedSubject($enrollment, $publishedGrades)['grade'] ?? null)
+                    ? ($releaseService->publishedSubject($enrollment, $publishedGrades, $this->resource)['grade'] ?? null)
                     : $enrollment->grade,
                 'academic_year' => $enrollment->academic_year,
                 'semester' => $enrollment->semester,

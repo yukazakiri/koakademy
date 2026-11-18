@@ -14,7 +14,7 @@ final class ClassEnrollmentResource extends JsonResource
     {
         $studentView = $request->user()?->isStudentRole() === true;
         $service = app(\App\Services\GradeReleaseService::class);
-        $published = $studentView && $this->student ? $service->publishedClass($this->resource, $service->releases($this->student)) : null;
+        $published = $studentView && $this->student ? $service->publishedClass($this->resource, $service->releases($this->student), $this->student) : null;
 
         return [
             'id' => (int) $this->id,

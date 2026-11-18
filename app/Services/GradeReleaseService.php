@@ -22,6 +22,9 @@ final class GradeReleaseService
     /** @var array<int, Collection<string, GradeRelease>> */
     private array $releaseCache = [];
 
+    /** @var array<int, Collection<string, GradeReleaseClearance>> */
+    private array $clearanceCache = [];
+
     public function requiresClearance(): bool
     {
         return (bool) data_get(app(GeneralSettingsService::class)->getGlobalSettingsModel()?->more_configs, 'grade_release.require_clearance', false);
@@ -29,6 +32,10 @@ final class GradeReleaseService
 
     public function normalizeYear(string $year): string
     {
+        if (preg_match('/^\s*(\d{4})\s*-\s*(\d{4})\s*$/', $year, $matches) === 1) {
+            return "{$matches[1]} - {$matches[2]}";
+        }
+
         return GeneralSettingsService::normalizeSchoolYear($year);
     }
 
@@ -67,7 +74,8 @@ final class GradeReleaseService
 
         $year = $this->normalizeYear($year);
         $currentYear = $this->normalizeYear($settings->getSchoolYearString());
-        if (preg_match('/^\d{4} - \d{4}$/', $currentYear) !== 1 || (int) $settings->semester < 1) {
+        if (preg_match('/^\d{4} - \d{4}$/', $year) !== 1 || $semester < 1 || $semester > 3
+            || preg_match('/^\d{4} - \d{4}$/', $currentYear) !== 1 || (int) $settings->semester < 1 || (int) $settings->semester > 3) {
             return true;
         }
 
@@ -133,7 +141,8 @@ final class GradeReleaseService
         return DB::transaction(function () use ($student, $year, $semester, $actor, $correctionReason): array {
             Student::withoutSchoolScope()->whereKey($student->id)->lockForUpdate()->firstOrFail();
             $snapshot = $this->snapshot($student, $year, $semester, true);
-            $existing = GradeRelease::query()->where('student_id', $student->id)->where('school_year', $year)->where('semester', $semester)->lockForUpdate()->first();
+            $existing = GradeRelease::query()->where('student_id', $student->id)->whereIn('school_year', $this->yearVariants($year))
+                ->where('semester', $semester)->orderByDesc('updated_at')->orderByDesc('id')->lockForUpdate()->first();
 
             if ($existing && $existing->published_by !== null && $this->canonical($existing->snapshot) === $this->canonical($snapshot)) {
                 return ['release' => $existing, 'changed' => false];
@@ -151,20 +160,14 @@ final class GradeReleaseService
                 throw ValidationException::withMessages(['correction_reason' => 'Explain why the published grades are being changed.']);
             }
 
-            if ($this->clearanceApplies($year, $semester) && $this->requiresClearance()) {
-                $clearance = GradeReleaseClearance::query()->where('student_id', $student->id)->where('school_year', $year)->where('semester', $semester)->lockForUpdate()->first();
-                if (! $clearance?->is_cleared) {
-                    throw ValidationException::withMessages(['period' => 'Grade-release clearance is required before finals can be published for this semester.']);
-                }
-            }
-
             $release = $existing ?? new GradeRelease(['student_id' => $student->id, 'school_year' => $year, 'semester' => $semester]);
+            $notificationState = $this->canViewPeriod($student, $year, $semester) ? 'pending' : 'deferred';
             $release->fill([
                 'snapshot' => $snapshot,
                 'revision' => $existing && $existing->published_by !== null ? $existing->revision + 1 : 1,
                 'published_by' => $actor->id,
                 'published_at' => now(),
-                'notification_status' => ['mail' => 'pending', 'database' => 'pending', 'warnings' => []],
+                'notification_status' => ['mail' => $notificationState, 'database' => $notificationState, 'warnings' => []],
             ])->save();
 
             GradeReleaseEvent::query()->create([
@@ -185,7 +188,10 @@ final class GradeReleaseService
 
         return DB::transaction(function () use ($student, $year, $semester, $cleared, $remarks, $actor): GradeReleaseClearance {
             Student::withoutSchoolScope()->whereKey($student->id)->lockForUpdate()->firstOrFail();
-            $clearance = GradeReleaseClearance::query()->firstOrNew(['student_id' => $student->id, 'school_year' => $year, 'semester' => $semester]);
+            $clearance = GradeReleaseClearance::query()->where('student_id', $student->id)
+                ->whereIn('school_year', $this->yearVariants($year))->where('semester', $semester)
+                ->orderByDesc('updated_at')->orderByDesc('id')->lockForUpdate()->first()
+                ?? new GradeReleaseClearance(['student_id' => $student->id, 'school_year' => $year, 'semester' => $semester]);
             $clearance->fill([
                 'is_cleared' => $cleared, 'remarks' => $remarks,
                 'cleared_by' => $cleared ? $actor->id : null, 'cleared_at' => $cleared ? now() : null,
@@ -197,6 +203,8 @@ final class GradeReleaseService
                 'details' => ['remarks' => $remarks],
             ]);
 
+            unset($this->clearanceCache[$student->id]);
+
             return $clearance;
         });
     }
@@ -204,7 +212,9 @@ final class GradeReleaseService
     /** @return Collection<string, GradeRelease> */
     public function releases(Student $student): Collection
     {
-        return $this->releaseCache[$student->id] ??= GradeRelease::query()->where('student_id', $student->id)->get()->keyBy(fn (GradeRelease $release): string => $this->key($release->school_year, $release->semester));
+        return $this->releaseCache[$student->id] ??= GradeRelease::query()->where('student_id', $student->id)->get()
+            ->sortBy(fn (GradeRelease $row): string => ($row->updated_at?->format('Y-m-d H:i:s.u') ?? '').sprintf('%020d', $row->id))
+            ->keyBy(fn (GradeRelease $release): string => $this->key($release->school_year, $release->semester));
     }
 
     /** @return list<array<string, mixed>> */
@@ -277,17 +287,39 @@ final class GradeReleaseService
     public function isClearedForPeriod(Student $student, string $year, int $semester): ?bool
     {
         $normalized = $this->normalizeYear($year);
-        if (preg_match('/^\d{4} - \d{4}$/', $normalized) !== 1 || $semester < 1) {
+        if (preg_match('/^\d{4} - \d{4}$/', $normalized) !== 1 || $semester < 1 || $semester > 3) {
             return null;
         }
 
-        $clearance = GradeReleaseClearance::query()
-            ->where('student_id', $student->id)
-            ->where('school_year', $normalized)
-            ->where('semester', $semester)
-            ->first();
+        $clearance = $this->clearanceCache[$student->id] ??= GradeReleaseClearance::query()
+            ->where('student_id', $student->id)->get()
+            ->sortBy(fn (GradeReleaseClearance $row): string => ($row->updated_at?->format('Y-m-d H:i:s.u') ?? '').sprintf('%020d', $row->id))
+            ->keyBy(fn (GradeReleaseClearance $row): string => $this->key($row->school_year, $row->semester));
 
-        return $clearance?->is_cleared;
+        return $clearance->get($this->key($normalized, $semester))?->is_cleared;
+    }
+
+    public function canViewPeriod(Student $student, ?string $year, int|string|null $semester): bool
+    {
+        if (! $this->requiresClearance()) {
+            return true;
+        }
+
+        $normalized = $this->normalizeYear((string) $year);
+        $term = (int) $semester;
+        if (preg_match('/^\d{4} - \d{4}$/', $normalized) !== 1 || $term < 1 || $term > 3) {
+            return false;
+        }
+
+        return $this->isClearedForPeriod($student, $normalized, $term) === true
+            || ! $this->clearanceApplies($normalized, $term);
+    }
+
+    public function canViewPeriodFresh(Student $student, ?string $year, int|string|null $semester): bool
+    {
+        unset($this->clearanceCache[$student->id]);
+
+        return $this->canViewPeriod($student, $year, $semester);
     }
 
     public function key(?string $year, int|string|null $semester): string
@@ -296,8 +328,13 @@ final class GradeReleaseService
     }
 
     /** @param Collection<string, GradeRelease> $releases @return array<string, mixed>|null */
-    public function publishedSubject(SubjectEnrollment $enrollment, Collection $releases): ?array
+    public function publishedSubject(SubjectEnrollment $enrollment, Collection $releases, ?Student $student = null): ?array
     {
+        $student ??= $enrollment->relationLoaded('student') ? $enrollment->student : Student::withoutSchoolScope()->find($enrollment->student_id);
+        if (! $student instanceof Student || (int) $student->id !== (int) $enrollment->student_id || ! $this->canViewPeriod($student, $enrollment->school_year, $enrollment->semester)) {
+            return null;
+        }
+
         $release = $releases->get($this->key($enrollment->school_year, $enrollment->semester));
 
         $published = $release?->snapshot['subjects'][(string) $enrollment->id] ?? null;
@@ -308,13 +345,38 @@ final class GradeReleaseService
         return $published;
     }
 
+    /**
+     * Return an in-memory copy containing only the student's posted, visible
+     * result. Never persist this copy; staff calculations still use live data.
+     *
+     * @param  Collection<string, GradeRelease>  $releases
+     */
+    public function studentVisibleSubject(SubjectEnrollment $enrollment, Collection $releases, Student $student): SubjectEnrollment
+    {
+        $visible = $this->publishedSubject($enrollment, $releases, $student);
+        $copy = $enrollment->replicate();
+        $copy->id = $enrollment->id;
+        $copy->grade = $visible['grade'] ?? null;
+        $copy->grade_symbol = $visible['grade_symbol'] ?? null;
+        $copy->grade_outcome = $visible['grade_outcome'] ?? null;
+        $copy->grade_quality_points = $visible['grade_quality_points'] ?? null;
+        $copy->remarks = $visible['remarks'] ?? null;
+        $copy->is_credited = $visible['is_credited'] ?? false;
+
+        return $copy;
+    }
+
     /** @param Collection<string, GradeRelease> $releases @return array<string, mixed>|null */
-    public function publishedClass(ClassEnrollment $enrollment, Collection $releases): ?array
+    public function publishedClass(ClassEnrollment $enrollment, Collection $releases, ?Student $student = null): ?array
     {
         $class = $enrollment->relationLoaded('class')
             ? $enrollment->class
             : \App\Models\Classes::withoutSchoolScope()->find($enrollment->class_id);
         if (! $class) {
+            return null;
+        }
+        $student ??= $enrollment->relationLoaded('student') ? $enrollment->student : Student::withoutSchoolScope()->find($enrollment->student_id);
+        if (! $student instanceof Student || (int) $student->id !== (int) $enrollment->student_id || ! $this->canViewPeriod($student, $class->school_year, $class->semester)) {
             return null;
         }
         $release = $releases->get($this->key($class->school_year, $class->semester));

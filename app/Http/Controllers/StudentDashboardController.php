@@ -72,7 +72,7 @@ final class StudentDashboardController extends Controller
 
                 // Format schedule
                 $schedule = $this->formatSchedule($class);
-                $published = $gradeReleases->publishedClass($enrollment, $publishedGrades);
+                $published = $gradeReleases->publishedClass($enrollment, $publishedGrades, $student);
 
                 $enrolledClasses[] = [
                     'id' => $class->id,

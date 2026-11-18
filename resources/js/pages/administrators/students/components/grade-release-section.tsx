@@ -66,15 +66,16 @@ export function GradeReleaseSection({ student }: { student: StudentDetail }) {
                 <CardHeader>
                     <CardTitle>Grade release and clearance</CardTitle>
                     <CardDescription>
-                        Current and future semester clearance is {student.grade_release_clearance_required ? "required" : "not required"} to publish
-                        final grades. Previous semesters do not require it.
+                        Staff can post final grades before clearance. Students{" "}
+                        {student.grade_release_clearance_required ? "must be cleared to view" : "can view"} current and future semester finals. Past
+                        semesters do not require clearance.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-4">
                     {student.grade_release_periods.length === 0 && <p className="text-muted-foreground text-sm">No semesters have been recorded.</p>}
                     {student.grade_release_periods.map((period) => {
                         const blocked = period.clearance_required && !period.clearance?.is_cleared;
-                        const canPublish = period.total > 0 && period.missing === 0 && !blocked && (!period.published_at || period.has_changes);
+                        const canPublish = period.total > 0 && period.missing === 0 && (!period.published_at || period.has_changes);
                         return (
                             <div
                                 key={`${period.school_year}-${period.semester}`}
@@ -88,9 +89,10 @@ export function GradeReleaseSection({ student }: { student: StudentDetail }) {
                                     <Badge variant={period.clearance?.is_cleared ? "default" : "secondary"}>
                                         {period.clearance ? (period.clearance.is_cleared ? "Cleared" : "Not cleared") : "No clearance record"}
                                     </Badge>
-                                    <Badge variant={period.published_at && !period.has_changes ? "default" : "secondary"}>
-                                        {period.published_at ? (period.has_changes ? "Unpublished changes" : "Published") : "Draft"}
+                                    <Badge variant={period.published_at && !period.has_changes && !blocked ? "default" : "secondary"}>
+                                        {period.published_at ? (blocked ? "Posted · Awaiting clearance" : "Published") : "Draft"}
                                     </Badge>
+                                    {period.published_at && period.has_changes && <Badge variant="secondary">Unpublished changes</Badge>}
                                 </div>
                                 <div className="text-muted-foreground flex flex-col gap-1 text-sm">
                                     <span>
@@ -160,7 +162,7 @@ export function GradeReleaseSection({ student }: { student: StudentDetail }) {
                                                 type="button"
                                                 variant="outline"
                                                 size="sm"
-                                                disabled={retryForm.processing}
+                                                disabled={retryForm.processing || blocked}
                                                 onClick={() => {
                                                     retryForm.transform(() => ({ school_year: period.school_year, semester: period.semester }));
                                                     retryForm.post(retryNotifications.url(student.id), {
@@ -236,8 +238,10 @@ export function GradeReleaseSection({ student }: { student: StudentDetail }) {
                     <AlertDialogHeader>
                         <AlertDialogTitle>Publish these grades?</AlertDialogTitle>
                         <AlertDialogDescription>
-                            Grades for {publishing?.school_year}, semester {publishing?.semester}, will become visible to the student. A notification
-                            will be sent through supported configured channels.
+                            Grades for {publishing?.school_year}, semester {publishing?.semester}, will be posted.{" "}
+                            {publishing?.clearance_required && !publishing.clearance?.is_cleared
+                                ? "They remain hidden until the student is cleared; notification is deferred until then."
+                                : "They will be visible to the student, and a notification will be sent through supported configured channels."}
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     {(publishing?.needs_correction_reason || Boolean(publishForm.errors.correction_reason)) && (

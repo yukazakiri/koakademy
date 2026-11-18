@@ -8,6 +8,7 @@ use App\Mcp\Concerns\AuthorizesMcpRequests;
 use App\Models\Subject;
 use App\Models\SubjectEnrollment;
 use App\Services\GeneralSettingsService;
+use App\Services\GradeReleaseService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Mcp\Request;
@@ -53,7 +54,15 @@ final class GetAvailableSubjectsTool extends Tool
         $enrolledSubjectRecords = SubjectEnrollment::query()
             ->with('subject')
             ->where('student_id', $student->id)
-            ->get(['id', 'subject_id', 'grade', 'grade_outcome', 'remarks', 'semester', 'school_year']);
+            ->get(['id', 'student_id', 'subject_id', 'grade', 'grade_outcome', 'remarks', 'semester', 'school_year']);
+
+        if ($user->isStudentRole()) {
+            $gradeReleases = app(GradeReleaseService::class);
+            $releases = $gradeReleases->releases($student);
+            $enrolledSubjectRecords = $enrolledSubjectRecords->map(
+                fn (SubjectEnrollment $enrollment): SubjectEnrollment => $gradeReleases->studentVisibleSubject($enrollment, $releases, $student),
+            );
+        }
 
         $enrolledSubjectIds = $enrolledSubjectRecords->pluck('subject_id')->filter()->unique()->all();
 

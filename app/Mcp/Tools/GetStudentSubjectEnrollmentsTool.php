@@ -8,6 +8,7 @@ use App\Mcp\Concerns\AuthorizesMcpRequests;
 use App\Models\StudentEnrollment;
 use App\Models\SubjectEnrollment;
 use App\Services\GeneralSettingsService;
+use App\Services\GradeReleaseService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Mcp\Request;
@@ -77,10 +78,14 @@ final class GetStudentSubjectEnrollmentsTool extends Tool
         }
 
         $totalUnits = 0;
-        $items = $subjectEnrollments->map(function (SubjectEnrollment $se) use (&$totalUnits): array {
+        $gradeReleases = app(GradeReleaseService::class);
+        $published = $user->isStudentRole() && $student ? $gradeReleases->releases($student) : collect();
+        $items = $subjectEnrollments->map(function (SubjectEnrollment $se) use (&$totalUnits, $user, $student, $gradeReleases, $published): array {
             $subject = $se->subject;
             $units = $subject?->units ?? $se->external_subject_units ?? ($se->enrolled_lecture_units + $se->enrolled_laboratory_units);
             $totalUnits += (int) $units;
+            $visibleGrade = $user->isStudentRole() && $student ? $gradeReleases->publishedSubject($se, $published, $student) : null;
+            $studentGrade = $visibleGrade['grade'] ?? null;
 
             return [
                 'id' => $se->id,
@@ -88,14 +93,14 @@ final class GetStudentSubjectEnrollmentsTool extends Tool
                 'subject_code' => $subject?->code ?? $se->external_subject_code ?? 'N/A',
                 'subject_title' => $subject?->title ?? $se->external_subject_title ?? 'N/A',
                 'units' => $units,
-                'grade' => $se->grade !== null ? (float) $se->grade : null,
-                'remarks' => $se->remarks,
+                'grade' => $user->isStudentRole() ? (is_numeric($studentGrade) ? (float) $studentGrade : null) : ($se->grade !== null ? (float) $se->grade : null),
+                'remarks' => $user->isStudentRole() ? ($visibleGrade['remarks'] ?? null) : $se->remarks,
                 'section' => $se->section ?? $se->class?->section ?? 'N/A',
                 'instructor' => $se->instructor ?? $se->class?->faculty?->full_name ?? 'TBA',
                 'room' => $se->class?->room?->name ?? 'TBA',
                 'class_id' => $se->class_id,
                 'classification' => $se->classification,
-                'is_credited' => (bool) $se->is_credited,
+                'is_credited' => $user->isStudentRole() ? (bool) ($visibleGrade['is_credited'] ?? false) : (bool) $se->is_credited,
                 'is_modular' => (bool) $se->is_modular,
             ];
         })->values()->all();

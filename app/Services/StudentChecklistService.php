@@ -26,7 +26,7 @@ final class StudentChecklistService
      * @param  array<string, mixed>  $options
      * @return array<string, mixed>
      */
-    public function analyze(Student $student, array $options = []): array
+    public function analyze(Student $student, array $options = [], bool $studentView = false): array
     {
         $school = $student->school ?? app(TenantContext::class)->getCurrentSchool();
         $gradingConfig = $this->gradingSystem->getConfig($school);
@@ -69,6 +69,14 @@ final class StudentChecklistService
             ->where('student_id', $student->id)
             ->with(['subject', 'class'])
             ->get();
+
+        if ($studentView) {
+            $gradeReleases = app(GradeReleaseService::class);
+            $releases = $gradeReleases->releases($student);
+            $subjectEnrollments = $subjectEnrollments->map(
+                fn (SubjectEnrollment $enrollment): SubjectEnrollment => $gradeReleases->studentVisibleSubject($enrollment, $releases, $student),
+            );
+        }
 
         $enrolledBySubjectId = $subjectEnrollments
             ->filter(fn (SubjectEnrollment $se): bool => $se->classification !== SubjectEnrolledEnum::NON_CREDITED->value)

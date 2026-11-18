@@ -44,7 +44,7 @@ final class GetStudentChecklistTool extends Tool
             'status' => $request->get('status') ? (string) $request->get('status') : null,
         ];
 
-        $analysis = $this->checklistService->analyze($student, $options);
+        $analysis = $this->checklistService->analyze($student, $options, studentView: $user->isStudentRole());
 
         return Response::structured($analysis);
     }

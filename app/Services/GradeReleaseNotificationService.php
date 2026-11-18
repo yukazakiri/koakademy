@@ -9,6 +9,7 @@ use App\Models\GradeRelease;
 use App\Models\Student;
 use App\Models\User;
 use App\Notifications\StudentGradesPublishedNotification;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use Throwable;
 
@@ -16,6 +17,33 @@ final class GradeReleaseNotificationService
 {
     /** @return array<string, mixed> */
     public function send(GradeRelease $release, Student $student, bool $retry = false): array
+    {
+        return DB::transaction(function () use ($release, $student, $retry): array {
+            Student::withoutSchoolScope()->whereKey($student->id)->lockForUpdate()->firstOrFail();
+            $current = GradeRelease::query()->whereKey($release->id)->where('revision', $release->revision)->lockForUpdate()->first();
+
+            if (! $current) {
+                return ['mail' => 'deferred', 'database' => 'deferred', 'warnings' => []];
+            }
+
+            if (! app(GradeReleaseService::class)->canViewPeriodFresh($student, $current->school_year, $current->semester)) {
+                $status = $current->notification_status ?? ['warnings' => []];
+                foreach (['mail', 'database'] as $channel) {
+                    if (($status[$channel] ?? 'pending') === 'pending') {
+                        $status[$channel] = 'deferred';
+                    }
+                }
+                $current->update(['notification_status' => $status]);
+
+                return $status;
+            }
+
+            return $this->sendVisible($current, $student, $retry);
+        });
+    }
+
+    /** @return array<string, mixed> */
+    private function sendVisible(GradeRelease $release, Student $student, bool $retry): array
     {
         $configured = data_get(app(GeneralSettingsService::class)->getGlobalSettingsModel()?->more_configs, 'notification_channels.enabled_channels', ['mail', 'database']);
         $configured = is_array($configured) ? $configured : [];

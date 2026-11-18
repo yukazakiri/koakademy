@@ -13,13 +13,13 @@ Koakademy provides a grading and academic performance engine that balances flexi
 
 Koakademy supports multiple concurrent grading standards configured per program, school, or department (`GradingPolicy` and `GradingPolicyVersion`):
 
-| Grading Scale | Format / Range | Typical Institutional Usage |
-| ------------- | -------------- | --------------------------- |
-| **Philippine Collegiate Standard** | `1.00` (Highest / Excellent) to `3.00` (Passing), `5.00` (Failed) | State universities, private colleges, CHED degree programs. |
-| **Percentage Scale** | `0%` to `100%`, with passing thresholds at `75%` or `60%` | Junior & Senior High Schools (DepEd K-12), preparatory institutions. |
-| **US / International Letter Scale** | `A+`, `A`, `A-`, `B+`, `B`, `B-`, `C`, `D`, `F` | International programs, graduate business schools. |
-| **Competency / Rubric Standard** | `Competent` (C), `Not Yet Competent` (NYC) | TESDA technical-vocational qualifications. |
-| **Qualitative / Pass-Fail** | `P` (Passed), `F` (Failed), `INC` (Incomplete), `DRP` (Dropped) | Thesis defense, physical education, internships, residency. |
+| Grading Scale                       | Format / Range                                                    | Typical Institutional Usage                                          |
+| ----------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------- |
+| **Philippine Collegiate Standard**  | `1.00` (Highest / Excellent) to `3.00` (Passing), `5.00` (Failed) | State universities, private colleges, CHED degree programs.          |
+| **Percentage Scale**                | `0%` to `100%`, with passing thresholds at `75%` or `60%`         | Junior & Senior High Schools (DepEd K-12), preparatory institutions. |
+| **US / International Letter Scale** | `A+`, `A`, `A-`, `B+`, `B`, `B-`, `C`, `D`, `F`                   | International programs, graduate business schools.                   |
+| **Competency / Rubric Standard**    | `Competent` (C), `Not Yet Competent` (NYC)                        | TESDA technical-vocational qualifications.                           |
+| **Qualitative / Pass-Fail**         | `P` (Passed), `F` (Failed), `INC` (Incomplete), `DRP` (Dropped)   | Thesis defense, physical education, internships, residency.          |
 
 ---
 
@@ -63,6 +63,18 @@ Koakademy supports multiple concurrent grading standards configured per program,
 
 ---
 
+## Final Grade Release and Clearance
+
+Administrators or authorized registrars can post a student's complete final-grade snapshot for a school year and semester before clearance is granted. When **Require grade-release clearance** is enabled, the student can view the posted final results for the current or a future semester only while that same semester's clearance is marked **Cleared**. Prelim and midterm scores remain visible. Prior semesters are not subject to this clearance requirement.
+
+- Granting clearance makes posted finals visible. Revoking it hides them again while the semester is current or future.
+- If an uncleared semester becomes historical, its posted grades become visible without clearance. The rule uses the installation's global academic year and semester, not the viewer's personal semester selection.
+- Previously migrated grade snapshots remain posted, but current and future semesters are subject to the same clearance gate. Staff must explicitly publish later corrections, including a correction reason.
+- Grade notifications are deferred while finals are hidden and queued when clearance makes them available. Notification delivery is checked again before sending.
+- Student portal pages, class-enrollment APIs, and student-facing MCP and academic-advisor checklist tools use the posted snapshot and clearance rule. Authorized staff continue to see live records.
+
+---
+
 ## General Weighted Average (GWA) Engine
 
 Koakademy computes students' cumulative and term General Weighted Average in real time:
@@ -72,17 +84,20 @@ GWA = Sum(Final Grade × Credit Units) / Sum(Credit Units)
 ```
 
 ### Configurable Subject Exclusions
+
 Certain curricular subjects should not impact academic honors or cumulative academic standing:
+
 - **National Service Training Program (NSTP / CWTS / ROTC):** Fully recorded for graduation requirements but excluded from collegiate GPA/GWA calculations per CHED regulations.
 - **Physical Education (PE):** Optionally excluded or included based on institutional policy.
 - **Remedial / Bridging Courses:** Non-credit foundation courses tracked separately from graduation credit totals.
 
 ### Academic Honors & Deans List
+
 - **Automated Deans List:** Automatically identifies eligible students per semester who satisfy minimum load requirements (e.g. at least 15 academic units), achieve a minimum GWA (e.g. 1.75 or higher), and have no grade below 2.50 or any Incomplete marks.
 - **Latin Honors Calculation:** Evaluates graduating seniors against institutional Latin Honors criteria:
-  - *Summa Cum Laude:* GWA 1.00 – 1.20 (no grade below 2.00)
-  - *Magna Cum Laude:* GWA 1.21 – 1.45 (no grade below 2.25)
-  - *Cum Laude:* GWA 1.46 – 1.75 (no grade below 2.50)
+    - _Summa Cum Laude:_ GWA 1.00 – 1.20 (no grade below 2.00)
+    - _Magna Cum Laude:_ GWA 1.21 – 1.45 (no grade below 2.25)
+    - _Cum Laude:_ GWA 1.46 – 1.75 (no grade below 2.50)
 
 ---
 

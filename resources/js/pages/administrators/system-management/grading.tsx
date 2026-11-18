@@ -178,7 +178,8 @@ export default function SystemManagementGradingPage({
                 <CardHeader>
                     <CardTitle>Final grade release</CardTitle>
                     <CardDescription>
-                        This installation-wide setting applies to current and future semester finals. Past semesters do not require clearance.
+                        When enabled, students must be cleared to view posted final grades for current and future semesters. Staff can post grades
+                        before clearance; past semesters do not require it.
                     </CardDescription>
                 </CardHeader>
                 <CardContent>

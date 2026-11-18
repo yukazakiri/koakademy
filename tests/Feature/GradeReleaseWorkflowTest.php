@@ -44,17 +44,22 @@ beforeEach(function (): void {
     Notification::fake();
 });
 
-it('requires the separate current-term clearance before publication and sends only one notice per revision', function (): void {
+it('posts current-term grades before clearance but only notifies once they become visible', function (): void {
     $url = portalUrlForAdministrators("/administrators/students/{$this->student->id}/grade-releases");
     $payload = ['school_year' => '2025 - 2026', 'semester' => 2];
-    $this->actingAs($this->admin)->from('/')->post($url, $payload)->assertSessionHasErrors('period');
-    expect(GradeRelease::query()->count())->toBe(0);
+    $this->actingAs($this->admin)->from('/')->post($url, $payload)->assertSessionHasNoErrors();
+    expect(GradeRelease::query()->count())->toBe(1);
+    expect(GradeRelease::query()->first()->notification_status['mail'])->toBe('deferred');
+    Notification::assertNothingSent();
 
     $this->actingAs($this->admin)->post(portalUrlForAdministrators("/administrators/students/{$this->student->id}/grade-release-clearance"), [
         ...$payload, 'is_cleared' => true, 'remarks' => 'Library complete',
     ])->assertSessionHasNoErrors();
+    Notification::assertSentToTimes($this->studentUser, StudentGradesPublishedNotification::class, 1);
     $this->actingAs($this->admin)->post($url, $payload)->assertSessionHasNoErrors();
     $this->actingAs($this->admin)->post($url, $payload)->assertSessionHasNoErrors();
+    $period = collect(app(GradeReleaseService::class)->periods($this->student))->firstWhere('school_year', '2025 - 2026');
+    expect($period['clearance']['is_cleared'])->toBeTrue()->and($period['published_at'])->not->toBeNull();
 
     expect(GradeRelease::query()->first()->revision)->toBe(1)
         ->and(GradeReleaseClearance::query()->first()->is_cleared)->toBeTrue();
@@ -93,9 +98,10 @@ it('publishes a historical semester without current-term clearance', function ()
     expect(GradeRelease::query()->where('school_year', '2024 - 2025')->exists())->toBeTrue();
 });
 
-it('requires clearance for future semesters when the rule is enabled', function (): void {
+it('allows future-semester grades to be posted while keeping them hidden until clearance', function (): void {
     $this->subjectEnrollment->update(['school_year' => '2026 - 2027', 'semester' => 1]);
-    $this->actingAs($this->admin)->post(portalUrlForAdministrators("/administrators/students/{$this->student->id}/grade-releases"), ['school_year' => '2026 - 2027', 'semester' => 1])->assertSessionHasErrors('period');
+    $this->actingAs($this->admin)->post(portalUrlForAdministrators("/administrators/students/{$this->student->id}/grade-releases"), ['school_year' => '2026 - 2027', 'semester' => 1])->assertSessionHasNoErrors();
+    expect(app(GradeReleaseService::class)->publishedSubject($this->subjectEnrollment->fresh(), app(GradeReleaseService::class)->releases($this->student)))->toBeNull();
 });
 
 it('allows authorized grading administrators to configure the requirement', function (): void {
@@ -112,6 +118,142 @@ it('manages historical clearance and clears stale approval details when revoked'
     $this->actingAs($this->admin)->post($url, [...$data, 'is_cleared' => false])->assertSessionHasNoErrors();
     $clearance = GradeReleaseClearance::query()->first();
     expect($clearance->school_year)->toBe('2024 - 2025')->and($clearance->is_cleared)->toBeFalse()->and($clearance->cleared_by)->toBeNull()->and($clearance->cleared_at)->toBeNull();
+});
+
+it('updates an existing clearance with a legacy school-year format', function (): void {
+    GradeReleaseClearance::query()->create([
+        'student_id' => $this->student->id, 'school_year' => '2025-2026', 'semester' => 2, 'is_cleared' => false,
+    ]);
+    $service = app(GradeReleaseService::class);
+    $service->updateClearance($this->student, '2025 - 2026', 2, true, null, $this->admin);
+
+    expect(GradeReleaseClearance::query()->where('student_id', $this->student->id)->count())->toBe(1)
+        ->and($service->isClearedForPeriod($this->student, '2025 - 2026', 2))->toBeTrue();
+});
+
+it('hides a posted final again when clearance is revoked and restores it when cleared', function (): void {
+    $service = app(GradeReleaseService::class);
+    $service->updateClearance($this->student, '2025 - 2026', 2, true, null, $this->admin);
+    $service->publish($this->student, '2025 - 2026', 2, $this->admin);
+    expect($service->publishedSubject($this->subjectEnrollment, $service->releases($this->student))['grade'])->toEqual(87);
+
+    $service->updateClearance($this->student, '2025 - 2026', 2, false, null, $this->admin);
+    expect($service->publishedSubject($this->subjectEnrollment, $service->releases($this->student)))->toBeNull();
+
+    $service->updateClearance($this->student, '2025 - 2026', 2, true, null, $this->admin);
+    expect($service->publishedSubject($this->subjectEnrollment, $service->releases($this->student))['grade'])->toEqual(87);
+});
+
+it('gates baseline and posted grades per student and period, while retaining historical access', function (): void {
+    $service = app(GradeReleaseService::class);
+    $snapshot = $service->snapshot($this->student, '2025 - 2026', 2);
+    GradeRelease::query()->create([
+        'student_id' => $this->student->id, 'school_year' => '2025 - 2026', 'semester' => 2,
+        'snapshot' => $snapshot, 'revision' => 1, 'published_at' => now(), 'published_by' => null,
+    ]);
+    $other = Student::factory()->create(['school_id' => $this->student->school_id]);
+    $service->updateClearance($other, '2025 - 2026', 2, true, null, $this->admin);
+    $service->updateClearance($this->student, '2025 - 2026', 1, true, null, $this->admin);
+    expect($service->publishedSubject($this->subjectEnrollment, $service->releases($this->student)))->toBeNull()
+        ->and($service->publishedSubject($this->subjectEnrollment, $service->releases($this->student), $other))->toBeNull();
+
+    $service->updateClearance($this->student, '2025 - 2026', 2, true, null, $this->admin);
+    expect($service->publishedSubject($this->subjectEnrollment, $service->releases($this->student))['grade'])->toEqual(87);
+    $service->updateClearance($this->student, '2025 - 2026', 2, false, null, $this->admin);
+    expect($service->publishedSubject($this->subjectEnrollment, $service->releases($this->student)))->toBeNull();
+
+    GeneralSetting::query()->first()->update(['semester' => 3]);
+    expect($service->publishedSubject($this->subjectEnrollment, $service->releases($this->student))['grade'])->toEqual(87);
+});
+
+it('uses the global academic period rather than a students personal semester selection', function (): void {
+    App\Models\UserSetting::query()->updateOrCreate(['user_id' => $this->studentUser->id], ['semester' => 3, 'school_year_start' => 2025]);
+    $service = app(GradeReleaseService::class);
+    GradeRelease::query()->create([
+        'student_id' => $this->student->id, 'school_year' => '2025 - 2026', 'semester' => 2,
+        'snapshot' => $service->snapshot($this->student, '2025 - 2026', 2), 'revision' => 1, 'published_at' => now(), 'published_by' => null,
+    ]);
+
+    $this->actingAs($this->studentUser);
+    expect($service->publishedSubject($this->subjectEnrollment, $service->releases($this->student)))->toBeNull();
+});
+
+it('fails closed for invalid grade periods when clearance is required', function (): void {
+    $service = app(GradeReleaseService::class);
+
+    expect($service->canViewPeriod($this->student, 'invalid', 1))->toBeFalse()
+        ->and($service->canViewPeriod($this->student, '2025 - 2026', 0))->toBeFalse()
+        ->and($service->canViewPeriod($this->student, '2025 - 2026', 4))->toBeFalse();
+});
+
+it('normalizes whitespace in a valid school year for clearance', function (): void {
+    $service = app(GradeReleaseService::class);
+    $service->updateClearance($this->student, ' 2025 - 2026 ', 2, true, null, $this->admin);
+
+    expect($service->isClearedForPeriod($this->student, '2025-2026', 2))->toBeTrue()
+        ->and(GradeReleaseClearance::query()->first()->school_year)->toBe('2025 - 2026');
+});
+
+it('reflects the clearance switch immediately on the student visibility decision', function (): void {
+    $service = app(GradeReleaseService::class);
+    $service->publish($this->student, '2025 - 2026', 2, $this->admin);
+    expect($service->publishedSubject($this->subjectEnrollment, $service->releases($this->student)))->toBeNull();
+
+    $administrator = User::factory()->create(['role' => UserRole::SuperAdmin]);
+    $this->actingAs($administrator)->put(portalUrlForAdministrators('/administrators/system-management/grade-release'), ['require_clearance' => false])
+        ->assertSessionHasNoErrors();
+    $service = app(GradeReleaseService::class);
+    expect($service->publishedSubject($this->subjectEnrollment, $service->releases($this->student))['grade'])->toEqual(87);
+    $this->actingAs($administrator)->put(portalUrlForAdministrators('/administrators/system-management/grade-release'), ['require_clearance' => true])
+        ->assertSessionHasNoErrors();
+    $service = app(GradeReleaseService::class);
+    expect($service->publishedSubject($this->subjectEnrollment, $service->releases($this->student)))->toBeNull();
+});
+
+it('defers an already queued notice if clearance is revoked before delivery', function (): void {
+    $service = app(GradeReleaseService::class);
+    $service->updateClearance($this->student, '2025 - 2026', 2, true, null, $this->admin);
+    $release = $service->publish($this->student, '2025 - 2026', 2, $this->admin)['release'];
+    $release->update(['notification_status' => ['mail' => 'queued', 'database' => 'queued', 'warnings' => []]]);
+    $notification = new StudentGradesPublishedNotification($release->school_year, $release->semester, 'mail', $release->id, $release->revision);
+    $service->updateClearance($this->student, '2025 - 2026', 2, false, null, $this->admin);
+
+    expect($notification->shouldSend($this->studentUser, 'mail'))->toBeFalse()
+        ->and($release->fresh()->notification_status['mail'])->toBe('deferred');
+    $service->updateClearance($this->student, '2025 - 2026', 2, true, null, $this->admin);
+    expect($notification->shouldSend($this->studentUser, 'mail'))->toBeTrue();
+    app(App\Services\GradeReleaseNotificationService::class)->send($release->fresh(), $this->student, retry: true);
+    expect($release->fresh()->notification_status['mail'])->toBe('queued');
+});
+
+it('notifies about the latest deferred revision only after clearance is granted', function (): void {
+    $url = portalUrlForAdministrators("/administrators/students/{$this->student->id}/grade-releases");
+    $payload = ['school_year' => '2025 - 2026', 'semester' => 2];
+    $this->actingAs($this->admin)->post($url, $payload)->assertSessionHasNoErrors();
+    $this->subjectEnrollment->update(['grade' => 91]);
+    $this->actingAs($this->admin)->post($url, [...$payload, 'correction_reason' => 'Corrected'])->assertSessionHasNoErrors();
+    Notification::assertNothingSent();
+
+    $this->actingAs($this->admin)->post(portalUrlForAdministrators("/administrators/students/{$this->student->id}/grade-releases/retry-notifications"), $payload)->assertForbidden();
+    $this->actingAs($this->admin)->post(portalUrlForAdministrators("/administrators/students/{$this->student->id}/grade-release-clearance"), [...$payload, 'is_cleared' => true])->assertSessionHasNoErrors();
+    Notification::assertSentToTimes($this->studentUser, StudentGradesPublishedNotification::class, 1);
+    Notification::assertSentOnDemandTimes(StudentGradesPublishedNotification::class, 1);
+    expect(GradeRelease::query()->first()->revision)->toBe(2);
+});
+
+it('marks a pending notification deferred if clearance is revoked before it is queued', function (): void {
+    $service = app(GradeReleaseService::class);
+    $service->updateClearance($this->student, '2025 - 2026', 2, true, null, $this->admin);
+    $release = $service->publish($this->student, '2025 - 2026', 2, $this->admin)['release'];
+    $service->updateClearance($this->student, '2025 - 2026', 2, false, null, $this->admin);
+    $status = app(App\Services\GradeReleaseNotificationService::class)->send($release, $this->student);
+
+    expect($status['mail'])->toBe('deferred')->and($status['database'])->toBe('deferred');
+    Notification::assertNothingSent();
+    $this->actingAs($this->admin)->post(portalUrlForAdministrators("/administrators/students/{$this->student->id}/grade-release-clearance"), [
+        'school_year' => '2025 - 2026', 'semester' => 2, 'is_cleared' => true,
+    ])->assertSessionHasNoErrors();
+    Notification::assertSentToTimes($this->studentUser, StudentGradesPublishedNotification::class, 1);
 });
 
 it('shows clearance history for recorded terms including terms with no clearance', function (): void {
@@ -132,17 +274,31 @@ it('returns the grade-release history on the administrator student page', functi
         ->where('student.grade_release_periods', fn ($periods): bool => collect($periods)->contains(fn ($period): bool => $period['school_year'] === '2024 - 2025' && $period['clearance']['is_cleared'])));
 });
 
-it('keeps baseline grades visible but permits explicit publication without changes', function (): void {
+it('keeps baseline snapshots posted while enforcing current-term clearance', function (): void {
     $service = app(GradeReleaseService::class);
     GradeRelease::query()->create([
         'student_id' => $this->student->id, 'school_year' => '2025 - 2026', 'semester' => 2,
         'snapshot' => $service->snapshot($this->student, '2025 - 2026', 2), 'revision' => 1, 'published_at' => now(), 'published_by' => null,
     ]);
-    expect($service->publishedSubject($this->subjectEnrollment, $service->releases($this->student))['grade'])->toBe('87.00');
-    $this->actingAs($this->admin)->post(portalUrlForAdministrators("/administrators/students/{$this->student->id}/grade-releases"), ['school_year' => '2025 - 2026', 'semester' => 2])->assertSessionHasErrors('period');
+    expect($service->publishedSubject($this->subjectEnrollment, $service->releases($this->student)))->toBeNull();
+    $this->actingAs($this->admin)->post(portalUrlForAdministrators("/administrators/students/{$this->student->id}/grade-releases"), ['school_year' => '2025 - 2026', 'semester' => 2])->assertSessionHasNoErrors();
     $service->updateClearance($this->student, '2025 - 2026', 2, true, null, $this->admin);
     $this->actingAs($this->admin)->post(portalUrlForAdministrators("/administrators/students/{$this->student->id}/grade-releases"), ['school_year' => '2025 - 2026', 'semester' => 2])->assertSessionHasNoErrors();
     expect(GradeRelease::query()->first()->published_by)->toBe($this->admin->id);
+});
+
+it('publishes changes to a legacy-format snapshot without duplicating the semester', function (): void {
+    $service = app(GradeReleaseService::class);
+    GradeRelease::query()->create([
+        'student_id' => $this->student->id, 'school_year' => '2025-2026', 'semester' => 2,
+        'snapshot' => $service->snapshot($this->student, '2025 - 2026', 2), 'revision' => 1, 'published_at' => now(), 'published_by' => null,
+    ]);
+    $service->publish($this->student, '2025 - 2026', 2, $this->admin);
+
+    expect(GradeRelease::query()->where('student_id', $this->student->id)->count())->toBe(1)
+        ->and($service->publishedSubject($this->subjectEnrollment, $service->releases($this->student)))->toBeNull();
+    $service->updateClearance($this->student, '2025 - 2026', 2, true, null, $this->admin);
+    expect($service->publishedSubject($this->subjectEnrollment, $service->releases($this->student))['grade'])->toEqual(87);
 });
 
 it('migrates previously visible grades into a baseline without notifications', function (): void {
@@ -252,10 +408,75 @@ it('masks finals on the student dashboard and class page', function (): void {
         ->where('my_grades.final', null)->where('my_grades.average', null)->where('my_grades.final_status', 'clearance_required'));
 });
 
+it('keeps prelim and midterm visible while hiding posted finals on portal and api until clearance', function (): void {
+    config(['inertia.testing.ensure_pages_exist' => false]);
+    $class = Classes::factory()->create(['school_id' => $this->student->school_id, 'school_year' => '2025 - 2026', 'semester' => 2]);
+    $classEnrollment = ClassEnrollment::factory()->create([
+        'school_id' => $this->student->school_id, 'student_id' => $this->student->id, 'class_id' => $class->id,
+        'prelim_grade' => 80, 'midterm_grade' => 82, 'finals_grade' => 90, 'total_average' => 85,
+    ]);
+    $service = app(GradeReleaseService::class);
+    $service->publish($this->student, '2025 - 2026', 2, $this->admin);
+    $this->withoutMiddleware([App\Http\Middleware\EnsureStudentAccess::class, App\Http\Middleware\EnsureFeatureEnabled::class]);
+
+    $this->actingAs($this->studentUser)->get(route('student.classes.show', $class))->assertOk()->assertInertia(fn (AssertableInertia $page) => $page
+        ->where('my_grades.prelim', '80.00')->where('my_grades.midterm', '82.00')->where('my_grades.final', null)->where('my_grades.average', null)
+        ->where('my_grades.final_status', 'clearance_required'));
+    $this->actingAs($this->studentUser, 'sanctum')->getJson('/api/class-enrollments/'.$classEnrollment->id)
+        ->assertOk()->assertJsonPath('data.prelim_grade', '80.00')->assertJsonPath('data.midterm_grade', '82.00')
+        ->assertJsonPath('data.finals_grade', null)->assertJsonPath('data.total_average', null);
+
+    $service->updateClearance($this->student, '2025 - 2026', 2, true, null, $this->admin);
+    $this->actingAs($this->studentUser, 'sanctum')->getJson('/api/class-enrollments/'.$classEnrollment->id)
+        ->assertOk()->assertJsonPath('data.finals_grade', '90.00')->assertJsonPath('data.total_average', '85.00');
+    $service->updateClearance($this->student, '2025 - 2026', 2, false, null, $this->admin);
+    $this->actingAs($this->studentUser, 'sanctum')->getJson('/api/class-enrollments/'.$classEnrollment->id)
+        ->assertOk()->assertJsonPath('data.finals_grade', null)->assertJsonPath('data.total_average', null);
+});
+
+it('masks student api fields and transformers while keeping staff results intact', function (): void {
+    $class = Classes::factory()->create(['school_id' => $this->student->school_id, 'school_year' => '2025 - 2026', 'semester' => 2]);
+    $enrollment = ClassEnrollment::factory()->create([
+        'school_id' => $this->student->school_id, 'student_id' => $this->student->id, 'class_id' => $class->id,
+        'prelim_grade' => 80, 'midterm_grade' => 82, 'finals_grade' => 90, 'total_average' => 85, 'grade_symbol' => 'B',
+        'grade_outcome' => 'pass', 'grade_quality_points' => 3,
+    ]);
+    $enrollment->load(['student', 'class']);
+    $service = app(GradeReleaseService::class);
+    $service->publish($this->student, '2025 - 2026', 2, $this->admin);
+    $studentRequest = Illuminate\Http\Request::create('/');
+    $studentRequest->setUserResolver(fn () => $this->studentUser);
+    $staffRequest = Illuminate\Http\Request::create('/');
+    $staffRequest->setUserResolver(fn () => $this->admin);
+
+    $hidden = (new App\Http\Resources\Api\V1\ClassEnrollmentResource($enrollment))->toArray($studentRequest);
+    expect($hidden['grades']['prelim'])->toEqual(80)->and($hidden['grades']['midterm'])->toEqual(82)
+        ->and($hidden['grades']['finals'])->toBeNull()->and($hidden['grades']['average'])->toBeNull();
+    $staff = (new App\Http\Resources\Api\V1\ClassEnrollmentResource($enrollment))->toArray($staffRequest);
+    expect($staff['grades']['finals'])->toEqual(90)->and($staff['grades']['average'])->toEqual(85);
+
+    $this->student->load('subjectEnrolled');
+    $hiddenStudent = (new App\Filament\Resources\Students\Api\Transformers\StudentTransformer($this->student))->toArray($studentRequest);
+    expect($hiddenStudent['current_enrolled_subjects'][0]['grade'])->toBeNull();
+
+    $service->updateClearance($this->student, '2025 - 2026', 2, true, null, $this->admin);
+    $visible = (new App\Http\Resources\Api\V1\ClassEnrollmentResource($enrollment))->toArray($studentRequest);
+    expect($visible['grades']['finals'])->toEqual(90)->and($visible['grades']['average'])->toEqual(85);
+    $visibleStudent = (new App\Filament\Resources\Students\Api\Transformers\StudentTransformer($this->student))->toArray($studentRequest);
+    expect($visibleStudent['current_enrolled_subjects'][0]['grade'])->toEqual(87);
+    $service->updateClearance($this->student, '2025 - 2026', 2, false, null, $this->admin);
+    $hiddenAgain = (new App\Http\Resources\Api\V1\ClassEnrollmentResource($enrollment))->toArray($studentRequest);
+    $hiddenStudentAgain = (new App\Filament\Resources\Students\Api\Transformers\StudentTransformer($this->student))->toArray($studentRequest);
+    expect($hiddenAgain['grades']['finals'])->toBeNull()->and($hiddenAgain['grades']['average'])->toBeNull()
+        ->and($hiddenStudentAgain['current_enrolled_subjects'][0]['grade'])->toBeNull();
+});
+
 it('preserves legacy records without letting them block enrollment or clear final grades', function (): void {
     StudentClearance::query()->create(['student_id' => $this->student->id, 'academic_year' => '2025 - 2026', 'semester' => 1, 'is_cleared' => false]);
     expect($this->student->validateEnrollmentClearance('2025 - 2026', 2)['allowed'])->toBeTrue();
-    $this->actingAs($this->admin)->post(portalUrlForAdministrators("/administrators/students/{$this->student->id}/grade-releases"), ['school_year' => '2025 - 2026', 'semester' => 2])->assertSessionHasErrors('period');
+    $this->actingAs($this->admin)->post(portalUrlForAdministrators("/administrators/students/{$this->student->id}/grade-releases"), ['school_year' => '2025 - 2026', 'semester' => 2])->assertSessionHasNoErrors();
+    $service = app(GradeReleaseService::class);
+    expect($service->publishedSubject($this->subjectEnrollment, $service->releases($this->student)))->toBeNull();
     expect(StudentClearance::query()->count())->toBe(1);
 });
 

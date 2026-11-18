@@ -20,7 +20,7 @@ final class ClassEnrollmentResource extends JsonResource
         $published = null;
         if ($isStudent && $this->student) {
             $service = app(\App\Services\GradeReleaseService::class);
-            $published = $service->publishedClass($this->resource, $service->releases($this->student));
+            $published = $service->publishedClass($this->resource, $service->releases($this->student), $this->student);
         }
 
         return [

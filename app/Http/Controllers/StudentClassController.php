@@ -105,7 +105,7 @@ final class StudentClassController extends Controller
         // Student's own grades
         $gradeReleases = app(GradeReleaseService::class);
         $enrollment->setRelation('class', $class);
-        $published = $gradeReleases->publishedClass($enrollment, $gradeReleases->releases($student));
+        $published = $gradeReleases->publishedClass($enrollment, $gradeReleases->releases($student), $student);
         $grades = [
             'prelim' => $enrollment->prelim_grade,
             'midterm' => $enrollment->midterm_grade,
@@ -113,8 +113,7 @@ final class StudentClassController extends Controller
             'average' => $published['total_average'] ?? null,
             'final_status' => $published && ($published['total_average'] !== null || $published['grade_symbol'] !== null)
                 ? 'released'
-                : ($class->school_year && $gradeReleases->requiresClearance() && $gradeReleases->clearanceApplies((string) $class->school_year, (int) $class->semester)
-                    && $gradeReleases->isClearedForPeriod($student, (string) $class->school_year, (int) $class->semester) !== true
+                : (! $gradeReleases->canViewPeriod($student, $class->school_year, $class->semester)
                         ? 'clearance_required' : 'not_released'),
         ];
 

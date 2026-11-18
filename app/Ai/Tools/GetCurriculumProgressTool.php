@@ -67,7 +67,7 @@ final class GetCurriculumProgressTool implements Tool
             'status' => isset($request['status']) ? (string) $request['status'] : null,
         ];
 
-        $analysis = $this->checklistService->analyze($student, $options);
+        $analysis = $this->checklistService->analyze($student, $options, studentView: $user->isStudentRole());
         $summary = is_array($analysis['academic_summary'] ?? null) ? $analysis['academic_summary'] : null;
         $totalCurriculumSubjects = (int) ($summary['total_curriculum_subjects'] ?? 0);
 

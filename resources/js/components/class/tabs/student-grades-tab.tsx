@@ -22,7 +22,7 @@ export function StudentGradesTab({ grades }: StudentGradesTabProps) {
     const average = grades.average;
     const finalStatus =
         grades.final_status === "clearance_required"
-            ? "Clearance required before final grades can be released."
+            ? "Clearance is required to view final grades for this semester."
             : "Final grades have not yet been released.";
 
     return (

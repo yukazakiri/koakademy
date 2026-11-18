@@ -93,7 +93,7 @@ final class StudentClassesController extends Controller
                 ?? 0;
 
             // Determine status
-            $published = $gradeReleases->publishedSubject($enrollment, $publishedGrades);
+            $published = $gradeReleases->publishedSubject($enrollment, $publishedGrades, $student);
             $numericGrade = $published['grade'] ?? null;
             $grade = $published['grade_symbol'] ?? $numericGrade;
             $outcome = $published['grade_outcome'] ?? null;

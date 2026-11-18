@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
-# Audit the production JavaScript dependencies.
+# Audit the JavaScript runtime tree shipped in the production Docker images.
+# Both Dockerfiles prune dev and optional dependencies after building assets.
+# Build-time and optional dependencies are not covered by this runtime audit.
 #
 # `npm audit` exits non-zero both when it finds vulnerabilities and when it
 # cannot reach the advisory endpoint, so a transient registry outage would
@@ -32,7 +34,7 @@ trap 'rm -f "$stdout_file" "$stderr_file"' EXIT
 
 for attempt in $(seq 1 "$attempts"); do
     status=0
-    npm audit --omit=dev --audit-level=high --json >"$stdout_file" 2>"$stderr_file" || status=$?
+    npm audit --omit=dev --omit=optional --audit-level=high --json >"$stdout_file" 2>"$stderr_file" || status=$?
 
     if [ "$status" -eq 0 ]; then
         cat "$stdout_file"

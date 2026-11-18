@@ -176,8 +176,10 @@ jobs:
       - name: Install JavaScript dependencies
         run: npm ci
 
-      - name: Audit JavaScript production dependencies
-        run: bash scripts/audit-production-deps.sh
+      - name: Test and audit Docker runtime dependencies
+        run: |
+          bash tests/audit-production-deps.sh
+          bash scripts/audit-production-deps.sh
 
       - name: Check PHP formatting
         run: vendor/bin/pint --test
@@ -227,12 +229,12 @@ jobs:
           done
           for script in scripts/install.sh scripts/koakademy scripts/check-release-assets.sh \
             scripts/generate-version-metadata.sh scripts/audit-production-deps.sh \
-            tests/installer-release.sh; do
+            tests/installer-release.sh tests/audit-production-deps.sh; do
             bash -n "${script}"
           done
           shellcheck scripts/install.sh scripts/koakademy scripts/koakademy-app-entrypoint.sh \
             scripts/check-release-assets.sh scripts/generate-version-metadata.sh \
-            scripts/audit-production-deps.sh tests/installer-release.sh \
+            scripts/audit-production-deps.sh tests/installer-release.sh tests/audit-production-deps.sh \
             tests/Fixtures/installer/docker tests/Fixtures/installer/curl
 
       - name: Validate one-line Swarm stack

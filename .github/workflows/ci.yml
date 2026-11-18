@@ -176,9 +176,24 @@ jobs:
       - name: Install JavaScript dependencies
         run: npm ci
 
+      - name: Verify audit test availability
+        env:
+          VALIDATION_SOURCE: ${{ inputs.source_sha }}
+        run: |
+          if [[ -f tests/audit-production-deps.sh ]]; then
+            echo "Audit test is available."
+          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && -n "${VALIDATION_SOURCE}" && "${VALIDATION_SOURCE}" != "${GITHUB_SHA}" ]]; then
+            echo "::notice::Historical recovery source predates the audit test; the source's production audit still runs."
+          else
+            echo "::error::Required audit test is missing."
+            exit 1
+          fi
+
       - name: Test and audit Docker runtime dependencies
         run: |
-          bash tests/audit-production-deps.sh
+          if [[ -f tests/audit-production-deps.sh ]]; then
+            bash tests/audit-production-deps.sh
+          fi
           bash scripts/audit-production-deps.sh
 
       - name: Check PHP formatting
@@ -229,12 +244,16 @@ jobs:
           done
           for script in scripts/install.sh scripts/koakademy scripts/check-release-assets.sh \
             scripts/generate-version-metadata.sh scripts/audit-production-deps.sh \
-            tests/installer-release.sh tests/audit-production-deps.sh; do
+            tests/installer-release.sh; do
             bash -n "${script}"
           done
+          if [[ -f tests/audit-production-deps.sh ]]; then
+            bash -n tests/audit-production-deps.sh
+            shellcheck tests/audit-production-deps.sh
+          fi
           shellcheck scripts/install.sh scripts/koakademy scripts/koakademy-app-entrypoint.sh \
             scripts/check-release-assets.sh scripts/generate-version-metadata.sh \
-            scripts/audit-production-deps.sh tests/installer-release.sh tests/audit-production-deps.sh \
+            scripts/audit-production-deps.sh tests/installer-release.sh \
             tests/Fixtures/installer/docker tests/Fixtures/installer/curl
 
       - name: Validate one-line Swarm stack

@@ -54,7 +54,7 @@ final class GetAvailableSubjectsTool extends Tool
         $enrolledSubjectRecords = SubjectEnrollment::query()
             ->with('subject')
             ->where('student_id', $student->id)
-            ->get(['id', 'subject_id', 'grade', 'grade_outcome', 'remarks', 'semester', 'school_year']);
+            ->get(['id', 'student_id', 'subject_id', 'grade', 'grade_outcome', 'remarks', 'semester', 'school_year']);
 
         if ($user->isStudentRole()) {
             $gradeReleases = app(GradeReleaseService::class);

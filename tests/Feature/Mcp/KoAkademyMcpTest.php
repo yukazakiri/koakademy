@@ -942,31 +942,31 @@ it('withholds student mcp grades until the posted semester is cleared while staf
     $subjectEnrollment = SubjectEnrollment::factory()->create([
         'student_id' => $student->id, 'enrollment_id' => $enrollment->id, 'subject_id' => $subject->id,
         'school_id' => $this->school->id, 'school_year' => $year, 'semester' => 1, 'grade' => 87,
-        'grade_symbol' => null, 'grade_outcome' => 'pass', 'remarks' => 'Passed',
+        'grade_symbol' => null, 'grade_outcome' => 'pass', 'remarks' => 'Passed', 'is_credited' => true,
     ]);
     $studentUser->createToken('Student Agent', ['mcp:read']);
     $this->staff->createToken('Staff Agent', ['mcp:read']);
     $this->staff->givePermissionTo('View:StudentEnrollment');
 
     KoAkademyServer::actingAs($studentUser)->tool(GetStudentSubjectEnrollmentsTool::class, ['enrollment_id' => $enrollment->id])
-        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('subjects.0.grade', null)->where('subjects.0.remarks', null)->etc());
+        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('subjects.0.grade', null)->where('subjects.0.remarks', null)->where('subjects.0.is_credited', false)->etc());
     KoAkademyServer::actingAs($this->staff)->tool(GetStudentSubjectEnrollmentsTool::class, ['enrollment_id' => $enrollment->id])
-        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('subjects.0.grade', 87)->etc());
+        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('subjects.0.grade', 87)->where('subjects.0.is_credited', true)->etc());
 
     $service = app(App\Services\GradeReleaseService::class);
     $service->publish($student, $year, 1, $this->admin);
     KoAkademyServer::actingAs($studentUser)->tool(GetStudentSubjectEnrollmentsTool::class, ['enrollment_id' => $enrollment->id])
-        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('subjects.0.grade', null)->etc());
+        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('subjects.0.grade', null)->where('subjects.0.remarks', null)->where('subjects.0.is_credited', false)->etc());
 
     $service->updateClearance($student, $year, 1, true, null, $this->admin);
     KoAkademyServer::actingAs($studentUser)->tool(GetStudentSubjectEnrollmentsTool::class, ['enrollment_id' => $enrollment->id])
-        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('subjects.0.grade', 87)->where('subjects.0.remarks', 'Passed')->etc());
-    $subjectEnrollment->update(['grade' => 92, 'remarks' => 'Edited draft']);
+        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('subjects.0.grade', 87)->where('subjects.0.remarks', 'Passed')->where('subjects.0.is_credited', true)->etc());
+    $subjectEnrollment->update(['grade' => 92, 'remarks' => 'Edited draft', 'is_credited' => false]);
     KoAkademyServer::actingAs($studentUser)->tool(GetStudentSubjectEnrollmentsTool::class, ['enrollment_id' => $enrollment->id])
-        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('subjects.0.grade', 87)->where('subjects.0.remarks', 'Passed')->etc());
+        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('subjects.0.grade', 87)->where('subjects.0.remarks', 'Passed')->where('subjects.0.is_credited', true)->etc());
     $service->updateClearance($student, $year, 1, false, null, $this->admin);
     KoAkademyServer::actingAs($studentUser)->tool(GetStudentSubjectEnrollmentsTool::class, ['enrollment_id' => $enrollment->id])
-        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('subjects.0.grade', null)->where('subjects.0.remarks', null)->etc());
+        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('subjects.0.grade', null)->where('subjects.0.remarks', null)->where('subjects.0.is_credited', false)->etc());
 });
 
 it('lists all student enrollments across academic history', function (): void {

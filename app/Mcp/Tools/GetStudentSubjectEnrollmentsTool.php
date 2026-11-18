@@ -100,7 +100,7 @@ final class GetStudentSubjectEnrollmentsTool extends Tool
                 'room' => $se->class?->room?->name ?? 'TBA',
                 'class_id' => $se->class_id,
                 'classification' => $se->classification,
-                'is_credited' => (bool) $se->is_credited,
+                'is_credited' => $user->isStudentRole() ? (bool) ($visibleGrade['is_credited'] ?? false) : (bool) $se->is_credited,
                 'is_modular' => (bool) $se->is_modular,
             ];
         })->values()->all();

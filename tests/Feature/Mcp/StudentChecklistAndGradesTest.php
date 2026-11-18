@@ -85,10 +85,17 @@ it('prevents student checklist and eligibility tools from inferring hidden final
     $service->updateClearance($student, $year, 1, true, null, $this->admin);
     KoAkademyServer::actingAs($user)->tool(GetStudentChecklistTool::class, [])
         ->assertOk()->assertStructuredContent(fn ($json) => $json->where('checklist.0.grade', '87.00')->where('checklist.0.grade_outcome', 'pass')->etc());
+    KoAkademyServer::actingAs($user)->tool(GetAvailableSubjectsTool::class, ['year_level' => 1, 'semester' => 1])
+        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('subjects.0.status', 'completed')->where('subjects.0.last_grade', 87)->etc());
     $subjectEnrollment->update(['grade' => 92]);
+    KoAkademyServer::actingAs($user)->tool(GetAvailableSubjectsTool::class, ['year_level' => 1, 'semester' => 1])
+        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('subjects.0.last_grade', 87)->etc());
     KoAkademyServer::actingAs($user)->tool(GetStudentChecklistTool::class, [])
         ->assertOk()->assertStructuredContent(fn ($json) => $json->where('checklist.0.grade', '87.00')->etc());
     expect((float) $subjectEnrollment->fresh()->grade)->toBe(92.0);
+    $service->updateClearance($student, $year, 1, false, null, $this->admin);
+    KoAkademyServer::actingAs($user)->tool(GetAvailableSubjectsTool::class, ['year_level' => 1, 'semester' => 1])
+        ->assertOk()->assertStructuredContent(fn ($json) => $json->where('subjects.0.status', 'currently_enrolled')->where('subjects.0.last_grade', null)->etc());
 });
 
 it('evaluates student curriculum checklist and computes real GWA and deficiencies via MCP', function (): void {

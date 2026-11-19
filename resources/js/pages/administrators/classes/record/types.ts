@@ -9,7 +9,7 @@ export type WeeklyScheduleEntry = {
         id: number | null;
         name: string;
     };
-    has_conflict: boolean;
+    has_conflict?: boolean;
 };
 
 export type RawScheduleEntry = {
@@ -19,9 +19,15 @@ export type RawScheduleEntry = {
     start_time: string;
     end_time: string;
     room_id: number | null;
+    room_name?: string | null;
+    component_type?: "lecture" | "lab" | null;
+    pattern_group_id?: string | null;
+    status?: "draft" | "published" | null;
+    subject_id?: number | null;
     temp_id?: string;
 };
 
+// Kept for the legacy timetable component, which is no longer mounted on the record page.
 export type RoomScheduleEntry = {
     id: number;
     class_id: number;
@@ -128,7 +134,7 @@ export interface ClassShowProps {
     capabilities?: ClassShowCapabilities;
     enrollments: EnrollmentRow[];
     raw_schedules: RawScheduleEntry[];
-    room_schedules: Record<number, RoomScheduleEntry[]>;
+    schedule_revision: string;
     rooms: RoomOption[];
     transferable_classes: TransferableClass[];
 }

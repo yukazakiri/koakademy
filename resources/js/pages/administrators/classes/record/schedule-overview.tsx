@@ -15,14 +15,12 @@ export function ScheduleOverview({ classItem, canUpdate, onManage }: { classItem
             title: "",
             location: (entry.delivery_mode ?? classItem.delivery_mode) === "online" ? undefined : entry.room?.name || "Room not assigned",
             online: (entry.delivery_mode ?? classItem.delivery_mode) === "online",
-            conflict: entry.has_conflict,
         })),
     );
     const hours = events.reduce((total, event) => {
         const duration = parseTimeToMinutes(event.end) - parseTimeToMinutes(event.start);
         return total + (Number.isFinite(duration) && duration > 0 ? duration / 60 : 0);
     }, 0);
-    const conflicts = events.filter((event) => event.conflict).length;
     const count = classItem.students_count;
     const capacity = classItem.maximum_slots;
     const overCapacity = capacity > 0 && count > capacity;
@@ -55,11 +53,7 @@ export function ScheduleOverview({ classItem, canUpdate, onManage }: { classItem
                                 ? `${events.length} ${events.length === 1 ? "session" : "sessions"} · ${Number(hours.toFixed(2))} ${hours === 1 ? "hour" : "hours"} per week`
                                 : "Add sessions to set the weekly schedule."}
                         </p>
-                        {conflicts > 0 && (
-                            <p role="status" className="text-destructive text-sm">
-                                {conflicts} {conflicts === 1 ? "session has a conflict" : "sessions have conflicts"}. Review the affected times.
-                            </p>
-                        )}
+                        <p className="text-muted-foreground text-xs">Room, faculty, and cohort conflicts are checked when changes are saved.</p>
                     </div>
                     {canUpdate && (
                         <Button variant="outline" onClick={onManage} className="h-10 px-3">

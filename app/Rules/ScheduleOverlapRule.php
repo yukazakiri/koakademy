@@ -141,15 +141,16 @@ final class ScheduleOverlapRule implements DataAwareRule, ValidationRule
                     $this->conflictingSchedule->start_time->format('h:i A').
                     ' to '.
                     $this->conflictingSchedule->end_time->format('h:i A').
-                    '.';
+                    ' ('.$this->conflictLocation().').';
             }
 
             if ($this->conflictType === 'section') {
-                return sprintf("The student cohort is already scheduled for '%s' on %s from %s to %s.",
+                return sprintf("The student cohort is already scheduled for '%s' on %s from %s to %s (%s).",
                     $className,
                     $this->conflictingSchedule->day_of_week,
                     $this->conflictingSchedule->start_time->format('h:i A'),
                     $this->conflictingSchedule->end_time->format('h:i A'),
+                    $this->conflictLocation(),
                 );
             }
 
@@ -177,6 +178,13 @@ final class ScheduleOverlapRule implements DataAwareRule, ValidationRule
         $this->data = $data;
 
         return $this;
+    }
+
+    private function conflictLocation(): string
+    {
+        return $this->conflictingSchedule?->isOnline()
+            ? 'online'
+            : ($this->conflictingSchedule?->room?->name ?? 'room unassigned');
     }
 
     /**

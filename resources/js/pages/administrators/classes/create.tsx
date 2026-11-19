@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { index, show } from "@/routes/administrators/classes";
 import type { User } from "@/types/user";
-import { Head, Link } from "@inertiajs/react";
+import { Head, Link, usePage } from "@inertiajs/react";
 import { ArrowLeft, ArrowUpRight, BookOpen, Calendar, GraduationCap } from "lucide-react";
 import type { ReactNode } from "react";
 import { ClassWizard } from "./forms/class-wizard";
@@ -39,6 +39,8 @@ export default function AdministratorClassCreate({
     flash,
 }: CreateClassProps): ReactNode {
     const isEditing = mode === "edit";
+    const pageUrl = usePage().url;
+    const initialSection = isEditing && new URL(pageUrl, "http://localhost").searchParams.get("step") === "schedule" ? "schedule" : "details";
     const semester = defaults.semester;
     const schoolYear = defaults.school_year;
     const initialData = isEditing ? (defaults as ClassFormData) : undefined;
@@ -126,6 +128,7 @@ export default function AdministratorClassCreate({
                     mode={mode}
                     classId={class_id}
                     initialData={initialData}
+                    initialSection={initialSection}
                 />
             </div>
         </AdminLayout>

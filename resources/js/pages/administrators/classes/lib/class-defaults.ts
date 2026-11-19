@@ -37,6 +37,7 @@ export type ClassSchedule = {
     start_time: string;
     end_time: string;
     room_id: number | null;
+    room_name?: string | null;
     component_type?: "lecture" | "lab";
     pattern_group_id?: string | null;
     status?: "draft" | "published";
@@ -127,6 +128,7 @@ export type ClassStorePayload = {
     room_id: number | null;
     maximum_slots: number;
     schedules: ClassSchedule[];
+    schedules_match_by_id?: boolean;
     settings: ClassSettings;
 } & (
     | {

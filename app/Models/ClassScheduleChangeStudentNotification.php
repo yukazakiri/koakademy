@@ -22,6 +22,9 @@ final class ClassScheduleChangeStudentNotification extends Model
         'email',
         'notified_at',
         'notified_by_user_id',
+        'auto_dispatch',
+        'database_queued_at',
+        'mail_queued_at',
     ];
 
     public function scheduleChange(): BelongsTo
@@ -53,6 +56,9 @@ final class ClassScheduleChangeStudentNotification extends Model
     {
         return [
             'notified_at' => 'datetime',
+            'auto_dispatch' => 'boolean',
+            'database_queued_at' => 'datetime',
+            'mail_queued_at' => 'datetime',
         ];
     }
 }

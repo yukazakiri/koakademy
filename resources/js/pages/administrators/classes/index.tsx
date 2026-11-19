@@ -14,6 +14,7 @@ import {
     copy as copyClass,
     create as createClass,
     destroy as destroyClass,
+    edit as editClass,
     forceDestroy as forceDestroyClass,
     restore as restoreClass,
     show as showClass,
@@ -694,6 +695,11 @@ export default function AdministratorClassesIndex({
         });
     };
 
+    const openSchedule = (classId: number) => {
+        cancelPendingSearch();
+        router.visit(editClass.url(classId, { query: { step: "schedule" } }));
+    };
+
     const confirmDelete = (row: ClassRow) => {
         setPendingDelete(row);
     };
@@ -731,7 +737,7 @@ export default function AdministratorClassesIndex({
     const classActions: ClassActionHandlers = {
         onManage: openManage,
         onEdit: openEdit,
-        onSchedule: (id) => openEdit(id, "schedule"),
+        onSchedule: openSchedule,
         onDelete: confirmDelete,
         onRestore: performRestore,
         onForceDelete: performForceDelete,
@@ -1258,8 +1264,7 @@ export default function AdministratorClassesIndex({
                                             type="button"
                                             variant="outline"
                                             onClick={() => {
-                                                setEditActiveTab("schedule");
-                                                setIsEditOpen(true);
+                                                openSchedule(selected_class.id);
                                             }}
                                         >
                                             Edit schedule

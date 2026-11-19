@@ -10,6 +10,12 @@ Artisan::command('inspire', function (): void {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
+Artisan::command('class-schedule:retry-notifications', function (App\Services\ClassScheduleChangeNotificationService $service): void {
+    $service->dispatchPendingAutomatic();
+})->purpose('Retry pending automatic class schedule notifications');
+
+Schedule::command('class-schedule:retry-notifications')->everyMinute()->onOneServer()->withoutOverlapping();
+
 // Horizon is not a project dependency (see bootstrap/providers.php); it is only
 // present inside the production Docker images. Guard its scheduled snapshot with
 // the same package-presence check so non-Docker installs do not invoke an

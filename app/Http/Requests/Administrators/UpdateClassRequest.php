@@ -66,16 +66,17 @@ final class UpdateClassRequest extends FormRequest
             'maximum_slots' => ['sometimes', 'nullable', 'integer', 'min:1'],
 
             // Schedule
+            'schedules_match_by_id' => ['sometimes', 'boolean'],
             'schedules' => ['sometimes', 'array', new NonOverlappingScheduleBlocksRule, new ScheduleOverlapRule($classIdForScheduleExclusion)],
             'schedules.*.id' => [
                 'sometimes',
                 'integer',
                 'distinct',
-                Rule::exists('schedule', 'id')->where('class_id', $classIdForScheduleExclusion),
+                Rule::exists('schedule', 'id')->where('class_id', $classIdForScheduleExclusion)->whereNull('deleted_at'),
             ],
             'schedules.*.day_of_week' => ['required_with:schedules', Rule::in(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])],
             'schedules.*.start_time' => ['required_with:schedules', 'date_format:H:i'],
-            'schedules.*.end_time' => ['required_with:schedules', 'date_format:H:i'],
+            'schedules.*.end_time' => ['required_with:schedules', 'date_format:H:i', 'after:schedules.*.start_time'],
             'schedules.*.delivery_mode' => ['sometimes', Rule::in(['face_to_face', 'online'])],
             'schedules.*.room_id' => ['nullable', 'integer', 'exists:rooms,id'],
             'schedules.*.component_type' => ['nullable', 'string', Rule::in(['lecture', 'lab'])],
@@ -156,6 +157,7 @@ final class UpdateClassRequest extends FormRequest
                 $this->input('schedules'),
                 $class instanceof Classes ? $class : null,
                 is_string($this->input('delivery_mode')) ? $this->input('delivery_mode') : null,
+                ! $this->boolean('schedules_match_by_id'),
             )]);
         }
     }

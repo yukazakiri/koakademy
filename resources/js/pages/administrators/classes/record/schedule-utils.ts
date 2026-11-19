@@ -58,7 +58,7 @@ export function buildTimetableBlocksForDay(dayKey: string, entries: WeeklySchedu
                 endMinutes,
                 timeRange: entry.time_range,
                 roomName: entry.room.name,
-                hasConflict: entry.has_conflict,
+                hasConflict: entry.has_conflict ?? false,
             };
         })
         .filter((block): block is Omit<TimetableBlock, "lane" | "laneCount"> => block !== null)

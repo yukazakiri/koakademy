@@ -25,7 +25,7 @@ final class ScheduleDelivery
         return $block;
     }
 
-    public static function normalizeSchedules(mixed $schedules, ?Classes $class = null, ?string $default = null): mixed
+    public static function normalizeSchedules(mixed $schedules, ?Classes $class = null, ?string $default = null, bool $matchLegacy = true): mixed
     {
         if (! is_array($schedules)) {
             return $schedules;
@@ -37,7 +37,7 @@ final class ScheduleDelivery
             ->pluck('id')->filter(fn (mixed $id): bool => is_numeric($id))->map(fn (mixed $id): int => (int) $id)->all();
         $usedIds = [];
 
-        return array_map(static function (mixed $block) use ($existing, $default, $claimedIds, &$usedIds): mixed {
+        return array_map(static function (mixed $block) use ($existing, $default, $claimedIds, $matchLegacy, &$usedIds): mixed {
             if (! is_array($block)) {
                 return $block;
             }
@@ -47,11 +47,13 @@ final class ScheduleDelivery
                 && ! in_array($schedule->id, $claimedIds, true)
                 && ! in_array($schedule->id, $usedIds, true));
             // Match legacy rows by meeting day before falling back to stable ID order.
-            $previous ??= $available?->first(fn ($schedule): bool => $schedule->day_of_week === ($block['day_of_week'] ?? null)
-                && $schedule->start_time?->format('H:i') === mb_substr((string) ($block['start_time'] ?? ''), 0, 5)
-                && $schedule->end_time?->format('H:i') === mb_substr((string) ($block['end_time'] ?? ''), 0, 5));
-            $previous ??= $available?->first(fn ($schedule): bool => $schedule->day_of_week === ($block['day_of_week'] ?? null));
-            $previous ??= $available?->first();
+            if ($matchLegacy) {
+                $previous ??= $available?->first(fn ($schedule): bool => $schedule->day_of_week === ($block['day_of_week'] ?? null)
+                    && $schedule->start_time?->format('H:i') === mb_substr((string) ($block['start_time'] ?? ''), 0, 5)
+                    && $schedule->end_time?->format('H:i') === mb_substr((string) ($block['end_time'] ?? ''), 0, 5));
+                $previous ??= $available?->first(fn ($schedule): bool => $schedule->day_of_week === ($block['day_of_week'] ?? null));
+                $previous ??= $available?->first();
+            }
             if ($previous !== null) {
                 $usedIds[] = $previous->id;
                 if (! array_key_exists('id', $block)) {

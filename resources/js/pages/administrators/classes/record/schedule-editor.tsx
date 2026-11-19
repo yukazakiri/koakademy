@@ -14,8 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { show as showClass } from "@/routes/administrators/classes";
 import { update as updateSchedule } from "@/routes/administrators/classes/schedule";
-import { router, useForm } from "@inertiajs/react";
+import { Link, router, useForm } from "@inertiajs/react";
 import { CalendarPlus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -43,21 +44,27 @@ function previewDateTime(schedule: Meeting): string {
 
 function meetingLocation(meeting: Pick<Meeting, "room_id" | "delivery_mode" | "room_name">, rooms: RoomOption[]): string {
     if (meeting.delivery_mode === "online") return "Online";
+    if (meeting.room_id === null) return "Room unassigned";
     return rooms.find((room) => room.id === meeting.room_id)?.label ?? meeting.room_name ?? "Room unassigned";
 }
 
 export function ScheduleEditor({
     classItem,
     initialSchedules,
+    revision,
     rooms,
     onClose,
 }: {
     classItem: ClassShowData;
     initialSchedules: RawScheduleEntry[];
+    revision: string;
     rooms: RoomOption[];
     onClose: () => void;
 }) {
-    const form = useForm<{ schedules: Meeting[] }>({ schedules: meetingsFromServer(initialSchedules, classItem.delivery_mode) });
+    const form = useForm<{ schedules: Meeting[]; schedule_revision: string }>({
+        schedules: meetingsFromServer(initialSchedules, classItem.delivery_mode),
+        schedule_revision: revision,
+    });
     const [discardOpen, setDiscardOpen] = useState(false);
     const [previewOpen, setPreviewOpen] = useState(false);
     const [applyGroup, setApplyGroup] = useState<Record<string, boolean>>({});
@@ -77,7 +84,9 @@ export function ScheduleEditor({
             "schedules",
             form.data.schedules.map((meeting) => (meeting.temp_id === tempId ? { ...meeting, ...changes } : meeting)),
         );
+        const staleRevision = errors.schedule_revision;
         form.clearErrors();
+        if (staleRevision) form.setError("schedule_revision", staleRevision);
     };
 
     const effectiveMeetings = useMemo(() => {
@@ -180,7 +189,9 @@ export function ScheduleEditor({
             room_id: null,
         };
         form.setData("schedules", [...form.data.schedules, next]);
+        const staleRevision = errors.schedule_revision;
         form.clearErrors();
+        if (staleRevision) form.setError("schedule_revision", staleRevision);
     };
 
     const save = () => {
@@ -192,7 +203,7 @@ export function ScheduleEditor({
             delivery_mode,
             room_id: delivery_mode === "online" ? null : room_id,
         }));
-        form.transform(() => ({ schedules }));
+        form.transform(() => ({ schedules, schedule_revision: revision }));
         setPreviewOpen(false);
         allowNextVisit.current = true;
         form.patch(updateSchedule.url(classItem.id), {
@@ -222,6 +233,14 @@ export function ScheduleEditor({
                 {errors.schedules && (
                     <Alert variant="destructive" role="alert">
                         <AlertDescription>{errors.schedules}</AlertDescription>
+                    </Alert>
+                )}
+                {errors.schedule_revision && (
+                    <Alert variant="destructive" role="alert">
+                        <AlertDescription>{errors.schedule_revision}</AlertDescription>
+                        <Button variant="outline" size="sm" nativeButton={false} render={<Link href={showClass.url(classItem.id)} />}>
+                            Reload class
+                        </Button>
                     </Alert>
                 )}
                 {form.data.schedules.length === 0 ? (
@@ -261,7 +280,9 @@ export function ScheduleEditor({
                                                     form.data.schedules.filter((item) => item.temp_id !== meeting.temp_id),
                                                 );
                                                 setApplyGroup((current) => ({ ...current, [meeting.temp_id]: false }));
+                                                const staleRevision = errors.schedule_revision;
                                                 form.clearErrors();
+                                                if (staleRevision) form.setError("schedule_revision", staleRevision);
                                             }}
                                         >
                                             <Trash2 aria-hidden="true" /> Remove
@@ -415,7 +436,7 @@ export function ScheduleEditor({
                 </Button>
                 <Button
                     type="button"
-                    disabled={!isDirty || form.processing || Object.keys(localErrors).length > 0}
+                    disabled={!isDirty || form.processing || Boolean(errors.schedule_revision) || Object.keys(localErrors).length > 0}
                     onClick={() => setPreviewOpen(true)}
                 >
                     {form.processing ? "Saving…" : "Review changes"}

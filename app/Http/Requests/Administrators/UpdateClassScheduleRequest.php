@@ -35,6 +35,7 @@ final class UpdateClassScheduleRequest extends FormRequest
 
         return [
             'schedules' => ['present', 'array', new NonOverlappingScheduleBlocksRule],
+            'schedule_revision' => ['required', 'string', 'regex:/\A[a-f0-9]{64}\z/'],
             'schedules.*' => ['required', 'array'],
             'schedules.*.id' => [
                 'sometimes', 'integer', 'distinct',

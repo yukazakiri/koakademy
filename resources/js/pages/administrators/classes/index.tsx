@@ -696,6 +696,7 @@ export default function AdministratorClassesIndex({
     };
 
     const openSchedule = (classId: number) => {
+        cancelPendingSearch();
         router.visit(editClass.url(classId, { query: { step: "schedule" } }));
     };
 

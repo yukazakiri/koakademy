@@ -123,6 +123,16 @@ test("manage details sheet opens schedule on the edit page", { timeout: 120_000 
     });
 });
 
+test("schedule navigation cancels a pending search", { timeout: 120_000 }, async () => {
+    await withPage("", async (page) => {
+        await page.type("#class-search", "science");
+        await clickText(page, "button", "Schedule");
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        assert.equal(await page.evaluate(() => window.classListRequests ?? 0), 0);
+        assert.equal(await page.evaluate(() => window.classScheduleVisit), "/administrators/classes/15/edit?step=schedule");
+    });
+});
+
 test("schedule deep link starts on teaching and schedule; normal and unknown links start on details", { timeout: 120_000 }, async () => {
     for (const [query, heading] of [
         ["?mode=edit&step=schedule", "Teaching & schedule"],
@@ -170,6 +180,7 @@ test("record edits a recurring pattern, reviews each change and sends only sched
         const submitted = await page.evaluate(() => window.classSchedulePatch);
         assert.equal(submitted.url, "/administrators/classes/15/schedule");
         assert.deepEqual(submitted.data, {
+            schedule_revision: "a".repeat(64),
             schedules: [
                 { id: 21, day_of_week: "Monday", start_time: "10:00", end_time: "11:00", delivery_mode: "face_to_face", room_id: 4 },
                 { id: 22, day_of_week: "Wednesday", start_time: "10:00", end_time: "11:00", delivery_mode: "face_to_face", room_id: 4 },
@@ -191,6 +202,17 @@ test("editing one recurring meeting leaves other days unchanged", { timeout: 120
         const submitted = await page.evaluate(() => window.classSchedulePatch);
         assert.equal(submitted.data.schedules[1].start_time, "08:00");
         assert.equal(submitted.data.schedules[1].end_time, "09:00");
+    });
+});
+
+test("preview shows an unassigned room after switching online and back", { timeout: 120_000 }, async () => {
+    await withPage("?mode=show", async (page) => {
+        await clickText(page, "button", "Edit schedule");
+        await page.select("#delivery-21", "online");
+        await page.select("#delivery-21", "face_to_face");
+        await clickText(page, "button", "Review changes");
+        const preview = await page.$eval('[role="alertdialog"]', (element) => element.textContent);
+        assert.match(preview, /Room 201 to Monday 08:00–09:00 · Room unassigned/);
     });
 });
 
@@ -235,6 +257,27 @@ test("record keeps edits and displays server conflict beside affected meeting", 
         );
         assert.equal(await page.$eval("#start-22", (input) => input.value), "10:00");
         assert.equal(await page.$eval("#start-22", (input) => input.getAttribute("aria-invalid")), "true");
+    });
+});
+
+test("stale schedule errors survive edits and prevent another stale save", { timeout: 120_000 }, async () => {
+    await withPage("?mode=show", async (page) => {
+        await page.evaluate(() => {
+            window.classScheduleMockErrors = { schedule_revision: "This schedule changed since you opened it. Reload the class before saving." };
+        });
+        await clickText(page, "button", "Edit schedule");
+        await setTime(page, "#start-22", "10:00");
+        await setTime(page, "#end-22", "11:00");
+        await clickText(page, "button", "Review changes");
+        await clickText(page, '[role="alertdialog"] button', "Save schedule");
+        await page.waitForFunction(() => document.body.textContent.includes("This schedule changed since you opened it"));
+        await setTime(page, "#end-22", "11:30");
+        assert.match(await page.$eval('[role="alert"]', (element) => element.textContent), /Reload the class/);
+        const review = await page.waitForFunction(() =>
+            [...document.querySelectorAll("button")].find((el) => el.textContent.trim() === "Review changes"),
+        );
+        assert.equal(await review.evaluate((button) => button.disabled), true);
+        assert.ok(await page.$('a[href="/administrators/classes/15"]'));
     });
 });
 

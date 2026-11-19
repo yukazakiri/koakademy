@@ -134,6 +134,7 @@ export interface ClassShowProps {
     capabilities?: ClassShowCapabilities;
     enrollments: EnrollmentRow[];
     raw_schedules: RawScheduleEntry[];
+    schedule_revision: string;
     rooms: RoomOption[];
     transferable_classes: TransferableClass[];
 }

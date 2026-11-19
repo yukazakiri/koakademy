@@ -10,6 +10,7 @@ use App\Models\Room;
 use App\Models\Schedule;
 use App\Models\Subject;
 use App\Models\User;
+use App\Services\Scheduling\SchedulingService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Testing\AssertableInertia;
@@ -48,6 +49,7 @@ it('updates only schedules, preserves meeting identities and metadata, and retur
     ]);
 
     $this->patch(route('administrators.classes.schedule.update', $class), [
+        'schedule_revision' => app(SchedulingService::class)->revision($class),
         'maximum_slots' => 1,
         'schedules' => [
             ['id' => $kept->id, 'day_of_week' => 'Monday', 'start_time' => '10:00', 'end_time' => '11:00', 'room_id' => $room->id, 'delivery_mode' => 'face_to_face'],
@@ -72,6 +74,7 @@ it('rejects invalid times and foreign schedule ids without changing records', fu
     $foreign = Schedule::factory()->create(['class_id' => $other->id]);
 
     $this->patch(route('administrators.classes.schedule.update', $class), [
+        'schedule_revision' => app(SchedulingService::class)->revision($class),
         'schedules' => [['id' => $foreign->id, 'day_of_week' => 'Monday', 'start_time' => '10:00', 'end_time' => '09:00', 'room_id' => null, 'delivery_mode' => 'online']],
     ])->assertInvalid(['schedules.0.id', 'schedules.0.end_time']);
 
@@ -81,15 +84,57 @@ it('rejects invalid times and foreign schedule ids without changing records', fu
 it('rejects malformed meetings without saving a partial schedule', function () {
     $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
     $class = Classes::factory()->create();
-    $this->patch(route('administrators.classes.schedule.update', $class), ['schedules' => ['invalid']])
+    $this->patch(route('administrators.classes.schedule.update', $class), ['schedule_revision' => app(SchedulingService::class)->revision($class), 'schedules' => ['invalid']])
         ->assertInvalid(['schedules.0']);
     expect($class->schedules()->count())->toBe(0);
+});
+
+it('rejects a stale replacement without deleting another administrators meeting', function () {
+    $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
+    $class = Classes::factory()->create(['classification' => 'shs']);
+    $original = Schedule::factory()->create(['class_id' => $class->id, 'day_of_week' => 'Monday', 'start_time' => '08:00', 'end_time' => '09:00']);
+    $oldRevision = app(SchedulingService::class)->revision($class);
+    $newMeeting = Schedule::factory()->create(['class_id' => $class->id, 'day_of_week' => 'Friday', 'start_time' => '10:00', 'end_time' => '11:00']);
+
+    $this->patch(route('administrators.classes.schedule.update', $class), [
+        'schedule_revision' => $oldRevision,
+        'schedules' => [['id' => $original->id, 'day_of_week' => 'Tuesday', 'start_time' => '08:00', 'end_time' => '09:00', 'room_id' => null, 'delivery_mode' => 'online']],
+    ])->assertInvalid(['schedule_revision' => 'changed since you opened it']);
+
+    expect($original->fresh()->day_of_week)->toBe('Monday')->and($newMeeting->fresh()->trashed())->toBeFalse();
+});
+
+it('rechecks overlap after the initial request validation', function () {
+    $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
+    $room = Room::factory()->create();
+    $class = Classes::factory()->create(['classification' => 'shs', 'school_year' => '2026 - 2027', 'semester' => 1, 'section' => 'A']);
+    $other = Classes::factory()->create(['classification' => 'shs', 'school_year' => '2026 - 2027', 'semester' => 1, 'section' => 'B']);
+    $revision = app(SchedulingService::class)->revision($class);
+    $payload = [['day_of_week' => 'Monday', 'start_time' => '08:00', 'end_time' => '09:00', 'room_id' => $room->id, 'delivery_mode' => 'face_to_face']];
+    $validator = Illuminate\Support\Facades\Validator::make(['schedules' => $payload], ['schedules' => [new App\Rules\ScheduleOverlapRule($class->id)]]);
+    expect($validator->passes())->toBeTrue();
+    Schedule::factory()->create(['class_id' => $other->id, 'room_id' => $room->id, 'delivery_mode' => 'face_to_face', 'day_of_week' => 'Monday', 'start_time' => '08:00', 'end_time' => '09:00']);
+
+    try {
+        app(SchedulingService::class)->replaceChecked($class, $payload, $revision, null);
+        $this->fail('Expected the locked recheck to reject the conflicting meeting.');
+    } catch (Illuminate\Validation\ValidationException $exception) {
+        expect($exception->errors())->toHaveKey('schedules.0');
+    }
+    expect($class->schedules()->count())->toBe(0);
+});
+
+it('requires a schedule revision for replacements', function () {
+    $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
+    $class = Classes::factory()->create();
+    $this->patch(route('administrators.classes.schedule.update', $class), ['schedules' => []])->assertInvalid(['schedule_revision']);
 });
 
 it('rejects overlapping meetings in the same class', function () {
     $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
     $class = Classes::factory()->create();
     $this->patch(route('administrators.classes.schedule.update', $class), [
+        'schedule_revision' => app(SchedulingService::class)->revision($class),
         'schedules' => [
             ['day_of_week' => 'Monday', 'start_time' => '08:00', 'end_time' => '10:00', 'room_id' => null, 'delivery_mode' => 'online'],
             ['day_of_week' => 'Monday', 'start_time' => '09:00', 'end_time' => '11:00', 'room_id' => null, 'delivery_mode' => 'online'],
@@ -104,6 +149,7 @@ it('accepts meetings from other terms and validates the class term', function ()
     $other = Classes::factory()->create(['classification' => 'shs', 'school_year' => '2025 - 2026', 'semester' => 2, 'section' => 'B']);
     Schedule::factory()->create(['class_id' => $other->id, 'room_id' => $room->id, 'delivery_mode' => 'face_to_face', 'day_of_week' => 'Monday', 'start_time' => '08:00', 'end_time' => '09:00']);
     $this->patch(route('administrators.classes.schedule.update', $class), [
+        'schedule_revision' => app(SchedulingService::class)->revision($class),
         'schedules' => [['day_of_week' => 'Monday', 'start_time' => '08:00', 'end_time' => '09:00', 'room_id' => $room->id, 'delivery_mode' => 'face_to_face']],
     ])->assertSessionHasNoErrors()->assertRedirect(route('administrators.classes.show', $class));
     expect($class->schedules()->count())->toBe(1);
@@ -144,6 +190,7 @@ it('reports conflicting room, faculty and cohort against the affected meeting', 
         'day_of_week' => 'Monday', 'start_time' => '08:00', 'end_time' => '10:00',
     ]);
     $response = $this->patch(route('administrators.classes.schedule.update', $class), [
+        'schedule_revision' => app(SchedulingService::class)->revision($class),
         'schedules' => [['day_of_week' => 'Monday', 'start_time' => '09:00', 'end_time' => '11:00', 'room_id' => $kind === 'room' ? $room->id : null, 'delivery_mode' => $kind === 'room' ? 'face_to_face' : 'online']],
     ]);
     $response->assertInvalid(['schedules.0' => match ($kind) {
@@ -159,7 +206,7 @@ it('allows clearing all meetings and rejects unauthorized updates', function () 
         ->patch(route('administrators.classes.schedule.update', $class), ['schedules' => []])->assertForbidden();
     expect($schedule->fresh()->trashed())->toBeFalse();
     $this->actingAs(User::factory()->create(['role' => UserRole::Admin]))
-        ->patch(route('administrators.classes.schedule.update', $class), ['schedules' => []])->assertRedirect(route('administrators.classes.show', $class));
+        ->patch(route('administrators.classes.schedule.update', $class), ['schedule_revision' => app(SchedulingService::class)->revision($class), 'schedules' => []])->assertRedirect(route('administrators.classes.show', $class));
     expect($schedule->fresh()->trashed())->toBeTrue();
 });
 
@@ -171,6 +218,7 @@ it('rolls back schedule updates if schedule change recording fails', function ()
 
     try {
         $this->patch(route('administrators.classes.schedule.update', $class), [
+            'schedule_revision' => app(SchedulingService::class)->revision($class),
             'schedules' => [['id' => $meeting->id, 'day_of_week' => 'Tuesday', 'start_time' => '10:00', 'end_time' => '11:00', 'room_id' => null, 'delivery_mode' => 'online']],
         ])->assertInternalServerError();
     } finally {

@@ -7,17 +7,70 @@ namespace App\Services\Scheduling;
 use App\Models\Classes;
 use App\Models\Schedule;
 use App\Models\User;
+use App\Rules\NonOverlappingScheduleBlocksRule;
+use App\Rules\ScheduleOverlapRule;
 use App\Services\ClassScheduleChangeNotificationService;
 use App\Support\ScheduleDelivery;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use RuntimeException;
 
 final readonly class SchedulingService
 {
     public function __construct(
         private ClassScheduleChangeNotificationService $notificationService,
     ) {}
+
+    /** A revision includes identities and metadata, not only the displayed timetable. */
+    public function revision(Classes $class): string
+    {
+        return $this->revisionFor($class->schedules()->orderBy('id')->get());
+    }
+
+    /** @param iterable<Schedule> $schedules */
+    public function revisionFor(iterable $schedules): string
+    {
+        $meetings = collect($schedules)->sortBy('id')->map(fn (Schedule $schedule): array => [
+            'id' => $schedule->id,
+            'day' => $schedule->day_of_week,
+            'start' => $schedule->start_time?->format('H:i:s'),
+            'end' => $schedule->end_time?->format('H:i:s'),
+            'room' => $schedule->room_id,
+            'delivery' => $schedule->delivery_mode,
+            'component' => $schedule->component_type,
+            'pattern' => $schedule->pattern_group_id,
+            'status' => $schedule->status,
+            'subject' => $schedule->subject_id,
+        ])->values()->all();
+
+        return hash('sha256', json_encode($meetings, JSON_THROW_ON_ERROR));
+    }
+
+    /** @param array<int, array<string, mixed>> $schedules */
+    public function replaceChecked(Classes $class, array $schedules, string $revision, ?User $actor): void
+    {
+        DB::transaction(function () use ($class, $schedules, $revision, $actor): void {
+            $this->lockScheduleWrites();
+            $locked = $class->newQuery()->whereKey($class->getKey())->lockForUpdate()->firstOrFail();
+            if (! hash_equals($this->revision($locked), $revision)) {
+                throw ValidationException::withMessages(['schedule_revision' => 'This schedule changed since you opened it. Reload the class before saving.']);
+            }
+
+            Validator::make(['schedules' => $schedules], ['schedules' => [new NonOverlappingScheduleBlocksRule]])->validate();
+
+            foreach ($schedules as $index => $schedule) {
+                $validator = Validator::make(['schedules' => [$schedule]], ['schedules' => [new ScheduleOverlapRule($locked->id)]]);
+                if ($validator->fails()) {
+                    throw ValidationException::withMessages(["schedules.{$index}" => $validator->errors()->first('schedules')]);
+                }
+            }
+
+            $this->syncClassSchedules($locked, $schedules, $actor, matchLegacy: false);
+        });
+    }
 
     /**
      * Synchronize all schedule blocks for a class in place without delete-all ID churn.
@@ -319,6 +372,28 @@ final readonly class SchedulingService
 
             return $copied;
         });
+    }
+
+    /**
+     * Lock a shared row before checking conflicts. All schedule-only saves use
+     * this same lock, including saves for different schools and rooms.
+     */
+    private function lockScheduleWrites(): void
+    {
+        $connection = DB::connection();
+        if ($connection->getDriverName() === 'pgsql') {
+            $connection->select('SELECT pg_advisory_xact_lock(?)', [735981604]);
+        } elseif (in_array($connection->getDriverName(), ['mysql', 'mariadb'], true)) {
+            // The first migration row is shared by every schedule-only save.
+            $connection->table('migrations')->where('migration', '2025_09_15_214110_create_schools_table')->lockForUpdate()->first()
+                ?? throw new RuntimeException('Schedule lock row is missing.');
+        } elseif ($connection->getDriverName() === 'sqlite') {
+            // Acquire SQLite's database write lock before reading conflicts.
+            $connection->table('migrations')->where('migration', '2025_09_15_214110_create_schools_table')
+                ->update(['migration' => '2025_09_15_214110_create_schools_table']);
+        } else {
+            throw new RuntimeException('Schedule conflict locking is not supported by this database driver.');
+        }
     }
 
     private function normalizeTimeString(string $time): string

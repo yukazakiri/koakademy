@@ -511,11 +511,11 @@ final class AdministratorClassManagementController extends Controller
     {
         $this->authorizeClassAction('Update:Classes');
 
-        $scheduling->syncClassSchedules(
+        $scheduling->replaceChecked(
             $class,
             $request->validated('schedules'),
+            $request->validated('schedule_revision'),
             Auth::user() instanceof User ? Auth::user() : null,
-            matchLegacy: false,
         );
 
         return redirect()->route('administrators.classes.show', $class)->with('flash', [
@@ -847,6 +847,7 @@ final class AdministratorClassManagementController extends Controller
                     'subject_id' => $schedule->subject_id,
                     'temp_id' => (string) $schedule->id, // Ensure temp_id exists for keying
                 ]),
+            'schedule_revision' => app(SchedulingService::class)->revisionFor($class->schedules),
             'transferable_classes' => $transferableClasses,
             'rooms' => Room::query()
                 ->where('is_active', true)

@@ -19,6 +19,7 @@ export default function AdministratorClassShow({
     capabilities: rawCapabilities,
     enrollments,
     raw_schedules,
+    schedule_revision,
     rooms,
     transferable_classes,
 }: ClassShowProps) {
@@ -64,6 +65,7 @@ export default function AdministratorClassShow({
                                 <ScheduleEditor
                                     classItem={classItem}
                                     initialSchedules={raw_schedules}
+                                    revision={schedule_revision}
                                     rooms={rooms}
                                     onClose={() => setScheduleEditing(false)}
                                 />

@@ -17,6 +17,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
+use Throwable;
 
 final class ClassScheduleChangeNotificationService
 {
@@ -59,6 +60,8 @@ final class ClassScheduleChangeNotificationService
             return 0;
         }
 
+        $settings = array_merge(Classes::getDefaultSettings(), (array) ($class->settings ?? []));
+        $automatic = (bool) ($settings['notify_students_on_schedule_changes'] ?? true);
         $users = $this->linkedStudentUsers($students);
         foreach ($students as $student) {
             $user = $this->linkedUserForStudent($student, $users);
@@ -70,12 +73,12 @@ final class ClassScheduleChangeNotificationService
                 [
                     'user_id' => $user?->id,
                     'email' => $this->normalizedEmail($student->email),
+                    'auto_dispatch' => $automatic,
                 ]
             );
         }
 
-        $settings = array_merge(Classes::getDefaultSettings(), (array) ($class->settings ?? []));
-        if (! (bool) ($settings['notify_students_on_schedule_changes'] ?? true)) {
+        if (! $automatic) {
             Log::info('Class schedule change recorded for manual notification.', [
                 'class_id' => $class->id,
                 'class_schedule_change_id' => $scheduleChange->id,
@@ -85,28 +88,13 @@ final class ClassScheduleChangeNotificationService
             return 0;
         }
 
-        $recipientCount = $this->sendPendingNotifications(
-            $scheduleChange->studentNotifications()->pending()->get(),
-            $changedBy
-        );
+        if (DB::transactionLevel() > 0) {
+            DB::afterCommit(fn () => $this->dispatchAutomaticChange($scheduleChange->id));
 
-        $emails = $students
-            ->pluck('email')
-            ->map(fn ($email): ?string => $this->normalizedEmail($email))
-            ->filter()
-            ->unique()
-            ->values();
+            return 0;
+        }
 
-        Log::info('Class schedule change notifications queued.', [
-            'class_id' => $class->id,
-            'class_schedule_change_id' => $scheduleChange->id,
-            'student_count' => $students->count(),
-            'linked_user_count' => $users->count(),
-            'email_count' => $emails->count(),
-            'recipient_count' => $recipientCount,
-        ]);
-
-        return $recipientCount;
+        return $this->dispatchAutomaticChange($scheduleChange->id);
     }
 
     /**
@@ -160,6 +148,23 @@ final class ClassScheduleChangeNotificationService
         ];
     }
 
+    /** Retry durable automatic dispatches after queue outages. */
+    public function dispatchPendingAutomatic(int $limit = 100): int
+    {
+        $ids = ClassScheduleChangeStudentNotification::query()->pending()->where('auto_dispatch', true)
+            ->orderBy('id')->limit($limit)->pluck('id');
+        $count = 0;
+        foreach ($ids as $id) {
+            try {
+                $count += $this->dispatchOne((int) $id);
+            } catch (Throwable $exception) {
+                report($exception);
+            }
+        }
+
+        return $count;
+    }
+
     /**
      * @param  Collection<int, ClassScheduleChangeStudentNotification>  $pending
      */
@@ -186,6 +191,23 @@ final class ClassScheduleChangeNotificationService
             })
             ->values()
             ->all();
+    }
+
+    private function dispatchAutomaticChange(int $changeId): int
+    {
+        $pending = ClassScheduleChangeStudentNotification::query()->pending()
+            ->where('class_schedule_change_id', $changeId)->where('auto_dispatch', true)->get();
+        $count = 0;
+        foreach ($pending as $recipient) {
+            try {
+                $count += $this->dispatchOne((int) $recipient->id);
+            } catch (Throwable $exception) {
+                // The committed pending row is retried by the scheduler.
+                report($exception);
+            }
+        }
+
+        return $count;
     }
 
     /**
@@ -349,8 +371,30 @@ final class ClassScheduleChangeNotificationService
     private function sendPendingNotifications(Collection $pending, ?User $notifiedBy = null): int
     {
         $recipientCount = 0;
-
         foreach ($pending as $studentNotification) {
+            $recipientCount += $this->dispatchOne((int) $studentNotification->id, $notifiedBy);
+        }
+
+        return $recipientCount;
+    }
+
+    private function dispatchOne(int $id, ?User $notifiedBy = null): int
+    {
+        $count = 0;
+        foreach (['database', 'mail', 'complete'] as $channel) {
+            $count += $this->dispatchChannel($id, $channel, $notifiedBy);
+        }
+
+        return $count;
+    }
+
+    private function dispatchChannel(int $id, string $channel, ?User $notifiedBy): int
+    {
+        return DB::transaction(function () use ($id, $channel, $notifiedBy): int {
+            $studentNotification = ClassScheduleChangeStudentNotification::query()->whereKey($id)->lockForUpdate()->first();
+            if (! $studentNotification || $studentNotification->notified_at !== null) {
+                return 0;
+            }
             $studentNotification->loadMissing([
                 'scheduleChange.class.faculty',
                 'scheduleChange.changedBy',
@@ -361,7 +405,7 @@ final class ClassScheduleChangeNotificationService
             $class = $change->class;
 
             if (! $class instanceof Classes) {
-                continue;
+                return 0;
             }
 
             $notification = new ClassScheduleChangedNotification(
@@ -376,26 +420,33 @@ final class ClassScheduleChangeNotificationService
                 facultyName: $class->faculty?->full_name,
                 changedAt: $change->created_at,
             );
-            $notification->afterCommit();
+            // The pending recipient row is committed before this method runs.
+            // Force immediate queue insertion so failures leave this row pending.
+            $notification->beforeCommit();
+            $recipientCount = 0;
 
-            if ($studentNotification->user instanceof User) {
+            if ($channel === 'database' && $studentNotification->user instanceof User && $studentNotification->database_queued_at === null) {
                 $studentNotification->user->notify($notification);
+                $studentNotification->forceFill(['database_queued_at' => now()])->save();
                 $recipientCount++;
             }
 
             $email = $this->normalizedEmail($studentNotification->email);
-            if ($email !== null) {
+            if ($channel === 'mail' && $email !== null && $studentNotification->mail_queued_at === null) {
                 Notification::route('mail', $email)->notify($notification);
+                $studentNotification->forceFill(['mail_queued_at' => now()])->save();
                 $recipientCount++;
             }
 
-            $studentNotification->forceFill([
-                'notified_at' => now(),
-                'notified_by_user_id' => $notifiedBy?->id,
-            ])->save();
-        }
+            if ($channel === 'complete') {
+                $studentNotification->forceFill([
+                    'notified_at' => now(),
+                    'notified_by_user_id' => $notifiedBy?->id,
+                ])->save();
+            }
 
-        return $recipientCount;
+            return $recipientCount;
+        });
     }
 
     private function normalizedEmail(mixed $email): ?string

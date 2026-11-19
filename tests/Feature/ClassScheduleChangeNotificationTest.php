@@ -15,6 +15,7 @@ use App\Notifications\ClassScheduleChangedNotification;
 use App\Services\ClassScheduleChangeNotificationService;
 use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Testing\Fakes\NotificationFake;
 
 it('notifies enrolled students when a class schedule changes', function () {
     Notification::fake();
@@ -61,7 +62,7 @@ it('notifies enrolled students when a class schedule changes', function () {
         'end_time' => '11:30',
     ]);
 
-    expect($service->notifyIfChanged($class, $oldSnapshot))->toBe(2);
+    $service->notifyIfChanged($class, $oldSnapshot);
 
     $scheduleChange = ClassScheduleChange::query()->where('class_id', $class->id)->first();
     expect($scheduleChange)->not->toBeNull()
@@ -73,6 +74,51 @@ it('notifies enrolled students when a class schedule changes', function () {
         fn (ClassScheduleChangedNotification $notification, array $channels, AnonymousNotifiable $notifiable): bool => $channels === ['mail']
             && ($notifiable->routes['mail'] ?? null) === 'student@example.test'
     );
+});
+
+it('keeps a failed automatic dispatch pending and retries only the unqueued channel', function () {
+    $service = app(ClassScheduleChangeNotificationService::class);
+    $class = Classes::factory()->create(['classification' => 'shs', 'settings' => array_merge(Classes::getDefaultSettings(), ['notify_students_on_schedule_changes' => true])]);
+    $meeting = Schedule::factory()->create(['class_id' => $class->id, 'day_of_week' => 'Monday', 'start_time' => '08:00', 'end_time' => '09:00']);
+    $user = User::factory()->create(['role' => UserRole::Student, 'email' => 'retry@example.test']);
+    $student = Student::factory()->create(['user_id' => $user->id, 'email' => 'retry@example.test']);
+    ClassEnrollment::factory()->create(['class_id' => $class->id, 'student_id' => $student->id, 'status' => true]);
+    $snapshot = $service->snapshot($class);
+    $meeting->update(['day_of_week' => 'Tuesday']);
+    $fake = new class extends NotificationFake
+    {
+        public bool $failMail = true;
+
+        public int $attempts = 0;
+
+        public function send($notifiables, $notification)
+        {
+            $this->attempts++;
+            if ($notifiables instanceof AnonymousNotifiable && $this->failMail) {
+                throw new RuntimeException('Queue unavailable');
+            }
+
+            return parent::send($notifiables, $notification);
+        }
+    };
+    Notification::swap($fake);
+    $this->app->instance(Illuminate\Contracts\Notifications\Dispatcher::class, $fake);
+    $service->notifyIfChanged($class, $snapshot);
+    expect($class->scheduleChanges()->firstOrFail()->studentNotifications()->firstOrFail()->auto_dispatch)->toBeTrue();
+    expect($class->scheduleChanges()->firstOrFail()->studentNotifications()->firstOrFail()->only(['user_id', 'email', 'auto_dispatch', 'notified_at']))->toBe(['user_id' => $user->id, 'email' => 'retry@example.test', 'auto_dispatch' => true, 'notified_at' => null]);
+    expect($fake->attempts)->toBe(2);
+    $pending = $class->scheduleChanges()->firstOrFail()->studentNotifications()->firstOrFail()->fresh();
+    expect($pending->database_queued_at)->not->toBeNull()
+        ->and($pending->mail_queued_at)->toBeNull()
+        ->and($pending->notified_at)->toBeNull();
+    $fake->assertSentToTimes($user, ClassScheduleChangedNotification::class, 1);
+
+    $fake->failMail = false;
+    expect($service->dispatchPendingAutomatic())->toBe(1)
+        ->and($pending->fresh()->notified_at)->not->toBeNull()
+        ->and($service->dispatchPendingAutomatic())->toBe(0);
+    $fake->assertSentToTimes($user, ClassScheduleChangedNotification::class, 1);
+    $fake->assertSentOnDemandTimes(ClassScheduleChangedNotification::class, 1);
 });
 
 it('does not notify when normalized schedules are unchanged', function () {

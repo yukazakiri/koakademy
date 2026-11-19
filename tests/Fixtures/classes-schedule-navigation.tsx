@@ -24,7 +24,15 @@ const options = {
     shs_tracks: [{ id: 3, label: "STEM" }],
 };
 
-const schedule = { id: 21, day_of_week: "Monday", start_time: "08:00", end_time: "09:00", delivery_mode: "face_to_face", room_id: 4 };
+const schedule = {
+    id: 21,
+    day_of_week: "Monday",
+    start_time: "08:00",
+    end_time: "09:00",
+    delivery_mode: "face_to_face",
+    room_id: 4,
+    room_name: "Room 201",
+};
 const recordSchedules = [
     { ...schedule, temp_id: "21", pattern_group_id: "weekly-pattern", component_type: "lab", status: "draft" },
     { ...schedule, id: 22, temp_id: "22", day_of_week: "Wednesday", pattern_group_id: "weekly-pattern", component_type: "lab", status: "draft" },
@@ -101,7 +109,11 @@ const defaults = {
 router.visit = ((url: string) => {
     (window as unknown as { classScheduleVisit: string }).classScheduleVisit = url;
 }) as typeof router.visit;
-router.get = ((_url: string, _data: unknown, options?: { onFinish?: () => void }) => options?.onFinish?.()) as typeof router.get;
+router.get = ((_url: string, _data: unknown, options?: { onFinish?: () => void }) => {
+    (window as unknown as { classListRequests: number }).classListRequests =
+        ((window as unknown as { classListRequests?: number }).classListRequests ?? 0) + 1;
+    options?.onFinish?.();
+}) as typeof router.get;
 router.patch = ((
     url: string,
     data: unknown,
@@ -142,6 +154,7 @@ createInertiaApp({
                       },
                       capabilities: { update: true, delete: true, restore: true, force_delete: true },
                       enrollments: [],
+                      schedule_revision: "a".repeat(64),
                       raw_schedules: recordSchedules,
                       rooms: options.rooms,
                       transferable_classes: [],

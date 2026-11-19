@@ -207,6 +207,7 @@ jobs:
           node --test tests/Unit/module-page-registry.test.mjs
           node --test tests/Unit/scheduling-readiness.test.mjs
           node --test tests/Unit/weekly-schedule.test.mjs
+          node --test tests/Unit/docker-composer-patches.test.mjs
 
       - name: Exercise stable and edge installer fixtures
         run: |

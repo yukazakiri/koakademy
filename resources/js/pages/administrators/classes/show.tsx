@@ -56,11 +56,13 @@ export default function AdministratorClassShow({
                     </div>
                     <TabsContent value="schedule" className="min-w-0" keepMounted>
                         <div className="flex flex-col gap-6">
-                            <ScheduleOverview
-                                classItem={classItem}
-                                canUpdate={capabilities.update && !classItem.is_archived && !scheduleEditing}
-                                onManage={() => setScheduleEditing(true)}
-                            />
+                            {!scheduleEditing && (
+                                <ScheduleOverview
+                                    classItem={classItem}
+                                    canUpdate={capabilities.update && !classItem.is_archived}
+                                    onManage={() => setScheduleEditing(true)}
+                                />
+                            )}
                             {capabilities.update && !classItem.is_archived && scheduleEditing && (
                                 <ScheduleEditor
                                     classItem={classItem}

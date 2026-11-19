@@ -62,9 +62,10 @@ async function withPage(query, run, width = 1440) {
         await page.setViewport({ width, height: 1000 });
         await page.goto(`${baseUrl}/classes-schedule-fixture${query}`, { waitUntil: "networkidle0" });
         await page.waitForSelector("h1", { timeout: 10000 }).catch(async () => {
+            if (await page.$("h1")) return;
             if (errors.length === 0) {
                 await page.reload({ waitUntil: "networkidle0" });
-                await page.waitForSelector("h1", { timeout: 10000 });
+                await page.waitForSelector("h1", { timeout: 20000 });
                 return;
             }
             throw new Error(
@@ -158,6 +159,11 @@ async function setTime(page, selector, value) {
     );
 }
 
+async function selectMeeting(page, index) {
+    const event = await page.waitForFunction((index) => document.querySelectorAll('[data-slot="event-calendar-event"]')[index], {}, index);
+    await event.click();
+}
+
 test("record edits a recurring pattern, reviews each change and sends only schedule fields", { timeout: 120_000 }, async () => {
     await withPage("?mode=show", async (page) => {
         await clickText(page, "button", "Edit schedule");
@@ -168,6 +174,7 @@ test("record edits a recurring pattern, reviews each change and sends only sched
         await setTime(page, "#start-21", "10:00");
         await setTime(page, "#end-21", "11:00");
         await page.click('section[aria-label="Meeting 1"] input[type="checkbox"]');
+        await selectMeeting(page, 1);
         assert.equal(await page.$eval("#start-22", (input) => input.value), "10:00");
         assert.equal(await page.$eval("#start-22", (input) => input.disabled), true);
         await clickText(page, "button", "Review changes");
@@ -223,6 +230,7 @@ test("record validates overlaps and protects unsaved changes on mobile", { timeo
             await clickText(page, "button", "Edit schedule");
             if (process.env.CLASS_SCHEDULE_SCREENSHOT_DIR)
                 await page.screenshot({ path: path.join(process.env.CLASS_SCHEDULE_SCREENSHOT_DIR, "class-schedule-mobile.png"), fullPage: true });
+            await selectMeeting(page, 1);
             await page.select("#day-22", "Monday");
             await page.waitForFunction(() => document.body.textContent.includes("overlaps another meeting"));
             assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
@@ -248,6 +256,7 @@ test("record keeps edits and displays server conflict beside affected meeting", 
             window.classScheduleMockErrors = { "schedules.1": "Room 201 is occupied by CS101 on Wednesday." };
         });
         await clickText(page, "button", "Edit schedule");
+        await selectMeeting(page, 1);
         await setTime(page, "#start-22", "10:00");
         await setTime(page, "#end-22", "11:00");
         await clickText(page, "button", "Review changes");
@@ -266,6 +275,7 @@ test("stale schedule errors survive edits and prevent another stale save", { tim
             window.classScheduleMockErrors = { schedule_revision: "This schedule changed since you opened it. Reload the class before saving." };
         });
         await clickText(page, "button", "Edit schedule");
+        await selectMeeting(page, 1);
         await setTime(page, "#start-22", "10:00");
         await setTime(page, "#end-22", "11:00");
         await clickText(page, "button", "Review changes");
@@ -287,6 +297,7 @@ test("schedule retry retains the draft revision after newer page props arrive", 
             window.classScheduleMockErrors = { "schedules.1": "Room already occupied." };
         });
         await clickText(page, "button", "Edit schedule");
+        await selectMeeting(page, 1);
         await setTime(page, "#start-22", "10:00");
         await setTime(page, "#end-22", "11:00");
         await clickText(page, "button", "Review changes");
@@ -301,6 +312,86 @@ test("schedule retry retains the draft revision after newer page props arrive", 
         await clickText(page, '[role="alertdialog"] button', "Save schedule");
         const submitted = await page.evaluate(() => window.classSchedulePatch);
         assert.equal(submitted.data.schedule_revision, "a".repeat(64));
+    });
+});
+
+test("timetable drag, resize and draw update the draft with 15-minute snapping", { timeout: 120_000 }, async () => {
+    await withPage("?mode=show", async (page) => {
+        await clickText(page, "button", "Edit schedule");
+        const event = (await page.$$('[data-slot="event-calendar-event"]'))[0];
+        const bounds = await event.boundingBox();
+        const columns = await page.$$('[data-slot="event-calendar-day-column"]');
+        const nextColumn = await columns[1].boundingBox();
+        await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(nextColumn.x + nextColumn.width / 2, bounds.y + bounds.height / 2 + 64, { steps: 8 });
+        await page.mouse.up();
+        await page.waitForFunction(() => document.querySelector("#day-21")?.value === "Tuesday");
+        assert.equal(await page.$eval("#start-21", (input) => input.value), "09:00");
+
+        const moved = (await page.$$('[data-slot="event-calendar-event"]'))[0];
+        const bottom = await moved.$('[data-slot="event-calendar-resize-handle"][data-edge="end"]');
+        const grip = await bottom.boundingBox();
+        await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2 + 32, { steps: 6 });
+        await page.mouse.up();
+        await page.waitForFunction(() => document.querySelector("#end-21")?.value === "10:30");
+
+        const thursday = await columns[3].boundingBox();
+        await page.mouse.move(thursday.x + thursday.width / 2, bounds.y + 4);
+        await page.mouse.down();
+        await page.mouse.move(thursday.x + thursday.width / 2, bounds.y + 68, { steps: 6 });
+        await page.mouse.up();
+        await page.waitForSelector("#day-new-1");
+        assert.equal(await page.$eval("#day-new-1", (input) => input.value), "Thursday");
+        assert.equal(await page.$eval("#start-new-1", (input) => input.value), "08:00");
+        await clickText(page, "button", "Review changes");
+        await clickText(page, '[role="alertdialog"] button', "Save schedule");
+        const submitted = await page.evaluate(() => window.classSchedulePatch);
+        assert.equal(submitted.data.schedules[0].day_of_week, "Tuesday");
+        assert.equal(submitted.data.schedules[0].start_time, "09:00");
+        assert.equal(submitted.data.schedules[0].end_time, "10:30");
+        assert.equal(submitted.data.schedules[2].day_of_week, "Thursday");
+    });
+});
+
+test("invalid meetings remain selectable when the timetable cannot render them", { timeout: 120_000 }, async () => {
+    await withPage("?mode=show", async (page) => {
+        await clickText(page, "button", "Edit schedule");
+        await setTime(page, "#end-21", "07:30");
+        await selectMeeting(page, 0);
+        await clickText(page, "button", "Edit Monday meeting");
+        assert.equal(await page.$eval("#end-21", (input) => input.value), "07:30");
+        await setTime(page, "#end-21", "09:00");
+        assert.equal(await page.evaluate(() => document.body.textContent.includes("cannot appear on the timetable")), false);
+    });
+});
+
+test("an unselected meeting retains its server conflict while another meeting is edited", { timeout: 120_000 }, async () => {
+    await withPage("?mode=show", async (page) => {
+        await page.evaluate(() => {
+            window.classScheduleMockErrors = { "schedules.1": "Room 201 conflicts with another class." };
+        });
+        await clickText(page, "button", "Edit schedule");
+        await setTime(page, "#start-21", "10:00");
+        await setTime(page, "#end-21", "11:00");
+        await clickText(page, "button", "Review changes");
+        await clickText(page, '[role="alertdialog"] button', "Save schedule");
+        await page.waitForSelector('[role="alertdialog"]', { hidden: true });
+        await page.waitForFunction(() => document.body.textContent.includes("Room 201 conflicts with another class."));
+        await setTime(page, "#end-21", "11:30");
+        assert.match(
+            await page.$eval('[aria-label="Edit weekly schedule"]', (element) => element.textContent),
+            /Room 201 conflicts with another class/,
+        );
+        await clickText(page, "button", "Wednesday: Room 201 conflicts with another class.");
+        await page.waitForSelector("#day-22", { timeout: 5000 }).catch(async () => {
+            throw new Error(
+                `Conflict action did not select meeting: ${await page.$eval('[aria-label="Edit weekly schedule"]', (element) => element.innerText)}`,
+            );
+        });
+        assert.equal(await page.$eval("#day-22", (input) => input.value), "Wednesday");
     });
 });
 

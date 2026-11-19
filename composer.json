@@ -237,6 +237,11 @@
                 "nativephp/laravel"
             ]
         },
+        "patches": {
+            "coolsam/modules": {
+                "Filament 5 MakeWidgetCommand::handle(Filesystem) signature": "patches/coolsam-modules-filament-5-widget-handle.patch"
+            }
+        },
         "merge-plugin": {
             "include": [
                 "Modules/*/composer.json"

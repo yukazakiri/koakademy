@@ -1,4 +1,17 @@
 {
-    "_hash": "6142bfcb78f54dfbf5247ae5e463f25bdb8fff1890806e2e45aa81a59c211653",
-    "patches": []
+    "_hash": "2e07595ece56e74f4094f80127110f52a2855fcb3308995a919c12c65daec5bf",
+    "patches": {
+        "coolsam/modules": [
+            {
+                "package": "coolsam/modules",
+                "description": "Filament 5 MakeWidgetCommand::handle(Filesystem) signature",
+                "url": "patches/coolsam-modules-filament-5-widget-handle.patch",
+                "sha256": "9b141a3a0988ba9bd48ce4cc7c04620350e532258ce319641d03d97e12080a2f",
+                "depth": 1,
+                "extra": {
+                    "provenance": "root"
+                }
+            }
+        ]
+    }
 }

@@ -1,0 +1,25 @@
+--- a/src/Commands/ModuleMakeFilamentWidgetCommand.php
++++ b/src/Commands/ModuleMakeFilamentWidgetCommand.php
+@@ -8,6 +8,7 @@
+ use Filament\Support\Facades\FilamentCli;
+ use Filament\Widgets\Commands\MakeWidgetCommand;
+ use Filament\Widgets\Widget;
++use Illuminate\Filesystem\Filesystem;
+ use Illuminate\Support\Arr;
+ use Illuminate\Support\Str;
+ use Illuminate\Support\Stringable;
+@@ -29,12 +30,12 @@
+         'module:filament:make-widget',
+     ];
+ 
+-    public function handle(): int
++    public function handle(?Filesystem $filesystem = null): int
+     {
+         $this->ensureModule();
+         $this->ensurePanel();
+ 
+-        return parent::handle();
++        return parent::handle($filesystem ?? app(Filesystem::class));
+     }
+ 
+     protected function getRelativeNamespace(): string

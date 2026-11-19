@@ -14,6 +14,9 @@ use App\Models\ShsTrack;
 use App\Models\StrandSubject;
 use App\Support\SetupCatalogRegistry;
 use Inertia\Testing\AssertableInertia as Assert;
+use Tests\Support\SetupTestForeignCatalogProvider;
+use Tests\Support\SetupTestForeignProvider;
+use Tests\Support\SetupTestMultiLevelProvider;
 
 it('bootstraps CHED degree programs with departments during setup', function (): void {
     $this->post('/setup', setupPayload([
@@ -288,87 +291,6 @@ it('rejects configured providers that do not implement the provider contract', f
     expect(fn (): ?SetupCatalogProvider => app(SetupCatalogRegistry::class)->provider('US'))
         ->toThrow(InvalidArgumentException::class);
 });
-
-final class SetupTestForeignProvider implements SetupCatalogProvider
-{
-    public function frameworks(SchoolLevel $level): array
-    {
-        return [CurriculumFramework::ChedPsg];
-    }
-
-    public function catalog(SchoolLevel $level): array
-    {
-        return [];
-    }
-
-    public function validProgramCodes(CurriculumFramework $framework): array
-    {
-        return ['BSIT'];
-    }
-
-    public function bootstrap(School $school, CurriculumFramework $framework, array $programCodes, string $curriculumYear, bool $seedStrandSubjects): void
-    {
-        throw new LogicException('Foreign provider bootstrap must not be called for a PH framework.');
-    }
-}
-
-final class SetupTestForeignCatalogProvider implements SetupCatalogProvider
-{
-    public function frameworks(SchoolLevel $level): array
-    {
-        return [];
-    }
-
-    public function catalog(SchoolLevel $level): array
-    {
-        return $level === SchoolLevel::HigherEducation
-            ? ['calendars' => [['key' => 'us-calendar', 'label' => 'US calendar']]]
-            : [];
-    }
-
-    public function validProgramCodes(CurriculumFramework $framework): array
-    {
-        return [];
-    }
-
-    public function bootstrap(School $school, CurriculumFramework $framework, array $programCodes, string $curriculumYear, bool $seedStrandSubjects): void
-    {
-        throw new LogicException('Foreign provider has no frameworks to bootstrap.');
-    }
-}
-
-final class SetupTestMultiLevelProvider implements SetupCatalogProvider
-{
-    public function frameworks(SchoolLevel $level): array
-    {
-        return in_array($level, [SchoolLevel::HigherEducation, SchoolLevel::TechnicalVocational], true)
-            ? [CurriculumFramework::TesdaTr] : [];
-    }
-
-    public function catalog(SchoolLevel $level): array
-    {
-        return match ($level) {
-            SchoolLevel::HigherEducation, SchoolLevel::TechnicalVocational => [
-                'program_groups' => [CurriculumFramework::TesdaTr->value => [[
-                    'key' => $level === SchoolLevel::HigherEducation ? 'higher' : 'technical',
-                    'label' => 'Test qualifications',
-                    'programs' => [['code' => 'TEST-QUALIFICATION', 'title' => 'Test qualification']],
-                ]]],
-            ],
-            default => [],
-        };
-    }
-
-    public function validProgramCodes(CurriculumFramework $framework): array
-    {
-        return ['TEST-QUALIFICATION'];
-    }
-
-    public function bootstrap(School $school, CurriculumFramework $framework, array $programCodes, string $curriculumYear, bool $seedStrandSubjects): void
-    {
-        $school->update(['description' => 'Bootstrapped '.implode(', ', $programCodes)]);
-    }
-}
 
 it('rejects program codes outside the chosen framework', function (): void {
     $this->post('/setup', setupPayload([

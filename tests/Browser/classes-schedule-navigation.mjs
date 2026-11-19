@@ -33,6 +33,16 @@ before(
             server: { host: "127.0.0.1", port: 0 },
         });
         server.middlewares.use(async (request, response, next) => {
+            if (request.url?.startsWith("/event-calendar-regression")) {
+                response.setHeader("Content-Type", "text/html");
+                response.end(
+                    await server.transformIndexHtml(
+                        request.url,
+                        `<!doctype html><html><body><div id="root"></div><script type="module" src="/tests/Fixtures/event-calendar-regression.tsx"></script></body></html>`,
+                    ),
+                );
+                return;
+            }
             if (!request.url?.startsWith("/classes-schedule-fixture")) return next();
             response.setHeader("Content-Type", "text/html");
             response.end(
@@ -62,9 +72,10 @@ async function withPage(query, run, width = 1440) {
         await page.setViewport({ width, height: 1000 });
         await page.goto(`${baseUrl}/classes-schedule-fixture${query}`, { waitUntil: "networkidle0" });
         await page.waitForSelector("h1", { timeout: 10000 }).catch(async () => {
+            if (await page.$("h1")) return;
             if (errors.length === 0) {
                 await page.reload({ waitUntil: "networkidle0" });
-                await page.waitForSelector("h1", { timeout: 10000 });
+                await page.waitForSelector("h1", { timeout: 20000 });
                 return;
             }
             throw new Error(
@@ -158,6 +169,11 @@ async function setTime(page, selector, value) {
     );
 }
 
+async function selectMeeting(page, index) {
+    const event = await page.waitForFunction((index) => document.querySelectorAll('[data-slot="event-calendar-event"]')[index], {}, index);
+    await event.click();
+}
+
 test("record edits a recurring pattern, reviews each change and sends only schedule fields", { timeout: 120_000 }, async () => {
     await withPage("?mode=show", async (page) => {
         await clickText(page, "button", "Edit schedule");
@@ -168,6 +184,7 @@ test("record edits a recurring pattern, reviews each change and sends only sched
         await setTime(page, "#start-21", "10:00");
         await setTime(page, "#end-21", "11:00");
         await page.click('section[aria-label="Meeting 1"] input[type="checkbox"]');
+        await selectMeeting(page, 1);
         assert.equal(await page.$eval("#start-22", (input) => input.value), "10:00");
         assert.equal(await page.$eval("#start-22", (input) => input.disabled), true);
         await clickText(page, "button", "Review changes");
@@ -223,6 +240,7 @@ test("record validates overlaps and protects unsaved changes on mobile", { timeo
             await clickText(page, "button", "Edit schedule");
             if (process.env.CLASS_SCHEDULE_SCREENSHOT_DIR)
                 await page.screenshot({ path: path.join(process.env.CLASS_SCHEDULE_SCREENSHOT_DIR, "class-schedule-mobile.png"), fullPage: true });
+            await selectMeeting(page, 1);
             await page.select("#day-22", "Monday");
             await page.waitForFunction(() => document.body.textContent.includes("overlaps another meeting"));
             assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
@@ -248,6 +266,7 @@ test("record keeps edits and displays server conflict beside affected meeting", 
             window.classScheduleMockErrors = { "schedules.1": "Room 201 is occupied by CS101 on Wednesday." };
         });
         await clickText(page, "button", "Edit schedule");
+        await selectMeeting(page, 1);
         await setTime(page, "#start-22", "10:00");
         await setTime(page, "#end-22", "11:00");
         await clickText(page, "button", "Review changes");
@@ -266,6 +285,7 @@ test("stale schedule errors survive edits and prevent another stale save", { tim
             window.classScheduleMockErrors = { schedule_revision: "This schedule changed since you opened it. Reload the class before saving." };
         });
         await clickText(page, "button", "Edit schedule");
+        await selectMeeting(page, 1);
         await setTime(page, "#start-22", "10:00");
         await setTime(page, "#end-22", "11:00");
         await clickText(page, "button", "Review changes");
@@ -287,6 +307,7 @@ test("schedule retry retains the draft revision after newer page props arrive", 
             window.classScheduleMockErrors = { "schedules.1": "Room already occupied." };
         });
         await clickText(page, "button", "Edit schedule");
+        await selectMeeting(page, 1);
         await setTime(page, "#start-22", "10:00");
         await setTime(page, "#end-22", "11:00");
         await clickText(page, "button", "Review changes");
@@ -301,6 +322,237 @@ test("schedule retry retains the draft revision after newer page props arrive", 
         await clickText(page, '[role="alertdialog"] button', "Save schedule");
         const submitted = await page.evaluate(() => window.classSchedulePatch);
         assert.equal(submitted.data.schedule_revision, "a".repeat(64));
+    });
+});
+
+test("timetable drag, resize and draw update the draft with 15-minute snapping", { timeout: 120_000 }, async () => {
+    await withPage("?mode=show", async (page) => {
+        await clickText(page, "button", "Edit schedule");
+        const event = (await page.$$('[data-slot="event-calendar-event"]'))[0];
+        const bounds = await event.boundingBox();
+        const columns = await page.$$('[data-slot="event-calendar-day-column"]');
+        const nextColumn = await columns[1].boundingBox();
+        await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(nextColumn.x + nextColumn.width / 2, bounds.y + bounds.height / 2 + 80, { steps: 8 });
+        await page.mouse.up();
+        await page.waitForFunction(() => document.querySelector("#day-21")?.value === "Tuesday");
+        assert.equal(await page.$eval("#start-21", (input) => input.value), "09:15");
+        assert.match(await page.$eval('[aria-live="polite"]', (element) => element.textContent), /Tuesday meeting, 09:15 to 10:15/);
+
+        const moved = (await page.$$('[data-slot="event-calendar-event"]'))[0];
+        const bottom = await moved.$('[data-slot="event-calendar-resize-handle"][data-edge="end"]');
+        const grip = await bottom.boundingBox();
+        await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2 + 32, { steps: 6 });
+        await page.mouse.up();
+        await page.waitForFunction(() => document.querySelector("#end-21")?.value === "10:45");
+
+        const thursday = await columns[3].boundingBox();
+        await page.mouse.move(thursday.x + thursday.width / 2, bounds.y + 4);
+        await page.mouse.down();
+        await page.mouse.move(thursday.x + thursday.width / 2, bounds.y + 68, { steps: 6 });
+        await page.mouse.up();
+        await page.waitForSelector("#day-new-1");
+        assert.equal(await page.$eval("#day-new-1", (input) => input.value), "Thursday");
+        assert.equal(await page.$eval("#start-new-1", (input) => input.value), "08:00");
+        await clickText(page, "button", "Review changes");
+        await clickText(page, '[role="alertdialog"] button', "Save schedule");
+        const submitted = await page.evaluate(() => window.classSchedulePatch);
+        assert.equal(submitted.data.schedules[0].day_of_week, "Tuesday");
+        assert.equal(submitted.data.schedules[0].start_time, "09:15");
+        assert.equal(submitted.data.schedules[0].end_time, "10:45");
+        assert.equal(submitted.data.schedules[2].day_of_week, "Thursday");
+    });
+});
+
+test("drag follows scrolling even when the pointer does not move again", { timeout: 120_000 }, async () => {
+    await withPage("?mode=show", async (page) => {
+        await clickText(page, "button", "Edit schedule");
+        const chip = (await page.$$('[data-slot="event-calendar-event"]'))[0];
+        const rect = await chip.boundingBox();
+        await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(rect.x + rect.width / 2 + 6, rect.y + rect.height / 2, { steps: 2 });
+        await page.waitForSelector('[data-slot="event-calendar-drag-carry"]');
+        await page.$eval('[data-slot="scroll-area-viewport"]', (viewport) => {
+            viewport.scrollTop += 64;
+        });
+        await page.waitForFunction(() => document.querySelector('[data-slot="scroll-area-viewport"]')?.scrollTop >= 64);
+        await page.mouse.up();
+        await page.waitForFunction(() => document.querySelector("#start-21")?.value === "09:00");
+    });
+});
+
+test("second pointer cannot own or commit another meeting's gesture", { timeout: 120_000 }, async () => {
+    await withPage("?mode=show", async (page) => {
+        await clickText(page, "button", "Edit schedule");
+        await page.evaluate(() => {
+            const chips = [...document.querySelectorAll('[data-slot="event-calendar-event"]')];
+            const box = (element) => element.getBoundingClientRect();
+            const first = box(chips[0]),
+                second = box(chips[1]);
+            const send = (target, type, id, x, y) =>
+                target.dispatchEvent(
+                    new PointerEvent(type, {
+                        bubbles: true,
+                        pointerId: id,
+                        pointerType: "touch",
+                        isPrimary: id === 11,
+                        button: 0,
+                        buttons: type === "pointerup" ? 0 : 1,
+                        clientX: x,
+                        clientY: y,
+                    }),
+                );
+            send(chips[0], "pointerdown", 11, first.x + first.width / 2, first.y + first.height / 2);
+            send(chips[1], "pointerdown", 12, second.x + second.width / 2, second.y + second.height / 2);
+            window.testPointers = {
+                first: { x: first.x + first.width / 2, y: first.y + first.height / 2 },
+                second: { x: second.x + second.width / 2, y: second.y + second.height / 2 },
+            };
+        });
+        await page.waitForSelector('[data-slot="event-calendar-drag-carry"]');
+        await page.evaluate(() => {
+            const { first, second } = window.testPointers;
+            const send = (type, id, x, y) =>
+                window.dispatchEvent(
+                    new PointerEvent(type, {
+                        bubbles: true,
+                        pointerId: id,
+                        pointerType: "touch",
+                        isPrimary: id === 11,
+                        button: 0,
+                        buttons: type === "pointerup" ? 0 : 1,
+                        clientX: x,
+                        clientY: y,
+                    }),
+                );
+            send("pointermove", 12, second.x, second.y + 128);
+            send("pointermove", 11, first.x, first.y + 64);
+            send("pointerup", 11, first.x, first.y + 64);
+            send("pointerup", 12, second.x, second.y + 128);
+        });
+        await page.waitForFunction(() => document.querySelector("#start-21")?.value === "09:00");
+        await selectMeeting(page, 1);
+        await page.waitForSelector("#start-22");
+        assert.equal(await page.$eval("#start-22", (input) => input.value), "08:00");
+    });
+});
+
+test("recurrence and concurrent calendar snapshots remain correct", { timeout: 120_000 }, async () => {
+    const page = await browser.newPage();
+    const errors = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    try {
+        await page.goto(`${baseUrl}/event-calendar-regression`, { waitUntil: "networkidle0" });
+        await page.waitForSelector("#selection");
+        const cases = await page.evaluate(() => window.recurrenceCases());
+        assert.deepEqual(cases.monthly, ["2026-01-31T09:00:00.000Z", "2026-03-31T09:00:00.000Z"]);
+        assert.deepEqual(cases.far, ["2026-03-31T09:00:00.000Z"]);
+        assert.deepEqual(cases.lastDay, ["2026-01-31T09:00:00.000Z", "2026-02-28T09:00:00.000Z"]);
+        assert.deepEqual(cases.point, ["2026-01-02T09:00:00.000Z"]);
+        assert.deepEqual(cases.extraIndices, [null, null]);
+        assert.deepEqual(cases.dst, ["2026-03-15T04:00:00.000Z"]);
+        assert.deepEqual(cases.plus, [{ day: "MO", ordinal: 1 }]);
+        assert.equal(cases.floating, "2026-10-20T09:00:00.000Z");
+        assert.equal(cases.overnight, true);
+        assert.equal(cases.unsupported, true);
+        assert.deepEqual(await page.evaluate(() => window.rangeIdentity()), { count: 4, stable: true });
+        assert.deepEqual(await page.evaluate(() => window.rangeBoundaries()), { empty: 0, included: true, excluded: false });
+        assert.deepEqual(await page.evaluate(() => window.checkAtomic()), [true]);
+        await page.evaluate(() => window.rerenderProbe());
+        await page.waitForFunction(() => document.querySelector("#selection")?.textContent.includes("committed-1"));
+        await page.evaluate(() => window.startSuspended());
+        await page.waitForFunction(() => window.suspendedRenderAttempted === true);
+        await page.evaluate(() => window.calendarNotify());
+        assert.deepEqual(await page.evaluate(() => window.calendarProbe()), { api: "original", selected: "original:committed-1:4:4" });
+        await page.evaluate(() => window.hideCalendar());
+        await page.waitForFunction(() => window.apiRefValue() === null);
+        assert.deepEqual(errors, []);
+    } finally {
+        await page.close();
+    }
+});
+
+test("rejected slot extensions clear the earlier accepted draft", { timeout: 120_000 }, async () => {
+    const page = await browser.newPage();
+    try {
+        await page.setViewport({ width: 1440, height: 1000 });
+        await page.goto(`${baseUrl}/event-calendar-regression`, { waitUntil: "networkidle0" });
+        const column = await page.waitForSelector('[data-slot="event-calendar"] [data-slot="event-calendar-day-column"]');
+        const box = await column.boundingBox();
+        await page.mouse.move(box.x + box.width / 2, box.y + 10 * 64);
+        await page.mouse.down();
+        await page.mouse.move(box.x + box.width / 2, box.y + 10 * 64 + 16, { steps: 3 });
+        await page.waitForFunction(() => window.calendarState().slotDraft !== null);
+        await page.mouse.move(box.x + box.width / 2, box.y + 10 * 64 + 64, { steps: 3 });
+        await page.waitForFunction(() => window.calendarState().slotDraft === null);
+        await page.mouse.up();
+        assert.equal(await page.evaluate(() => window.selectedSlot ?? null), null);
+    } finally {
+        await page.close();
+    }
+});
+
+test("unmounting one calendar cancels only its active gesture", { timeout: 120_000 }, async () => {
+    const page = await browser.newPage();
+    try {
+        await page.setViewport({ width: 1440, height: 1000 });
+        await page.goto(`${baseUrl}/event-calendar-regression`, { waitUntil: "networkidle0" });
+        const event = await page.waitForSelector('[data-slot="event-calendar"] [data-slot="event-calendar-event"]');
+        const box = await event.boundingBox();
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 20, { steps: 3 });
+        await page.waitForSelector('[data-slot="event-calendar-drag-carry"]');
+        await page.evaluate(() => window.hideCalendar());
+        await page.waitForSelector('[data-slot="event-calendar-drag-carry"]', { hidden: true });
+        await page.mouse.up();
+        assert.equal(await page.evaluate(() => window.apiRefValue()), null);
+        assert.equal(await page.$$eval('[data-slot="event-calendar"]', (items) => items.length), 1);
+    } finally {
+        await page.close();
+    }
+});
+
+test("invalid meetings remain selectable when the timetable cannot render them", { timeout: 120_000 }, async () => {
+    await withPage("?mode=show", async (page) => {
+        await clickText(page, "button", "Edit schedule");
+        await setTime(page, "#end-21", "07:30");
+        await selectMeeting(page, 0);
+        await clickText(page, "button", "Edit Monday meeting");
+        assert.equal(await page.$eval("#end-21", (input) => input.value), "07:30");
+        await setTime(page, "#end-21", "09:00");
+        assert.equal(await page.evaluate(() => document.body.textContent.includes("cannot appear on the timetable")), false);
+    });
+});
+
+test("an unselected meeting retains its server conflict while another meeting is edited", { timeout: 120_000 }, async () => {
+    await withPage("?mode=show", async (page) => {
+        await page.evaluate(() => {
+            window.classScheduleMockErrors = { "schedules.1": "Room 201 conflicts with another class." };
+        });
+        await clickText(page, "button", "Edit schedule");
+        await setTime(page, "#start-21", "10:00");
+        await setTime(page, "#end-21", "11:00");
+        await clickText(page, "button", "Review changes");
+        await clickText(page, '[role="alertdialog"] button', "Save schedule");
+        await page.waitForSelector('[role="alertdialog"]', { hidden: true });
+        await page.waitForFunction(() => document.body.textContent.includes("Room 201 conflicts with another class."));
+        await setTime(page, "#end-21", "11:30");
+        assert.match(
+            await page.$eval('[aria-label="Edit weekly schedule"]', (element) => element.textContent),
+            /Room 201 conflicts with another class/,
+        );
+        await clickText(page, "button", "Wednesday: Room 201 conflicts with another class.");
+        await page.waitForSelector("#day-22", { timeout: 5000 }).catch(async () => {
+            throw new Error(
+                `Conflict action did not select meeting: ${await page.$eval('[aria-label="Edit weekly schedule"]', (element) => element.innerText)}`,
+            );
+        });
+        assert.equal(await page.$eval("#day-22", (input) => input.value), "Wednesday");
     });
 });
 

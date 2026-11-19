@@ -213,7 +213,10 @@ function EventCalendarEvent<TData = unknown>({
         />
       )}
       {occurrence.isRecurring && (
-        <RepeatIcon className="size-2.5 shrink-0 opacity-70" aria-hidden="true" />
+        <RepeatIcon
+          className="size-2.5 shrink-0 opacity-70"
+          aria-hidden="true"
+        />
       )}
       <span
         className={cn(
@@ -303,7 +306,10 @@ function EventCalendarEvent<TData = unknown>({
       />
       <span className="truncate text-sm">{event.title}</span>
       {occurrence.isRecurring && (
-        <RepeatIcon className="text-muted-foreground size-2.5 shrink-0" aria-hidden="true" />
+        <RepeatIcon
+          className="text-muted-foreground size-2.5 shrink-0"
+          aria-hidden="true"
+        />
       )}
     </>
   )
@@ -465,12 +471,12 @@ function EventCalendarEvent<TData = unknown>({
     onPointerDown: (e: React.PointerEvent) => {
       e.stopPropagation()
       // suppress the trailing slot-create click when this press yields no drag
-      markChipPress()
+      markChipPress(e)
       if (interactive) gestures.beginMove(e, segment)
     },
     onClick: (e: React.MouseEvent) => {
       e.stopPropagation()
-      if (wasRecentDrag()) return
+      if (e.detail !== 0 && wasRecentDrag()) return
       // consumer first: e.preventDefault() opts out of built-in selection
       settings.onEventClick?.(occurrence, e)
       // the agenda is a read-only list: a click never selects/focuses a row
@@ -482,7 +488,7 @@ function EventCalendarEvent<TData = unknown>({
       settings.onEventDoubleClick?.(occurrence, e)
     },
     className: cn(
-      "group/ec-event text-foreground relative flex w-full min-w-0 cursor-pointer touch-none items-center overflow-hidden text-start select-none",
+      "group/ec-event text-foreground relative flex w-full min-w-0 cursor-pointer items-center overflow-hidden text-start select-none",
       "focus-visible:ring-ring/50 outline-none focus-visible:ring-2",
       preview && "pointer-events-none",
       view === "agenda"
@@ -494,7 +500,7 @@ function EventCalendarEvent<TData = unknown>({
             // py-1: room above/below inline badges (attendee pill etc.)
             "@container gap-1.5 rounded-sm px-1.5 py-1 leading-normal",
             // soft tint + inset ring, not an accent border: legible on both themes
-            "bg-(--ec-event-color)/15 hover:bg-(--ec-event-color)/25",
+            "bg-(--ec-event-color)/15 hover:bg-(--ec-event-color)/25 active:bg-(--ec-event-color)/30",
             // a flat tint reads darker on a dark surface, so lift it there
             "dark:bg-(--ec-event-color)/20 dark:hover:bg-(--ec-event-color)/30",
             "inset-ring inset-ring-(--ec-event-color)/15",

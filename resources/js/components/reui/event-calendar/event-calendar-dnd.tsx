@@ -8,6 +8,7 @@ import {
 } from "@/components/reui/event-calendar/event-calendar"
 import {
   snapMinutes,
+  spansMultipleDays,
   toZoned,
   zonedStartOfDay,
 } from "@/components/reui/event-calendar/event-calendar-lib"
@@ -85,15 +86,37 @@ function wasRecentDrag(): boolean {
  * click-to-edit is unaffected (only grid slot-clicks check it).
  */
 let lastChipPressAt = 0
-function markChipPress(): void {
+function beginPointerSequence(): void {
+  if (gestureOwner) return
+  lastGestureEndedAt = 0
+  lastChipPressAt = 0
+}
+function markChipPress(event: React.PointerEvent): void {
+  beginPointerSequence()
   lastChipPressAt = performance.now()
-  window.addEventListener(
-    "pointerup",
-    () => {
-      lastChipPressAt = performance.now()
-    },
-    { once: true, capture: true }
-  )
+  const pointerId = event.pointerId
+  const cleanup = () => {
+    window.removeEventListener("pointerup", onUp, true)
+    window.removeEventListener("pointercancel", onCancel, true)
+    window.removeEventListener("blur", onBlur)
+  }
+  const onUp = (e: PointerEvent) => {
+    if (e.pointerId !== pointerId) return
+    lastChipPressAt = performance.now()
+    cleanup()
+  }
+  const onCancel = (e: PointerEvent) => {
+    if (e.pointerId !== pointerId) return
+    lastChipPressAt = 0
+    cleanup()
+  }
+  const onBlur = () => {
+    lastChipPressAt = 0
+    cleanup()
+  }
+  window.addEventListener("pointerup", onUp, true)
+  window.addEventListener("pointercancel", onCancel, true)
+  window.addEventListener("blur", onBlur)
 }
 function wasRecentChipPress(): boolean {
   return performance.now() - lastChipPressAt < 300
@@ -108,6 +131,7 @@ function wasRecentChipPress(): boolean {
  * and no update is committed.
  */
 const activeGestureCancels = new Set<() => void>()
+let gestureOwner: { instance: object; cancel: () => void } | null = null
 
 /** Cancel (and fully revert) every in-flight event calendar pointer gesture. */
 function cancelActiveEventCalendarGestures(): void {
@@ -119,7 +143,7 @@ function cancelActiveEventCalendarGestures(): void {
  * the LAST consumer leaving means the calendar itself is gone; aborting when
  * any single chip unmounts would kill a drag the user is still holding.
  */
-let gestureConsumers = 0
+const gestureConsumers = new Map<object, number>()
 
 /**
  * Snap a translate offset to the device pixel grid. The cursor-following
@@ -263,6 +287,7 @@ function beginBlockedGesture<TData>(
   segment: EventCalendarSegment<TData>,
   gesture: "move" | "resize"
 ) {
+  if (gestureOwner) return
   const startX = startEvent.clientX
   const startY = startEvent.clientY
   const activation = {
@@ -291,14 +316,13 @@ function beginBlockedGesture<TData>(
     // body class alongside the inline cursor so consumer CSS can restyle or
     // detect the blocked-drag state (mirrors "ec-dragging")
     document.body.classList.add("ec-drag-blocked")
-    // only now is there anything to get stuck: focus loss means the release
-    // may never be delivered, leaving the cursor not-allowed document-wide
-    window.addEventListener("blur", cleanup)
     instance.settings.onDragBlocked?.(segment.occurrence, { gesture, reason })
   }
   const cleanup = () => {
     if (finished) return
     finished = true
+    if (gestureOwner?.cancel === cleanup) gestureOwner = null
+    activeGestureCancels.delete(cleanup)
     window.removeEventListener("pointermove", onMove)
     window.removeEventListener("pointerup", onRelease)
     window.removeEventListener("pointercancel", onRelease)
@@ -320,9 +344,15 @@ function beginBlockedGesture<TData>(
   window.addEventListener("pointermove", onMove)
   window.addEventListener("pointerup", onRelease)
   window.addEventListener("pointercancel", onRelease)
+  window.addEventListener("blur", cleanup)
+  gestureOwner = { instance, cancel: cleanup }
+  activeGestureCancels.add(cleanup)
 }
 
 function beginGesture<TData>(config: BeginGestureConfig<TData>) {
+  // All calendars share body-level overlays and cursor state. Reserve before a
+  // touch long press can arm, not after either pointer starts writing a draft.
+  if (gestureOwner) return
   const { instance, kind, origin, startEvent, segment, ui } = config
   const { settings, internals, api } = instance
   const timeZone = settings.timeZone
@@ -365,9 +395,7 @@ function beginGesture<TData>(config: BeginGestureConfig<TData>) {
 
   const occurrence = segment?.occurrence
   const isBar = occurrence
-    ? occurrence.allDay ||
-      occurrence.end.getTime() - occurrence.start.getTime() >
-        24 * 60 * 60 * 1000
+    ? occurrence.allDay || spansMultipleDays(occurrence, timeZone)
     : false
 
   // Preserve the grab offset so the event does not jump to the pointer
@@ -417,8 +445,10 @@ function beginGesture<TData>(config: BeginGestureConfig<TData>) {
     active = true
     // armed with the gesture, not with the press: a press that never activates
     // holds no drag state, no overlay and no body class to strand
-    window.addEventListener("blur", onWindowBlur)
     surface = collectSurface(origin, internals.getRootEl())
+    surface.viewport?.addEventListener("scroll", onViewportScroll, {
+      passive: true,
+    })
     if (kind === "move" && occurrence) {
       const grabCell = findCell(surface, startX, startY)
       if (grabCell) {
@@ -552,7 +582,15 @@ function beginGesture<TData>(config: BeginGestureConfig<TData>) {
         const start = addDays(toZoned(occurrence.start, timeZone), delta)
         return {
           start,
-          end: new Date(start.getTime() + durationMs),
+          end: occurrence.allDay
+            ? addDays(
+                start,
+                differenceInCalendarDays(
+                  zonedStartOfDay(occurrence.end, timeZone),
+                  originDay
+                )
+              )
+            : new Date(start.getTime() + durationMs),
           allDay: occurrence.allDay,
           dayGranular: true,
         }
@@ -598,6 +636,7 @@ function beginGesture<TData>(config: BeginGestureConfig<TData>) {
       // the clamp keeps the grabbed CHIP inside the column it is over; the
       // lead then carries the rest of a cross-midnight occurrence with it
       const chipDurationMin = Math.round(grabSegDurationMs / 60000)
+      if (chipDurationMin > col.boundsEndMin - col.boundsStartMin) return null
       const clamped = Math.min(
         Math.max(newStartMin, col.boundsStartMin),
         col.boundsEndMin - chipDurationMin
@@ -645,14 +684,22 @@ function beginGesture<TData>(config: BeginGestureConfig<TData>) {
 
   const applyProposal = (e: PointerEvent) => {
     const proposal = computeProposal(e)
-    if (!proposal) return
+    if (!proposal) {
+      lastProposalKey = ""
+      if (kind === "create") internals.setSlotDraft(null)
+      else if (active) internals.setDrag(null)
+      return
+    }
     const key = `${proposal.start.getTime()}-${proposal.end.getTime()}-${proposal.allDay}-${proposal.resourceId ?? ""}`
     if (key === lastProposalKey) return
     lastProposalKey = key
 
     if (kind === "create") {
       const draft = { ...proposal, view: instance.getState().view }
-      if (settings.canSelectSlot && !settings.canSelectSlot(draft)) return
+      if (settings.canSelectSlot && !settings.canSelectSlot(draft)) {
+        internals.setSlotDraft(null)
+        return
+      }
       internals.setSlotDraft(draft)
       return
     }
@@ -798,7 +845,7 @@ function beginGesture<TData>(config: BeginGestureConfig<TData>) {
         if (applied === 0) return
         // keep the tracked scrollTop in step so pointerMinutes stays a pure
         // number read (no DOM scrollTop, no forced reflow)
-        surface!.scrollTop += applied
+        surface!.scrollTop = surface!.viewport!.scrollTop
         applyProposal(e)
         rafScroll = requestAnimationFrame(tick)
       }
@@ -809,10 +856,21 @@ function beginGesture<TData>(config: BeginGestureConfig<TData>) {
   // idempotent: pointerup, pointercancel, Escape, blur and the calendar-level
   // teardown can race; whichever lands first wins and the rest no-op
   let finished = false
+  const onViewportScroll = () => {
+    if (!active || !surface?.viewport) return
+    const scrollTop = surface.viewport.scrollTop
+    if (scrollTop === surface.scrollTop) return
+    surface.scrollTop = scrollTop
+    applyProposal(lastPointer)
+    updateHint(lastPointer)
+    positionCarry(lastPointer)
+  }
   const cleanup = () => {
     if (finished) return
     finished = true
     activeGestureCancels.delete(cancel)
+    if (gestureOwner?.cancel === cancel) gestureOwner = null
+    surface?.viewport?.removeEventListener("scroll", onViewportScroll)
     window.removeEventListener("pointermove", onPointerMove)
     window.removeEventListener("pointerup", onPointerUp)
     window.removeEventListener("pointercancel", onCancel)
@@ -830,7 +888,6 @@ function beginGesture<TData>(config: BeginGestureConfig<TData>) {
   const cancel = () => {
     cleanup()
     if (active) {
-      lastGestureEndedAt = performance.now()
       internals.setDrag(null)
       internals.setSlotDraft(null)
     }
@@ -871,6 +928,8 @@ function beginGesture<TData>(config: BeginGestureConfig<TData>) {
 
   const onPointerUp = (e: PointerEvent) => {
     if (e.pointerId !== pointerId) return
+    // A scroll event can still be queued when the pointer is released.
+    onViewportScroll()
     cleanup()
     if (!active) return
     lastGestureEndedAt = performance.now()
@@ -893,6 +952,7 @@ function beginGesture<TData>(config: BeginGestureConfig<TData>) {
     const unchanged =
       drag.proposedStart.getTime() === occurrence.start.getTime() &&
       drag.proposedEnd.getTime() === occurrence.end.getTime() &&
+      drag.proposedAllDay === occurrence.allDay &&
       (drag.proposedResourceId === undefined ||
         drag.proposedResourceId === occurrence.event.resourceId)
     if (unchanged) return
@@ -929,11 +989,15 @@ function beginGesture<TData>(config: BeginGestureConfig<TData>) {
   window.addEventListener("pointermove", onPointerMove)
   window.addEventListener("pointerup", onPointerUp)
   window.addEventListener("pointercancel", onCancel)
-  // a resize on a precise pointer is live from the first frame, so it never
-  // reaches activate() to arm its own blur cancel
-  if (active) window.addEventListener("blur", onWindowBlur)
+  // Reserve cleanup even before long-press activation.
+  window.addEventListener("blur", onWindowBlur)
   window.addEventListener("keydown", onKeyDown, true)
   activeGestureCancels.add(cancel)
+  gestureOwner = { instance, cancel }
+  if (active)
+    surface?.viewport?.addEventListener("scroll", onViewportScroll, {
+      passive: true,
+    })
 
   // Touch: long-press activation (movement past tolerance cancels above)
   if (isTouch && !active) {
@@ -964,12 +1028,17 @@ function useEventCalendarGestures<TData = unknown>() {
   // legitimately unmount mid-gesture, so only the LAST consumer leaving - the
   // calendar itself going away - aborts.
   useEffect(() => {
-    gestureConsumers += 1
+    const owner = instance
+    gestureConsumers.set(owner, (gestureConsumers.get(owner) ?? 0) + 1)
     return () => {
-      gestureConsumers -= 1
-      if (gestureConsumers === 0) cancelActiveEventCalendarGestures()
+      const remaining = (gestureConsumers.get(owner) ?? 1) - 1
+      if (remaining > 0) gestureConsumers.set(owner, remaining)
+      else {
+        gestureConsumers.delete(owner)
+        if (gestureOwner?.instance === owner) gestureOwner.cancel()
+      }
     }
-  }, [])
+  }, [instance])
 
   const canDrag = useCallback(
     (segment: EventCalendarSegment<TData>) => {
@@ -1022,6 +1091,7 @@ function useEventCalendarGestures<TData = unknown>() {
         return
       }
       e.stopPropagation()
+      beginPointerSequence()
       e.preventDefault()
       beginGesture({
         instance,
@@ -1057,6 +1127,7 @@ function useEventCalendarGestures<TData = unknown>() {
 
 export {
   EVENT_CALENDAR_ACTIVATION,
+  beginPointerSequence,
   cancelActiveEventCalendarGestures,
   markChipPress,
   useEventCalendarGestures,

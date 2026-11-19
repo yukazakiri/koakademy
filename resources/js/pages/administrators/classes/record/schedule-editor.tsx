@@ -98,6 +98,7 @@ export function ScheduleEditor({
     const [previewOpen, setPreviewOpen] = useState(false);
     const [selectedId, setSelectedId] = useState<string | null>(() => form.data.schedules[0]?.temp_id ?? null);
     const [applyGroup, setApplyGroup] = useState<Record<string, boolean>>({});
+    const [calendarAnnouncement, setCalendarAnnouncement] = useState("");
     const baseline = useRef(initialSchedules);
     const allowNextVisit = useRef(false);
     const nextId = useRef(0);
@@ -309,6 +310,9 @@ export function ScheduleEditor({
             end_time: fromCalendarTime(update.end),
         });
         setSelectedId(meeting.temp_id);
+        setCalendarAnnouncement(
+            `${scheduleDayOrder[(update.start.getDay() + 6) % 7]} meeting, ${fromCalendarTime(update.start)} to ${fromCalendarTime(update.end)}.`,
+        );
         // Form state is authoritative; reject the calendar's internal write.
         return false;
     };
@@ -371,6 +375,9 @@ export function ScheduleEditor({
                     <Button type="button" variant="outline" size="sm" onClick={() => addMeeting()} disabled={form.processing}>
                         <CalendarPlus aria-hidden="true" /> Add meeting
                     </Button>
+                </div>
+                <div aria-live="polite" className="sr-only">
+                    {calendarAnnouncement}
                 </div>
                 <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,20rem)]">
                     <div className="min-w-0">

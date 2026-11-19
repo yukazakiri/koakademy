@@ -160,6 +160,20 @@ function eventsOverlap(
   return a.start < b.end && a.end > b.start
 }
 
+/** Point occurrences belong at the inclusive start, never the exclusive end. */
+function occurrenceInRange(
+  occurrence: { start: Date; end: Date },
+  range: EventCalendarDateRange
+): boolean {
+  if (range.start >= range.end) return false
+  return (
+    occurrence.start < range.end &&
+    (occurrence.end > range.start ||
+      (occurrence.start.getTime() === occurrence.end.getTime() &&
+        occurrence.start >= range.start))
+  )
+}
+
 /**
  * The one canonical multi-day segmentation. Splits an occurrence into per-day
  * segments clamped to the range. Rules (unit-tested in M1): exclusive end - an
@@ -246,16 +260,7 @@ function spansMultipleDays(
     timeZone ? toZoned(occ.start, timeZone) : occ.start
   )
   const nextDayStart = startOfDay(addDays(dayStart, 1))
-  return (
-    occ.end.getTime() - occ.start.getTime() >
-    nextDayStart.getTime() - dayStart.getTime()
-  )
-}
-
-interface PackedPosition {
-  column: number
-  columnCount: number
-  columnSpan: number
+  return occ.end.getTime() > nextDayStart.getTime()
 }
 
 /**
@@ -287,8 +292,7 @@ function packTimedSegments<TData>(
     .sort(
       (a, b) =>
         a.startMin - b.startMin ||
-        b.effEnd - b.startMin - (a.effEnd - a.startMin) ||
-        a.seg.occurrence.key.localeCompare(b.seg.occurrence.key)
+        b.effEnd - b.startMin - (a.effEnd - a.startMin)
     )
 
   // Sweep into connected clusters
@@ -406,10 +410,7 @@ function packWeekRowLanes<TData>(
   }
 
   const rowBars = Array.from(merged.values()).sort(
-    (a, b) =>
-      a.colStart - b.colStart ||
-      b.colSpan - a.colSpan ||
-      a.seg.occurrence.key.localeCompare(b.seg.occurrence.key)
+    (a, b) => a.colStart - b.colStart || b.colSpan - a.colSpan
   )
 
   const lanes: boolean[][] = []
@@ -519,8 +520,7 @@ function buildEventIndex<TData>(
     if (custom) {
       custom.forEach((occ, i) => {
         if (replaced?.has(occ.start.getTime())) return
-        if (!rangesIntersect({ start: occ.start, end: occ.end }, visibleRange))
-          return
+        if (!occurrenceInRange(occ, visibleRange)) return
         occurrences.push({
           key: `${event.id}::${occ.start.toISOString()}`,
           eventId: event.id,
@@ -662,6 +662,7 @@ export {
   segmentOccurrence,
   snapMinutes,
   spansMultipleDays,
+  occurrenceInRange,
   stepDate,
   toZoned,
   zonedStartOfDay,

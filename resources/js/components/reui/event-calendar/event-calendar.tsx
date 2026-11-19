@@ -8,7 +8,7 @@ import {
   useContext,
   useEffect,
   useLayoutEffect,
-  useRef,
+  useMemo,
   useState,
   useSyncExternalStore,
   type ComponentType,
@@ -23,7 +23,7 @@ import {
 import {
   buildEventIndex,
   defaultEventOrder,
-  eventsOverlap,
+  occurrenceInRange,
   getDayKey,
   getRangeKey,
   getViewDateRange,
@@ -310,30 +310,11 @@ interface EventCalendarInstance<TData = unknown> {
 function resolveSettings<TData>(
   options: UseEventCalendarStateOptions<TData>
 ): EventCalendarSettings<TData> {
-  const {
-    // strip state pairs; the rest flows into settings
-    events: _e,
-    defaultEvents: _de,
-    view: _v,
-    defaultView: _dv,
-    date: _d,
-    defaultDate: _dd,
-    dayCount: _dc,
-    defaultDayCount: _ddc,
-    selection: _s,
-    defaultSelection: _ds,
-    interactions: _i,
-    defaultInteractions: _di,
-    viewSettings: _vs,
-    defaultViewSettings: _dvs,
-    loading: _l,
-    ...rest
-  } = options
   const getEventPriority =
     options.getEventPriority ??
     (DEFAULT_EVENT_PRIORITY as (event: CalendarEvent<TData>) => number)
   return {
-    ...rest,
+    ...options,
     timeZone:
       options.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
     locale: options.locale,
@@ -417,21 +398,16 @@ function createEventCalendarStore<TData>(
     getOccurrences: EventCalendarSettings<TData>["getOccurrences"]
     index: EventCalendarIndex<TData>
   } | null = null
-  // Second single-entry cache, for api.getOccurrences(range) outside the
-  // visible range: that branch builds a throwaway index, so without it every
-  // call hands back brand new occurrence OBJECTS and the identity-based
-  // isEqual in useEventCalendarOccurrences can never settle - an unstable
-  // getSnapshot is a hard render loop under useSyncExternalStore, not a slow
-  // render.
-  let rangeCache: {
+  // Keep every queried range stable until its indexing inputs change. Multiple
+  // active subscribers must not evict one another's snapshots.
+  let rangeCacheInputs: {
     events: CalendarEvent<TData>[]
-    rangeKey: string
     timeZone: string
     weekStartsOn: WeekStartsOn
     eventOrder: EventCalendarSettings<TData>["eventOrder"]
     getOccurrences: EventCalendarSettings<TData>["getOccurrences"]
-    occurrences: EventCalendarOccurrence<TData>[]
   } | null = null
+  const rangeCache = new Map<string, EventCalendarOccurrence<TData>[]>()
   let scrollHandler: ((time: Date | number) => void) | null = null
   // The rendered calendar root element, registered by the <EventCalendar> host.
   // The drag engine falls back to it to find day cells when a gesture starts
@@ -545,25 +521,40 @@ function createEventCalendarStore<TData>(
     if (!controlled) notify()
   }
 
-  // An occurrence key encodes the start instant (id::startISO), so committing a
-  // move re-keys the occurrence and a selection holding the old key would point
-  // at nothing. Remapped in the same commit and emitted BEFORE the events write
-  // so a controlled consumer applies the two in a consistent order.
-  const remapSelectionKey = (
+  const selectionAfterMove = (
     id: EventCalendarEventId,
     oldKey: string,
     nextStart: Date
-  ) => {
+  ): EventCalendarSelection | null => {
     const newKey = `${id}::${nextStart.toISOString()}`
-    if (newKey === oldKey) return
+    if (newKey === oldKey) return null
     const selection = getState().selection
-    if (!selection.eventKeys.includes(oldKey)) return
-    setField("selection", {
+    if (!selection.eventKeys.includes(oldKey)) return null
+    return {
       ...selection,
       eventKeys: selection.eventKeys.map((key) =>
         key === oldKey ? newKey : key
       ),
-    })
+    }
+  }
+
+  const commitEvents = (
+    events: CalendarEvent<TData>[],
+    selection: EventCalendarSelection | null
+  ) => {
+    const eventsControlled = options.events !== undefined
+    const selectionControlled = options.selection !== undefined
+    if (!eventsControlled) internal.events = events
+    if (selection && !selectionControlled) internal.selection = selection
+    const changed =
+      !eventsControlled || Boolean(selection && !selectionControlled)
+    if (changed) invalidate()
+    try {
+      if (selection) settings.onSelectionChange?.(selection)
+      settings.onEventsChange?.(events)
+    } finally {
+      if (changed) notify()
+    }
   }
 
   // extraPatch: non-timing fields committed in the SAME write. Two sequential
@@ -595,16 +586,20 @@ function createEventCalendarStore<TData>(
     const oldKey =
       update.occurrence?.key ??
       (stored ? `${stored.id}::${stored.start.toISOString()}` : null)
-    if (oldKey) {
-      remapSelectionKey(update.event.id, oldKey, adjusted.start ?? update.start)
-    }
+    const selection = oldKey
+      ? selectionAfterMove(
+          update.event.id,
+          oldKey,
+          adjusted.start ?? update.start
+        )
+      : null
     const events = getState().events
     const next = events.map((event) =>
       event.id === update.event.id
         ? { ...event, ...extraPatch, ...adjusted }
         : event
     )
-    setField("events", next)
+    commitEvents(next, selection)
     return timing
   }
 
@@ -698,7 +693,7 @@ function createEventCalendarStore<TData>(
         patch.start !== undefined ||
         patch.end !== undefined ||
         patch.allDay !== undefined
-      if (timingChanged && settings.onEventUpdate) {
+      if (timingChanged) {
         // single write: the non-timing rest rides along as extraPatch so
         // controlled mode sees one consistent onEventsChange payload
         const rest = { ...patch }
@@ -718,13 +713,6 @@ function createEventCalendarStore<TData>(
         )
         return
       }
-      if (timingChanged) {
-        remapSelectionKey(
-          id,
-          `${id}::${event.start.toISOString()}`,
-          merged.start
-        )
-      }
       setField(
         "events",
         getState().events.map((e) => (e.id === id ? merged : e))
@@ -738,40 +726,43 @@ function createEventCalendarStore<TData>(
     },
     getOccurrences(range) {
       if (!range) return getIndex().occurrences
+      if (range.start >= range.end) return []
       const state = getState()
       const within =
         range.start >= state.visibleRange.start &&
         range.end <= state.visibleRange.end
       if (within) {
-        return getIndex().occurrences.filter((occ) => eventsOverlap(occ, range))
+        return getIndex().occurrences.filter((occ) =>
+          occurrenceInRange(occ, range)
+        )
       }
       const rangeKey = getRangeKey(range)
       if (
-        rangeCache &&
-        rangeCache.events === state.events &&
-        rangeCache.rangeKey === rangeKey &&
-        rangeCache.timeZone === settings.timeZone &&
-        rangeCache.weekStartsOn === settings.weekStartsOn &&
-        rangeCache.eventOrder === settings.eventOrder &&
-        rangeCache.getOccurrences === settings.getOccurrences
+        !rangeCacheInputs ||
+        rangeCacheInputs.events !== state.events ||
+        rangeCacheInputs.timeZone !== settings.timeZone ||
+        rangeCacheInputs.weekStartsOn !== settings.weekStartsOn ||
+        rangeCacheInputs.eventOrder !== settings.eventOrder ||
+        rangeCacheInputs.getOccurrences !== settings.getOccurrences
       ) {
-        return rangeCache.occurrences
+        rangeCache.clear()
+        rangeCacheInputs = {
+          events: state.events,
+          timeZone: settings.timeZone,
+          weekStartsOn: settings.weekStartsOn,
+          eventOrder: settings.eventOrder,
+          getOccurrences: settings.getOccurrences,
+        }
       }
+      const cached = rangeCache.get(rangeKey)
+      if (cached) return cached
       const { occurrences } = buildEventIndex(state.events, range, {
         timeZone: settings.timeZone,
         weekStartsOn: settings.weekStartsOn,
         eventOrder: settings.eventOrder,
         getOccurrences: settings.getOccurrences,
       })
-      rangeCache = {
-        events: state.events,
-        rangeKey,
-        timeZone: settings.timeZone,
-        weekStartsOn: settings.weekStartsOn,
-        eventOrder: settings.eventOrder,
-        getOccurrences: settings.getOccurrences,
-        occurrences,
-      }
+      rangeCache.set(rangeKey, occurrences)
       return occurrences
     },
     getOccurrencesForDay(day) {
@@ -942,19 +933,12 @@ function useEventCalendarState<TData = unknown>(
   options: UseEventCalendarStateOptions<TData> = {}
 ): EventCalendarInstance<TData> {
   const [store] = useState(() => createEventCalendarStore<TData>(options))
-  const changed = store.setOptions(options)
-  const changedRef = useRef(false)
-  if (changed) changedRef.current = true
   useLayoutEffect(() => {
-    if (changedRef.current) {
-      changedRef.current = false
-      store.notify()
-    }
+    if (store.setOptions(options)) store.notify()
   })
   useEffect(() => {
     store.emitRangeIfChanged()
     // mount-only: onRangeChange fires once for the initial range
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   return store.instance
 }
@@ -990,20 +974,17 @@ function useEventCalendarSelector<TData = unknown, TSelected = unknown>(
     )
   }
   const isEqual = options?.isEqual ?? Object.is
-  const lastRef = useRef<{ value: TSelected } | null>(null)
-  const selectorRef = useRef(selector)
-  selectorRef.current = selector
-
-  const getSnapshot = () => {
-    const next = selectorRef.current(
-      instance.getState() as EventCalendarState<TData>
-    )
-    if (lastRef.current && isEqual(lastRef.current.value, next)) {
-      return lastRef.current.value
+  // Memoize inside this render's closure. A suspended render must not replace
+  // the selector or cached value used by the currently committed subscription.
+  const getSnapshot = useMemo(() => {
+    let last: { value: TSelected } | null = null
+    return () => {
+      const next = selector(instance.getState() as EventCalendarState<TData>)
+      if (last && isEqual(last.value, next)) return last.value
+      last = { value: next }
+      return next
     }
-    lastRef.current = { value: next }
-    return next
-  }
+  }, [instance, selector, isEqual])
 
   return useSyncExternalStore(instance.subscribe, getSnapshot, getSnapshot)
 }
@@ -1843,6 +1824,9 @@ function EventCalendar<TData = unknown>({
 
   useEffect(() => {
     if (apiRef) apiRef.current = instance.api
+    return () => {
+      if (apiRef?.current === instance.api) apiRef.current = null
+    }
   }, [apiRef, instance])
 
   // Register the root element so the drag engine can find day cells even when a

@@ -74,6 +74,7 @@ interface EventCalendarOccurrence<TData = unknown> {
   end: Date
   allDay: boolean
   isRecurring: boolean
+  /** Generated rule ordinal; additional RDATE occurrences have no ordinal. */
   recurrenceIndex?: number
 }
 

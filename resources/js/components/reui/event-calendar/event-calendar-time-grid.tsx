@@ -17,6 +17,7 @@ import {
   useEventCalendarViewSettings,
 } from "@/components/reui/event-calendar/event-calendar"
 import {
+  beginPointerSequence,
   useEventCalendarGestures,
   wasRecentChipPress,
   wasRecentDrag,
@@ -41,7 +42,6 @@ import type {
   EventCalendarDateRange,
   EventCalendarDragState,
   EventCalendarSegment,
-  EventCalendarSlotDraft,
 } from "@/components/reui/event-calendar/event-calendar-types"
 import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
@@ -790,6 +790,7 @@ function EventCalendarAllDayCell({ day }: { day: Date }) {
         viewConfig.classNames?.allDayCell
       )}
       onPointerDown={(e) => {
+        beginPointerSequence()
         if (e.target === e.currentTarget) gestures.beginCreate(e, day, true)
       }}
       onClick={(e) => {
@@ -1064,7 +1065,10 @@ function EventCalendarDayColumn({
     return clones
   }, [segments.timed, boundsStartMin, boundsEndMin])
 
-  const slotFromPointer = (e: React.MouseEvent): { date: Date; end: Date } => {
+  const slotFromPointer = (
+    e: React.MouseEvent
+  ): { date: Date; end: Date } | null => {
+    if (settings.slotDuration > boundsMinutes) return null
     const rect = e.currentTarget.getBoundingClientRect()
     const pxPerMinute = rect.height / boundsMinutes
     const minutes = snapMinutes(
@@ -1109,6 +1113,7 @@ function EventCalendarDayColumn({
         backgroundImage: `repeating-linear-gradient(to bottom, transparent, transparent calc(var(--ec-hour-height) * ${interval / 60} - var(--ec-slot-line-width, 1px)), var(--ec-slot-line-color, var(--color-border)) calc(var(--ec-hour-height) * ${interval / 60} - var(--ec-slot-line-width, 1px)), var(--ec-slot-line-color, var(--color-border)) calc(var(--ec-hour-height) * ${interval / 60}))`,
       }}
       onPointerDown={(e) => {
+        beginPointerSequence()
         if (e.target === e.currentTarget) gestures.beginCreate(e, day, false)
       }}
       onClick={(e) => {
@@ -1119,6 +1124,7 @@ function EventCalendarDayColumn({
         )
           return
         const slot = slotFromPointer(e)
+        if (!slot) return
         settings.onSlotClick?.({ ...slot, allDay: false, view }, e)
       }}
     >

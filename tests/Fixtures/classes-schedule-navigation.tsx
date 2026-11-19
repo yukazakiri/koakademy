@@ -1,4 +1,5 @@
 import { createInertiaApp, router } from "@inertiajs/react";
+import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import "../../resources/css/app.css";
 import ClassesEdit from "../../resources/js/pages/administrators/classes/create";
@@ -106,6 +107,12 @@ const defaults = {
     },
 };
 
+function RecordWithRefreshedProps(props: React.ComponentProps<typeof ClassesShow>) {
+    const [revision, setRevision] = useState(props.schedule_revision);
+    (window as unknown as { refreshScheduleRevision: (revision: string) => void }).refreshScheduleRevision = setRevision;
+    return <ClassesShow {...props} schedule_revision={revision} />;
+}
+
 router.visit = ((url: string) => {
     (window as unknown as { classScheduleVisit: string }).classScheduleVisit = url;
 }) as typeof router.visit;
@@ -193,7 +200,7 @@ createInertiaApp({
         clearHistory: false,
         encryptHistory: false,
     },
-    resolve: () => (mode === "index" ? ClassesIndex : mode === "show" ? ClassesShow : ClassesEdit),
+    resolve: () => (mode === "index" ? ClassesIndex : mode === "show" ? RecordWithRefreshedProps : ClassesEdit),
     setup({ el, App, props }) {
         createRoot(el).render(<App {...props} />);
     },

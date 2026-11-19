@@ -203,7 +203,7 @@ export function ScheduleEditor({
             delivery_mode,
             room_id: delivery_mode === "online" ? null : room_id,
         }));
-        form.transform(() => ({ schedules, schedule_revision: revision }));
+        form.transform((data) => ({ schedules, schedule_revision: data.schedule_revision }));
         setPreviewOpen(false);
         allowNextVisit.current = true;
         form.patch(updateSchedule.url(classItem.id), {

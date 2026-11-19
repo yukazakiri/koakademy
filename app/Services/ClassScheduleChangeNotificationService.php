@@ -152,6 +152,7 @@ final class ClassScheduleChangeNotificationService
     public function dispatchPendingAutomatic(int $limit = 100): int
     {
         $ids = ClassScheduleChangeStudentNotification::query()->pending()->where('auto_dispatch', true)
+            ->whereHas('scheduleChange.class')
             ->orderBy('id')->limit($limit)->pluck('id');
         $count = 0;
         foreach ($ids as $id) {

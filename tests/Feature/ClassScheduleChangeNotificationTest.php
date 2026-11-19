@@ -121,6 +121,25 @@ it('keeps a failed automatic dispatch pending and retries only the unqueued chan
     $fake->assertSentOnDemandTimes(ClassScheduleChangedNotification::class, 1);
 });
 
+it('skips archived class notifications before limiting automatic retries', function () {
+    Notification::fake();
+    $service = app(ClassScheduleChangeNotificationService::class);
+    $archivedClass = Classes::factory()->create();
+    $liveClass = Classes::factory()->create();
+    $archivedStudent = Student::factory()->create(['email' => 'archived@example.test']);
+    $liveStudent = Student::factory()->create(['email' => 'live@example.test']);
+    $archivedChange = $archivedClass->scheduleChanges()->create(['old_schedule' => [], 'new_schedule' => []]);
+    $liveChange = $liveClass->scheduleChanges()->create(['old_schedule' => [], 'new_schedule' => []]);
+    $archivedNotice = $archivedChange->studentNotifications()->create(['student_id' => $archivedStudent->id, 'email' => $archivedStudent->email, 'auto_dispatch' => true]);
+    $liveNotice = $liveChange->studentNotifications()->create(['student_id' => $liveStudent->id, 'email' => $liveStudent->email, 'auto_dispatch' => true]);
+    $archivedClass->delete();
+
+    expect($service->dispatchPendingAutomatic(1))->toBe(1)
+        ->and($liveNotice->fresh()->notified_at)->not->toBeNull()
+        ->and($archivedNotice->fresh()->notified_at)->toBeNull();
+    Notification::assertSentOnDemandTimes(ClassScheduleChangedNotification::class, 1);
+});
+
 it('does not notify when normalized schedules are unchanged', function () {
     Notification::fake();
 

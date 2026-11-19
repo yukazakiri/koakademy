@@ -281,6 +281,29 @@ test("stale schedule errors survive edits and prevent another stale save", { tim
     });
 });
 
+test("schedule retry retains the draft revision after newer page props arrive", { timeout: 120_000 }, async () => {
+    await withPage("?mode=show", async (page) => {
+        await page.evaluate(() => {
+            window.classScheduleMockErrors = { "schedules.1": "Room already occupied." };
+        });
+        await clickText(page, "button", "Edit schedule");
+        await setTime(page, "#start-22", "10:00");
+        await setTime(page, "#end-22", "11:00");
+        await clickText(page, "button", "Review changes");
+        await clickText(page, '[role="alertdialog"] button', "Save schedule");
+        await page.waitForFunction(() => document.body.textContent.includes("Room already occupied."));
+        await page.evaluate(() => {
+            window.refreshScheduleRevision("b".repeat(64));
+            delete window.classScheduleMockErrors;
+        });
+        await setTime(page, "#end-22", "11:30");
+        await clickText(page, "button", "Review changes");
+        await clickText(page, '[role="alertdialog"] button', "Save schedule");
+        const submitted = await page.evaluate(() => window.classSchedulePatch);
+        assert.equal(submitted.data.schedule_revision, "a".repeat(64));
+    });
+});
+
 test("adding and removing an unsaved meeting leaves no pending changes", { timeout: 120_000 }, async () => {
     await withPage("?mode=show", async (page) => {
         await clickText(page, "button", "Edit schedule");

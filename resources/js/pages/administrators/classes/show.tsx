@@ -6,9 +6,9 @@ import { useState } from "react";
 import { MoveStudentDialog } from "./record/move-student-dialog";
 import { RecordHeader } from "./record/record-header";
 import { RecordSettings } from "./record/record-settings";
+import { ScheduleEditor } from "./record/schedule-editor";
 import { ScheduleOverview } from "./record/schedule-overview";
 import { StudentRecords } from "./record/student-records";
-import { TimetableEditor } from "./record/timetable-editor";
 import type { ClassShowCapabilities, ClassShowProps, EnrollmentRow } from "./record/types";
 
 const DEFAULT_CAPABILITIES: ClassShowCapabilities = { update: false, delete: false, restore: false, force_delete: false };
@@ -19,12 +19,11 @@ export default function AdministratorClassShow({
     capabilities: rawCapabilities,
     enrollments,
     raw_schedules,
-    room_schedules,
     rooms,
     transferable_classes,
 }: ClassShowProps) {
     const capabilities = rawCapabilities ?? DEFAULT_CAPABILITIES;
-    const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+    const [scheduleEditing, setScheduleEditing] = useState(false);
     const [studentToMove, setStudentToMove] = useState<EnrollmentRow | null>(null);
 
     return (
@@ -54,8 +53,22 @@ export default function AdministratorClassShow({
                             </TabsTrigger>
                         </TabsList>
                     </div>
-                    <TabsContent value="schedule" className="min-w-0">
-                        <ScheduleOverview classItem={classItem} canUpdate={capabilities.update} onManage={() => setScheduleDialogOpen(true)} />
+                    <TabsContent value="schedule" className="min-w-0" keepMounted>
+                        <div className="flex flex-col gap-6">
+                            <ScheduleOverview
+                                classItem={classItem}
+                                canUpdate={capabilities.update && !classItem.is_archived && !scheduleEditing}
+                                onManage={() => setScheduleEditing(true)}
+                            />
+                            {capabilities.update && !classItem.is_archived && scheduleEditing && (
+                                <ScheduleEditor
+                                    classItem={classItem}
+                                    initialSchedules={raw_schedules}
+                                    rooms={rooms}
+                                    onClose={() => setScheduleEditing(false)}
+                                />
+                            )}
+                        </div>
                     </TabsContent>
                     <TabsContent value="roster" className="min-w-0">
                         <StudentRecords classItem={classItem} enrollments={enrollments} onMove={setStudentToMove} />
@@ -67,16 +80,6 @@ export default function AdministratorClassShow({
                         <RecordSettings classItem={classItem} canUpdate={capabilities.update} />
                     </TabsContent>
                 </Tabs>
-                {capabilities.update && scheduleDialogOpen && (
-                    <TimetableEditor
-                        classItem={classItem}
-                        initialSchedules={raw_schedules}
-                        roomSchedules={room_schedules}
-                        rooms={rooms}
-                        open={scheduleDialogOpen}
-                        onOpenChange={setScheduleDialogOpen}
-                    />
-                )}
                 {studentToMove && (
                     <MoveStudentDialog
                         key={studentToMove.id}

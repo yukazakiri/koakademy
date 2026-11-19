@@ -31,11 +31,12 @@ final readonly class SchedulingService
         array $incomingSchedules,
         ?User $actor = null,
         ?array $oldSnapshot = null,
+        bool $matchLegacy = true,
     ): Collection {
-        $oldSnapshot ??= $this->notificationService->snapshot($class);
-        $incomingSchedules = ScheduleDelivery::normalizeSchedules($incomingSchedules, $class);
-
-        $synced = DB::transaction(function () use ($class, $incomingSchedules): Collection {
+        return DB::transaction(function () use ($class, $incomingSchedules, $matchLegacy, $oldSnapshot, $actor): Collection {
+            $class->newQuery()->whereKey($class->getKey())->lockForUpdate()->firstOrFail();
+            $oldSnapshot ??= $this->notificationService->snapshot($class);
+            $incomingSchedules = ScheduleDelivery::normalizeSchedules($incomingSchedules, $class, matchLegacy: $matchLegacy);
             $existingSchedules = $class->schedules()->withTrashed()->get();
             $existingById = $existingSchedules->keyBy('id');
             $availableExisting = $existingSchedules->filter(fn (Schedule $s): bool => ! $s->trashed())->values();
@@ -53,7 +54,7 @@ final readonly class SchedulingService
 
                 if ($numericId !== null && $existingById->has($numericId) && ! in_array($numericId, $usedIds, true)) {
                     $target = $existingById->get($numericId);
-                } else {
+                } elseif ($matchLegacy) {
                     // Reuse an available active row that isn't explicitly claimed by another incoming numeric ID
                     $claimedNumericIds = collect($incomingSchedules)
                         ->pluck('id')
@@ -111,15 +112,13 @@ final readonly class SchedulingService
                 $class->schedules()->whereNotIn('id', $usedIds)->delete();
             }
 
+            $class->unsetRelation('schedules');
+            $class->unsetRelation('Schedule');
+
+            $this->notificationService->notifyIfChanged($class, $oldSnapshot, $actor);
+
             return $result;
         });
-
-        $class->unsetRelation('schedules');
-        $class->unsetRelation('Schedule');
-
-        $this->notificationService->notifyIfChanged($class, $oldSnapshot, $actor);
-
-        return $synced;
     }
 
     /**

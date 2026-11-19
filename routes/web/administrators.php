@@ -331,6 +331,7 @@ Route::middleware(['auth', 'administrators.only'])
         // Parameterized routes
         Route::get('/classes/{class}/edit', [AdministratorClassManagementController::class, 'edit'])->name('classes.edit')->withTrashed();
         Route::patch('/classes/{class}', [AdministratorClassManagementController::class, 'update'])->name('classes.update');
+        Route::patch('/classes/{class}/schedule', [AdministratorClassManagementController::class, 'updateSchedule'])->name('classes.schedule.update');
         Route::delete('/classes/{class}', [AdministratorClassManagementController::class, 'destroy'])->name('classes.destroy');
         Route::post('/classes/{class}/copy', [AdministratorClassManagementController::class, 'copy'])->name('classes.copy');
         Route::post('/classes/{class}/restore', [AdministratorClassManagementController::class, 'restore'])->name('classes.restore');

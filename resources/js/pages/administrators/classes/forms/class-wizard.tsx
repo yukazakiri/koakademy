@@ -30,12 +30,22 @@ type ClassWizardProps = ClassDefaultsInput & {
     mode?: "create" | "edit";
     classId?: number;
     initialData?: ClassFormData;
+    initialSection?: "details" | "schedule";
     onCreated?: () => void;
 };
 
 const draftKey = "koakademy:class-draft";
 
-export function ClassWizard({ semester, school_year, options, mode = "create", classId, initialData, onCreated }: ClassWizardProps): ReactNode {
+export function ClassWizard({
+    semester,
+    school_year,
+    options,
+    mode = "create",
+    classId,
+    initialData,
+    initialSection = "details",
+    onCreated,
+}: ClassWizardProps): ReactNode {
     const defaults = useMemo(() => ({ semester, school_year, options }), [semester, school_year, options]);
     const {
         form,
@@ -51,7 +61,7 @@ export function ClassWizard({ semester, school_year, options, mode = "create", c
     } = useClassForm(defaults, initialData);
 
     const isEditing = mode === "edit";
-    const [currentSection, setCurrentSection] = useState(0);
+    const [currentSection, setCurrentSection] = useState(isEditing && initialSection === "schedule" ? 1 : 0);
     const [validationError, setValidationError] = useState<string | null>(null);
     const [savedDraft, setSavedDraft] = useState<ClassDraft | null>(null);
     const [draftReady, setDraftReady] = useState(false);
@@ -274,7 +284,7 @@ export function ClassWizard({ semester, school_year, options, mode = "create", c
             },
         };
 
-        form.transform(() => buildClassStorePayload(form.data));
+        form.transform(() => ({ ...buildClassStorePayload(form.data), ...(isEditing ? { schedules_match_by_id: true } : {}) }));
 
         if (isEditing && classId) {
             form.patch(update.url(classId), requestOptions);
@@ -557,25 +567,31 @@ export function ClassWizard({ semester, school_year, options, mode = "create", c
                                 ) : null}
                             </div>
 
-                            <Button type="submit" className="h-11 gap-2 rounded-xl px-5 text-sm font-semibold shadow-xs" disabled={form.processing}>
-                                {currentSection === reviewStepIndex ? (
-                                    <>
-                                        <CheckCheck className="size-4" aria-hidden="true" />
-                                        {form.processing ? "Publishing class…" : isEditing ? "Save changes" : "Create class"}
-                                    </>
-                                ) : (
-                                    <>
-                                        Continue to {sections[currentSection + 1]?.title}
-                                        <ArrowRight className="size-4" aria-hidden="true" />
-                                    </>
-                                )}
-                            </Button>
+                            <div className="flex flex-wrap gap-2">
+                                <Button
+                                    type="submit"
+                                    className="h-11 gap-2 rounded-xl px-5 text-sm font-semibold shadow-xs"
+                                    disabled={form.processing}
+                                >
+                                    {currentSection === reviewStepIndex ? (
+                                        <>
+                                            <CheckCheck className="size-4" aria-hidden="true" />
+                                            {form.processing ? "Publishing class…" : isEditing ? "Save changes" : "Create class"}
+                                        </>
+                                    ) : (
+                                        <>
+                                            Continue to {sections[currentSection + 1]?.title}
+                                            <ArrowRight className="size-4" aria-hidden="true" />
+                                        </>
+                                    )}
+                                </Button>
+                            </div>
                         </div>
 
                         <div className="text-muted-foreground flex items-center justify-between border-t pt-3 text-xs">
                             <span className="flex items-center gap-1.5">
                                 <span className="size-1.5 rounded-full bg-emerald-500" />
-                                {!isEditing ? draftStatus : "Changes saved upon final confirmation"}
+                                {!isEditing ? draftStatus : "Changes are saved when you confirm"}
                             </span>
                             <span>
                                 Step {currentSection + 1} of {sections.length}

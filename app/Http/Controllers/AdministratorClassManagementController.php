@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\V1\ApiPagination;
 use App\Http\Requests\Administrators\CopyClassRequest;
 use App\Http\Requests\Administrators\StoreClassRequest;
 use App\Http\Requests\Administrators\UpdateClassRequest;
+use App\Http\Requests\Administrators\UpdateClassScheduleRequest;
 use App\Jobs\MoveStudentToSectionJob;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
@@ -25,6 +26,7 @@ use App\Models\User;
 use App\Services\ClassCurriculumPlacementService;
 use App\Services\ClassScheduleChangeNotificationService;
 use App\Services\GeneralSettingsService;
+use App\Services\Scheduling\SchedulingService;
 use App\Support\Database\JsonArrayQuery;
 use App\Support\Database\SqlDialect;
 use Exception;
@@ -322,7 +324,7 @@ final class AdministratorClassManagementController extends Controller
 
     public function edit(Classes $class): Response
     {
-        $class->loadMissing(['schedules']);
+        $class->loadMissing(['schedules.room']);
 
         return Inertia::render('administrators/classes/create', [
             'user' => $this->getUserProps(),
@@ -395,7 +397,7 @@ final class AdministratorClassManagementController extends Controller
         $class = DB::transaction(function () use ($validated, $schedules): Classes {
             $class = Classes::query()->create($validated);
 
-            app(\App\Services\Scheduling\SchedulingService::class)->syncClassSchedules(
+            app(SchedulingService::class)->syncClassSchedules(
                 $class,
                 $schedules,
                 Auth::user() instanceof User ? Auth::user() : null,
@@ -420,6 +422,8 @@ final class AdministratorClassManagementController extends Controller
         $this->authorizeClassAction('Update:Classes');
 
         $validated = $request->validated();
+        $matchLegacySchedules = ! ($validated['schedules_match_by_id'] ?? false);
+        unset($validated['schedules_match_by_id']);
         $classification = $validated['classification'] ?? $class->classification ?? 'college';
 
         /** @var array<string, mixed> $settings */
@@ -477,18 +481,19 @@ final class AdministratorClassManagementController extends Controller
 
         $actor = Auth::user() instanceof User ? Auth::user() : null;
 
-        DB::transaction(function () use ($class, $validated, $schedules, $scheduleNotifications, $actor): void {
+        DB::transaction(function () use ($class, $validated, $schedules, $scheduleNotifications, $actor, $matchLegacySchedules): void {
             // Saving an online class clears session rooms through the model hook.
             $oldSnapshot = $scheduleNotifications->snapshot($class);
             $class->fill($validated);
             $class->save();
 
             if (is_array($schedules)) {
-                app(\App\Services\Scheduling\SchedulingService::class)->syncClassSchedules(
+                app(SchedulingService::class)->syncClassSchedules(
                     $class,
                     $schedules,
                     $actor,
                     $oldSnapshot,
+                    $matchLegacySchedules,
                 );
             } else {
                 $scheduleNotifications->notifyIfChanged($class, $oldSnapshot, $actor);
@@ -499,6 +504,23 @@ final class AdministratorClassManagementController extends Controller
             'type' => 'success',
             'message' => 'Class updated successfully.',
             'class_id' => $class->id,
+        ]);
+    }
+
+    public function updateSchedule(UpdateClassScheduleRequest $request, Classes $class, SchedulingService $scheduling): \Illuminate\Http\RedirectResponse
+    {
+        $this->authorizeClassAction('Update:Classes');
+
+        $scheduling->syncClassSchedules(
+            $class,
+            $request->validated('schedules'),
+            Auth::user() instanceof User ? Auth::user() : null,
+            matchLegacy: false,
+        );
+
+        return redirect()->route('administrators.classes.show', $class)->with('flash', [
+            'type' => 'success',
+            'message' => 'Class schedule updated successfully.',
         ]);
     }
 
@@ -582,7 +604,7 @@ final class AdministratorClassManagementController extends Controller
             $newClass->save();
 
             if ($copySchedules) {
-                app(\App\Services\Scheduling\SchedulingService::class)->copyClassSchedules($class, $newClass);
+                app(SchedulingService::class)->copyClassSchedules($class, $newClass);
             }
 
             return $newClass;
@@ -597,7 +619,7 @@ final class AdministratorClassManagementController extends Controller
         ]);
     }
 
-    public function show(Request $request, Classes $class, GeneralSettingsService $generalSettingsService): Response
+    public function show(Request $request, Classes $class): Response
     {
         $class->loadMissing([
             'Subject',
@@ -694,24 +716,6 @@ final class AdministratorClassManagementController extends Controller
             ])
             ->values();
 
-        // Fetch occupied schedules for all rooms in the current period to display conflicts
-        $currentSemester = $generalSettingsService->getCurrentSemester();
-        $roomSchedules = Schedule::query()
-            ->whereHas('class', function ($query) use ($currentSemester): void {
-                $query->where('semester', $currentSemester);
-            })
-            ->with('class:id,subject_code,section')
-            ->get()
-            ->groupBy('room_id')
-            ->map(fn ($schedules) => $schedules->map(fn ($schedule): array => [
-                'id' => $schedule->id,
-                'class_id' => $schedule->class_id,
-                'day_of_week' => $schedule->day_of_week,
-                'start_time' => $schedule->start_time?->format('H:i'),
-                'end_time' => $schedule->end_time?->format('H:i'),
-                'title' => $schedule->class ? ($schedule->class->subject_code.' - '.$schedule->class->section) : 'Occupied',
-            ]));
-
         // Fetch transferable classes (other sections of the same subject)
         $transferableClasses = Classes::query()
             ->where('id', '!=', $class->id)
@@ -760,7 +764,6 @@ final class AdministratorClassManagementController extends Controller
                 'name' => $s->isOnline() ? 'Online' : ($s->room?->name ?? 'TBA'),
             ],
             'delivery_mode' => $s->delivery_mode,
-            'has_conflict' => false, // Conflict calculation is done in frontend or separate prop
         ]));
 
         $associatedCourses = null;
@@ -836,10 +839,14 @@ final class AdministratorClassManagementController extends Controller
                     'start_time' => $schedule->start_time?->format('H:i'),
                     'end_time' => $schedule->end_time?->format('H:i'),
                     'room_id' => $schedule->room_id,
+                    'room_name' => $schedule->room?->name,
                     'delivery_mode' => $schedule->delivery_mode,
+                    'component_type' => $schedule->component_type,
+                    'pattern_group_id' => $schedule->pattern_group_id,
+                    'status' => $schedule->status,
+                    'subject_id' => $schedule->subject_id,
                     'temp_id' => (string) $schedule->id, // Ensure temp_id exists for keying
                 ]),
-            'room_schedules' => $roomSchedules,
             'transferable_classes' => $transferableClasses,
             'rooms' => Room::query()
                 ->where('is_active', true)
@@ -1611,6 +1618,7 @@ final class AdministratorClassManagementController extends Controller
                     'start_time' => $schedule->start_time?->format('H:i') ?? '08:00',
                     'end_time' => $schedule->end_time?->format('H:i') ?? '09:00',
                     'room_id' => $schedule->room_id,
+                    'room_name' => $schedule->room?->name,
                     'delivery_mode' => $schedule->delivery_mode,
                     'component_type' => $schedule->component_type,
                     'pattern_group_id' => $schedule->pattern_group_id,

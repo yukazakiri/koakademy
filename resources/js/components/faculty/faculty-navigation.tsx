@@ -39,10 +39,10 @@ export function getFacultyPortalNavigation(enabledRoutes: Record<string, boolean
                   badge:
                       cls.students_count > 0 ? (
                           <Badge
-                              variant="secondary"
-                              className="flex h-5 min-w-5 items-center justify-center gap-0.5 rounded-full px-1.5 text-[10px] font-medium tabular-nums"
+                              variant="outline"
+                              className="border-sidebar-border/80 bg-background/85 text-sidebar-foreground/80 dark:border-sidebar-border/70 dark:bg-sidebar-accent/70 dark:text-sidebar-foreground/85 flex h-[18px] min-w-[22px] items-center justify-center gap-1 rounded-md px-1.5 font-mono text-[10px] leading-none font-semibold tracking-tight tabular-nums shadow-2xs"
                           >
-                              <IconUsers className="size-3" />
+                              <IconUsers className="size-2.5 opacity-75" />
                               {cls.students_count}
                           </Badge>
                       ) : undefined,
@@ -79,7 +79,7 @@ export function getFacultyPortalNavigation(enabledRoutes: Record<string, boolean
                 facultyClasses.length > 0 ? (
                     <Badge
                         variant="outline"
-                        className="border-primary/30 bg-primary/10 text-primary ml-1 flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-medium tabular-nums"
+                        className="border-primary/30 bg-primary/15 text-primary ring-primary/10 dark:border-primary/40 dark:bg-primary/25 dark:text-primary ml-1 flex h-[18px] min-w-[22px] items-center justify-center rounded-md px-1.5 font-mono text-[10px] leading-none font-semibold tracking-tight tabular-nums shadow-2xs ring-1 ring-inset"
                     >
                         {facultyClasses.length}
                     </Badge>

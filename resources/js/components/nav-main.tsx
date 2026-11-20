@@ -193,8 +193,8 @@ export function NavMain({ items, showQuickActions = true }: { items: NavItem[]; 
                                                                     <item.icon className="size-4" />
                                                                 </div>
                                                             )}
-                                                            <span className="flex-1 text-sm font-medium">{item.title}</span>
-                                                            {item.badge && <span className="ml-1">{item.badge}</span>}
+                                                            <span className="flex-1 truncate text-sm font-medium">{item.title}</span>
+                                                            {item.badge && <div className="ml-auto flex shrink-0 items-center">{item.badge}</div>}
                                                         </Link>
                                                     </SidebarMenuButton>
                                                     {!isCollapsed && (
@@ -377,13 +377,15 @@ export function NavMain({ items, showQuickActions = true }: { items: NavItem[]; 
                                                         )}
                                                         <span
                                                             className={cn(
-                                                                "relative z-10 text-sm font-medium",
+                                                                "relative z-10 flex-1 truncate text-sm font-medium",
                                                                 isActive ? "text-sidebar-accent-foreground" : "",
                                                             )}
                                                         >
                                                             {item.title}
                                                         </span>
-                                                        {item.badge && <span className="ml-1">{item.badge}</span>}
+                                                        {item.badge && (
+                                                            <div className="relative z-10 ml-auto flex shrink-0 items-center">{item.badge}</div>
+                                                        )}
                                                     </Link>
                                                 </SidebarMenuButton>
                                                 {isActive && (

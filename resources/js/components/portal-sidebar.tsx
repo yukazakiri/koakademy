@@ -4,6 +4,7 @@ import { getFacultyPortalNavigation, type FacultyPortalClass } from "@/component
 import { NavMain, type NavItem } from "@/components/nav-main";
 import { NavSecondary } from "@/components/nav-secondary";
 import { NavUser } from "@/components/nav-user";
+import { Badge } from "@/components/reui/badge";
 import type { SemesterSelectorProps } from "@/components/semester-selector";
 import { NotificationsPopover } from "@/components/sidebar-03/nav-notifications";
 import { getStudentPortalNavigation, type StudentPortalClass } from "@/components/student/student-navigation";
@@ -31,10 +32,12 @@ import { Link, router, usePage } from "@inertiajs/react";
 import {
     IconBooks,
     IconBriefcase,
+    IconBuilding,
     IconCalendar,
     IconChartBar,
     IconChevronDown,
     IconDashboard,
+    IconDoor,
     IconHelp,
     IconReceipt,
     IconSchool,
@@ -46,6 +49,16 @@ import * as React from "react";
 import { useMemo, useState } from "react";
 
 type FacultyClass = FacultyPortalClass;
+
+interface AdminSidebarCounts {
+    students: number;
+    enrollments: number;
+    faculties: number;
+    users: number;
+    classes?: number;
+    rooms?: number;
+    departments?: number;
+}
 
 interface PageProps {
     auth?: {
@@ -59,8 +72,35 @@ interface PageProps {
     branding?: Partial<Branding> | null;
     facultyClasses?: FacultyClass[];
     studentClasses?: StudentPortalClass[];
+    adminSidebarCounts?: AdminSidebarCounts | null;
     settings?: SemesterSelectorProps;
     [key: string]: unknown;
+}
+
+const staffCountFormatter = new Intl.NumberFormat();
+
+function renderStaffCountBadge(count?: number): React.ReactNode {
+    if (count === null || count === undefined) {
+        return undefined;
+    }
+
+    const isZero = count === 0;
+
+    return (
+        <Badge
+            variant="outline"
+            size="xs"
+            radius="full"
+            className={cn(
+                "h-[18px] min-w-[22px] rounded-md px-1.5 font-mono text-[10px] leading-none font-semibold tracking-tight tabular-nums select-none transition-colors duration-150",
+                isZero
+                    ? "border-sidebar-border/50 bg-transparent text-muted-foreground/55"
+                    : "border-sidebar-border/80 bg-background/85 text-sidebar-foreground/80 shadow-2xs dark:border-sidebar-border/70 dark:bg-sidebar-accent/70 dark:text-sidebar-foreground/85",
+            )}
+        >
+            {staffCountFormatter.format(count)}
+        </Badge>
+    );
 }
 
 function useFeatureFlagRoutes(
@@ -71,6 +111,7 @@ function useFeatureFlagRoutes(
 ): NavItem[] {
     const { props } = usePage<PageProps>();
     const enabledRoutes = props.featureFlags?.enabledRoutes || {};
+    const adminSidebarCounts = props.adminSidebarCounts ?? null;
 
     return useMemo(() => {
         if (isStudent) {
@@ -79,8 +120,8 @@ function useFeatureFlagRoutes(
         if (isFaculty) {
             return getFacultyRoutes(enabledRoutes, facultyClasses);
         }
-        return getStaffRoutes(enabledRoutes);
-    }, [isStudent, isFaculty, enabledRoutes, facultyClasses, studentClasses]);
+        return getStaffRoutes(enabledRoutes, adminSidebarCounts);
+    }, [isStudent, isFaculty, enabledRoutes, facultyClasses, studentClasses, adminSidebarCounts]);
 }
 
 function getStudentRoutes(enabledRoutes: Record<string, boolean>, studentClasses: StudentPortalClass[] = []): NavItem[] {
@@ -91,7 +132,7 @@ function getFacultyRoutes(enabledRoutes: Record<string, boolean>, facultyClasses
     return getFacultyPortalNavigation(enabledRoutes, facultyClasses);
 }
 
-function getStaffRoutes(enabledRoutes: Record<string, boolean>): NavItem[] {
+function getStaffRoutes(enabledRoutes: Record<string, boolean>, counts?: AdminSidebarCounts | null): NavItem[] {
     const isEnabled = (routeId: string): boolean => {
         return enabledRoutes[routeId] === true;
     };
@@ -101,7 +142,7 @@ function getStaffRoutes(enabledRoutes: Record<string, boolean>): NavItem[] {
             id: "dashboard",
             title: "Dashboard",
             icon: IconDashboard,
-            url: "/admin/dashboard",
+            url: "/administrators/dashboard",
         },
         ...(isEnabled("library")
             ? [
@@ -114,56 +155,73 @@ function getStaffRoutes(enabledRoutes: Record<string, boolean>): NavItem[] {
               ]
             : []),
         {
-            id: "users",
-            title: "User Management",
-            icon: IconUsers,
-            url: isEnabled("users") ? "/admin/users" : "#",
-            disabled: !isEnabled("users"),
-            disabledTooltip: "User management coming soon",
+            id: "classes",
+            title: "Classes",
+            icon: IconSchool,
+            url: "/administrators/classes",
+            badge: renderStaffCountBadge(counts?.classes),
+            separator: true,
+        },
+        {
+            id: "schedule",
+            title: "Schedule",
+            icon: IconCalendar,
+            url: "/administrators/scheduling-analytics",
+        },
+        {
+            id: "rooms",
+            title: "Rooms",
+            icon: IconDoor,
+            url: "/administrators/rooms",
+            badge: renderStaffCountBadge(counts?.rooms),
+        },
+        {
+            id: "departments",
+            title: "Departments",
+            icon: IconBuilding,
+            url: "/administrators/departments",
+            badge: renderStaffCountBadge(counts?.departments),
         },
         {
             id: "students",
-            title: "Student Management",
+            title: "Students",
             icon: IconSchool,
-            url: isEnabled("students") ? "/admin/students" : "#",
-            disabled: !isEnabled("students"),
-            disabledTooltip: "Student management coming soon",
+            url: "/administrators/students",
+            badge: renderStaffCountBadge(counts?.students),
+            separator: true,
         },
         {
             id: "faculty",
-            title: "Faculty Management",
+            title: "Faculty",
             icon: IconBriefcase,
-            url: isEnabled("faculty") ? "/admin/faculty" : "#",
-            disabled: !isEnabled("faculty"),
-            disabledTooltip: "Faculty management coming soon",
+            url: "/administrators/faculties",
+            badge: renderStaffCountBadge(counts?.faculties),
         },
         {
             id: "finances",
             title: "Finance",
             icon: IconReceipt,
-            url: isEnabled("finances") ? "/admin/finances" : "#",
-            disabled: !isEnabled("finances"),
-            disabledTooltip: "Finance management coming soon",
+            url: "/administrators/finance",
         },
         {
-            id: "reports",
-            title: "Reports & Analytics",
-            icon: IconChartBar,
-            url: isEnabled("reports") ? "/admin/reports" : "#",
-            disabled: !isEnabled("reports"),
-            disabledTooltip: "Reports coming soon",
+            id: "users",
+            title: "Users",
+            icon: IconUsers,
+            url: "/administrators/users",
+            badge: renderStaffCountBadge(counts?.users),
+            separator: true,
         },
         {
             id: "announcements",
             title: "Announcements",
             icon: IconSpeakerphone,
-            url: "/admin/announcements",
+            url: "/administrators/announcements",
         },
         {
             id: "settings",
             title: "Settings",
             icon: IconSettings,
-            url: "/admin/settings",
+            url: "/administrators/system-management",
             separator: true,
         },
     ];
@@ -175,7 +233,7 @@ function getSecondaryRoutes(isStudent: boolean, isStaff: boolean): NavItem[] {
             id: "settings",
             title: "Settings",
             icon: IconSettings,
-            url: isStudent ? "/student/profile" : isStaff ? "/admin/settings" : "/faculty/profile",
+            url: isStudent ? "/student/profile" : isStaff ? "/administrators/settings" : "/faculty/profile",
         },
         {
             id: "help",

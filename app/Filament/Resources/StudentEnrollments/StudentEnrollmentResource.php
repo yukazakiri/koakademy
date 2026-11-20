@@ -14,10 +14,12 @@ use App\Filament\Resources\StudentEnrollments\Tables\StudentEnrollmentsTable;
 use App\Models\StudentEnrollment;
 use App\Services\EnrollmentPipelineService;
 use App\Services\GeneralSettingsService;
+use BackedEnum;
 use Filament\Actions\Action;
 use Filament\GlobalSearch\GlobalSearchResult;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -31,6 +33,9 @@ final class StudentEnrollmentResource extends Resource
 {
     #[Override]
     protected static ?string $model = StudentEnrollment::class;
+
+    #[Override]
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedClipboardDocumentList;
 
     #[Override]
     protected static string|UnitEnum|null $navigationGroup = 'Academics';

@@ -12,11 +12,13 @@ use App\Filament\Resources\Accounts\Schemas\AccountForm;
 use App\Filament\Resources\Accounts\Schemas\AccountInfolist;
 use App\Filament\Resources\Accounts\Tables\AccountsTable;
 use App\Models\Account;
+use BackedEnum;
 use Exception;
 use Filament\Pages\Enums\SubNavigationPosition;
 use Filament\Resources\Pages\Page;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Override;
 use UnitEnum;
@@ -31,6 +33,9 @@ final class AccountResource extends Resource
 
     #[Override]
     protected static ?string $recordTitleAttribute = 'name';
+
+    #[Override]
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedIdentification;
 
     #[Override]
     protected static string|UnitEnum|null $navigationGroup = 'Administration';

@@ -33,7 +33,7 @@ final class CodeAuthorityResource extends Resource
     protected static string|UnitEnum|null $navigationGroup = 'Academics';
 
     #[Override]
-    protected static ?int $navigationSort = 2;
+    protected static ?int $navigationSort = 6;
 
     #[Override]
     protected static ?string $navigationLabel = 'Code Authorities';

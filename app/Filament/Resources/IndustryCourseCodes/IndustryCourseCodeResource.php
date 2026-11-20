@@ -33,7 +33,7 @@ final class IndustryCourseCodeResource extends Resource
     protected static string|UnitEnum|null $navigationGroup = 'Academics';
 
     #[Override]
-    protected static ?int $navigationSort = 3;
+    protected static ?int $navigationSort = 7;
 
     #[Override]
     protected static ?string $navigationLabel = 'Industry Course Codes';

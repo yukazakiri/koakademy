@@ -65,7 +65,7 @@ final class Timetable extends Page implements HasForms, HasTable
     protected static string|UnitEnum|null $navigationGroup = 'Academics';
 
     #[Override]
-    protected static ?int $navigationSort = 5;
+    protected static ?int $navigationSort = 4;
 
     #[Override]
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCalendar;

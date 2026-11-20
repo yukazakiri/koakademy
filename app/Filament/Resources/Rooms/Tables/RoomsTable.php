@@ -4,15 +4,18 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Rooms\Tables;
 
+use App\Filament\Resources\Rooms\Schemas\RoomForm;
 use App\Models\Room;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Notifications\Notification;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 
@@ -25,13 +28,44 @@ final class RoomsTable
                 TextColumn::make('name')
                     ->label('Room Name')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->weight('semibold'),
 
                 TextColumn::make('class_code')
                     ->label('Class Code')
                     ->searchable()
                     ->sortable()
+                    ->badge()
                     ->placeholder('No class code'),
+
+                TextColumn::make('type')
+                    ->label('Type')
+                    ->badge()
+                    ->color('info')
+                    ->sortable()
+                    ->formatStateUsing(fn (?string $state): string => RoomForm::roomTypeOptions()[$state ?? 'lecture'] ?? ucfirst((string) $state)),
+
+                TextColumn::make('capacity')
+                    ->label('Capacity')
+                    ->numeric()
+                    ->sortable()
+                    ->alignCenter()
+                    ->suffix(' seats'),
+
+                TextColumn::make('building')
+                    ->label('Building')
+                    ->searchable()
+                    ->sortable()
+                    ->placeholder('—'),
+
+                TextColumn::make('school.name')
+                    ->label('School')
+                    ->searchable()
+                    ->sortable()
+                    ->badge()
+                    ->color('primary')
+                    ->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 IconColumn::make('is_active')
                     ->label('Status')
@@ -68,6 +102,16 @@ final class RoomsTable
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
+                SelectFilter::make('type')
+                    ->label('Room Type')
+                    ->options(RoomForm::roomTypeOptions()),
+
+                SelectFilter::make('school_id')
+                    ->label('School')
+                    ->relationship('school', 'name')
+                    ->searchable()
+                    ->preload(),
+
                 TernaryFilter::make('is_active')
                     ->label('Status')
                     ->placeholder('All rooms')
@@ -97,6 +141,7 @@ final class RoomsTable
                             ->success()
                             ->send();
                     }),
+                DeleteAction::make(),
             ])
             ->bulkActions([
                 BulkActionGroup::make([

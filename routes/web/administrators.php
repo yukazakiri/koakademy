@@ -405,6 +405,15 @@ Route::middleware(['auth', 'administrators.only'])
         Route::put('/departments/{department}', [App\Http\Controllers\AdministratorDepartmentManagementController::class, 'update'])->name('departments.update');
         Route::delete('/departments/{department}', [App\Http\Controllers\AdministratorDepartmentManagementController::class, 'destroy'])->name('departments.destroy');
 
+        // Rooms Management
+        Route::get('/rooms', [App\Http\Controllers\AdministratorRoomManagementController::class, 'index'])->name('rooms.index');
+        Route::get('/rooms/create', [App\Http\Controllers\AdministratorRoomManagementController::class, 'create'])->name('rooms.create');
+        Route::post('/rooms', [App\Http\Controllers\AdministratorRoomManagementController::class, 'store'])->name('rooms.store');
+        Route::get('/rooms/{room}/edit', [App\Http\Controllers\AdministratorRoomManagementController::class, 'edit'])->whereNumber('room')->name('rooms.edit');
+        Route::put('/rooms/{room}', [App\Http\Controllers\AdministratorRoomManagementController::class, 'update'])->whereNumber('room')->name('rooms.update');
+        Route::patch('/rooms/{room}/toggle-status', [App\Http\Controllers\AdministratorRoomManagementController::class, 'toggleStatus'])->whereNumber('room')->name('rooms.toggle-status');
+        Route::delete('/rooms/{room}', [App\Http\Controllers\AdministratorRoomManagementController::class, 'destroy'])->whereNumber('room')->name('rooms.destroy');
+
         // Audit Logs
         Route::get('/audit-logs', [AdministratorAuditLogController::class, 'index'])->name('audit-logs.index');
 

@@ -47,6 +47,7 @@
         <server name="PULSE_DB_CONNECTION" value="sqlite"/>
         <server name="TELESCOPE_ENABLED" value="false"/>
         <server name="LARALYZE_ENABLED" value="false"/>
+        <server name="LARAOWL_ENABLED" value="false"/>
         <server name="NIGHTWATCH_ENABLED" value="false"/>
         <server name="SIMPLESTATS_ENABLED" value="false"/>
         <server name="INERTIA_SSR_ENABLED" value="false"/>

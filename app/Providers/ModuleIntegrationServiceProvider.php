@@ -38,14 +38,27 @@ final class ModuleIntegrationServiceProvider extends ServiceProvider
         }
 
         $this->app->booted(function () use ($installed): void {
+            if ($this->app->routesAreCached()) {
+                return;
+            }
+
             $access = $this->app->make(ModuleAccessService::class);
+            $realPaths = [];
+
             foreach ($this->app->make(Router::class)->getRoutes()->getRoutes() as $route) {
+                if ($route->getAction('koakademy_module') !== null) {
+                    continue;
+                }
+
                 $file = $access->routeFile($route);
                 if ($file === null) {
                     continue;
                 }
+
+                $realFile = $realPaths[$file] ??= (realpath($file) ?: $file);
+
                 foreach ($installed as $module) {
-                    if ($module->containsFile($file)) {
+                    if ($module->containsFile($realFile)) {
                         // Preserve closure ownership when routes are cached.
                         /** @var array<string, mixed> $action */
                         $action = $route->getAction();

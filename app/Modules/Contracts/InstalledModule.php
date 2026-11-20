@@ -9,17 +9,33 @@ use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use SplFileInfo;
 
-final readonly class InstalledModule
+final class InstalledModule
 {
+    /**
+     * @var array<string, list<class-string>>
+     */
+    private array $classesCache = [];
+
+    /**
+     * @var list<array{namespace: string, root: string}>|null
+     */
+    private ?array $psr4Roots = null;
+
     public function __construct(
-        public ModuleManifest $manifest,
-        public string $path,
-        public ?string $discoveryPath = null,
+        public readonly ModuleManifest $manifest,
+        public readonly string $path,
+        public readonly ?string $discoveryPath = null,
     ) {}
 
     public function containsFile(string $file): bool
     {
-        return str_starts_with(realpath($file) ?: $file, $this->path.DIRECTORY_SEPARATOR);
+        $prefix = $this->path.DIRECTORY_SEPARATOR;
+
+        if (str_starts_with($file, $prefix)) {
+            return true;
+        }
+
+        return str_starts_with(realpath($file) ?: $file, $prefix);
     }
 
     public function frontendPath(): ?string
@@ -37,19 +53,25 @@ final readonly class InstalledModule
      */
     public function classesIn(string $directory, string $suffix = '.php'): array
     {
-        $composerPath = $this->path.'/composer.json';
-        if (! is_file($composerPath) || ! is_dir($this->path.'/'.$directory)) {
-            return [];
+        $cacheKey = $directory."\0".$suffix;
+
+        if (array_key_exists($cacheKey, $this->classesCache)) {
+            return $this->classesCache[$cacheKey];
         }
-        $composer = json_decode((string) file_get_contents($composerPath), true, 512, JSON_THROW_ON_ERROR);
-        $autoload = is_array($composer) ? ($composer['autoload'] ?? []) : [];
-        $mappings = is_array($autoload) ? ($autoload['psr-4'] ?? []) : [];
-        if (! is_array($mappings)) {
-            throw new InvalidArgumentException('Module PSR-4 mappings must be an object.');
+
+        $targetDirectory = realpath($this->path.DIRECTORY_SEPARATOR.str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $directory));
+        if ($targetDirectory === false || ! is_dir($targetDirectory)) {
+            return $this->classesCache[$cacheKey] = [];
         }
+
+        $roots = $this->psr4Roots();
+        if ($roots === []) {
+            return $this->classesCache[$cacheKey] = [];
+        }
+
         $classes = [];
         $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(
-            $this->path.'/'.$directory, RecursiveDirectoryIterator::SKIP_DOTS,
+            $targetDirectory, RecursiveDirectoryIterator::SKIP_DOTS,
         ));
 
         /** @var SplFileInfo $file */
@@ -57,27 +79,63 @@ final readonly class InstalledModule
             if (! $file->isFile() || ! str_ends_with($file->getFilename(), $suffix)) {
                 continue;
             }
-            foreach ($mappings as $namespace => $paths) {
-                if (! is_string($namespace) || (! is_array($paths) && ! is_string($paths))) {
-                    throw new InvalidArgumentException('Module PSR-4 mappings require namespace strings and directories.');
+            $pathname = $file->getPathname();
+            foreach ($roots as $entry) {
+                if (! str_starts_with($pathname, $entry['root'].DIRECTORY_SEPARATOR)) {
+                    continue;
                 }
-                foreach ((array) $paths as $relative) {
-                    if (! is_string($relative)) {
-                        throw new InvalidArgumentException('Module autoload directories must be strings.');
-                    }
-                    $root = realpath($this->path.'/'.$relative);
-                    if ($root === false || ! str_starts_with($file->getPathname(), $root.DIRECTORY_SEPARATOR)) {
-                        continue;
-                    }
-                    $relativeClass = mb_substr($file->getPathname(), mb_strlen($root) + 1, -4);
-                    $class = $namespace.str_replace(['/', '\\'], '\\', $relativeClass);
-                    if (class_exists($class)) {
-                        $classes[] = $class;
-                    }
+                $relativeClass = mb_substr($pathname, mb_strlen($entry['root']) + 1, -4);
+                $class = $entry['namespace'].str_replace(['/', '\\'], '\\', $relativeClass);
+                if (class_exists($class)) {
+                    $classes[] = $class;
                 }
             }
         }
 
-        return array_values(array_unique($classes));
+        return $this->classesCache[$cacheKey] = array_values(array_unique($classes));
+    }
+
+    /**
+     * @return list<array{namespace: string, root: string}>
+     */
+    private function psr4Roots(): array
+    {
+        if ($this->psr4Roots !== null) {
+            return $this->psr4Roots;
+        }
+
+        $composerPath = $this->path.DIRECTORY_SEPARATOR.'composer.json';
+        if (! is_file($composerPath)) {
+            return $this->psr4Roots = [];
+        }
+
+        $composer = json_decode((string) file_get_contents($composerPath), true, 512, JSON_THROW_ON_ERROR);
+        $autoload = is_array($composer) ? ($composer['autoload'] ?? []) : [];
+        $mappings = is_array($autoload) ? ($autoload['psr-4'] ?? []) : [];
+
+        if (! is_array($mappings)) {
+            throw new InvalidArgumentException('Module PSR-4 mappings must be an object.');
+        }
+
+        $roots = [];
+
+        foreach ($mappings as $namespace => $paths) {
+            if (! is_string($namespace) || (! is_array($paths) && ! is_string($paths))) {
+                throw new InvalidArgumentException('Module PSR-4 mappings require namespace strings and directories.');
+            }
+
+            foreach ((array) $paths as $relative) {
+                if (! is_string($relative)) {
+                    throw new InvalidArgumentException('Module autoload directories must be strings.');
+                }
+
+                $root = realpath($this->path.DIRECTORY_SEPARATOR.str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $relative));
+                if ($root !== false) {
+                    $roots[] = ['namespace' => $namespace, 'root' => $root];
+                }
+            }
+        }
+
+        return $this->psr4Roots = $roots;
     }
 }

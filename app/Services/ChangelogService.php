@@ -31,6 +31,8 @@ final readonly class ChangelogService
 
     private const int STALE_CACHE_TTL = 86400; // 24 hours
 
+    private const int UNAVAILABLE_VERSION_TTL = 300; // 5 minutes
+
     private const int LOCK_TTL = 15;
 
     public function __construct(
@@ -142,11 +144,26 @@ final readonly class ChangelogService
      */
     public function getLatestStableVersion(): ?string
     {
-        return Cache::remember('latest_stable_version', self::FRESH_CACHE_TTL, function (): ?string {
-            $releases = $this->getChangelog(limit: 1, includePrereleases: false);
+        $cached = Cache::get('latest_stable_version');
 
-            return $releases->first()['version'] ?? null;
-        });
+        if (is_array($cached) && array_key_exists('version', $cached)) {
+            return is_string($cached['version']) ? $cached['version'] : null;
+        }
+
+        if (is_string($cached)) {
+            return $cached;
+        }
+
+        $releases = $this->getChangelog(limit: 1, includePrereleases: false);
+        $version = $releases->first()['version'] ?? null;
+
+        Cache::put(
+            'latest_stable_version',
+            ['version' => $version],
+            $version !== null ? self::FRESH_CACHE_TTL : self::UNAVAILABLE_VERSION_TTL,
+        );
+
+        return $version;
     }
 
     /**

@@ -179,3 +179,14 @@ it('isolates cached release histories by repository', function (): void {
     expect($first->entries->first()['version'])->toBe('1.0.0')
         ->and($second->entries->first()['version'])->toBe('2.0.0');
 });
+
+it('caches unavailable latest stable version lookups to avoid repeating failed GitHub requests', function (): void {
+    Http::fake(['api.github.com/repos/yukazakiri/koakademy/releases*' => Http::failedConnection('Offline')]);
+
+    $service = app(ChangelogService::class);
+
+    expect($service->getLatestStableVersion())->toBeNull()
+        ->and($service->getLatestStableVersion())->toBeNull();
+
+    Http::assertSentCount(3);
+});

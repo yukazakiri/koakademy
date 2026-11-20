@@ -32,6 +32,7 @@ use App\Services\VersionService;
 use App\Support\HostingSecurity;
 use App\Support\RuntimeSecurity;
 use DateInterval;
+use Filament\Facades\Filament;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Auth\StatefulGuard;
 use Illuminate\Database\Eloquent\Model;
@@ -322,9 +323,12 @@ final class AppServiceProvider extends ServiceProvider
         $this->definePennantFeatures();
 
         // Dynamically populate the Filament Feature Showcase config from
-        // GitHub releases (stable only) and version.json so the changelog
-        // stays in sync without manual config edits.
-        $this->syncFeatureShowcaseConfig();
+        // GitHub releases (stable only) and version.json only when serving
+        // a Filament panel, so non-Filament routes and CLI runs do not block
+        // on showcase cache lookups or outbound GitHub fetches.
+        Filament::serving(function (): void {
+            $this->syncFeatureShowcaseConfig();
+        });
 
         $this->configureDevCommands();
 
@@ -485,11 +489,10 @@ final class AppServiceProvider extends ServiceProvider
 
             $versionData = $versionService->getVersionData();
             $showcaseChangelog = $changelogService->getShowcaseChangelog();
-            $latestStable = $changelogService->getLatestStableVersion();
 
             // Prefer version.json version; fall back to latest GitHub stable release
             $currentVersion = ($versionData['version'] ?? null)
-                ?? $latestStable
+                ?? $changelogService->getLatestStableVersion()
                 ?? config('filament-feature-showcase.current');
 
             config([

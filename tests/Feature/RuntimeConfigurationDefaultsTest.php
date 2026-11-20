@@ -182,7 +182,8 @@ it('gives horizon supervisors for student transfers and assessment exports', fun
  */
 it('leaves the observability recorders switched off by default', function (): void {
     expect(runtimeEnvDefault('pulse.php', 'PULSE_ENABLED'))->toBe('false')
-        ->and(runtimeEnvDefault('telescope.php', 'TELESCOPE_ENABLED'))->toBe('false');
+        ->and(runtimeEnvDefault('telescope.php', 'TELESCOPE_ENABLED'))->toBe('false')
+        ->and(runtimeEnvDefault('laraowl.php', 'LARAOWL_ENABLED'))->toBe('false');
 });
 
 /**

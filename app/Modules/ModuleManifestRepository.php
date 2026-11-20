@@ -12,6 +12,23 @@ use RuntimeException;
 
 final class ModuleManifestRepository
 {
+    private ?string $cachedInstalledKey = null;
+
+    /**
+     * @var list<InstalledModule>|null
+     */
+    private ?array $cachedInstalled = null;
+
+    /**
+     * @var array<string, InstalledModule>
+     */
+    private array $cachedByIdentifier = [];
+
+    /**
+     * @var array<string, ?InstalledModule>
+     */
+    private array $cachedOwningFiles = [];
+
     public function __construct(
         private readonly ModuleStateRepository $states,
         private readonly ?string $modulesPath = null,
@@ -30,11 +47,19 @@ final class ModuleManifestRepository
      */
     public function installed(): array
     {
+        $directories = $this->manifestDirectories();
+        $cacheKey = implode("\0", $directories);
+
+        if ($this->cachedInstalledKey === $cacheKey && $this->cachedInstalled !== null) {
+            return $this->cachedInstalled;
+        }
+
         $manifests = [];
         $manifestPaths = [];
         $identities = [];
+        $byIdentifier = [];
 
-        foreach ($this->manifestDirectories() as $path) {
+        foreach ($directories as $path) {
             $path = mb_rtrim($path, DIRECTORY_SEPARATOR);
             $manifestPattern = str_contains($path, '*')
                 ? $path.DIRECTORY_SEPARATOR.'module.json'
@@ -48,64 +73,78 @@ final class ModuleManifestRepository
         foreach ($manifestPaths as $manifestPath) {
             $manifest = $this->read($manifestPath);
             $path = dirname(realpath($manifestPath) ?: $manifestPath);
+            $installedModule = new InstalledModule($manifest, $path, dirname($manifestPath));
+
             foreach (array_filter([$manifest->name, $manifest->alias, $manifest->composerPackage]) as $identifier) {
                 $key = mb_strtolower($identifier);
                 if (isset($identities[$key]) && $identities[$key] !== $path) {
                     throw new InvalidArgumentException("Duplicate module identity [{$identifier}] in [{$identities[$key]}] and [{$path}]. Remove the duplicate before deployment.");
                 }
                 $identities[$key] = $path;
+                $byIdentifier[$key] = $installedModule;
             }
-            $manifests[] = new InstalledModule($manifest, $path, dirname($manifestPath));
+
+            $manifests[] = $installedModule;
         }
 
         usort($manifests, static fn (InstalledModule $first, InstalledModule $second): int => strcasecmp($first->manifest->name, $second->manifest->name));
+
+        $this->cachedInstalledKey = $cacheKey;
+        $this->cachedInstalled = $manifests;
+        $this->cachedByIdentifier = $byIdentifier;
+        $this->cachedOwningFiles = [];
 
         return $manifests;
     }
 
     public function installedModule(string $identifier): ?InstalledModule
     {
-        foreach ($this->installed() as $module) {
-            if (in_array(mb_strtolower($identifier), array_map('mb_strtolower', [
-                $module->manifest->name, $module->manifest->alias, $module->manifest->composerPackage ?? '',
-            ]), true)) {
-                return $module;
-            }
-        }
+        $this->installed();
 
-        return null;
+        return $this->cachedByIdentifier[mb_strtolower($identifier)] ?? null;
     }
 
     public function owningFile(string $file): ?InstalledModule
     {
-        foreach ($this->installed() as $module) {
-            if ($module->containsFile($file)) {
-                return $module;
+        $installed = $this->installed();
+
+        if (array_key_exists($file, $this->cachedOwningFiles)) {
+            return $this->cachedOwningFiles[$file];
+        }
+
+        $realFile = realpath($file) ?: $file;
+
+        foreach ($installed as $module) {
+            if ($module->containsFile($realFile)) {
+                return $this->cachedOwningFiles[$file] = $module;
             }
         }
 
         // Laravel may auto-discover a package even when module scanning is off.
         // Recognize its ownership so availability fails closed in that case.
-        $directory = dirname(realpath($file) ?: $file);
+        $directory = dirname($realFile);
         while ($directory !== dirname($directory)) {
             if (is_file($directory.'/module.json')) {
-                return new InstalledModule($this->read($directory.'/module.json'), $directory);
+                return $this->cachedOwningFiles[$file] = new InstalledModule($this->read($directory.'/module.json'), $directory);
             }
             $directory = dirname($directory);
         }
 
-        return null;
+        return $this->cachedOwningFiles[$file] = null;
     }
 
     public function find(string $identifier): ?ModuleManifest
     {
-        foreach ($this->all() as $manifest) {
-            if (strcasecmp($manifest->name, $identifier) === 0 || strcasecmp($manifest->alias, $identifier) === 0) {
-                return $manifest;
-            }
+        $installed = $this->installedModule($identifier);
+
+        if ($installed === null) {
+            return null;
         }
 
-        return null;
+        return (strcasecmp($installed->manifest->name, $identifier) === 0
+            || strcasecmp($installed->manifest->alias, $identifier) === 0)
+            ? $installed->manifest
+            : null;
     }
 
     /**

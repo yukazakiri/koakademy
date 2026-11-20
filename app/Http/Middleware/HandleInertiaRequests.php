@@ -144,7 +144,7 @@ final class HandleInertiaRequests extends Middleware
                 'adminSidebarCounts' => $isAdministratorPortal
                     ? Inertia::defer(fn (): ?array => $administratorSidebarCounts->resolve($request), 'admin-shell', true)
                     : fn (): ?array => $administratorSidebarCounts->resolve($request),
-                'moduleAdminRoutes' => $moduleAdminNavigationService->getRoutes(),
+                'moduleAdminRoutes' => $user instanceof User ? $moduleAdminNavigationService->getRoutes() : [],
                 // Desk entries for the sidebar and command palette. Resolved by the registry
                 // so the front end never has to restate which roles may open which desk.
                 // Deferred with the rest of the admin shell: the sidebar renders before it

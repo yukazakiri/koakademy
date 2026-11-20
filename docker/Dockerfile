@@ -108,6 +108,7 @@ ENV ROOT=${ROOT}
 ENV USER=laravel
 ENV INERTIA_SSR_ENABLED=true
 ENV INERTIA_SSR_RUNTIME=/usr/local/bin/node
+ENV HEALTHCHECK_TIMEOUT=20
 ENV COMPOSER_FUND=0
 ENV COMPOSER_MAX_PARALLEL_HTTP=48
 ENV XDG_CONFIG_HOME=${ROOT}/.config
@@ -263,4 +264,4 @@ EXPOSE 8000
 
 ENTRYPOINT ["start-container"]
 
-HEALTHCHECK --start-period=60s --interval=30s --timeout=10s --retries=5 CMD healthcheck || exit 1
+HEALTHCHECK --start-period=300s --interval=30s --timeout=30s --retries=5 CMD healthcheck || exit 1

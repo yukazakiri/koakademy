@@ -37,7 +37,7 @@ if [ "${container_mode}" = "http" ]; then
 
     php -r '
         $port = getenv("PORT") ?: "8000";
-        $timeout = (float) (getenv("HEALTHCHECK_TIMEOUT") ?: "2");
+        $timeout = (float) (getenv("HEALTHCHECK_TIMEOUT") ?: "20");
         $path = getenv("HEALTHCHECK_PATH") ?: "/up";
         $url = "http://127.0.0.1:{$port}{$path}";
         $context = stream_context_create([

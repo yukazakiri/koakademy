@@ -20,4 +20,7 @@ final class SettingsCluster extends Cluster
 
     #[Override]
     protected static string|UnitEnum|null $navigationGroup = 'Administration';
+
+    #[Override]
+    protected static ?int $navigationSort = 3;
 }

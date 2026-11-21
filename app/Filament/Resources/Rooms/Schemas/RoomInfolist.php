@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Rooms\Schemas;
 
-use Filament\Infolists\Components\Grid;
-use Filament\Infolists\Components\Section;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 
 final class RoomInfolist
@@ -20,11 +20,40 @@ final class RoomInfolist
                         Grid::make(2)
                             ->schema([
                                 TextEntry::make('name')
-                                    ->label('Room Name'),
+                                    ->label('Room Name')
+                                    ->weight('semibold'),
 
                                 TextEntry::make('class_code')
                                     ->label('Class Code')
+                                    ->badge()
                                     ->placeholder('No class code assigned'),
+
+                                TextEntry::make('type')
+                                    ->label('Room Type')
+                                    ->badge()
+                                    ->color('info')
+                                    ->formatStateUsing(fn (?string $state): string => RoomForm::roomTypeOptions()[$state ?? 'lecture'] ?? ucfirst((string) $state)),
+
+                                TextEntry::make('capacity')
+                                    ->label('Capacity')
+                                    ->suffix(' seats')
+                                    ->placeholder('40 seats'),
+
+                                TextEntry::make('building')
+                                    ->label('Building / Location')
+                                    ->placeholder('Not specified'),
+
+                                TextEntry::make('school.name')
+                                    ->label('School')
+                                    ->badge()
+                                    ->color('primary')
+                                    ->placeholder('All Schools / Default'),
+
+                                TextEntry::make('is_active')
+                                    ->label('Status')
+                                    ->badge()
+                                    ->color(fn (bool $state): string => $state ? 'success' : 'danger')
+                                    ->formatStateUsing(fn (bool $state): string => $state ? 'Active' : 'Inactive'),
                             ]),
                     ]),
 

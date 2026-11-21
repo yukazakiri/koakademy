@@ -352,6 +352,14 @@ export function GlobalCommandContent({
                     onSelect: () => adminVisit("/administrators/scheduling-analytics"),
                 },
                 {
+                    id: "nav:admin-rooms",
+                    routeId: "admin-rooms",
+                    label: "Rooms & Facilities",
+                    keywords: "admin rooms classrooms labs facilities capacity",
+                    icon: <IconSchool className="h-4 w-4" />,
+                    onSelect: () => adminVisit("/administrators/rooms"),
+                },
+                {
                     id: "nav:admin-users",
                     routeId: "admin-users",
                     label: "User Management",

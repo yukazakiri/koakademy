@@ -16,7 +16,6 @@ use App\Filament\Resources\Events\Tables\EventsTable;
 use App\Models\Event;
 use BackedEnum;
 use Exception;
-use Filament\Pages\Enums\SubNavigationPosition;
 use Filament\Resources\Pages\Page;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
@@ -30,11 +29,9 @@ final class EventResource extends Resource
     #[Override]
     protected static ?string $model = Event::class;
 
-    // protected static string|BackedEnum|null $activeNavigationIcon = Heroicon::CalendarDays;
+    #[Override]
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCalendarDays;
 
-    // protected static ?int $navigationSort = 10;
-
-    // protected static ?SubNavigationPosition $subNavigationPosition = SubNavigationPosition::Top;
     #[Override]
     protected static string|UnitEnum|null $navigationGroup = 'Operations';
 

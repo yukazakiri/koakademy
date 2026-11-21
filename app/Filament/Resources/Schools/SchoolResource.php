@@ -12,11 +12,13 @@ use App\Filament\Resources\Schools\Schemas\SchoolForm;
 use App\Filament\Resources\Schools\Schemas\SchoolInfolist;
 use App\Filament\Resources\Schools\Tables\SchoolsTable;
 use App\Models\School;
+use BackedEnum;
 use Exception;
 use Filament\Pages\Enums\SubNavigationPosition;
 use Filament\Resources\Pages\Page;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Override;
 use UnitEnum;
@@ -31,6 +33,9 @@ final class SchoolResource extends Resource
 
     #[Override]
     protected static ?string $recordTitleAttribute = 'name';
+
+    #[Override]
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedBuildingLibrary;
 
     #[Override]
     protected static string|UnitEnum|null $navigationGroup = 'Campus';

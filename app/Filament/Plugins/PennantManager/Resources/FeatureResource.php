@@ -20,9 +20,11 @@ final class FeatureResource extends Resource
 
     protected static BackedEnum|string|null $navigationIcon = 'heroicon-o-flag';
 
+    protected static ?int $navigationSort = 20;
+
     public static function getNavigationLabel(): string
     {
-        return 'Feature access (legacy)';
+        return 'Feature Access (Legacy)';
     }
 
     public static function canAccess(): bool
@@ -47,7 +49,7 @@ final class FeatureResource extends Resource
 
     public static function getNavigationGroup(): ?string
     {
-        return 'Settings';
+        return 'System Tools';
     }
 
     public static function getEloquentQuery(): Builder

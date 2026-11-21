@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Support;
 
+use App\Models\Classes;
+use App\Models\Department;
 use App\Models\Faculty;
+use App\Models\Room;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\User;
@@ -22,7 +25,7 @@ final readonly class AdministratorSidebarCounts
     ) {}
 
     /**
-     * @return array{students: int, enrollments: int, faculties: int, users: int}|null
+     * @return array{students: int, enrollments: int, faculties: int, users: int, classes: int, rooms: int, departments: int}|null
      */
     public function resolve(Request $request): ?array
     {
@@ -44,7 +47,7 @@ final readonly class AdministratorSidebarCounts
     }
 
     /**
-     * @return array{enrollments: int, faculties: int, users: int}
+     * @return array{enrollments: int, faculties: int, users: int, classes: int, rooms: int, departments: int}
      */
     private function resolveCachedNonStudentCounts(): array
     {
@@ -58,6 +61,9 @@ final readonly class AdministratorSidebarCounts
                     ->count(),
                 'faculties' => Faculty::query()->count(),
                 'users' => User::query()->count(),
+                'classes' => Classes::currentAcademicPeriod()->count(),
+                'rooms' => Room::query()->count(),
+                'departments' => Department::query()->count(),
             ],
         );
     }

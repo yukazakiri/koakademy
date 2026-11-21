@@ -13,9 +13,11 @@ use App\Filament\Resources\Faculties\Schemas\FacultyForm;
 use App\Filament\Resources\Faculties\Schemas\FacultyInfolist;
 use App\Filament\Resources\Faculties\Tables\FacultiesTable;
 use App\Models\Faculty;
+use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -26,6 +28,9 @@ final class FacultyResource extends Resource
 {
     #[Override]
     protected static ?string $model = Faculty::class;
+
+    #[Override]
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedUserGroup;
 
     #[Override]
     protected static string|UnitEnum|null $navigationGroup = 'People';

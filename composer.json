@@ -126,6 +126,9 @@
         "phpunit/phpunit": ">=13.4.0 <13.4.4"
     },
     "autoload": {
+        "classmap": [
+            "scripts/ComposerPatchGuard.php"
+        ],
         "files": [
             "app/helpers.php"
         ],
@@ -182,12 +185,22 @@
         }
     },
     "scripts": {
+        "pre-install-cmd": [
+            "Scripts\\ComposerPatchGuard::evictStalePatchedPackages"
+        ],
+        "post-install-cmd": [
+            "Scripts\\ComposerPatchGuard::recordAppliedPatches"
+        ],
+        "pre-update-cmd": [
+            "Scripts\\ComposerPatchGuard::evictStalePatchedPackages"
+        ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi",
             "@php artisan filament:upgrade"
         ],
         "post-update-cmd": [
+            "Scripts\\ComposerPatchGuard::recordAppliedPatches",
             "@php artisan vendor:publish --tag=laravel-assets --ansi --force"
         ],
         "post-root-package-install": [

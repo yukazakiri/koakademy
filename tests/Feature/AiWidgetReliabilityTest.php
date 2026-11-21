@@ -96,8 +96,7 @@ it('forks a conversation branch on regenerate and resend without duplicating use
 
         return match ($turnCounter) {
             1 => 'First turn answer.',
-            2 => 'Generated Title',
-            3 => 'Second turn answer.',
+            2 => 'Second turn answer.',
             default => 'Regenerated first turn answer.',
         };
     });

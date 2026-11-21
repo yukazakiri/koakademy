@@ -1,5 +1,42 @@
 # Changelog
 
+## [1.31.0](https://github.com/yukazakiri/koakademy/compare/v1.30.1...v1.31.0) (2026-11-21)
+
+
+### Features
+
+* **classes:** add visual weekly schedule editor ([#546](https://github.com/yukazakiri/koakademy/issues/546)) ([f336cb2](https://github.com/yukazakiri/koakademy/commit/f336cb2271edfd72281619bce1b1fab4d6eade71))
+* **grades:** add grade-release workflow and clearance management ([#537](https://github.com/yukazakiri/koakademy/issues/537)) ([a3679a9](https://github.com/yukazakiri/koakademy/commit/a3679a91b6435f3779a91d8f18025b83dda340b4))
+
+
+### Bug Fixes
+
+* **classes:** preserve schedule draft revisions ([#545](https://github.com/yukazakiri/koakademy/issues/545)) ([9968fc2](https://github.com/yukazakiri/koakademy/commit/9968fc22d2e707fd3104c998fb7ab222ae9926dc))
+* **classes:** streamline schedule management ([#543](https://github.com/yukazakiri/koakademy/issues/543)) ([ddb1a44](https://github.com/yukazakiri/koakademy/commit/ddb1a44cf825250b5a5d660d1b2fc23e34443ebe))
+* clearance gating for posted final grades ([#542](https://github.com/yukazakiri/koakademy/issues/542)) ([9add728](https://github.com/yukazakiri/koakademy/commit/9add7288779d1e46177d95c0c51835dd77798586))
+* **deps:** patch coolsam/modules for Filament 5 widget command ([4332299](https://github.com/yukazakiri/koakademy/commit/43322995fb535c90b02308546ab43a9820a8b59c))
+* **docker:** harden koakademy startup healthcheck and workers ([#547](https://github.com/yukazakiri/koakademy/issues/547)) ([4abf1a9](https://github.com/yukazakiri/koakademy/commit/4abf1a93ef7c59e34eb2b4cd118eafe63c626dd6))
+* **docker:** include Composer patches in vendor builds ([#544](https://github.com/yukazakiri/koakademy/issues/544)) ([9dffe68](https://github.com/yukazakiri/koakademy/commit/9dffe687670210081e65e3da55ff7336a618c629))
+* **mcp:** support OAuth consent and client registration ([#541](https://github.com/yukazakiri/koakademy/issues/541)) ([b612468](https://github.com/yukazakiri/koakademy/commit/b6124686b993304c4c20aaf08d7a1dac37aced3b))
+
+
+### Performance Improvements
+
+* **ci:** speed up Pest tests, shard CI jobs, and parallelize container builds ([#550](https://github.com/yukazakiri/koakademy/issues/550)) ([f905065](https://github.com/yukazakiri/koakademy/commit/f9050653705668ee58d09901d1f941b827117802))
+* **docker:** tune OPcache limits, nginx compression, and startup env normalization ([1687e26](https://github.com/yukazakiri/koakademy/commit/1687e269ad8406aa03930c46a2646eabbd67be80))
+* **runtime:** reduce request boot overhead and disable default Laraowl ingest ([2c2a4c8](https://github.com/yukazakiri/koakademy/commit/2c2a4c82d9a321c76a260a8b2c83df47bc973144))
+
+
+### Build System
+
+* **deps:** bump the composer-minor group with 18 updates ([#539](https://github.com/yukazakiri/koakademy/issues/539)) ([c51605e](https://github.com/yukazakiri/koakademy/commit/c51605e8b9298c42cf84c08537482192f6fd49d3))
+* **deps:** bump the composer-patch group with 9 updates ([#538](https://github.com/yukazakiri/koakademy/issues/538)) ([2bb02b9](https://github.com/yukazakiri/koakademy/commit/2bb02b9493de9794f7e582d04d71f286e58bc3f5))
+
+
+### Tests
+
+* **setup:** move setup catalog provider fixtures into PSR-4 files ([56ee10a](https://github.com/yukazakiri/koakademy/commit/56ee10a7b6cc084c6d4cf42824fc8243d29d0e65))
+
 ## [1.30.1](https://github.com/yukazakiri/koakademy/compare/v1.30.0...v1.30.1) (2026-11-14)
 
 

@@ -7,6 +7,7 @@ namespace App\Support;
 use const JSON_PRETTY_PRINT;
 use const JSON_THROW_ON_ERROR;
 use const JSON_UNESCAPED_SLASHES;
+use const LOCK_EX;
 
 use RuntimeException;
 
@@ -109,19 +110,62 @@ final class ComposerPatchState
     }
 
     /**
+     * Resolve the next persisted patch-state map from previously verified hashes and
+     * only the packages actually installed or updated during the current Composer run.
+     *
+     * @param  array<string, string>  $previousAppliedHashes
      * @param  array<string, string>  $lockedHashes
      * @param  list<string>  $installedPackages
+     * @param  list<string>  $touchedPackages
+     * @return array<string, string>
      */
-    public static function writeAppliedPackageHashes(string $stateFilePath, array $lockedHashes, array $installedPackages): void
-    {
+    public static function resolveAppliedPackageHashes(
+        array $previousAppliedHashes,
+        array $lockedHashes,
+        array $installedPackages,
+        array $touchedPackages,
+    ): array {
+        $touchedLookup = [];
+        foreach ($touchedPackages as $package) {
+            $touchedLookup[mb_strtolower($package)] = true;
+        }
+
         $recorded = [];
 
         foreach ($installedPackages as $package) {
             $normalized = mb_strtolower($package);
 
-            if (isset($lockedHashes[$normalized])) {
-                $recorded[$normalized] = $lockedHashes[$normalized];
+            if (isset($touchedLookup[$normalized])) {
+                if (isset($lockedHashes[$normalized])) {
+                    $recorded[$normalized] = $lockedHashes[$normalized];
+                }
+
+                continue;
             }
+
+            if (isset($previousAppliedHashes[$normalized])) {
+                $recorded[$normalized] = $previousAppliedHashes[$normalized];
+            }
+        }
+
+        ksort($recorded);
+
+        return $recorded;
+    }
+
+    /**
+     * @param  array<string, string>  $appliedHashes
+     */
+    public static function writeAppliedPackageHashes(string $stateFilePath, array $appliedHashes): void
+    {
+        $recorded = [];
+
+        foreach ($appliedHashes as $package => $hash) {
+            if ($hash === '') {
+                continue;
+            }
+
+            $recorded[mb_strtolower($package)] = $hash;
         }
 
         ksort($recorded);
@@ -145,8 +189,24 @@ final class ComposerPatchState
             JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR,
         )."\n";
 
-        if (file_put_contents($stateFilePath, $encoded) === false) {
-            throw new RuntimeException("Unable to write Composer patch state [{$stateFilePath}].");
+        $pid = getmypid();
+        $suffix = ($pid === false ? '0' : (string) $pid).'.'.bin2hex(random_bytes(4));
+        $tempPath = $stateFilePath.'.tmp.'.$suffix;
+
+        if (file_put_contents($tempPath, $encoded, LOCK_EX) === false) {
+            if (is_file($tempPath)) {
+                unlink($tempPath);
+            }
+
+            throw new RuntimeException("Unable to write temporary Composer patch state [{$tempPath}].");
+        }
+
+        if (! rename($tempPath, $stateFilePath)) {
+            if (is_file($tempPath)) {
+                unlink($tempPath);
+            }
+
+            throw new RuntimeException("Unable to replace Composer patch state [{$stateFilePath}].");
         }
     }
 }

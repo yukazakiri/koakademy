@@ -122,29 +122,65 @@ it('does not flag packages that are not currently installed', function (): void 
     expect($stale)->toBe([]);
 });
 
-it('persists applied patch hashes for installed packages and removes the state file when empty', function (): void {
+it('resolves applied patch state for touched packages and preserves previously verified untouched packages', function (): void {
+    $resolved = ComposerPatchState::resolveAppliedPackageHashes(
+        previousAppliedHashes: [
+            'vendor/already-verified' => 'verified-hash',
+            'coolsam/modules' => 'old-hash',
+            'vendor/removed-patch' => 'removed-hash',
+            'vendor/uninstalled' => 'stale-hash',
+        ],
+        lockedHashes: [
+            'vendor/already-verified' => 'verified-hash',
+            'coolsam/modules' => 'hash-v2',
+            'vendor/newly-locked-untouched' => 'unapplied-hash',
+            'other/not-installed' => 'hash-v3',
+        ],
+        installedPackages: [
+            'laravel/framework',
+            'vendor/already-verified',
+            'Coolsam/Modules',
+            'vendor/removed-patch',
+            'vendor/newly-locked-untouched',
+        ],
+        touchedPackages: ['Coolsam/Modules', 'vendor/removed-patch'],
+    );
+
+    expect($resolved)->toBe([
+        'coolsam/modules' => 'hash-v2',
+        'vendor/already-verified' => 'verified-hash',
+    ]);
+});
+
+it('atomically persists applied patch hashes and removes the state file when empty', function (): void {
     $dir = makePatchStateTempDir();
-    $statePath = $dir.'/composer/koakademy-applied-patches.json';
+    $stateDir = $dir.'/composer';
+    $statePath = $stateDir.'/koakademy-applied-patches.json';
 
     try {
         ComposerPatchState::writeAppliedPackageHashes(
             stateFilePath: $statePath,
-            lockedHashes: [
-                'coolsam/modules' => 'hash-v1',
-                'other/not-installed' => 'hash-v2',
-            ],
-            installedPackages: ['laravel/framework', 'Coolsam/Modules'],
+            appliedHashes: ['Coolsam/Modules' => 'hash-v1'],
         );
 
         expect(is_file($statePath))->toBeTrue()
             ->and(ComposerPatchState::readAppliedPackageHashes($statePath))->toBe([
                 'coolsam/modules' => 'hash-v1',
-            ]);
+            ])
+            ->and(glob($statePath.'.tmp.*'))->toBe([]);
 
         ComposerPatchState::writeAppliedPackageHashes(
             stateFilePath: $statePath,
-            lockedHashes: [],
-            installedPackages: ['laravel/framework', 'coolsam/modules'],
+            appliedHashes: ['Coolsam/Modules' => 'hash-v2'],
+        );
+
+        expect(ComposerPatchState::readAppliedPackageHashes($statePath))->toBe([
+            'coolsam/modules' => 'hash-v2',
+        ])->and(glob($statePath.'.tmp.*'))->toBe([]);
+
+        ComposerPatchState::writeAppliedPackageHashes(
+            stateFilePath: $statePath,
+            appliedHashes: [],
         );
 
         expect(is_file($statePath))->toBeFalse()

@@ -186,13 +186,16 @@
     },
     "scripts": {
         "pre-install-cmd": [
-            "Scripts\\ComposerPatchGuard::evictStalePatchedPackages"
+            "Scripts\\ComposerPatchGuard::preparePatchTracking"
         ],
         "post-install-cmd": [
             "Scripts\\ComposerPatchGuard::recordAppliedPatches"
         ],
         "pre-update-cmd": [
-            "Scripts\\ComposerPatchGuard::evictStalePatchedPackages"
+            "Scripts\\ComposerPatchGuard::preparePatchTracking"
+        ],
+        "pre-operations-exec": [
+            "Scripts\\ComposerPatchGuard::reinstallStalePatchedPackages"
         ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",

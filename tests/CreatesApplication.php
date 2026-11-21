@@ -45,7 +45,11 @@ trait CreatesApplication
 
         $app['config']->set('database.default', 'sqlite');
         $app['config']->set('database.connections.sqlite.database', $testDbReal);
+        $app['config']->set('database.connections.sqlite.journal_mode', 'MEMORY');
+        $app['config']->set('database.connections.sqlite.synchronous', 'OFF');
         $app['config']->set('database.connections.pulse.database', $testDbReal);
+        $app['config']->set('database.connections.pulse.journal_mode', 'MEMORY');
+        $app['config']->set('database.connections.pulse.synchronous', 'OFF');
 
         if ($app->bound('db')) {
             $app['db']->purge('sqlite');

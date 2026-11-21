@@ -254,7 +254,7 @@ final class ComposerPatchGuard
         $resolved = realpath($composerFile);
         $path = $resolved !== false ? $resolved : (getcwd() ?: '.').'/'.basename($composerFile);
         $dir = dirname($path);
-        $base = pathinfo($path, PATHINFO_FILENAME);
+        $base = pathinfo($composerFile, PATHINFO_FILENAME);
 
         return $base === 'composer'
             ? $dir.'/patches.lock.json'

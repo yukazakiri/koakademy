@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace Database\Seeders;
 
 use App\Enums\UserRole;
+use App\Modules\ModuleManifestRepository;
+use App\Modules\ModulePermissionService;
 use App\Support\SystemManagementPermissions;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use ReflectionMethod;
-use Spatie\Permission\Models\Permission;
-use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 
 final class RolesSeeder extends Seeder
 {
@@ -109,70 +111,66 @@ final class RolesSeeder extends Seeder
     {
         $this->command->info('Syncing UserRole enum with Spatie roles table...');
 
-        foreach (UserRole::cases() as $role) {
-            $roleName = $role->value;
-            $roleModel = Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']);
+        $rolesTable = $this->configString('permission.table_names.roles', 'roles');
+        $roleNames = array_map(static fn (UserRole $role): string => $role->value, UserRole::cases());
 
-            if ($roleModel->wasRecentlyCreated) {
-                $this->command->info("Created role: {$roleName}");
-            }
+        foreach ($this->insertMissingWebNames($rolesTable, $roleNames) as $roleName) {
+            $this->command->info("Created role: {$roleName}");
         }
 
         $this->command->info('Roles synced successfully.');
 
         $this->command->info('Generating permissions from Policies...');
-        $permissions = $this->generatePermissionsFromPolicies();
-        $this->command->info("Generated {$permissions->count()} permissions.");
+        $permissionsCount = $this->generatePermissionsFromPolicies();
+        $this->command->info("Generated {$permissionsCount} permissions.");
 
         $this->command->info('Assigning permissions to roles...');
-        $this->assignPermissionsToRoles();
+        [$allPermissions, $rolePermissionMap] = $this->assignPermissionsToRoles();
         $this->command->info('Permissions assigned successfully.');
 
-        $this->reportUnresolvedTokens();
+        $this->reportUnresolvedTokens($allPermissions, $rolePermissionMap);
     }
 
-    private function generatePermissionsFromPolicies(): \Illuminate\Support\Collection
+    private function generatePermissionsFromPolicies(): int
     {
         $policiesPath = app_path('Policies');
         $policyFiles = File::files($policiesPath);
 
-        foreach (app(\App\Modules\ModuleManifestRepository::class)->installed() as $module) {
+        foreach (app(ModuleManifestRepository::class)->installed() as $module) {
             $modulePolicyPath = $module->path.'/app/Policies';
             if (File::isDirectory($modulePolicyPath)) {
                 $policyFiles = array_merge($policyFiles, File::files($modulePolicyPath));
             }
         }
 
-        $createdPermissions = collect();
+        $candidatePermissions = [];
 
         foreach ($policyFiles as $file) {
             $policyName = pathinfo($file->getFilename(), PATHINFO_FILENAME);
             $entityName = str_replace('Policy', '', $policyName);
 
             foreach (self::PERMISSION_ACTIONS as $action) {
-                $permissionName = "{$action}:{$entityName}";
-                $permission = Permission::firstOrCreate(
-                    ['name' => $permissionName, 'guard_name' => 'web']
-                );
-                $createdPermissions->push($permission);
+                $candidatePermissions[] = "{$action}:{$entityName}";
             }
         }
 
-        $customPermissions = $this->getCustomPermissions();
-        foreach ($customPermissions as $permissionName) {
-            $permission = Permission::firstOrCreate(
-                ['name' => $permissionName, 'guard_name' => 'web']
-            );
-            $createdPermissions->push($permission);
+        foreach ($this->getCustomPermissions() as $permissionName) {
+            $candidatePermissions[] = $permissionName;
         }
 
-        foreach (app(\App\Modules\ModulePermissionService::class)->sync() as $permissionName) {
-            $createdPermissions->push(Permission::findByName($permissionName, 'web'));
-        }
+        $candidatePermissions = array_values(array_unique($candidatePermissions));
 
-        return $createdPermissions;
+        $permissionsTable = $this->configString('permission.table_names.permissions', 'permissions');
+        $this->insertMissingWebNames($permissionsTable, $candidatePermissions);
+
+        $modulePermissions = app(ModulePermissionService::class)->sync();
+
+        return count(array_unique([...$candidatePermissions, ...$modulePermissions]));
     }
 
+    /**
+     * @return array<int, string>
+     */
     private function getCustomPermissions(): array
     {
         return [
@@ -242,25 +240,86 @@ final class RolesSeeder extends Seeder
         ];
     }
 
-    private function assignPermissionsToRoles(): void
+    /**
+     * @return array{0: list<string>, 1: array<string, array<mixed>>}
+     */
+    private function assignPermissionsToRoles(): array
     {
-        $rolePermissionMap = $this->getRolePermissionMap();
+        $rolesTable = $this->configString('permission.table_names.roles', 'roles');
+        $permissionsTable = $this->configString('permission.table_names.permissions', 'permissions');
+        $pivotTable = $this->configString('permission.table_names.role_has_permissions', 'role_has_permissions');
+        $pivotRole = $this->configString('permission.column_names.role_pivot_key', 'role_id');
+        $pivotPermission = $this->configString('permission.column_names.permission_pivot_key', 'permission_id');
+
+        /** @var array<string, int> $permissionIdsByName */
+        $permissionIdsByName = DB::table($permissionsTable)
+            ->where('guard_name', 'web')
+            ->pluck('id', 'name')
+            ->map(static fn (mixed $id): int => is_numeric($id) ? (int) $id : 0)
+            ->all();
+
+        $allPermissions = array_map(
+            static fn (int|string $name): string => (string) $name,
+            array_keys($permissionIdsByName),
+        );
+
+        /** @var array<string, int> $roleIdsByName */
+        $roleIdsByName = DB::table($rolesTable)
+            ->where('guard_name', 'web')
+            ->pluck('id', 'name')
+            ->map(static fn (mixed $id): int => is_numeric($id) ? (int) $id : 0)
+            ->all();
+
+        $rolePermissionMap = $this->getRolePermissionMap($allPermissions);
+
+        $pivotRows = [];
+        $roleIdsToSync = [];
 
         foreach ($rolePermissionMap as $roleName => $permissions) {
-            $role = Role::where('name', $roleName)->first();
-
-            if (! $role) {
+            if (! isset($roleIdsByName[$roleName])) {
                 continue;
             }
 
-            $role->syncPermissions($permissions);
+            $roleId = $roleIdsByName[$roleName];
+            $roleIdsToSync[] = $roleId;
+
+            $seenPermissions = [];
+            foreach ($permissions as $permissionName) {
+                if (! is_string($permissionName) || isset($seenPermissions[$permissionName]) || ! isset($permissionIdsByName[$permissionName])) {
+                    continue;
+                }
+
+                $seenPermissions[$permissionName] = true;
+                $pivotRows[] = [
+                    $pivotPermission => $permissionIdsByName[$permissionName],
+                    $pivotRole => $roleId,
+                ];
+            }
+
             $this->command->info("Assigned {$roleName}: ".count($permissions).' permissions');
         }
+
+        if ($roleIdsToSync !== []) {
+            DB::transaction(static function () use ($pivotTable, $pivotRole, $roleIdsToSync, $pivotRows): void {
+                DB::table($pivotTable)->whereIn($pivotRole, $roleIdsToSync)->delete();
+
+                foreach (array_chunk($pivotRows, 400) as $chunk) {
+                    DB::table($pivotTable)->insert($chunk);
+                }
+            });
+        }
+
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        return [$allPermissions, $rolePermissionMap];
     }
 
-    private function getRolePermissionMap(): array
+    /**
+     * @param  array<int, string>  $allPermissions
+     * @return array<string, array<mixed>>
+     */
+    private function getRolePermissionMap(array $allPermissions): array
     {
-        $allPermissions = Permission::pluck('name')->toArray();
         $adminPermissions = $allPermissions;
         $studentPermissions = [];
 
@@ -330,12 +389,13 @@ final class RolesSeeder extends Seeder
      * Warn about any permission token used by a role that resolves to nothing, so a typo
      * cannot quietly strip access. Reads the real get*Permissions() lists by reflection so
      * this check can never drift from the definitions it audits.
+     *
+     * @param  array<int, string>  $allPermissions
+     * @param  array<string, array<mixed>>  $rolePermissionMap
      */
-    private function reportUnresolvedTokens(): void
+    private function reportUnresolvedTokens(array $allPermissions, array $rolePermissionMap): void
     {
-        $allPermissions = Permission::pluck('name')->toArray();
-
-        foreach ($this->getRolePermissionMap() as $roleName => $_) {
+        foreach ($rolePermissionMap as $roleName => $_) {
             $method = $this->permissionMethodFor((string) $roleName);
 
             if ($method === null) {
@@ -407,6 +467,55 @@ final class RolesSeeder extends Seeder
         }
 
         return [$includes, $excludes];
+    }
+
+    private function configString(string $key, string $default): string
+    {
+        $value = config($key);
+
+        return is_string($value) && $value !== '' ? $value : $default;
+    }
+
+    /**
+     * Batch-insert missing guard='web' role or permission names and return the inserted names.
+     *
+     * @param  array<int, string>  $names
+     * @return list<string>
+     */
+    private function insertMissingWebNames(string $table, array $names): array
+    {
+        if ($names === []) {
+            return [];
+        }
+
+        $existing = DB::table($table)
+            ->where('guard_name', 'web')
+            ->pluck('name')
+            ->map(static fn (mixed $name): string => is_string($name) ? $name : '')
+            ->all();
+
+        $missing = array_values(array_diff(array_unique($names), $existing));
+
+        if ($missing === []) {
+            return [];
+        }
+
+        $now = now();
+        $rows = array_map(
+            static fn (string $name): array => [
+                'name' => $name,
+                'guard_name' => 'web',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+            $missing,
+        );
+
+        foreach (array_chunk($rows, 200) as $chunk) {
+            DB::table($table)->insert($chunk);
+        }
+
+        return $missing;
     }
 
     private function getPresidentPermissions(array $all): array

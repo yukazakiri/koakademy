@@ -583,7 +583,7 @@ jobs:
           } >> "${GITHUB_OUTPUT}"
 
   build:
-    name: Build ${{ matrix.platform }} images
+    name: Build ${{ matrix.platform }} ${{ matrix.variant }} image
     if: >-
       always() &&
       needs.publish.result == 'success' &&
@@ -605,11 +605,38 @@ jobs:
         include:
           - platform: amd64
             runner: ubuntu-24.04
+            variant: fpm
+            dockerfile: docker/Dockerfile
+            tag_suffix: ""
+            cache_scope: delivery
+            metadata_output: version.json
+          - platform: amd64
+            runner: ubuntu-24.04
+            variant: franken
+            dockerfile: docker/Dockerfile.franken
+            tag_suffix: "-franken"
+            cache_scope: delivery-franken
+            metadata_output: version-franken.json
           - platform: arm64
             runner: ubuntu-24.04-arm
+            variant: fpm
+            dockerfile: docker/Dockerfile
+            tag_suffix: ""
+            cache_scope: delivery
+            metadata_output: version.json
+          - platform: arm64
+            runner: ubuntu-24.04-arm
+            variant: franken
+            dockerfile: docker/Dockerfile.franken
+            tag_suffix: "-franken"
+            cache_scope: delivery-franken
+            metadata_output: version-franken.json
 
     steps:
       - name: Check out immutable source
+        if: >-
+          (matrix.variant == 'fpm' && needs.publish.outputs.build_required == 'true') ||
+          (matrix.variant == 'franken' && needs.publish.outputs.build_required_franken == 'true')
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.publish.outputs.source_sha }}
@@ -617,6 +644,9 @@ jobs:
           persist-credentials: false
 
       - name: Load metadata generator from workflow revision
+        if: >-
+          (matrix.variant == 'fpm' && needs.publish.outputs.build_required == 'true') ||
+          (matrix.variant == 'franken' && needs.publish.outputs.build_required_franken == 'true')
         env:
           GH_TOKEN: ${{ github.token }}
           WORKFLOW_SHA: ${{ github.workflow_sha }}
@@ -632,37 +662,20 @@ jobs:
           [[ -s "${RUNNER_TEMP}/generate-version-metadata.sh" ]]
           chmod 0755 "${RUNNER_TEMP}/generate-version-metadata.sh"
 
-      - name: Generate image version metadata
+      - name: Generate ${{ matrix.variant }} image version metadata
         id: metadata
+        if: >-
+          (matrix.variant == 'fpm' && needs.publish.outputs.build_required == 'true') ||
+          (matrix.variant == 'franken' && needs.publish.outputs.build_required_franken == 'true')
         env:
           CHANNEL: ${{ needs.publish.outputs.channel }}
           VERSION: ${{ needs.publish.outputs.version }}
           SOURCE_SHA: ${{ needs.publish.outputs.source_sha }}
           BUILD_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TAG_SUFFIX: ${{ matrix.tag_suffix }}
+          METADATA_OUTPUT: ${{ matrix.metadata_output }}
         run: |
-          immutable_ref="ghcr.io/${GITHUB_REPOSITORY}:sha-${SOURCE_SHA}"
-          "${RUNNER_TEMP}/generate-version-metadata.sh" \
-            --channel "${CHANNEL}" \
-            --version "${VERSION}" \
-            --commit "${SOURCE_SHA}" \
-            --image "${immutable_ref}" \
-            --build-url "${BUILD_URL}" \
-            --repository "${GITHUB_REPOSITORY}"
-
-          {
-            printf 'created=%s\n' "$(jq --raw-output '.timestamp' version.json)"
-            printf 'display_version=%s\n' "$(jq --raw-output '.version' version.json)"
-          } >> "${GITHUB_OUTPUT}"
-
-      - name: Generate FrankenPHP image version metadata
-        id: metadata-franken
-        env:
-          CHANNEL: ${{ needs.publish.outputs.channel }}
-          VERSION: ${{ needs.publish.outputs.version }}
-          SOURCE_SHA: ${{ needs.publish.outputs.source_sha }}
-          BUILD_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          immutable_ref="ghcr.io/${GITHUB_REPOSITORY}:sha-${SOURCE_SHA}-franken"
+          immutable_ref="ghcr.io/${GITHUB_REPOSITORY}:sha-${SOURCE_SHA}${TAG_SUFFIX}"
           "${RUNNER_TEMP}/generate-version-metadata.sh" \
             --channel "${CHANNEL}" \
             --version "${VERSION}" \
@@ -670,32 +683,40 @@ jobs:
             --image "${immutable_ref}" \
             --build-url "${BUILD_URL}" \
             --repository "${GITHUB_REPOSITORY}" \
-            --output version-franken.json
+            --output "${METADATA_OUTPUT}"
 
           {
-            printf 'created=%s\n' "$(jq --raw-output '.timestamp' version-franken.json)"
-            printf 'display_version=%s\n' "$(jq --raw-output '.version' version-franken.json)"
+            printf 'created=%s\n' "$(jq --raw-output '.timestamp' "${METADATA_OUTPUT}")"
+            printf 'display_version=%s\n' "$(jq --raw-output '.version' "${METADATA_OUTPUT}")"
           } >> "${GITHUB_OUTPUT}"
 
       - name: Set up Docker Buildx
+        if: >-
+          (matrix.variant == 'fpm' && needs.publish.outputs.build_required == 'true') ||
+          (matrix.variant == 'franken' && needs.publish.outputs.build_required_franken == 'true')
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Sign in to GitHub Container Registry
+        if: >-
+          (matrix.variant == 'fpm' && needs.publish.outputs.build_required == 'true') ||
+          (matrix.variant == 'franken' && needs.publish.outputs.build_required_franken == 'true')
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: Build and push immutable ${{ matrix.platform }} image
-        if: needs.publish.outputs.build_required == 'true'
+      - name: Build and push immutable ${{ matrix.platform }} ${{ matrix.variant }} image
+        if: >-
+          (matrix.variant == 'fpm' && needs.publish.outputs.build_required == 'true') ||
+          (matrix.variant == 'franken' && needs.publish.outputs.build_required_franken == 'true')
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          file: docker/Dockerfile
+          file: ${{ matrix.dockerfile }}
           platforms: linux/${{ matrix.platform }}
           push: true
-          tags: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}-${{ matrix.platform }}
+          tags: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}${{ matrix.tag_suffix }}-${{ matrix.platform }}
           labels: |
             org.opencontainers.image.created=${{ steps.metadata.outputs.created }}
             org.opencontainers.image.revision=${{ needs.publish.outputs.source_sha }}
@@ -704,30 +725,9 @@ jobs:
           provenance: mode=max
           sbom: true
           cache-from: |
-            type=gha,scope=delivery-${{ matrix.platform }}
-            type=gha,scope=delivery
-          cache-to: type=gha,mode=max,scope=delivery-${{ matrix.platform }},ignore-error=true
-
-      - name: Build and push immutable ${{ matrix.platform }} FrankenPHP image
-        if: needs.publish.outputs.build_required_franken == 'true'
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          file: docker/Dockerfile.franken
-          platforms: linux/${{ matrix.platform }}
-          push: true
-          tags: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}-franken-${{ matrix.platform }}
-          labels: |
-            org.opencontainers.image.created=${{ steps.metadata-franken.outputs.created }}
-            org.opencontainers.image.revision=${{ needs.publish.outputs.source_sha }}
-            org.opencontainers.image.version=${{ steps.metadata-franken.outputs.display_version }}
-            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
-          provenance: mode=max
-          sbom: true
-          cache-from: |
-            type=gha,scope=delivery-franken-${{ matrix.platform }}
-            type=gha,scope=delivery-franken
-          cache-to: type=gha,mode=max,scope=delivery-franken-${{ matrix.platform }},ignore-error=true
+            type=gha,scope=${{ matrix.cache_scope }}-${{ matrix.platform }}
+            type=gha,scope=${{ matrix.cache_scope }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}-${{ matrix.platform }},ignore-error=true
 
   merge:
     name: Merge multi-platform manifests

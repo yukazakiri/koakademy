@@ -1,14 +1,20 @@
-keys == ["docs", "pr-title", "scope", "validate", "workflow-security"] and
+keys == ["docs", "extensions", "frontend", "pest", "pr-title", "scope", "static", "workflow-security"] and
 .scope.result == "success" and
 (
   if $release_only == "true" and $event_name == "pull_request" then
-    .validate.result == "skipped" and
-    .["workflow-security"].result == "skipped" and
-    .docs.result == "skipped"
+    .docs.result == "skipped" and
+    .extensions.result == "skipped" and
+    .frontend.result == "skipped" and
+    .pest.result == "skipped" and
+    .static.result == "skipped" and
+    .["workflow-security"].result == "skipped"
   else
-    .validate.result == "success" and
-    .["workflow-security"].result == "success" and
-    .docs.result == "success"
+    .docs.result == "success" and
+    .extensions.result == "success" and
+    .frontend.result == "success" and
+    .pest.result == "success" and
+    .static.result == "success" and
+    .["workflow-security"].result == "success"
   end
 ) and
 (

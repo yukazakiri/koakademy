@@ -11,6 +11,7 @@ use App\Support\SystemManagementPermissions;
 use Illuminate\Support\Facades\Cache;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 
 use function Pest\Laravel\actingAs;
 
@@ -164,9 +165,32 @@ function administratorInertiaAuditUser(): User
         }
     }
 
-    $permissions = collect($permissionNames)->filter()->unique()->map(function (string $permissionName): Permission {
-        return Permission::findOrCreate($permissionName, 'web');
-    });
+    $uniquePermissionNames = array_values(array_unique(array_filter($permissionNames)));
+    $existingPermissions = Permission::query()
+        ->where('guard_name', 'web')
+        ->whereIn('name', $uniquePermissionNames)
+        ->pluck('name')
+        ->all();
+    $missingPermissions = array_values(array_diff($uniquePermissionNames, $existingPermissions));
+
+    if ($missingPermissions !== []) {
+        $now = now();
+        Permission::query()->insert(array_map(
+            static fn (string $permissionName): array => [
+                'name' => $permissionName,
+                'guard_name' => 'web',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+            $missingPermissions,
+        ));
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+    }
+
+    $permissions = Permission::query()
+        ->where('guard_name', 'web')
+        ->whereIn('name', $uniquePermissionNames)
+        ->get();
 
     $school = School::factory()->create();
     $user = User::factory()->create([
@@ -325,29 +349,57 @@ function administratorInertiaBorrowRecord(): Modules\LibrarySystem\Models\Borrow
     ]);
 }
 
-it('returns every static administrator destination as an Inertia response', function (string $routeName, string $component): void {
+/**
+ * @param  array<int, array{0: string, 1: string}>  $routes
+ */
+it('returns every static administrator destination as an Inertia response', function (array $routes): void {
     $user = administratorInertiaAuditUser();
+    $headers = administratorInertiaHeaders();
 
-    actingAs($user)
-        ->get(route($routeName), administratorInertiaHeaders())
-        ->assertOk()
-        ->assertHeader('X-Inertia', 'true')
-        ->assertJsonPath('component', $component)
-        ->assertJsonStructure(['component', 'props', 'url', 'version']);
-})->with(administratorInertiaPageCatalog());
+    foreach ($routes as [$routeName, $component]) {
+        actingAs($user)
+            ->get(route($routeName), $headers)
+            ->assertOk()
+            ->assertHeader('X-Inertia', 'true')
+            ->assertJsonPath('component', $component)
+            ->assertJsonStructure(['component', 'props', 'url', 'version']);
+    }
+})->with(function (): array {
+    $batches = [];
 
-it('returns every parameterized administrator destination as an Inertia response', function (string $routeName, string $component, string $fixture): void {
+    foreach (array_chunk(administratorInertiaPageCatalog(), 19) as $index => $chunk) {
+        $batches['static batch '.($index + 1)] = [$chunk];
+    }
+
+    return $batches;
+});
+
+/**
+ * @param  array<int, array{0: string, 1: string, 2: string}>  $routes
+ */
+it('returns every parameterized administrator destination as an Inertia response', function (array $routes): void {
     $user = administratorInertiaAuditUser();
     actingAs($user);
+    $headers = administratorInertiaHeaders();
 
-    $url = administratorInertiaParameterizedUrl($routeName, $fixture);
+    foreach ($routes as [$routeName, $component, $fixture]) {
+        $url = administratorInertiaParameterizedUrl($routeName, $fixture);
 
-    $this->get($url, administratorInertiaHeaders())
-        ->assertSuccessful()
-        ->assertHeader('X-Inertia', 'true')
-        ->assertJsonPath('component', $component)
-        ->assertJsonStructure(['component', 'props', 'url', 'version']);
-})->with(administratorInertiaParameterizedPageCatalog());
+        $this->get($url, $headers)
+            ->assertSuccessful()
+            ->assertHeader('X-Inertia', 'true')
+            ->assertJsonPath('component', $component)
+            ->assertJsonStructure(['component', 'props', 'url', 'version']);
+    }
+})->with(function (): array {
+    $batches = [];
+
+    foreach (array_chunk(administratorInertiaParameterizedPageCatalog(), 13) as $index => $chunk) {
+        $batches['parameterized batch '.($index + 1)] = [$chunk];
+    }
+
+    return $batches;
+});
 
 it('advertises the admin shell deferred props on initial Inertia visits', function (): void {
     $user = administratorInertiaAuditUser();

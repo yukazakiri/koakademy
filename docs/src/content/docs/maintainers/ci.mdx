@@ -11,18 +11,21 @@ CI is intentionally secret-free and fork-safe. Actions are commit-SHA pinned, ch
 
 ## Required jobs
 
-| Job                           | Contract                                                                                                                     |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Classify pull request         | Detect and validate exact same-repository Release Please metadata-only updates                                               |
-| Application and documentation | PHP 8.5.12, Node 26.12.1, runtime version verification, Composer install/audit, production npm audit, Pint, JavaScript unit tests, stable/edge installer fixtures, application build, Pest, docs sync/link checks, and Compose/Swarm/shell validation |
-| Workflow security             | Test the required-check policy and check every workflow with checksum-pinned `actionlint` and `zizmor`                       |
-| Documentation production build | Install the separate docs lockfile on Node 22.23.4, check generated docs/links, and build Astro before merge                  |
-| Conventional PR title         | Validate the current GitHub title after the separate metadata automation normalizes it; skipped outside pull requests         |
-| required                      | Stable `CI / required` branch-protection aggregator                                                                          |
+| Job                                  | Contract                                                                                                                   |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| Classify pull request                | Detect and validate exact same-repository Release Please metadata-only updates                                             |
+| Frontend build and dependency audits | PHP 8.5.12, Node 26.12.1, runtime version verification, Composer install/audit, production npm audit, JS unit tests, Vite build, and docs link checks |
+| Static checks                        | PHP 8.5.12, Composer install, parallel Pint formatting, stable/edge installer fixtures, and Compose/Swarm/shell validation |
+| Extension lifecycle                  | Installed extension contract validation and `composer test:extensions` against the built frontend assets                   |
+| Pest suite (1..4/4)                  | Sharded parallel Pest runs on PHP 8.5.12 with OPcache CLI enabled and built frontend assets restored                       |
+| Workflow security                    | Test the required-check policy and check every workflow with checksum-pinned `actionlint` and `zizmor`                     |
+| Documentation production build       | Install the separate docs lockfile on Node 22.23.4, check generated docs/links, and build Astro before merge               |
+| Conventional PR title                | Validate the current GitHub title after the separate metadata automation normalizes it; skipped outside pull requests       |
+| required                             | Stable `CI / required` branch-protection aggregator                                                                        |
 
 Application boot uses SQLite, array cache/session/mail, sync queues, null broadcasting, and disabled optional observability. Pest then uses its isolated SQLite file and test-specific overrides from `phpunit.xml` and `tests/Pest.php`. Composer downloads and both npm lockfiles have separate caches. The application Node runtime matches both production Dockerfiles; documentation retains its own patched Node 22 toolchain.
 
-Delivery owns the multi-architecture container build and registry credentials. CI builds the frontend/SSR bundle for tests; Delivery builds production images only after validation. The frontend must precede Pest because HTTP tests render Vite-backed views. The path-filtered Pages workflow rebuilds the same documentation source, checks generated docs/links, and publishes only from `master`.
+Delivery owns the multi-architecture container build and registry credentials. CI builds the frontend/SSR bundle for tests; Delivery builds production images only after validation. The frontend build precedes both Pest and extension lifecycle tests because HTTP tests render Vite-backed views. The path-filtered Pages workflow rebuilds the same documentation source, checks generated docs/links, and publishes only from `master`.
 
 Standalone module registry validation runs in the separate
 [KoAkademy module registry](https://github.com/yukazakiri/koakademy-modules)

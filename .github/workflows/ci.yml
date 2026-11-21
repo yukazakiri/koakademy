@@ -96,13 +96,13 @@ jobs:
           [[ "${PULL_REQUEST_TITLE}" == "chore(release): release ${tracked_version}" ]]
           grep --fixed-strings --quiet "## [${tracked_version}]" CHANGELOG.md
 
-  validate:
-    name: Application and documentation
+  frontend:
+    name: Frontend build and dependency audits
     if: needs.scope.outputs.release_only != 'true'
     needs:
       - scope
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 20
     permissions:
       contents: read
     env:
@@ -136,14 +136,9 @@ jobs:
           # CVE-2026-109619 fixes. Do not widen this back to "8.5".
           php-version: "8.5.12"
           extensions: mbstring, bcmath, pcntl, intl, gd, zip, sqlite3, ffi, posix
-          ini-values: memory_limit=1G
+          ini-values: memory_limit=1G, opcache.enable_cli=1
           coverage: none
           tools: composer:v2
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends librsvg2-bin shellcheck
 
       - name: Cache Composer downloads
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -196,9 +191,6 @@ jobs:
           fi
           bash scripts/audit-production-deps.sh
 
-      - name: Check PHP formatting
-        run: vendor/bin/pint --test
-
       - name: Run JavaScript unit tests
         run: |
           npm run test:email-canvas
@@ -209,28 +201,97 @@ jobs:
           node --test tests/Unit/weekly-schedule.test.mjs
           node --test tests/Unit/docker-composer-patches.test.mjs
 
-      - name: Exercise stable and edge installer fixtures
-        run: |
-          bash tests/installer-release.sh stable
-          bash tests/installer-release.sh edge
+      - name: Cache built frontend assets for test jobs
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: public/build
+          key: vite-build-${{ runner.os }}-${{ inputs.source_sha || github.sha }}-${{ github.run_id }}
 
       - name: Build application frontend
         run: npm run build
 
-      - name: Verify model table schema integrity
-        run: php artisan test --compact tests/Feature/Database/ModelTableSchemaIntegrityTest.php
-
-      - name: Run Pest suite
-        run: php artisan test --parallel --compact
-
-      - name: Validate installed extension contracts
-        run: php artisan modules:validate --all --no-interaction
-
-      - name: Exercise Composer extension lifecycle
-        run: composer test:extensions
-
       - name: Check generated docs and local links
         run: npm run docs:check
+
+  static:
+    name: Static checks
+    if: needs.scope.outputs.release_only != 'true'
+    needs:
+      - scope
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      APP_ENV: testing
+      APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      APP_DEBUG: "false"
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ":memory:"
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+      MAIL_MAILER: array
+      BROADCAST_CONNECTION: "null"
+      SCOUT_DRIVER: collection
+      PULSE_ENABLED: "false"
+      TELESCOPE_ENABLED: "false"
+      NIGHTWATCH_ENABLED: "false"
+      INERTIA_SSR_ENABLED: "false"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up PHP 8.5
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          # Pinned to the first release that carries the CVE-2026-109618 and
+          # CVE-2026-109619 fixes. Do not widen this back to "8.5".
+          php-version: "8.5.12"
+          extensions: mbstring, bcmath, pcntl, intl, gd, zip, sqlite3, ffi, posix
+          ini-values: memory_limit=1G, opcache.enable_cli=1
+          coverage: none
+          tools: composer:v2
+
+      - name: Ensure shellcheck is available
+        run: command -v shellcheck >/dev/null || (sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck)
+
+      - name: Cache Composer downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/composer/files
+          key: composer-${{ runner.os }}-php85-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-php85-
+
+      - name: Verify patched PHP runtime version
+        run: |
+          php -r 'version_compare(PHP_VERSION, "8.5.12", ">=") || exit(fprintf(STDERR, "PHP %s is vulnerable to CVE-2026-109618 and CVE-2026-109619; 8.5.12 or newer is required.\n", PHP_VERSION));'
+          php -v | head -1
+
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Cache Pint results
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pint/pint.cache
+          key: pint-${{ runner.os }}-php85-${{ hashFiles('pint.json', 'composer.lock') }}-${{ github.sha }}
+          restore-keys: |
+            pint-${{ runner.os }}-php85-${{ hashFiles('pint.json', 'composer.lock') }}-
+
+      - name: Check PHP formatting
+        run: |
+          mkdir -p "${HOME}/.cache/pint"
+          vendor/bin/pint --test --parallel --cache-file="${HOME}/.cache/pint/pint.cache"
+
+      - name: Exercise stable and edge installer fixtures
+        run: |
+          bash tests/installer-release.sh stable
+          bash tests/installer-release.sh edge
 
       - name: Validate production Compose file
         env:
@@ -268,6 +329,163 @@ jobs:
           set +a
           docker stack config --compose-file scripts/swarm-stack.yml >/dev/null
           docker stack config --compose-file scripts/swarm-stack-direct.yml >/dev/null
+
+  extensions:
+    name: Extension lifecycle
+    if: needs.scope.outputs.release_only != 'true'
+    needs:
+      - scope
+      - frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      APP_ENV: testing
+      APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      APP_DEBUG: "false"
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ":memory:"
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+      MAIL_MAILER: array
+      BROADCAST_CONNECTION: "null"
+      SCOUT_DRIVER: collection
+      PULSE_ENABLED: "false"
+      TELESCOPE_ENABLED: "false"
+      NIGHTWATCH_ENABLED: "false"
+      INERTIA_SSR_ENABLED: "false"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up PHP 8.5
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          # Pinned to the first release that carries the CVE-2026-109618 and
+          # CVE-2026-109619 fixes. Do not widen this back to "8.5".
+          php-version: "8.5.12"
+          extensions: mbstring, bcmath, pcntl, intl, gd, zip, sqlite3, ffi, posix
+          ini-values: memory_limit=1G, opcache.enable_cli=1
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache Composer downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/composer/files
+          key: composer-${{ runner.os }}-php85-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-php85-
+
+      - name: Verify patched PHP runtime version
+        run: |
+          php -r 'version_compare(PHP_VERSION, "8.5.12", ">=") || exit(fprintf(STDERR, "PHP %s is vulnerable to CVE-2026-109618 and CVE-2026-109619; 8.5.12 or newer is required.\n", PHP_VERSION));'
+          php -v | head -1
+
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Restore built frontend assets
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: public/build
+          key: vite-build-${{ runner.os }}-${{ inputs.source_sha || github.sha }}-${{ github.run_id }}
+
+      - name: Verify built frontend assets
+        run: test -f public/build/manifest.json
+
+      - name: Validate installed extension contracts
+        run: php artisan modules:validate --all --no-interaction
+
+      - name: Exercise Composer extension lifecycle
+        run: composer test:extensions
+
+  pest:
+    name: Pest suite (${{ matrix.shard }}/4)
+    if: needs.scope.outputs.release_only != 'true'
+    needs:
+      - scope
+      - frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    env:
+      APP_ENV: testing
+      APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      APP_DEBUG: "false"
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ":memory:"
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+      MAIL_MAILER: array
+      BROADCAST_CONNECTION: "null"
+      SCOUT_DRIVER: collection
+      PULSE_ENABLED: "false"
+      TELESCOPE_ENABLED: "false"
+      NIGHTWATCH_ENABLED: "false"
+      INERTIA_SSR_ENABLED: "false"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up PHP 8.5
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          # Pinned to the first release that carries the CVE-2026-109618 and
+          # CVE-2026-109619 fixes. Do not widen this back to "8.5".
+          php-version: "8.5.12"
+          extensions: mbstring, bcmath, pcntl, intl, gd, zip, sqlite3, ffi, posix
+          ini-values: memory_limit=1G, opcache.enable_cli=1
+          coverage: none
+          tools: composer:v2
+
+      - name: Install SVG rasterizer
+        run: command -v rsvg-convert >/dev/null || (sudo apt-get update && sudo apt-get install -y --no-install-recommends librsvg2-bin)
+
+      - name: Cache Composer downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/composer/files
+          key: composer-${{ runner.os }}-php85-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-php85-
+
+      - name: Verify patched PHP runtime version
+        run: |
+          php -r 'version_compare(PHP_VERSION, "8.5.12", ">=") || exit(fprintf(STDERR, "PHP %s is vulnerable to CVE-2026-109618 and CVE-2026-109619; 8.5.12 or newer is required.\n", PHP_VERSION));'
+          php -v | head -1
+
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Restore built frontend assets
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: public/build
+          key: vite-build-${{ runner.os }}-${{ inputs.source_sha || github.sha }}-${{ github.run_id }}
+
+      - name: Verify built frontend assets
+        run: test -f public/build/manifest.json
+
+      - name: Run Pest suite
+        env:
+          PEST_SHARD: ${{ matrix.shard }}
+          PEST_SHARD_TOTAL: "4"
+        run: php artisan test --parallel --compact --shard="${PEST_SHARD}/${PEST_SHARD_TOTAL}"
 
   workflow-security:
     name: Workflow security
@@ -407,7 +625,10 @@ jobs:
     if: always()
     needs:
       - scope
-      - validate
+      - frontend
+      - static
+      - extensions
+      - pest
       - workflow-security
       - docs
       - pr-title

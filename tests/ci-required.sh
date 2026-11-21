@@ -8,12 +8,13 @@ full_results='{
   "scope": {"result": "success"},
   "frontend": {"result": "success"},
   "static": {"result": "success"},
+  "extensions": {"result": "success"},
   "pest": {"result": "success"},
   "workflow-security": {"result": "success"},
   "docs": {"result": "success"},
   "pr-title": {"result": "success"}
 }'
-release_results="$(jq '.frontend.result = "skipped" | .static.result = "skipped" | .pest.result = "skipped" | .["workflow-security"].result = "skipped" | .docs.result = "skipped"' <<<"${full_results}")"
+release_results="$(jq '.frontend.result = "skipped" | .static.result = "skipped" | .extensions.result = "skipped" | .pest.result = "skipped" | .["workflow-security"].result = "skipped" | .docs.result = "skipped"' <<<"${full_results}")"
 checks=0
 
 assert_policy() {
@@ -49,7 +50,7 @@ for event_name in push workflow_dispatch; do
     assert_policy fail "${event_name}" false "${full_results}" 'non-PR runs must skip PR title check'
 done
 
-for job in scope frontend static pest workflow-security docs pr-title; do
+for job in scope frontend static extensions pest workflow-security docs pr-title; do
     for result in failure cancelled skipped; do
         failed_results="$(jq --arg job "${job}" --arg result "${result}" '.[$job].result = $result' <<<"${full_results}")"
         assert_policy fail pull_request false "${failed_results}" "${job} ${result} blocks merge"

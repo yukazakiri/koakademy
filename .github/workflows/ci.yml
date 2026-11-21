@@ -201,7 +201,7 @@ jobs:
           node --test tests/Unit/weekly-schedule.test.mjs
           node --test tests/Unit/docker-composer-patches.test.mjs
 
-      - name: Cache built frontend assets for Pest shards
+      - name: Cache built frontend assets for test jobs
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: public/build
@@ -214,7 +214,7 @@ jobs:
         run: npm run docs:check
 
   static:
-    name: Static checks and extension lifecycle
+    name: Static checks
     if: needs.scope.outputs.release_only != 'true'
     needs:
       - scope
@@ -293,12 +293,6 @@ jobs:
           bash tests/installer-release.sh stable
           bash tests/installer-release.sh edge
 
-      - name: Validate installed extension contracts
-        run: php artisan modules:validate --all --no-interaction
-
-      - name: Exercise Composer extension lifecycle
-        run: composer test:extensions
-
       - name: Validate production Compose file
         env:
           KOAKADEMY_ENV_FILE: .env.production.example
@@ -335,6 +329,81 @@ jobs:
           set +a
           docker stack config --compose-file scripts/swarm-stack.yml >/dev/null
           docker stack config --compose-file scripts/swarm-stack-direct.yml >/dev/null
+
+  extensions:
+    name: Extension lifecycle
+    if: needs.scope.outputs.release_only != 'true'
+    needs:
+      - scope
+      - frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      APP_ENV: testing
+      APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      APP_DEBUG: "false"
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ":memory:"
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+      MAIL_MAILER: array
+      BROADCAST_CONNECTION: "null"
+      SCOUT_DRIVER: collection
+      PULSE_ENABLED: "false"
+      TELESCOPE_ENABLED: "false"
+      NIGHTWATCH_ENABLED: "false"
+      INERTIA_SSR_ENABLED: "false"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up PHP 8.5
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          # Pinned to the first release that carries the CVE-2026-109618 and
+          # CVE-2026-109619 fixes. Do not widen this back to "8.5".
+          php-version: "8.5.12"
+          extensions: mbstring, bcmath, pcntl, intl, gd, zip, sqlite3, ffi, posix
+          ini-values: memory_limit=1G, opcache.enable_cli=1
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache Composer downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/composer/files
+          key: composer-${{ runner.os }}-php85-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-php85-
+
+      - name: Verify patched PHP runtime version
+        run: |
+          php -r 'version_compare(PHP_VERSION, "8.5.12", ">=") || exit(fprintf(STDERR, "PHP %s is vulnerable to CVE-2026-109618 and CVE-2026-109619; 8.5.12 or newer is required.\n", PHP_VERSION));'
+          php -v | head -1
+
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Restore built frontend assets
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: public/build
+          key: vite-build-${{ runner.os }}-${{ inputs.source_sha || github.sha }}-${{ github.run_id }}
+
+      - name: Verify built frontend assets
+        run: test -f public/build/manifest.json
+
+      - name: Validate installed extension contracts
+        run: php artisan modules:validate --all --no-interaction
+
+      - name: Exercise Composer extension lifecycle
+        run: composer test:extensions
 
   pest:
     name: Pest suite (${{ matrix.shard }}/4)
@@ -558,6 +627,7 @@ jobs:
       - scope
       - frontend
       - static
+      - extensions
       - pest
       - workflow-security
       - docs

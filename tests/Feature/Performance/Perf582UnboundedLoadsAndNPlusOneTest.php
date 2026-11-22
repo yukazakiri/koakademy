@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\UserRole;
 use App\Filament\Resources\Classes\RelationManagers\ClassEnrollmentsRelationManager;
+use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\School;
 use App\Models\User;
 use Filament\Forms\Components\Select;
@@ -20,7 +21,9 @@ it('avoids N+1 department/user counts in OrganizationController::index()', funct
     DB::flushQueryLog();
     DB::enableQueryLog();
 
-    $response = $this->actingAs($admin)->getJson('/api/organizations');
+    $response = $this->actingAs($admin)
+        ->withoutMiddleware(HandleInertiaRequests::class)
+        ->getJson('/api/organizations');
 
     $queryCount = count(DB::getQueryLog());
     DB::disableQueryLog();

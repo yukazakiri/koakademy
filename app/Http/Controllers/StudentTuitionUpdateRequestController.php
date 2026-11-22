@@ -8,13 +8,16 @@ use App\Http\Requests\StoreStudentTuitionUpdateRequest;
 use App\Models\StudentEnrollment;
 use App\Models\StudentTuition;
 use App\Models\StudentTuitionUpdateRequest;
+use App\Models\StudentTuitionUpdateRequestReceipt;
 use App\Models\User;
 use App\Services\GeneralSettingsService;
 use App\Services\StudentTuitionUpdateRequestService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class StudentTuitionUpdateRequestController extends Controller
 {
@@ -98,6 +101,47 @@ final class StudentTuitionUpdateRequestController extends Controller
             'semester' => $tuitionRequest->semester,
         ])->with('tuition_request_id', $tuitionRequest->id)
             ->with('flash', ['success' => 'Your tuition update request was submitted to Finance.']);
+    }
+
+    public function showReceipt(
+        Request $request,
+        StudentTuitionUpdateRequestReceipt $receipt,
+        StudentTuitionUpdateRequestService $requests,
+    ): StreamedResponse {
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
+
+        $receipt->loadMissing('request.student');
+        $tuitionRequest = $receipt->request;
+        abort_unless($tuitionRequest instanceof StudentTuitionUpdateRequest, 404);
+
+        $canViewAsStaff = $user->can('view_tuition_fees') || $user->can('manage_tuition_fees');
+        $student = $canViewAsStaff ? null : $requests->studentFor($user);
+        $isOwner = $tuitionRequest->submitted_by_user_id === $user->id
+            || ($student !== null && (int) $tuitionRequest->student_id === (int) $student->id);
+
+        abort_unless($canViewAsStaff || $isOwner, 403);
+
+        $path = $receipt->image_path;
+        if (! is_string($path) || $path === '' || str_contains($path, '..') || str_starts_with($path, '/')) {
+            abort(404);
+        }
+
+        $privateDisk = (string) config('filesystems.private_disk', 'private');
+        $disk = null;
+
+        if (Storage::disk($privateDisk)->exists($path)) {
+            $disk = $privateDisk;
+        } elseif (Storage::disk('public')->exists($path)) {
+            $disk = 'public';
+        }
+
+        abort_if($disk === null, 404);
+
+        return Storage::disk($disk)->response($path, $receipt->file_name ?: basename($path), [
+            'Cache-Control' => 'private, no-store',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
     }
 
     /** @return list<array{value: string, label: string, description: string}> */

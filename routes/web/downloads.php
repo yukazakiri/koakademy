@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\AssessmentExportDownloadController;
+use App\Http\Controllers\StudentTuitionUpdateRequestController;
 use App\Jobs\GenerateTimetablePdfJob;
 use App\Models\Faculty;
 use App\Models\Schedule;
@@ -72,6 +73,12 @@ Route::get('/download/student-list/{filename}', function (string $filename) {
         ->header('Content-Disposition', 'attachment; filename="'.$filename.'"')
         ->header('X-Content-Type-Options', 'nosniff');
 })->where('filename', '.*')->middleware(['auth'])->name('download.student-list');
+
+// Authenticated tuition update request receipt image download/preview
+Route::get('/tuition-update-requests/receipts/{receipt}', [StudentTuitionUpdateRequestController::class, 'showReceipt'])
+    ->whereNumber('receipt')
+    ->middleware(['auth', 'throttle:60,1'])
+    ->name('tuition-update-requests.receipts.show');
 
 // Timetable PDF download
 Route::get('/download/timetable-pdf/{filename}', function (string $filename) {

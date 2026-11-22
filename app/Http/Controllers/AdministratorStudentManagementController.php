@@ -851,7 +851,7 @@ final class AdministratorStudentManagementController extends Controller
                 'education' => $student->studentEducationInfo,
                 'personal_info' => $student->personalInfo,
                 'documents' => $student->DocumentLocation?->toResolvedDocumentArray(),
-                'signature_url' => $this->resolveStoredFileUrl($student->signature_path),
+                'signature_url' => $this->resolveStudentSignatureUrl($student),
                 'grade_release_periods' => $canViewGradeRelease ? app(GradeReleaseService::class)->periods($student) : [],
                 'grade_release_clearance_required' => app(GradeReleaseService::class)->requiresClearance(),
                 'can_manage_grade_clearance' => $canManageGradeClearance,
@@ -2099,6 +2099,31 @@ final class AdministratorStudentManagementController extends Controller
         return redirect()->route('administrators.finance.tuition-adjustments.index', ['student' => $student->id]);
     }
 
+    public function showSignature(Student $student): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        $path = $student->signature_path;
+        if (! is_string($path) || mb_trim($path) === '' || str_contains($path, '..') || str_starts_with($path, '/')) {
+            abort(404);
+        }
+
+        $privateDisk = (string) config('filesystems.private_disk', 'private');
+        $defaultDisk = config('filesystems.default');
+
+        $disk = null;
+        if (Storage::disk($privateDisk)->exists($path)) {
+            $disk = $privateDisk;
+        } elseif (is_string($defaultDisk) && $defaultDisk !== $privateDisk && Storage::disk($defaultDisk)->exists($path)) {
+            $disk = $defaultDisk;
+        }
+
+        abort_if($disk === null, 404);
+
+        return Storage::disk($disk)->response($path, basename($path), [
+            'Cache-Control' => 'private, no-store',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
     public function updateSignature(Request $request, Student $student): RedirectResponse
     {
         $validated = $request->validate([
@@ -2108,24 +2133,14 @@ final class AdministratorStudentManagementController extends Controller
         /** @var UploadedFile $signature */
         $signature = $validated['signature'];
 
-        $disk = config('filesystems.default');
-        $newPath = $signature->store("students/{$student->id}/signatures");
+        $privateDisk = (string) config('filesystems.private_disk', 'private');
+        $newPath = $signature->store("students/{$student->id}/signatures", $privateDisk);
 
         if (! is_string($newPath) || $newPath === '') {
             return back()->with('error', 'Failed to store signature.');
         }
 
-        $oldPath = $student->signature_path;
-        if (
-            is_string($oldPath) &&
-            $oldPath !== '' &&
-            ! filter_var($oldPath, FILTER_VALIDATE_URL) &&
-            ! str_starts_with($oldPath, '/') &&
-            is_string($disk) &&
-            Storage::disk($disk)->exists($oldPath)
-        ) {
-            Storage::disk($disk)->delete($oldPath);
-        }
+        $this->deleteStoredSignature($student->signature_path);
 
         $student->update([
             'signature_path' => $newPath,
@@ -2135,25 +2150,13 @@ final class AdministratorStudentManagementController extends Controller
 
         return back()->with([
             'success' => 'Student signature saved successfully.',
-            'signature_url' => $this->resolveStoredFileUrl($student->signature_path),
+            'signature_url' => $this->resolveStudentSignatureUrl($student),
         ]);
     }
 
     public function destroySignature(Request $request, Student $student): RedirectResponse
     {
-        $oldPath = $student->signature_path;
-        $disk = config('filesystems.default');
-
-        if (
-            is_string($oldPath) &&
-            $oldPath !== '' &&
-            ! filter_var($oldPath, FILTER_VALIDATE_URL) &&
-            ! str_starts_with($oldPath, '/') &&
-            is_string($disk) &&
-            Storage::disk($disk)->exists($oldPath)
-        ) {
-            Storage::disk($disk)->delete($oldPath);
-        }
+        $this->deleteStoredSignature($student->signature_path);
 
         $student->update([
             'signature_path' => null,
@@ -3252,6 +3255,45 @@ final class AdministratorStudentManagementController extends Controller
             'default_income_mode' => (string) config('income_brackets.default_mode', 'annual'),
             'subjects' => Subject::all(['id', 'code', 'title', 'units'])->map(fn ($s): array => ['value' => $s->id, 'label' => "{$s->code} - {$s->title} ({$s->units} units)"])->all(),
         ];
+    }
+
+    private function resolveStudentSignatureUrl(Student $student): ?string
+    {
+        $path = $student->signature_path;
+
+        if (! is_string($path) || mb_trim($path) === '') {
+            return null;
+        }
+
+        if (filter_var($path, FILTER_VALIDATE_URL) || str_starts_with($path, '/')) {
+            return $path;
+        }
+
+        return route('administrators.students.signature.show', $student->id);
+    }
+
+    private function deleteStoredSignature(?string $path): void
+    {
+        if (
+            ! is_string($path)
+            || $path === ''
+            || filter_var($path, FILTER_VALIDATE_URL)
+            || str_starts_with($path, '/')
+        ) {
+            return;
+        }
+
+        $candidateDisks = array_values(array_unique(array_filter([
+            (string) config('filesystems.private_disk', 'private'),
+            is_string(config('filesystems.default')) ? (string) config('filesystems.default') : null,
+            'public',
+        ])));
+
+        foreach ($candidateDisks as $disk) {
+            if (Storage::disk($disk)->exists($path)) {
+                Storage::disk($disk)->delete($path);
+            }
+        }
     }
 
     private function resolveStoredFileUrl(?string $path): ?string

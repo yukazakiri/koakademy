@@ -304,14 +304,11 @@ it('shows standalone non credited records separately from the checklist payload'
             ->where('student.checklist.0.semesters.0.subjects.0.code', 'MATH101'));
 });
 
-it('stores student signature on the default filesystem and returns a show-page signature url', function (): void {
-    $defaultDisk = config('filesystems.default');
+it('stores student signature on the private filesystem and returns an authenticated signature url', function (): void {
+    $privateDisk = (string) config('filesystems.private_disk', 'private');
 
-    if (! is_string($defaultDisk)) {
-        throw new RuntimeException('The default filesystem disk must be a string.');
-    }
-
-    Storage::fake($defaultDisk);
+    Storage::fake($privateDisk);
+    Storage::fake('public');
 
     $user = User::factory()->create(['role' => UserRole::Admin]);
     $student = Student::factory()->create();
@@ -326,14 +323,22 @@ it('stores student signature on the default filesystem and returns a show-page s
     $student->refresh();
 
     expect($student->signature_path)->not->toBeNull();
-    Storage::disk($defaultDisk)->assertExists((string) $student->signature_path);
+    Storage::disk($privateDisk)->assertExists((string) $student->signature_path);
+    Storage::disk('public')->assertMissing((string) $student->signature_path);
+
+    $expectedUrl = route('administrators.students.signature.show', $student->id);
 
     actingAs($user)
         ->get(route('administrators.students.show', $student->id))
         ->assertSuccessful()
         ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
             ->component('administrators/students/show', false)
-            ->where('student.signature_url', Storage::disk($defaultDisk)->url((string) $student->signature_path)));
+            ->where('student.signature_url', $expectedUrl));
+
+    actingAs($user)
+        ->get($expectedUrl)
+        ->assertOk()
+        ->assertHeader('X-Content-Type-Options', 'nosniff');
 });
 
 it('soft deletes a student via the destroy endpoint', function (): void {

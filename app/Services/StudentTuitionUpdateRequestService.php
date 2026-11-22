@@ -118,7 +118,8 @@ final class StudentTuitionUpdateRequestService
                 $fileSize = null;
 
                 if ($entry['image'] instanceof UploadedFile && $entry['image']->isValid()) {
-                    $storedPath = $entry['image']->storePublicly('tuition-request-receipts', 'public');
+                    $privateDisk = (string) config('filesystems.private_disk', 'private');
+                    $storedPath = $entry['image']->store('tuition-request-receipts', $privateDisk);
                     $fileName = $entry['image']->getClientOriginalName();
                     $mimeType = $entry['image']->getClientMimeType();
                     $fileSize = $entry['image']->getSize();

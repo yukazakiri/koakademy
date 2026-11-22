@@ -7,6 +7,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 
 final class StudentTuitionUpdateRequestReceipt extends Model
@@ -37,7 +38,11 @@ final class StudentTuitionUpdateRequestReceipt extends Model
                 return $this->image_path;
             }
 
-            return Storage::disk('public')->url($this->image_path);
+            if (Route::has('tuition-update-requests.receipts.show') && $this->exists) {
+                return route('tuition-update-requests.receipts.show', $this);
+            }
+
+            return Storage::disk((string) config('filesystems.private_disk', 'private'))->url($this->image_path);
         });
     }
 

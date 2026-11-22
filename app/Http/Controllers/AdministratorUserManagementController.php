@@ -513,13 +513,26 @@ final class AdministratorUserManagementController extends Controller
      */
     private function getRoleDistribution(int $totalUsers): array
     {
-        return User::query()->with('roles')->get()->groupBy(fn (User $user): string => $user->role->value)
-            ->map(fn ($users, string $role): array => [
-                'role' => $role,
-                'label' => UserRole::from($role)->getLabel(),
-                'count' => $users->count(),
-                'percentage' => $this->percentageOf($users->count(), $totalUsers),
-            ])->sortByDesc('count')->values()->all();
+        return User::query()
+            ->select('role')
+            ->selectRaw('COUNT(*) as count')
+            ->whereNotNull('role')
+            ->groupBy('role')
+            ->orderByDesc('count')
+            ->get()
+            ->map(function (User $row) use ($totalUsers): array {
+                $roleEnum = $row->role instanceof UserRole ? $row->role : UserRole::from((string) $row->role);
+                $count = (int) $row->getAttribute('count');
+
+                return [
+                    'role' => $roleEnum->value,
+                    'label' => $roleEnum->getLabel(),
+                    'count' => $count,
+                    'percentage' => $this->percentageOf($count, $totalUsers),
+                ];
+            })
+            ->values()
+            ->all();
     }
 
     /**

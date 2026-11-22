@@ -460,36 +460,61 @@ final class ManageStudentClearances extends Page implements HasTable
                     $settingsService = app(GeneralSettingsService::class);
                     $currentYear = $settingsService->getCurrentSchoolYearString();
                     $currentSemester = $settingsService->getCurrentSemester();
-
-                    $students = Student::all();
+                    $previous = (new Student)->getPreviousAcademicPeriod($currentYear, $currentSemester);
+                    $clearedBy = Auth::user()->name ?? 'Admin';
+                    $now = now();
                     $clearedCount = 0;
 
-                    foreach ($students as $student) {
-                        $previous = $student->getPreviousAcademicPeriod($currentYear, $currentSemester);
-                        $clearance = StudentClearance::query()
-                            ->where('student_id', $student->id)
-                            ->where('academic_year', $previous['academic_year'])
-                            ->where('semester', $previous['semester'])
-                            ->first();
+                    Student::query()
+                        ->select(['id'])
+                        ->chunkById(200, function (Collection $students) use ($previous, $clearedBy, $now, &$clearedCount): void {
+                            $studentIds = $students->pluck('id')->all();
 
-                        if (! $clearance) {
-                            $clearance = StudentClearance::query()->create([
-                                'student_id' => $student->id,
-                                'academic_year' => $previous['academic_year'],
-                                'semester' => $previous['semester'],
-                                'is_cleared' => false,
-                            ]);
-                        }
+                            $existing = StudentClearance::query()
+                                ->whereIn('student_id', $studentIds)
+                                ->where('academic_year', $previous['academic_year'])
+                                ->where('semester', $previous['semester'])
+                                ->get(['id', 'student_id', 'is_cleared'])
+                                ->keyBy('student_id');
 
-                        if (! $clearance->is_cleared) {
-                            $clearance->update([
-                                'is_cleared' => true,
-                                'cleared_by' => Auth::user()->name ?? 'Admin',
-                                'cleared_at' => now(),
-                            ]);
-                            $clearedCount++;
-                        }
-                    }
+                            $toInsert = [];
+                            $toUpdateIds = [];
+
+                            foreach ($studentIds as $studentId) {
+                                $record = $existing->get($studentId);
+                                if (! $record) {
+                                    $toInsert[] = [
+                                        'student_id' => $studentId,
+                                        'academic_year' => $previous['academic_year'],
+                                        'semester' => $previous['semester'],
+                                        'is_cleared' => true,
+                                        'cleared_by' => $clearedBy,
+                                        'cleared_at' => $now,
+                                        'created_at' => $now,
+                                        'updated_at' => $now,
+                                    ];
+                                    $clearedCount++;
+                                } elseif (! $record->is_cleared) {
+                                    $toUpdateIds[] = $record->id;
+                                    $clearedCount++;
+                                }
+                            }
+
+                            if ($toInsert !== []) {
+                                StudentClearance::query()->insert($toInsert);
+                            }
+
+                            if ($toUpdateIds !== []) {
+                                StudentClearance::query()
+                                    ->whereIn('id', $toUpdateIds)
+                                    ->update([
+                                        'is_cleared' => true,
+                                        'cleared_by' => $clearedBy,
+                                        'cleared_at' => $now,
+                                        'updated_at' => $now,
+                                    ]);
+                            }
+                        });
 
                     Notification::make()
                         ->success()
@@ -510,28 +535,40 @@ final class ManageStudentClearances extends Page implements HasTable
                     $settingsService = app(GeneralSettingsService::class);
                     $currentYear = $settingsService->getCurrentSchoolYearString();
                     $currentSemester = $settingsService->getCurrentSemester();
-
-                    $students = Student::all();
+                    $previous = (new Student)->getPreviousAcademicPeriod($currentYear, $currentSemester);
+                    $now = now();
                     $createdCount = 0;
 
-                    foreach ($students as $student) {
-                        $previous = $student->getPreviousAcademicPeriod($currentYear, $currentSemester);
-                        $exists = StudentClearance::query()
-                            ->where('student_id', $student->id)
-                            ->where('academic_year', $previous['academic_year'])
-                            ->where('semester', $previous['semester'])
-                            ->exists();
+                    Student::query()
+                        ->select(['id'])
+                        ->chunkById(200, function (Collection $students) use ($previous, $now, &$createdCount): void {
+                            $studentIds = $students->pluck('id')->all();
 
-                        if (! $exists) {
-                            StudentClearance::query()->create([
-                                'student_id' => $student->id,
+                            $existingIds = StudentClearance::query()
+                                ->whereIn('student_id', $studentIds)
+                                ->where('academic_year', $previous['academic_year'])
+                                ->where('semester', $previous['semester'])
+                                ->pluck('student_id')
+                                ->all();
+
+                            $missingIds = array_diff($studentIds, $existingIds);
+
+                            if ($missingIds === []) {
+                                return;
+                            }
+
+                            $rows = array_map(static fn (int|string $studentId): array => [
+                                'student_id' => $studentId,
                                 'academic_year' => $previous['academic_year'],
                                 'semester' => $previous['semester'],
                                 'is_cleared' => false,
-                            ]);
-                            $createdCount++;
-                        }
-                    }
+                                'created_at' => $now,
+                                'updated_at' => $now,
+                            ], $missingIds);
+
+                            StudentClearance::query()->insert($rows);
+                            $createdCount += count($rows);
+                        });
 
                     Notification::make()
                         ->success()

@@ -64,7 +64,7 @@ final class StudentOrganizationAssignmentService
 
         // Policy belongs to each candidate school, not to a public caller's session.
         // Legacy SHS clients can still submit the lrn key; neutral schools use student_id.
-        $students = $query->get()->filter(function (Student $student) use ($identifier, $inputField): bool {
+        $students = $query->limit(10)->get()->filter(function (Student $student) use ($identifier, $inputField): bool {
             $external = app(StudentConfigurationService::class)->usesExternal($student->student_type->value, $student->school_id)
                 && (string) $student->student_id === (string) $student->lrn;
             $expectedField = $external ? 'lrn' : 'student_id';

@@ -63,10 +63,27 @@ final class ClassEnrollmentsRelationManager extends RelationManager
         return $schema->schema([
             Select::make('student_id')
                 ->label('Student')
-                ->options(fn () => Student::all()->pluck('full_name', 'id'))
                 ->searchable()
+                ->getSearchResultsUsing(function (string $search): array {
+                    $term = '%'.mb_trim($search).'%';
+
+                    return Student::query()
+                        ->select(['id', 'student_id', 'first_name', 'middle_name', 'last_name'])
+                        ->where(function ($query) use ($term): void {
+                            $query->whereLike('first_name', $term)
+                                ->orWhereLike('last_name', $term)
+                                ->orWhereLike('student_id', $term);
+                        })
+                        ->orderBy('last_name')
+                        ->limit(50)
+                        ->get()
+                        ->pluck('full_name', 'id')
+                        ->all();
+                })
+                ->getOptionLabelUsing(fn ($value): ?string => Student::query()
+                    ->select(['id', 'first_name', 'middle_name', 'last_name'])
+                    ->find($value)?->full_name)
                 ->required()
-                ->preload()
                 ->columnSpan('full'),
 
             Grid::make(3)->schema([

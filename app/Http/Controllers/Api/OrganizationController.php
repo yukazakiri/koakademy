@@ -33,6 +33,7 @@ final class OrganizationController extends Controller
     public function index(): JsonResponse
     {
         $organizations = $this->tenantContext->getAccessibleOrganizations();
+        $organizations->loadCount(['departments', 'users']);
 
         return response()->json([
             'organizations' => $organizations->map(fn (School $org): array => [
@@ -41,8 +42,8 @@ final class OrganizationController extends Controller
                 'code' => $org->code,
                 'description' => $org->description,
                 'is_active' => $org->is_active,
-                'departments_count' => $org->departments()->count(),
-                'users_count' => $org->users()->count(),
+                'departments_count' => (int) ($org->departments_count ?? 0),
+                'users_count' => (int) ($org->users_count ?? 0),
             ]),
             'current_organization_id' => $this->tenantContext->getCurrentSchoolId(),
             'can_create' => $this->canCreateOrganization(),

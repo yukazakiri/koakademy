@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Faculties\Api\Requests;
 
+use App\Models\Faculty;
 use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rules\Password;
@@ -17,7 +18,10 @@ final class CreateFacultyRequest extends FormRequest
     {
         $user = $this->user();
 
-        return $user instanceof User && ! $user->role->isFaculty();
+        return $user instanceof User
+            && ! $user->isStudentRole()
+            && ! $user->isFaculty()
+            && $user->can('create', Faculty::class);
     }
 
     /**

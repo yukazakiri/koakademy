@@ -1,55 +1,55 @@
 <x-dynamic-component :component="$getEntryWrapperView()" :entry="$entry">
     @php
-    // dd($getRecord());
     $enrolledSubjects = \App\Models\SubjectEnrollment::with('subject')
         ->where('enrollment_id', $getRecord()->id)
-        // ->where('semester', $getRecord()->semester)
-        // ->where('school_year', $getRecord()->school_year)
         ->whereNull('grade')
-        ->get()
-        ->toArray();
-    
+        ->get();
+
+    $classIds = $enrolledSubjects
+        ->pluck('section')
+        ->filter()
+        ->unique()
+        ->values();
+
+    $classesById = $classIds->isNotEmpty()
+        ? \App\Models\Classes::query()
+            ->whereIn('id', $classIds)
+            ->with('Schedule.room')
+            ->get()
+            ->keyBy('id')
+        : collect();
 
     $scheduleData = [];
     foreach ($enrolledSubjects as $enrolledSubject) {
-        // Debug enrolled subject
-        // dd($enrolledSubject);
-        if (!isset($enrolledSubject['subject'])) {
-            \Log::error('Subject not found for enrolled subject:', $enrolledSubject);
+        $subjectCode = $enrolledSubject->subject?->code;
+
+        if (! filled($subjectCode)) {
             continue;
         }
 
-        if (!isset($enrolledSubject['subject']['code'])) {
-            \Log::error('Subject code not found:', $enrolledSubject['subject']);
+        $class = $classesById->get($enrolledSubject->section);
+
+        if (! $class || ! $class->Schedule) {
             continue;
         }
 
-        $class = \App\Models\Classes::where('id', $enrolledSubject['section'])
-            ->with('Schedule.room')
-            ->first();
-        
-        if ($class) {
-            $schedules = $class->Schedule;
-            
-            if (!$schedules) {
-                \Log::error('No schedules found for class:', $class->toArray());
+        foreach ($class->Schedule as $schedule) {
+            if (! $schedule) {
                 continue;
             }
 
-            foreach ($schedules as $schedule) {
-                if (!$schedule) {
-                    \Log::error('Invalid schedule entry');
-                    continue;
-                }
+            $weekDay = strtolower((string) $schedule->day_of_week);
+            $startTime = date('g:i A', strtotime((string) $schedule->start_time));
+            $endTime = date('g:i A', strtotime((string) $schedule->end_time));
+            $room = (string) ($schedule->room?->name ?? 'No Room');
+            $section = (string) ($class->section ?? 'No Section');
 
-                $weekDay = strtolower($schedule->day_of_week);
-                $startTime = date('g:i A', strtotime($schedule->start_time));
-                $endTime = date('g:i A', strtotime($schedule->end_time));
-                $room = $schedule->room->name ?? 'No Room';
-                $section = $schedule->class->section ?? 'No Section';
-                
-                $scheduleData[$enrolledSubject['subject']['code']][$weekDay] = "<b>$room | $section</b> <br> $startTime - $endTime";
-            }
+            $scheduleData[$subjectCode][$weekDay] = [
+                'room' => $room,
+                'section' => $section,
+                'start_time' => $startTime,
+                'end_time' => $endTime,
+            ];
         }
     }
     @endphp
@@ -69,9 +69,15 @@
             <tbody class="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
                 @foreach ($scheduleData as $subjectCode => $schedule)
                 <tr>
-                    <td class="px-6 py-4 whitespace-nowrap">{{ $subjectCode }} </td>
+                    <td class="px-6 py-4 whitespace-nowrap">{{ $subjectCode }}</td>
                     @foreach (['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as $day)
-                    <td class="px-1 py-1 whitespace-nowrap {{ isset($schedule[$day]) ? 'bg-primary-500/50 border border-primary-500' : '' }}">{!! $schedule[$day] ?? '' !!}</td>
+                    <td class="px-1 py-1 whitespace-nowrap {{ isset($schedule[$day]) ? 'bg-primary-500/50 border border-primary-500' : '' }}">
+                        @if (isset($schedule[$day]))
+                            <b>{{ $schedule[$day]['room'] }} | {{ $schedule[$day]['section'] }}</b>
+                            <br>
+                            {{ $schedule[$day]['start_time'] }} - {{ $schedule[$day]['end_time'] }}
+                        @endif
+                    </td>
                     @endforeach
                 </tr>
                 @endforeach

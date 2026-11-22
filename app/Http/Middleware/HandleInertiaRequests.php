@@ -68,7 +68,6 @@ final class HandleInertiaRequests extends Middleware
         $socialiteProviderService = app(SocialiteProviderService::class);
         $generalSettingsService = app(GeneralSettingsService::class);
         $isAdministratorPortal = $request->is('administrators') || $request->is('administrators/*');
-
         $featureValues = $onboardingService->getAllFeatureValues($user);
         $studentInformationUpdatesEnabled = $user && Feature::for($user)->active(StudentInformationUpdates::class);
         $libraryEnabled = (bool) $generalSettingsService->getGlobalSetting('library_module_enabled', false);
@@ -78,20 +77,20 @@ final class HandleInertiaRequests extends Middleware
             parent::share($request),
             [
                 'auth' => $settingsService->getAuthData($user),
-                'socialMediaSettings' => $settingsService->getSocialMediaSettings(),
-                'siteSettings' => $settingsService->getSiteSettings($request),
-                'branding' => $settingsService->getBranding(),
+                'socialMediaSettings' => fn () => $settingsService->getSocialMediaSettings(),
+                'siteSettings' => fn (): array => $settingsService->getSiteSettings($request),
+                'branding' => fn (): array => $settingsService->getBranding(),
                 'seo' => $settingsService->getSeoSettings(...),
-                'grading' => $settingsService->getGrading(),
-                'analytics' => $analyticsService->getFrontendConfig(),
-                'meta' => [
+                'grading' => fn (): array => $settingsService->getGrading(),
+                'analytics' => fn (): array => $analyticsService->getFrontendConfig(),
+                'meta' => fn (): array => [
                     'appName' => $settingsService->getAppName($request),
                     'isPortalDomain' => $settingsService->isPortalDomain($request),
                 ],
                 'demoMode' => $this->getDemoModeData(),
-                'status' => session('status'),
+                'status' => fn () => session('status'),
                 'featureNotice' => fn (): ?array => $request->attributes->get('feature_notice'),
-                'settings' => $settingsService->getSettings(),
+                'settings' => fn (): array => $settingsService->getSettings($user),
                 'socialAuthProviders' => $socialiteProviderService->enabledProviders(...),
                 'version' => config('app.version'),
                 'ziggy' => function () use ($request): array {
@@ -129,22 +128,22 @@ final class HandleInertiaRequests extends Middleware
                     'studentAvatarUpload' => $user && Feature::for($user)->active(StudentAvatarUpload::class),
                     'studentInformationUpdates' => $studentInformationUpdatesEnabled,
                 ],
-                'facultyClasses' => $facultyClassService->getFacultyClasses($user),
-                'studentClasses' => $studentClassService->getStudentClasses($user),
+                'facultyClasses' => fn (): array => $facultyClassService->getFacultyClasses($user),
+                'studentClasses' => fn (): array => $studentClassService->getStudentClasses($user),
                 'notifications' => $isAdministratorPortal
                     ? Inertia::defer(fn (): array => $notificationService->transformNotifications($user), 'admin-shell', true)
-                    : $notificationService->transformNotifications($user),
+                    : fn (): array => $notificationService->transformNotifications($user),
                 'unreadNotificationsCount' => $isAdministratorPortal
                     ? Inertia::defer(fn (): int => $notificationService->getUnreadCount($user), 'admin-shell', true)
-                    : $notificationService->getUnreadCount($user),
+                    : fn (): int => $notificationService->getUnreadCount($user),
                 'unresolvedHelpTicketsCount' => $isAdministratorPortal
                     ? Inertia::defer(fn (): int => $onboardingService->getUnresolvedHelpTicketsCount($user), 'admin-shell', true)
-                    : $onboardingService->getUnresolvedHelpTicketsCount($user),
+                    : fn (): int => $onboardingService->getUnresolvedHelpTicketsCount($user),
                 'newsletter' => fn (): array => $this->getNewsletterData($user),
                 'adminSidebarCounts' => $isAdministratorPortal
                     ? Inertia::defer(fn (): ?array => $administratorSidebarCounts->resolve($request), 'admin-shell', true)
                     : fn (): ?array => $administratorSidebarCounts->resolve($request),
-                'moduleAdminRoutes' => $user instanceof User ? $moduleAdminNavigationService->getRoutes() : [],
+                'moduleAdminRoutes' => fn (): array => $user instanceof User ? $moduleAdminNavigationService->getRoutes() : [],
                 // Desk entries for the sidebar and command palette. Resolved by the registry
                 // so the front end never has to restate which roles may open which desk.
                 // Deferred with the rest of the admin shell: the sidebar renders before it

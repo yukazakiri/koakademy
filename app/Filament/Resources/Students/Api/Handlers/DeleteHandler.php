@@ -42,10 +42,10 @@ final class DeleteHandler extends Handlers
             return self::sendNotFoundResponse();
         }
 
-        // Check ownership: students can only delete their own record
+        // Students are never permitted to delete student records; enforce policy check
         $user = $request->user();
-        if ($user && $user->role?->isStudent() && $model->user_id !== $user->id) {
-            return response()->json(['message' => 'You can only delete your own student record.'], 403);
+        if (! $user || $user->isStudentRole() || ! $user->can('delete', $model)) {
+            return response()->json(['message' => 'You are not authorized to delete this student record.'], 403);
         }
 
         $model->delete();

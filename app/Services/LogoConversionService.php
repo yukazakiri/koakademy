@@ -7,7 +7,9 @@ namespace App\Services;
 use GdImage;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 final class LogoConversionService
@@ -39,77 +41,78 @@ final class LogoConversionService
     {
         $disk ??= config('filesystems.default');
 
-        $tmpDir = storage_path('framework/logo-tmp');
+        $tmpDir = storage_path('framework/logo-tmp/'.Str::uuid()->toString());
+        File::makeDirectory($tmpDir, 0755, true);
 
-        if (! File::isDirectory($tmpDir)) {
-            File::makeDirectory($tmpDir, 0755, true);
+        try {
+            $ts = (string) time();
+            $prefix = "branding/{$ts}";
+            $sourcePath = $file->getRealPath();
+
+            // ── SVG: validate, rasterize to PNG for GD processing, and retain original only on private disk ──
+            if ($this->isSvg($file)) {
+                $svgContents = (string) file_get_contents($sourcePath);
+                $this->assertSafeSvg($svgContents);
+
+                $rasterPath = $tmpDir.'/source-rasterized.png';
+                $this->rasterizeSvg($sourcePath, $rasterPath, 512, 512);
+                Storage::disk('private')->put("{$prefix}/logo.svg", $svgContents);
+                $sourcePath = $rasterPath;
+            }
+
+            $sourceImage = $this->loadImage($sourcePath);
+
+            if ($sourceImage === false) {
+                throw new RuntimeException('Unable to read uploaded image. Ensure it is a valid PNG, JPG, WEBP, GIF, or SVG.');
+            }
+
+            // ── 1. Main logo (512x512 max) ──
+            $this->resizeAndSavePng($sourceImage, 512, 512, $tmpDir.'/logo.png');
+            Storage::disk($disk)->put("{$prefix}/logo.png", file_get_contents($tmpDir.'/logo.png'));
+
+            // ── 2. Favicon sizes ──
+            $faviconSizes = [
+                'favicon-16x16.png' => 16,
+                'favicon-32x32.png' => 32,
+                'favicon-96x96.png' => 96,
+            ];
+
+            foreach ($faviconSizes as $name => $size) {
+                $this->resizeAndSavePng($sourceImage, $size, $size, $tmpDir.'/'.$name);
+                Storage::disk($disk)->put("{$prefix}/{$name}", file_get_contents($tmpDir.'/'.$name));
+            }
+
+            // favicon.ico — browsers accept PNG favicons served as ico
+            $faviconPath = "{$prefix}/favicon.ico";
+            Storage::disk($disk)->put($faviconPath, file_get_contents($tmpDir.'/favicon-32x32.png'));
+
+            // ── 3. Apple touch icon (180x180) ──
+            $this->resizeAndSavePng($sourceImage, 180, 180, $tmpDir.'/apple-touch-icon.png');
+            Storage::disk($disk)->put("{$prefix}/apple-touch-icon.png", file_get_contents($tmpDir.'/apple-touch-icon.png'));
+
+            // ── 4. PWA manifest icons ──
+            $manifestSizes = [
+                'web-app-manifest-192x192.png' => 192,
+                'web-app-manifest-512x512.png' => 512,
+            ];
+
+            foreach ($manifestSizes as $name => $size) {
+                $this->resizeAndSavePng($sourceImage, $size, $size, $tmpDir.'/'.$name);
+                Storage::disk($disk)->put("{$prefix}/{$name}", file_get_contents($tmpDir.'/'.$name));
+            }
+
+            // ── 5. OG image (1200x630, centered logo on dark bg) ──
+            $this->createOgImage($sourceImage, $tmpDir.'/og-image.png');
+            Storage::disk($disk)->put("{$prefix}/og-image.png", file_get_contents($tmpDir.'/og-image.png'));
+
+            return [
+                'logo' => "{$prefix}/logo.png",
+                'favicon' => $faviconPath,
+                'og_image' => "{$prefix}/og-image.png",
+            ];
+        } finally {
+            File::deleteDirectory($tmpDir);
         }
-
-        $ts = (string) time();
-        $prefix = "branding/{$ts}";
-        $sourcePath = $file->getRealPath();
-
-        // ── SVG: rasterize to PNG for GD processing and retain original only on private disk ──
-        if ($this->isSvg($file)) {
-            $rasterPath = $tmpDir.'/source-rasterized.png';
-            $this->rasterizeSvg($sourcePath, $rasterPath, 512, 512);
-            Storage::disk('private')->put("{$prefix}/logo.svg", (string) file_get_contents($file->getRealPath()));
-            $sourcePath = $rasterPath;
-        }
-
-        $sourceImage = $this->loadImage($sourcePath);
-
-        if ($sourceImage === false) {
-            throw new RuntimeException('Unable to read uploaded image. Ensure it is a valid PNG, JPG, WEBP, GIF, or SVG.');
-        }
-
-        // ── 1. Main logo (512x512 max) ──
-        $this->resizeAndSavePng($sourceImage, 512, 512, $tmpDir.'/logo.png');
-        Storage::disk($disk)->put("{$prefix}/logo.png", file_get_contents($tmpDir.'/logo.png'));
-
-        // ── 2. Favicon sizes ──
-        $faviconSizes = [
-            'favicon-16x16.png' => 16,
-            'favicon-32x32.png' => 32,
-            'favicon-96x96.png' => 96,
-        ];
-
-        foreach ($faviconSizes as $name => $size) {
-            $this->resizeAndSavePng($sourceImage, $size, $size, $tmpDir.'/'.$name);
-            Storage::disk($disk)->put("{$prefix}/{$name}", file_get_contents($tmpDir.'/'.$name));
-        }
-
-        // favicon.ico — browsers accept PNG favicons served as ico
-        $faviconPath = "{$prefix}/favicon.ico";
-        Storage::disk($disk)->put($faviconPath, file_get_contents($tmpDir.'/favicon-32x32.png'));
-
-        // ── 3. Apple touch icon (180x180) ──
-        $this->resizeAndSavePng($sourceImage, 180, 180, $tmpDir.'/apple-touch-icon.png');
-        Storage::disk($disk)->put("{$prefix}/apple-touch-icon.png", file_get_contents($tmpDir.'/apple-touch-icon.png'));
-
-        // ── 4. PWA manifest icons ──
-        $manifestSizes = [
-            'web-app-manifest-192x192.png' => 192,
-            'web-app-manifest-512x512.png' => 512,
-        ];
-
-        foreach ($manifestSizes as $name => $size) {
-            $this->resizeAndSavePng($sourceImage, $size, $size, $tmpDir.'/'.$name);
-            Storage::disk($disk)->put("{$prefix}/{$name}", file_get_contents($tmpDir.'/'.$name));
-        }
-
-        // ── 5. OG image (1200x630, centered logo on dark bg) ──
-        $this->createOgImage($sourceImage, $tmpDir.'/og-image.png');
-        Storage::disk($disk)->put("{$prefix}/og-image.png", file_get_contents($tmpDir.'/og-image.png'));
-
-        // ── 6. Cleanup ──
-        File::cleanDirectory($tmpDir);
-
-        return [
-            'logo' => "{$prefix}/logo.png",
-            'favicon' => $faviconPath,
-            'og_image' => "{$prefix}/og-image.png",
-        ];
     }
 
     /**
@@ -117,12 +120,34 @@ final class LogoConversionService
      */
     private function isSvg(UploadedFile $file): bool
     {
-        $mimeType = $file->getMimeType() ?? '';
+        $mimeType = mb_strtolower((string) ($file->getMimeType() ?? ''));
         $extension = mb_strtolower($file->getClientOriginalExtension());
 
         return $mimeType === 'image/svg+xml'
-            || $mimeType === 'text/html'  // some servers report SVG as text/html
+            || $mimeType === 'image/svg'
             || $extension === 'svg';
+    }
+
+    /**
+     * Reject SVGs containing XML entities, scripts, event handlers, or external references.
+     */
+    private function assertSafeSvg(string $svgContents): void
+    {
+        $forbiddenPatterns = [
+            '/<!\s*(DOCTYPE|ENTITY)\b/i',
+            '/<\s*(script|foreignObject)\b/i',
+            '/<\s*[a-z0-9_-]+:include\b/i',
+            '/\bon[a-z]+\s*=/i',
+            '/javascript\s*:/i',
+            '/(?:xlink:)?href\s*=\s*["\']\s*(?!#)(?:[a-z][a-z0-9+.-]*:|\/\/|\.\.)/i',
+            '/url\(\s*["\']?\s*(?!#)(?:[a-z][a-z0-9+.-]*:|\/\/|\.\.)/i',
+        ];
+
+        foreach ($forbiddenPatterns as $pattern) {
+            if (preg_match($pattern, $svgContents) === 1) {
+                throw new RuntimeException('Uploaded SVG contains disallowed markup or external references.');
+            }
+        }
     }
 
     /**
@@ -152,7 +177,12 @@ final class LogoConversionService
         exec($cmd, $output, $exitCode);
 
         if ($exitCode !== 0 || ! file_exists($destPath)) {
-            throw new RuntimeException('SVG rasterization failed: '.implode(' ', $output));
+            Log::warning('SVG rasterization failed.', [
+                'exit_code' => $exitCode,
+                'output' => implode(' ', $output),
+            ]);
+
+            throw new RuntimeException('SVG rasterization failed.');
         }
     }
 

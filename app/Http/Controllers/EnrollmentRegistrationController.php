@@ -959,8 +959,14 @@ final class EnrollmentRegistrationController extends Controller
                 ]);
             }
         } catch (Exception $exception) {
+            Log::error('Failed to save continuing student re-enrollment.', [
+                'exception' => $exception,
+            ]);
+
             return back()->with('flash', [
-                'error' => 'We could not save your re-enrollment: '.$exception->getMessage(),
+                'error' => config('app.debug')
+                    ? 'We could not save your re-enrollment: '.$exception->getMessage()
+                    : 'We could not save your re-enrollment. Please try again or contact the registrar.',
             ]);
         }
 

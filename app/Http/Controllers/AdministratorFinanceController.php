@@ -62,44 +62,31 @@ final class AdministratorFinanceController extends Controller
             })
             ->sum('amount');
 
-        // 2. Total Collectibles (Remaining Balance)
-        $totalCollectibles = StudentTuition::query()
+        // 2-6 & 13. Single conditional aggregate for all tuition & discount KPIs instead of 6 separate table scans
+        $tuitionSummary = StudentTuition::query()
             ->whereHas('enrollment', function ($q) use ($currentSchoolYear, $currentSemester): void {
                 $q->where('school_year', $currentSchoolYear)
                     ->where('semester', $currentSemester);
             })
-            ->sum('total_balance');
+            ->selectRaw('COALESCE(SUM(total_balance), 0) as total_collectibles')
+            ->selectRaw('COALESCE(SUM(overall_tuition), 0) as total_assessed')
+            ->selectRaw('SUM(CASE WHEN total_balance <= 0 THEN 1 ELSE 0 END) as fully_paid_count')
+            ->selectRaw('SUM(CASE WHEN total_balance > 0 THEN 1 ELSE 0 END) as outstanding_count')
+            ->selectRaw('COALESCE(SUM(CASE WHEN discount > 0 THEN (total_tuition * discount) / 100.0 ELSE 0 END), 0) as total_discounts')
+            ->selectRaw('SUM(CASE WHEN discount > 0 THEN 1 ELSE 0 END) as discounted_students')
+            ->first();
 
-        // 3. Total Tuition Assessed (Overall)
-        $totalAssessed = StudentTuition::query()
-            ->whereHas('enrollment', function ($q) use ($currentSchoolYear, $currentSemester): void {
-                $q->where('school_year', $currentSchoolYear)
-                    ->where('semester', $currentSemester);
-            })
-            ->sum('overall_tuition');
+        $totalCollectibles = (float) ($tuitionSummary?->total_collectibles ?? 0);
+        $totalAssessed = (float) ($tuitionSummary?->total_assessed ?? 0);
 
-        // 4. Collection Rate
         $collectionRate = $totalAssessed > 0
             ? round(($totalRevenue / $totalAssessed) * 100, 2)
             : 0;
 
-        // 5. Fully Paid Students Count
-        $fullyPaidCount = StudentTuition::query()
-            ->whereHas('enrollment', function ($q) use ($currentSchoolYear, $currentSemester): void {
-                $q->where('school_year', $currentSchoolYear)
-                    ->where('semester', $currentSemester);
-            })
-            ->where('total_balance', '<=', 0)
-            ->count();
-
-        // 6. Students with Outstanding Balance
-        $outstandingCount = StudentTuition::query()
-            ->whereHas('enrollment', function ($q) use ($currentSchoolYear, $currentSemester): void {
-                $q->where('school_year', $currentSchoolYear)
-                    ->where('semester', $currentSemester);
-            })
-            ->where('total_balance', '>', 0)
-            ->count();
+        $fullyPaidCount = (int) ($tuitionSummary?->fully_paid_count ?? 0);
+        $outstandingCount = (int) ($tuitionSummary?->outstanding_count ?? 0);
+        $totalDiscounts = (float) ($tuitionSummary?->total_discounts ?? 0);
+        $discountedStudents = (int) ($tuitionSummary?->discounted_students ?? 0);
 
         // 7. Total Enrolled Students
         $totalEnrolled = StudentEnrollment::query()
@@ -107,44 +94,125 @@ final class AdministratorFinanceController extends Controller
             ->where('semester', $currentSemester)
             ->count();
 
-        // 8. Today's Collection
-        $todayStart = Carbon::now()->startOfDay();
-        $todayEnd = Carbon::now()->endOfDay();
-        $todayCollection = Transaction::query()
-            ->whereBetween('transaction_date', [$todayStart, $todayEnd])
-            ->get()
-            ->sum(fn ($tx) => $tx->raw_total_amount);
+        // 8, 10, 15. Single sargable 12-month range stream (covers today, 7-day trend, and 12-month chart)
+        $now = Carbon::now();
+        $todayStart = $now->copy()->startOfDay();
+        $startDate = $now->copy()->subMonths(11)->startOfMonth();
+        $endDate = $now->copy()->endOfMonth();
 
-        $todayTransactions = Transaction::query()
-            ->whereBetween('transaction_date', [$todayStart, $todayEnd])
-            ->count();
+        $decodeSettlements = static function (mixed $raw): array {
+            $decoded = is_string($raw) ? json_decode($raw, true) : $raw;
 
-        // 9. Payment Methods Breakdown
-        $paymentMethods = Transaction::query()
-            ->forAcademicPeriod($currentSchoolYear, $currentSemester)
-            ->get()
-            ->groupBy('payment_method')
-            ->map(fn ($group): array => [
-                'method' => $group->first()->payment_method,
-                'count' => $group->count(),
-                'total' => $group->sum(fn ($tx) => $tx->raw_total_amount),
-            ])
-            ->values();
+            return is_array($decoded) ? $decoded : [];
+        };
 
-        // 10. Daily Collection (Last 7 Days)
-        $dailyCollection = collect(range(0, 6))->map(function ($daysAgo) use ($todayStart): array {
+        $sumSettlements = static function (array $settlements): float {
+            return array_reduce(
+                array_values($settlements),
+                static fn (float $carry, mixed $value): float => $carry + (float) $value,
+                0.0,
+            );
+        };
+
+        $dailyBuckets = [];
+        foreach (range(6, 0) as $daysAgo) {
             $date = $todayStart->copy()->subDays($daysAgo);
-            $transactions = Transaction::query()
-                ->whereDate('transaction_date', $date)
-                ->get();
-
-            return [
+            $dailyBuckets[$date->toDateString()] = [
                 'date' => $date->format('M d'),
                 'day' => $date->format('l'),
-                'count' => $transactions->count(),
-                'total' => $transactions->sum(fn ($tx) => $tx->raw_total_amount),
+                'count' => 0,
+                'total' => 0.0,
             ];
-        })->reverse()->values();
+        }
+
+        $monthlyTotals = [];
+        foreach (range(0, 11) as $monthsAgo) {
+            $date = $now->copy()->subMonths(11 - $monthsAgo)->startOfMonth();
+            $monthlyTotals[$date->format('Y-m')] = 0.0;
+        }
+
+        $todayKey = $todayStart->toDateString();
+
+        foreach (Transaction::query()
+            ->whereBetween('transaction_date', [$startDate, $endDate])
+            ->select(['transaction_date', 'settlements'])
+            ->toBase()
+            ->cursor() as $row) {
+            $txDate = Carbon::parse($row->transaction_date);
+            $amount = $sumSettlements($decodeSettlements($row->settlements));
+
+            $monthKey = $txDate->format('Y-m');
+            if (isset($monthlyTotals[$monthKey])) {
+                $monthlyTotals[$monthKey] += $amount;
+            }
+
+            $dayKey = $txDate->toDateString();
+            if (isset($dailyBuckets[$dayKey])) {
+                $dailyBuckets[$dayKey]['count']++;
+                $dailyBuckets[$dayKey]['total'] += $amount;
+            }
+        }
+
+        $todayCollection = $dailyBuckets[$todayKey]['total'] ?? 0.0;
+        $todayTransactions = $dailyBuckets[$todayKey]['count'] ?? 0;
+        $dailyCollection = collect(array_values($dailyBuckets));
+        $monthlyRevenue = collect(range(0, 11))->map(function (int $monthsAgo) use ($now, $monthlyTotals): array {
+            $date = $now->copy()->subMonths(11 - $monthsAgo)->startOfMonth();
+            $key = $date->format('Y-m');
+
+            return [
+                'month' => $date->format('M Y'),
+                'total' => $monthlyTotals[$key] ?? 0,
+            ];
+        });
+
+        // 9 & 14. Single streamed scan for payment method and fee type breakdowns
+        $methodTotals = [];
+        $feeTotals = [];
+        foreach (Transaction::query()
+            ->forAcademicPeriod($currentSchoolYear, $currentSemester)
+            ->select(['payment_method', 'settlements'])
+            ->toBase()
+            ->cursor() as $row) {
+            $settlements = $decodeSettlements($row->settlements);
+            $amount = $sumSettlements($settlements);
+
+            $method = $row->payment_method;
+            $bucketKey = (string) ($method ?? '');
+            if (! isset($methodTotals[$bucketKey])) {
+                $methodTotals[$bucketKey] = [
+                    'method' => $method,
+                    'count' => 0,
+                    'total' => 0.0,
+                ];
+            }
+            $methodTotals[$bucketKey]['count']++;
+            $methodTotals[$bucketKey]['total'] += $amount;
+
+            foreach ($settlements as $feeKey => $feeValue) {
+                $feeTotals[(string) $feeKey] = ($feeTotals[(string) $feeKey] ?? 0.0) + (float) $feeValue;
+            }
+        }
+
+        $paymentMethods = collect(array_values($methodTotals));
+        $feeBreakdown = collect($feeTotals)
+            ->map(static fn (float $total, string $key): array => [
+                'key' => $key,
+                'label' => match ($key) {
+                    'tuition_fee' => 'Tuition Fee',
+                    'registration_fee' => 'Registration Fee',
+                    'miscelanous_fee' => 'Miscellaneous Fee',
+                    'diploma_or_certificate' => 'Diploma/Certificate',
+                    'transcript_of_records' => 'Transcript of Records',
+                    'certification' => 'Certification',
+                    'special_exam' => 'Special Exam',
+                    'others' => 'Others',
+                    default => ucfirst($key),
+                },
+                'total' => $total,
+            ])
+            ->filter(static fn (array $item): bool => $item['total'] > 0)
+            ->values();
 
         // 11. Recent Transactions (Last 10)
         $recentTransactions = Transaction::query()
@@ -228,81 +296,6 @@ final class AdministratorFinanceController extends Controller
                 ],
             ],
         ];
-
-        // 13. Scholarship/Discount Summary
-        $totalDiscounts = StudentTuition::query()
-            ->whereHas('enrollment', function ($q) use ($currentSchoolYear, $currentSemester): void {
-                $q->where('school_year', $currentSchoolYear)
-                    ->where('semester', $currentSemester);
-            })
-            ->where('discount', '>', 0)
-            ->get()
-            ->sum(fn ($t): int|float => ($t->total_tuition * $t->discount) / 100);
-
-        $discountedStudents = StudentTuition::query()
-            ->whereHas('enrollment', function ($q) use ($currentSchoolYear, $currentSemester): void {
-                $q->where('school_year', $currentSchoolYear)
-                    ->where('semester', $currentSemester);
-            })
-            ->where('discount', '>', 0)
-            ->count();
-
-        // 14. Fee Type Breakdown
-        $feeBreakdown = Transaction::query()
-            ->forAcademicPeriod($currentSchoolYear, $currentSemester)
-            ->get()
-            ->flatMap(fn ($tx) => $tx->settlements ?? [])
-            ->groupBy(fn ($value, $key): int|string => $key)
-            ->map(fn ($amounts): float => array_sum($amounts->toArray()))
-            ->map(fn ($total, $key): array => [
-                'key' => $key,
-                'label' => match ($key) {
-                    'tuition_fee' => 'Tuition Fee',
-                    'registration_fee' => 'Registration Fee',
-                    'miscelanous_fee' => 'Miscellaneous Fee',
-                    'diploma_or_certificate' => 'Diploma/Certificate',
-                    'transcript_of_records' => 'Transcript of Records',
-                    'certification' => 'Certification',
-                    'special_exam' => 'Special Exam',
-                    'others' => 'Others',
-                    default => ucfirst((string) $key),
-                },
-                'total' => $total,
-            ])
-            ->filter(fn ($item): bool => $item['total'] > 0)
-            ->values();
-
-        // 15. Monthly Revenue Chart Data (Past 12 months)
-        $now = Carbon::now();
-        $startDate = $now->copy()->subMonths(11)->startOfMonth();
-        $endDate = $now->copy()->endOfMonth();
-
-        $transactionsByMonth = Transaction::query()
-            ->select(['transaction_date', 'settlements'])
-            ->whereBetween('transaction_date', [$startDate, $endDate])
-            ->get()
-            ->groupBy(fn (Transaction $transaction): string => $transaction->transaction_date->format('Y-m'))
-            ->map(fn ($transactions) => $transactions->sum(function ($tx): int|float {
-                $settlements = $tx->settlements;
-                if (is_string($settlements)) {
-                    $settlements = json_decode($settlements, true);
-                }
-                if (! is_array($settlements)) {
-                    return 0;
-                }
-
-                return array_reduce(array_values($settlements), fn ($carry, $value): float => $carry + (float) $value, 0.0);
-            }));
-
-        $monthlyRevenue = collect(range(0, 11))->map(function ($monthsAgo) use ($now, $transactionsByMonth): array {
-            $date = $now->copy()->subMonths(11 - $monthsAgo)->startOfMonth();
-            $key = $date->format('Y-m');
-
-            return [
-                'month' => $date->format('M Y'),
-                'total' => $transactionsByMonth->get($key, 0),
-            ];
-        });
 
         return Inertia::render('administrators/finance/dashboard', [
             'user' => [

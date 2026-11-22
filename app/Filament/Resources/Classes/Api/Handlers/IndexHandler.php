@@ -20,7 +20,7 @@ final class IndexHandler extends Handlers
     #[Override]
     public static ?string $resource = ClassResource::class;
 
-    protected static string $permission = 'View:Class';
+    protected static string $permission = 'ViewAny:Classes';
 
     /**
      * List All Class Schedules

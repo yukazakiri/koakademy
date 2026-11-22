@@ -80,44 +80,56 @@ final class FacultyClassShareService
         $shsSubjects = collect();
 
         if ($subjectCodes->isNotEmpty() || $subjectIds->isNotEmpty()) {
-            $subjects = Subject::whereIn('code', $subjectCodes)
-                ->orWhereIn('id', $subjectIds)
-                ->get()
-                ->keyBy('code');
+            $subjects = Subject::query()
+                ->select(['id', 'code', 'title'])
+                ->where(function ($query) use ($subjectCodes, $subjectIds): void {
+                    if ($subjectCodes->isNotEmpty()) {
+                        $query->whereIn('code', $subjectCodes);
+                    }
+                    if ($subjectIds->isNotEmpty()) {
+                        $subjectCodes->isNotEmpty()
+                            ? $query->orWhereIn('id', $subjectIds)
+                            : $query->whereIn('id', $subjectIds);
+                    }
+                })
+                ->get();
         }
 
-        $shsClass = $classes->firstWhere('classification', 'shs');
-        if ($shsClass || $classes->where('classification', 'shs')->isNotEmpty()) {
+        if ($classes->where('classification', 'shs')->isNotEmpty()) {
             $shsSubjectCodes = $classes->where('classification', 'shs')->pluck('subject_code')->unique()->filter();
             if ($shsSubjectCodes->isNotEmpty()) {
-                $shsSubjects = StrandSubject::whereIn('code', $shsSubjectCodes)
+                $shsSubjects = StrandSubject::query()
+                    ->select(['id', 'code', 'title'])
+                    ->whereIn('code', $shsSubjectCodes)
                     ->get()
                     ->keyBy('code');
             }
         }
 
         return [
-            'subjects' => $subjects,
+            'subjectsById' => $subjects->keyBy('id'),
+            'subjectsByCode' => $subjects->keyBy('code'),
             'shsSubjects' => $shsSubjects,
         ];
     }
 
     private function findSubject($class, array $subjectData): mixed
     {
-        $subjects = $subjectData['subjects'];
+        $subjectsById = $subjectData['subjectsById'];
+        $subjectsByCode = $subjectData['subjectsByCode'];
         $shsSubjects = $subjectData['shsSubjects'];
 
         $subject = null;
 
-        if ($class->subject_id && $subjects->has($class->subject_id)) {
-            $subject = $subjects->firstWhere('id', $class->subject_id);
+        if ($class->subject_id) {
+            $subject = $subjectsById->get($class->subject_id);
         }
 
         if (! $subject && $class->subject_code) {
             if ($class->classification === 'shs') {
                 $subject = $shsSubjects->get($class->subject_code);
             } else {
-                $subject = $subjects->get($class->subject_code);
+                $subject = $subjectsByCode->get($class->subject_code);
             }
         }
 

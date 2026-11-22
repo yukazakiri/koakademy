@@ -81,6 +81,7 @@ final class PortalPanelProvider extends PanelProvider
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
                 SetTenantContext::class,
+                \App\Http\Middleware\SecurityHeaders::class,
             ])
             ->authMiddleware([
                 Authenticate::class,

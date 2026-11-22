@@ -379,7 +379,7 @@ Route::middleware(['auth', 'faculty.verified', 'faculty.only', 'ensure.feature']
         Route::get('/classes/{class}/shs-strands', [FacultyClassController::class, 'getShsStrands'])->name('classes.shs-strands');
         Route::delete('/classes/{class}/students/{student}', [FacultyClassController::class, 'removeStudent'])->name('classes.students.destroy');
         Route::post('/classes/{class}/students/{student}/move', [FacultyClassController::class, 'requestMove'])->name('classes.students.move.request');
-        Route::get('/classes/{class}/students/{student}/move/{target_class}/accept', [FacultyClassController::class, 'acceptMove'])->name('classes.students.move.accept');
+        Route::post('/classes/{class}/students/{student}/move/{target_class}/accept', [FacultyClassController::class, 'acceptMove'])->name('classes.students.move.accept');
         Route::get('/classes/{class}/related-sections', [FacultyClassController::class, 'getRelatedSections'])->name('classes.sections.related');
 
         // Attendance

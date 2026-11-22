@@ -250,6 +250,8 @@ final class ClassesController extends Controller
         $class = \App\Models\Classes::with(['schedules.room', 'faculty', 'room', 'ShsStrand', 'ShsSubject', 'subject', 'SubjectByCodeFallback'])
             ->findOrFail($id);
 
+        $this->authorizeFacultyOwnsClass($class);
+
         // Determine subject title logic
         $firstSubject = $class->subjects->first();
         if (! $firstSubject) {
@@ -285,11 +287,11 @@ final class ClassesController extends Controller
     public function update(Request $request, string $id)
     {
         $class = \App\Models\Classes::findOrFail($id);
+        $this->authorizeFacultyOwnsClass($class);
 
         // Basic validation
         $validated = $request->validate([
             'room_id' => 'required|exists:rooms,id',
-            'faculty_id' => 'nullable|exists:faculty,id',
             'maximum_slots' => 'required|integer|min:1',
             'section' => 'required|string|max:10',
             'semester' => 'required|string',
@@ -304,10 +306,10 @@ final class ClassesController extends Controller
             'schedules.*.room_id' => 'required|exists:rooms,id',
         ]);
 
-        // Update basic class info
+        // Update basic class info (faculty_id is intentionally excluded so a
+        // faculty member cannot reassign another instructor's class).
         $updateData = [
             'room_id' => $validated['room_id'],
-            'faculty_id' => $validated['faculty_id'],
             'maximum_slots' => $validated['maximum_slots'],
             'section' => $validated['section'],
             'semester' => $validated['semester'],
@@ -315,9 +317,9 @@ final class ClassesController extends Controller
         ];
 
         // Add SHS-specific fields if it's an SHS class
-        if ($validated['classification'] === 'shs') {
-            $updateData['shs_strand_id'] = $validated['strand_id'] ? (int) $validated['strand_id'] : null;
-            $updateData['subject_code'] = $validated['subject_code'];
+        if (($validated['classification'] ?? null) === 'shs') {
+            $updateData['shs_strand_id'] = ! empty($validated['strand_id']) ? (int) $validated['strand_id'] : null;
+            $updateData['subject_code'] = $validated['subject_code'] ?? $class->subject_code;
         }
 
         $class->update($updateData);
@@ -346,17 +348,7 @@ final class ClassesController extends Controller
     public function activityLog(string $id)
     {
         $class = \App\Models\Classes::findOrFail($id);
-
-        // Verify the current user has access to this class
-        $user = Auth::user();
-        if (! $user || ! $user->isFaculty()) {
-            abort(403);
-        }
-
-        $faculty = \App\Models\Faculty::where('email', $user->email)->first();
-        if (! $faculty || $class->faculty_id !== $faculty->id) {
-            abort(403, 'You do not have access to this class');
-        }
+        $this->authorizeFacultyOwnsClass($class);
 
         // Query activities for this class and related entities
         $activities = \Spatie\Activitylog\Models\Activity::query()
@@ -525,5 +517,23 @@ final class ClassesController extends Controller
         }
 
         return '';
+    }
+
+    /**
+     * Ensure the authenticated user is the faculty owner of the given class.
+     */
+    private function authorizeFacultyOwnsClass(\App\Models\Classes $class): \App\Models\Faculty
+    {
+        $user = Auth::user();
+        if (! $user || ! $user->isFaculty()) {
+            abort(403);
+        }
+
+        $faculty = \App\Models\Faculty::where('email', $user->email)->first();
+        if (! $faculty || (string) $class->faculty_id !== (string) $faculty->id) {
+            abort(403, 'You do not have access to this class.');
+        }
+
+        return $faculty;
     }
 }

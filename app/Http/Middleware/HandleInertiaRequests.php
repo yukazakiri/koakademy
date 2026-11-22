@@ -69,27 +69,22 @@ final class HandleInertiaRequests extends Middleware
         $generalSettingsService = app(GeneralSettingsService::class);
         $isAdministratorPortal = $request->is('administrators') || $request->is('administrators/*');
 
-        $featureValues = $onboardingService->getAllFeatureValues($user);
-        $studentInformationUpdatesEnabled = $user && Feature::for($user)->active(StudentInformationUpdates::class);
-        $libraryEnabled = (bool) $generalSettingsService->getGlobalSetting('library_module_enabled', false);
-        $aiAgentFlags = app(AiAgentAccess::class)->flagsFor($user);
-
         return array_merge(
             parent::share($request),
             [
-                'auth' => $settingsService->getAuthData($user),
-                'socialMediaSettings' => $settingsService->getSocialMediaSettings(),
-                'siteSettings' => $settingsService->getSiteSettings($request),
-                'branding' => $settingsService->getBranding(),
+                'auth' => fn (): array => $settingsService->getAuthData($user),
+                'socialMediaSettings' => fn () => $settingsService->getSocialMediaSettings(),
+                'siteSettings' => fn (): array => $settingsService->getSiteSettings($request),
+                'branding' => fn (): array => $settingsService->getBranding(),
                 'seo' => $settingsService->getSeoSettings(...),
-                'grading' => $settingsService->getGrading(),
-                'analytics' => $analyticsService->getFrontendConfig(),
-                'meta' => [
+                'grading' => fn (): array => $settingsService->getGrading(),
+                'analytics' => fn (): array => $analyticsService->getFrontendConfig(),
+                'meta' => fn (): array => [
                     'appName' => $settingsService->getAppName($request),
                     'isPortalDomain' => $settingsService->isPortalDomain($request),
                 ],
-                'demoMode' => $this->getDemoModeData(),
-                'status' => session('status'),
+                'demoMode' => fn (): array => $this->getDemoModeData(),
+                'status' => fn () => session('status'),
                 'featureNotice' => fn (): ?array => $request->attributes->get('feature_notice'),
                 'settings' => fn (): array => $settingsService->getSettings($user),
                 'socialAuthProviders' => $socialiteProviderService->enabledProviders(...),
@@ -109,42 +104,49 @@ final class HandleInertiaRequests extends Middleware
                         'features' => $onboardingService->getOnboardingFeatures($user),
                         'dismissEndpoint' => route('onboarding.dismiss'),
                     ], 'admin-shell', true)
-                    : [
+                    : fn (): array => [
                         'forceOnLogin' => (bool) config('onboarding.force_on_login'),
                         'features' => $onboardingService->getOnboardingFeatures($user),
                         'dismissEndpoint' => route('onboarding.dismiss'),
                     ],
-                'featureFlags' => [
-                    'experimentalKeys' => config('onboarding.experimental_feature_keys', []),
-                    'enabledRoutes' => array_merge(
-                        $onboardingService->getSidebarFeatureFlags($featureValues),
-                        ['library' => $libraryEnabled]
-                    ),
-                    'library' => $libraryEnabled,
-                    'ai' => [
-                        'any' => in_array(true, $aiAgentFlags, true),
-                        'agents' => $aiAgentFlags,
-                    ],
-                    'studentSignaturePad' => $user && Feature::for($user)->active(StudentSignaturePad::class),
-                    'studentAvatarUpload' => $user && Feature::for($user)->active(StudentAvatarUpload::class),
-                    'studentInformationUpdates' => $studentInformationUpdatesEnabled,
-                ],
-                'facultyClasses' => $facultyClassService->getFacultyClasses($user),
-                'studentClasses' => $studentClassService->getStudentClasses($user),
+                'featureFlags' => function () use ($user, $onboardingService, $generalSettingsService): array {
+                    $featureValues = $onboardingService->getAllFeatureValues($user);
+                    $studentInformationUpdatesEnabled = $user && Feature::for($user)->active(StudentInformationUpdates::class);
+                    $libraryEnabled = (bool) $generalSettingsService->getGlobalSetting('library_module_enabled', false);
+                    $aiAgentFlags = app(AiAgentAccess::class)->flagsFor($user);
+
+                    return [
+                        'experimentalKeys' => config('onboarding.experimental_feature_keys', []),
+                        'enabledRoutes' => array_merge(
+                            $onboardingService->getSidebarFeatureFlags($featureValues),
+                            ['library' => $libraryEnabled]
+                        ),
+                        'library' => $libraryEnabled,
+                        'ai' => [
+                            'any' => in_array(true, $aiAgentFlags, true),
+                            'agents' => $aiAgentFlags,
+                        ],
+                        'studentSignaturePad' => $user && Feature::for($user)->active(StudentSignaturePad::class),
+                        'studentAvatarUpload' => $user && Feature::for($user)->active(StudentAvatarUpload::class),
+                        'studentInformationUpdates' => $studentInformationUpdatesEnabled,
+                    ];
+                },
+                'facultyClasses' => fn (): array => $facultyClassService->getFacultyClasses($user),
+                'studentClasses' => fn (): array => $studentClassService->getStudentClasses($user),
                 'notifications' => $isAdministratorPortal
                     ? Inertia::defer(fn (): array => $notificationService->transformNotifications($user), 'admin-shell', true)
-                    : $notificationService->transformNotifications($user),
+                    : fn (): array => $notificationService->transformNotifications($user),
                 'unreadNotificationsCount' => $isAdministratorPortal
                     ? Inertia::defer(fn (): int => $notificationService->getUnreadCount($user), 'admin-shell', true)
-                    : $notificationService->getUnreadCount($user),
+                    : fn (): int => $notificationService->getUnreadCount($user),
                 'unresolvedHelpTicketsCount' => $isAdministratorPortal
                     ? Inertia::defer(fn (): int => $onboardingService->getUnresolvedHelpTicketsCount($user), 'admin-shell', true)
-                    : $onboardingService->getUnresolvedHelpTicketsCount($user),
+                    : fn (): int => $onboardingService->getUnresolvedHelpTicketsCount($user),
                 'newsletter' => fn (): array => $this->getNewsletterData($user),
                 'adminSidebarCounts' => $isAdministratorPortal
                     ? Inertia::defer(fn (): ?array => $administratorSidebarCounts->resolve($request), 'admin-shell', true)
                     : fn (): ?array => $administratorSidebarCounts->resolve($request),
-                'moduleAdminRoutes' => $user instanceof User ? $moduleAdminNavigationService->getRoutes() : [],
+                'moduleAdminRoutes' => fn (): array => $user instanceof User ? $moduleAdminNavigationService->getRoutes() : [],
                 // Desk entries for the sidebar and command palette. Resolved by the registry
                 // so the front end never has to restate which roles may open which desk.
                 // Deferred with the rest of the admin shell: the sidebar renders before it

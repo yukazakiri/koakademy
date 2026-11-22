@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Models\ClassEnrollment;
+use App\Models\StrandSubject;
 use App\Models\Student;
+use App\Models\Subject;
 use App\Models\User;
+use Illuminate\Support\Collection;
 
 final class StudentClassShareService
 {
@@ -21,34 +24,39 @@ final class StudentClassShareService
             return [];
         }
 
-        $student = Student::where('email', $user->email)
-            ->orWhere('user_id', $user->id)
-            ->first();
+        $student = Student::query()->where('user_id', $user->id)->first()
+            ?? Student::query()->where('email', $user->email)->first();
 
         if (! $student) {
             return [];
         }
 
-        $enrollments = ClassEnrollment::where('student_id', $student->id)
+        $enrollments = ClassEnrollment::query()
+            ->where('student_id', $student->id)
             ->currentAcademicPeriod()
-            ->with(['class' => fn ($query) => $query->withCount('class_enrollments')])
+            ->with([
+                'class' => static fn ($query) => $query
+                    ->select(['id', 'subject_code', 'section', 'classification', 'subject_id', 'shs_strand_id', 'settings'])
+                    ->withCount('class_enrollments'),
+            ])
             ->get();
 
         if ($enrollments->isEmpty()) {
             return [];
         }
 
-        return $enrollments->map(function (ClassEnrollment $enrollment): ?array {
-            $class = $enrollment->class;
+        $classes = $enrollments->pluck('class')->filter()->values();
+        if ($classes->isEmpty()) {
+            return [];
+        }
 
-            if (! $class) {
-                return null;
-            }
+        [$subjectsById, $subjectsByCode, $shsSubjectsByCode] = $this->loadSubjectsForClasses($classes);
 
-            $subject = $class->subject
-                ?? $class->subjectByCode
-                ?? $class->subjectByCodeFallback
-                ?? $class->shsSubject;
+        return $classes->map(function ($class) use ($subjectsById, $subjectsByCode, $shsSubjectsByCode): array {
+            $subject = ($class->subject_id ? $subjectsById->get($class->subject_id) : null)
+                ?? ($class->classification === 'shs' && $class->subject_code ? $shsSubjectsByCode->get($class->subject_code) : null)
+                ?? ($class->subject_code ? $subjectsByCode->get($class->subject_code) : null)
+                ?? ($class->subject_code ? $shsSubjectsByCode->get($class->subject_code) : null);
 
             $settings = $class->settings ?? [];
             $accentColor = $settings['accent_color'] ?? '#3b82f6';
@@ -62,6 +70,44 @@ final class StudentClassShareService
                 'students_count' => $class->class_enrollments_count ?? 0,
                 'accent_color' => $accentColor,
             ];
-        })->filter()->values()->all();
+        })->values()->all();
+    }
+
+    /**
+     * @param  Collection<int, mixed>  $classes
+     * @return array{0: Collection<int, Subject>, 1: Collection<string, Subject>, 2: Collection<string, StrandSubject>}
+     */
+    private function loadSubjectsForClasses(Collection $classes): array
+    {
+        $subjectIds = $classes->pluck('subject_id')->filter()->unique()->values();
+        $subjectCodes = $classes->pluck('subject_code')->filter()->unique()->values();
+
+        $subjects = collect();
+        if ($subjectIds->isNotEmpty() || $subjectCodes->isNotEmpty()) {
+            $subjects = Subject::query()
+                ->select(['id', 'code', 'title'])
+                ->where(function ($query) use ($subjectIds, $subjectCodes): void {
+                    if ($subjectIds->isNotEmpty()) {
+                        $query->whereIn('id', $subjectIds);
+                    }
+                    if ($subjectCodes->isNotEmpty()) {
+                        $subjectIds->isNotEmpty()
+                            ? $query->orWhereIn('code', $subjectCodes)
+                            : $query->whereIn('code', $subjectCodes);
+                    }
+                })
+                ->get();
+        }
+
+        $shsCodes = $classes->where('classification', 'shs')->pluck('subject_code')->filter()->unique()->values();
+        $shsSubjects = $shsCodes->isNotEmpty()
+            ? StrandSubject::query()->select(['id', 'code', 'title'])->whereIn('code', $shsCodes)->get()->keyBy('code')
+            : collect();
+
+        return [
+            $subjects->keyBy('id'),
+            $subjects->keyBy('code'),
+            $shsSubjects,
+        ];
     }
 }

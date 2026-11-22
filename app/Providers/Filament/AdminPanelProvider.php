@@ -184,7 +184,10 @@ final class AdminPanelProvider extends PanelProvider
         );
 
         $adminHost = (string) config('app.admin_host');
-        $domain = in_array(mb_strtolower($adminHost), ['localhost', '127.0.0.1', ''], true) ? null : $adminHost;
+        $portalHost = (string) config('app.portal_host');
+        $isLocalOrSingleDomain = in_array(mb_strtolower($adminHost), ['localhost', '127.0.0.1', ''], true)
+            || (mb_strtolower($adminHost) === mb_strtolower($portalHost) && empty(config('app.portal_host_aliases', [])));
+        $domain = $isLocalOrSingleDomain ? null : $adminHost;
 
         return $panel
             ->default()

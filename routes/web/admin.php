@@ -91,9 +91,11 @@ $registerAdminRoutes = function () use ($adminHost): void {
     })->middleware(['auth', 'administrators.only'])->name('assessment.download');
 };
 
-$isLocalAdminHost = in_array($adminHost, ['localhost', '127.0.0.1', ''], true);
+$isLocalAdminHost = in_array(mb_strtolower((string) $adminHost), ['localhost', '127.0.0.1', ''], true);
+$isSingleDomainAdminHost = mb_strtolower((string) $adminHost) === mb_strtolower((string) config('app.portal_host'))
+    && empty(config('app.portal_host_aliases', []));
 
-if (! $isLocalAdminHost && filled($adminHost)) {
+if (! $isLocalAdminHost && ! $isSingleDomainAdminHost && filled($adminHost)) {
     Route::domain($adminHost)->group($registerAdminRoutes);
 } else {
     Route::group([], $registerAdminRoutes);

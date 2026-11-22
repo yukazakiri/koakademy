@@ -10,16 +10,16 @@ KoAkademy runs as a self-managed Linux service with flexible deployment targets.
 
 Choose the self-hosting method that best aligns with your infrastructure:
 
-| Platform / Method | Recommended Use Case | Reverse Proxy / SSL | Multi-Node / HA | Guide |
-| :--- | :--- | :--- | :--- | :--- |
-| **Linux VPS (1-Line Installer)** | Dedicated VPS / Bare Metal | Built-in Caddy (Auto HTTPS) | Single-node Swarm | [Quickstart](#one-line-production-installation) |
-| **Standalone VPS (Direct / No Docker)** | Native systemd / PHP 8.5 host | External Caddy / Nginx | Single host | [Bare VPS Runbook](#standalone-vps-deployment-without-docker) |
-| **Docker Compose** | Custom proxy / existing Docker host | Caddy / Nginx / Traefik | Single host | [Compose Guide](./docker-compose/) |
-| **Dokploy** | Self-hosted PaaS / Zero-Downtime UI | Traefik (Automated) | Project-based | [Dokploy Guide](./dokploy/) |
-| **Coolify** | Self-hosted PaaS / Multi-server UI | Traefik (Automated) | Multi-server | [Coolify Guide](./coolify/) |
-| **Docker Swarm** | Lightweight container clustering | Caddy / Swarm Ingress | Native Multi-node | [Swarm Guide](./docker-swarm/) |
-| **Kubernetes (K8s / K3s)** | Enterprise / Cloud orchestration | Ingress / cert-manager | Native Multi-node | [K8s Guide](./kubernetes/) |
-| **Red Hat OpenShift** | Enterprise OCP / OKD / ROSA | OpenShift Route (TLS) | Native Multi-node | [OpenShift Guide](./openshift/) |
+| Platform / Method | Support Tier | Recommended Use Case | Reverse Proxy / SSL | Multi-Node / HA | Guide |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Linux VPS (1-Line Installer)** | **Tier 1 (Official, CI-Tested)** | Dedicated VPS / Bare Metal | Built-in Caddy (Auto HTTPS) | Single-node Swarm | [Quickstart](#quickstart-one-line-installer) |
+| **Docker Compose** | **Tier 1 (Official, CI-Tested)** | Custom proxy / existing Docker host | Caddy / Nginx / Traefik | Single host | [Compose Guide](./docker-compose/) |
+| **Dokploy** | Tier 2 (Manifest-Validated Reference) | Self-hosted PaaS / Zero-Downtime UI | Traefik (Automated) | Project-based | [Dokploy Guide](./dokploy/) |
+| **Coolify** | Tier 2 (Manifest-Validated Reference) | Self-hosted PaaS / Multi-server UI | Traefik (Automated) | Multi-server | [Coolify Guide](./coolify/) |
+| **Docker Swarm (Manual)** | Tier 2 (Manifest-Validated Reference) | Lightweight container clustering | Caddy / Swarm Ingress | Native Multi-node | [Swarm Guide](./docker-swarm/) |
+| **Kubernetes (K8s / K3s)** | Tier 2 (Manifest-Validated Reference) | Enterprise / Cloud orchestration | Ingress / cert-manager | Native Multi-node | [K8s Guide](./kubernetes/) |
+| **Red Hat OpenShift** | Tier 2 (Manifest-Validated Reference) | Enterprise OCP / OKD / ROSA | OpenShift Route (TLS) | Native Multi-node | [OpenShift Guide](./openshift/) |
+| **Standalone VPS (No Docker)** | Tier 2 (Reference Runbook) | Native systemd / PHP 8.5 host | External Caddy / Nginx | Single host | [Bare VPS Runbook](#standalone-vps-deployment-without-docker) |
 
 KoAkademy is beta software. Use staging first, review release notes, and keep a tested recovery path for institutional data.
 

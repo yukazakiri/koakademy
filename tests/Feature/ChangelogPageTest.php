@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 
 beforeEach(function (): void {
+    $this->withoutVite();
     Cache::flush();
     Http::preventStrayRequests();
 
@@ -110,5 +111,25 @@ it('preserves build metadata for an administrator', function (): void {
             ->where('layout', 'admin')
             ->where('versionInfo.commit', $expectedVersionInfo['commit'])
             ->where('versionInfo.build_url', $expectedVersionInfo['build_url'])
+        );
+});
+
+it('blocks unauthenticated changelog access without calling GitHub when PUBLIC_CHANGELOG_ENABLED is false', function (): void {
+    config(['app.public_changelog_enabled' => false]);
+
+    Http::fake([
+        'api.github.com/repos/private-school/koakademy/releases*' => Http::response([changelogPageReleasePayload()]),
+    ]);
+
+    $this->get(route('changelog'))->assertForbidden();
+    Http::assertNothingSent();
+
+    $user = User::factory()->create(['role' => UserRole::Student]);
+
+    $this->actingAs($user)
+        ->get(route('changelog'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page): Assert => $page
+            ->where('changelog_status', 'live')
         );
 });

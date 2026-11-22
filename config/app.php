@@ -167,6 +167,8 @@ return [
 
     'documentation_url' => env('DOCUMENTATION_URL', 'https://koakademy.github.io/koakademy'),
 
+    'public_changelog_enabled' => (bool) env('PUBLIC_CHANGELOG_ENABLED', true),
+
     /*
     |--------------------------------------------------------------------------
     | Maintenance Mode Driver

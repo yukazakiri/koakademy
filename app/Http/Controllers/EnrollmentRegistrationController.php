@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Data\Enrollment\EnrollmentContext;
 use App\Data\Enrollment\EnrollmentSubmissionData;
+use App\Enrollment\EnrollmentFeeCalculator;
 use App\Enrollment\EnrollmentPolicyResolver;
 use App\Enrollment\EnrollmentWorkflowCoordinator;
 use App\Enums\StudentStatus;
@@ -706,12 +707,8 @@ final class EnrollmentRegistrationController extends Controller
             'academic_year' => ['required', 'integer', 'in:1,2,3,4'],
             'semester' => ['nullable', 'integer', 'in:1,2'],
             'subjects' => ['required', 'array', 'min:1'],
-            'subjects.*.subject_id' => ['required', 'integer', 'exists:subject,id'],
-            'subjects.*.is_modular' => ['boolean'],
-            'subjects.*.lecture_fee' => ['required', 'numeric', 'min:0'],
-            'subjects.*.laboratory_fee' => ['required', 'numeric', 'min:0'],
-            'subjects.*.enrolled_lecture_units' => ['required', 'integer', 'min:0'],
-            'subjects.*.enrolled_laboratory_units' => ['required', 'integer', 'min:0'],
+            'subjects.*.subject_id' => ['required', 'integer', 'distinct', 'exists:subject,id'],
+            'subjects.*.is_modular' => ['sometimes', 'boolean'],
             'consent' => ['accepted'],
             'marketing_consent' => ['sometimes', 'boolean'],
         ], [
@@ -739,6 +736,52 @@ final class EnrollmentRegistrationController extends Controller
                 'error' => 'Your student record has no course on file. Please contact the registrar.',
             ]);
         }
+
+        $requestedSubjectIds = collect($validated['subjects'])
+            ->pluck('subject_id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        $subjectModels = Subject::query()
+            ->with('course')
+            ->where('course_id', $student->course_id)
+            ->whereIn('id', $requestedSubjectIds)
+            ->get()
+            ->keyBy('id');
+
+        if ($subjectModels->count() !== count($requestedSubjectIds)) {
+            throw ValidationException::withMessages([
+                'subjects' => 'One or more selected subjects do not belong to your course.',
+            ]);
+        }
+
+        $feeCalculator = app(EnrollmentFeeCalculator::class);
+        $feeConfiguration = [
+            ...EnrollmentFeeCalculator::Defaults,
+            'course_lecture_rate_per_unit' => (float) ($student->Course?->lec_per_unit ?? 0),
+            'course_laboratory_rate_per_unit' => (float) ($student->Course?->lab_per_unit ?? 0),
+        ];
+
+        $computedSubjects = collect($validated['subjects'])
+            ->map(function (array $row) use ($subjectModels, $feeCalculator, $feeConfiguration): array {
+                /** @var Subject $subject */
+                $subject = $subjectModels->get((int) $row['subject_id']);
+                $isModular = (bool) ($row['is_modular'] ?? false);
+                $fees = $feeCalculator->subject($subject->toArray(), $feeConfiguration, $isModular);
+
+                return [
+                    'subject_id' => $subject->id,
+                    'is_modular' => $isModular,
+                    'lecture_fee' => $fees['lecture_fee'],
+                    'laboratory_fee' => $fees['laboratory_fee'],
+                    'enrolled_lecture_units' => (int) ($subject->lecture ?? 0),
+                    'enrolled_laboratory_units' => (int) ($subject->laboratory ?? 0),
+                ];
+            })
+            ->values()
+            ->all();
 
         // Always write under the GLOBAL current term on the public flow, never a
         // per-user override. The public form has no authenticated session, but we
@@ -804,7 +847,7 @@ final class EnrollmentRegistrationController extends Controller
         }
 
         try {
-            [$enrollment, $tuition] = DB::transaction(function () use ($validated, $student, $schoolYear, $semester, $enrollmentService, $workflowCoordinator): array {
+            [$enrollment, $tuition] = DB::transaction(function () use ($validated, $computedSubjects, $student, $schoolYear, $semester, $enrollmentService, $workflowCoordinator): array {
                 $schoolId = $this->resolveSiteSchoolId($student);
 
                 $marketingConsent = (bool) ($validated['marketing_consent'] ?? false);
@@ -823,15 +866,15 @@ final class EnrollmentRegistrationController extends Controller
                         'academic_year' => (int) $validated['academic_year'],
                         'school_year' => $schoolYear,
                     ],
-                    subjects: $validated['subjects'],
+                    subjects: $computedSubjects,
                     billingOverrides: ['discount_percentage' => 0, 'downpayment' => 0],
                     channel: 'continuing',
                     idempotencyKey: 'continuing-'.$student->id.'-'.$schoolYear.'-'.$semester,
                 );
                 $enrollment = $workflowCoordinator->submit(
                     $submission,
-                    function (StudentEnrollment $legacyEnrollment) use ($validated, $schoolId, $student, $schoolYear, $semester, $enrollmentService): void {
-                        foreach ($validated['subjects'] as $subjectData) {
+                    function (StudentEnrollment $legacyEnrollment) use ($validated, $computedSubjects, $schoolId, $student, $schoolYear, $semester, $enrollmentService): void {
+                        foreach ($computedSubjects as $subjectData) {
                             $legacyEnrollment->subjectsEnrolled()->create([
                                 ...$subjectData,
                                 'school_id' => $schoolId,
@@ -843,7 +886,7 @@ final class EnrollmentRegistrationController extends Controller
                             ]);
                         }
                         $enrollmentService->createStudentTuition($legacyEnrollment, [
-                            'subjectsEnrolled' => $validated['subjects'],
+                            'subjectsEnrolled' => $computedSubjects,
                             'discount' => 0,
                             'downpayment' => 0,
                             'additionalFees' => [],
@@ -922,10 +965,7 @@ final class EnrollmentRegistrationController extends Controller
         }
 
         // Build a rich summary payload for the success screen.
-        $subjectIds = collect($validated['subjects'])->pluck('subject_id')->all();
-        $subjectModels = Subject::query()->whereIn('id', $subjectIds)->get()->keyBy('id');
-
-        $subjectsSummary = collect($validated['subjects'])->map(function (array $row) use ($subjectModels): array {
+        $subjectsSummary = collect($computedSubjects)->map(function (array $row) use ($subjectModels): array {
             $model = $subjectModels->get($row['subject_id']);
 
             return [

@@ -16,12 +16,15 @@ Route::get('/enrollment', [EnrollmentRegistrationController::class, 'create'])
     ->name('enrollment.create');
 
 Route::post('/enrollment', [EnrollmentRegistrationController::class, 'store'])
+    ->middleware('throttle:public-enrollment-submit')
     ->name('enrollment.store');
 
 Route::post('/enrollment/lookup', [EnrollmentRegistrationController::class, 'lookup'])
+    ->middleware('throttle:public-enrollment-lookup')
     ->name('enrollment.lookup');
 
 Route::post('/enrollment/subjects', [EnrollmentRegistrationController::class, 'subjectsFor'])
+    ->middleware('throttle:public-enrollment-lookup')
     ->name('enrollment.subjects');
 
 Route::get('/enrollment/policy-context', EnrollmentPolicyContextController::class)
@@ -29,6 +32,7 @@ Route::get('/enrollment/policy-context', EnrollmentPolicyContextController::clas
     ->name('enrollment.policy-context.show');
 
 Route::post('/enrollment/continuing', [EnrollmentRegistrationController::class, 'storeContinuing'])
+    ->middleware('throttle:public-enrollment-submit')
     ->name('enrollment.continuing.store');
 
 Route::get('/api-docs', fn () => redirect('/docs/v1/introduction'))->name('api-docs');

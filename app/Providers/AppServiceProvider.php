@@ -255,6 +255,17 @@ final class AppServiceProvider extends ServiceProvider
 
         RateLimiter::for('mcp-registration', fn (Request $request): Limit => Limit::perMinute(10)->by($request->ip()));
 
+        RateLimiter::for('public-enrollment-lookup', function (Request $request): array {
+            $normalizedEmail = mb_strtolower(mb_trim((string) $request->input('email')));
+
+            return [
+                Limit::perMinute(15)->by('ip:'.$request->ip()),
+                Limit::perMinute(10)->by('email:'.$normalizedEmail),
+            ];
+        });
+
+        RateLimiter::for('public-enrollment-submit', fn (Request $request): Limit => Limit::perMinute(10)->by($request->ip()));
+
         Passport::tokensCan([
             McpOAuth::READ => 'Read data available to your account through MCP.',
             McpOAuth::WRITE => 'Create, update, or delete data through available MCP tools, within your existing permissions.',

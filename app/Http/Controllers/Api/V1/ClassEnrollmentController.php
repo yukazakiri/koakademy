@@ -183,7 +183,7 @@ final class ClassEnrollmentController extends Controller
         } catch (Exception $e) {
             return response()->json([
                 'message' => 'Failed to create class enrollment',
-                'error' => $e->getMessage(),
+                'error' => config('app.debug') ? $e->getMessage() : 'An internal server error occurred.',
             ], 500);
         }
     }
@@ -276,7 +276,7 @@ final class ClassEnrollmentController extends Controller
         } catch (Exception $e) {
             return response()->json([
                 'message' => 'Failed to update class enrollment',
-                'error' => $e->getMessage(),
+                'error' => config('app.debug') ? $e->getMessage() : 'An internal server error occurred.',
             ], 500);
         }
     }
@@ -302,7 +302,7 @@ final class ClassEnrollmentController extends Controller
         } catch (Exception $e) {
             return response()->json([
                 'message' => 'Failed to delete class enrollment',
-                'error' => $e->getMessage(),
+                'error' => config('app.debug') ? $e->getMessage() : 'An internal server error occurred.',
             ], 500);
         }
     }
@@ -330,7 +330,7 @@ final class ClassEnrollmentController extends Controller
         } catch (Exception $e) {
             return response()->json([
                 'message' => 'Failed to restore class enrollment',
-                'error' => $e->getMessage(),
+                'error' => config('app.debug') ? $e->getMessage() : 'An internal server error occurred.',
             ], 500);
         }
     }
@@ -356,7 +356,7 @@ final class ClassEnrollmentController extends Controller
         } catch (Exception $e) {
             return response()->json([
                 'message' => 'Failed to permanently delete class enrollment',
-                'error' => $e->getMessage(),
+                'error' => config('app.debug') ? $e->getMessage() : 'An internal server error occurred.',
             ], 500);
         }
     }
@@ -414,7 +414,7 @@ final class ClassEnrollmentController extends Controller
         } catch (Exception $e) {
             return response()->json([
                 'message' => 'Failed to update grades',
-                'error' => $e->getMessage(),
+                'error' => config('app.debug') ? $e->getMessage() : 'An internal server error occurred.',
             ], 500);
         }
     }
@@ -461,7 +461,7 @@ final class ClassEnrollmentController extends Controller
         } catch (Exception $e) {
             return response()->json([
                 'message' => 'Failed to finalize grades',
-                'error' => $e->getMessage(),
+                'error' => config('app.debug') ? $e->getMessage() : 'An internal server error occurred.',
             ], 500);
         }
     }
@@ -510,7 +510,7 @@ final class ClassEnrollmentController extends Controller
         } catch (Exception $e) {
             return response()->json([
                 'message' => 'Failed to verify grades',
-                'error' => $e->getMessage(),
+                'error' => config('app.debug') ? $e->getMessage() : 'An internal server error occurred.',
             ], 500);
         }
     }
@@ -614,7 +614,7 @@ final class ClassEnrollmentController extends Controller
         } catch (Exception $e) {
             return response()->json([
                 'message' => 'Failed to retrieve grade statistics',
-                'error' => $e->getMessage(),
+                'error' => config('app.debug') ? $e->getMessage() : 'An internal server error occurred.',
             ], 500);
         }
     }
@@ -770,7 +770,7 @@ final class ClassEnrollmentController extends Controller
         } catch (Exception $e) {
             return response()->json([
                 'message' => 'Failed to update grades',
-                'error' => $e->getMessage(),
+                'error' => config('app.debug') ? $e->getMessage() : 'An internal server error occurred.',
             ], 500);
         }
     }

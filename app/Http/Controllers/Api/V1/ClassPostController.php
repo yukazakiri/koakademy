@@ -140,7 +140,7 @@ final class ClassPostController extends Controller
         } catch (Exception $e) {
             return response()->json([
                 'message' => 'Failed to create class post',
-                'error' => $e->getMessage(),
+                'error' => config('app.debug') ? $e->getMessage() : 'An internal server error occurred.',
             ], 500);
         }
     }
@@ -221,7 +221,7 @@ final class ClassPostController extends Controller
         } catch (Exception $e) {
             return response()->json([
                 'message' => 'Failed to update class post',
-                'error' => $e->getMessage(),
+                'error' => config('app.debug') ? $e->getMessage() : 'An internal server error occurred.',
             ], 500);
         }
     }
@@ -252,7 +252,7 @@ final class ClassPostController extends Controller
         } catch (Exception $e) {
             return response()->json([
                 'message' => 'Failed to delete class post',
-                'error' => $e->getMessage(),
+                'error' => config('app.debug') ? $e->getMessage() : 'An internal server error occurred.',
             ], 500);
         }
     }
@@ -277,7 +277,7 @@ final class ClassPostController extends Controller
         } catch (Exception $e) {
             return response()->json([
                 'message' => 'Failed to restore class post',
-                'error' => $e->getMessage(),
+                'error' => config('app.debug') ? $e->getMessage() : 'An internal server error occurred.',
             ], 500);
         }
     }
@@ -308,7 +308,7 @@ final class ClassPostController extends Controller
         } catch (Exception $e) {
             return response()->json([
                 'message' => 'Failed to permanently delete class post',
-                'error' => $e->getMessage(),
+                'error' => config('app.debug') ? $e->getMessage() : 'An internal server error occurred.',
             ], 500);
         }
     }
@@ -393,7 +393,7 @@ final class ClassPostController extends Controller
         } catch (Exception $e) {
             return response()->json([
                 'message' => 'Failed to upload attachment',
-                'error' => $e->getMessage(),
+                'error' => config('app.debug') ? $e->getMessage() : 'An internal server error occurred.',
             ], 500);
         }
     }
@@ -430,7 +430,7 @@ final class ClassPostController extends Controller
         } catch (Exception $e) {
             return response()->json([
                 'message' => 'Failed to delete attachment',
-                'error' => $e->getMessage(),
+                'error' => config('app.debug') ? $e->getMessage() : 'An internal server error occurred.',
             ], 500);
         }
     }

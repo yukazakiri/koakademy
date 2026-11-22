@@ -184,6 +184,15 @@ final class TwoFactorChallengeController extends Controller
             return response()->json(['error' => 'User not found.'], 404);
         }
 
+        $challenge = $this->challengeKey($user);
+
+        if ($this->attempts->tooManyAttempts($challenge)) {
+            $request->session()->forget('auth.2fa.id');
+            $request->session()->forget('auth.2fa.remember');
+
+            return response()->json(['error' => 'Too many failed authentication attempts. Please sign in again.'], 429);
+        }
+
         $this->configurePasskeysForRequest($request);
 
         $serializedOptions = $request->session()->pull(self::VERIFICATION_OPTIONS_SESSION_KEY);
@@ -199,6 +208,7 @@ final class TwoFactorChallengeController extends Controller
                 $user,
             );
 
+            $this->attempts->recordSuccess($challenge);
             app(UserSecurityActivityService::class)->record($user, 'mfa_passed', 'success');
             Auth::login($user, $request->session()->get('auth.2fa.remember', false));
             $request->session()->forget('auth.2fa.id');
@@ -211,9 +221,33 @@ final class TwoFactorChallengeController extends Controller
 
             return response()->json(['url' => $redirect, 'redirect' => $redirect]);
         } catch (ValidationException $exception) {
+            $this->attempts->recordFailure($challenge);
+            app(UserSecurityActivityService::class)->record($user, 'mfa_failed', 'failure');
+
+            if ($this->attempts->tooManyAttempts($challenge)) {
+                $request->session()->forget('auth.2fa.id');
+                $request->session()->forget('auth.2fa.remember');
+
+                return response()->json(['error' => 'Too many failed authentication attempts. Please sign in again.'], 429);
+            }
+
             throw $exception;
         } catch (Throwable $exception) {
-            return response()->json(['error' => 'Passkey verification failed: '.$exception->getMessage()], 400);
+            $this->attempts->recordFailure($challenge);
+            app(UserSecurityActivityService::class)->record($user, 'mfa_failed', 'failure');
+            \Illuminate\Support\Facades\Log::warning('Two-factor passkey verification failed.', [
+                'user_id' => $user->id,
+                'exception' => $exception->getMessage(),
+            ]);
+
+            if ($this->attempts->tooManyAttempts($challenge)) {
+                $request->session()->forget('auth.2fa.id');
+                $request->session()->forget('auth.2fa.remember');
+
+                return response()->json(['error' => 'Too many failed authentication attempts. Please sign in again.'], 429);
+            }
+
+            return response()->json(['error' => 'Passkey verification failed.'], 400);
         }
     }
 

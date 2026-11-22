@@ -31,6 +31,7 @@ it('loads student sidebar classes in constant query count without N+1 subject lo
         $class = Classes::factory()->create([
             'school_year' => $schoolYear,
             'semester' => 1,
+            'classification' => 'college',
             'subject_id' => $subject->id,
             'subject_code' => $subject->code,
             'section' => "SEC-{$index}",

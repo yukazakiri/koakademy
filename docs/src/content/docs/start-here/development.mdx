@@ -9,39 +9,51 @@ This guide covers native development and testing. Production operators should us
 ## Toolchain
 
 - PHP 8.5.12 or newer and Composer 2
-- Node.js 22.23.4 or newer and npm
+- Node.js 22.23.4 or newer and npm (`.node-version` and `mise.toml` pin **PHP 8.5.12** and **Node.js 26.13.0** to match CI and production Docker builds)
 - `rsvg-convert` from `librsvg2-bin` for SVG brand uploads
-- SQLite for the default test/development path, or PostgreSQL for integration work
-- Redis and Gotenberg when working on queues, sessions, cache, or PDF features
+- SQLite for the default local setup, or PostgreSQL via `compose.yaml` for integration work
+- Redis and Gotenberg when working on Horizon queues, sessions, cache, or PDF features
 
 The PHP and Node.js floors are security requirements, not preferences. PHP 8.5.12 fixes CVE-2026-109618 and CVE-2026-109619, and Node.js 22.23.4 fixes CVE-2026-111497. The application logs a warning when it detects an unpatched interpreter and refuses to boot in a production environment.
 
-If your local PHP predates 8.5.12, use the bundled development container instead. It builds on Ubuntu 24.04 and pulls the current PHP 8.5 patch release:
+If you use [mise](https://mise.jdx.dev/), running `mise install` in the repository root installs the pinned PHP and Node.js versions automatically.
 
-```sh
-docker compose build laravel.test
-docker compose run --rm laravel.test composer install
-docker compose run --rm laravel.test php artisan test
-```
+## Native setup (Linux, macOS, and Windows)
 
-The repository also includes a development-oriented `compose.yaml`. It is not the production topology and publishes additional tools and ports.
-
-## Native setup
+`composer setup` and `composer dev` are cross-platform and run identically on Windows, macOS, and Linux without external databases or Redis:
 
 ```sh
 git clone https://github.com/yukazakiri/koakademy.git
 cd koakademy
-composer install
-npm ci
-cp .env.example .env
-php artisan key:generate
-touch database/database.sqlite
-php artisan migrate
-npm run build
-php artisan serve
+composer setup
+composer dev
 ```
 
-Open `http://127.0.0.1:8000/setup` to create development data and the first administrator. Run a Vite development server with `npm run dev` when editing frontend assets.
+`composer setup` is idempotent: it runs `composer install`, copies `.env.example` to `.env`, generates `APP_KEY` if unset, creates `database/database.sqlite`, runs `php artisan migrate --force`, links `public/storage`, generates Passport keys for MCP OAuth, runs `wayfinder:generate`, installs Node dependencies with `npm ci`, and compiles initial assets with `npm run build`.
+
+`composer dev` launches the HTTP server (`http://127.0.0.1:8000`), queue listener, cross-platform log watcher (`scripts/dev-logs.php`), and Vite HMR server together. Open `http://127.0.0.1:8000/setup` to create development data and the first administrator.
+
+## Containerized setup (Docker Compose & Dev Containers)
+
+If your local machine does not have PHP 8.5.12 installed, use the self-contained development container defined in `docker/dev/Dockerfile` and `compose.yaml` (it builds directly on a fresh clone before `vendor/` exists):
+
+```sh
+git clone https://github.com/yukazakiri/koakademy.git
+cd koakademy
+docker compose up -d --build
+docker compose exec laravel.test composer setup
+docker compose exec laravel.test php artisan test --compact
+```
+
+To also start Redis-backed Horizon and Pulse background workers in Docker, enable the `workers` profile:
+
+```sh
+docker compose --profile workers up -d
+```
+
+Contributors using **VS Code Dev Containers** or **GitHub Codespaces** can open the repository directly using the bundled `.devcontainer/devcontainer.json`, which boots `compose.yaml` and runs `composer setup` automatically.
+
+The development `compose.yaml` is not the production topology and publishes local ports (`8000`, `5173`, `5432`, `6379`, `8025`, `7700`, `9888`) via configurable environment variables.
 
 ## Common commands
 

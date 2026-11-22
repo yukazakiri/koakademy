@@ -60,33 +60,25 @@ Features vary in maturity. Treat this as a **codebase to evaluate and improve**,
 
 ## Try KoAkademy locally
 
-**Curious about the project? Start here.** Local development uses SQLite and does not require PostgreSQL, Redis, object storage, or third-party API keys for the basic setup.
+**Curious about the project? Start here.** Local development uses SQLite and database-backed queues/sessions/cache, so you do not need PostgreSQL, Redis, object storage, or third-party API keys to get started.
 
-**You'll need:** PHP **8.5**, Composer **2**, Node.js **22**, npm, and SQLite support for PHP. See the [development guide](docs/src/content/docs/start-here/development.mdx) for system packages and advanced workflows.
+**You'll need:** PHP **8.5.12+**, Composer **2**, Node.js **22.23.4+** (`26.13.0` pinned via `.node-version` and `mise.toml`), npm, and SQLite support for PHP. Don't want to install PHP 8.5 locally? Use the bundled Docker Compose / Dev Container environment in the [development guide](docs/src/content/docs/start-here/development.mdx).
 
 ```bash
-# Get the source
+# 1. Clone the repository
 git clone https://github.com/yukazakiri/koakademy.git
 cd koakademy
 
-# Install backend and frontend dependencies
-composer install
-npm ci
+# 2. One-command setup (Linux, macOS, and Windows)
+composer setup
 
-# Create a local environment
-cp .env.example .env
-php artisan key:generate
-touch database/database.sqlite
-php artisan migrate
-
-# Build assets and start the application
-npm run build
-php artisan serve
+# 3. Start the app, queue worker, log watcher, and Vite HMR
+composer dev
 ```
 
 Open **http://127.0.0.1:8000/setup** to initialize a local institution and create its first administrator. Use fictitious data while exploring.
 
-Working on the React interface? Run `npm run dev` in a second terminal for Vite hot reloading. If something doesn't work, check the [development guide](docs/src/content/docs/start-here/development.mdx), search [existing issues](https://github.com/yukazakiri/koakademy/issues), or open a reproducible bug report.
+If something doesn't work, check the [development guide](docs/src/content/docs/start-here/development.mdx), search [existing issues](https://github.com/yukazakiri/koakademy/issues), or open a reproducible bug report.
 
 ## Under the hood
 
@@ -135,7 +127,7 @@ We would rather be transparent about what's unfinished than surprise a school or
 | **Small, evolving public API** | Only [documented endpoints](docs/src/content/docs/api/api-overview.mdx) are part of the beta contract. A general student CRUD API is not guaranteed. |
 | **Optional modules require installation** | Modules are distributed through Composer. The module catalogue and Marketplace do not automatically install packages into a running deployment. |
 | **No built-in high availability** | The default installer is single-node. It is not a multi-node failover solution, and recovery depends on tested backups and operator procedures. |
-| **Specific toolchain** | Development currently targets PHP 8.5 and Node.js 22. Earlier PHP versions are not supported by the declared dependency constraints. |
+| **Specific toolchain** | Development requires PHP 8.5.12+ and Node.js 22.23.4+ (`26.13.0` pinned in `.node-version` / `mise.toml`), or Docker / Dev Containers. Earlier PHP versions are not supported by the declared dependency constraints. |
 | **Volunteer maintenance** | Support, issue response, and releases are best-effort, without guaranteed turnaround times or an SLA. |
 
 Check [open issues](https://github.com/yukazakiri/koakademy/issues) and [release notes](https://github.com/yukazakiri/koakademy/releases) for the latest state. If you find a vulnerability, **do not publish an exploit or sensitive data in an issue**; follow [SECURITY.md](SECURITY.md).

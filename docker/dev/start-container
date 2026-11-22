@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -n "${WWWUSER:-}" ]]; then
+    usermod -u "${WWWUSER}" sail >/dev/null 2>&1 || true
+fi
+
+if [[ ! -d /.composer ]]; then
+    mkdir -p /.composer
+fi
+chmod -R ugo+rw /.composer
+
+if (( $# > 0 )); then
+    exec gosu "${WWWUSER:-sail}" "$@"
+fi
+
+exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf

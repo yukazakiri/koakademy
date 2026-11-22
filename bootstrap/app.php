@@ -5,25 +5,27 @@ declare(strict_types=1);
 /**
  * Worktree-friendly App\ class fallback.
  *
- * When a worktree shares a vendor/ directory with its parent checkout,
- * composer's autoloader resolves App\* classes to the parent checkout's
- * absolute paths, silently loading the wrong code. This prepend-only
- * fallback resolves App\* from this checkout first; in a normal install
- * it resolves the same files composer would, so behavior is unchanged.
+ * When a git worktree shares a symlinked vendor/ directory with its parent
+ * checkout, Composer's autoloader resolves App\* classes to the parent
+ * checkout's absolute paths. Guard registration behind is_link() so normal
+ * checkouts and production images keep Composer's authoritative classmap
+ * untouched without per-class filesystem stat overhead.
  */
-spl_autoload_register(function (string $class): bool {
-    if (str_starts_with($class, 'App\\')) {
-        $sub = str_replace('\\', '/', mb_substr($class, 4));
-        $file = __DIR__."/../app/{$sub}.php";
-        if (is_file($file)) {
-            require_once $file;
+if (is_link(__DIR__.'/../vendor')) {
+    spl_autoload_register(function (string $class): bool {
+        if (str_starts_with($class, 'App\\')) {
+            $sub = str_replace('\\', '/', mb_substr($class, 4));
+            $file = __DIR__."/../app/{$sub}.php";
+            if (is_file($file)) {
+                require_once $file;
 
-            return true;
+                return true;
+            }
         }
-    }
 
-    return false;
-}, true, true);
+        return false;
+    }, true, true);
+}
 
 use App\Http\Middleware\EnsureAdministrativePortalAccess;
 use App\Http\Middleware\EnsureApiEnabled;

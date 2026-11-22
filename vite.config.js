@@ -15,24 +15,39 @@ function resolvePhpBinary() {
     if (process.env.PHP_BINARY && fs.existsSync(process.env.PHP_BINARY)) {
         return process.env.PHP_BINARY;
     }
+
+    const isWindows = process.platform === "win32";
+
     try {
-        const detected = execSync("command -v php || which php", { stdio: ["ignore", "pipe", "ignore"] })
+        const lookupCommand = isWindows ? "where php" : "command -v php || which php";
+        const detected = execSync(lookupCommand, { stdio: ["ignore", "pipe", "ignore"] })
             .toString()
-            .trim();
-        if (detected && fs.existsSync(detected)) {
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .find((line) => line.length > 0 && fs.existsSync(line));
+
+        if (detected) {
             return detected;
         }
     } catch {
         // Fall back to well-known PHP binary locations
     }
 
-    const wellKnownPaths = [
-        path.join(os.homedir(), ".config/herd-lite/bin/php"),
-        path.join(os.homedir(), "Library/Application Support/Herd/bin/php"),
-        path.join(os.homedir(), ".config/herd/bin/php"),
-        "/usr/local/bin/php",
-        "/usr/bin/php",
-    ];
+    const wellKnownPaths = isWindows
+        ? [
+              path.join(os.homedir(), ".config", "herd", "bin", "php.bat"),
+              path.join(os.homedir(), ".config", "herd", "bin", "php.exe"),
+              path.join(os.homedir(), ".config", "herd-lite", "bin", "php.exe"),
+              "C:\\php\\php.exe",
+              "C:\\laragon\\bin\\php\\php.exe",
+          ]
+        : [
+              path.join(os.homedir(), ".config/herd-lite/bin/php"),
+              path.join(os.homedir(), "Library/Application Support/Herd/bin/php"),
+              path.join(os.homedir(), ".config/herd/bin/php"),
+              "/usr/local/bin/php",
+              "/usr/bin/php",
+          ];
 
     for (const binaryPath of wellKnownPaths) {
         if (fs.existsSync(binaryPath)) {

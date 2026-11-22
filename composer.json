@@ -59,7 +59,6 @@
         "laravel/passport": "^13.0",
         "laravel/pennant": "^1.18",
         "laravel/pulse": "^1.4",
-        "laravel/sail": "^1.46",
         "laravel/sanctum": "^4.0",
         "laravel/scout": "^11.0",
         "laravel/socialite": "^5.24",
@@ -111,6 +110,7 @@
         "laravel/pail": "^1.2",
         "laravel/pao": "^1.0",
         "laravel/pint": "^1.24",
+        "laravel/sail": "^1.46",
         "mockery/mockery": "^1.6",
         "nunomaduro/collision": "^8.6",
         "pestphp/pest": "^5.0",
@@ -216,7 +216,7 @@
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
-            "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan serve\" \"php artisan queue:listen --queue=default,scout --tries=1\" \"php artisan pail --timeout=0\" \"npm run dev\" --names=server,queue,logs,vite"
+            "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan serve --host=127.0.0.1 --port=8000\" \"php artisan queue:listen --queue=default,scout --tries=1\" \"php scripts/dev-logs.php\" \"npm run dev\" --names=server,queue,logs,vite"
         ],
         "test": [
             "@php artisan config:clear --ansi",
@@ -235,11 +235,13 @@
         "setup": [
             "composer install",
             "@php -r \"file_exists('.env') || copy('.env.example', '.env');\"",
-            "@php artisan key:generate",
+            "@php -r \"preg_match('/^APP_KEY=.+/m', (string) @file_get_contents('.env')) || passthru(escapeshellarg(PHP_BINARY) . ' artisan key:generate --ansi');\"",
             "@php -r \"file_exists('database/database.sqlite') || touch('database/database.sqlite');\"",
-            "@php artisan migrate --force",
-            "@php artisan wayfinder:generate",
-            "npm install",
+            "@php artisan migrate --force --ansi",
+            "@php -r \"is_link('public/storage') || is_dir('public/storage') || passthru(escapeshellarg(PHP_BINARY) . ' artisan storage:link --ansi');\"",
+            "@php -r \"file_exists('storage/oauth-private.key') || passthru(escapeshellarg(PHP_BINARY) . ' artisan passport:keys --no-interaction --ansi');\"",
+            "@php artisan wayfinder:generate --no-interaction",
+            "npm ci",
             "npm run build"
         ],
         "test:extensions": [

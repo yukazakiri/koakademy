@@ -2,7 +2,7 @@ name: koakademy
 
 services:
   app:
-    image: ghcr.io/yukazakiri/koakademy:${KOAKADEMY_VERSION:?Set KOAKADEMY_VERSION to a stable release tag}
+    image: ${KOAKADEMY_IMAGE:-ghcr.io/yukazakiri/koakademy:${KOAKADEMY_VERSION:?Set KOAKADEMY_VERSION to a stable FrankenPHP release tag (e.g. v1.30.0-franken)}}
     env_file:
       - ${KOAKADEMY_ENV_FILE:-.env}
     ports:
@@ -16,6 +16,37 @@ services:
         condition: service_healthy
       gotenberg:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  scheduler:
+    image: ${KOAKADEMY_IMAGE:-ghcr.io/yukazakiri/koakademy:${KOAKADEMY_VERSION:?Set KOAKADEMY_VERSION to a stable FrankenPHP release tag (e.g. v1.30.0-franken)}}
+    env_file:
+      - ${KOAKADEMY_ENV_FILE:-.env}
+    environment:
+      CONTAINER_MODE: scheduler
+      AUTO_MIGRATE: "false"
+      RUN_DOCKER_SCRIPTS: "false"
+      RUN_SCOUT_SETTINGS: "false"
+      RUN_OPTIMIZE: "false"
+    volumes:
+      - app-storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     restart: unless-stopped
 
   postgres:

@@ -340,17 +340,20 @@ while [ $# -gt 0 ]; do
                             *) fail "Channel must be stable or edge." ;;
                         esac
                         channel_explicit="${channel}"
-                        forward_args="${forward_args} --channel $2"
+                        append_forward_arg "--channel"
+                        append_forward_arg "$2"
                         shift 2
                         ;;
-                    --release | --port | --source-sha)
+                    --release | --port | --source-sha | --image)
+                        [ $# -ge 2 ] || fail "$1 requires a value."
                         if [ "$1" = "--release" ]; then release_flag="$2"; fi
                         if [ "$1" = "--source-sha" ]; then source_sha_flag="$2"; fi
                         if [ "$1" = "--port" ]; then public_port="$2"; port_explicit="flag"; fi
-                        forward_args="${forward_args} $1 $2"
+                        append_forward_arg "$1"
+                        append_forward_arg "$2"
                         shift 2
                         ;;
-                    --release=* | --port=* | --source-sha=* | --stable | --edge)
+                    --release=* | --port=* | --source-sha=* | --image=* | --stable | --edge)
                         case "$1" in
                             --stable) channel="stable"; channel_explicit="stable" ;;
                             --edge) channel="edge"; channel_explicit="edge" ;;
@@ -358,16 +361,25 @@ while [ $# -gt 0 ]; do
                             --source-sha=*) source_sha_flag="${1#--source-sha=}" ;;
                             --port=*) public_port="${1#--port=}"; port_explicit="flag" ;;
                         esac
-                        forward_args="${forward_args} $1"
+                        append_forward_arg "$1"
                         shift
                         ;;
-                    --domain | --domain=*)
-                        case "$1" in
-                            --domain) domain="$2"; forward_args="${forward_args} --domain $2"; shift 2 ;;
-                            *) domain="${1#--domain=}"; forward_args="${forward_args} $1"; shift ;;
-                        esac
+                    --domain)
+                        [ $# -ge 2 ] || fail "--domain requires a hostname."
+                        domain="$2"
+                        append_forward_arg "--domain"
+                        append_forward_arg "$2"
+                        shift 2
                         ;;
-                    *) forward_args="${forward_args} $1"; shift ;;
+                    --domain=*)
+                        domain="${1#--domain=}"
+                        append_forward_arg "$1"
+                        shift
+                        ;;
+                    *)
+                        append_forward_arg "$1"
+                        shift
+                        ;;
                 esac
             done
             break
@@ -402,7 +414,7 @@ while [ $# -gt 0 ]; do
             ;;
         --admin-name | --admin-email | --admin-password | \
         --school-name | --school-code | --country-code | \
-        --school-level | --currency)
+        --school-level | --currency | --image)
             [ $# -ge 2 ] || fail "$1 requires an argument."
             append_forward_arg "$1"
             append_forward_arg "$2"
@@ -410,7 +422,7 @@ while [ $# -gt 0 ]; do
             ;;
         --admin-name=* | --admin-email=* | --admin-password=* | \
         --school-name=* | --school-code=* | --country-code=* | \
-        --school-level=* | --currency=*)
+        --school-level=* | --currency=* | --image=*)
             append_forward_arg "$1"
             shift
             ;;
@@ -586,6 +598,8 @@ run_operator() {
         ${DOCKER_SWARM_INIT_ARGS:+DOCKER_SWARM_INIT_ARGS="${DOCKER_SWARM_INIT_ARGS}"} \
         ${ENDPOINT_MODE:+ENDPOINT_MODE="${ENDPOINT_MODE}"} \
         ${KOAKADEMY_DIRECT_ACCESS:+KOAKADEMY_DIRECT_ACCESS="${KOAKADEMY_DIRECT_ACCESS}"} \
+        ${KOAKADEMY_CUSTOM_IMAGE:+KOAKADEMY_CUSTOM_IMAGE="${KOAKADEMY_CUSTOM_IMAGE}"} \
+        ${KOAKADEMY_ADMIN_PASSWORD:+KOAKADEMY_ADMIN_PASSWORD="${KOAKADEMY_ADMIN_PASSWORD}"} \
         ${unattended:+KOAKADEMY_UNATTENDED="${unattended}"} \
         "$@"
 }

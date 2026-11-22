@@ -200,6 +200,7 @@ jobs:
           node --test tests/Unit/scheduling-readiness.test.mjs
           node --test tests/Unit/weekly-schedule.test.mjs
           node --test tests/Unit/docker-composer-patches.test.mjs
+          node --test tests/Unit/self-hosting-docs.test.mjs
 
       - name: Cache built frontend assets for test jobs
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

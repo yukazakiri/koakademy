@@ -1,7 +1,7 @@
 ARG APP_NAME=KoAkademy
 ARG APP_ENV=production
 ARG APP_DEBUG=false
-ARG APP_URL=https://koakademy.yukazaki.com
+ARG APP_URL=http://localhost
 
 # -----------------------------------------------------------------------------
 # Stage 1: Install PHP Dependencies
@@ -144,7 +144,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install only the PHP extensions the application actually requires
+# Install only the PHP extensions the application actually requires, then purge
+# build-only compiler toolchains ($PHPIZE_DEPS) from the final runtime image.
 RUN docker-php-ext-configure gd --with-jpeg --with-freetype \
     && docker-php-ext-install \
         pcntl \
@@ -156,7 +157,9 @@ RUN docker-php-ext-configure gd --with-jpeg --with-freetype \
         gd \
         ffi \
     && pecl install redis \
-    && docker-php-ext-enable redis
+    && docker-php-ext-enable redis \
+    && apt-get purge -y --auto-remove $PHPIZE_DEPS \
+    && rm -rf /tmp/pear /var/lib/apt/lists/*
 
 # Install Supercronic
 RUN case "${TARGETARCH}" in \

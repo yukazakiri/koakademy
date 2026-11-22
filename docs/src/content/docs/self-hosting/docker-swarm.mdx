@@ -56,7 +56,7 @@ Create secure Docker Secrets for sensitive credentials:
 
 ```sh
 # Generate App Key
-APP_KEY=$(docker run --rm ghcr.io/yukazakiri/koakademy:latest php artisan key:generate --show)
+APP_KEY=$(docker run --rm ghcr.io/yukazakiri/koakademy:latest-franken php artisan key:generate --show)
 echo "$APP_KEY" | docker secret create koakademy_app_key -
 
 # Database and Redis Passwords
@@ -68,8 +68,9 @@ openssl rand -base64 32 | docker secret create koakademy_redis_password -
 
 ## Step 2: Define `stack.yaml`
 
-Create `/opt/koakademy/app.env`. The application and the release migration
-job share this file, so both talk to the same database:
+Create `/opt/koakademy/app.env`. The application, scheduler, and release migration
+job share this file, and `start-container` automatically loads `/run/secrets/koakademy_*`
+(or `*_FILE` paths) into the runtime environment:
 
 ```sh
 cat >/opt/koakademy/app.env <<'ENV'
@@ -77,6 +78,10 @@ APP_NAME="KoAkademy"
 APP_ENV="production"
 APP_DEBUG="false"
 APP_URL="https://school.example.com"
+PORTAL_HOST="school.example.com"
+ADMIN_HOST="school.example.com"
+TRUSTED_PROXIES="*"
+APP_KEY_FILE="/run/secrets/koakademy_app_key"
 OCTANE_SERVER="frankenphp"
 AUTO_MIGRATE="false"
 RUN_OPTIMIZE="foreground"
@@ -133,9 +138,11 @@ services:
         condition: on-failure
 
   app:
-    image: ghcr.io/yukazakiri/koakademy:latest
+    image: ghcr.io/yukazakiri/koakademy:latest-franken
     env_file:
       - /opt/koakademy/app.env
+    environment:
+      HORIZON_IN_HTTP_CONTAINER: "false"
     secrets:
       - koakademy_app_key
       - koakademy_db_password
@@ -157,6 +164,53 @@ services:
       restart_policy:
         condition: on-failure
 
+  horizon:
+    image: ghcr.io/yukazakiri/koakademy:latest-franken
+    env_file:
+      - /opt/koakademy/app.env
+    environment:
+      CONTAINER_MODE: "horizon"
+      AUTO_MIGRATE: "false"
+      RUN_OPTIMIZE: "false"
+      RUN_SCOUT_SETTINGS: "false"
+    secrets:
+      - koakademy_app_key
+      - koakademy_db_password
+      - koakademy_redis_password
+    volumes:
+      - app_storage:/app/storage
+    networks:
+      - koakademy_overlay
+    deploy:
+      replicas: ${WORKER_REPLICAS:-1}
+      restart_policy:
+        condition: on-failure
+
+  scheduler:
+    image: ghcr.io/yukazakiri/koakademy:latest-franken
+    env_file:
+      - /opt/koakademy/app.env
+    environment:
+      CONTAINER_MODE: "scheduler"
+      AUTO_MIGRATE: "false"
+      RUN_OPTIMIZE: "false"
+      RUN_SCOUT_SETTINGS: "false"
+    secrets:
+      - koakademy_app_key
+      - koakademy_db_password
+      - koakademy_redis_password
+    volumes:
+      - app_storage:/app/storage
+    networks:
+      - koakademy_overlay
+    deploy:
+      replicas: ${WORKER_REPLICAS:-1}
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
   postgres:
     image: postgres:18-alpine
     environment:
@@ -166,7 +220,7 @@ services:
     secrets:
       - koakademy_db_password
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     networks:
       - koakademy_overlay
     deploy:
@@ -179,7 +233,7 @@ services:
 
   redis:
     image: redis:8-alpine
-    command: ["sh", "-c", "redis-server --appendonly yes --requirepass $(cat /run/secrets/koakademy_redis_password)"]
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$(cat /run/secrets/koakademy_redis_password)\""]
     secrets:
       - koakademy_redis_password
     volumes:
@@ -246,7 +300,7 @@ only after the schema is prepared, so the application service is deployed
 without replicas first.
 
 ```sh
-APP_REPLICAS=0 docker stack deploy -c /opt/koakademy/stack.yaml koakademy
+APP_REPLICAS=0 WORKER_REPLICAS=0 docker stack deploy -c /opt/koakademy/stack.yaml koakademy
 ```
 
 Run the migration as a one-shot job with the same environment, secrets and
@@ -257,7 +311,7 @@ docker service rm koakademy_migrate >/dev/null 2>&1 || true
 
 # The job runs on the image the rollout starts, so the image is pulled
 # first. A cached image would run the migrations of an older release.
-docker pull ghcr.io/yukazakiri/koakademy:latest
+docker pull ghcr.io/yukazakiri/koakademy:latest-franken
 
 docker service create \
   --name koakademy_migrate \
@@ -270,7 +324,7 @@ docker service create \
   --secret koakademy_db_password \
   --secret koakademy_redis_password \
   --mount type=volume,source=koakademy_app_storage,target=/app/storage \
-  ghcr.io/yukazakiri/koakademy:latest \
+  ghcr.io/yukazakiri/koakademy:latest-franken \
   php artisan migrate --force --no-interaction
 ```
 
@@ -285,10 +339,10 @@ docker service logs koakademy_migrate
 
 ## Step 5: Deploy Stack
 
-Deploy the stack to the Swarm with the application replicas:
+Deploy the stack to the Swarm with the application and worker replicas:
 
 ```sh
-APP_REPLICAS=2 docker stack deploy -c /opt/koakademy/stack.yaml koakademy
+APP_REPLICAS=2 WORKER_REPLICAS=1 docker stack deploy -c /opt/koakademy/stack.yaml koakademy
 ```
 
 Check the status of running tasks:
@@ -302,16 +356,12 @@ docker service logs -f koakademy_app
 
 ## Zero-Downtime Rolling Upgrades
 
-To update KoAkademy to a new release:
+To update KoAkademy to a new release without dropping traffic:
 
 ```sh
-# Run the release migrations first, with the application scaled down.
-docker service scale koakademy_app=0
+# 1. Pull the target release image and run the release migration job first.
 docker service rm koakademy_migrate >/dev/null 2>&1 || true
-
-# The job runs on the image the rollout starts, so the image is pulled
-# first. A cached image would run the migrations of an older release.
-docker pull ghcr.io/yukazakiri/koakademy:latest
+docker pull ghcr.io/yukazakiri/koakademy:v1.30.0-franken
 
 docker service create \
   --name koakademy_migrate \
@@ -324,17 +374,25 @@ docker service create \
   --secret koakademy_db_password \
   --secret koakademy_redis_password \
   --mount type=volume,source=koakademy_app_storage,target=/app/storage \
-  ghcr.io/yukazakiri/koakademy:latest \
+  ghcr.io/yukazakiri/koakademy:v1.30.0-franken \
   php artisan migrate --force --no-interaction
 
 docker service ps koakademy_migrate
 docker service logs koakademy_migrate
 
-# Bring the new image up once the schema is ready.
+# 2. Roll out the new image with start-first ordering once the migration job completes.
 docker service update \
-  --image ghcr.io/yukazakiri/koakademy:v1.2.0 \
+  --image ghcr.io/yukazakiri/koakademy:v1.30.0-franken \
   --update-order start-first \
   koakademy_app
+
+docker service update \
+  --image ghcr.io/yukazakiri/koakademy:v1.30.0-franken \
+  koakademy_horizon
+
+docker service update \
+  --image ghcr.io/yukazakiri/koakademy:v1.30.0-franken \
+  koakademy_scheduler
 ```
 
 Swarm will launch new tasks, wait for health check verification at `/up`, and cleanly drain connections from older containers before stopping them.

@@ -1,7 +1,7 @@
 ARG APP_NAME=KoAkademy
 ARG APP_ENV=production
 ARG APP_DEBUG=false
-ARG APP_URL=https://koakademy.yukazaki.com
+ARG APP_URL=http://localhost
 
 # -----------------------------------------------------------------------------
 # Stage 1: Install PHP Dependencies

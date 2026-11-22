@@ -125,7 +125,7 @@ return [
     |
     */
 
-    'timezone' => env('APP_TIMEZONE', 'Asia/Kathmandu'),
+    'timezone' => env('APP_TIMEZONE', 'UTC'),
 
     /*
     |--------------------------------------------------------------------------
@@ -166,6 +166,8 @@ return [
     ],
 
     'documentation_url' => env('DOCUMENTATION_URL', 'https://koakademy.github.io/koakademy'),
+
+    'public_changelog_enabled' => (bool) env('PUBLIC_CHANGELOG_ENABLED', true),
 
     /*
     |--------------------------------------------------------------------------

@@ -156,6 +156,31 @@ their standalone repositories until the application is deliberately migrated
 to the Composer package. Keep the legacy module enabled during that migration
 unless the migration plan explicitly changes its status.
 
+### Adding optional or community Composer modules (Self-Hosters)
+
+Self-hosting operators do not need to fork or clone the full KoAkademy source repository to install an optional Composer module or regulatory report adapter. Extend the official FrankenPHP release image with a 5-line `Dockerfile`:
+
+```dockerfile
+FROM ghcr.io/yukazakiri/koakademy:v1.30.0-franken
+COPY --from=composer:2.10 /usr/bin/composer /usr/local/bin/composer
+USER laravel
+RUN composer require vendor/koakademy-custom-module --no-interaction --no-scripts \
+    && composer dump-autoload --optimize --classmap-authoritative --no-dev --no-scripts
+USER root
+```
+
+Build and deploy the extended image:
+
+```sh
+docker build -t local/koakademy-custom:v1.30.0-franken .
+
+# Docker Swarm operator:
+koakademy update --image local/koakademy-custom:v1.30.0-franken
+
+# Or Docker Compose (.env):
+# KOAKADEMY_IMAGE=local/koakademy-custom:v1.30.0-franken
+```
+
 ## Backups and recovery
 
 Back up and restore-test all of these:
@@ -185,8 +210,8 @@ Never point both stacks at the same PostgreSQL database, Redis data, or storage 
 `compose.production.yaml` remains for operators who own their own edge proxy. It binds the application to `127.0.0.1:8000`, so the proxy must preserve `Host`, `X-Forwarded-For`, `X-Forwarded-Host`, and `X-Forwarded-Proto`. Use an exact stable image tag, protected `.env`, external S3-compatible storage, explicit migrations, and an application restart after configuration changes.
 
 ```sh
-docker compose --env-file .env -f compose.production.yaml pull app
-docker compose --env-file .env -f compose.production.yaml run --rm app php artisan migrate --force
-docker compose --env-file .env -f compose.production.yaml up -d app
+docker compose --env-file .env -f compose.production.yaml pull app scheduler
+docker compose --env-file .env -f compose.production.yaml run --rm app php artisan migrate --force --no-interaction
+docker compose --env-file .env -f compose.production.yaml up -d app scheduler
 curl --fail --silent --show-error http://127.0.0.1:8000/up
 ```

@@ -10,16 +10,16 @@ KoAkademy runs as a self-managed Linux service with flexible deployment targets.
 
 Choose the self-hosting method that best aligns with your infrastructure:
 
-| Platform / Method | Recommended Use Case | Reverse Proxy / SSL | Multi-Node / HA | Guide |
-| :--- | :--- | :--- | :--- | :--- |
-| **Linux VPS (1-Line Installer)** | Dedicated VPS / Bare Metal | Built-in Caddy (Auto HTTPS) | Single-node Swarm | [Quickstart](#one-line-production-installation) |
-| **Standalone VPS (Direct / No Docker)** | Native systemd / PHP 8.5 host | External Caddy / Nginx | Single host | [Bare VPS Runbook](#standalone-vps-deployment-without-docker) |
-| **Docker Compose** | Custom proxy / existing Docker host | Caddy / Nginx / Traefik | Single host | [Compose Guide](./docker-compose/) |
-| **Dokploy** | Self-hosted PaaS / Zero-Downtime UI | Traefik (Automated) | Project-based | [Dokploy Guide](./dokploy/) |
-| **Coolify** | Self-hosted PaaS / Multi-server UI | Traefik (Automated) | Multi-server | [Coolify Guide](./coolify/) |
-| **Docker Swarm** | Lightweight container clustering | Caddy / Swarm Ingress | Native Multi-node | [Swarm Guide](./docker-swarm/) |
-| **Kubernetes (K8s / K3s)** | Enterprise / Cloud orchestration | Ingress / cert-manager | Native Multi-node | [K8s Guide](./kubernetes/) |
-| **Red Hat OpenShift** | Enterprise OCP / OKD / ROSA | OpenShift Route (TLS) | Native Multi-node | [OpenShift Guide](./openshift/) |
+| Platform / Method | Support Tier | Recommended Use Case | Reverse Proxy / SSL | Multi-Node / HA | Guide |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Linux VPS (1-Line Installer)** | **Tier 1 (Official, CI-Tested)** | Dedicated VPS / Bare Metal | Built-in Caddy (Auto HTTPS) | Single-node Swarm | [Quickstart](#quickstart-one-line-installer) |
+| **Docker Compose** | **Tier 1 (Official, CI-Tested)** | Custom proxy / existing Docker host | Caddy / Nginx / Traefik | Single host | [Compose Guide](./docker-compose/) |
+| **Dokploy** | Tier 2 (Manifest-Validated Reference) | Self-hosted PaaS / Zero-Downtime UI | Traefik (Automated) | Project-based | [Dokploy Guide](./dokploy/) |
+| **Coolify** | Tier 2 (Manifest-Validated Reference) | Self-hosted PaaS / Multi-server UI | Traefik (Automated) | Multi-server | [Coolify Guide](./coolify/) |
+| **Docker Swarm (Manual)** | Tier 2 (Manifest-Validated Reference) | Lightweight container clustering | Caddy / Swarm Ingress | Native Multi-node | [Swarm Guide](./docker-swarm/) |
+| **Kubernetes (K8s / K3s)** | Tier 2 (Manifest-Validated Reference) | Enterprise / Cloud orchestration | Ingress / cert-manager | Native Multi-node | [K8s Guide](./kubernetes/) |
+| **Red Hat OpenShift** | Tier 2 (Manifest-Validated Reference) | Enterprise OCP / OKD / ROSA | OpenShift Route (TLS) | Native Multi-node | [OpenShift Guide](./openshift/) |
+| **Standalone VPS (No Docker)** | Tier 2 (Reference Runbook) | Native systemd / PHP 8.5 host | External Caddy / Nginx | Single host | [Bare VPS Runbook](#standalone-vps-deployment-without-docker) |
 
 KoAkademy is beta software. Use staging first, review release notes, and keep a tested recovery path for institutional data.
 
@@ -35,16 +35,16 @@ Docker does not need to be preinstalled. The installer uses Docker's official in
 
 ## Quickstart (One-line Installer)
 
-The fastest and officially supported production path is the automated one-line installer:
+The fastest and officially supported production path is the automated one-line installer from the latest verified GitHub Release:
 
 ```sh
-curl -sSL https://koakademy.koamishin.com/install.sh | bash
+curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh | bash
 ```
 
 For non-interactive automation (e.g. cloud-init or CI), pass the target domain directly:
 
 ```sh
-curl -sSL https://koakademy.koamishin.com/install.sh \
+curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh \
   | env KOAKADEMY_DOMAIN=school.example.com bash
 ```
 
@@ -180,18 +180,19 @@ The new installer deliberately refuses a host that still has legacy `koakademy-*
 
 ## Manual Docker Compose installation
 
-Compose remains supported for operators who manage their own reverse proxy and environment file:
+Compose remains supported for operators who manage their own reverse proxy and environment file. Download the published Compose manifest and production `.env` template directly from the latest GitHub Release (no full source clone required):
 
 ```sh
-git clone https://github.com/yukazakiri/koakademy.git
-cd koakademy
-git checkout <latest-stable-tag>
-cp .env.production.example .env
+mkdir -p /opt/koakademy
+cd /opt/koakademy
+curl -fsSLO https://github.com/yukazakiri/koakademy/releases/latest/download/compose.production.yaml
+curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/default.env.production.example -o .env
 chmod 600 .env
+# Edit .env to set APP_URL, DB_PASSWORD, and REDIS_PASSWORD, then generate APP_KEY:
 docker compose --env-file .env -f compose.production.yaml config --quiet
 docker compose --env-file .env -f compose.production.yaml up -d postgres redis gotenberg
-docker compose --env-file .env -f compose.production.yaml run --rm app php artisan migrate --force
-docker compose --env-file .env -f compose.production.yaml up -d app
+docker compose --env-file .env -f compose.production.yaml run --rm app php artisan migrate --force --no-interaction
+docker compose --env-file .env -f compose.production.yaml up -d app scheduler
 ```
 
 Configure HTTPS in front of the Compose loopback port and complete `/setup`. Review [Configuration](./configuration/) and [Deployment](./deployment/) before accepting traffic.
@@ -205,7 +206,7 @@ For operators running on dedicated bare metal, standard Linux VPS, or hardened o
 ### System Prerequisites
 
 - **OS**: Ubuntu 24.04 LTS / Debian 12
-- **PHP**: PHP 8.5 CLI with extensions: `bcmath`, `curl`, `gd`, `intl`, `mbstring`, `pcntl`, `pdo_pgsql`, `redis`, `xml`, `zip`
+- **PHP**: PHP 8.5.12+ CLI with extensions: `bcmath`, `curl`, `exif`, `ffi`, `gd`, `intl`, `mbstring`, `pcntl`, `pdo_pgsql`, `redis`, `sockets`, `xml`, `zip`
 - **Node.js**: Node.js 22.23.4+ & npm
 - **Database**: PostgreSQL 16+ or 18
 - **Cache/Queue**: Redis 7+ or 8
@@ -224,12 +225,19 @@ The published container images already pin these versions, so Docker and Swarm d
 
 ### 1. Install System Dependencies
 
+Stock Ubuntu 24.04 and Debian 12 repositories do not bundle PHP 8.5.12+ or Node.js 22.23.4+. Register the upstream PHP (`ppa:ondrej/php` on Ubuntu or `packages.sury.org/php` on Debian) and NodeSource repositories first:
+
 ```sh
-# Ubuntu 24.04 / Debian 12
+# Ubuntu 24.04 LTS: register Ondřej Surý PHP PPA and NodeSource 22.x
 sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg software-properties-common
+sudo add-apt-repository -y ppa:ondrej/php
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+
 sudo apt-get install -y php8.5-cli php8.5-curl php8.5-gd php8.5-mbstring \
   php8.5-pgsql php8.5-redis php8.5-xml php8.5-bcmath php8.5-intl php8.5-zip \
-  composer nodejs npm postgresql redis-server git rsync unzip
+  php8.5-ffi librsvg2-bin mdbtools composer nodejs postgresql redis-server \
+  git rsync unzip
 
 # Install FrankenPHP binary
 curl -fsSL https://github.com/php/frankenphp/releases/latest/download/frankenphp-linux-x86_64-gnu \
@@ -287,21 +295,24 @@ php artisan optimize
 
 ### 4. Install Systemd Services
 
-The repository includes production-oriented unit files in [`deploy/systemd/`](https://github.com/yukazakiri/koakademy/tree/master/deploy/systemd). Install them after cloning the application:
+The repository includes production-oriented unit files in [`deploy/systemd/`](https://github.com/yukazakiri/koakademy/tree/master/deploy/systemd) for the FrankenPHP Octane web server, Horizon queue worker, Inertia SSR server, and per-minute scheduler timer. Install them after building the application:
 
 ```sh
 sudo install -m 0644 deploy/systemd/koakademy-web.service /etc/systemd/system/koakademy-web.service
 sudo install -m 0644 deploy/systemd/koakademy-worker.service /etc/systemd/system/koakademy-worker.service
+sudo install -m 0644 deploy/systemd/koakademy-ssr.service /etc/systemd/system/koakademy-ssr.service
+sudo install -m 0644 deploy/systemd/koakademy-scheduler.service /etc/systemd/system/koakademy-scheduler.service
+sudo install -m 0644 deploy/systemd/koakademy-scheduler.timer /etc/systemd/system/koakademy-scheduler.timer
 ```
 
-The units expect the application at `/var/www/koakademy`, load `/var/www/koakademy/.env`, run as `www-data`, and protect the rest of the filesystem. The web unit starts Laravel Octane, which renders the FrankenPHP Caddy configuration and applies `OCTANE_WORKERS` and `OCTANE_MAX_REQUESTS` from `.env`. If you use another installation path, update `WorkingDirectory`, `EnvironmentFile`, `ExecStart`, and `ReadWritePaths` in both units before installing them.
+The units expect the application at `/var/www/koakademy`, load `/var/www/koakademy/.env`, run as `www-data`, and protect the rest of the filesystem. The web unit starts Laravel Octane, which renders the FrankenPHP Caddy configuration and applies `OCTANE_WORKERS` and `OCTANE_MAX_REQUESTS` from `.env`. If you use another installation path, update `WorkingDirectory`, `EnvironmentFile`, `ExecStart`, and `ReadWritePaths` in the units before installing them.
 
 Enable and start services:
 
 ```sh
 sudo chown -R www-data:www-data /var/www/koakademy/storage /var/www/koakademy/bootstrap/cache
 sudo systemctl daemon-reload
-sudo systemctl enable --now koakademy-web.service koakademy-worker.service
+sudo systemctl enable --now koakademy-web.service koakademy-worker.service koakademy-ssr.service koakademy-scheduler.timer
 ```
 
 Point your reverse proxy (Caddy or Nginx) to `127.0.0.1:8000`.

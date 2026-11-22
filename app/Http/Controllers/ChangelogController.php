@@ -20,6 +20,11 @@ final class ChangelogController extends Controller
     public function __invoke(ChangelogService $changelogService, VersionService $versionService): Response
     {
         $user = Auth::user();
+
+        if (! config('app.public_changelog_enabled', true) && $user === null) {
+            abort(403);
+        }
+
         $canAccessAdminPortal = $user?->canAccessAdminPortal() ?? false;
 
         // Resolve the configured GitHub source for the release history. This

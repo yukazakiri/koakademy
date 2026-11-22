@@ -50,6 +50,9 @@ from_address_opt=""
 from_name_opt=""
 api_key_opt=""
 api_url_opt=""
+advertise_addr="${KOAKADEMY_ADVERTISE_ADDR:-${ADVERTISE_ADDR:-}}"
+custom_image_opt="${KOAKADEMY_CUSTOM_IMAGE:-}"
+superseded_secrets=()
 original_arguments=()
 
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -303,10 +306,21 @@ write_initial_runtime() {
     local app_url portal_host admin_host trusted_hosts secure_cookie mail_from_address
 
     if [[ "$direct_access" == true ]]; then
+        local private_ip
         app_url="http://127.0.0.1:$public_port"
         portal_host=localhost
         admin_host=localhost
         trusted_hosts="localhost,127.0.0.1"
+        private_ip="$(detect_private_ip)"
+        if [[ -n "$private_ip" && ",$trusted_hosts," != *",$private_ip,"* ]]; then
+            trusted_hosts="${trusted_hosts},${private_ip}"
+        fi
+        if [[ -n "${advertise_addr:-}" && ",$trusted_hosts," != *",$advertise_addr,"* ]]; then
+            trusted_hosts="${trusted_hosts},${advertise_addr}"
+        fi
+        if [[ -n "${host_opt:-}" && ",$trusted_hosts," != *",$host_opt,"* ]]; then
+            trusted_hosts="${trusted_hosts},${host_opt}"
+        fi
         secure_cookie=false
         mail_from_address=no-reply@koakademy.localhost
     else
@@ -324,6 +338,7 @@ write_initial_runtime() {
 KOAKADEMY_DOMAIN=$domain
 KOAKADEMY_NODE=$(docker info --format '{{.Name}}')
 KOAKADEMY_NETWORK=koakademy_private
+ENDPOINT_MODE=${ENDPOINT_MODE:-vip}
 KOAKADEMY_MAX_REQUEST_BODY=420M
 APP_NAME=KoAkademy
 APP_URL=$app_url
@@ -507,6 +522,10 @@ fetch_release() {
 
 release_image() {
     local image
+    if [[ -n "${custom_image_opt:-}" ]]; then
+        printf '%s\n' "$custom_image_opt"
+        return
+    fi
     image="$(sed -nE 's/^[[:space:]]*"image":[[:space:]]*"([^"]+)".*/\1/p' "$release_directory/version.json" | head -n 1)"
     if [[ "$channel" == edge ]]; then
         [[ "$image" == "$(edge_image)" ]] || fail "Edge release image must use the current edge-frankenphp alias."
@@ -574,22 +593,35 @@ configure_docker_group() {
 
 ensure_swarm_manager() {
     local state manager address
+    local -a swarm_init_args=()
     state="$(docker info --format '{{.Swarm.LocalNodeState}}')"
     if [[ "$state" == inactive ]]; then
         info "Initializing a single-node Docker Swarm."
-        address="${KOAKADEMY_ADVERTISE_ADDR:-}"
+        address="${advertise_addr:-${KOAKADEMY_ADVERTISE_ADDR:-${ADVERTISE_ADDR:-}}}"
         if [[ -z "$address" ]]; then
             address="$(ip -o -4 addr show scope global 2>/dev/null \
                 | awk '$2 !~ /^(docker|br-|veth)/ {print $4}' \
                 | cut -d/ -f1 \
                 | head -n 1 || true)"
         fi
+        if [[ -n "${DOCKER_SWARM_INIT_ARGS:-}" ]]; then
+            # shellcheck disable=SC2206
+            swarm_init_args=(${DOCKER_SWARM_INIT_ARGS})
+        fi
         if [[ -n "$address" ]]; then
             info "Detected host address: $address"
-            docker swarm init --advertise-addr "$address"
+            if (( ${#swarm_init_args[@]} > 0 )); then
+                docker swarm init --advertise-addr "$address" "${swarm_init_args[@]}"
+            else
+                docker swarm init --advertise-addr "$address"
+            fi
         else
             info "No host address was detected; Docker will choose the Swarm address."
-            docker swarm init
+            if (( ${#swarm_init_args[@]} > 0 )); then
+                docker swarm init "${swarm_init_args[@]}"
+            else
+                docker swarm init
+            fi
         fi
     elif [[ "$state" != active ]]; then
         fail "Docker Swarm is in unsupported state '$state'."
@@ -655,10 +687,23 @@ reject_legacy_installation() {
 create_secret() {
     local state_key="$1"
     local value="$2"
+    local previous_secret="${!state_key:-}"
     local secret_name
     secret_name="koakademy_${state_key,,}_$(date -u +%Y%m%d%H%M%S)_$(openssl rand -hex 6)"
     printf '%s' "$value" | docker secret create --label "$MANAGED_LABEL" "$secret_name" - >/dev/null
     set_runtime "$state_key" "$secret_name"
+    if [[ -n "$previous_secret" && "$previous_secret" != "$secret_name" ]]; then
+        superseded_secrets+=("$previous_secret")
+    fi
+}
+
+prune_superseded_secrets() {
+    local old_secret
+    for old_secret in "${superseded_secrets[@]:-}"; do
+        [[ -n "$old_secret" ]] || continue
+        docker secret rm "$old_secret" >/dev/null 2>&1 || true
+    done
+    superseded_secrets=()
 }
 
 ensure_secret() {
@@ -837,6 +882,7 @@ run_app_job() {
         --env TELESCOPE_ENABLED=false \
         --env PULSE_ENABLED=false \
         --env NIGHTWATCH_ENABLED=false \
+        ${KOAKADEMY_JOB_ADMIN_PASSWORD:+--env "KOAKADEMY_ADMIN_PASSWORD=$KOAKADEMY_JOB_ADMIN_PASSWORD"} \
         --secret "source=$APP_KEY_SECRET,target=koakademy-app-key" \
         --secret "source=$POSTGRES_PASSWORD_SECRET,target=koakademy-db-password" \
         --secret "source=$REDIS_PASSWORD_SECRET,target=koakademy-redis-password" \
@@ -1011,16 +1057,17 @@ perform_install() {
     run_app_job "koakademy-migrate-$(date +%s)" "$KOAKADEMY_IMAGE" php artisan migrate --force --no-interaction
     if [[ -n "$admin_email" || -n "${KOAKADEMY_ADMIN_EMAIL:-}" ]]; then
         info "Running automated application setup."
+        local resolved_admin_email="${admin_email:-${KOAKADEMY_ADMIN_EMAIL:-}}"
+        local resolved_admin_password="${admin_password:-${KOAKADEMY_ADMIN_PASSWORD:-}}"
         local -a setup_job_args=(php artisan app:setup --unattended)
         [[ -n "$admin_name" ]] && setup_job_args+=(--admin-name="$admin_name")
-        [[ -n "$admin_email" ]] && setup_job_args+=(--admin-email="$admin_email")
-        [[ -n "$admin_password" ]] && setup_job_args+=(--admin-password="$admin_password")
+        [[ -n "$resolved_admin_email" ]] && setup_job_args+=(--admin-email="$resolved_admin_email")
         [[ -n "$school_name" ]] && setup_job_args+=(--school-name="$school_name")
         [[ -n "$school_code" ]] && setup_job_args+=(--school-code="$school_code")
         [[ -n "$country_code" ]] && setup_job_args+=(--country-code="$country_code")
         [[ -n "$school_level" ]] && setup_job_args+=(--school-level="$school_level")
         [[ -n "$currency" ]] && setup_job_args+=(--currency="$currency")
-        run_app_job "koakademy-setup-$(date +%s)" "$KOAKADEMY_IMAGE" "${setup_job_args[@]}"
+        KOAKADEMY_JOB_ADMIN_PASSWORD="$resolved_admin_password" run_app_job "koakademy-setup-$(date +%s)" "$KOAKADEMY_IMAGE" "${setup_job_args[@]}"
     fi
     set_runtime APP_REPLICAS 1
     deploy_stack
@@ -1043,18 +1090,18 @@ perform_install() {
 perform_setup() {
     require_root
     load_runtime
+    local resolved_admin_password="${admin_password:-${KOAKADEMY_ADMIN_PASSWORD:-}}"
     local -a setup_job_args=(php artisan app:setup)
     [[ "$unattended" == true ]] && setup_job_args+=(--unattended)
     [[ -n "$admin_name" ]] && setup_job_args+=(--admin-name="$admin_name")
     [[ -n "$admin_email" ]] && setup_job_args+=(--admin-email="$admin_email")
-    [[ -n "$admin_password" ]] && setup_job_args+=(--admin-password="$admin_password")
     [[ -n "$school_name" ]] && setup_job_args+=(--school-name="$school_name")
     [[ -n "$school_code" ]] && setup_job_args+=(--school-code="$school_code")
     [[ -n "$country_code" ]] && setup_job_args+=(--country-code="$country_code")
     [[ -n "$school_level" ]] && setup_job_args+=(--school-level="$school_level")
     [[ -n "$currency" ]] && setup_job_args+=(--currency="$currency")
     info "Running application setup."
-    run_app_job "koakademy-setup-$(date +%s)" "$KOAKADEMY_IMAGE" "${setup_job_args[@]}"
+    KOAKADEMY_JOB_ADMIN_PASSWORD="$resolved_admin_password" run_app_job "koakademy-setup-$(date +%s)" "$KOAKADEMY_IMAGE" "${setup_job_args[@]}"
     info "Application setup complete."
 }
 
@@ -1106,6 +1153,7 @@ perform_update() {
         # The stack spec still references the same alias tag, so force the
         # service to re-resolve the image and roll out fresh tasks.
         docker service update --force --with-registry-auth "${STACK_NAME}_app"
+        docker service update --force --with-registry-auth "${STACK_NAME}_scheduler" >/dev/null 2>&1 || true
     fi
     if [[ "$wait_ready" == true ]]; then
         wait_for_service "${STACK_NAME}_app" "$image"
@@ -1129,6 +1177,7 @@ apply_configuration() {
     deploy_stack
     wait_for_service "${STACK_NAME}_app" "$KOAKADEMY_IMAGE"
     verify_https
+    prune_superseded_secrets
 }
 
 configure_storage() {
@@ -1396,6 +1445,10 @@ parse_command() {
             --wait) wait_ready=true; shift ;;
             --no-wait) wait_ready=false; shift ;;
             --preserve-volumes) preserve_volumes=true; shift ;;
+            --advertise-addr) (( $# >= 2 )) || fail "--advertise-addr requires an IP address."; advertise_addr="$2"; KOAKADEMY_ADVERTISE_ADDR="$2"; export KOAKADEMY_ADVERTISE_ADDR; shift 2 ;;
+            --advertise-addr=*) advertise_addr="${1#--advertise-addr=}"; [[ -n "$advertise_addr" ]] || fail "--advertise-addr requires an IP address."; KOAKADEMY_ADVERTISE_ADDR="$advertise_addr"; export KOAKADEMY_ADVERTISE_ADDR; shift ;;
+            --image) (( $# >= 2 )) || fail "--image requires an image reference."; custom_image_opt="$2"; shift 2 ;;
+            --image=*) custom_image_opt="${1#--image=}"; [[ -n "$custom_image_opt" ]] || fail "--image requires an image reference."; shift ;;
             --admin-name) (( $# >= 2 )) || fail "--admin-name requires a value."; admin_name="$2"; shift 2 ;;
             --admin-name=*) admin_name="${1#--admin-name=}"; shift ;;
             --admin-email) (( $# >= 2 )) || fail "--admin-email requires an email."; admin_email="$2"; shift 2 ;;

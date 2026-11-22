@@ -7,7 +7,7 @@ Docker Compose is the recommended deployment method for operators who manage the
 
 ## Architecture Overview
 
-A standard production Compose deployment consists of four containers communicating over an internal Docker bridge network:
+A standard production Compose deployment consists of five containers communicating over an internal Docker bridge network:
 
 ```mermaid
 graph TD
@@ -16,9 +16,12 @@ graph TD
     App -->|Port 5432| DB[(PostgreSQL 18)]
     App -->|Port 6379| Cache[(Redis 8)]
     App -->|Port 3000| PDF[Gotenberg 8 PDF Engine]
+    Sched[KoAkademy Scheduler] -->|Port 5432| DB
+    Sched -->|Port 6379| Cache
 ```
 
-- **Application (`app`)**: Runs PHP 8.5 on FrankenPHP (Laravel Octane), Supercronic (cron scheduler), and Supervisor worker processes on port `8000`.
+- **Application (`app`)**: Runs PHP 8.5 on FrankenPHP (Laravel Octane), Inertia SSR, and Supervisor Horizon queue workers on port `8000`.
+- **Scheduler (`scheduler`)**: Runs Supercronic (`CONTAINER_MODE=scheduler`) to trigger `php artisan schedule:run` every minute.
 - **PostgreSQL (`postgres`)**: Relational database storage (PostgreSQL 18).
 - **Redis (`redis`)**: Cache, sessions, queue backplane, and real-time locking.
 - **Gotenberg (`gotenberg`)**: Headless Chromium and LibreOffice microservice on port `3000` for PDF generation (transcripts, certificates, and invoices).
@@ -57,6 +60,9 @@ APP_NAME=KoAkademy
 APP_ENV=production
 APP_DEBUG=false
 APP_URL=https://school.example.com
+PORTAL_HOST=school.example.com
+ADMIN_HOST=school.example.com
+TRUSTED_PROXIES=127.0.0.1,::1
 APP_KEY=
 
 # Server & Runtime
@@ -93,7 +99,7 @@ MAIL_HOST=smtp.mailgun.org
 MAIL_PORT=587
 MAIL_USERNAME=postmaster@school.example.com
 MAIL_PASSWORD=your_smtp_password
-MAIL_ENCRYPTION=tls
+MAIL_SCHEME=tls
 MAIL_FROM_ADDRESS=notifications@school.example.com
 MAIL_FROM_NAME="KoAkademy Notification"
 EOF
@@ -102,7 +108,7 @@ EOF
 Generate a secure application key:
 
 ```sh
-docker run --rm ghcr.io/yukazakiri/koakademy:latest php artisan key:generate --show
+docker run --rm ghcr.io/yukazakiri/koakademy:latest-franken php artisan key:generate --show
 ```
 
 Copy the generated `base64:...` key and set it as `APP_KEY` in your `.env` file.
@@ -111,14 +117,14 @@ Copy the generated `base64:...` key and set it as `APP_KEY` in your `.env` file.
 
 ## Step 3: Production `compose.yaml`
 
-Create your `compose.yaml` file:
+Create your `compose.yaml` file (or download `compose.production.yaml` directly from the latest GitHub Release):
 
 ```yaml
 name: koakademy
 
 services:
   app:
-    image: ghcr.io/yukazakiri/koakademy:latest
+    image: ghcr.io/yukazakiri/koakademy:latest-franken
     restart: unless-stopped
     env_file:
       - .env
@@ -138,7 +144,32 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 45s
+      start_period: 60s
+
+  scheduler:
+    image: ghcr.io/yukazakiri/koakademy:latest-franken
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      CONTAINER_MODE: scheduler
+      AUTO_MIGRATE: "false"
+      RUN_DOCKER_SCRIPTS: "false"
+      RUN_SCOUT_SETTINGS: "false"
+      RUN_OPTIMIZE: "false"
+    volumes:
+      - app-storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   postgres:
     image: postgres:18-alpine
@@ -148,12 +179,12 @@ services:
       POSTGRES_USER: ${DB_USERNAME:-koakademy}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   redis:
     image: redis:8-alpine
@@ -167,16 +198,16 @@ services:
       test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   gotenberg:
     image: gotenberg/gotenberg:8
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:3000/health"]
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://localhost:3000/health"]
       interval: 15s
       timeout: 5s
-      retries: 5
+      retries: 10
 
 volumes:
   app-storage:
@@ -229,7 +260,7 @@ server {
     ssl_certificate /etc/letsencrypt/live/school.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/school.example.com/privkey.pem;
 
-    client_max_body_size 100M;
+    client_max_body_size 420M;
 
     location / {
         proxy_pass http://127.0.0.1:8000;
@@ -261,7 +292,7 @@ reaches an empty database:
 ```sh
 docker compose up -d postgres redis gotenberg
 docker compose run --rm --pull always app php artisan migrate --force --no-interaction
-docker compose up -d app
+docker compose up -d app scheduler
 ```
 
 Monitor container startup and logs:
@@ -299,7 +330,7 @@ docker compose pull
 # The image is pulled, so the migration runs on the image the rollout starts.
 docker compose run --rm --pull always app php artisan migrate --force --no-interaction
 
-# Restart services with zero-downtime rolling restart
+# Recreate updated containers
 docker compose up -d --remove-orphans
 
 # Verify health status

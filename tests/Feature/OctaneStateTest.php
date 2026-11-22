@@ -22,13 +22,7 @@ use Laravel\Octane\Events\WorkerErrorOccurred;
 use Laravel\Octane\Events\WorkerStarting;
 use Mockery\MockInterface;
 use Modules\Announcement\Models\Announcement;
-use PDO;
-use RuntimeException;
 use Symfony\Component\HttpFoundation\Response;
-
-use function file_exists;
-use function sys_get_temp_dir;
-use function unlink;
 
 it('resets request-scoped state between Octane requests', function (string $abstract): void {
     $first = app($abstract);

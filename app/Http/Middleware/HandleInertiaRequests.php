@@ -91,7 +91,7 @@ final class HandleInertiaRequests extends Middleware
                 'demoMode' => $this->getDemoModeData(),
                 'status' => session('status'),
                 'featureNotice' => fn (): ?array => $request->attributes->get('feature_notice'),
-                'settings' => $settingsService->getSettings(),
+                'settings' => fn (): array => $settingsService->getSettings($user),
                 'socialAuthProviders' => $socialiteProviderService->enabledProviders(...),
                 'version' => config('app.version'),
                 'ziggy' => function () use ($request): array {

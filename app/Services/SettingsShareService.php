@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Models\School;
 use App\Models\User;
 use App\Settings\SiteSettings;
 use App\Settings\SocialMediaSettings;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 final readonly class SettingsShareService
 {
@@ -120,9 +122,24 @@ final readonly class SettingsShareService
     /**
      * Get settings data for frontend.
      */
-    public function getSettings(): array
+    public function getSettings(?User $user = null): array
     {
-        $activeSchoolId = $this->generalSettingsService->getActiveSchoolId();
+        $resolvedUser = $user ?? Auth::user();
+        $activeSchoolId = $resolvedUser instanceof User
+            ? $this->generalSettingsService->getActiveSchoolId()
+            : null;
+
+        $availableSchools = $resolvedUser instanceof User
+            ? app(TenantContext::class)
+                ->getAccessibleOrganizations()
+                ->map(static fn (School $school): array => [
+                    'id' => $school->id,
+                    'name' => $school->name,
+                    'code' => $school->code,
+                ])
+                ->values()
+                ->all()
+            : [];
 
         return [
             'currentSemester' => $this->generalSettingsService->getCurrentSemester(),
@@ -132,7 +149,7 @@ final readonly class SettingsShareService
             'availableSemesters' => $this->generalSettingsService->getAvailableSemesters(),
             'availableSchoolYears' => $this->generalSettingsService->getAvailableSchoolYears(),
             'activeSchoolId' => $activeSchoolId,
-            'availableSchools' => \App\Models\School::all(['id', 'name', 'code'])->toArray(),
+            'availableSchools' => $availableSchools,
         ];
     }
 

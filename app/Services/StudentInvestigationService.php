@@ -152,34 +152,46 @@ final class StudentInvestigationService
             foreach ($subjects as $se) {
                 $subject = $se->subject;
                 if ($subject instanceof Subject && filled($subject->pre_riquisite)) {
-                    $prereqCode = mb_strtoupper(mb_trim((string) $subject->pre_riquisite));
-                    if ($prereqCode !== 'NONE' && $prereqCode !== 'N/A' && $prereqCode !== '') {
-                        $prereqPassed = SubjectEnrollment::query()
-                            ->where('student_id', $student->id)
-                            ->where('id', '!=', $se->id)
-                            ->where(function ($q) use ($prereqCode): void {
-                                $q->whereHas('subject', fn ($subQuery) => $subQuery->where('code', $prereqCode))
-                                    ->orWhere('external_subject_code', $prereqCode);
-                            })
-                            ->get()
-                            ->contains(fn (SubjectEnrollment $candidate): bool => in_array(mb_strtolower((string) $candidate->grade_outcome), ['pass', 'passed'], true)
-                                || ($candidate->grade !== null && $this->gradingSystem->isPassingGrade($candidate->grade, $gradingConfig))
-                            );
+                    $prereqItems = is_array($subject->pre_riquisite) ? $subject->pre_riquisite : [$subject->pre_riquisite];
+                    foreach ($prereqItems as $prereqItem) {
+                        $isNumericId = is_int($prereqItem) || (is_string($prereqItem) && ctype_digit($prereqItem));
+                        $prereqCode = $isNumericId
+                            ? (string) (Subject::withoutSchoolScope()->whereKey((int) $prereqItem)->value('code') ?? "#{$prereqItem}")
+                            : mb_strtoupper(mb_trim((string) $prereqItem));
 
-                        if (! $prereqPassed) {
-                            $findings[] = [
-                                'category' => 'prerequisite_violation',
-                                'severity' => 'critical',
-                                'record_type' => 'subject_enrollment',
-                                'record_id' => $se->id,
-                                'issue' => "Student enrolled in {$subject->code} without passing required prerequisite {$prereqCode}.",
-                                'evidence' => [
-                                    'subject' => $subject->code,
-                                    'required_prerequisite' => $prereqCode,
-                                    'term' => "{$enrollment->school_year} Sem {$enrollment->semester}",
-                                ],
-                                'suggested_action' => "Drop {$subject->code} or verify crediting of {$prereqCode}.",
-                            ];
+                        if ($prereqCode !== 'NONE' && $prereqCode !== 'N/A' && $prereqCode !== '') {
+                            $prereqPassed = SubjectEnrollment::query()
+                                ->where('student_id', $student->id)
+                                ->where('id', '!=', $se->id)
+                                ->where(function ($q) use ($isNumericId, $prereqItem, $prereqCode): void {
+                                    if ($isNumericId) {
+                                        $q->where('subject_id', (int) $prereqItem)
+                                            ->orWhere('credited_subject_id', (int) $prereqItem);
+                                    } else {
+                                        $q->whereHas('subject', fn ($subQuery) => $subQuery->where('code', $prereqCode))
+                                            ->orWhere('external_subject_code', $prereqCode);
+                                    }
+                                })
+                                ->get()
+                                ->contains(fn (SubjectEnrollment $candidate): bool => in_array(mb_strtolower((string) $candidate->grade_outcome), ['pass', 'passed'], true)
+                                    || ($candidate->grade !== null && $this->gradingSystem->isPassingGrade($candidate->grade, $gradingConfig))
+                                );
+
+                            if (! $prereqPassed) {
+                                $findings[] = [
+                                    'category' => 'prerequisite_violation',
+                                    'severity' => 'critical',
+                                    'record_type' => 'subject_enrollment',
+                                    'record_id' => $se->id,
+                                    'issue' => "Student enrolled in {$subject->code} without passing required prerequisite {$prereqCode}.",
+                                    'evidence' => [
+                                        'subject' => $subject->code,
+                                        'required_prerequisite' => $prereqCode,
+                                        'term' => "{$enrollment->school_year} Sem {$enrollment->semester}",
+                                    ],
+                                    'suggested_action' => "Drop {$subject->code} or verify crediting of {$prereqCode}.",
+                                ];
+                            }
                         }
                     }
                 }

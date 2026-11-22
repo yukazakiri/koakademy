@@ -6,6 +6,7 @@ namespace Database\Seeders;
 
 use App\Models\Student;
 use App\Models\StudentClearance;
+use App\Services\GeneralSettingsService;
 use Illuminate\Database\Seeder;
 
 final class StudentClearanceSeeder extends Seeder
@@ -15,66 +16,79 @@ final class StudentClearanceSeeder extends Seeder
      */
     public function run(): void
     {
-        $students = Student::all();
+        $settings = app(GeneralSettingsService::class);
+        $currentSchoolYear = $settings->getCurrentSchoolYearString();
+        $currentSemester = $settings->getCurrentSemester();
+        $previousStartYear = $settings->getCurrentSchoolYearStart() - 1;
+        $previousSchoolYear = $previousStartYear.' - '.($previousStartYear + 1);
+
+        $students = Student::withoutSchoolScope()->get();
+        $clearedIds = [2021001, 2021003, 2023001, 2020001];
 
         foreach ($students as $student) {
-            // Create clearance for current semester (2024-2025, Semester 1)
-            StudentClearance::query()->create([
-                'student_id' => $student->id,
-                'academic_year' => '2024-2025',
-                'semester' => 1,
-                'is_cleared' => in_array($student->id, [2021001, 2021003, 2023001, 2020001]), // Some students are cleared
-                'cleared_by' => in_array($student->id, [2021001, 2021003, 2023001, 2020001]) ? 'Registrar Office' : null,
-                'cleared_at' => in_array($student->id, [2021001, 2021003, 2023001, 2020001]) ? now()->subDays(random_int(1, 15)) : null,
-                'remarks' => in_array($student->id, [2021001, 2021003, 2023001, 2020001])
-                    ? 'All requirements submitted and verified'
-                    : 'Pending document submission',
-            ]);
+            $isCleared = in_array($student->id, $clearedIds, true) || $student->clearance_status === 'cleared';
 
-            // Create clearance for previous semester (2023-2024, Semester 2) for continuing students
-            if (in_array($student->id, [2021001, 2021002, 2021003, 2023001, 2020001, 2022001])) {
-                StudentClearance::query()->create([
+            StudentClearance::query()->firstOrCreate(
+                [
                     'student_id' => $student->id,
-                    'academic_year' => '2023-2024',
-                    'semester' => 2,
-                    'is_cleared' => true, // All previous semesters should be cleared
-                    'cleared_by' => 'Registrar Office',
-                    'cleared_at' => now()->subMonths(6)->addDays(random_int(1, 30)),
-                    'remarks' => 'Semester completed - all requirements met',
-                ]);
-            }
+                    'academic_year' => $currentSchoolYear,
+                    'semester' => $currentSemester,
+                ],
+                [
+                    'is_cleared' => $isCleared,
+                    'cleared_by' => $isCleared ? 'Registrar Office' : null,
+                    'cleared_at' => $isCleared ? now()->subDays(random_int(1, 15)) : null,
+                    'remarks' => $isCleared
+                        ? 'All requirements submitted and verified'
+                        : 'Pending document submission',
+                ],
+            );
 
-            // Create clearance for 2023-2024, Semester 1 for older students
-            if (in_array($student->id, [2021001, 2021002, 2021003, 2020001])) {
-                StudentClearance::query()->create([
-                    'student_id' => $student->id,
-                    'academic_year' => '2023-2024',
-                    'semester' => 1,
-                    'is_cleared' => true,
-                    'cleared_by' => 'Registrar Office',
-                    'cleared_at' => now()->subMonths(12)->addDays(random_int(1, 30)),
-                    'remarks' => 'Semester completed - all requirements met',
-                ]);
+            if ((int) $student->academic_year >= 2) {
+                StudentClearance::query()->firstOrCreate(
+                    [
+                        'student_id' => $student->id,
+                        'academic_year' => $previousSchoolYear,
+                        'semester' => 2,
+                    ],
+                    [
+                        'is_cleared' => true,
+                        'cleared_by' => 'Registrar Office',
+                        'cleared_at' => now()->subMonths(6)->addDays(random_int(1, 30)),
+                        'remarks' => 'Semester completed - all requirements met',
+                    ],
+                );
+
+                StudentClearance::query()->firstOrCreate(
+                    [
+                        'student_id' => $student->id,
+                        'academic_year' => $previousSchoolYear,
+                        'semester' => 1,
+                    ],
+                    [
+                        'is_cleared' => true,
+                        'cleared_by' => 'Registrar Office',
+                        'cleared_at' => now()->subMonths(12)->addDays(random_int(1, 30)),
+                        'remarks' => 'Semester completed - all requirements met',
+                    ],
+                );
             }
         }
 
-        // Create some specific clearance scenarios for testing
         $specificClearances = [
-            // Student with clearance issues
             [
                 'student_id' => 2024002,
-                'academic_year' => '2024-2025',
-                'semester' => 1,
+                'academic_year' => $currentSchoolYear,
+                'semester' => $currentSemester,
                 'is_cleared' => false,
                 'cleared_by' => null,
                 'cleared_at' => null,
                 'remarks' => 'Missing: Library clearance, Laboratory clearance',
             ],
-            // Student with conditional clearance
             [
                 'student_id' => 2024003,
-                'academic_year' => '2024-2025',
-                'semester' => 1,
+                'academic_year' => $currentSchoolYear,
+                'semester' => $currentSemester,
                 'is_cleared' => false,
                 'cleared_by' => null,
                 'cleared_at' => null,
@@ -83,14 +97,20 @@ final class StudentClearanceSeeder extends Seeder
         ];
 
         foreach ($specificClearances as $specificClearance) {
-            // Update existing clearance or create new one
-            StudentClearance::query()->updateOrCreate([
-                'student_id' => $specificClearance['student_id'],
-                'academic_year' => $specificClearance['academic_year'],
-                'semester' => $specificClearance['semester'],
-            ], $specificClearance);
+            if (! Student::withoutSchoolScope()->whereKey($specificClearance['student_id'])->exists()) {
+                continue;
+            }
+
+            StudentClearance::query()->updateOrCreate(
+                [
+                    'student_id' => $specificClearance['student_id'],
+                    'academic_year' => $specificClearance['academic_year'],
+                    'semester' => $specificClearance['semester'],
+                ],
+                $specificClearance,
+            );
         }
 
-        $this->command->info('Student clearances seeded successfully!');
+        $this->command?->info('Student clearances seeded successfully!');
     }
 }

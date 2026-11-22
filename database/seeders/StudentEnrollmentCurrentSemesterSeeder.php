@@ -5,13 +5,11 @@ declare(strict_types=1);
 namespace Database\Seeders;
 
 use App\Enums\EnrollStat;
-use App\Models\ClassEnrollment;
-use App\Models\Classes;
-use App\Models\Course;
+use App\Enums\StudentStatus;
+use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
-use App\Models\Subject;
-use App\Models\SubjectEnrollment;
+use App\Models\StudentStatusRecord;
 use App\Services\GeneralSettingsService;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
@@ -19,180 +17,176 @@ use Illuminate\Support\Facades\DB;
 final class StudentEnrollmentCurrentSemesterSeeder extends Seeder
 {
     /**
-     * Run the database seeds.
+     * Seed current-semester and historical enrollments for all seeded students.
+     *
+     * Subject enrollments and class enrollments are handled by SubjectEnrollmentSeeder
+     * and ClassEnrollmentSeeder right after this seeder runs.
      */
     public function run(): void
     {
-        $faker = fake();
+        $school = School::query()->first();
+        $schoolId = $school?->id ?? 1;
 
-        // Get current academic period from settings
         $settingsService = app(GeneralSettingsService::class);
         $currentSemester = $settingsService->getCurrentSemester();
         $currentSchoolYear = $settingsService->getCurrentSchoolYearString();
+        $currentStartYear = $settingsService->getCurrentSchoolYearStart();
 
         $this->logInfo("Seeding enrollments for: {$currentSchoolYear}, Semester {$currentSemester}");
 
-        // Ensure we have courses
-        $courses = Course::query()->take(5)->get();
-        if ($courses->isEmpty()) {
-            $courses = Course::factory()->count(5)->create();
-            $this->logInfo('Created 5 courses');
+        $students = Student::withoutSchoolScope()
+            ->whereNotNull('course_id')
+            ->orderBy('id')
+            ->get();
+
+        if ($students->isEmpty()) {
+            $this->logInfo('No students found to enroll.');
+
+            return;
         }
 
-        // Ensure we have subjects for each course
-        foreach ($courses as $course) {
-            $existingSubjects = Subject::query()->where('course_id', $course->id)->count();
-            if ($existingSubjects < 3) {
-                Subject::factory()->count(5)->create([
-                    'course_id' => $course->id,
-                    'semester' => $currentSemester,
-                    'academic_year' => $faker->numberBetween(1, 4),
-                ]);
-            }
-        }
-
-        // Ensure we have classes for current semester
-        $classesCount = Classes::query()
-            ->where('school_year', $currentSchoolYear)
-            ->where('semester', $currentSemester)
-            ->count();
-
-        if ($classesCount < 10) {
-            foreach ($courses as $course) {
-                $subjects = Subject::query()->where('course_id', $course->id)->take(3)->get();
-                foreach ($subjects as $subject) {
-                    // Get or create a faculty
-                    $faculty = \App\Models\Faculty::query()->first();
-                    if (! $faculty) {
-                        $faculty = \App\Models\Faculty::factory()->create();
-                    }
-
-                    // Get or create a room
-                    $room = \App\Models\Room::query()->first();
-                    if (! $room) {
-                        $room = \App\Models\Room::factory()->create();
-                    }
-
-                    Classes::factory()->create([
-                        'subject_id' => $subject->id,
-                        'subject_code' => $subject->code,
-                        'faculty_id' => $faculty->id,
-                        'school_year' => $currentSchoolYear,
-                        'semester' => $currentSemester,
-                        'academic_year' => $subject->academic_year,
-                        'course_codes' => [(string) $course->id],
-                        'room_id' => $room->id,
-                    ]);
-                }
-            }
-            $this->logInfo('Created classes for current semester');
-        }
-
-        // Create 30 students and their enrollments
-        $statuses = [
+        $workflowStatuses = [
             EnrollStat::Pending->value,
             EnrollStat::VerifiedByDeptHead->value,
             EnrollStat::VerifiedByCashier->value,
         ];
 
-        $academicYears = [1, 2, 3, 4];
+        $createdCount = 0;
 
-        DB::transaction(function () use ($courses, $currentSemester, $currentSchoolYear, $statuses, $academicYears, $faker): void {
-            for ($i = 1; $i <= 30; $i++) {
-                $course = $courses->random();
+        DB::transaction(function () use (
+            $students,
+            $schoolId,
+            $currentSemester,
+            $currentSchoolYear,
+            $currentStartYear,
+            $workflowStatuses,
+            &$createdCount,
+        ): void {
+            foreach ($students as $index => $student) {
+                $studentStatus = $student->status instanceof StudentStatus
+                    ? $student->status->value
+                    : (string) ($student->status ?: StudentStatus::Enrolled->value);
 
-                // Create student with unique ID
-                $studentId = 2024000 + $i;
-                $student = Student::query()->where('id', $studentId)->first();
-
-                if (! $student) {
-                    $student = Student::factory()->create([
-                        'id' => $studentId,
-                        'student_id' => $studentId,
-                        'first_name' => 'Student'.$i,
-                        'last_name' => 'Test'.$i,
-                        'email' => "student{$i}@test.com",
-                        'course_id' => $course->id,
-                    ]);
-                }
-
-                // Assign course and academic year
-                $academicYear = $academicYears[array_rand($academicYears)];
-                $status = $statuses[array_rand($statuses)];
-
-                // Create student enrollment
-                $enrollment = StudentEnrollment::query()->firstOrCreate(
+                StudentStatusRecord::withoutSchoolScope()->firstOrCreate(
                     [
                         'student_id' => $student->id,
+                        'academic_year' => $currentSchoolYear,
+                        'semester' => $currentSemester,
+                    ],
+                    [
+                        'status' => $studentStatus,
+                        'school_id' => $schoolId,
+                    ],
+                );
+
+                // Skip students that already have enrollments from StudentEnrollmentSeeder
+                $hasExistingEnrollments = StudentEnrollment::withoutSchoolScope()
+                    ->where('student_id', (string) $student->id)
+                    ->exists();
+
+                if ($hasExistingEnrollments) {
+                    continue;
+                }
+
+                // Applicants have not yet enrolled in subjects
+                if ($studentStatus === StudentStatus::Applicant->value) {
+                    continue;
+                }
+
+                $courseId = (int) $student->course_id;
+                $academicYear = max(1, min(4, (int) ($student->academic_year ?: 1)));
+
+                if ($studentStatus === StudentStatus::Graduated->value) {
+                    // Graduated students have completed all 4 academic years (8 semesters)
+                    for ($year = 1; $year <= 4; $year++) {
+                        $yearsAgo = 5 - $year;
+                        $histStart = $currentStartYear - $yearsAgo;
+                        $historicalSchoolYear = $histStart.' - '.($histStart + 1);
+
+                        for ($sem = 1; $sem <= 2; $sem++) {
+                            StudentEnrollment::withoutSchoolScope()->firstOrCreate(
+                                [
+                                    'student_id' => (string) $student->id,
+                                    'school_year' => $historicalSchoolYear,
+                                    'semester' => $sem,
+                                ],
+                                [
+                                    'course_id' => $courseId,
+                                    'status' => 'Completed',
+                                    'terminal_outcome' => 'completed',
+                                    'academic_year' => $year,
+                                    'downpayment' => 5000.00,
+                                    'remarks' => sprintf('Completed Year %d Semester %d enrollment', $year, $sem),
+                                    'school_id' => $schoolId,
+                                ],
+                            );
+                        }
+                    }
+
+                    continue;
+                }
+
+                // Continuing enrolled students: seed completed enrollments for all prior years & semesters
+                for ($year = 1; $year <= $academicYear; $year++) {
+                    for ($sem = 1; $sem <= 2; $sem++) {
+                        if ($year === $academicYear && $sem >= $currentSemester) {
+                            break;
+                        }
+
+                        $yearsAgo = $academicYear - $year;
+                        $histStart = $currentStartYear - $yearsAgo;
+                        $historicalSchoolYear = $histStart.' - '.($histStart + 1);
+
+                        StudentEnrollment::withoutSchoolScope()->firstOrCreate(
+                            [
+                                'student_id' => (string) $student->id,
+                                'school_year' => $historicalSchoolYear,
+                                'semester' => $sem,
+                            ],
+                            [
+                                'course_id' => $courseId,
+                                'status' => 'Completed',
+                                'terminal_outcome' => 'completed',
+                                'academic_year' => $year,
+                                'downpayment' => 4800.00,
+                                'remarks' => sprintf('Completed Year %d Semester %d enrollment', $year, $sem),
+                                'school_id' => $schoolId,
+                            ],
+                        );
+                    }
+                }
+
+                // Seed current-semester enrollment: demo student & ~80% are fully 'Enrolled', ~20% exercise workflow queues
+                $isDemoStudent = $student->email === 'john.student@student.koakademy.edu';
+                $enrollmentStatus = ($isDemoStudent || $index % 5 !== 4)
+                    ? 'Enrolled'
+                    : $workflowStatuses[$index % count($workflowStatuses)];
+
+                $enrollment = StudentEnrollment::withoutSchoolScope()->firstOrCreate(
+                    [
+                        'student_id' => (string) $student->id,
                         'school_year' => $currentSchoolYear,
                         'semester' => $currentSemester,
                     ],
                     [
-                        'course_id' => $course->id,
-                        'status' => $status,
+                        'course_id' => $courseId,
+                        'status' => $enrollmentStatus,
                         'academic_year' => $academicYear,
-                        'downpayment' => random_int(3000, 8000),
-                        'remarks' => "Seeded enrollment #{$i} for {$currentSchoolYear} semester {$currentSemester}",
-                    ]
+                        'downpayment' => random_int(3500, 7500),
+                        'remarks' => sprintf('Enrollment for Year %d Semester %d (%s)', $academicYear, $currentSemester, $currentSchoolYear),
+                        'school_id' => $schoolId,
+                    ],
                 );
 
-                // Get available subjects for this course and academic year
-                $availableSubjects = Subject::query()
-                    ->where('course_id', $course->id)
-                    ->where('academic_year', '<=', $academicYear)
-                    ->where('semester', $currentSemester)
-                    ->take(5)
-                    ->get();
-
-                // Create subject enrollments
-                foreach ($availableSubjects as $subject) {
-                    SubjectEnrollment::query()->firstOrCreate(
-                        [
-                            'enrollment_id' => $enrollment->id,
-                            'subject_id' => $subject->id,
-                        ],
-                        [
-                            'student_id' => $student->id,
-                            'academic_year' => $academicYear,
-                            'school_year' => $currentSchoolYear,
-                            'semester' => $currentSemester,
-                            'remarks' => 'Auto-enrolled via seeder',
-                            'enrolled_lecture_units' => $subject->lecture,
-                            'enrolled_laboratory_units' => $subject->laboratory,
-                        ]
-                    );
-                }
-
-                // Get classes for current semester that match the course
-                $availableClasses = Classes::query()
-                    ->where('school_year', $currentSchoolYear)
-                    ->where('semester', $currentSemester)
-                    ->whereJsonContains('course_codes', (string) $course->id)
-                    ->take(3)
-                    ->get();
-
-                // Create class enrollments
-                foreach ($availableClasses as $class) {
-                    ClassEnrollment::query()->firstOrCreate(
-                        [
-                            'class_id' => $class->id,
-                            'student_id' => $student->id,
-                        ],
-                        [
-                            'status' => true,
-                            'remarks' => 'Auto-enrolled via seeder',
-                            'prelim_grade' => $faker->optional(0.3)->randomFloat(2, 70, 95),
-                            'midterm_grade' => $faker->optional(0.3)->randomFloat(2, 70, 95),
-                            'finals_grade' => $faker->optional(0.3)->randomFloat(2, 70, 95),
-                        ]
-                    );
+                if ($enrollment->wasRecentlyCreated) {
+                    $createdCount++;
                 }
             }
         });
 
-        $this->logInfo('Successfully created 30 student enrollments with subjects and classes!');
+        $this->logInfo("Successfully created {$createdCount} current-semester student enrollments!");
         $this->logInfo("Total enrollments for {$currentSchoolYear} Semester {$currentSemester}: ".
-            StudentEnrollment::query()
+            StudentEnrollment::withoutSchoolScope()
                 ->where('school_year', $currentSchoolYear)
                 ->where('semester', $currentSemester)
                 ->count());
@@ -200,6 +194,6 @@ final class StudentEnrollmentCurrentSemesterSeeder extends Seeder
 
     private function logInfo(string $message): void
     {
-        $this->command->info($message);
+        $this->command?->info($message);
     }
 }

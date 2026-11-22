@@ -220,12 +220,13 @@ HTML;
             return '';
         }
 
-        $dsn = htmlspecialchars($frontend['dsn'], ENT_QUOTES, 'UTF-8');
-        $environment = htmlspecialchars($frontend['environment'], ENT_QUOTES, 'UTF-8');
-        $release = htmlspecialchars($frontend['release'], ENT_QUOTES, 'UTF-8');
-        $traces = json_encode($frontend['traces_sample_rate']);
-        $replaysSession = json_encode($frontend['replays_session_sample_rate']);
-        $replaysOnError = json_encode($frontend['replays_on_error_sample_rate']);
+        $jsonFlags = JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR;
+        $dsn = json_encode($frontend['dsn'], $jsonFlags);
+        $environment = json_encode($frontend['environment'], $jsonFlags);
+        $release = json_encode($frontend['release'], $jsonFlags);
+        $traces = json_encode($frontend['traces_sample_rate'], $jsonFlags);
+        $replaysSession = json_encode($frontend['replays_session_sample_rate'], $jsonFlags);
+        $replaysOnError = json_encode($frontend['replays_on_error_sample_rate'], $jsonFlags);
 
         // Pinned Sentry JS bundle; bump when upgrading the browser SDK.
         // @see https://docs.sentry.io/platforms/javascript/install/cdn/
@@ -233,9 +234,9 @@ HTML;
 <script src="https://browser.sentry-cdn.com/9.18.0/bundle.tracing.replay.min.js" crossorigin="anonymous"></script>
 <script>
 window.Sentry && window.Sentry.init({
-  dsn: "{$dsn}",
-  environment: "{$environment}",
-  release: "{$release}" || undefined,
+  dsn: {$dsn},
+  environment: {$environment},
+  release: {$release} || undefined,
   tracesSampleRate: {$traces},
   replaysSessionSampleRate: {$replaysSession},
   replaysOnErrorSampleRate: {$replaysOnError}

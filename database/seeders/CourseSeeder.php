@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Database\Seeders;
 
+use App\Enums\CurriculumFramework;
 use App\Models\Course;
+use App\Models\CourseType;
 use App\Models\Department;
 use App\Models\School;
 use Illuminate\Database\Seeder;
@@ -31,6 +33,10 @@ final class CourseSeeder extends Seeder
         $school = School::query()->first();
         $schoolId = $school?->id ?? 1;
 
+        $courseTypeId = CourseType::query()->firstOrCreate([
+            'name' => 'College Undergraduate',
+        ])->id;
+
         $departments = Department::query()
             ->whereIn('code', array_values(self::DEPARTMENT_MAP))
             ->get()
@@ -47,8 +53,8 @@ final class CourseSeeder extends Seeder
                 'lab_per_unit' => '200.00',
                 'year_level' => 4,
                 'semester' => 1,
-                'school_year' => '2024-2025',
-                'curriculum_year' => '2024-2025',
+                'school_year' => '2024 - 2025',
+                'curriculum_year' => '2024 - 2025',
                 'miscellaneous' => '3700.00',
                 'is_active' => true,
             ],
@@ -62,8 +68,8 @@ final class CourseSeeder extends Seeder
                 'lab_per_unit' => '200.00',
                 'year_level' => 4,
                 'semester' => 1,
-                'school_year' => '2024-2025',
-                'curriculum_year' => '2024-2025',
+                'school_year' => '2024 - 2025',
+                'curriculum_year' => '2024 - 2025',
                 'miscellaneous' => '3700.00',
                 'is_active' => true,
             ],
@@ -77,8 +83,8 @@ final class CourseSeeder extends Seeder
                 'lab_per_unit' => '200.00',
                 'year_level' => 4,
                 'semester' => 1,
-                'school_year' => '2024-2025',
-                'curriculum_year' => '2024-2025',
+                'school_year' => '2024 - 2025',
+                'curriculum_year' => '2024 - 2025',
                 'miscellaneous' => '3700.00',
                 'is_active' => true,
             ],
@@ -92,8 +98,8 @@ final class CourseSeeder extends Seeder
                 'lab_per_unit' => '200.00',
                 'year_level' => 4,
                 'semester' => 1,
-                'school_year' => '2024-2025',
-                'curriculum_year' => '2024-2025',
+                'school_year' => '2024 - 2025',
+                'curriculum_year' => '2024 - 2025',
                 'miscellaneous' => '3700.00',
                 'is_active' => true,
             ],
@@ -107,8 +113,8 @@ final class CourseSeeder extends Seeder
                 'lab_per_unit' => '150.00',
                 'year_level' => 4,
                 'semester' => 1,
-                'school_year' => '2024-2025',
-                'curriculum_year' => '2024-2025',
+                'school_year' => '2024 - 2025',
+                'curriculum_year' => '2024 - 2025',
                 'miscellaneous' => '3500.00',
                 'is_active' => true,
             ],
@@ -122,8 +128,8 @@ final class CourseSeeder extends Seeder
                 'lab_per_unit' => '150.00',
                 'year_level' => 4,
                 'semester' => 1,
-                'school_year' => '2024-2025',
-                'curriculum_year' => '2024-2025',
+                'school_year' => '2024 - 2025',
+                'curriculum_year' => '2024 - 2025',
                 'miscellaneous' => '3500.00',
                 'is_active' => true,
             ],
@@ -137,8 +143,8 @@ final class CourseSeeder extends Seeder
                 'lab_per_unit' => '150.00',
                 'year_level' => 4,
                 'semester' => 1,
-                'school_year' => '2024-2025',
-                'curriculum_year' => '2024-2025',
+                'school_year' => '2024 - 2025',
+                'curriculum_year' => '2024 - 2025',
                 'miscellaneous' => '3500.00',
                 'is_active' => true,
             ],
@@ -152,8 +158,8 @@ final class CourseSeeder extends Seeder
                 'lab_per_unit' => '150.00',
                 'year_level' => 4,
                 'semester' => 1,
-                'school_year' => '2024-2025',
-                'curriculum_year' => '2024-2025',
+                'school_year' => '2024 - 2025',
+                'curriculum_year' => '2024 - 2025',
                 'miscellaneous' => '3500.00',
                 'is_active' => true,
             ],
@@ -167,8 +173,8 @@ final class CourseSeeder extends Seeder
                 'lab_per_unit' => '180.00',
                 'year_level' => 4,
                 'semester' => 1,
-                'school_year' => '2024-2025',
-                'curriculum_year' => '2024-2025',
+                'school_year' => '2024 - 2025',
+                'curriculum_year' => '2024 - 2025',
                 'miscellaneous' => '3600.00',
                 'is_active' => true,
             ],
@@ -182,8 +188,8 @@ final class CourseSeeder extends Seeder
                 'lab_per_unit' => '180.00',
                 'year_level' => 4,
                 'semester' => 1,
-                'school_year' => '2024-2025',
-                'curriculum_year' => '2024-2025',
+                'school_year' => '2024 - 2025',
+                'curriculum_year' => '2024 - 2025',
                 'miscellaneous' => '3600.00',
                 'is_active' => true,
             ],
@@ -197,8 +203,8 @@ final class CourseSeeder extends Seeder
                 'lab_per_unit' => '180.00',
                 'year_level' => 4,
                 'semester' => 1,
-                'school_year' => '2024-2025',
-                'curriculum_year' => '2024-2025',
+                'school_year' => '2024 - 2025',
+                'curriculum_year' => '2024 - 2025',
                 'miscellaneous' => '3600.00',
                 'is_active' => true,
             ],
@@ -212,21 +218,45 @@ final class CourseSeeder extends Seeder
                 'lab_per_unit' => '180.00',
                 'year_level' => 4,
                 'semester' => 1,
-                'school_year' => '2024-2025',
-                'curriculum_year' => '2024-2025',
+                'school_year' => '2024 - 2025',
+                'curriculum_year' => '2024 - 2025',
                 'miscellaneous' => '3600.00',
                 'is_active' => true,
             ],
         ];
 
         foreach ($courses as $course) {
+            $courseId = (int) $course['id'];
             $deptCode = self::DEPARTMENT_MAP[$course['code']];
-            $course['department_id'] = $departments[$deptCode]?->id;
-            $course['school_id'] = $schoolId;
-            unset($course['department']);
-            Course::query()->create($course);
+            $attributes = [
+                ...$course,
+                'department_id' => $departments[$deptCode]?->id,
+                'course_type_id' => $courseTypeId,
+                'school_id' => $schoolId,
+                'miscelaneous' => $course['miscellaneous'],
+                'curriculum_kind' => 'program',
+                'curriculum_framework' => CurriculumFramework::ChedPsg->value,
+            ];
+            unset($attributes['id'], $attributes['department']);
+
+            $existing = Course::withoutSchoolScope()
+                ->where('school_id', $schoolId)
+                ->where('code', $course['code'])
+                ->first();
+
+            if ($existing instanceof Course) {
+                $existing->update($attributes);
+
+                continue;
+            }
+
+            $model = new Course($attributes);
+            if (! Course::withoutSchoolScope()->whereKey($courseId)->exists()) {
+                $model->id = $courseId;
+            }
+            $model->save();
         }
 
-        $this->command->info('Courses seeded successfully!');
+        $this->command?->info('Courses seeded successfully!');
     }
 }

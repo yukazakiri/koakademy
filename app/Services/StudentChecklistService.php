@@ -106,10 +106,20 @@ final class StudentChecklistService
         $failedRetakesNeeded = [];
         $prerequisiteBlockers = [];
 
-        // Build quick lookup for passed subjects
+        // Build quick lookup for passed subjects (by code and by subject ID)
+        $subjectCodeById = $allCurriculumSubjects
+            ->mapWithKeys(fn (Subject $s): array => [(int) $s->id => mb_strtoupper(mb_trim((string) $s->code))])
+            ->all();
         $passedSubjectCodes = [];
+        $passedSubjectIds = [];
         foreach ($subjectEnrollments as $se) {
             if ($this->isSubjectPassed($se, $gradingConfig)) {
+                if ($se->subject_id) {
+                    $passedSubjectIds[(int) $se->subject_id] = true;
+                }
+                if ($se->credited_subject_id) {
+                    $passedSubjectIds[(int) $se->credited_subject_id] = true;
+                }
                 $code = $se->subject?->code ?? $se->external_subject_code;
                 if ($code) {
                     $passedSubjectCodes[mb_strtoupper(mb_trim($code))] = true;
@@ -193,25 +203,42 @@ final class StudentChecklistService
             }
 
             // Check if student is blocked by unmet prerequisite
-            $prereqString = (string) $subject->pre_riquisite;
-            $prereqClean = mb_strtoupper(mb_trim($prereqString));
+            $rawPrereqs = is_array($subject->pre_riquisite)
+                ? $subject->pre_riquisite
+                : (filled($subject->pre_riquisite) ? [(string) $subject->pre_riquisite] : []);
             $prereqSatisfied = true;
-            $missingPrereq = null;
+            $missingPrereqs = [];
 
-            if ($prereqClean !== '' && $prereqClean !== 'NONE' && $prereqClean !== 'N/A') {
-                if (! isset($passedSubjectCodes[$prereqClean])) {
-                    $prereqSatisfied = false;
-                    $missingPrereq = $prereqClean;
-                    if (! $isCompleted && ! $isInProgress) {
-                        $prerequisiteBlockers[] = [
-                            'subject_code' => $subject->code,
-                            'subject_title' => $subject->title,
-                            'unmet_prerequisite' => $missingPrereq,
-                            'scheduled_year' => $subject->academic_year,
-                            'scheduled_semester' => $subject->semester,
-                        ];
+            foreach ($rawPrereqs as $prereqItem) {
+                if (is_int($prereqItem) || (is_string($prereqItem) && ctype_digit($prereqItem))) {
+                    $prereqId = (int) $prereqItem;
+                    $prereqCode = $subjectCodeById[$prereqId] ?? null;
+                    $isPassed = isset($passedSubjectIds[$prereqId])
+                        || ($prereqCode !== null && isset($passedSubjectCodes[$prereqCode]));
+                    if (! $isPassed) {
+                        $prereqSatisfied = false;
+                        $missingPrereqs[] = $prereqCode ?? "#{$prereqId}";
                     }
+
+                    continue;
                 }
+
+                $prereqClean = mb_strtoupper(mb_trim((string) $prereqItem));
+                if ($prereqClean !== '' && $prereqClean !== 'NONE' && $prereqClean !== 'N/A' && ! isset($passedSubjectCodes[$prereqClean])) {
+                    $prereqSatisfied = false;
+                    $missingPrereqs[] = $prereqClean;
+                }
+            }
+
+            $missingPrereq = $missingPrereqs !== [] ? implode(', ', $missingPrereqs) : null;
+            if (! $prereqSatisfied && ! $isCompleted && ! $isInProgress) {
+                $prerequisiteBlockers[] = [
+                    'subject_code' => $subject->code,
+                    'subject_title' => $subject->title,
+                    'unmet_prerequisite' => $missingPrereq,
+                    'scheduled_year' => $subject->academic_year,
+                    'scheduled_semester' => $subject->semester,
+                ];
             }
 
             // Filter check

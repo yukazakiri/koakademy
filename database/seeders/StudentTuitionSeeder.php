@@ -8,6 +8,7 @@ use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\StudentTuition;
 use App\Models\SubjectEnrollment;
+use App\Services\GeneralSettingsService;
 use Illuminate\Database\Seeder;
 
 final class StudentTuitionSeeder extends Seeder
@@ -17,10 +18,14 @@ final class StudentTuitionSeeder extends Seeder
      */
     public function run(): void
     {
-        $enrollments = StudentEnrollment::all();
+        $settings = app(GeneralSettingsService::class);
+        $currentSchoolYearVariants = $settings->getCurrentSchoolYearVariants();
+        $currentSemester = $settings->getCurrentSemester();
+
+        $enrollments = StudentEnrollment::withoutSchoolScope()->get();
 
         foreach ($enrollments as $enrollment) {
-            $student = Student::query()->find($enrollment->student_id);
+            $student = Student::withoutSchoolScope()->find($enrollment->student_id);
             if (! $student) {
                 continue;
             }
@@ -30,69 +35,66 @@ final class StudentTuitionSeeder extends Seeder
                 continue;
             }
 
-            // Get all subject enrollments for this enrollment
-            $subjectEnrollments = SubjectEnrollment::query()->where('enrollment_id', $enrollment->id)->get();
+            $subjectEnrollments = SubjectEnrollment::withoutSchoolScope()
+                ->where('enrollment_id', $enrollment->id)
+                ->get();
 
-            // Calculate total fees
             $totalLectures = $subjectEnrollments->sum('lecture_fee');
             $totalLaboratory = $subjectEnrollments->sum('laboratory_fee');
             $totalTuition = $totalLectures + $totalLaboratory;
 
-            // Get miscellaneous fees from course
             $miscellaneousFees = $course->getMiscellaneousFee();
-
-            // Calculate overall tuition
             $overallTuition = $totalTuition + $miscellaneousFees;
 
-            // Apply discount (10% for some students)
-            $discount = in_array($student->id, [2021001, 2021003, 2024001]) ? 10 : 0;
+            $discount = in_array($student->id, [2021001, 2021003, 2024001], true) ? 10 : 0;
             $discountAmount = $overallTuition * ($discount / 100);
             $finalTuition = $overallTuition - $discountAmount;
 
-            // Calculate balance based on downpayment
-            $downpayment = $enrollment->downpayment;
-            $totalBalance = max(0, $finalTuition - $downpayment);
+            $downpayment = (float) $enrollment->downpayment;
+            $isCompleted = $enrollment->status === 'Completed';
+            $paid = $isCompleted ? (int) $finalTuition : (int) $downpayment;
+            $totalBalance = $isCompleted ? 0 : max(0, $finalTuition - $downpayment);
 
-            // Determine status
             $status = match (true) {
                 $totalBalance <= 0 => 'fully_paid',
                 $downpayment > 0 => 'partially_paid',
-                default => 'pending'
+                default => 'pending',
             };
 
-            StudentTuition::query()->create([
-                'total_tuition' => $totalTuition,
-                'total_balance' => $totalBalance,
-                'total_lectures' => $totalLectures,
-                'total_laboratory' => $totalLaboratory,
-                'total_miscelaneous_fees' => $miscellaneousFees,
-                'status' => $status,
-                'semester' => $enrollment->semester,
-                'school_year' => $enrollment->school_year,
-                'academic_year' => $enrollment->academic_year,
-                'student_id' => $student->id,
-                'enrollment_id' => $enrollment->id,
-                'discount' => $discount,
-                'downpayment' => $downpayment,
-                'overall_tuition' => $finalTuition,
-                'paid' => (int) $downpayment,
-            ]);
+            StudentTuition::query()->firstOrCreate(
+                [
+                    'enrollment_id' => $enrollment->id,
+                ],
+                [
+                    'total_tuition' => $totalTuition,
+                    'total_balance' => $totalBalance,
+                    'total_lectures' => $totalLectures,
+                    'total_laboratory' => $totalLaboratory,
+                    'total_miscelaneous_fees' => $miscellaneousFees,
+                    'status' => $status,
+                    'semester' => $enrollment->semester,
+                    'school_year' => $enrollment->school_year,
+                    'academic_year' => $enrollment->academic_year,
+                    'student_id' => $student->id,
+                    'discount' => $discount,
+                    'downpayment' => $downpayment,
+                    'overall_tuition' => $finalTuition,
+                    'paid' => $paid,
+                ],
+            );
         }
 
-        // Create some additional payment scenarios for testing
         $specialCases = [
-            // Fully paid student
             ['student_id' => 2021001, 'additional_payment' => 15000],
-            // Overpaid student (for testing)
             ['student_id' => 2021003, 'additional_payment' => 20000],
-            // Partial payment student
             ['student_id' => 2024001, 'additional_payment' => 8000],
         ];
 
         foreach ($specialCases as $specialCase) {
-            $tuition = StudentTuition::query()->where('student_id', $specialCase['student_id'])
-                ->where('school_year', '2024-2025')
-                ->where('semester', 1)
+            $tuition = StudentTuition::query()
+                ->where('student_id', $specialCase['student_id'])
+                ->whereIn('school_year', $currentSchoolYearVariants)
+                ->where('semester', $currentSemester)
                 ->first();
 
             if ($tuition) {
@@ -107,6 +109,6 @@ final class StudentTuitionSeeder extends Seeder
             }
         }
 
-        $this->command->info('Student tuitions seeded successfully!');
+        $this->command?->info('Student tuitions seeded successfully!');
     }
 }

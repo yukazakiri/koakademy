@@ -68,11 +68,15 @@ final class HandleInertiaRequests extends Middleware
         $socialiteProviderService = app(SocialiteProviderService::class);
         $generalSettingsService = app(GeneralSettingsService::class);
         $isAdministratorPortal = $request->is('administrators') || $request->is('administrators/*');
+        $featureValues = $onboardingService->getAllFeatureValues($user);
+        $studentInformationUpdatesEnabled = $user && Feature::for($user)->active(StudentInformationUpdates::class);
+        $libraryEnabled = (bool) $generalSettingsService->getGlobalSetting('library_module_enabled', false);
+        $aiAgentFlags = app(AiAgentAccess::class)->flagsFor($user);
 
         return array_merge(
             parent::share($request),
             [
-                'auth' => fn (): array => $settingsService->getAuthData($user),
+                'auth' => $settingsService->getAuthData($user),
                 'socialMediaSettings' => fn () => $settingsService->getSocialMediaSettings(),
                 'siteSettings' => fn (): array => $settingsService->getSiteSettings($request),
                 'branding' => fn (): array => $settingsService->getBranding(),
@@ -83,7 +87,7 @@ final class HandleInertiaRequests extends Middleware
                     'appName' => $settingsService->getAppName($request),
                     'isPortalDomain' => $settingsService->isPortalDomain($request),
                 ],
-                'demoMode' => fn (): array => $this->getDemoModeData(),
+                'demoMode' => $this->getDemoModeData(),
                 'status' => fn () => session('status'),
                 'featureNotice' => fn (): ?array => $request->attributes->get('feature_notice'),
                 'settings' => fn (): array => $settingsService->getSettings($user),
@@ -104,33 +108,26 @@ final class HandleInertiaRequests extends Middleware
                         'features' => $onboardingService->getOnboardingFeatures($user),
                         'dismissEndpoint' => route('onboarding.dismiss'),
                     ], 'admin-shell', true)
-                    : fn (): array => [
+                    : [
                         'forceOnLogin' => (bool) config('onboarding.force_on_login'),
                         'features' => $onboardingService->getOnboardingFeatures($user),
                         'dismissEndpoint' => route('onboarding.dismiss'),
                     ],
-                'featureFlags' => function () use ($user, $onboardingService, $generalSettingsService): array {
-                    $featureValues = $onboardingService->getAllFeatureValues($user);
-                    $studentInformationUpdatesEnabled = $user && Feature::for($user)->active(StudentInformationUpdates::class);
-                    $libraryEnabled = (bool) $generalSettingsService->getGlobalSetting('library_module_enabled', false);
-                    $aiAgentFlags = app(AiAgentAccess::class)->flagsFor($user);
-
-                    return [
-                        'experimentalKeys' => config('onboarding.experimental_feature_keys', []),
-                        'enabledRoutes' => array_merge(
-                            $onboardingService->getSidebarFeatureFlags($featureValues),
-                            ['library' => $libraryEnabled]
-                        ),
-                        'library' => $libraryEnabled,
-                        'ai' => [
-                            'any' => in_array(true, $aiAgentFlags, true),
-                            'agents' => $aiAgentFlags,
-                        ],
-                        'studentSignaturePad' => $user && Feature::for($user)->active(StudentSignaturePad::class),
-                        'studentAvatarUpload' => $user && Feature::for($user)->active(StudentAvatarUpload::class),
-                        'studentInformationUpdates' => $studentInformationUpdatesEnabled,
-                    ];
-                },
+                'featureFlags' => [
+                    'experimentalKeys' => config('onboarding.experimental_feature_keys', []),
+                    'enabledRoutes' => array_merge(
+                        $onboardingService->getSidebarFeatureFlags($featureValues),
+                        ['library' => $libraryEnabled]
+                    ),
+                    'library' => $libraryEnabled,
+                    'ai' => [
+                        'any' => in_array(true, $aiAgentFlags, true),
+                        'agents' => $aiAgentFlags,
+                    ],
+                    'studentSignaturePad' => $user && Feature::for($user)->active(StudentSignaturePad::class),
+                    'studentAvatarUpload' => $user && Feature::for($user)->active(StudentAvatarUpload::class),
+                    'studentInformationUpdates' => $studentInformationUpdatesEnabled,
+                ],
                 'facultyClasses' => fn (): array => $facultyClassService->getFacultyClasses($user),
                 'studentClasses' => fn (): array => $studentClassService->getStudentClasses($user),
                 'notifications' => $isAdministratorPortal

@@ -9,37 +9,26 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
-     * @var array<string, list<array{columns: list<string>, name: string}>>
+     * Only genuinely missing, non-redundant indexes not already covered by
+     * earlier migrations (e.g. 2026_11_03_000001_add_hot_path_indexes).
+     *
+     * @var array<string, list<array{columns: list<string>, name: string, supersedes?: string, supersedes_columns?: list<string>}>>
      */
     private array $indexes = [
         'students' => [
-            ['columns' => ['school_id', 'deleted_at'], 'name' => 'idx_students_school_deleted'],
-            ['columns' => ['email'], 'name' => 'idx_students_email'],
+            [
+                'columns' => ['school_id', 'deleted_at'],
+                'name' => 'idx_students_school_deleted',
+                'supersedes' => 'students_school_id_index',
+                'supersedes_columns' => ['school_id'],
+            ],
         ],
         'class_enrollments' => [
-            ['columns' => ['student_id'], 'name' => 'idx_class_enrollments_student_id'],
             ['columns' => ['student_id', 'class_id'], 'name' => 'idx_class_enrollments_student_class'],
         ],
-        'subject_enrollments' => [
-            ['columns' => ['student_id', 'school_year', 'semester'], 'name' => 'idx_subject_enrollments_student_period'],
-        ],
-        'student_tuition' => [
-            ['columns' => ['student_id', 'school_year', 'semester'], 'name' => 'idx_student_tuition_student_period'],
-        ],
-        'classes' => [
-            ['columns' => ['school_id', 'school_year', 'semester'], 'name' => 'idx_classes_school_period'],
-        ],
         'transactions' => [
-            ['columns' => ['transaction_date'], 'name' => 'idx_transactions_date'],
             ['columns' => ['created_at'], 'name' => 'idx_transactions_created_at'],
-            ['columns' => ['status'], 'name' => 'idx_transactions_status'],
             ['columns' => ['invoicenumber'], 'name' => 'idx_transactions_invoicenumber'],
-        ],
-        'student_transactions' => [
-            ['columns' => ['student_id'], 'name' => 'idx_student_transactions_student_id'],
-        ],
-        'help_tickets' => [
-            ['columns' => ['status'], 'name' => 'idx_help_tickets_status'],
         ],
     ];
 
@@ -54,13 +43,23 @@ return new class extends Migration
                 $columns = $definition['columns'];
                 $indexName = $definition['name'];
 
-                if (! Schema::hasColumns($tableName, $columns) || Schema::hasIndex($tableName, $indexName)) {
+                if (! Schema::hasColumns($tableName, $columns)) {
                     continue;
                 }
 
-                Schema::table($tableName, static function (Blueprint $table) use ($columns, $indexName): void {
-                    $table->index($columns, $indexName);
-                });
+                if (! Schema::hasIndex($tableName, $indexName) && ! $this->hasIndexWithColumns($tableName, $columns)) {
+                    Schema::table($tableName, static function (Blueprint $table) use ($columns, $indexName): void {
+                        $table->index($columns, $indexName);
+                    });
+                }
+
+                $superseded = $definition['supersedes'] ?? null;
+
+                if ($superseded !== null && Schema::hasIndex($tableName, $superseded)) {
+                    Schema::table($tableName, static function (Blueprint $table) use ($superseded): void {
+                        $table->dropIndex($superseded);
+                    });
+                }
             }
         }
     }
@@ -74,6 +73,19 @@ return new class extends Migration
 
             foreach ($definitions as $definition) {
                 $indexName = $definition['name'];
+                $superseded = $definition['supersedes'] ?? null;
+                $supersededColumns = $definition['supersedes_columns'] ?? null;
+
+                if (
+                    $superseded !== null
+                    && $supersededColumns !== null
+                    && Schema::hasColumns($tableName, $supersededColumns)
+                    && ! Schema::hasIndex($tableName, $superseded)
+                ) {
+                    Schema::table($tableName, static function (Blueprint $table) use ($supersededColumns, $superseded): void {
+                        $table->index($supersededColumns, $superseded);
+                    });
+                }
 
                 if (! Schema::hasIndex($tableName, $indexName)) {
                     continue;
@@ -84,5 +96,19 @@ return new class extends Migration
                 });
             }
         }
+    }
+
+    /**
+     * @param  list<string>  $columns
+     */
+    private function hasIndexWithColumns(string $tableName, array $columns): bool
+    {
+        foreach (Schema::getIndexes($tableName) as $index) {
+            if ($index['columns'] === $columns) {
+                return true;
+            }
+        }
+
+        return false;
     }
 };

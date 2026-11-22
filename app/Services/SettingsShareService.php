@@ -197,11 +197,15 @@ final readonly class SettingsShareService
                 $userRole instanceof \App\Enums\UserRole ? (string) $userRole->getLabel() : null,
             ])));
 
-            /** @var \Spatie\Permission\Models\Role|null $spatieRole */
-            $spatieRole = \Spatie\Permission\Models\Role::query()
+            $roles = \Spatie\Permission\Models\Role::query()
                 ->with('permissions:id,name')
                 ->whereIn('name', $candidateNames)
-                ->first();
+                ->get()
+                ->keyBy('name');
+
+            /** @var \Spatie\Permission\Models\Role|null $spatieRole */
+            $spatieRole = $roles->get($userRoleValue)
+                ?? ($userRole instanceof \App\Enums\UserRole ? $roles->get((string) $userRole->getLabel()) : null);
 
             if ($spatieRole) {
                 $permissions = $spatieRole->permissions->pluck('name')->values()->all();

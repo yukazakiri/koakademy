@@ -23,23 +23,38 @@ it('loads student sidebar classes in constant query count without N+1 subject lo
     $currentYear = (int) date('Y');
     $schoolYear = $currentYear.' - '.($currentYear + 1);
 
-    for ($i = 1; $i <= 6; $i++) {
+    $createEnrollment = static function (int $index) use ($student, $schoolYear): void {
         $subject = Subject::factory()->create([
-            'code' => "PERF579-{$i}",
-            'title' => "Performance Subject {$i}",
+            'code' => "PERF579-{$index}",
+            'title' => "Performance Subject {$index}",
         ]);
         $class = Classes::factory()->create([
             'school_year' => $schoolYear,
             'semester' => 1,
             'subject_id' => $subject->id,
             'subject_code' => $subject->code,
-            'section' => "SEC-{$i}",
+            'section' => "SEC-{$index}",
         ]);
         ClassEnrollment::factory()->create([
             'student_id' => $student->id,
             'class_id' => $class->id,
             'status' => true,
         ]);
+    };
+
+    $createEnrollment(1);
+
+    // Warm one-time settings caches, then measure baseline for 1 class.
+    app(StudentClassShareService::class)->getStudentClasses($user);
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+    $oneClass = app(StudentClassShareService::class)->getStudentClasses($user);
+    $baselineQueryCount = count(DB::getQueryLog());
+    DB::disableQueryLog();
+
+    for ($i = 2; $i <= 6; $i++) {
+        $createEnrollment($i);
     }
 
     DB::flushQueryLog();
@@ -50,8 +65,10 @@ it('loads student sidebar classes in constant query count without N+1 subject lo
     $queryCount = count(DB::getQueryLog());
     DB::disableQueryLog();
 
-    expect($classes)->toHaveCount(6)
+    expect($oneClass)->toHaveCount(1)
+        ->and($classes)->toHaveCount(6)
         ->and($classes[0]['subject_title'])->toContain('Performance Subject')
+        ->and($queryCount)->toBe($baselineQueryCount)
         ->and($queryCount)->toBeLessThanOrEqual(8);
 });
 

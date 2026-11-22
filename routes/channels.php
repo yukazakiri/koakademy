@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\UserRole;
 use App\Models\User;
 use Illuminate\Support\Facades\Broadcast;
 
@@ -21,9 +22,11 @@ Broadcast::channel('App.Models.User.{id}', function (User $user, int $id) {
     return $user->id === $id;
 });
 
-// Allow all users to listen to test notifications (for development)
-Broadcast::channel('test-notifications', function ($user) {
-    return true;
+// Restrict test-notifications channel to local/testing environments or Developers
+Broadcast::channel('test-notifications', function (User $user): bool {
+    return app()->environment(['local', 'testing'])
+        || $user->role === UserRole::Developer
+        || $user->hasRole(UserRole::Developer);
 });
 
 // Example for Filament notifications (you can customize this based on your needs)

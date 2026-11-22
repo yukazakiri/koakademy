@@ -7,6 +7,7 @@ use App\Modules\ModuleStateRepository;
 use App\Services\FeatureAccessService;
 use App\Services\GeneralSettingsService;
 use App\Services\TenantContext;
+use App\Support\Octane\DisconnectSqliteConnections;
 use Laravel\Octane\Contracts\OperationTerminated;
 use Laravel\Octane\Events\RequestHandled;
 use Laravel\Octane\Events\RequestReceived;
@@ -72,6 +73,7 @@ return [
         WorkerStarting::class => [
             EnsureUploadedFilesAreValid::class,
             EnsureUploadedFilesCanBeMoved::class,
+            DisconnectSqliteConnections::class,
         ],
 
         RequestReceived::class => [
@@ -110,12 +112,17 @@ return [
             FlushOnce::class,
             FlushTemporaryContainerInstances::class,
             // DisconnectFromDatabases::class,
+            // Only close file-backed SQLite connections so migrate:fresh or replacing
+            // database.sqlite cannot pin FrankenPHP workers to a stale/unlinked inode,
+            // while persistent PostgreSQL/MySQL connections remain pooled.
+            DisconnectSqliteConnections::class,
             // CollectGarbage::class,
         ],
 
         WorkerErrorOccurred::class => [
             ReportException::class,
             StopWorkerIfNecessary::class,
+            DisconnectSqliteConnections::class,
         ],
 
         WorkerStopping::class => [

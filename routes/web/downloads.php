@@ -34,12 +34,27 @@ Route::get('/download/student-list/{filename}', function (string $filename) {
         abort(403, 'Unauthorized');
     }
 
-    if (basename($filename) !== $filename || str_contains($filename, '..') || str_contains($filename, '/') || str_contains($filename, '\\')) {
+    if (
+        basename($filename) !== $filename
+        || str_contains($filename, '..')
+        || str_contains($filename, '/')
+        || str_contains($filename, '\\')
+        || preg_match('/["\r\n]/', $filename) === 1
+    ) {
         abort(400, 'Invalid filename.');
     }
 
-    $path = 'exports/student-lists/'.$filename;
-    $disk = PrivateExportStorage::locate($path, PrivateExportStorage::candidateDisks());
+    $scopedPath = 'exports/student-lists/'.$user->id.'/'.$filename;
+    $legacyPath = 'exports/student-lists/'.$filename;
+    $candidateDisks = PrivateExportStorage::candidateDisks();
+
+    $path = $scopedPath;
+    $disk = PrivateExportStorage::locate($scopedPath, $candidateDisks);
+
+    if ($disk === null) {
+        $path = $legacyPath;
+        $disk = PrivateExportStorage::locate($legacyPath, $candidateDisks);
+    }
 
     if ($disk === null) {
         abort(404, 'File not found');
@@ -66,18 +81,31 @@ Route::get('/download/timetable-pdf/{filename}', function (string $filename) {
         abort(403, 'Unauthorized');
     }
 
-    if (basename($filename) !== $filename || str_contains($filename, '..') || str_contains($filename, '/') || str_contains($filename, '\\')) {
+    if (
+        basename($filename) !== $filename
+        || str_contains($filename, '..')
+        || str_contains($filename, '/')
+        || str_contains($filename, '\\')
+        || preg_match('/["\r\n]/', $filename) === 1
+    ) {
         abort(400, 'Invalid filename.');
     }
 
-    $path = 'schedules/'.$filename;
-    $disk = PrivateExportStorage::locate($path, PrivateExportStorage::candidateDisks());
+    $scopedPath = 'schedules/'.$user->id.'/'.$filename;
+    $legacyPath = 'schedules/'.$filename;
+    $candidateDisks = PrivateExportStorage::candidateDisks();
+
+    $path = $scopedPath;
+    $disk = PrivateExportStorage::locate($scopedPath, $candidateDisks);
+
+    if ($disk === null) {
+        $path = $legacyPath;
+        $disk = PrivateExportStorage::locate($legacyPath, $candidateDisks);
+    }
 
     if ($disk === null) {
         return response()->json([
             'error' => 'PDF not found. Please contact administrator to generate schedule PDF.',
-            'path' => $path,
-            'disk' => PrivateExportStorage::disk(),
         ], 404);
     }
 
@@ -109,7 +137,7 @@ Route::get('/download/timetable-pdf/{filename}', function (string $filename) {
 })->where('filename', '.*')->middleware(['auth'])->name('download.timetable-pdf');
 
 // Schedule PDF download (authenticated)
-Route::get('/download/schedule', function () {
+Route::post('/download/schedule', function () {
     $user = Auth::user();
 
     if (! $user || ! $user->isFaculty()) {
@@ -206,7 +234,7 @@ Route::get('/download/schedule', function () {
         'message' => 'Schedule PDF export queued. You will be notified when your file is ready.',
     ], 202);
 
-})->name('download.schedule');
+})->middleware(['auth', 'throttle:10,1'])->name('download.schedule');
 
 Route::get('/download/attendance-report/{filename}', function (string $filename) {
     $user = Auth::user();

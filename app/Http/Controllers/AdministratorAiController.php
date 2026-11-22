@@ -610,7 +610,7 @@ final class AdministratorAiController extends Controller
         $user = Auth::user();
         abort_unless($user instanceof User && $user->canAccessAdminPortal(), 403);
 
-        return $docService->downloadDocument($documentId);
+        return $docService->downloadDocument($documentId, $user);
     }
 
     /**

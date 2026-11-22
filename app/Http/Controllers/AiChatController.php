@@ -515,7 +515,7 @@ final class AiChatController extends Controller
         $user = Auth::user();
         abort_unless($user instanceof User, 401);
 
-        return $docService->downloadDocument($documentId);
+        return $docService->downloadDocument($documentId, $user);
     }
 
     /**

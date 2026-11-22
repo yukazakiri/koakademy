@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services\Ai;
 
 use App\Models\GeneralSetting;
+use App\Models\User;
+use App\Services\TenantContext;
 use FPDF;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Facades\Cache;
@@ -13,13 +15,28 @@ use Throwable;
 final class AiDocumentGeneratorService
 {
     /**
-     * Serve a document from cache by ID.
+     * Serve a document from cache by ID, verifying owner and tenant scope.
      */
-    public function downloadDocument(string $documentId): HttpResponse
+    public function downloadDocument(string $documentId, ?User $user = null): HttpResponse
     {
+        if (! $user instanceof User) {
+            abort(401);
+        }
+
         $doc = Cache::get("ai:doc:{$documentId}");
 
         if (! is_array($doc)) {
+            abort(404, 'The requested document has expired or was not found.');
+        }
+
+        $ownerId = $doc['user_id'] ?? null;
+        if ($ownerId === null || (int) $ownerId !== (int) $user->id) {
+            abort(404, 'The requested document has expired or was not found.');
+        }
+
+        $documentSchoolId = $doc['school_id'] ?? null;
+        $currentSchoolId = app(TenantContext::class)->getCurrentSchoolId();
+        if ($documentSchoolId !== null && $currentSchoolId !== null && (int) $documentSchoolId !== (int) $currentSchoolId) {
             abort(404, 'The requested document has expired or was not found.');
         }
 

@@ -32,7 +32,30 @@ final class ClassPostAttachmentController extends Controller
             abort(400, 'Invalid filename.');
         }
 
-        $path = "class-post-attachments/{$file}";
+        $matchedAttachment = null;
+        $posts = ClassPost::where('class_id', $class->id)->get();
+        foreach ($posts as $post) {
+            foreach ($post->attachments ?? [] as $att) {
+                if (is_array($att)) {
+                    $attFilename = basename((string) ($att['path'] ?? parse_url($att['url'] ?? '', PHP_URL_PATH) ?? ''));
+                    if ($attFilename === $file) {
+                        $matchedAttachment = $att;
+                        break 2;
+                    }
+                }
+            }
+        }
+
+        if ($matchedAttachment === null) {
+            abort(404, 'Attachment not found.');
+        }
+
+        $path = is_string($matchedAttachment['path'] ?? null) && $matchedAttachment['path'] !== ''
+            ? $matchedAttachment['path']
+            : "class-post-attachments/{$file}";
+        $originalName = is_string($matchedAttachment['name'] ?? null) && $matchedAttachment['name'] !== ''
+            ? $matchedAttachment['name']
+            : $file;
 
         $disk = 'private';
         if (! Storage::disk('private')->exists($path)) {
@@ -42,20 +65,6 @@ final class ClassPostAttachmentController extends Controller
                 $disk = config('filesystems.default');
             } else {
                 abort(404, 'Attachment not found.');
-            }
-        }
-
-        $originalName = $file;
-        $posts = ClassPost::where('class_id', $class->id)->get();
-        foreach ($posts as $post) {
-            foreach ($post->attachments ?? [] as $att) {
-                if (is_array($att)) {
-                    $attFilename = basename((string) ($att['path'] ?? parse_url($att['url'] ?? '', PHP_URL_PATH) ?? ''));
-                    if ($attFilename === $file) {
-                        $originalName = $att['name'] ?? $file;
-                        break 2;
-                    }
-                }
             }
         }
 

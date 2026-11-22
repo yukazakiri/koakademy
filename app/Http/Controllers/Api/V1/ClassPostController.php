@@ -114,7 +114,7 @@ final class ClassPostController extends Controller
         try {
             $validated = $request->validated();
 
-            // Handle file uploads
+            // Handle validated multipart file uploads only (never persist raw base64 data URIs)
             $attachments = [];
             if ($request->hasFile('attachments')) {
                 foreach ($request->file('attachments') as $file) {
@@ -123,21 +123,7 @@ final class ClassPostController extends Controller
                 }
             }
 
-            // If attachments were uploaded as JSON array of base64
-            if (isset($validated['attachments']) && is_array($validated['attachments'])) {
-                $jsonAttachments = [];
-                foreach ($validated['attachments'] as $attachment) {
-                    if (is_string($attachment) && str_starts_with($attachment, 'data:')) {
-                        // Handle base64 encoded file
-                        $decoded = base64_decode(preg_split('@;@', $attachment)[1] ?? '', flags: PREG_SPLIT_NO_EMPTY);
-                        $filename = 'attachment_'.time().'_'.uniqid().'.bin';
-                        Storage::disk('private')->put("class-post-attachments/{$filename}", $decoded);
-                        $jsonAttachments[] = "class-post-attachments/{$filename}";
-                    }
-                }
-                $attachments = array_merge($attachments, $jsonAttachments);
-                unset($validated['attachments']);
-            }
+            unset($validated['attachments']);
 
             $postData = array_merge($validated, [
                 'attachments' => $attachments,

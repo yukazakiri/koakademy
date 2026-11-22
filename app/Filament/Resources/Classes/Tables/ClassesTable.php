@@ -171,8 +171,14 @@ final class ClassesTable
                 TextColumn::make('faculty_name')
                     ->label('Faculty')
                     ->getStateUsing(fn (Classes $classes): string => $classes->Faculty?->full_name ?? 'No faculty assigned')
-                    ->sortable(query: fn (Builder $builder, string $direction): Builder => $builder->leftJoin('faculty', 'classes.faculty_id', '=', 'faculty.id')
-                        ->orderByRaw("CONCAT(faculty.last_name, ', ', faculty.first_name) ".$direction))
+                    ->sortable(query: function (Builder $builder, string $direction): Builder {
+                        $safeDirection = mb_strtolower($direction) === 'desc' ? 'desc' : 'asc';
+
+                        return $builder
+                            ->leftJoin('faculty', 'classes.faculty_id', '=', 'faculty.id')
+                            ->select('classes.*')
+                            ->orderByRaw("CONCAT(faculty.last_name, ', ', faculty.first_name) {$safeDirection}");
+                    })
                     ->toggleable()
                     ->placeholder('No faculty assigned')
                     ->description(fn (Classes $classes): ?string => $classes->Faculty?->departmentBelongsTo ? 'Dept: '.$classes->Faculty->departmentBelongsTo->name : null

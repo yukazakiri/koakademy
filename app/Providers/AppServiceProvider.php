@@ -30,6 +30,7 @@ use App\Services\Newsletter\NewsletterSettingsService;
 use App\Services\Newsletter\NewsletterSubscriptionService;
 use App\Services\VersionService;
 use App\Support\HostingSecurity;
+use App\Support\Octane\DisconnectSqliteConnections;
 use App\Support\RuntimeSecurity;
 use DateInterval;
 use Filament\Facades\Filament;
@@ -81,6 +82,7 @@ final class AppServiceProvider extends ServiceProvider
 
         $this->app->scoped(GeneralSettingsService::class);
         $this->app->scoped(\App\Services\GradeReleaseService::class);
+        $this->app->singleton(DisconnectSqliteConnections::class);
         $this->app->singleton(ExportFailureHandler::class);
         $this->app->scoped(ModuleManifestRepository::class);
         $this->app->scoped(ModuleStateRepository::class);

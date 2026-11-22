@@ -131,20 +131,26 @@ it('standardizes cross-platform composer setup and dev workflows and keeps sail 
 
 it('pins the contributor toolchain, guards worktree autoloading, and removes root scratch files', function (): void {
     $package = json_decode(File::get(base_path('package.json')), true, 512, JSON_THROW_ON_ERROR);
+    $docsPackage = json_decode(File::get(base_path('docs/package.json')), true, 512, JSON_THROW_ON_ERROR);
     $nodeVersion = mb_trim(File::get(base_path('.node-version')));
     $mise = File::get(base_path('mise.toml'));
     $envExample = File::get(base_path('.env.example'));
     $bootstrap = File::get(base_path('bootstrap/app.php'));
+    $viteConfig = File::get(base_path('vite.config.js'));
 
     expect($package['engines']['node'] ?? null)->toBe('>='.RuntimeSecurity::MINIMUM_NODE_VERSION)
+        ->and($docsPackage['engines']['node'] ?? null)->toBe('>='.RuntimeSecurity::MINIMUM_NODE_VERSION)
         ->and(RuntimeSecurity::nodeVersionIsSupported($nodeVersion))->toBeTrue()
         ->and($mise)->toContain('php = "'.RuntimeSecurity::MINIMUM_PHP_VERSION.'"')
         ->and($mise)->toContain('node = "'.$nodeVersion.'"')
         ->and($envExample)->toMatch('/^APP_URL=http:\/\/127\.0\.0\.1:8000$/m')
         ->and($envExample)->toMatch('/^APP_TIMEZONE=UTC$/m')
-        ->and($bootstrap)->toContain("if (is_link(__DIR__.'/../vendor'))");
+        ->and($envExample)->toMatch('/^LARALYZE_ENABLED=false$/m')
+        ->and($bootstrap)->toContain("if (is_link(__DIR__.'/../vendor'))")
+        ->and($viteConfig)->toContain('process.platform === "win32"');
 
     expect(File::exists(base_path('bun.lock')))->toBeFalse()
+        ->and(File::exists(base_path('docs/bun.lock')))->toBeFalse()
         ->and(File::exists(base_path('pandacode-run.sh')))->toBeFalse()
         ->and(File::exists(base_path('PROFILE_SETTINGS_REVAMP_PLAN.md')))->toBeFalse()
         ->and(File::exists(base_path('.devcontainerignore')))->toBeFalse();

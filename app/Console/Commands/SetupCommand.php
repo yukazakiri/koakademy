@@ -79,7 +79,29 @@ final class SetupCommand extends Command
             $adminEmail = (string) $this->ask('Super Administrator Email', 'admin@example.com');
         }
 
-        $adminPassword = (string) ($this->option('admin-password') ?: ($unattended ? 'password' : ''));
+        $adminPasswordOption = (string) ($this->option('admin-password') ?: '');
+        if ($adminPasswordOption === '') {
+            $envPassword = $_SERVER['KOAKADEMY_ADMIN_PASSWORD'] ?? $_ENV['KOAKADEMY_ADMIN_PASSWORD'] ?? getenv('KOAKADEMY_ADMIN_PASSWORD');
+            if (is_string($envPassword) && $envPassword !== '') {
+                $adminPasswordOption = $envPassword;
+            }
+        }
+        if ($adminPasswordOption === '' && is_readable('/run/secrets/koakademy-setup-admin-password')) {
+            $secretPassword = mb_trim((string) @file_get_contents('/run/secrets/koakademy-setup-admin-password'));
+            if ($secretPassword !== '' && $secretPassword !== '__KOAKADEMY_NOT_CONFIGURED__') {
+                $adminPasswordOption = $secretPassword;
+            }
+        }
+
+        if ($unattended && $adminPasswordOption === '' && app()->isProduction()) {
+            $this->components->error('Admin password (--admin-password or KOAKADEMY_ADMIN_PASSWORD) is required for unattended setup in production.');
+
+            return self::FAILURE;
+        }
+
+        $adminPassword = $adminPasswordOption !== ''
+            ? $adminPasswordOption
+            : ($unattended ? 'password' : '');
         if ($adminPassword === '') {
             $adminPassword = (string) $this->secret('Super Administrator Password');
         }

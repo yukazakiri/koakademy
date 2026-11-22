@@ -59,3 +59,41 @@ it('does not re-run setup without force when already setup', function (): void {
         ->expectsOutputToContain('KoAkademy is already set up')
         ->assertSuccessful();
 });
+
+it('fails closed for unattended setup in production when no admin password is supplied', function (): void {
+    $previousEnv = app()->environment();
+    app()->detectEnvironment(static fn (): string => 'production');
+
+    try {
+        $this->artisan('app:setup --unattended')
+            ->expectsOutputToContain('Admin password (--admin-password or KOAKADEMY_ADMIN_PASSWORD) is required for unattended setup in production.')
+            ->assertFailed();
+
+        expect(User::query()->where('role', UserRole::SuperAdmin)->exists())->toBeFalse();
+    } finally {
+        app()->detectEnvironment(static fn (): string => (string) $previousEnv);
+    }
+});
+
+it('accepts KOAKADEMY_ADMIN_PASSWORD from the environment for unattended production setup', function (): void {
+    $previousEnv = app()->environment();
+    app()->detectEnvironment(static fn (): string => 'production');
+    $_ENV['KOAKADEMY_ADMIN_PASSWORD'] = 'EnvSuppliedSecret99!';
+    $_SERVER['KOAKADEMY_ADMIN_PASSWORD'] = 'EnvSuppliedSecret99!';
+    putenv('KOAKADEMY_ADMIN_PASSWORD=EnvSuppliedSecret99!');
+
+    try {
+        $this->artisan('app:setup', [
+            '--admin-email' => 'ops@school.example',
+            '--unattended' => true,
+        ])->assertSuccessful();
+
+        $user = User::query()->where('email', 'ops@school.example')->first();
+        expect($user)->not->toBeNull()
+            ->and($user?->role)->toBe(UserRole::SuperAdmin);
+    } finally {
+        unset($_ENV['KOAKADEMY_ADMIN_PASSWORD'], $_SERVER['KOAKADEMY_ADMIN_PASSWORD']);
+        putenv('KOAKADEMY_ADMIN_PASSWORD');
+        app()->detectEnvironment(static fn (): string => (string) $previousEnv);
+    }
+});

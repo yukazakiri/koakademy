@@ -21,7 +21,7 @@ check_supervisor_program() {
 }
 
 if [ "${container_mode}" = "http" ]; then
-    if [ -n "${OCTANE_SERVER:-}" ]; then
+    if [ -n "${OCTANE_SERVER:-}" ] && [ -f /etc/supervisor/conf.d/supervisord.frankenphp.conf ]; then
         check_supervisor_program "frankenphp"
     else
         check_supervisor_program "nginx"
@@ -59,8 +59,6 @@ if [ "${container_mode}" = "http" ]; then
     '
 elif [ "${container_mode}" = "horizon" ]; then
     php "${ROOT}/artisan" horizon:status
-    check_supervisor_program "assessment-pdf:assessment-pdf_00"
-    check_supervisor_program "assessment-events:assessment-events_00"
 elif [ "${container_mode}" = "scheduler" ]; then
     check_supervisor_program "scheduler:scheduler_0"
 elif [ "${container_mode}" = "reverb" ]; then

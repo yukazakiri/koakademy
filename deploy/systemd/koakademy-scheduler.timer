@@ -1,0 +1,11 @@
+[Unit]
+Description=Run KoAkademy Scheduled Tasks Every Minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+Persistent=true
+AccuracySec=1s
+Unit=koakademy-scheduler.service
+
+[Install]
+WantedBy=timers.target

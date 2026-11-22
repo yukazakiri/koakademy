@@ -18,6 +18,18 @@ it('shows the setup screen when the database is empty', function (): void {
     expect(GeneralSetting::query()->exists())->toBeFalse();
 });
 
+it('allows health and liveness probes to return 200 before initial setup is complete', function (): void {
+    $middleware = new App\Http\Middleware\EnsureSystemIsSetup();
+    $healthRequest = Illuminate\Http\Request::create('/health', 'GET');
+    $upRequest = Illuminate\Http\Request::create('/up', 'GET');
+
+    $this->get('/health')->assertOk()->assertJsonPath('status', 'ok');
+    $this->get('/up')->assertOk();
+
+    expect($healthRequest->is('health'))->toBeTrue()
+        ->and($upRequest->is('up'))->toBeTrue();
+});
+
 it('marks the application as setup when data exists and blocks access', function (): void {
     User::factory()->create();
 

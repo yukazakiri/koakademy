@@ -25,6 +25,43 @@ normalize_environment_value() {
     export "${variable_name}=${variable_value}"
 }
 
+load_secret_file_fallbacks() {
+    for variable_name in APP_KEY DB_PASSWORD REDIS_PASSWORD \
+        AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY \
+        R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY \
+        LIBRARY_R2_ACCESS_KEY_ID LIBRARY_R2_SECRET_ACCESS_KEY \
+        MAIL_PASSWORD SEQUENZY_API_KEY MEILISEARCH_KEY; do
+        eval "current_value=\${${variable_name}:-}"
+        eval "file_path=\${${variable_name}_FILE:-}"
+        file_path=$(strip_optional_quotes "${file_path}")
+
+        if [ -z "${current_value}" ] && [ -n "${file_path}" ] && [ -r "${file_path}" ]; then
+            secret_value=$(cat "${file_path}")
+            if [ -n "${secret_value}" ] && [ "${secret_value}" != "__KOAKADEMY_NOT_CONFIGURED__" ]; then
+                export "${variable_name}=${secret_value}"
+            fi
+        fi
+    done
+
+    for secret_pair in \
+        "APP_KEY:/run/secrets/koakademy_app_key" \
+        "DB_PASSWORD:/run/secrets/koakademy_db_password" \
+        "REDIS_PASSWORD:/run/secrets/koakademy_redis_password"; do
+        variable_name=${secret_pair%%:*}
+        secret_path=${secret_pair#*:}
+        eval "current_value=\${${variable_name}:-}"
+
+        if [ -z "${current_value}" ] && [ -r "${secret_path}" ]; then
+            secret_value=$(cat "${secret_path}")
+            if [ -n "${secret_value}" ] && [ "${secret_value}" != "__KOAKADEMY_NOT_CONFIGURED__" ]; then
+                export "${variable_name}=${secret_value}"
+            fi
+        fi
+    done
+}
+
+load_secret_file_fallbacks
+
 normalize_environment_value APP_ENV "${APP_ENV:-production}"
 normalize_environment_value APP_DEBUG "${APP_DEBUG:-false}"
 
@@ -198,8 +235,8 @@ resolve_horizon_enabled() {
     queue_connection=$(printf '%s' "${QUEUE_CONNECTION:-database}" | tr '[:upper:]' '[:lower:]')
     horizon_env=$(printf '%s' "${HORIZON_ENABLED:-}" | tr '[:upper:]' '[:lower:]')
 
-    if [ "${queue_connection}" = "redis" ]; then
-        horizon_enabled=true
+    if is_falsy "${horizon_env}"; then
+        horizon_enabled=false
         return 0
     fi
 
@@ -208,8 +245,8 @@ resolve_horizon_enabled() {
         return 0
     fi
 
-    if is_falsy "${horizon_env}"; then
-        horizon_enabled=false
+    if [ "${queue_connection}" = "redis" ]; then
+        horizon_enabled=true
         return 0
     fi
 
@@ -583,7 +620,15 @@ fix_storage_permissions() {
     web_user="${WEB_USER:-${USER:-www-data}}"
     web_group="${WEB_GROUP:-${USER:-www-data}}"
 
-    mkdir -p storage/framework/{cache,sessions,testing,views} storage/logs bootstrap/cache
+    mkdir -p \
+        storage/framework/cache \
+        storage/framework/sessions \
+        storage/framework/testing \
+        storage/framework/views \
+        storage/app/public \
+        storage/app/private \
+        storage/logs \
+        bootstrap/cache
 
     if [ "$(id -u)" = "0" ]; then
         chown -R "${web_user}:${web_group}" storage bootstrap/cache 2>/dev/null || true
@@ -872,17 +917,21 @@ bootstrap_container() {
 
 start_http_container() {
     if [ -n "${OCTANE_SERVER:-}" ]; then
-        echo "Web Server: FrankenPHP (${OCTANE_SERVER})"
+        if [ -f /etc/supervisor/conf.d/supervisord.frankenphp.conf ]; then
+            echo "Web Server: FrankenPHP (${OCTANE_SERVER})"
 
-        # Ensure any files created during startup (logs, caches, etc.) are
-        # writable by the web server process before it starts.
-        fix_storage_permissions
+            # Ensure any files created during startup (logs, caches, etc.) are
+            # writable by the web server process before it starts.
+            fix_storage_permissions
 
-        if [ "${horizon_enabled}" = "true" ] && run_horizon_in_http_container; then
-            exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.frankenphp.conf
+            if [ "${horizon_enabled}" = "true" ] && run_horizon_in_http_container; then
+                exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.frankenphp.conf
+            fi
+
+            exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.frankenphp.no-horizon.conf
         fi
 
-        exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.frankenphp.no-horizon.conf
+        echo "WARN: OCTANE_SERVER=${OCTANE_SERVER} is set, but /etc/supervisor/conf.d/supervisord.frankenphp.conf is absent in this image. Falling back to nginx + PHP-FPM. Use a '-franken' image tag to run FrankenPHP."
     fi
 
     echo "Web Server: nginx + PHP-FPM"
@@ -906,8 +955,6 @@ start_non_http_container() {
         fi
 
         exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.horizon.conf
-    elif [ "${container_mode}" = "reverb" ]; then
-        exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.reverb.conf
     elif [ "${container_mode}" = "scheduler" ]; then
         exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.scheduler.conf
     elif [ "${container_mode}" = "nightwatch" ]; then
@@ -921,7 +968,7 @@ start_non_http_container() {
         exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.worker.conf
     fi
 
-    echo "Container mode mismatched."
+    echo "Container mode '${container_mode}' is unsupported."
     exit 1
 }
 

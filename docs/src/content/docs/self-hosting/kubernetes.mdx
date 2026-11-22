@@ -35,9 +35,11 @@ stringData:
   APP_KEY: "base64:YOUR_GENERATED_32_BYTE_BASE64_KEY"
   DB_PASSWORD: "YourSecureDatabasePassword"
   REDIS_PASSWORD: "YourSecureRedisPassword"
-  # S3 / R2 credentials if using object storage
-  AWS_ACCESS_KEY_ID: "your_access_key"
-  AWS_SECRET_ACCESS_KEY: "your_secret_key"
+  # S3 / Cloudflare R2 credentials for object storage
+  R2_ACCESS_KEY_ID: "your_r2_access_key"
+  R2_SECRET_ACCESS_KEY: "your_r2_secret_key"
+  AWS_ACCESS_KEY_ID: "your_r2_access_key"
+  AWS_SECRET_ACCESS_KEY: "your_r2_secret_key"
 ```
 
 Apply secrets:
@@ -63,7 +65,11 @@ data:
   APP_ENV: "production"
   APP_DEBUG: "false"
   APP_URL: "https://school.example.com"
+  PORTAL_HOST: "school.example.com"
+  ADMIN_HOST: "school.example.com"
+  TRUSTED_PROXIES: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
   OCTANE_SERVER: "frankenphp"
+  HORIZON_IN_HTTP_CONTAINER: "false"
   AUTO_MIGRATE: "false"
   RUN_OPTIMIZE: "foreground"
   
@@ -84,17 +90,19 @@ data:
   # Gotenberg
   GOTENBERG_URL: "http://gotenberg.koakademy.svc.cluster.local:3000"
   
-  # Object Storage
+  # Object Storage (Cloudflare R2 / S3)
   FILESYSTEM_DISK: "r2"
+  R2_BUCKET: "koakademy-uploads"
+  R2_DEFAULT_REGION: "auto"
+  R2_ENDPOINT: "https://<account-id>.r2.cloudflarestorage.com"
   AWS_BUCKET: "koakademy-uploads"
   AWS_DEFAULT_REGION: "auto"
   AWS_ENDPOINT: "https://<account-id>.r2.cloudflarestorage.com"
 
-  # Generated exports (assessment forms, student lists, timetable PDFs) are
-  # written to their own disk so they are never reachable through /storage.
-  # The built-in "private" disk is local, so replicas need a shared volume or
-  # an object storage disk every replica can read.
-  FILESYSTEM_PRIVATE_DISK: "private"
+  # Multi-replica deployments must store generated exports on a shared object
+  # storage disk (or mount a ReadWriteMany PVC on /app/storage) so every pod
+  # can read exports created by background workers.
+  FILESYSTEM_PRIVATE_DISK: "r2"
 ```
 
 Apply config:
@@ -188,8 +196,8 @@ spec:
       restartPolicy: Never
       containers:
         - name: migrate
-          # The same release-specific tag the application deployment uses.
-          image: ghcr.io/yukazakiri/koakademy:v1.30.0
+          # The same release-specific FrankenPHP tag the application deployment uses.
+          image: ghcr.io/yukazakiri/koakademy:v1.30.0-franken
           imagePullPolicy: IfNotPresent
           command: ["php", "artisan", "migrate", "--force", "--no-interaction"]
           envFrom:
@@ -201,7 +209,7 @@ spec:
 
 ---
 
-## Step 5: Application Deployment & Service
+## Step 5: Application, Worker & Scheduler Deployments
 
 Create `koakademy-app.yaml`:
 
@@ -228,8 +236,8 @@ spec:
     spec:
       containers:
         - name: koakademy
-          # The same release-specific tag the migration job uses.
-          image: ghcr.io/yukazakiri/koakademy:v1.30.0
+          # The same release-specific FrankenPHP tag the migration job uses.
+          image: ghcr.io/yukazakiri/koakademy:v1.30.0-franken
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
@@ -264,6 +272,88 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 2
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: koakademy-horizon
+  namespace: koakademy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: koakademy-horizon
+  template:
+    metadata:
+      labels:
+        app: koakademy-horizon
+    spec:
+      containers:
+        - name: horizon
+          image: ghcr.io/yukazakiri/koakademy:v1.30.0-franken
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: CONTAINER_MODE
+              value: "horizon"
+            - name: AUTO_MIGRATE
+              value: "false"
+            - name: RUN_OPTIMIZE
+              value: "false"
+            - name: RUN_SCOUT_SETTINGS
+              value: "false"
+          envFrom:
+            - configMapRef:
+                name: koakademy-config
+            - secretRef:
+                name: koakademy-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: koakademy-scheduler
+  namespace: koakademy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: koakademy-scheduler
+  template:
+    metadata:
+      labels:
+        app: koakademy-scheduler
+    spec:
+      containers:
+        - name: scheduler
+          image: ghcr.io/yukazakiri/koakademy:v1.30.0-franken
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: CONTAINER_MODE
+              value: "scheduler"
+            - name: AUTO_MIGRATE
+              value: "false"
+            - name: RUN_OPTIMIZE
+              value: "false"
+            - name: RUN_SCOUT_SETTINGS
+              value: "false"
+          envFrom:
+            - configMapRef:
+                name: koakademy-config
+            - secretRef:
+                name: koakademy-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
 ---
 apiVersion: v1
 kind: Service

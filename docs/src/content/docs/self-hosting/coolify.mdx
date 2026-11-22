@@ -37,7 +37,7 @@ services:
   # only after it completed successfully. Coolify deploys this Compose
   # definition as it is written, so the step has to be part of it.
   migrate:
-    image: ghcr.io/yukazakiri/koakademy:latest
+    image: ghcr.io/yukazakiri/koakademy:latest-franken
     restart: "no"
     entrypoint: ["php", "artisan", "migrate", "--force", "--no-interaction"]
     environment:
@@ -70,22 +70,20 @@ services:
         condition: service_healthy
 
   app:
-    image: ghcr.io/yukazakiri/koakademy:latest
+    image: ghcr.io/yukazakiri/koakademy:latest-franken
     restart: unless-stopped
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
     environment:
       APP_NAME: "KoAkademy"
       APP_ENV: "production"
       APP_DEBUG: "false"
       APP_URL: "${COOLIFY_FQDN_APP:-https://school.example.com}"
+      TRUSTED_PROXIES: "*"
       APP_KEY: "${APP_KEY}"
       APP_PORT: 8000
       OCTANE_SERVER: "frankenphp"
       AUTO_MIGRATE: "false"
       RUN_OPTIMIZE: "foreground"
-      
+
       # Database
       DB_CONNECTION: "pgsql"
       DB_HOST: "postgres"
@@ -93,7 +91,7 @@ services:
       DB_DATABASE: "koakademy"
       DB_USERNAME: "koakademy"
       DB_PASSWORD: "${DB_PASSWORD}"
-      
+
       # Redis Cache & Queues
       CACHE_STORE: "redis"
       SESSION_DRIVER: "redis"
@@ -101,20 +99,60 @@ services:
       REDIS_HOST: "redis"
       REDIS_PORT: 6379
       REDIS_PASSWORD: "${REDIS_PASSWORD}"
-      
+
       # PDF Service
       GOTENBERG_URL: "http://gotenberg:3000"
-      
+
       # Storage
       FILESYSTEM_DISK: "public"
     volumes:
       - app_storage:/app/storage
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       gotenberg:
+        condition: service_healthy
+
+  scheduler:
+    image: ghcr.io/yukazakiri/koakademy:latest-franken
+    restart: unless-stopped
+    environment:
+      CONTAINER_MODE: "scheduler"
+      APP_NAME: "KoAkademy"
+      APP_ENV: "production"
+      APP_DEBUG: "false"
+      APP_URL: "${COOLIFY_FQDN_APP:-https://school.example.com}"
+      APP_KEY: "${APP_KEY}"
+      AUTO_MIGRATE: "false"
+      RUN_DOCKER_SCRIPTS: "false"
+      RUN_SCOUT_SETTINGS: "false"
+      RUN_OPTIMIZE: "false"
+      DB_CONNECTION: "pgsql"
+      DB_HOST: "postgres"
+      DB_PORT: 5432
+      DB_DATABASE: "koakademy"
+      DB_USERNAME: "koakademy"
+      DB_PASSWORD: "${DB_PASSWORD}"
+      CACHE_STORE: "redis"
+      SESSION_DRIVER: "redis"
+      QUEUE_CONNECTION: "redis"
+      REDIS_HOST: "redis"
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: "${REDIS_PASSWORD}"
+      GOTENBERG_URL: "http://gotenberg:3000"
+      FILESYSTEM_DISK: "public"
+    volumes:
+      - app_storage:/app/storage
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   postgres:
@@ -125,7 +163,7 @@ services:
       POSTGRES_USER: "koakademy"
       POSTGRES_PASSWORD: "${DB_PASSWORD}"
     volumes:
-      - pg_data:/var/lib/postgresql/data
+      - pg_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U koakademy -d koakademy"]
       interval: 10s
@@ -165,7 +203,7 @@ volumes:
 
 In Coolify's **Environment Variables** panel, set the following secrets:
 
-1. `APP_KEY`: Generate a key with `docker run --rm ghcr.io/yukazakiri/koakademy:latest php artisan key:generate --show`.
+1. `APP_KEY`: Generate a key with `docker run --rm ghcr.io/yukazakiri/koakademy:latest-franken php artisan key:generate --show`.
 2. `DB_PASSWORD`: Enter a secure random string for PostgreSQL.
 3. `REDIS_PASSWORD`: Enter a secure random string for Redis.
 

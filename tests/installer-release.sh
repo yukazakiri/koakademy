@@ -76,7 +76,6 @@ if [[ "$channel" == stable ]]; then
     export KOAKADEMY_INSTALLER_TEST_STATE="$flag_state"
     export KOAKADEMY_ROOT="$flag_state/runtime"
     export KOAKADEMY_INSTALLER_TEST_SWARM_STATE=inactive
-    export KOAKADEMY_ADVERTISE_ADDR=198.51.100.10
 
     # Mask the host Docker binary so the fixture exercises the official Docker
     # bootstrap path before the test fixture becomes available again.
@@ -92,13 +91,13 @@ if [[ "$channel" == stable ]]; then
     export KOAKADEMY_INSTALLER_TEST_DOCKER_SOURCE="$repository_root/tests/Fixtures/installer/docker"
     export KOAKADEMY_INSTALLER_TEST_DOCKER_TARGET="$minimal_bin/docker"
     export PATH="$minimal_bin"
-    bash "$bootstrap_directory/install.sh" --domain flag.example
+    bash "$bootstrap_directory/install.sh" --domain flag.example --advertise-addr 198.51.100.10
     export PATH="$base_path"
     ln -s "$repository_root/tests/Fixtures/installer/docker" "$fixture_bin/docker"
     unset KOAKADEMY_INSTALLER_TEST_DOCKER_SOURCE KOAKADEMY_INSTALLER_TEST_DOCKER_TARGET
     grep -Fq 'KOAKADEMY_DOMAIN=flag.example' "$flag_state/runtime/runtime.env"
     grep -Fq 'swarm init --advertise-addr 198.51.100.10' "$flag_state/docker.log"
-    unset KOAKADEMY_INSTALLER_TEST_SWARM_STATE KOAKADEMY_ADVERTISE_ADDR
+    unset KOAKADEMY_INSTALLER_TEST_SWARM_STATE
 
     # A piped, non-interactive stable install without a domain must succeed
     # with direct self-hosted HTTP access instead of requiring a domain.
@@ -145,6 +144,11 @@ if [[ "$channel" == stable ]]; then
     grep -Fq 'php artisan app:setup --unattended' "$unattended_state/docker.log"
     grep -Fq -- '--admin-email=admin@unattended.example' "$unattended_state/docker.log"
     grep -Fq -- '--school-name=Automated School' "$unattended_state/docker.log"
+    grep -Fq -- '--env KOAKADEMY_ADMIN_PASSWORD=secretpass123' "$unattended_state/docker.log"
+    if grep -Fq -- '--admin-password=' "$unattended_state/docker.log"; then
+        printf 'Admin password must not be passed as a CLI argument to app:setup.\n' >&2
+        exit 1
+    fi
 
     # Restore the primary fixture state for the update lifecycle assertions.
     export KOAKADEMY_INSTALLER_TEST_STATE="$state_directory"
@@ -169,6 +173,7 @@ if [[ "$channel" == stable ]]; then
         "$state_directory/runtime/runtime.env"
     grep -Fq 'INSTALLATION_COMPLETE=true' "$state_directory/runtime/runtime.env"
 else
+    export KOAKADEMY_INSTALLER_TEST_NONINTERACTIVE=1
     export KOAKADEMY_INSTALLER_TEST_SOURCE_SHA="$previous_source_sha"
     export KOAKADEMY_INSTALLER_TEST_FAIL_FIRST_STACK=1
     if bash "$bootstrap_directory/install.sh" edge; then

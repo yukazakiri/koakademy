@@ -92,6 +92,7 @@ case "$command_name" in
                 create services koakademy_caddy
                 if [[ "${APP_REPLICAS:-1}" != 0 ]]; then
                     create services koakademy_app
+                    create services koakademy_scheduler
                     printf '%s\n' "${KOAKADEMY_IMAGE:-}" >"$state/services/koakademy_app_image"
                 fi
                 ;;

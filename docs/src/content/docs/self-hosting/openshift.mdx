@@ -8,8 +8,8 @@ This guide covers running KoAkademy on [Red Hat OpenShift Container Platform (OC
 ## OpenShift Architectural Considerations
 
 1. **Security Context Constraints (SCC)**:
-   - KoAkademy's base container sets POSIX capabilities (`CAP_NET_BIND_SERVICE`) on FrankenPHP and defaults to non-root UID `1000:1000`.
-   - On OpenShift clusters with restricted SCCs, the pod will run with an arbitrary assigned UID from the project's UID range. The container filesystem and `/tmp/opcache-file-cache` permissions support standard OpenShift non-root user execution.
+   - KoAkademy's production image runs `supervisord` to manage FrankenPHP, Inertia SSR, and worker processes, and switches child processes to the `laravel` user (`1000:1000`).
+   - Grant the `anyuid` SCC to the deployment's ServiceAccount (`oc adm policy add-scc-to-user anyuid -z default -n koakademy`), or run FrankenPHP directly as an unprivileged entrypoint when enforcing `restricted-v2`.
 2. **OpenShift Routes**:
    - OpenShift uses `Route` objects backed by HAProxy routers for ingress traffic and automatic TLS edge termination.
 3. **Storage**:
@@ -23,6 +23,7 @@ Create a dedicated OpenShift project:
 
 ```sh
 oc new-project koakademy --display-name="KoAkademy School System"
+oc adm policy add-scc-to-user anyuid -z default -n koakademy
 ```
 
 Create OpenShift secrets:
@@ -50,19 +51,26 @@ data:
   APP_ENV: "production"
   APP_DEBUG: "false"
   APP_URL: "https://koakademy.apps.cluster.example.com"
+  PORTAL_HOST: "koakademy.apps.cluster.example.com"
+  ADMIN_HOST: "koakademy.apps.cluster.example.com"
+  TRUSTED_PROXIES: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
   OCTANE_SERVER: "frankenphp"
+  HORIZON_IN_HTTP_CONTAINER: "false"
   AUTO_MIGRATE: "false"
   RUN_OPTIMIZE: "foreground"
-  
+
   # DB & Redis
   DB_CONNECTION: "pgsql"
   DB_HOST: "postgresql"
   DB_PORT: "5432"
   DB_DATABASE: "koakademy"
   DB_USERNAME: "koakademy"
+  CACHE_STORE: "redis"
+  SESSION_DRIVER: "redis"
+  QUEUE_CONNECTION: "redis"
   REDIS_HOST: "redis"
   REDIS_PORT: "6379"
-  
+
   # PDF Service
   GOTENBERG_URL: "http://gotenberg:3000"
   FILESYSTEM_DISK: "public"
@@ -78,7 +86,7 @@ oc apply -f koakademy-configmap.yaml
 
 ## Step 3: Deploy Gotenberg, PostgreSQL & Redis
 
-You can use OpenShift Template or standard manifests:
+Deploy Gotenberg alongside your OpenShift PostgreSQL and Redis services:
 
 ```yaml
 # dependencies.yaml
@@ -123,7 +131,7 @@ spec:
       targetPort: 3000
 ```
 
-Apply dependencies:
+Apply dependencies (and provision `postgresql` and `redis` via OpenShift operators or StatefulSets):
 
 ```sh
 oc apply -f dependencies.yaml
@@ -153,8 +161,8 @@ spec:
       restartPolicy: Never
       containers:
         - name: migrate
-          # The same release-specific tag the application deployment uses.
-          image: ghcr.io/yukazakiri/koakademy:v1.30.0
+          # The same release-specific FrankenPHP tag the application deployment uses.
+          image: ghcr.io/yukazakiri/koakademy:v1.30.0-franken
           imagePullPolicy: IfNotPresent
           command: ["php", "artisan", "migrate", "--force", "--no-interaction"]
           envFrom:
@@ -166,7 +174,7 @@ spec:
 
 ---
 
-## Step 5: Deploy KoAkademy Application
+## Step 5: Deploy KoAkademy Application, Horizon & Scheduler
 
 ```yaml
 # koakademy-deployment.yaml
@@ -192,8 +200,8 @@ spec:
     spec:
       containers:
         - name: app
-          # The same release-specific tag the migration job uses.
-          image: ghcr.io/yukazakiri/koakademy:v1.30.0
+          # The same release-specific FrankenPHP tag the migration job uses.
+          image: ghcr.io/yukazakiri/koakademy:v1.30.0-franken
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
@@ -224,6 +232,74 @@ spec:
               port: 8000
             initialDelaySeconds: 10
             periodSeconds: 10
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: koakademy-horizon
+  namespace: koakademy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: koakademy-horizon
+  template:
+    metadata:
+      labels:
+        app: koakademy-horizon
+    spec:
+      containers:
+        - name: horizon
+          image: ghcr.io/yukazakiri/koakademy:v1.30.0-franken
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: CONTAINER_MODE
+              value: "horizon"
+            - name: AUTO_MIGRATE
+              value: "false"
+            - name: RUN_OPTIMIZE
+              value: "false"
+            - name: RUN_SCOUT_SETTINGS
+              value: "false"
+          envFrom:
+            - configMapRef:
+                name: koakademy-config
+            - secretRef:
+                name: koakademy-secrets
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: koakademy-scheduler
+  namespace: koakademy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: koakademy-scheduler
+  template:
+    metadata:
+      labels:
+        app: koakademy-scheduler
+    spec:
+      containers:
+        - name: scheduler
+          image: ghcr.io/yukazakiri/koakademy:v1.30.0-franken
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: CONTAINER_MODE
+              value: "scheduler"
+            - name: AUTO_MIGRATE
+              value: "false"
+            - name: RUN_OPTIMIZE
+              value: "false"
+            - name: RUN_SCOUT_SETTINGS
+              value: "false"
+          envFrom:
+            - configMapRef:
+                name: koakademy-config
+            - secretRef:
+                name: koakademy-secrets
 ---
 apiVersion: v1
 kind: Service

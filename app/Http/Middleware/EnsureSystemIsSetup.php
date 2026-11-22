@@ -26,8 +26,8 @@ final class EnsureSystemIsSetup
             return $next($request);
         }
 
-        // Skip setup routes and ignition/dev routes
-        if ($request->is('setup') || $request->is('setup/*') || $request->is('_ignition/*') || $request->is('livewire/*')) {
+        // Skip setup routes, container health probes, and ignition/dev routes
+        if ($request->is('setup') || $request->is('setup/*') || $request->is('health') || $request->is('up') || $request->is('_ignition/*') || $request->is('livewire/*')) {
             return $next($request);
         }
 

@@ -1665,7 +1665,13 @@ final class StudentEnrollmentForm
                                                     'TBA';
                                                 $section =
                                                     $class->section ?? '';
-                                                $scheduleData[$subjectCode][$weekDay] = sprintf('<b>%s | %s</b> <br> %s - %s', $room, $section, $startTime, $endTime);
+                                                $scheduleData[$subjectCode][$weekDay] = sprintf(
+                                                    '<b>%s | %s</b> <br> %s - %s',
+                                                    e((string) $room),
+                                                    e((string) $section),
+                                                    e((string) $startTime),
+                                                    e((string) $endTime),
+                                                );
                                             }
                                         }
                                     }
@@ -1708,7 +1714,7 @@ final class StudentEnrollmentForm
                                 ) {
                                     $table .=
                                         '<tr><td class="px-6 py-4 whitespace-nowrap">'.
-                                        $subjectCode.
+                                        e((string) $subjectCode).
                                         '</td>';
                                     $days = [
                                         'monday',

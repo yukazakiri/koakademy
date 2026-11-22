@@ -89,7 +89,7 @@ final class SetupController extends Controller
             $request->merge(['country_code' => mb_strtoupper(mb_trim((string) $request->input('country_code')))]);
         }
 
-        $request->validate([
+        $validated = $request->validate([
             // Step 1: Administrator (required)
             'admin_name' => ['required', 'string', 'max:255'],
             'admin_email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
@@ -140,12 +140,14 @@ final class SetupController extends Controller
         ]);
 
         $result = $setupService->execute(
-            $request->all(),
+            $validated,
             $request->file('logo'),
         );
 
-        // Log in the new user
+        // Log in the new user and rotate the session ID to prevent session fixation
         Auth::login($result['user']);
+        $request->session()->regenerate();
+        $request->session()->put('user_session_version', (int) ($result['user']->session_version ?? 0));
 
         return redirect('/');
     }

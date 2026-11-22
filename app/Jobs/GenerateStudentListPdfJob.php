@@ -89,9 +89,9 @@ final class GenerateStudentListPdfJob implements ShouldQueue
                 str_replace('-', '_', (string) ($this->class->school_year ?? 'Unknown'))
             );
 
-            // Use the private export disk so the file is never web-accessible
+            // Use the private export disk scoped per requesting user so files are isolated
             $disk = PrivateExportStorage::disk();
-            $directory = 'exports/student-lists';
+            $directory = 'exports/student-lists/'.$this->userId;
 
             // Ensure directory exists
             Storage::disk($disk)->makeDirectory($directory);

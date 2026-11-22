@@ -13,8 +13,10 @@ use App\Filament\Pages\Backups;
 use App\Filament\Pages\GeneralSettings;
 use App\Filament\Plugins\DiscoveredModulesPlugin;
 use App\Filament\Plugins\PennantManagerPlugin;
+use App\Http\Middleware\EnsureUserAccountAccess;
 use App\Http\Middleware\ResetFeatureAccessState;
 use App\Http\Middleware\SetApiTenantContext;
+use App\Http\Middleware\SetTenantContext;
 use App\Services\AnalyticsSettingsService;
 use App\Settings\SiteSettings;
 use Awcodes\Gravatar\GravatarPlugin;
@@ -315,9 +317,12 @@ final class AdminPanelProvider extends PanelProvider
                 SubstituteBindings::class,
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
+                SetTenantContext::class,
+                \App\Http\Middleware\SecurityHeaders::class,
             ])
             ->authMiddleware([
                 Authenticate::class,
+                EnsureUserAccountAccess::class,
             ])
             ->plugins($plugins)
             ->userMenuItems([

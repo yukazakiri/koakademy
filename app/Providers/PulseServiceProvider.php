@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Enums\UserRole;
+use App\Models\User;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Pulse\Pulse;
@@ -29,8 +31,18 @@ final class PulseServiceProvider extends ServiceProvider
             'avatar' => $user->avatar_url ?? null,
         ]);
 
-        Gate::define('viewPulse', fn ($user): bool =>
-            // Only allow users with admin email or specific roles to view Pulse
-            $user->email === 'superadminh@gmail.com' || $user->email === env('ADMIN_EMAIL') || $user->hasRole('super_admin'));
+        Gate::define('viewPulse', function (mixed $user = null): bool {
+            if (! $user instanceof User) {
+                return false;
+            }
+
+            if (in_array($user->role, [UserRole::SuperAdmin, UserRole::Developer], true)) {
+                return true;
+            }
+
+            $superAdminRole = (string) config('filament-shield.super_admin.name', UserRole::SuperAdmin->value);
+
+            return $user->hasAnyRole([$superAdminRole, UserRole::Developer->value]);
+        });
     }
 }

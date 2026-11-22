@@ -903,8 +903,7 @@ final class ProfileController extends Controller
 
         if ($validator->fails()) {
             return back()
-                ->withErrors($validator->errors())
-                ->withInput($request->only(['password', 'password_confirmation']));
+                ->withErrors($validator->errors());
         }
 
         $user = Auth::user();
@@ -912,13 +911,20 @@ final class ProfileController extends Controller
         // Verify current password
         if (! Hash::check($request->current_password, $user->password)) {
             return back()
-                ->withErrors(['current_password' => 'The current password is incorrect.'])
-                ->withInput($request->only(['password', 'password_confirmation']));
+                ->withErrors(['current_password' => 'The current password is incorrect.']);
         }
 
-        $user->update([
+        $user->forceFill([
             'password' => Hash::make($request->password),
-        ]);
+            'session_version' => ((int) ($user->session_version ?? 0)) + 1,
+            'remember_token' => Str::random(60),
+        ])->save();
+
+        $user->tokens()->delete();
+        $user->revokeMcpOAuthTokens();
+
+        $request->session()->regenerate();
+        $request->session()->put('user_session_version', (int) $user->session_version);
 
         return back()->with('flash', [
             'success' => 'Password changed successfully!',

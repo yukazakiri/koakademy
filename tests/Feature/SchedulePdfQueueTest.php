@@ -22,7 +22,7 @@ it('queues schedule PDF export from downloads route', function (): void {
     ]);
 
     $response = $this->actingAs($user)
-        ->getJson(portalUrlForAdministrators('/download/schedule?type=timetable'));
+        ->postJson(portalUrlForAdministrators('/download/schedule?type=timetable'));
 
     $response->assertAccepted()
         ->assertJsonPath('message', 'Schedule PDF export queued. You will be notified when your file is ready.');

@@ -1353,6 +1353,38 @@ final class FacultyClassController extends Controller
             return redirect()->back()->with('flash', ['error' => 'Target class must be the same subject.']);
         }
 
+        $isEnrolled = ClassEnrollment::query()
+            ->where('class_id', $class->id)
+            ->where('student_id', $student->id)
+            ->exists();
+
+        if (! $isEnrolled) {
+            return redirect()->back()->with('flash', ['error' => 'Student is not enrolled in the source class.']);
+        }
+
+        $transferToken = Str::random(40);
+        \Illuminate\Support\Facades\Cache::put(
+            "class_transfer:{$transferToken}",
+            [
+                'source_class_id' => (string) $class->id,
+                'target_class_id' => (string) $targetClass->id,
+                'student_id' => (string) $student->id,
+                'requested_by_faculty_id' => (string) $class->faculty_id,
+            ],
+            now()->addDays(7),
+        );
+
+        $acceptUrl = \Illuminate\Support\Facades\URL::temporarySignedRoute(
+            'faculty.classes.students.move.accept',
+            now()->addDays(7),
+            [
+                'class' => $class->id,
+                'student' => $student->id,
+                'target_class' => $targetClass->id,
+                'token' => $transferToken,
+            ],
+        );
+
         // Send Notification to Target Faculty
         // Using Filament Notifications
         \Filament\Notifications\Notification::make()
@@ -1361,11 +1393,8 @@ final class FacultyClassController extends Controller
             ->actions([
                 Action::make('accept')
                     ->button()
-                    ->url(route('faculty.classes.students.move.accept', [
-                        'class' => $class->id, // Source
-                        'student' => $student->id,
-                        'target_class' => $targetClass->id,
-                    ]), shouldOpenInNewTab: false)
+                    ->url($acceptUrl, shouldOpenInNewTab: false)
+                    ->postToUrl()
                     ->markAsRead(),
                 Action::make('decline')
                     ->color('danger')
@@ -1378,12 +1407,34 @@ final class FacultyClassController extends Controller
         ]);
     }
 
-    public function acceptMove(Classes $class, \App\Models\Student $student, Classes $targetClass): RedirectResponse
+    public function acceptMove(Request $request, Classes $class, \App\Models\Student $student, Classes $targetClass): RedirectResponse
     {
         // Verified Faculty Logic: Ensure the CURRENT user is the TARGET faculty
         $currentFaculty = $this->resolveFacultyOrAbort();
-        if ($targetClass->faculty_id !== $currentFaculty->id) {
+        if ((string) $targetClass->faculty_id !== (string) $currentFaculty->id) {
             abort(403, 'You are not authorized to accept this transfer.');
+        }
+
+        // Require a valid signed transfer request originated by the source faculty
+        if (! $request->hasValidSignature()) {
+            abort(403, 'Invalid or expired transfer request.');
+        }
+
+        $token = (string) ($request->input('token') ?? $request->query('token', ''));
+        if ($token === '') {
+            abort(403, 'Missing transfer request token.');
+        }
+
+        $pending = \Illuminate\Support\Facades\Cache::pull("class_transfer:{$token}");
+
+        if (
+            ! is_array($pending)
+            || ($pending['source_class_id'] ?? null) !== (string) $class->id
+            || ($pending['target_class_id'] ?? null) !== (string) $targetClass->id
+            || ($pending['student_id'] ?? null) !== (string) $student->id
+            || ($pending['requested_by_faculty_id'] ?? null) !== (string) $class->faculty_id
+        ) {
+            abort(403, 'This transfer request is invalid, expired, or has already been processed.');
         }
 
         // Move the student
@@ -1393,7 +1444,7 @@ final class FacultyClassController extends Controller
             ->first();
 
         if (! $sourceEnrollment) {
-            return redirect()->route('classes.show', $targetClass)->with('flash', ['error' => 'Student is no longer in the source class.']);
+            return redirect()->route('faculty.classes.show', $targetClass)->with('flash', ['error' => 'Student is no longer in the source class.']);
         }
 
         // 2. Update to new class
@@ -1408,7 +1459,7 @@ final class FacultyClassController extends Controller
             ->success()
             ->sendToDatabase($class->faculty);
 
-        return redirect()->route('classes.show', $targetClass)->with('flash', [
+        return redirect()->route('faculty.classes.show', $targetClass)->with('flash', [
             'success' => "Student {$student->full_name} transferred successfully.",
         ]);
     }

@@ -399,7 +399,8 @@ it('prevents non-finance users or pending requests from resending notifications'
 });
 
 it('lets a student specify an amount and upload a receipt image', function (): void {
-    Illuminate\Support\Facades\Storage::fake('public');
+    $privateDisk = (string) config('filesystems.private_disk', 'private');
+    Illuminate\Support\Facades\Storage::fake($privateDisk);
     [$user, $student] = tuitionRequestStudent();
 
     $file = Illuminate\Http\UploadedFile::fake()->image('my_receipt.jpg', 600, 800);
@@ -425,11 +426,12 @@ it('lets a student specify an amount and upload a receipt image', function (): v
         ->and((float) $receipt->amount)->toBe(5000.00)
         ->and($receipt->image_path)->not->toBeNull();
 
-    Illuminate\Support\Facades\Storage::disk('public')->assertExists($receipt->image_path);
+    Illuminate\Support\Facades\Storage::disk($privateDisk)->assertExists($receipt->image_path);
 });
 
 it('lets a student submit two receipts with photos and amounts', function (): void {
-    Illuminate\Support\Facades\Storage::fake('public');
+    $privateDisk = (string) config('filesystems.private_disk', 'private');
+    Illuminate\Support\Facades\Storage::fake($privateDisk);
     [$user, $student] = tuitionRequestStudent();
 
     $file1 = Illuminate\Http\UploadedFile::fake()->image('receipt1.png');
@@ -454,7 +456,7 @@ it('lets a student submit two receipts with photos and amounts', function (): vo
         ->and($request->receipt_number)->toContain('OR-226432');
 
     foreach ($request->receipts as $receipt) {
-        Illuminate\Support\Facades\Storage::disk('public')->assertExists($receipt->image_path);
+        Illuminate\Support\Facades\Storage::disk($privateDisk)->assertExists($receipt->image_path);
     }
 });
 

@@ -79,6 +79,26 @@ final class Timetable extends Page implements HasForms, HasTable
 
     private $conflictSummary = [];
 
+    public static function canAccess(): bool
+    {
+        $user = Auth::user();
+
+        if (! $user) {
+            return false;
+        }
+
+        return (bool) (
+            $user->can('page_Timetable')
+            || $user->can('View:Timetable')
+            || $user->can('ViewAny:Classes')
+        );
+    }
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return self::canAccess();
+    }
+
     public function mount(): void
     {
         // Get current academic period settings using GeneralSettingsService

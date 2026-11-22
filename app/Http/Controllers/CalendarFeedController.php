@@ -22,6 +22,8 @@ final class CalendarFeedController extends Controller
      */
     public function feed(User $user, string $token): Response
     {
+        abort_if($user->suspended_at !== null, 403, 'Account access is unavailable.');
+
         if (! $this->integrationSettings->isCalendarFeedAllowedFor($user)) {
             abort(403, 'Calendar subscription feeds are disabled by the institutional administrator.');
         }

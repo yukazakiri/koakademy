@@ -41,6 +41,10 @@ return [
                     base_path('vendor'),
                     base_path('node_modules'),
                     storage_path('framework'),
+                    base_path('.env'),
+                    base_path('.env.local'),
+                    base_path('.env.production'),
+                    base_path('.env.testing'),
                 ],
 
                 /*

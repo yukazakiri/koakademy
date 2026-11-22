@@ -51,6 +51,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Validation\Rules\Password as PasswordRule;
 use Illuminate\View\FileViewFinder;
 use Laravel\Passkeys\Passkeys;
 use Laravel\Passport\Bridge\AuthCodeRepository;
@@ -140,6 +141,12 @@ final class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->guardAgainstUnpatchedRuntime();
+
+        PasswordRule::defaults(function (): PasswordRule {
+            return $this->app->isProduction()
+                ? PasswordRule::min(12)->letters()->mixedCase()->numbers()->symbols()
+                : PasswordRule::min(8)->letters()->numbers();
+        });
 
         $this->resetPhpSpreadsheetValueBinderBetweenUnitsOfWork();
 
@@ -256,6 +263,17 @@ final class AppServiceProvider extends ServiceProvider
         });
 
         RateLimiter::for('mcp-registration', fn (Request $request): Limit => Limit::perMinute(10)->by($request->ip()));
+
+        RateLimiter::for('public-enrollment-lookup', function (Request $request): array {
+            $normalizedEmail = mb_strtolower(mb_trim((string) $request->input('email')));
+
+            return [
+                Limit::perMinute(15)->by('ip:'.$request->ip()),
+                Limit::perMinute(10)->by('email:'.$normalizedEmail),
+            ];
+        });
+
+        RateLimiter::for('public-enrollment-submit', fn (Request $request): Limit => Limit::perMinute(10)->by($request->ip()));
 
         Passport::tokensCan([
             McpOAuth::READ => 'Read data available to your account through MCP.',

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Providers\Filament;
 
+use App\Http\Middleware\EnsureUserAccountAccess;
 use App\Http\Middleware\ResetFeatureAccessState;
 use App\Http\Middleware\SetApiTenantContext;
+use App\Http\Middleware\SetTenantContext;
 use App\Settings\SiteSettings;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -78,9 +80,12 @@ final class PortalPanelProvider extends PanelProvider
                 SubstituteBindings::class,
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
+                SetTenantContext::class,
+                \App\Http\Middleware\SecurityHeaders::class,
             ])
             ->authMiddleware([
                 Authenticate::class,
+                EnsureUserAccountAccess::class,
             ]);
     }
 }

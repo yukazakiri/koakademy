@@ -221,7 +221,10 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
 
     public function canAccessPanel(Panel $panel): bool
     {
-        // return true;
+        if ($this->suspended_at !== null) {
+            return false;
+        }
+
         // Null safety check - if role is not set, deny access
         if (! $this->role) {
             return false;

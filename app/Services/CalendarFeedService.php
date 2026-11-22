@@ -11,14 +11,29 @@ use Carbon\Carbon;
 
 final class CalendarFeedService
 {
+    private const string PREFERENCE_SECRET_KEY = 'calendar_feed_secret';
+
     /**
-     * Generate secure, deterministic token for a user's calendar feed.
+     * Generate a per-user rotatable token for a user's calendar feed.
      */
     public function generateToken(User $user): string
     {
-        $appKey = (string) config('app.key');
+        $secret = $this->ensureUserSecret($user);
 
-        return mb_substr(hash_hmac('sha256', "calendar-feed:{$user->id}:{$user->email}", $appKey), 0, 32);
+        return $this->computeToken($user, $secret);
+    }
+
+    /**
+     * Rotate the per-user calendar feed secret, invalidating all previously issued feed URLs.
+     */
+    public function rotateToken(User $user): string
+    {
+        $secret = bin2hex(random_bytes(32));
+        $preferences = is_array($user->preferences) ? $user->preferences : [];
+        $preferences[self::PREFERENCE_SECRET_KEY] = $secret;
+        $user->forceFill(['preferences' => $preferences])->saveQuietly();
+
+        return $this->computeToken($user, $secret);
     }
 
     /**
@@ -26,7 +41,18 @@ final class CalendarFeedService
      */
     public function validateToken(User $user, string $token): bool
     {
-        return hash_equals($this->generateToken($user), $token);
+        if ($user->suspended_at !== null) {
+            return false;
+        }
+
+        $preferences = is_array($user->preferences) ? $user->preferences : [];
+        $secret = $preferences[self::PREFERENCE_SECRET_KEY] ?? null;
+
+        if (! is_string($secret) || $secret === '') {
+            return false;
+        }
+
+        return hash_equals($this->computeToken($user, $secret), $token);
     }
 
     /**
@@ -133,6 +159,30 @@ final class CalendarFeedService
         }
 
         return $events;
+    }
+
+    private function ensureUserSecret(User $user): string
+    {
+        $preferences = is_array($user->preferences) ? $user->preferences : [];
+        $existing = $preferences[self::PREFERENCE_SECRET_KEY] ?? null;
+
+        if (is_string($existing) && $existing !== '') {
+            return $existing;
+        }
+
+        $secret = bin2hex(random_bytes(32));
+        $preferences[self::PREFERENCE_SECRET_KEY] = $secret;
+        $user->forceFill(['preferences' => $preferences])->saveQuietly();
+
+        return $secret;
+    }
+
+    private function computeToken(User $user, string $secret): string
+    {
+        $appKey = (string) config('app.key');
+        $version = (int) ($user->session_version ?? 0);
+
+        return hash_hmac('sha256', "calendar-feed:{$user->id}:v{$version}:{$secret}", $appKey);
     }
 
     /**

@@ -168,10 +168,13 @@ async function downloadSchedulePdf(type: "timetable" | "matrix"): Promise<void> 
     });
 
     try {
+        const csrfToken = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? "";
         const response = await fetch(`/download/schedule?type=${type}`, {
-            method: "GET",
+            method: "POST",
+            credentials: "same-origin",
             headers: {
                 Accept: "application/json",
+                "X-CSRF-TOKEN": csrfToken,
             },
         });
 

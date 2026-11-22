@@ -193,11 +193,11 @@ final class GeneralSetting extends Model
     {
         return [
             'seo_metadata' => 'array',
-            'email_settings' => 'array',
+            'email_settings' => \App\Casts\EncryptedJsonArrayCast::class,
             'newsletter_settings' => 'encrypted:array',
             'ai_settings' => 'encrypted:array',
             'sequenzy_api_key' => 'encrypted',
-            'social_network' => 'array',
+            'social_network' => \App\Casts\EncryptedJsonArrayCast::class,
             'analytics_enabled' => 'boolean',
             'analytics_settings' => 'array',
             'more_configs' => 'array',

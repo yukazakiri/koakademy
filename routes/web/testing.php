@@ -3,18 +3,21 @@
 declare(strict_types=1);
 
 use App\Services\PdfGenerationService;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth'])->group(function (): void {
     Route::get('/test-pdf-generation', function () {
+        abort_unless(app()->environment(['local', 'testing']), 404);
+
         try {
             $html = '<html><body style="padding: 50px; font-family: Arial;">
             <h1>Test PDF Generation</h1>
             <p>This is a test PDF to verify PDF generation is working correctly.</p>
             <p>Generated at: '.now().'</p>
             <ul>
-                <li>Driver: '.config('laravel-pdf.driver').'</li>
-                <li>Environment: '.config('app.env').'</li>
+                <li>Driver: '.e((string) config('laravel-pdf.driver')).'</li>
+                <li>Environment: '.e((string) config('app.env')).'</li>
             </ul>
         </body></html>';
 
@@ -38,10 +41,10 @@ Route::middleware(['auth'])->group(function (): void {
                 'Content-Disposition' => 'inline; filename="test.pdf"',
             ]);
         } catch (Exception $e) {
+            Log::error('Test PDF generation failed.', ['exception' => $e]);
+
             return response()->json([
-                'error' => $e->getMessage(),
-                'driver' => config('laravel-pdf.driver'),
-                'trace' => $e->getTraceAsString(),
+                'error' => config('app.debug') ? $e->getMessage() : 'PDF generation failed.',
             ], 500);
         }
     })->name('test.pdf');

@@ -157,8 +157,20 @@ final class StudentEnrollmentController extends Controller
         }
 
         // Sorting
-        $sortBy = $request->input('sort_by', 'created_at');
-        $sortDirection = $request->input('sort_direction', 'desc');
+        $allowedSortColumns = [
+            'id',
+            'student_id',
+            'course_id',
+            'academic_year',
+            'semester',
+            'school_year',
+            'status',
+            'created_at',
+            'updated_at',
+        ];
+        $requestedSortBy = (string) $request->input('sort_by', 'created_at');
+        $sortBy = in_array($requestedSortBy, $allowedSortColumns, true) ? $requestedSortBy : 'created_at';
+        $sortDirection = mb_strtolower((string) $request->input('sort_direction', 'desc')) === 'asc' ? 'asc' : 'desc';
         $query->orderBy($sortBy, $sortDirection);
 
         // Pagination

@@ -31,6 +31,7 @@ use App\Http\Middleware\EnsureMcpEnabled;
 use App\Http\Middleware\EnsureMobileApiAbility;
 use App\Http\Middleware\FacultyIdValidationMiddleware;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\SetApiTenantContext;
 use App\Http\Middleware\SetTenantContext;
 use App\Support\HostingSecurity;
@@ -62,9 +63,11 @@ return Application::configure(basePath: dirname(__DIR__))
             HandleInertiaRequests::class,
             App\Http\Middleware\OnlineUserTrackingMiddleware::class,
             SetTenantContext::class,
+            SecurityHeaders::class,
         ]);
 
-        $middleware->api(prepend: [EnsureApiEnabled::class, App\Http\Middleware\EnsureModuleEnabled::class, App\Http\Middleware\ResetFeatureAccessState::class], append: [App\Http\Middleware\EnsureUserAccountAccess::class, SetApiTenantContext::class]);
+        $middleware->api(prepend: [EnsureApiEnabled::class, App\Http\Middleware\EnsureModuleEnabled::class, App\Http\Middleware\ResetFeatureAccessState::class], append: [App\Http\Middleware\EnsureUserAccountAccess::class, SetApiTenantContext::class, SecurityHeaders::class]);
+        $middleware->throttleApi('api');
 
         $middleware->appendToPriorityList(
             Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests::class,
@@ -134,9 +137,13 @@ return Application::configure(basePath: dirname(__DIR__))
                     $code = 'POST_TOO_LARGE';
                 }
 
+                $message = $statusCode >= 500 && ! config('app.debug')
+                    ? 'An internal server error occurred.'
+                    : $e->getMessage();
+
                 return response()->json([
                     'error' => true,
-                    'message' => $e->getMessage(),
+                    'message' => $message,
                     'code' => $code,
                 ], $statusCode);
             }

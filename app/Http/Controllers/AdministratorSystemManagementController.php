@@ -1067,6 +1067,28 @@ final class AdministratorSystemManagementController extends Controller
 
         $validated = $request->validate($rules);
 
+        $submitsRawScript = collect($validated['providers'])->contains(static function (array $provider): bool {
+            if (filled($provider['script'] ?? null)) {
+                return true;
+            }
+
+            return ($provider['provider'] ?? null) === 'custom'
+                && (filled($provider['settings']['snippet'] ?? null) || filled($provider['settings']['script'] ?? null));
+        });
+
+        if ($submitsRawScript) {
+            $user = $request->user();
+            $canManageRawScripts = $user instanceof User
+                && (in_array($user->role, [UserRole::SuperAdmin, UserRole::Developer], true)
+                    || $user->hasAnyRole([UserRole::SuperAdmin, UserRole::Developer]));
+
+            abort_unless(
+                $canManageRawScripts,
+                403,
+                'Only Super Administrators or Developers may configure raw analytics scripts.',
+            );
+        }
+
         $settings->update([
             'analytics_enabled' => (bool) $validated['analytics_enabled'],
         ]);

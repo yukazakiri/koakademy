@@ -36,7 +36,26 @@ final class ClassPostsRelationManager extends RelationManager
                     ->columnSpanFull(),
                 Forms\Components\FileUpload::make('attachments')
                     ->multiple()
+                    ->disk((string) config('filesystems.private_disk', 'private'))
+                    ->visibility('private')
                     ->directory('class-post-attachments')
+                    ->maxSize(10240)
+                    ->acceptedFileTypes([
+                        'application/pdf',
+                        'application/msword',
+                        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                        'application/vnd.ms-excel',
+                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        'application/vnd.ms-powerpoint',
+                        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                        'text/plain',
+                        'text/csv',
+                        'image/jpeg',
+                        'image/png',
+                        'image/gif',
+                        'image/webp',
+                        'application/zip',
+                    ])
                     ->reorderable()
                     ->appendFiles()
                     ->columnSpanFull(),

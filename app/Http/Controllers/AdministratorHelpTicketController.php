@@ -44,11 +44,11 @@ final class AdministratorHelpTicketController extends Controller
         }
 
         // Sorting
-        $sortColumn = $request->input('sort_by', 'created_at');
-        $sortDirection = $request->input('sort_order', 'desc');
+        $sortColumn = (string) $request->input('sort_by', 'created_at');
+        $sortDirection = mb_strtolower((string) $request->input('sort_order', 'desc')) === 'asc' ? 'asc' : 'desc';
 
         // Allowed sort columns
-        if (in_array($sortColumn, ['created_at', 'updated_at', 'priority', 'status', 'type'])) {
+        if (in_array($sortColumn, ['created_at', 'updated_at', 'priority', 'status', 'type'], true)) {
             $query->orderBy($sortColumn, $sortDirection);
         } else {
             $query->orderBy('created_at', 'desc');

@@ -66,7 +66,7 @@ final class GenerateTimetablePdfJob implements ShouldQueue
 
             $disk = PrivateExportStorage::disk();
 
-            $directory = 'schedules';
+            $directory = $this->userId ? 'schedules/'.$this->userId : 'schedules';
 
             // Ensure directory exists
             Storage::disk($disk)->makeDirectory($directory);

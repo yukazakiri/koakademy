@@ -34,7 +34,7 @@ function enableSocialProvider(string $provider = 'google', array $overrides = []
 
 function fakeGoogleUser(array $attributes = []): void
 {
-    Socialite::fake('google', SocialiteUser::fake(array_merge([
+    $user = SocialiteUser::fake(array_merge([
         'id' => 'google-123',
         'name' => 'Google User',
         'email' => 'google-user@example.com',
@@ -42,7 +42,13 @@ function fakeGoogleUser(array $attributes = []): void
         'token' => 'google-token',
         'refreshToken' => 'google-refresh-token',
         'expiresIn' => 3600,
-    ], $attributes)));
+    ], $attributes));
+
+    if (! array_key_exists('user', $attributes)) {
+        $user->setRaw(['email_verified' => true]);
+    }
+
+    Socialite::fake('google', $user);
 }
 
 it('persists enabled social providers and exposes them to auth pages', function (): void {

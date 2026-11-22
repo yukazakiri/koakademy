@@ -32,7 +32,7 @@ it('rejects a bearer token with an earlier explicit expiry', function (): void {
 
 it('checks the correct mobile ability on API requests', function (array $abilities, string $method, string $url, int $expected): void {
     $school = School::factory()->create();
-    $user = User::factory()->create(['school_id' => $school->id]);
+    $user = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
     $token = $user->createToken('scoped', $abilities)->plainTextToken;
 
     $this->withToken($token)->json($method, $url)->assertStatus($expected);

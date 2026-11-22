@@ -66,9 +66,8 @@ final class SocialAuthController extends Controller
                     $this->syncAvatar($user, $socialUser);
                 }
                 $this->studentOrganizations->reconcileExistingStudent($user);
-                $this->login($request, $user);
 
-                return redirect()->intended($this->redirectForUser($user));
+                return $this->completeLogin($request, $user);
             }
 
             $emailMatches = User::query()
@@ -84,14 +83,21 @@ final class SocialAuthController extends Controller
             $user = $emailMatches->first();
 
             if ($user instanceof User) {
+                if (! $this->hasVerifiedProviderEmail($provider, $socialUser)) {
+                    return redirect('/login')->withErrors([
+                        'email' => 'This '.ucfirst($provider).' email address is not verified. Please sign in with your password and link '.ucfirst($provider).' from your profile settings.',
+                    ]);
+                }
+
                 $this->storeConnectedAccount($user, $provider, $socialUser);
                 $this->syncAvatar($user, $socialUser);
                 $this->studentOrganizations->reconcileExistingStudent($user);
-                $this->login($request, $user);
 
-                return redirect()
-                    ->intended($this->redirectForUser($user))
-                    ->with('status', ucfirst($provider).' is now linked. You can use it to sign in next time.');
+                return $this->completeLogin(
+                    $request,
+                    $user,
+                    ucfirst($provider).' is now linked. You can use it to sign in next time.',
+                );
             }
 
             $request->session()->put('socialite_signup', [
@@ -231,10 +237,39 @@ final class SocialAuthController extends Controller
         }
     }
 
-    private function login(Request $request, User $user): void
+    private function completeLogin(Request $request, User $user, ?string $status = null): RedirectResponse
     {
         Auth::login($user);
         $request->session()->regenerate();
+
+        if ($user->requiresTwoFactorChallenge()) {
+            Auth::logout();
+            $request->session()->put('auth.2fa.id', $user->id);
+            $request->session()->put('auth.2fa.remember', false);
+
+            return redirect()->route('two-factor.login');
+        }
+
+        $redirect = redirect()->intended($this->redirectForUser($user));
+
+        return $status !== null ? $redirect->with('status', $status) : $redirect;
+    }
+
+    private function hasVerifiedProviderEmail(string $provider, SocialiteUser $socialUser): bool
+    {
+        $raw = method_exists($socialUser, 'getRaw')
+            ? $socialUser->getRaw()
+            : (property_exists($socialUser, 'user') && is_array($socialUser->user) ? $socialUser->user : []);
+
+        if (! is_array($raw)) {
+            return false;
+        }
+
+        if ($provider === 'google') {
+            return ($raw['email_verified'] ?? $raw['verified_email'] ?? false) === true;
+        }
+
+        return ($raw['email_verified'] ?? false) === true;
     }
 
     private function redirectForUser(User $user): string

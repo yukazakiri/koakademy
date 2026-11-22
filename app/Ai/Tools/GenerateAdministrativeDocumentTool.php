@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Ai\Tools;
 
+use App\Services\TenantContext;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
@@ -65,6 +67,8 @@ final class GenerateAdministrativeDocumentTool implements Tool
 
         $documentPayload = [
             'id' => $docId,
+            'user_id' => Auth::id(),
+            'school_id' => app(TenantContext::class)->getCurrentSchoolId(),
             'title' => $title,
             'filename' => $fileName,
             'format' => $format,

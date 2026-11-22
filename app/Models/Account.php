@@ -256,6 +256,8 @@ final class Account extends Authenticatable implements FilamentUser
             'is_login' => 'boolean',
             'is_notification_active' => 'boolean',
             'person_id' => 'integer',
+            'two_factor_secret' => \App\Casts\EncryptedOrLegacyStringCast::class,
+            'two_factor_recovery_codes' => \App\Casts\EncryptedOrLegacyStringCast::class,
             'two_factor_confirmed_at' => 'datetime',
             'otp_activated_at' => 'datetime',
             'last_login' => 'datetime',

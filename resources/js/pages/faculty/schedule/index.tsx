@@ -134,10 +134,13 @@ export default function SchedulePage({ user, faculty_data }: SchedulePageProps) 
         });
 
         try {
+            const csrfToken = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? "";
             const response = await fetch(`/download/schedule?type=${exportType}`, {
-                method: "GET",
+                method: "POST",
+                credentials: "same-origin",
                 headers: {
                     Accept: "application/json",
+                    "X-CSRF-TOKEN": csrfToken,
                 },
             });
 

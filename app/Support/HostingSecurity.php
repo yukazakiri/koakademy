@@ -50,10 +50,14 @@ final class HostingSecurity
      */
     public static function trustedProxies(?string $proxies = null): array|string|null
     {
-        $configured = mb_trim($proxies ?? self::environment('TRUSTED_PROXIES', '*'));
+        $configured = mb_trim($proxies ?? self::environment('TRUSTED_PROXIES', ''));
 
-        if ($configured === '' || $configured === '*') {
-            return $configured === '*' ? '*' : null;
+        if ($configured === '') {
+            return null;
+        }
+
+        if ($configured === '*') {
+            return '*';
         }
 
         return array_values(array_filter(array_map(

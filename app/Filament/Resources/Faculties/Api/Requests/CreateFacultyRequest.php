@@ -6,6 +6,7 @@ namespace App\Filament\Resources\Faculties\Api\Requests;
 
 use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rules\Password;
 
 final class CreateFacultyRequest extends FormRequest
 {
@@ -43,7 +44,7 @@ final class CreateFacultyRequest extends FormRequest
             'status' => 'required',
             'gender' => 'required',
             'age' => 'required',
-            'password' => 'required',
+            'password' => ['required', 'string', Password::defaults()],
             'remember_token' => 'required',
             'email_verified_at' => 'required',
             'faculty_code' => 'required',

@@ -145,6 +145,24 @@ final class AuthTokenController extends Controller
         if (! $verified) {
             app(UserSecurityActivityService::class)->record($user, 'mfa_failed', 'failure', guard: 'sanctum');
 
+            $attemptsKey = self::CHALLENGE_PREFIX.$challengeId.':attempts';
+            $attempts = ((int) Cache::get($attemptsKey, 0)) + 1;
+            $maxAttempts = max(1, (int) config('security.two_factor_max_attempts', 5));
+
+            if ($attempts >= $maxAttempts) {
+                Cache::forget(self::CHALLENGE_PREFIX.$challengeId);
+                Cache::forget(self::CHALLENGE_PREFIX.$challengeId.':code');
+                Cache::forget($attemptsKey);
+
+                return response()->json([
+                    'error' => true,
+                    'message' => 'Too many invalid authentication attempts. Please sign in again.',
+                    'code' => 'CHALLENGE_LOCKED',
+                ], 429);
+            }
+
+            Cache::put($attemptsKey, $attempts, now()->addMinutes(5));
+
             return response()->json([
                 'error' => true,
                 'message' => 'The authentication code is invalid or expired.',
@@ -155,6 +173,7 @@ final class AuthTokenController extends Controller
         app(UserSecurityActivityService::class)->record($user, 'mfa_passed', 'success', guard: 'sanctum');
         Cache::forget(self::CHALLENGE_PREFIX.$challengeId);
         Cache::forget(self::CHALLENGE_PREFIX.$challengeId.':code');
+        Cache::forget(self::CHALLENGE_PREFIX.$challengeId.':attempts');
 
         return $this->tokenResponse($user, (string) ($request->validated('device_name') ?? $challenge['device_name']));
     }
@@ -218,8 +237,13 @@ final class AuthTokenController extends Controller
         $status = Password::broker()->reset(
             $request->validated(),
             function (User $user, string $password): void {
-                $user->forceFill(['password' => Hash::make($password)])->save();
+                $user->forceFill([
+                    'password' => Hash::make($password),
+                    'session_version' => ((int) ($user->session_version ?? 0)) + 1,
+                    'remember_token' => Str::random(60),
+                ])->save();
                 $user->tokens()->delete();
+                $user->revokeMcpOAuthTokens();
                 event(new PasswordReset($user));
             },
         );
@@ -242,12 +266,17 @@ final class AuthTokenController extends Controller
     {
         $user = $request->user();
         $token = $user->currentAccessToken();
-        $user->forceFill(['password' => Hash::make((string) $request->validated('password'))])->save();
+        $user->forceFill([
+            'password' => Hash::make((string) $request->validated('password')),
+            'session_version' => ((int) ($user->session_version ?? 0)) + 1,
+            'remember_token' => Str::random(60),
+        ])->save();
         $tokens = $user->tokens();
         if ($token instanceof PersonalAccessToken) {
             $tokens->whereKeyNot($token->getKey());
         }
         $tokens->delete();
+        $user->revokeMcpOAuthTokens();
 
         return response()->json(['message' => 'The password has been updated.']);
     }

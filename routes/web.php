@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\AppManifestController;
-use App\Http\Controllers\ClassesController;
 use App\Http\Controllers\DigitalIdCardController;
 use App\Http\Controllers\FinancialDocumentVerificationController;
 use App\Http\Controllers\StatementOfAccountVerificationController;
@@ -312,8 +311,6 @@ if ($isLocalPortalHost || empty($portalHosts)) {
 require __DIR__.'/web/setup.php';
 
 Route::get('/app.webmanifest', AppManifestController::class)->name('app.manifest');
-
-Route::post('/classes/validate-schedules', [ClassesController::class, 'validateSchedules']);
 
 // Public ID Card Verification (accessible without authentication)
 Route::get('/id-card/verify/{token}', [DigitalIdCardController::class, 'verify'])

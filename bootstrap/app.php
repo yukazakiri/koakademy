@@ -67,6 +67,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->api(prepend: [EnsureApiEnabled::class, App\Http\Middleware\EnsureModuleEnabled::class, App\Http\Middleware\ResetFeatureAccessState::class], append: [App\Http\Middleware\EnsureUserAccountAccess::class, SetApiTenantContext::class, SecurityHeaders::class]);
+        $middleware->throttleApi('api');
 
         $middleware->appendToPriorityList(
             Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests::class,

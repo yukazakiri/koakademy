@@ -166,7 +166,7 @@ Route::middleware(['web', 'auth'])->prefix('organizations')->name('api.organizat
 
 // Student Verification API Routes
 Route::middleware(['auth:sanctum', 'api.ability'])->prefix('students')->name('api.students.')->group(function (): void {
-    Route::post('/verify', [StudentVerificationController::class, 'verify'])->name('verify');
+    Route::post('/verify', [StudentVerificationController::class, 'verify'])->middleware('throttle:30,1')->name('verify');
 });
 
 // Faculty Mobile App API Routes

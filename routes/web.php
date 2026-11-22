@@ -316,7 +316,9 @@ Route::get('/app.webmanifest', AppManifestController::class)->name('app.manifest
 Route::post('/classes/validate-schedules', [ClassesController::class, 'validateSchedules']);
 
 // Public ID Card Verification (accessible without authentication)
-Route::get('/id-card/verify/{token}', [DigitalIdCardController::class, 'verify'])->name('id-card.verify');
+Route::get('/id-card/verify/{token}', [DigitalIdCardController::class, 'verify'])
+    ->middleware('throttle:30,1')
+    ->name('id-card.verify');
 
 // Public Changelog (accessible without authentication)
 Route::get('/changelog', App\Http\Controllers\ChangelogController::class)->name('changelog');
@@ -406,4 +408,6 @@ Route::middleware(['auth'])->group(function () {
 });
 
 // Public Calendar Subscription Feed (Token Verified for Outlook, Apple Calendar, Google Calendar)
-Route::get('/calendar/feed/{user}/{token}.ics', [App\Http\Controllers\CalendarFeedController::class, 'feed'])->name('calendar.feed');
+Route::get('/calendar/feed/{user}/{token}.ics', [App\Http\Controllers\CalendarFeedController::class, 'feed'])
+    ->middleware('throttle:30,1')
+    ->name('calendar.feed');

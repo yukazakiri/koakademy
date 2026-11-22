@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Casts\EncryptedOrLegacyStringCast;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Override;
@@ -25,8 +26,21 @@ final class ConnectedAccount extends Model
         'expires_at',
     ];
 
+    /**
+     * @var list<string>
+     */
+    #[Override]
+    protected $hidden = [
+        'token',
+        'secret',
+        'refresh_token',
+    ];
+
     #[Override]
     protected $casts = [
+        'token' => EncryptedOrLegacyStringCast::class,
+        'secret' => EncryptedOrLegacyStringCast::class,
+        'refresh_token' => EncryptedOrLegacyStringCast::class,
         'expires_at' => 'datetime',
     ];
 

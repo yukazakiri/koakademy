@@ -50,6 +50,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Validation\Rules\Password as PasswordRule;
 use Illuminate\View\FileViewFinder;
 use Laravel\Passkeys\Passkeys;
 use Laravel\Passport\Bridge\AuthCodeRepository;
@@ -138,6 +139,12 @@ final class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->guardAgainstUnpatchedRuntime();
+
+        PasswordRule::defaults(function (): PasswordRule {
+            return $this->app->isProduction()
+                ? PasswordRule::min(12)->letters()->mixedCase()->numbers()->symbols()
+                : PasswordRule::min(8)->letters()->numbers();
+        });
 
         $this->resetPhpSpreadsheetValueBinderBetweenUnitsOfWork();
 

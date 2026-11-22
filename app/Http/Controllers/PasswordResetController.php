@@ -59,10 +59,13 @@ final class PasswordResetController extends Controller
             function ($user, $password): void {
                 $user->forceFill([
                     'password' => $password,
+                    'session_version' => ((int) ($user->session_version ?? 0)) + 1,
                 ]);
 
                 $user->setRememberToken(Str::random(60));
                 $user->save();
+                $user->tokens()->delete();
+                $user->revokeMcpOAuthTokens();
 
                 event(new PasswordReset($user));
             }

@@ -7,6 +7,7 @@ namespace App\Http\Requests\Administrators;
 use App\Enums\UserRole;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rules\Enum;
+use Illuminate\Validation\Rules\Password;
 
 final class StoreUserRequest extends FormRequest
 {
@@ -25,7 +26,7 @@ final class StoreUserRequest extends FormRequest
             'department_id' => ['nullable', 'exists:departments,id'],
             'faculty_id_number' => ['nullable', 'string', 'max:255'],
             'record_id' => ['nullable', 'string', 'max:255'],
-            'password' => ['required', 'string', 'min:8', 'confirmed'],
+            'password' => ['required', 'string', 'confirmed', Password::defaults()],
             'avatar_url' => ['nullable'], // simplified for now
             'theme_color' => ['nullable', 'string', 'max:255'],
             'roles' => ['nullable', 'array'],

@@ -21,7 +21,6 @@
         "astrophp/trail": "^1.0.0",
         "awcodes/filament-gravatar": "^4.0",
         "backstage/mails": "^5.0",
-        "barryvdh/laravel-debugbar": "^4.0",
         "bezhansalleh/filament-shield": "^4.0",
         "chrome-php/chrome": "^1.15",
         "composer/semver": "^3.5",
@@ -102,6 +101,7 @@
         "yukazakiri/laravel-shadebridge": "^0.2.0"
     },
     "require-dev": {
+        "barryvdh/laravel-debugbar": "^4.0",
         "barryvdh/laravel-ide-helper": "^3.6",
         "driftingly/rector-laravel": "^2.0",
         "fakerphp/faker": "^1.23",

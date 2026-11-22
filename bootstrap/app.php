@@ -134,9 +134,13 @@ return Application::configure(basePath: dirname(__DIR__))
                     $code = 'POST_TOO_LARGE';
                 }
 
+                $message = $statusCode >= 500 && ! config('app.debug')
+                    ? 'An internal server error occurred.'
+                    : $e->getMessage();
+
                 return response()->json([
                     'error' => true,
-                    'message' => $e->getMessage(),
+                    'message' => $message,
                     'code' => $code,
                 ], $statusCode);
             }

@@ -85,8 +85,11 @@ final class PasskeyAuthController extends Controller
             throw $exception;
         } catch (Throwable $exception) {
             $this->recordFailedSignIn($credential);
+            \Illuminate\Support\Facades\Log::warning('Passkey verification failed.', [
+                'exception' => $exception->getMessage(),
+            ]);
 
-            return response()->json(['error' => 'Passkey verification failed: '.$exception->getMessage()], 400);
+            return response()->json(['error' => 'Passkey verification failed.'], 400);
         }
     }
 

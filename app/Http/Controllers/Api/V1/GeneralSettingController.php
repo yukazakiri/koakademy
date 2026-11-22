@@ -126,9 +126,11 @@ final class GeneralSettingController extends Controller
             ], 201);
 
         } catch (Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Failed to create general settings.', ['exception' => $e]);
+
             return response()->json([
                 'message' => 'Failed to create general settings',
-                'error' => $e->getMessage(),
+                'error' => config('app.debug') ? $e->getMessage() : 'An internal server error occurred.',
             ], 500);
         }
     }
@@ -238,9 +240,11 @@ final class GeneralSettingController extends Controller
             ], 200);
 
         } catch (Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Failed to update general settings.', ['exception' => $e]);
+
             return response()->json([
                 'message' => 'Failed to update general settings',
-                'error' => $e->getMessage(),
+                'error' => config('app.debug') ? $e->getMessage() : 'An internal server error occurred.',
             ], 500);
         }
     }

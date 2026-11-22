@@ -291,7 +291,9 @@ $registerPortalRoutes = function (): void {
     | Testing Routes
     |--------------------------------------------------------------------------
     */
-    require __DIR__.'/web/testing.php';
+    if (app()->environment(['local', 'testing'])) {
+        require __DIR__.'/web/testing.php';
+    }
 };
 
 if ($isLocalPortalHost || empty($portalHosts)) {

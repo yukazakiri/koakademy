@@ -1,73 +1,71 @@
 services:
-    traefik:
-        image: "traefik:v3.3"
-        command:
-            - "--api.insecure=true"
-            - "--providers.docker=false"
-            - "--entrypoints.web.address=:80"
-            - "--entrypoints.websecure.address=:443"
-            - "--providers.file.directory=/etc/traefik/dynamic"
-            - "--providers.file.watch=true"
-            - "--log.level=INFO"
-        ports:
-            - "80:80"
-            - "443:443"
-            - "8080:8080"
-        networks:
-            - sail
-        volumes:
-            - "./docker/traefik/dynamic:/etc/traefik/dynamic:ro,z"
-            - "./docker/traefik/certs:/etc/traefik/certs:ro,z"
     laravel.test:
         build:
-            context: ./vendor/laravel/sail/runtimes/8.5
+            context: ./docker/dev
             dockerfile: Dockerfile
             args:
+                WWWUSER: "${WWWUSER:-1000}"
                 WWWGROUP: "${WWWGROUP:-1000}"
-        image: sail-8.5/app
+        image: koakademy-dev/php8.5
         extra_hosts:
             - "host.docker.internal:host-gateway"
         ports:
+            - "${APP_PORT:-8000}:80"
             - "${VITE_PORT:-5173}:${VITE_PORT:-5173}"
         environment:
             WWWUSER: "${WWWUSER:-1000}"
             LARAVEL_SAIL: 1
-            SUPERVISOR_PHP_COMMAND: "/usr/bin/php -d variables_order=EGPCS /var/www/html/artisan serve --host=0.0.0.0 --port=80"
-            XDEBUG_MODE: "${SAIL_XDEBUG_MODE:-off}"
-            XDEBUG_CONFIG: "${SAIL_XDEBUG_CONFIG:-client_host=host.docker.internal}"
+            SUPERVISOR_PHP_COMMAND: "/usr/local/bin/php -d variables_order=EGPCS /var/www/html/artisan serve --host=0.0.0.0 --port=80"
             IGNITION_LOCAL_SITES_PATH: "${PWD}"
         volumes:
-            - ".:/var/www/html:z"
+            - ".:/var/www/html"
         networks:
             sail:
                 aliases:
                     - laravel
         depends_on:
-            - pgsql
-            - redis
-            - mailpit
-            - meilisearch
+            pgsql:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+            mailpit:
+                condition: service_started
+            meilisearch:
+                condition: service_healthy
+            gotenberg:
+                condition: service_started
+
     pgsql:
         image: "postgres:18-alpine"
         ports:
             - "${FORWARD_DB_PORT:-5432}:5432"
         environment:
             PGPASSWORD: "${DB_PASSWORD:-password}"
-            POSTGRES_DB: "${DB_DATABASE:-laravel}"
+            POSTGRES_DB: "${DB_DATABASE:-koakademy}"
             POSTGRES_USER: "${DB_USERNAME:-sail}"
             POSTGRES_PASSWORD: "${DB_PASSWORD:-password}"
         volumes:
-            - "sail-pgsql2:/var/lib/postgresql"
+            - "sail-pgsql:/var/lib/postgresql"
         networks:
             - sail
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -q -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+            retries: 5
+            timeout: 5s
+
     redis:
-        image: "redis:alpine"
+        image: "redis:8-alpine"
         ports:
             - "${FORWARD_REDIS_PORT:-6379}:6379"
         volumes:
             - "sail-redis:/data"
         networks:
             - sail
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            retries: 5
+            timeout: 5s
+
     mailpit:
         image: "axllent/mailpit:latest"
         ports:
@@ -75,51 +73,7 @@ services:
             - "${FORWARD_MAILPIT_DASHBOARD_PORT:-8025}:8025"
         networks:
             - sail
-    station:
-        build:
-            context: ./vendor/laravel/sail/runtimes/8.5
-            dockerfile: Dockerfile
-            args:
-                WWWGROUP: "${WWWGROUP:-1000}"
-        image: sail-8.5/app
-        environment:
-            WWWUSER: "${WWWUSER:-1000}"
-            LARAVEL_SAIL: 1
-            XDEBUG_MODE: "${SAIL_XDEBUG_MODE:-off}"
-            XDEBUG_CONFIG: "${SAIL_XDEBUG_CONFIG:-client_host=host.docker.internal}"
-            IGNITION_LOCAL_SITES_PATH: "${PWD}"
-        volumes:
-            - ".:/var/www/html:z"
-        networks:
-            - sail
-        depends_on:
-            - pgsql
-            - redis
-        command:
-            - /bin/bash
-            - -lc
-            - php artisan station:work redis --queue=default,assessments,scout --workers=3 --memory=512 --timeout=60 --tries=1 & php artisan station:work redis-pdf --queue=pdf-generation --workers=2 --memory=2048 --timeout=3600 --tries=1 & php artisan queue:work "${ASSESSMENT_EXPORT_CONNECTION:-assessment-pdf}" --queue="${ASSESSMENT_EXPORT_QUEUE:-assessment-pdf}" --timeout="${ASSESSMENT_EXPORT_WORKER_TIMEOUT:-1900}" --memory="${ASSESSMENT_EXPORT_WORKER_MEMORY:-2048}" & php artisan queue:work "${ASSESSMENT_EXPORT_CONNECTION:-assessment-pdf}" --queue="${ASSESSMENT_EXPORT_EVENT_QUEUE:-assessment-events}" --timeout=60 --memory=256 & wait -n
-    pulse:
-        build:
-            context: ./vendor/laravel/sail/runtimes/8.5
-            dockerfile: Dockerfile
-            args:
-                WWWGROUP: "${WWWGROUP:-1000}"
-        image: sail-8.5/app
-        environment:
-            WWWUSER: "${WWWUSER:-1000}"
-            LARAVEL_SAIL: 1
-            XDEBUG_MODE: "${SAIL_XDEBUG_MODE:-off}"
-            XDEBUG_CONFIG: "${SAIL_XDEBUG_CONFIG:-client_host=host.docker.internal}"
-            IGNITION_LOCAL_SITES_PATH: "${PWD}"
-        volumes:
-            - ".:/var/www/html:z"
-        networks:
-            - sail
-        depends_on:
-            - pgsql
-            - redis
-        command: ["/bin/bash", "-c", "php artisan pulse:check & php artisan pulse:work"]
+
     meilisearch:
         image: "getmeili/meilisearch:v1.48.2"
         ports:
@@ -131,25 +85,69 @@ services:
         networks:
             - sail
         healthcheck:
-            test:
-                - CMD
-                - wget
-                - "--no-verbose"
-                - "--spider"
-                - "http://127.0.0.1:7700/health"
-            retries: 3
+            test: ["CMD", "wget", "--no-verbose", "--spider", "http://127.0.0.1:7700/health"]
+            retries: 5
             timeout: 5s
+
     gotenberg:
-        image: gotenberg/gotenberg:8
+        image: "gotenberg/gotenberg:8"
+        ports:
+            - "${FORWARD_GOTENBERG_PORT:-9888}:3000"
         networks:
             - sail
-        ports:
-            - "9888:3000"
+
+    horizon:
+        profiles: ["workers"]
+        build:
+            context: ./docker/dev
+            dockerfile: Dockerfile
+            args:
+                WWWUSER: "${WWWUSER:-1000}"
+                WWWGROUP: "${WWWGROUP:-1000}"
+        image: koakademy-dev/php8.5
+        environment:
+            WWWUSER: "${WWWUSER:-1000}"
+            LARAVEL_SAIL: 1
+        volumes:
+            - ".:/var/www/html"
+        networks:
+            - sail
+        depends_on:
+            pgsql:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+        command: ["php", "artisan", "horizon"]
+
+    pulse:
+        profiles: ["workers"]
+        build:
+            context: ./docker/dev
+            dockerfile: Dockerfile
+            args:
+                WWWUSER: "${WWWUSER:-1000}"
+                WWWGROUP: "${WWWGROUP:-1000}"
+        image: koakademy-dev/php8.5
+        environment:
+            WWWUSER: "${WWWUSER:-1000}"
+            LARAVEL_SAIL: 1
+        volumes:
+            - ".:/var/www/html"
+        networks:
+            - sail
+        depends_on:
+            pgsql:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+        command: ["/bin/bash", "-c", "php artisan pulse:check & php artisan pulse:work"]
+
 networks:
     sail:
         driver: bridge
+
 volumes:
-    sail-pgsql2:
+    sail-pgsql:
         driver: local
     sail-redis:
         driver: local

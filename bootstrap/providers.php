@@ -13,11 +13,14 @@ $providers = [
     App\Providers\NotificationChannelServiceProvider::class,
     App\Providers\PulseServiceProvider::class,
     App\Providers\SequenzyMailServiceProvider::class,
-    App\Providers\TelescopeServiceProvider::class,
     App\Providers\TrailServiceProvider::class,
     EragLaravelPwa\EragLaravelPwaServiceProvider::class,
     SaaSykit\OpenGraphy\OpenGraphyServiceProvider::class,
 ];
+
+if (class_exists(Laravel\Telescope\TelescopeApplicationServiceProvider::class)) {
+    $providers[] = App\Providers\TelescopeServiceProvider::class;
+}
 
 // Horizon is no longer a project dependency; it is installed only in the
 // production Docker images (see docker/Dockerfile / docker/Dockerfile.franken).

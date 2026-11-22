@@ -3,6 +3,10 @@
     "private": true,
     "license": "AGPL-3.0-or-later",
     "type": "module",
+    "engines": {
+        "node": ">=22.23.4",
+        "npm": ">=10.0.0"
+    },
     "scripts": {
         "build": "vite build && vite build --ssr",
         "dev": "vite",

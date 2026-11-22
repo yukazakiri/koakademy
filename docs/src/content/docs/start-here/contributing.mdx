@@ -17,27 +17,21 @@ Thank you for contributing to KoAkademy! Contributions should be focused, well-t
 
 ## Development Setup
 
-KoAkademy runs on **PHP 8.5.12 or newer**, **Laravel 13**, **Inertia 3**, **React 19**, and **Node.js 22.23.4 or newer**. The PHP and Node.js floors are security requirements: PHP 8.5.12 fixes CVE-2026-109618 and CVE-2026-109619, and Node.js 22.23.4 fixes CVE-2026-111497. Follow the [Development guide](./development/) for full installation instructions:
+KoAkademy runs on **PHP 8.5.12 or newer**, **Laravel 13**, **Inertia 3**, **React 19**, and **Node.js 22.23.4 or newer** (`.node-version` and `mise.toml` pin **PHP 8.5.12** and **Node.js 26.13.0** to match CI and production Docker builds). The PHP and Node.js floors are security requirements: PHP 8.5.12 fixes CVE-2026-109618 and CVE-2026-109619, and Node.js 22.23.4 fixes CVE-2026-111497. Follow the [Development guide](./development/) for Docker, Dev Containers, and system package details:
 
 ```sh
-# 1. Clone the repository and install dependencies
+# 1. Clone the repository
 git clone https://github.com/yukazakiri/koakademy.git
 cd koakademy
-composer install
-npm ci
 
-# 2. Configure environment and database
-cp .env.example .env
-php artisan key:generate
-touch database/database.sqlite
-php artisan migrate
+# 2. Install dependencies, initialize .env / SQLite / keys / migrations, and build assets
+composer setup
 
-# 3. Build frontend assets and start servers
-npm run build
-php artisan serve
+# 3. Start the server, queue worker, log watcher, and Vite HMR (works on Linux, macOS, and Windows)
+composer dev
 ```
 
-Run `npm run dev` in a separate terminal when working on React portal components with hot module replacement (HMR).
+Or open the repository directly in **VS Code Dev Containers** / **GitHub Codespaces** (`.devcontainer/devcontainer.json`) if you do not have PHP 8.5.12 installed natively.
 
 ## First Contribution Walkthrough
 

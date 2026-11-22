@@ -19,22 +19,22 @@ return [
 
     'assessment_notification_connection' => env(
         'ASSESSMENT_NOTIFICATION_CONNECTION',
-        PHP_OS_FAMILY === 'Windows' ? env('QUEUE_CONNECTION', 'database') : 'redis-pdf'
+        env('QUEUE_CONNECTION', 'database') === 'redis' ? 'redis-pdf' : env('QUEUE_CONNECTION', 'database')
     ),
 
     'assessment_notification_queue' => env(
         'ASSESSMENT_NOTIFICATION_QUEUE',
-        PHP_OS_FAMILY === 'Windows' ? 'default' : 'pdf-generation'
+        env('QUEUE_CONNECTION', 'database') === 'redis' ? 'pdf-generation' : 'default'
     ),
 
     'receipt_email_connection' => env(
         'RECEIPT_EMAIL_CONNECTION',
-        PHP_OS_FAMILY === 'Windows' ? env('QUEUE_CONNECTION', 'database') : 'redis-pdf'
+        env('QUEUE_CONNECTION', 'database') === 'redis' ? 'redis-pdf' : env('QUEUE_CONNECTION', 'database')
     ),
 
     'receipt_email_queue' => env(
         'RECEIPT_EMAIL_QUEUE',
-        PHP_OS_FAMILY === 'Windows' ? 'default' : 'pdf-generation'
+        env('QUEUE_CONNECTION', 'database') === 'redis' ? 'pdf-generation' : 'default'
     ),
 
     /*

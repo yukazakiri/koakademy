@@ -1,0 +1,35 @@
+{
+    "name": "KoAkademy Development",
+    "dockerComposeFile": ["../compose.yaml"],
+    "service": "laravel.test",
+    "runServices": ["laravel.test", "pgsql", "redis", "mailpit", "meilisearch", "gotenberg"],
+    "workspaceFolder": "/var/www/html",
+    "remoteUser": "sail",
+    "forwardPorts": [8000, 5173, 8025, 5432, 6379],
+    "portsAttributes": {
+        "8000": {
+            "label": "KoAkademy App",
+            "onAutoForward": "notify"
+        },
+        "5173": {
+            "label": "Vite Dev Server",
+            "onAutoForward": "silent"
+        },
+        "8025": {
+            "label": "Mailpit UI",
+            "onAutoForward": "silent"
+        }
+    },
+    "postCreateCommand": "composer setup",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "bmewburn.vscode-intelephense-client",
+                "laravel.vscode-laravel",
+                "dbaeumer.vscode-eslint",
+                "esbenp.prettier-vscode",
+                "bradlc.vscode-tailwindcss"
+            ]
+        }
+    }
+}

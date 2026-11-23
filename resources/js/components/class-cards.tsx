@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { isAdministratorPortalRole, isFacultyPortalRole, isStudentPortalRole } from "@/lib/portal-role";
 import { cn } from "@/lib/utils";
 import { User } from "@/types/user";
 import { Link, usePage } from "@inertiajs/react";
@@ -146,18 +147,14 @@ function resolveClassTheme(classItem: ClassData): {
 }
 
 export function ClassCards({ data, onEdit }: ClassCardsProps) {
-    const { props } = usePage<{ user: User }>();
-    const user = props.user;
-
-    const isFaculty = ["professor", "instructor", "associate_professor", "assistant_professor", "part_time_faculty"].includes(user.role);
-    const isStudent = ["student", "shs_student", "graduate_student"].includes(user.role);
-    const isAdmin = ["admin", "super_admin", "developer", "president"].includes(user.role);
+    const { props } = usePage<{ user?: User; auth?: { user?: User } }>();
+    const role = props.auth?.user?.role ?? props.user?.role;
 
     const getBaseUrl = () => {
-        if (isFaculty) return "/faculty/classes";
-        if (isStudent) return "/student/classes";
-        if (isAdmin) return "/administrators/classes";
-        return "/classes";
+        if (isFacultyPortalRole(role)) return "/faculty/classes";
+        if (isStudentPortalRole(role)) return "/student/classes";
+        if (isAdministratorPortalRole(role)) return "/administrators/classes";
+        return "/faculty/classes";
     };
 
     const baseUrl = getBaseUrl();

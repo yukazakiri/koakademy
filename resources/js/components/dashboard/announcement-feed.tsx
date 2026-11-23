@@ -1,7 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { CardContent } from "@/components/ui/card";
+import { isAdministratorPortalRole, isStudentPortalRole } from "@/lib/portal-role";
 import { cn } from "@/lib/utils";
-import { Link } from "@inertiajs/react";
+import { Link, usePage } from "@inertiajs/react";
 import { IconAlertTriangle, IconBell, IconBulb, IconCalendar, IconChevronRight, IconInfoCircle } from "@tabler/icons-react";
 import { motion } from "framer-motion";
 
@@ -15,6 +16,7 @@ interface Announcement {
 
 interface AnnouncementFeedProps {
     announcements: Announcement[];
+    viewAllHref?: string;
 }
 
 const typeConfig = {
@@ -52,7 +54,17 @@ const typeConfig = {
     },
 };
 
-export function AnnouncementFeed({ announcements }: AnnouncementFeedProps) {
+export function AnnouncementFeed({ announcements, viewAllHref }: AnnouncementFeedProps) {
+    const { props } = usePage<{ auth?: { user?: { role?: string | null } }; user?: { role?: string | null } }>();
+    const role = props.auth?.user?.role ?? props.user?.role;
+    const resolvedHref =
+        viewAllHref ??
+        (isAdministratorPortalRole(role)
+            ? "/administrators/announcements"
+            : isStudentPortalRole(role)
+              ? "/student/announcements"
+              : "/faculty/announcements");
+
     return (
         <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -75,7 +87,7 @@ export function AnnouncementFeed({ announcements }: AnnouncementFeedProps) {
                     </div>
                 </div>
                 <Button variant="ghost" size="sm" className="h-8 gap-1 text-xs" asChild>
-                    <Link href="/announcements">
+                    <Link href={resolvedHref}>
                         View All
                         <IconChevronRight className="h-3.5 w-3.5" />
                     </Link>

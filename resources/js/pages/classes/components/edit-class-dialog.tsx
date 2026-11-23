@@ -114,7 +114,7 @@ export function EditClassDialog({ open, onOpenChange, classItem, shs_strands, ro
 
     useEffect(() => {
         if (open && editForm.classification === "shs" && editForm.strand_id) {
-            fetch(`/classes/strand-subjects?strand_id=${editForm.strand_id}`)
+            fetch(`/faculty/classes/strand-subjects?strand_id=${editForm.strand_id}`)
                 .then((res) => res.json())
                 .then((data) => {
                     setStrandSubjects(data.strand_subjects || []);
@@ -126,7 +126,7 @@ export function EditClassDialog({ open, onOpenChange, classItem, shs_strands, ro
     function handleUpdateClass() {
         if (!classItem) return;
 
-        router.put(`/classes/${classItem.id}`, editForm, {
+        router.put(`/faculty/classes/${classItem.id}`, editForm, {
             onSuccess: () => {
                 onOpenChange(false);
                 toast.success("Class updated successfully");

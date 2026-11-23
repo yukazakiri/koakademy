@@ -56,7 +56,7 @@ export function AgendaView({ schedule, statusById, conflicts }: AgendaViewProps)
                                 return (
                                     <Link
                                         key={entry.id}
-                                        href={entry.class_id ? `/classes/${entry.class_id}` : "/classes"}
+                                        href={entry.class_id ? `/faculty/classes/${entry.class_id}` : "/faculty/classes"}
                                         className={cn(
                                             "group bg-card hover:border-primary/20 relative flex flex-col gap-3 rounded-2xl border p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] sm:p-5",
                                             status === "added" && "border-emerald-500/20 bg-emerald-500/5 ring-1 ring-emerald-500/50",

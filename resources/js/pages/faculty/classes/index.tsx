@@ -87,12 +87,22 @@ export default function Classes({ user, faculty_data, shs_strands, rooms, curren
     useEffect(() => {
         if (typeof window !== "undefined") {
             const params = new URLSearchParams(window.location.search);
+            const requestedView = params.get("view");
+            if (requestedView === "board" || requestedView === "gallery" || requestedView === "list") {
+                handleSetViewMode(requestedView);
+            }
+            if (params.get("conflicts") === "true") {
+                setOnlyConflicts(true);
+            }
+            if (params.get("unscheduled") === "true") {
+                setOnlyUnscheduled(true);
+            }
             if (params.get("create") === "1") {
                 setCreateDialogOpen(true);
-                router.visit("/classes", { replace: true, preserveScroll: true, preserveState: true });
+                router.visit("/faculty/classes", { replace: true, preserveScroll: true, preserveState: true });
             }
         }
-    }, []);
+    }, [setOnlyConflicts, setOnlyUnscheduled]);
 
     function handleEditClick(classItem: ClassData) {
         setEditingClass(classItem);
@@ -160,7 +170,7 @@ export default function Classes({ user, faculty_data, shs_strands, rooms, curren
                 </div>
 
                 {/* Status Section */}
-                <ClassesStatus nextUp={nextUp} stats={stats} />
+                <ClassesStatus nextUp={nextUp} stats={stats} baseUrl="/faculty/classes" />
 
                 {/* Filters and Content */}
                 <div className="space-y-4">

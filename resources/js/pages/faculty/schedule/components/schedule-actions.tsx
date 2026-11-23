@@ -27,7 +27,7 @@ export function ScheduleActions({ handleExport, handleClearBaseline, baseline }:
                 </Button>
 
                 <Button asChild className="h-9 gap-2">
-                    <Link href="/classes?create=1">
+                    <Link href="/faculty/classes?create=1">
                         <IconPlus className="size-4" />
                         <span>Create Class</span>
                     </Link>
@@ -48,7 +48,7 @@ export function ScheduleActions({ handleExport, handleClearBaseline, baseline }:
                             <span className="text-muted-foreground ml-auto text-xs">Soon</span>
                         </DropdownMenuItem>
                         <DropdownMenuItem asChild>
-                            <Link href="/settings">
+                            <Link href="/faculty/profile">
                                 <IconSettings className="mr-2 size-4" />
                                 <span>Settings</span>
                             </Link>
@@ -71,7 +71,7 @@ export function ScheduleActions({ handleExport, handleClearBaseline, baseline }:
             {/* Mobile Actions (Icon Only + Menu) */}
             <div className="flex items-center gap-1 md:hidden">
                 <Button asChild size="icon" variant="ghost" className="h-9 w-9">
-                    <Link href="/classes?create=1">
+                    <Link href="/faculty/classes?create=1">
                         <IconPlus className="size-5" />
                     </Link>
                 </Button>
@@ -86,7 +86,7 @@ export function ScheduleActions({ handleExport, handleClearBaseline, baseline }:
                         <DropdownMenuLabel>Actions</DropdownMenuLabel>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem asChild>
-                            <Link href="/classes?create=1">
+                            <Link href="/faculty/classes?create=1">
                                 <IconPlus className="mr-2 size-4" />
                                 Create Class
                             </Link>

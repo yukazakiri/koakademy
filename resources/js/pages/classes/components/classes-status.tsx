@@ -15,7 +15,7 @@ interface ClassesStatusProps {
     baseUrl?: string;
 }
 
-export function ClassesStatus({ nextUp, stats, baseUrl = "/classes" }: ClassesStatusProps) {
+export function ClassesStatus({ nextUp, stats, baseUrl = "/faculty/classes" }: ClassesStatusProps) {
     // If there's nothing urgent (no next class, no conflicts/unscheduled), show nothing or a minimal "All good" state?
     // The user wants "enjoyable" and "minimal".
     // Let's show the Next Up card if it exists.

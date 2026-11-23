@@ -360,7 +360,9 @@ Route::middleware(['auth'])->group(function () {
         $user = Illuminate\Support\Facades\Auth::user();
         $prefix = $user->isStudentRole() ? 'student' : 'faculty';
 
-        return redirect()->route("{$prefix}.help.store", $request->all(), 307); // 307 to preserve POST
+        // 307 keeps the POST body. Never copy the input into the route parameters: that
+        // would put the ticket text in the URL (access logs, browser history, URL length limits).
+        return redirect()->route("{$prefix}.help.store", [], 307);
     })->name('help.store');
 
     Route::post('/help/{helpTicket}/reply', function (Illuminate\Http\Request $request, $helpTicket) {

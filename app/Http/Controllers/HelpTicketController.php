@@ -29,7 +29,7 @@ final class HelpTicketController extends Controller
                 'avatar' => $user->avatar_url ?? null,
                 'role' => $user->role?->getLabel() ?? 'User',
             ],
-            'submit_url' => route('help.store'),
+            'submit_url' => route($this->portalPrefix($request).'.help.store'),
         ]);
     }
 
@@ -98,7 +98,7 @@ final class HelpTicketController extends Controller
         return redirect()->back()->with('success', 'Ticket submitted successfully.');
     }
 
-    public function show(HelpTicket $helpTicket)
+    public function show(Request $request, HelpTicket $helpTicket)
     {
         $user = Auth::user();
 
@@ -109,12 +109,22 @@ final class HelpTicketController extends Controller
             abort(403);
         }
 
-        $helpTicket->load(['user', 'replies.user']);
+        // Only the columns the ticket page renders. Loading whole User rows would send the
+        // ticket owner's and every staff replier's email, phone, address and staff IDs to
+        // whoever opens the ticket.
+        $helpTicket->load(['user:id,name,avatar_url', 'replies.user:id,name,avatar_url']);
         $this->secureAttachmentUrls($helpTicket);
 
         return Inertia::render('Help/Show', [
             'ticket' => $helpTicket,
-            'user' => $user,
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'avatar' => $user->avatar_url ?? null,
+                'role' => $user->role?->getLabel() ?? 'User',
+            ],
+            'reply_url' => route($this->portalPrefix($request).'.help.reply', $helpTicket),
         ]);
     }
 
@@ -190,6 +200,14 @@ final class HelpTicketController extends Controller
         }
 
         return back()->with('success', 'Reply sent successfully.');
+    }
+
+    /**
+     * Route prefix of the portal the request came in through.
+     */
+    private function portalPrefix(Request $request): string
+    {
+        return $request->routeIs('faculty.*') ? 'faculty' : 'student';
     }
 
     private function secureAttachmentUrls(HelpTicket $ticket): void

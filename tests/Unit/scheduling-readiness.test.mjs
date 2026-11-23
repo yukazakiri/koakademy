@@ -156,10 +156,38 @@ test("legacy online drafts inherit a meeting mode without losing metadata", asyn
 test("mixed schedule review requires rooms only for face-to-face meetings", () => {
     const item = { id: 1, subject_code: "IT101", section: "A", faculty_name: "Mika Santos", required_hours: 3, delivery_mode: "online", schedules: [
         { start_time: "08:00", end_time: "09:00", delivery_mode: "face_to_face", room_id: 4 },
-        { start_time: "08:00", end_time: "09:00", delivery_mode: "face_to_face", room_id: 4 },
+        { start_time: "08:00", end_time: "09:00", delivery_mode: "online_synchronous", room_id: null },
         { start_time: "08:00", end_time: "09:00", delivery_mode: "online", room_id: null },
     ] };
     assert.deepEqual(getSchedulingReadiness([item])[0].warnings, []);
     item.schedules[0].room_id = null;
     assert.deepEqual(getSchedulingReadiness([item])[0].warnings, ["Room not assigned to every session"]);
+});
+
+test("synchronous online mode clears rooms, passes draft validation, and formats labels", async () => {
+    const {
+        buildClassDefaults,
+        buildClassStorePayload,
+        createDefaultSchedule,
+        deliveryModeLabel,
+        deliveryModeShortLabel,
+        isClassDraft,
+        meetingDeliverySummary,
+    } = await import("../../resources/js/pages/administrators/classes/lib/class-defaults.ts");
+    const defaults = buildClassDefaults({ semester: "1", school_year: "2026-2027", options: { rooms: [{ id: 4 }] } });
+    const syncMeeting = { ...createDefaultSchedule(7, "online_synchronous"), day_of_week: "Monday" };
+    assert.equal(syncMeeting.room_id, null);
+    assert.equal(syncMeeting.delivery_mode, "online_synchronous");
+
+    const draft = { ...defaults, delivery_mode: "online_synchronous", schedules: [syncMeeting] };
+    assert.equal(isClassDraft(draft), true);
+    const payload = buildClassStorePayload(draft);
+    assert.equal(payload.delivery_mode, "online_synchronous");
+    assert.equal(payload.room_id, null);
+    assert.equal(meetingDeliverySummary(payload.schedules, payload.delivery_mode), "online_synchronous");
+    assert.equal(meetingDeliverySummary([syncMeeting, createDefaultSchedule(null, "online")], "online"), "mixed");
+    assert.equal(deliveryModeLabel("online"), "Online (Asynchronous)");
+    assert.equal(deliveryModeLabel("online_synchronous"), "Online (Synchronous)");
+    assert.equal(deliveryModeShortLabel("online"), "Online (Async)");
+    assert.equal(deliveryModeShortLabel("online_synchronous"), "Online (Sync)");
 });

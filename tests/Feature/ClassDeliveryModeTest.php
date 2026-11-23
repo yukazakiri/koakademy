@@ -20,11 +20,13 @@ use App\Models\User;
 use App\Notifications\ClassScheduleChangedNotification;
 use App\Services\ClassScheduleChangeNotificationService;
 use App\Services\CourseScheduleExportService;
+use App\Services\GeneralSettingsService;
 use App\Services\Scheduling\ScheduleConflictService;
 use App\Services\Scheduling\SchedulingService;
 use App\Services\Scheduling\TermOfferingGeneratorService;
 use App\Services\StudentScheduleService;
 use App\Services\TenantContext;
+use App\Services\TimetableConflictResolutionService;
 use App\Services\TimetableConflictService;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Notification;
@@ -116,7 +118,7 @@ it('checks conflicts using the meeting mode even when the class default is diffe
         'faculty_id' => $faculty->id,
         'schedules' => [[
             'day_of_week' => 'Monday', 'start_time' => '08:00', 'end_time' => '09:00',
-            'delivery_mode' => $conflict === 'room' ? 'face_to_face' : 'online', 'room_id' => $room->id,
+            'delivery_mode' => $conflict === 'room' ? 'face_to_face' : 'online_synchronous', 'room_id' => $room->id,
         ]],
     ]);
     $other = deliveryModeClass([
@@ -223,11 +225,12 @@ it('creates an online planner offering despite a stale occupied room', function 
     $this->assertDatabaseHas('schedule', ['class_id' => $response->json('class.id'), 'room_id' => null, 'status' => 'draft']);
 });
 
-it('rejects faculty and cohort clashes when creating online classes with stale rooms', function (string $conflict): void {
+it('rejects faculty and cohort clashes when creating synchronous online classes with stale rooms', function (string $conflict): void {
     $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
     $faculty = Faculty::factory()->create();
     $room = Room::factory()->create();
     $payload = deliveryModePayload([
+        'delivery_mode' => 'online_synchronous',
         'faculty_id' => $conflict === 'faculty' ? $faculty->id : null,
         'room_id' => $room->id,
         'schedules' => [[
@@ -308,7 +311,7 @@ it('strips rooms from online partial schedule updates when the mode is omitted',
     $this->assertDatabaseHas('schedule', ['id' => $schedule->id, 'day_of_week' => 'Tuesday', 'room_id' => null]);
 });
 
-it('retains faculty and cohort validation on online partial schedule updates', function (string $conflict): void {
+it('retains faculty and cohort validation on synchronous online partial schedule updates', function (string $conflict): void {
     $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
     $course = Course::factory()->create();
     $subjects = Subject::factory()->count(2)->create(['course_id' => $course->id, 'academic_year' => 1]);
@@ -320,7 +323,7 @@ it('retains faculty and cohort validation on online partial schedule updates', f
     ]);
     deliveryModeBlock($other);
     $class = deliveryModeClass([
-        'delivery_mode' => 'online', 'course_codes' => [$course->id],
+        'delivery_mode' => 'online_synchronous', 'course_codes' => [$course->id],
         'subject_id' => $subjects[1]->id, 'subject_ids' => [$subjects[1]->id],
         'faculty_id' => $conflict === 'faculty' ? $faculty->id : null,
     ]);
@@ -338,12 +341,12 @@ it('retains faculty and cohort validation on online partial schedule updates', f
     $this->assertDatabaseHas('schedule', ['id' => $schedule->id, 'day_of_week' => 'Tuesday']);
 })->with(['faculty', 'cohort']);
 
-it('validates retained schedules when assigning faculty in a partial update', function (): void {
+it('validates retained synchronous online schedules when assigning faculty in a partial update', function (): void {
     $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
     $faculty = Faculty::factory()->create();
     $other = deliveryModeClass(['faculty_id' => $faculty->id, 'section' => 'B']);
     deliveryModeBlock($other);
-    $class = deliveryModeClass(['delivery_mode' => 'online']);
+    $class = deliveryModeClass(['delivery_mode' => 'online_synchronous']);
     $schedule = deliveryModeBlock($class);
 
     $this->patch(route('administrators.classes.update', $class), ['faculty_id' => $faculty->id])
@@ -380,7 +383,7 @@ it('uses the primary room for a planner pattern only when the room field is omit
     $this->assertDatabaseHas('schedule', ['class_id' => $class->id, 'day_of_week' => 'Tuesday', 'room_id' => $room->id]);
 });
 
-it('normalizes online planner patterns before validation without hiding faculty or cohort conflicts', function (string $conflict): void {
+it('normalizes synchronous online planner patterns before validation without hiding faculty or cohort conflicts', function (string $conflict): void {
     $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
     $course = Course::factory()->create();
     $faculty = Faculty::factory()->create();
@@ -390,13 +393,13 @@ it('normalizes online planner patterns before validation without hiding faculty 
     ]);
     deliveryModeBlock($other);
     $class = deliveryModeClass([
-        'delivery_mode' => 'online', 'course_codes' => [$course->id],
+        'delivery_mode' => 'online_synchronous', 'course_codes' => [$course->id],
         'faculty_id' => $conflict === 'faculty' ? $faculty->id : null,
     ]);
 
     $this->postJson(route('administrators.scheduling-analytics.classes.schedules.store', $class), [
         'days' => ['Monday', 'Wednesday'], 'start_time' => '08:00', 'end_time' => '09:00', 'room_id' => 999999,
-    ])->assertOk()->assertJsonPath('class.delivery_mode', 'online')
+    ])->assertOk()->assertJsonPath('class.delivery_mode', 'online_synchronous')
         ->assertJsonPath('class.schedules.0.room_id', null)->assertJsonPath('class.schedules.1.room_id', null)
         ->assertJsonPath('conflicts.0.conflict_type', $conflict === 'faculty' ? 'faculty' : 'section');
 
@@ -696,9 +699,10 @@ it('normalizes stale online rooms before MCP rescheduling conflict checks', func
     $this->assertDatabaseHas('schedule', ['id' => $schedule->id, 'day_of_week' => 'Monday', 'room_id' => null]);
 });
 
-it('review rejects online creation against the normalized curriculum cohort', function (string $routeName): void {
+it('review rejects synchronous online creation against the normalized curriculum cohort', function (string $routeName): void {
     $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
     $payload = deliveryModePayload([
+        'delivery_mode' => 'online_synchronous',
         'academic_year' => 2,
         'schedules' => [['day_of_week' => 'Monday', 'start_time' => '08:00', 'end_time' => '09:00', 'room_id' => null]],
     ]);
@@ -715,7 +719,7 @@ it('review rejects online creation against the normalized curriculum cohort', fu
     $this->assertDatabaseCount('schedule', 1);
 })->with(['administrators.classes.store', 'administrators.scheduling-analytics.classes.store']);
 
-it('review checks the normalized curriculum cohort when editing with supplied or retained sessions', function (bool $supplySchedules): void {
+it('review checks the normalized curriculum cohort when editing synchronous online classes with supplied or retained sessions', function (bool $supplySchedules): void {
     $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
     $course = Course::factory()->create();
     $yearOne = Subject::factory()->create(['course_id' => $course->id, 'academic_year' => 1]);
@@ -723,7 +727,7 @@ it('review checks the normalized curriculum cohort when editing with supplied or
     $other = deliveryModeClass(['course_codes' => [$course->id], 'subject_id' => $yearOne->id, 'subject_ids' => [$yearOne->id]]);
     deliveryModeBlock($other);
     $class = deliveryModeClass([
-        'delivery_mode' => 'online', 'course_codes' => [$course->id], 'academic_year' => 2,
+        'delivery_mode' => 'online_synchronous', 'course_codes' => [$course->id], 'academic_year' => 2,
         'subject_id' => $yearTwo->id, 'subject_ids' => [$yearTwo->id],
     ]);
     $initialDay = $supplySchedules ? 'Tuesday' : 'Monday';
@@ -886,4 +890,258 @@ it('updates class schedules through the API without resubmitting unchanged curri
     expect($class->fresh()->course_codes)->toBe([$course->id]);
     expect($class->schedules()->count())->toBe(1);
     $this->assertDatabaseHas('schedule', ['class_id' => $class->id, 'day_of_week' => 'Monday', 'room_id' => $room->id, 'deleted_at' => null]);
+});
+
+it('skips room, faculty, cohort, and student conflicts for asynchronous online classes by default', function (string $inputMode): void {
+    $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
+    $faculty = Faculty::factory()->create();
+    $room = Room::factory()->create();
+    $student = Student::factory()->create();
+    $payload = deliveryModePayload([
+        'delivery_mode' => $inputMode,
+        'faculty_id' => $faculty->id,
+        'room_id' => $room->id,
+        'schedules' => [[
+            'day_of_week' => 'Monday', 'start_time' => '08:00', 'end_time' => '09:00',
+            'delivery_mode' => $inputMode, 'room_id' => $room->id,
+        ]],
+    ]);
+    $campus = deliveryModeClass([
+        'course_codes' => $payload['course_codes'],
+        'faculty_id' => $faculty->id,
+        'section' => 'A',
+        'room_id' => $room->id,
+    ]);
+    deliveryModeBlock($campus, ['room_id' => $room->id]);
+
+    $this->postJson(route('administrators.scheduling-analytics.classes.store'), $payload)
+        ->assertOk()
+        ->assertJsonPath('class.delivery_mode', 'online')
+        ->assertJsonPath('class.room_id', null)
+        ->assertJsonPath('class.schedules.0.delivery_mode', 'online')
+        ->assertJsonPath('class.schedules.0.room_id', null)
+        ->assertJsonPath('conflicts', []);
+
+    $asyncClass = Classes::query()->whereKeyNot($campus->id)->sole();
+    ClassEnrollment::factory()->create(['class_id' => $campus->id, 'student_id' => $student->id, 'status' => true]);
+    ClassEnrollment::factory()->create(['class_id' => $asyncClass->id, 'student_id' => $student->id, 'status' => true]);
+
+    $allSchedules = Schedule::with('class')->get();
+    $timetableConflicts = app(TimetableConflictService::class);
+    expect($timetableConflicts->detectTimeRoomConflicts($allSchedules))->toBe([])
+        ->and($timetableConflicts->detectFacultyConflicts($allSchedules))->toBe([])
+        ->and($timetableConflicts->detectStudentConflicts($allSchedules))->toBe([]);
+
+    $studentSchedule = app(StudentScheduleService::class)->build($student, '2031 - 2032', 2);
+    expect($studentSchedule['conflicts'])->toBe([]);
+})->with(['canonical online' => 'online', 'explicit alias' => 'online_asynchronous']);
+
+it('checks faculty, cohort, and student time conflicts for synchronous online classes while skipping room conflicts', function (): void {
+    $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
+    $faculty = Faculty::factory()->create();
+    $room = Room::factory()->create();
+    $course = Course::factory()->create();
+    $student = Student::factory()->create();
+
+    $campus = deliveryModeClass([
+        'course_codes' => [$course->id],
+        'faculty_id' => $faculty->id,
+        'section' => 'A',
+        'room_id' => $room->id,
+    ]);
+    deliveryModeBlock($campus, ['room_id' => $room->id]);
+
+    // Different faculty & section, same occupied room: synchronous online MUST succeed without room conflict.
+    $syncNoOverlap = deliveryModePayload([
+        'delivery_mode' => 'online_synchronous',
+        'section' => 'B',
+        'room_id' => $room->id,
+        'schedules' => [[
+            'day_of_week' => 'Monday', 'start_time' => '08:00', 'end_time' => '09:00',
+            'delivery_mode' => 'online_synchronous', 'room_id' => $room->id,
+        ]],
+    ]);
+    $this->postJson(route('administrators.scheduling-analytics.classes.store'), $syncNoOverlap)
+        ->assertOk()
+        ->assertJsonPath('class.delivery_mode', 'online_synchronous')
+        ->assertJsonPath('class.room_id', null)
+        ->assertJsonPath('class.schedules.0.room_id', null)
+        ->assertJsonPath('conflicts', []);
+
+    // Same student enrolled in both campus & synchronous online overlapping sessions: MUST detect student conflict.
+    $syncClass = Classes::query()->whereKeyNot($campus->id)->sole();
+    ClassEnrollment::factory()->create(['class_id' => $campus->id, 'student_id' => $student->id, 'status' => true]);
+    ClassEnrollment::factory()->create(['class_id' => $syncClass->id, 'student_id' => $student->id, 'status' => true]);
+
+    $allSchedules = Schedule::with('class')->get();
+    $timetableConflicts = app(TimetableConflictService::class);
+    expect($timetableConflicts->detectTimeRoomConflicts($allSchedules))->toBe([])
+        ->and($timetableConflicts->detectStudentConflicts($allSchedules))->toHaveCount(1);
+
+    $studentSchedule = app(StudentScheduleService::class)->build($student, '2031 - 2032', 2);
+    expect($studentSchedule['conflicts'])->toHaveCount(1);
+    $syncEntry = collect($studentSchedule['classes'])->firstWhere('id', $syncClass->id);
+    expect($syncEntry['room'])->toBe('Online (Sync)')
+        ->and($syncEntry['schedules'][0]['room'])->toBe('Online (Sync)');
+});
+
+it('persists configurable scheduling conflict rules through settings and applies them dynamically', function (): void {
+    $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
+    GeneralSetting::factory()->create([
+        'school_starting_date' => '2031-06-01',
+        'school_ending_date' => '2032-03-31',
+        'semester' => 2,
+    ]);
+
+    $settingsService = app(GeneralSettingsService::class);
+    expect($settingsService->getSchedulingConfig())->toMatchArray([
+        'default_online_delivery_mode' => 'online',
+        'check_room_conflicts' => true,
+        'check_faculty_conflicts' => true,
+        'check_student_cohort_conflicts' => true,
+        'check_synchronous_online_conflicts' => true,
+        'check_asynchronous_online_conflicts' => false,
+    ]);
+
+    // Turn ON asynchronous online time conflict checking and OFF synchronous online time conflict checking.
+    $this->patchJson(route('administrators.scheduling-analytics.policy.update'), [
+        'default_online_delivery_mode' => 'online_synchronous',
+        'check_room_conflicts' => true,
+        'check_faculty_conflicts' => true,
+        'check_student_cohort_conflicts' => true,
+        'check_synchronous_online_conflicts' => false,
+        'check_asynchronous_online_conflicts' => true,
+        'school_year' => '2031 - 2032',
+        'semester' => 2,
+    ])->assertOk()
+        ->assertJsonPath('scheduling_policy.default_online_delivery_mode', 'online_synchronous')
+        ->assertJsonPath('scheduling_policy.check_synchronous_online_conflicts', false)
+        ->assertJsonPath('scheduling_policy.check_asynchronous_online_conflicts', true);
+
+    expect($settingsService->getSchedulingConfig())->toMatchArray([
+        'default_online_delivery_mode' => 'online_synchronous',
+        'check_synchronous_online_conflicts' => false,
+        'check_asynchronous_online_conflicts' => true,
+    ]);
+
+    $faculty = Faculty::factory()->create();
+    $room = Room::factory()->create();
+    $campus = deliveryModeClass(['faculty_id' => $faculty->id, 'section' => 'B', 'room_id' => $room->id]);
+    deliveryModeBlock($campus, ['room_id' => $room->id]);
+
+    // With check_asynchronous_online_conflicts = true, async online now conflicts on faculty...
+    $asyncConflict = deliveryModePayload([
+        'delivery_mode' => 'online',
+        'faculty_id' => $faculty->id,
+        'schedules' => [['day_of_week' => 'Monday', 'start_time' => '08:00', 'end_time' => '09:00', 'delivery_mode' => 'online', 'room_id' => $room->id]],
+    ]);
+    $this->postJson(route('administrators.scheduling-analytics.classes.store'), $asyncConflict)
+        ->assertUnprocessable()
+        ->assertInvalid(['schedules' => 'faculty member is already scheduled']);
+
+    // ...but async online STILL never triggers a room conflict when faculty & cohort differ.
+    $asyncNoFaculty = deliveryModePayload([
+        'delivery_mode' => 'online',
+        'faculty_id' => null,
+        'section' => 'C',
+        'schedules' => [['day_of_week' => 'Monday', 'start_time' => '08:00', 'end_time' => '09:00', 'delivery_mode' => 'online', 'room_id' => $room->id]],
+    ]);
+    $this->postJson(route('administrators.scheduling-analytics.classes.store'), $asyncNoFaculty)->assertOk();
+
+    // With check_synchronous_online_conflicts = false, synchronous online now skips faculty conflict.
+    $syncAllowed = deliveryModePayload([
+        'delivery_mode' => 'online_synchronous',
+        'faculty_id' => $faculty->id,
+        'section' => 'D',
+        'schedules' => [['day_of_week' => 'Monday', 'start_time' => '08:00', 'end_time' => '09:00', 'delivery_mode' => 'online_synchronous']],
+    ]);
+    $this->postJson(route('administrators.scheduling-analytics.classes.store'), $syncAllowed)
+        ->assertOk()
+        ->assertJsonPath('conflicts', []);
+});
+
+it('applies class delivery mode to all existing meetings when apply_delivery_mode_to_schedules is true', function (): void {
+    Notification::fake();
+    $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
+    $room = Room::factory()->create(['name' => 'Room 301']);
+    $class = deliveryModeClass(['room_id' => $room->id]);
+    $mon = deliveryModeBlock($class, ['day_of_week' => 'Monday', 'room_id' => $room->id]);
+    $wed = deliveryModeBlock($class, ['day_of_week' => 'Wednesday', 'room_id' => $room->id]);
+
+    $this->patch(route('administrators.classes.update', $class), [
+        'delivery_mode' => 'online',
+        'apply_delivery_mode_to_schedules' => true,
+    ])->assertRedirect(route('administrators.classes.index'))->assertSessionHasNoErrors();
+
+    expect($class->fresh()->delivery_mode)->toBe('online')
+        ->and($class->fresh()->room_id)->toBeNull()
+        ->and($mon->fresh()->delivery_mode)->toBe('online')
+        ->and($mon->fresh()->room_id)->toBeNull()
+        ->and($wed->fresh()->delivery_mode)->toBe('online')
+        ->and($wed->fresh()->room_id)->toBeNull()
+        ->and($class->scheduleChanges()->count())->toBe(1);
+});
+
+it('fixes conflict summary type counts, self-class faculty false positives, room resolution filtering, and summer semester analytics', function (): void {
+    $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
+    $faculty = Faculty::factory()->create();
+    $room = Room::factory()->create(['is_active' => true]);
+
+    // 1. Self-class schedules with same faculty should never report a faculty conflict against itself.
+    $single = deliveryModeClass(['faculty_id' => $faculty->id, 'room_id' => $room->id]);
+    deliveryModeBlock($single, ['day_of_week' => 'Monday', 'start_time' => '08:00', 'end_time' => '09:00', 'room_id' => $room->id]);
+    deliveryModeBlock($single, ['day_of_week' => 'Monday', 'start_time' => '08:30', 'end_time' => '09:30', 'room_id' => null]);
+
+    expect(app(ScheduleConflictService::class)->detectConflictsForClasses(Classes::with(['Faculty', 'Schedule.room'])->whereKey($single->id)->get()))->toBe([]);
+
+    // 2. TimetableConflictService::getConflictSummary maps time_room/faculty/student counts properly.
+    $other = deliveryModeClass(['faculty_id' => $faculty->id, 'section' => 'B', 'room_id' => $room->id]);
+    deliveryModeBlock($other, ['day_of_week' => 'Monday', 'start_time' => '08:00', 'end_time' => '09:00', 'room_id' => $room->id]);
+    $timetableService = app(TimetableConflictService::class);
+    $detected = $timetableService->detectConflicts(Schedule::with('class')->get());
+    $summary = $timetableService->getConflictSummary($detected);
+    expect($summary['by_type']['time_room'])->toBeGreaterThanOrEqual(1)
+        ->and($summary['by_type']['faculty'])->toBeGreaterThanOrEqual(1);
+
+    // 3. TimetableConflictResolutionService ignores online schedules and does not treat boundary-touching slots as conflicts.
+    GeneralSetting::factory()->create([
+        'school_starting_date' => '2031-06-01',
+        'school_ending_date' => '2032-03-31',
+        'semester' => 2,
+    ]);
+    $freeRoom = Room::factory()->create(['is_active' => true]);
+    $busyRoom = Room::factory()->create(['is_active' => true]);
+    $onlineClass = deliveryModeClass(['delivery_mode' => 'online', 'section' => 'C']);
+    deliveryModeBlock($onlineClass, ['day_of_week' => 'Tuesday', 'start_time' => '10:00', 'end_time' => '11:00', 'delivery_mode' => 'online']);
+    $boundaryCampus = deliveryModeClass(['section' => 'D', 'room_id' => $freeRoom->id]);
+    deliveryModeBlock($boundaryCampus, ['day_of_week' => 'Tuesday', 'start_time' => '09:00', 'end_time' => '10:00', 'room_id' => $freeRoom->id]);
+    $conflictTarget = deliveryModeBlock(deliveryModeClass(['section' => 'E', 'room_id' => $busyRoom->id]), [
+        'day_of_week' => 'Tuesday',
+        'start_time' => '10:00',
+        'end_time' => '11:00',
+        'room_id' => $busyRoom->id,
+    ]);
+    $suggestions = app(TimetableConflictResolutionService::class)->getConflictResolutionSuggestions([
+        'type' => 'time_room',
+        'conflicts' => [[
+            'schedule1' => [
+                'id' => $conflictTarget->id,
+                'room_id' => $busyRoom->id,
+                'day_of_week' => 'Tuesday',
+                'start_time' => '10:00:00',
+                'end_time' => '11:00:00',
+            ],
+        ]],
+    ]);
+    $roomSuggestion = collect($suggestions)->firstWhere('type', 'alternative_room');
+    expect(collect($roomSuggestion['options'] ?? [])->pluck('id')->all())->toContain($freeRoom->id);
+
+    // 4. Summer semester works cleanly in Scheduling Analytics without casting 'summer' to 0.
+    $summerClass = deliveryModeClass(['semester' => 'summer', 'section' => 'S']);
+    deliveryModeBlock($summerClass, ['day_of_week' => 'Wednesday']);
+    $this->get(route('administrators.scheduling-analytics.index', ['school_year' => '2031 - 2032', 'semester' => 'summer']))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('term_context.semester', 'summer')
+            ->where('schedule_data.0.id', $summerClass->id));
 });

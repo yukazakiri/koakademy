@@ -936,13 +936,23 @@ final class AdministratorFacultyManagementController extends Controller
             ];
         }
 
+        $policy = \App\Support\ScheduleDelivery::policy();
+
         foreach ($candidateClass->schedules as $candidateSchedule) {
+            if (! \App\Support\ScheduleDelivery::checksFacultyConflicts($candidateSchedule->delivery_mode, $policy)) {
+                continue;
+            }
+
             foreach ($currentClasses as $currentClass) {
                 if ((int) $currentClass->id === (int) $candidateClass->id) {
                     continue;
                 }
 
                 foreach ($currentClass->schedules as $currentSchedule) {
+                    if (! \App\Support\ScheduleDelivery::checksFacultyConflicts($currentSchedule->delivery_mode, $policy)) {
+                        continue;
+                    }
+
                     if (mb_strtolower((string) $candidateSchedule->day_of_week) !== mb_strtolower((string) $currentSchedule->day_of_week)) {
                         continue;
                     }

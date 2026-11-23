@@ -40,7 +40,7 @@ final class UpdateClassSchedulesRequest extends FormRequest
             ],
             'schedules.*.start_time' => ['required', 'date_format:H:i'],
             'schedules.*.end_time' => ['required', 'date_format:H:i'],
-            'schedules.*.delivery_mode' => ['sometimes', Rule::in(['face_to_face', 'online'])],
+            'schedules.*.delivery_mode' => ['sometimes', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
             'schedules.*.room_id' => ['nullable', 'integer', 'exists:rooms,id'],
         ];
     }

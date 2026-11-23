@@ -8,6 +8,7 @@ use App\Models\Schedule;
 use App\Support\ScheduleDelivery;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 final class UpdateScheduleRequest extends FormRequest
 {
@@ -30,7 +31,7 @@ final class UpdateScheduleRequest extends FormRequest
             'day_of_week' => ['required', 'string', 'in:Monday,Tuesday,Wednesday,Thursday,Friday,Saturday'],
             'start_time' => ['required', 'date_format:H:i'],
             'end_time' => ['required', 'date_format:H:i', 'after:start_time'],
-            'delivery_mode' => ['sometimes', 'in:face_to_face,online'],
+            'delivery_mode' => ['sometimes', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
             'room_id' => ['nullable', 'integer', 'exists:rooms,id'],
             'component_type' => ['nullable', 'string', 'in:lecture,lab'],
             'status' => ['nullable', 'string', 'in:draft,published'],

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Classes\Api\Requests;
 
+use App\Support\ScheduleDelivery;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 final class CreateClassesRequest extends FormRequest
 {
@@ -32,7 +34,8 @@ final class CreateClassesRequest extends FormRequest
             'school_year' => 'required',
             'course_codes' => 'required',
             'section' => 'required',
-            'room_id' => 'required',
+            'delivery_mode' => ['sometimes', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
+            'room_id' => ScheduleDelivery::isOnline($this->input('delivery_mode')) ? 'nullable' : 'required',
             'classification' => 'required',
             'maximum_slots' => 'required',
             'shs_track_id' => 'required',
@@ -55,5 +58,16 @@ final class CreateClassesRequest extends FormRequest
             'settings.notify_students_on_schedule_changes' => 'nullable|boolean',
             'settings.custom' => 'nullable|array',
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        if ($this->exists('delivery_mode')) {
+            $this->merge(['delivery_mode' => ScheduleDelivery::normalizeInput($this->input('delivery_mode'))]);
+        }
+
+        if (ScheduleDelivery::isOnline($this->input('delivery_mode'))) {
+            $this->merge(['room_id' => null]);
+        }
     }
 }

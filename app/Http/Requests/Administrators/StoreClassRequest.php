@@ -52,7 +52,7 @@ final class StoreClassRequest extends FormRequest
             'semester' => ['required', Rule::in(['1', '2', 1, 2, 'summer'])],
             'school_year' => ['required', 'string', 'max:50'],
             'section' => ['required', Rule::in(['A', 'B', 'C', 'D'])],
-            'delivery_mode' => ['sometimes', Rule::in(['face_to_face', 'online'])],
+            'delivery_mode' => ['sometimes', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
             'room_id' => ['nullable', 'integer', 'exists:rooms,id'],
             'maximum_slots' => ['required', 'integer', 'min:1'],
 
@@ -62,7 +62,7 @@ final class StoreClassRequest extends FormRequest
             'schedules.*.day_of_week' => ['required', Rule::in(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])],
             'schedules.*.start_time' => ['required', 'date_format:H:i'],
             'schedules.*.end_time' => ['required', 'date_format:H:i'],
-            'schedules.*.delivery_mode' => ['sometimes', Rule::in(['face_to_face', 'online'])],
+            'schedules.*.delivery_mode' => ['sometimes', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
             'schedules.*.room_id' => ['nullable', 'integer', 'exists:rooms,id'],
             'schedules.*.component_type' => ['nullable', 'string', Rule::in(['lecture', 'lab'])],
             'schedules.*.pattern_group_id' => ['nullable', 'string', 'max:64'],
@@ -101,7 +101,12 @@ final class StoreClassRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        if ($this->input('delivery_mode') === 'online') {
+        if ($this->exists('delivery_mode')) {
+            $normalizedDeliveryMode = ScheduleDelivery::normalizeInput($this->input('delivery_mode'));
+            $this->merge(['delivery_mode' => $normalizedDeliveryMode]);
+        }
+
+        if (ScheduleDelivery::isOnline($this->input('delivery_mode'))) {
             $this->merge(['room_id' => null]);
         }
 

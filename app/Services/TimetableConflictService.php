@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Models\ClassEnrollment;
+use App\Support\ScheduleDelivery;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Support\Collection;
@@ -89,9 +90,10 @@ final class TimetableConflictService
      */
     public function detectTimeRoomConflicts(Collection $schedules): array
     {
+        $policy = ScheduleDelivery::policy();
         $conflicts = [];
         $grouped = $schedules
-            ->filter(fn ($schedule): bool => $schedule->room_id !== null && ! $schedule->isOnline())
+            ->filter(fn ($schedule): bool => $schedule->room_id !== null && ScheduleDelivery::checksRoomConflicts($schedule->delivery_mode, $policy))
             ->groupBy(fn ($schedule): string => $schedule->day_of_week.'_'.$schedule->room_id);
 
         foreach ($grouped as $dayRoom => $dayRoomSchedules) {
@@ -116,12 +118,15 @@ final class TimetableConflictService
      */
     public function detectFacultyConflicts(Collection $schedules): array
     {
+        $policy = ScheduleDelivery::policy();
         $conflicts = [];
-        $facultySchedules = $schedules->filter(fn ($schedule): bool => $schedule->class && $schedule->class->faculty_id)->groupBy(fn ($schedule): string => $schedule->day_of_week.'_'.$schedule->class->faculty_id);
+        $facultySchedules = $schedules
+            ->filter(fn ($schedule): bool => $schedule->class && $schedule->class->faculty_id && ScheduleDelivery::checksFacultyConflicts($schedule->delivery_mode, $policy))
+            ->groupBy(fn ($schedule): string => $schedule->day_of_week.'_'.$schedule->class->faculty_id);
 
         foreach ($facultySchedules as $dayFaculty => $dayFacultySchedules) {
             if ($dayFacultySchedules->count() > 1) {
-                $timeConflicts = $this->findTimeOverlaps($dayFacultySchedules);
+                $timeConflicts = $this->findTimeOverlaps($dayFacultySchedules, ignoreSameClass: true);
                 if ($timeConflicts !== []) {
                     $conflicts[] = [
                         'type' => 'faculty',
@@ -141,10 +146,19 @@ final class TimetableConflictService
      */
     public function detectStudentConflicts(Collection $schedules): array
     {
+        $policy = ScheduleDelivery::policy();
+        $checkedSchedules = $schedules
+            ->filter(fn ($schedule): bool => ScheduleDelivery::checksStudentCohortConflicts($schedule->delivery_mode, $policy))
+            ->values();
+
+        if ($checkedSchedules->isEmpty()) {
+            return [];
+        }
+
         $conflicts = [];
 
         // Get all students enrolled in these classes
-        $classIds = $schedules->pluck('class_id')->filter()->unique();
+        $classIds = $checkedSchedules->pluck('class_id')->filter()->unique();
         $studentEnrollments = ClassEnrollment::query()->whereIn('class_id', $classIds)
             ->with(['student', 'class'])
             ->get()
@@ -154,7 +168,7 @@ final class TimetableConflictService
             $studentSchedules = collect();
 
             foreach ($enrollments as $enrollment) {
-                $classSchedules = $schedules->where('class_id', $enrollment->class_id);
+                $classSchedules = $checkedSchedules->where('class_id', $enrollment->class_id);
                 $studentSchedules = $studentSchedules->merge($classSchedules);
             }
 
@@ -163,7 +177,7 @@ final class TimetableConflictService
 
                 foreach ($dayGroups as $day => $daySchedules) {
                     if ($daySchedules->count() > 1) {
-                        $timeConflicts = $this->findTimeOverlaps($daySchedules);
+                        $timeConflicts = $this->findTimeOverlaps($daySchedules, ignoreSameClass: true);
                         if ($timeConflicts !== []) {
                             $conflicts[] = [
                                 'type' => 'student',
@@ -199,10 +213,22 @@ final class TimetableConflictService
         ];
 
         foreach ($conflicts as $type => $typeConflicts) {
-            $summary['by_type'][$type] = count($typeConflicts);
+            if (! is_array($typeConflicts)) {
+                continue;
+            }
+
+            $normalizedType = str_ends_with((string) $type, '_conflicts')
+                ? mb_substr((string) $type, 0, -10)
+                : (string) $type;
+
+            $summary['by_type'][$normalizedType] = count($typeConflicts);
             $summary['total_conflicts'] += count($typeConflicts);
 
             foreach ($typeConflicts as $typeConflict) {
+                if (! is_array($typeConflict) || ! isset($typeConflict['severity'])) {
+                    continue;
+                }
+
                 switch ($typeConflict['severity']) {
                     case 'high':
                         $summary['high_severity']++;
@@ -359,16 +385,20 @@ final class TimetableConflictService
     /**
      * Find time overlaps between schedules
      */
-    private function findTimeOverlaps(Collection $schedules): array
+    private function findTimeOverlaps(Collection $schedules, bool $ignoreSameClass = false): array
     {
         $conflicts = [];
-        $scheduleArray = $schedules->toArray();
+        $scheduleArray = $schedules->values()->toArray();
         $counter = count($scheduleArray);
 
         for ($i = 0; $i < $counter; $i++) {
-            for ($j = $i + 1; $j < count($scheduleArray); $j++) {
+            for ($j = $i + 1; $j < $counter; $j++) {
                 $schedule1 = $scheduleArray[$i];
                 $schedule2 = $scheduleArray[$j];
+
+                if ($ignoreSameClass && isset($schedule1['class_id'], $schedule2['class_id']) && (int) $schedule1['class_id'] === (int) $schedule2['class_id']) {
+                    continue;
+                }
 
                 if ($this->hasTimeOverlap($schedule1, $schedule2)) {
                     $conflicts[] = [

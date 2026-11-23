@@ -14,6 +14,7 @@ use App\Models\StrandSubject;
 use App\Models\Subject;
 use App\Rules\ScheduleOverlapRule;
 use App\Services\GeneralSettingsService;
+use App\Support\ScheduleDelivery;
 use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
@@ -522,6 +523,19 @@ final class ClassesForm
                                 ->placeholder('Select section...')
                                 ->helperText('Choose the section for this class'),
 
+                            Select::make('delivery_mode')
+                                ->label('Default Delivery Mode')
+                                ->options(ScheduleDelivery::selectOptions())
+                                ->default(Classes::DELIVERY_FACE_TO_FACE)
+                                ->required()
+                                ->live()
+                                ->afterStateUpdated(function (Set $set, $state): void {
+                                    if (ScheduleDelivery::isOnline($state)) {
+                                        $set('room_id', null);
+                                    }
+                                })
+                                ->helperText('Face-to-face checks rooms and time; online (asynchronous) skips conflicts by default; online (synchronous) checks time without reserving a room.'),
+
                             Select::make('room_id')
                                 ->label('Room')
                                 ->options(
@@ -529,7 +543,11 @@ final class ClassesForm
                                 )
                                 ->searchable()
                                 ->preload()
-                                ->helperText('Only active rooms are shown')
+                                ->disabled(fn (Get $get): bool => ScheduleDelivery::isOnline($get('delivery_mode')))
+                                ->dehydrateStateUsing(fn (Get $get, mixed $state): mixed => ScheduleDelivery::isOnline($get('delivery_mode')) ? null : $state)
+                                ->helperText(fn (Get $get): string => ScheduleDelivery::isOnline($get('delivery_mode'))
+                                    ? 'Online classes do not reserve a physical room.'
+                                    : 'Only active rooms are shown')
                                 ->createOptionForm([
                                     TextInput::make('name')
                                         ->label('Room Name')
@@ -574,7 +592,19 @@ final class ClassesForm
                                 Repeater::make('schedules')
                                     ->relationship()
                                     ->schema([
-                                        Grid::make(4)->schema([
+                                        Grid::make(5)->schema([
+                                            Select::make('delivery_mode')
+                                                ->label('Delivery')
+                                                ->options(ScheduleDelivery::selectOptions())
+                                                ->default(fn (Get $get): string => (string) ($get('../../delivery_mode') ?: Classes::DELIVERY_FACE_TO_FACE))
+                                                ->required()
+                                                ->live()
+                                                ->afterStateUpdated(function (Set $set, $state): void {
+                                                    if (ScheduleDelivery::isOnline($state)) {
+                                                        $set('room_id', null);
+                                                    }
+                                                }),
+
                                             Select::make('day_of_week')
                                                 ->options([
                                                     'Monday' => 'Monday',
@@ -623,7 +653,10 @@ final class ClassesForm
                                                     titleAttribute: 'name',
                                                     modifyQueryUsing: fn ($query) => $query->where('is_active', true)
                                                 )
-                                                ->required()
+                                                ->required(fn (Get $get): bool => ScheduleDelivery::isFaceToFace($get('delivery_mode')))
+                                                ->disabled(fn (Get $get): bool => ScheduleDelivery::isOnline($get('delivery_mode')))
+                                                ->dehydrateStateUsing(fn (Get $get, mixed $state): mixed => ScheduleDelivery::isOnline($get('delivery_mode')) ? null : $state)
+                                                ->placeholder(fn (Get $get): string => ScheduleDelivery::isOnline($get('delivery_mode')) ? 'No room (Online)' : 'Select room')
                                                 ->searchable()
                                                 ->createOptionForm([
                                                     TextInput::make('name')
@@ -654,7 +687,9 @@ final class ClassesForm
                                     ->defaultItems(1)
                                     ->reorderable(true)
                                     ->collapsible()
-                                    ->rules([new ScheduleOverlapRule])
+                                    ->rules([
+                                        fn (?Classes $record): ScheduleOverlapRule => new ScheduleOverlapRule($record?->id),
+                                    ])
                                     ->validationMessages([
                                         'schedule_overlap' => 'The schedule overlaps with another.',
                                     ])

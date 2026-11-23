@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Models\GeneralSetting;
 use App\Models\UserSetting;
+use App\Support\ScheduleDelivery;
 use Exception;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
@@ -14,6 +15,8 @@ use Illuminate\Support\Facades\Log;
 final class GeneralSettingsService
 {
     private const string API_MANAGEMENT_CONFIG_KEY = 'api_management';
+
+    private const string SCHEDULING_CONFIG_KEY = 'scheduling';
 
     /**
      * @var array<string, array{label: string, description: string, input: string, editable: bool}>
@@ -704,6 +707,66 @@ final class GeneralSettingsService
         $this->generalSetting = $settings->fresh();
 
         return $this->getApiManagementConfig();
+    }
+
+    /**
+     * @return array{
+     *     default_online_delivery_mode: string,
+     *     check_room_conflicts: bool,
+     *     check_faculty_conflicts: bool,
+     *     check_student_cohort_conflicts: bool,
+     *     check_synchronous_online_conflicts: bool,
+     *     check_asynchronous_online_conflicts: bool
+     * }
+     */
+    public function getSchedulingConfig(): array
+    {
+        $savedConfig = data_get(
+            $this->getGlobalSettingsModel()?->more_configs,
+            self::SCHEDULING_CONFIG_KEY,
+            []
+        );
+
+        return ScheduleDelivery::sanitizePolicy(
+            is_array($savedConfig) ? $savedConfig : []
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @return array{
+     *     default_online_delivery_mode: string,
+     *     check_room_conflicts: bool,
+     *     check_faculty_conflicts: bool,
+     *     check_student_cohort_conflicts: bool,
+     *     check_synchronous_online_conflicts: bool,
+     *     check_asynchronous_online_conflicts: bool
+     * }
+     */
+    public function updateSchedulingConfig(array $attributes): array
+    {
+        $settings = $this->getGlobalSettingsModel();
+
+        if (! $settings instanceof GeneralSetting) {
+            $settings = GeneralSetting::firstOrCreateGlobal();
+
+            $this->generalSetting = $settings;
+        }
+
+        $existing = $this->getSchedulingConfig();
+        $config = ScheduleDelivery::sanitizePolicy(array_merge($existing, $attributes));
+
+        $moreConfigs = is_array($settings->more_configs) ? $settings->more_configs : [];
+        $moreConfigs[self::SCHEDULING_CONFIG_KEY] = $config;
+
+        $settings->update([
+            'more_configs' => $moreConfigs,
+        ]);
+
+        $this->generalSetting = $settings->fresh();
+        app(TimetableConflictService::class)->clearConflictCache();
+
+        return $this->getSchedulingConfig();
     }
 
     public function isMcpEnabled(): bool

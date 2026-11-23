@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
 use App\Models\Student;
+use App\Support\ScheduleDelivery;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -86,7 +87,7 @@ final class StudentScheduleService
                     'start_time' => $startTime,
                     'end_time' => $endTime,
                     'room_id' => $schedule->room_id,
-                    'room' => $schedule->isOnline() ? 'Online' : ($schedule->room?->name ?? 'Room TBA'),
+                    'room' => ScheduleDelivery::locationLabel($schedule->delivery_mode, $schedule->room?->name, 'Room TBA'),
                     'delivery_mode' => $schedule->delivery_mode,
                 ];
             })
@@ -109,7 +110,7 @@ final class StudentScheduleService
             'units' => $subject?->units ?? 0,
             'faculty_name' => $class->faculty?->full_name ?? 'TBA',
             'schedule' => 'TBA',
-            'room' => $class->isOnline() ? 'Online' : ($class->room?->name ?? 'TBA'),
+            'room' => ScheduleDelivery::locationLabel($class->delivery_mode, $class->room?->name, 'TBA'),
             'room_id' => $class->room_id,
             'faculty_id' => $class->faculty_id,
             'maximum_slots' => $class->maximum_slots,
@@ -134,11 +135,17 @@ final class StudentScheduleService
      */
     private function buildConflicts(array $classes): array
     {
+        $policy = ScheduleDelivery::policy();
         /** @var array<string, list<array<string, mixed>>> $eventsByDay */
         $eventsByDay = [];
 
         foreach ($classes as $class) {
             foreach ($class['schedules'] as $schedule) {
+                $deliveryMode = $schedule['delivery_mode'] ?? $class['delivery_mode'] ?? Classes::DELIVERY_FACE_TO_FACE;
+                if (! ScheduleDelivery::checksStudentCohortConflicts($deliveryMode, $policy)) {
+                    continue;
+                }
+
                 $startMinutes = $this->timeToMinutes((string) $schedule['start_time']);
                 $endMinutes = $this->timeToMinutes((string) $schedule['end_time']);
                 if ($startMinutes === null) {
@@ -159,6 +166,7 @@ final class StudentScheduleService
                     'subject_title' => (string) $class['subject_title'],
                     'section' => (string) $class['section'],
                     'room' => (string) $schedule['room'],
+                    'delivery_mode' => $deliveryMode,
                     'start_minutes' => $startMinutes,
                     'end_minutes' => $endMinutes,
                 ];
@@ -212,6 +220,7 @@ final class StudentScheduleService
                             'subject_title' => $item['subject_title'],
                             'section' => $item['section'],
                             'room' => $item['room'],
+                            'delivery_mode' => $item['delivery_mode'] ?? Classes::DELIVERY_FACE_TO_FACE,
                             'start_time' => $this->minutesToTime($item['start_minutes']),
                             'end_time' => $this->minutesToTime($item['end_minutes']),
                         ], $pair),

@@ -8,6 +8,7 @@ use App\Models\Classes;
 use App\Models\StrandSubject;
 use App\Models\Subject;
 use App\Services\GeneralSettingsService;
+use App\Support\ScheduleDelivery;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -31,8 +32,8 @@ final readonly class TermOfferingGeneratorService
         $numericSemester = is_numeric($semesterRaw) ? (int) $semesterRaw : 1;
         $sections = array_values(array_unique(array_filter(array_map(strval(...), (array) ($params['sections'] ?? ['A'])))));
         $maximumSlots = isset($params['maximum_slots']) ? max(1, (int) $params['maximum_slots']) : 40;
-        $deliveryMode = (string) ($params['delivery_mode'] ?? Classes::DELIVERY_FACE_TO_FACE);
-        $roomId = $deliveryMode !== Classes::DELIVERY_ONLINE && ! empty($params['room_id']) ? (int) $params['room_id'] : null;
+        $deliveryMode = ScheduleDelivery::canonicalize($params['delivery_mode'] ?? Classes::DELIVERY_FACE_TO_FACE);
+        $roomId = ! ScheduleDelivery::isOnline($deliveryMode) && ! empty($params['room_id']) ? (int) $params['room_id'] : null;
         $facultyId = ! empty($params['faculty_id']) ? (string) $params['faculty_id'] : null;
 
         $compactSchoolYear = str_replace(' ', '', $schoolYear);

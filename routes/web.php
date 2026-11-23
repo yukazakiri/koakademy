@@ -127,7 +127,8 @@ $registerPortalRoutes = function (): void {
                         'section' => $class->section ?? 'N/A',
                         'school_year' => $class->school_year ?? 'N/A',
                         'semester' => $class->semester ?? 'N/A',
-                        'room' => $class->Room?->name ?? 'TBA',
+                        'delivery_mode' => $class->delivery_mode ?? App\Models\Classes::DELIVERY_FACE_TO_FACE,
+                        'room' => App\Support\ScheduleDelivery::locationLabel($class->delivery_mode, $class->Room?->name, 'TBA'),
                         'students_count' => $class->class_enrollments_count ?? 0,
                     ];
                 })
@@ -157,7 +158,10 @@ $registerPortalRoutes = function (): void {
                             'subject_code' => $firstSubject?->code ?? $class->subject_code ?? 'N/A',
                             'subject_title' => $firstSubject?->title ?? 'N/A',
                             'section' => $class->section ?? 'N/A',
-                            'room' => $schedule->room?->name ?? $class->Room?->name ?? 'TBA',
+                            'delivery_mode' => $schedule->delivery_mode ?? $class->delivery_mode ?? App\Models\Classes::DELIVERY_FACE_TO_FACE,
+                            'room' => $schedule->isOnline()
+                                ? App\Support\ScheduleDelivery::locationLabel($schedule->delivery_mode)
+                                : ($schedule->room?->name ?? $class->Room?->name ?? 'TBA'),
                             'course_codes' => $class->formatted_course_codes ?? 'N/A',
                             'classification' => $class->classification ?? 'college',
                         ];

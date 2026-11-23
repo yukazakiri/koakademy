@@ -266,10 +266,10 @@ final readonly class SchedulingService
         $uniqueDays = array_values(array_unique(array_filter($days)));
         $patternGroupId = count($uniqueDays) > 1 ? (string) Str::uuid() : null;
 
-        $deliveryMode ??= $class->delivery_mode;
+        $deliveryMode = ScheduleDelivery::canonicalize($deliveryMode ?? $class->delivery_mode);
         $created = DB::transaction(function () use ($class, $uniqueDays, $startTime, $endTime, $roomId, $componentType, $status, $patternGroupId, $deliveryMode): Collection {
             $blocks = collect();
-            $effectiveRoomId = $deliveryMode === Classes::DELIVERY_ONLINE ? null : $roomId;
+            $effectiveRoomId = ScheduleDelivery::isOnline($deliveryMode) ? null : $roomId;
 
             foreach ($uniqueDays as $day) {
                 /** @var Schedule $schedule */

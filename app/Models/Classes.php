@@ -10,6 +10,7 @@ namespace App\Models;
 
 use App\Models\Concerns\BelongsToSchool;
 use App\Models\Concerns\HasAcademicPeriodScope;
+use App\Support\ScheduleDelivery;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Collection;
@@ -83,6 +84,10 @@ final class Classes extends Model
     public const DELIVERY_FACE_TO_FACE = 'face_to_face';
 
     public const DELIVERY_ONLINE = 'online';
+
+    public const DELIVERY_ONLINE_ASYNCHRONOUS = 'online';
+
+    public const DELIVERY_ONLINE_SYNCHRONOUS = 'online_synchronous';
 
     #[Override]
     protected $table = 'classes';
@@ -400,15 +405,37 @@ final class Classes extends Model
 
     public function isOnline(): bool
     {
-        return $this->delivery_mode === self::DELIVERY_ONLINE;
+        return ScheduleDelivery::isOnline($this->delivery_mode);
+    }
+
+    public function isAsynchronousOnline(): bool
+    {
+        return ScheduleDelivery::isAsynchronousOnline($this->delivery_mode);
+    }
+
+    public function isSynchronousOnline(): bool
+    {
+        return ScheduleDelivery::isSynchronousOnline($this->delivery_mode);
+    }
+
+    public function isFaceToFace(): bool
+    {
+        return ScheduleDelivery::isFaceToFace($this->delivery_mode);
     }
 
     public function deliverySummary(): string
     {
         $schedules = $this->relationLoaded('Schedule') ? $this->Schedule : $this->schedules;
-        $modes = $schedules->pluck('delivery_mode')->filter()->unique()->values();
+        $modes = $schedules
+            ->pluck('delivery_mode')
+            ->filter()
+            ->map(fn (mixed $mode): string => ScheduleDelivery::canonicalize($mode))
+            ->unique()
+            ->values();
 
-        return $modes->count() > 1 ? 'mixed' : ($modes->first() ?? $this->delivery_mode ?? self::DELIVERY_FACE_TO_FACE);
+        return $modes->count() > 1
+            ? 'mixed'
+            : ($modes->first() ?? ScheduleDelivery::canonicalize($this->delivery_mode));
     }
 
     protected static function boot(): void
@@ -420,6 +447,8 @@ final class Classes extends Model
             if (empty($model->subject_code)) {
                 $model->subject_code = $model->getSubjectCodeFromRelationships();
             }
+
+            $model->delivery_mode = ScheduleDelivery::canonicalize($model->delivery_mode ?? self::DELIVERY_FACE_TO_FACE);
 
             // This is the default room for new meetings; existing meetings keep their own mode and room.
             if ($model->isOnline()) {
@@ -675,9 +704,10 @@ final class Classes extends Model
                         'start_time' => $schedule->formatted_start_time,
                         'end_time' => $schedule->formatted_end_time,
                         'time_range' => $schedule->time_range,
+                        'delivery_mode' => $schedule->delivery_mode,
                         'room' => [
                             'id' => $schedule->room_id,
-                            'name' => $schedule->room?->name ?? 'TBA',
+                            'name' => ScheduleDelivery::locationLabel($schedule->delivery_mode, $schedule->room?->name, 'TBA'),
                         ],
                         'has_conflict' => false, // You could calculate this if needed
                     ]);

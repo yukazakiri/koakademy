@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Models\Classes;
 use App\Models\ShsStrand;
 use App\Services\GeneralSettingsService;
+use App\Support\ScheduleDelivery;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -83,7 +86,9 @@ final class ClassesController extends Controller
                             'section' => $class->section ?? 'N/A',
                             'school_year' => $class->school_year ?? 'N/A',
                             'semester' => $class->semester ?? 'N/A',
-                            'room' => $class->Room?->name ?? 'TBA',
+                            'delivery_mode' => $class->delivery_mode ?? Classes::DELIVERY_FACE_TO_FACE,
+                            'delivery_summary' => $class->deliverySummary(),
+                            'room' => ScheduleDelivery::locationLabel($class->delivery_mode, $class->Room?->name, 'TBA'),
                             'room_id' => $class->room_id,
                             'faculty_id' => $class->faculty_id,
                             'maximum_slots' => $class->maximum_slots,
@@ -97,6 +102,7 @@ final class ClassesController extends Controller
                                 'start_time' => $schedule->start_time?->format('H:i'),
                                 'end_time' => $schedule->end_time?->format('H:i'),
                                 'room_id' => $schedule->room_id,
+                                'delivery_mode' => $schedule->delivery_mode ?? $class->delivery_mode ?? Classes::DELIVERY_FACE_TO_FACE,
                             ]),
                             'settings' => $class->settings,
                             'accent_color' => $class->settings['accent_color'] ?? null,
@@ -204,6 +210,15 @@ final class ClassesController extends Controller
         $currentSemester = $settingsService->getCurrentSemester();
         $currentSchoolYear = $settingsService->getCurrentSchoolYearString();
 
+        if ($request->exists('delivery_mode')) {
+            $request->merge(['delivery_mode' => ScheduleDelivery::normalizeInput($request->input('delivery_mode'))]);
+        }
+
+        $isOnline = ScheduleDelivery::isOnline($request->input('delivery_mode'));
+        if ($isOnline) {
+            $request->merge(['room_id' => null]);
+        }
+
         // Validate the request
         $data = $request->validate([
             'classification' => 'required|in:college,shs',
@@ -217,7 +232,8 @@ final class ClassesController extends Controller
             'semester' => 'nullable|string',
             'school_year' => 'nullable|string',
             'section' => 'required|string|max:10',
-            'room_id' => 'required|string',
+            'delivery_mode' => ['sometimes', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
+            'room_id' => $isOnline ? 'nullable' : 'required|string',
             'maximum_slots' => 'required|integer|min:1',
         ]);
 
@@ -234,7 +250,7 @@ final class ClassesController extends Controller
         }
 
         // Create the class
-        $class = \App\Models\Classes::create($data);
+        $class = Classes::create($data);
 
         // Re-assign faculty_id explicitly if it's missing (sometimes fillable or casting issues)
         if (! $class->faculty_id) {
@@ -247,7 +263,7 @@ final class ClassesController extends Controller
 
     public function show(string $id)
     {
-        $class = \App\Models\Classes::with(['schedules.room', 'faculty', 'room', 'ShsStrand', 'ShsSubject', 'subject', 'SubjectByCodeFallback'])
+        $class = Classes::with(['schedules.room', 'faculty', 'room', 'ShsStrand', 'ShsSubject', 'subject', 'SubjectByCodeFallback'])
             ->findOrFail($id);
 
         $this->authorizeFacultyOwnsClass($class);
@@ -262,6 +278,8 @@ final class ClassesController extends Controller
         return response()->json([
             'class' => [
                 'id' => $class->id,
+                'delivery_mode' => $class->delivery_mode ?? Classes::DELIVERY_FACE_TO_FACE,
+                'delivery_summary' => $class->deliverySummary(),
                 'room_id' => $class->room_id,
                 'faculty_id' => $class->faculty_id,
                 'maximum_slots' => $class->maximum_slots,
@@ -277,6 +295,7 @@ final class ClassesController extends Controller
                     'day_of_week' => $schedule->day_of_week,
                     'start_time' => $schedule->start_time,
                     'end_time' => $schedule->end_time,
+                    'delivery_mode' => $schedule->delivery_mode ?? $class->delivery_mode ?? Classes::DELIVERY_FACE_TO_FACE,
                     'room_id' => $schedule->room_id,
                     'room' => $schedule->room,
                 ]),
@@ -286,12 +305,33 @@ final class ClassesController extends Controller
 
     public function update(Request $request, string $id)
     {
-        $class = \App\Models\Classes::findOrFail($id);
+        $class = Classes::findOrFail($id);
         $this->authorizeFacultyOwnsClass($class);
+
+        if ($request->exists('delivery_mode')) {
+            $request->merge(['delivery_mode' => ScheduleDelivery::normalizeInput($request->input('delivery_mode'))]);
+        }
+
+        $effectiveClassMode = $request->input('delivery_mode', $class->delivery_mode ?? Classes::DELIVERY_FACE_TO_FACE);
+        $classIsOnline = ScheduleDelivery::isOnline($effectiveClassMode);
+        if ($classIsOnline) {
+            $request->merge(['room_id' => null]);
+        }
+
+        if ($request->has('schedules')) {
+            $request->merge([
+                'schedules' => ScheduleDelivery::normalizeSchedules(
+                    $request->input('schedules'),
+                    $class,
+                    is_string($effectiveClassMode) ? $effectiveClassMode : null,
+                ),
+            ]);
+        }
 
         // Basic validation
         $validated = $request->validate([
-            'room_id' => 'required|exists:rooms,id',
+            'delivery_mode' => ['sometimes', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
+            'room_id' => $classIsOnline ? 'nullable' : 'nullable|exists:rooms,id',
             'maximum_slots' => 'required|integer|min:1',
             'section' => 'required|string|max:10',
             'semester' => 'required|string',
@@ -303,13 +343,15 @@ final class ClassesController extends Controller
             'schedules.*.day_of_week' => 'required|string',
             'schedules.*.start_time' => 'required',
             'schedules.*.end_time' => 'required',
-            'schedules.*.room_id' => 'required|exists:rooms,id',
+            'schedules.*.delivery_mode' => ['sometimes', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
+            'schedules.*.room_id' => 'nullable|exists:rooms,id',
         ]);
 
         // Update basic class info (faculty_id is intentionally excluded so a
         // faculty member cannot reassign another instructor's class).
         $updateData = [
-            'room_id' => $validated['room_id'],
+            'delivery_mode' => ScheduleDelivery::canonicalize($validated['delivery_mode'] ?? $class->delivery_mode),
+            'room_id' => $classIsOnline ? null : ($validated['room_id'] ?? $class->room_id),
             'maximum_slots' => $validated['maximum_slots'],
             'section' => $validated['section'],
             'semester' => $validated['semester'],
@@ -331,8 +373,13 @@ final class ClassesController extends Controller
 
             // Create new schedules
             foreach ($validated['schedules'] as $scheduleData) {
-                // Ensure room_id is set for each schedule, defaulting to class room if not provided (though validation requires it)
-                $scheduleData['room_id'] ??= $class->room_id;
+                $scheduleData = ScheduleDelivery::normalizeBlock(
+                    $scheduleData,
+                    $class->delivery_mode ?? Classes::DELIVERY_FACE_TO_FACE,
+                );
+                if (! ScheduleDelivery::isOnline($scheduleData['delivery_mode'])) {
+                    $scheduleData['room_id'] ??= $class->room_id;
+                }
 
                 // We need to associate the schedule with the class
                 $class->schedules()->create($scheduleData);
@@ -347,7 +394,7 @@ final class ClassesController extends Controller
      */
     public function activityLog(string $id)
     {
-        $class = \App\Models\Classes::findOrFail($id);
+        $class = Classes::findOrFail($id);
         $this->authorizeFacultyOwnsClass($class);
 
         // Query activities for this class and related entities
@@ -355,7 +402,7 @@ final class ClassesController extends Controller
             ->where(function ($query) use ($id): void {
                 // Activities on the class itself
                 $query->where(function ($q) use ($id): void {
-                    $q->where('subject_type', \App\Models\Classes::class)
+                    $q->where('subject_type', Classes::class)
                         ->where('subject_id', $id);
                 })
                     // Activities on class posts
@@ -453,7 +500,7 @@ final class ClassesController extends Controller
         }
 
         // Handle Class events
-        if ($activity->subject_type === \App\Models\Classes::class) {
+        if ($activity->subject_type === Classes::class) {
             if ($activity->event === 'updated' && ! empty($attributes)) {
                 $changes = [];
                 $fieldLabels = [
@@ -522,7 +569,7 @@ final class ClassesController extends Controller
     /**
      * Ensure the authenticated user is the faculty owner of the given class.
      */
-    private function authorizeFacultyOwnsClass(\App\Models\Classes $class): \App\Models\Faculty
+    private function authorizeFacultyOwnsClass(Classes $class): \App\Models\Faculty
     {
         $user = Auth::user();
         if (! $user || ! $user->isFaculty()) {

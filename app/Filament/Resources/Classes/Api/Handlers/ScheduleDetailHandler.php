@@ -7,6 +7,7 @@ namespace App\Filament\Resources\Classes\Api\Handlers;
 use App\Filament\Resources\Classes\Api\Transformers\ClassScheduleTransformer;
 use App\Filament\Resources\Classes\ClassResource;
 use App\Models\Classes;
+use App\Support\ScheduleDelivery;
 use Illuminate\Http\Request;
 use Override;
 use Rupadana\ApiService\Http\Handlers;
@@ -75,27 +76,38 @@ final class ScheduleDetailHandler extends Handlers
             return [];
         }
 
+        $policy = ScheduleDelivery::policy();
         $facultyId = $class->Faculty->id;
 
-        // Get all class schedules for this faculty member
-        $facultyClasses = Classes::query()
+        // Get class schedules for this faculty member in the same academic period
+        $facultyClassesQuery = Classes::query()
             ->where('faculty_id', $facultyId)
             ->where('id', '!=', $class->id) // Exclude the current class
-            ->with(['Schedule', 'Subject', 'Room'])
-            ->get();
+            ->with(['Schedule.Room', 'Subject', 'Room']);
+
+        if (filled($class->school_year) && filled($class->semester)) {
+            $facultyClassesQuery->forAcademicPeriod((string) $class->school_year, $class->semester);
+        }
+
+        $facultyClasses = $facultyClassesQuery->get();
 
         $scheduleConflicts = [];
 
         foreach ($facultyClasses as $facultyClass) {
             foreach ($facultyClass->Schedule as $schedule) {
+                if (! ScheduleDelivery::checksFacultyConflicts($schedule->delivery_mode, $policy)) {
+                    continue;
+                }
+
                 // Check if this schedule conflicts with any of the current class's schedules
-                $hasConflict = $class->Schedule->contains(fn ($classSchedule): bool => $classSchedule->day_of_week === $schedule->day_of_week &&
-                       $this->timesOverlap(
-                           $classSchedule->start_time,
-                           $classSchedule->end_time,
-                           $schedule->start_time,
-                           $schedule->end_time
-                       ));
+                $hasConflict = $class->Schedule->contains(fn ($classSchedule): bool => ScheduleDelivery::checksFacultyConflicts($classSchedule->delivery_mode, $policy)
+                    && $classSchedule->day_of_week === $schedule->day_of_week
+                    && $this->timesOverlap(
+                        $classSchedule->start_time,
+                        $classSchedule->end_time,
+                        $schedule->start_time,
+                        $schedule->end_time
+                    ));
 
                 if ($hasConflict) {
                     $scheduleConflicts[] = [
@@ -108,10 +120,11 @@ final class ScheduleDetailHandler extends Handlers
                         ],
                         'schedule' => [
                             'day_of_week' => $schedule->day_of_week,
+                            'delivery_mode' => $schedule->delivery_mode,
                             'start_time' => $schedule->start_time->format('H:i'),
                             'end_time' => $schedule->end_time->format('H:i'),
                             'time_range' => $schedule->start_time->format('H:i').' - '.$schedule->end_time->format('H:i'),
-                            'room' => $schedule->Room?->name ?? 'TBA',
+                            'room' => ScheduleDelivery::locationLabel($schedule->delivery_mode, $schedule->Room?->name, 'TBA'),
                         ],
                         'has_conflict' => $hasConflict,
                     ];

@@ -21,6 +21,7 @@ use App\Services\GeneralSettingsService;
 use App\Services\Scheduling\ScheduleConflictService;
 use App\Services\Scheduling\SchedulingService;
 use App\Services\Scheduling\TermOfferingGeneratorService;
+use App\Support\ScheduleDelivery;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -53,7 +54,7 @@ final class AdministratorSchedulingAnalyticsController extends Controller
 
         $requestedSemester = $request->input('semester');
         $selectedSemester = $requestedSemester !== null && $requestedSemester !== ''
-            ? (is_numeric($requestedSemester) ? (int) $requestedSemester : 1)
+            ? ($requestedSemester === 'summer' ? 'summer' : (is_numeric($requestedSemester) ? (int) $requestedSemester : 1))
             : $defaultSemester;
 
         // Base query for the selected academic period
@@ -241,12 +242,14 @@ final class AdministratorSchedulingAnalyticsController extends Controller
                     'track_name' => $strand->track?->track_name,
                 ])->values(),
                 'sections' => ['A', 'B', 'C', 'D'],
+                'delivery_modes' => ScheduleDelivery::options(),
                 'semesters' => [
                     ['value' => '1', 'label' => '1st Semester'],
                     ['value' => '2', 'label' => '2nd Semester'],
                     ['value' => 'summer', 'label' => 'Summer'],
                 ],
             ],
+            'scheduling_policy' => $generalSettingsService->getSchedulingConfig(),
             'defaults' => [
                 'semester' => (string) $selectedSemester,
                 'school_year' => $selectedSchoolYear,
@@ -321,7 +324,10 @@ final class AdministratorSchedulingAnalyticsController extends Controller
                     'start_time' => $schedule->formatted_start_time,
                     'end_time' => $schedule->formatted_end_time,
                     'time_range' => $schedule->time_range,
-                    'room' => $schedule->room?->name,
+                    'delivery_mode' => $schedule->delivery_mode,
+                    'room' => $schedule->isOnline()
+                        ? ScheduleDelivery::locationLabel($schedule->delivery_mode)
+                        : $schedule->room?->name,
                 ]),
             ];
         })->filter();
@@ -363,7 +369,8 @@ final class AdministratorSchedulingAnalyticsController extends Controller
 
         $conflicts = [];
         if ($class) {
-            $allClasses = Classes::forAcademicPeriod((string) $class->school_year, (int) $class->semester)
+            $classSemester = $this->normalizeSemesterValue($class->semester);
+            $allClasses = Classes::forAcademicPeriod((string) $class->school_year, $classSemester)
                 ->with(['Subject', 'Faculty', 'Room', 'Schedule.room'])
                 ->get();
 
@@ -407,7 +414,7 @@ final class AdministratorSchedulingAnalyticsController extends Controller
         );
 
         $allClasses = $class
-            ? Classes::forAcademicPeriod((string) $class->school_year, (int) $class->semester)
+            ? Classes::forAcademicPeriod((string) $class->school_year, $this->normalizeSemesterValue($class->semester))
                 ->with(['Subject', 'Faculty', 'Room', 'Schedule.room'])
                 ->get()
             : Classes::currentAcademicPeriod()
@@ -490,7 +497,7 @@ final class AdministratorSchedulingAnalyticsController extends Controller
 
         $response = $this->formatClassForPlanner($class, $curriculumPlacement, $conflictService);
 
-        $allClasses = Classes::forAcademicPeriod((string) $class->school_year, (int) $class->semester)
+        $allClasses = Classes::forAcademicPeriod((string) $class->school_year, $this->normalizeSemesterValue($class->semester))
             ->with(['Subject', 'Faculty', 'Room', 'Schedule.room'])
             ->get();
 
@@ -514,7 +521,11 @@ final class AdministratorSchedulingAnalyticsController extends Controller
     ): JsonResponse {
         abort_unless($request->user()?->isAdministrative() ?? false, 403);
 
-        if ($request->input('delivery_mode', $class->delivery_mode) === Classes::DELIVERY_ONLINE) {
+        if ($request->exists('delivery_mode')) {
+            $request->merge(['delivery_mode' => ScheduleDelivery::normalizeInput($request->input('delivery_mode'))]);
+        }
+
+        if (ScheduleDelivery::isOnline($request->input('delivery_mode', $class->delivery_mode))) {
             $request->merge(['room_id' => null]);
         }
 
@@ -524,7 +535,7 @@ final class AdministratorSchedulingAnalyticsController extends Controller
             'start_time' => ['required', 'date_format:H:i'],
             'end_time' => ['required', 'date_format:H:i', 'after:start_time'],
             'room_id' => ['nullable', 'integer', 'exists:rooms,id'],
-            'delivery_mode' => ['sometimes', Rule::in([Classes::DELIVERY_FACE_TO_FACE, Classes::DELIVERY_ONLINE])],
+            'delivery_mode' => ['sometimes', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
             'component_type' => ['nullable', 'string', Rule::in(['lecture', 'lab'])],
             'status' => ['nullable', 'string', Rule::in(['draft', 'published'])],
         ]);
@@ -548,7 +559,7 @@ final class AdministratorSchedulingAnalyticsController extends Controller
         $class->load(['Subject', 'subjects', 'Faculty', 'Room', 'Schedule.room']);
         $class->loadCount('ClassStudents');
 
-        $allClasses = Classes::forAcademicPeriod((string) $class->school_year, (int) $class->semester)
+        $allClasses = Classes::forAcademicPeriod((string) $class->school_year, $this->normalizeSemesterValue($class->semester))
             ->with(['Subject', 'Faculty', 'Room', 'Schedule.room'])
             ->get();
 
@@ -569,13 +580,17 @@ final class AdministratorSchedulingAnalyticsController extends Controller
     ): JsonResponse {
         abort_unless($request->user()?->isAdministrative() ?? false, 403);
 
-        if ($request->input('delivery_mode') === Classes::DELIVERY_ONLINE) {
+        if ($request->exists('delivery_mode')) {
+            $request->merge(['delivery_mode' => ScheduleDelivery::normalizeInput($request->input('delivery_mode'))]);
+        }
+
+        if (ScheduleDelivery::isOnline($request->input('delivery_mode'))) {
             $request->merge(['room_id' => null]);
         }
 
         $validated = $request->validate([
             'classification' => ['required', Rule::in(['college', 'shs'])],
-            'delivery_mode' => ['sometimes', Rule::in([Classes::DELIVERY_FACE_TO_FACE, Classes::DELIVERY_ONLINE])],
+            'delivery_mode' => ['sometimes', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
             'school_year' => ['required', 'string', 'max:50'],
             'semester' => ['required', Rule::in(['1', '2', 1, 2, 'summer'])],
             'sections' => ['required', 'array', 'min:1'],
@@ -624,7 +639,7 @@ final class AdministratorSchedulingAnalyticsController extends Controller
         ]);
 
         $schoolYear = GeneralSettingsService::normalizeSchoolYear((string) $validated['school_year']);
-        $semester = is_numeric($validated['semester']) ? (int) $validated['semester'] : 1;
+        $semester = $this->normalizeSemesterValue($validated['semester']);
 
         $classes = Classes::forAcademicPeriod($schoolYear, $semester)
             ->with(['Subject', 'Faculty', 'Room', 'Schedule.room'])
@@ -649,6 +664,49 @@ final class AdministratorSchedulingAnalyticsController extends Controller
 
         return response()->json([
             'published_count' => $publishedCount,
+            'conflicts' => $conflicts,
+        ]);
+    }
+
+    /**
+     * Update institution-wide scheduling and online delivery conflict policy.
+     */
+    public function updateSchedulingPolicy(
+        Request $request,
+        GeneralSettingsService $settingsService,
+        ScheduleConflictService $conflictService,
+    ): JsonResponse {
+        abort_unless($request->user()?->isAdministrative() ?? false, 403);
+
+        $validated = $request->validate([
+            'default_online_delivery_mode' => ['sometimes', Rule::in(ScheduleDelivery::ONLINE_MODES)],
+            'check_room_conflicts' => ['sometimes', 'boolean'],
+            'check_faculty_conflicts' => ['sometimes', 'boolean'],
+            'check_student_cohort_conflicts' => ['sometimes', 'boolean'],
+            'check_synchronous_online_conflicts' => ['sometimes', 'boolean'],
+            'check_asynchronous_online_conflicts' => ['sometimes', 'boolean'],
+            'school_year' => ['nullable', 'string', 'max:50'],
+            'semester' => ['nullable', Rule::in(['1', '2', 1, 2, 'summer'])],
+        ]);
+
+        $policyInput = Arr::only($validated, array_keys(ScheduleDelivery::DEFAULT_POLICY));
+        $updatedPolicy = $settingsService->updateSchedulingConfig($policyInput);
+
+        $schoolYear = filled($validated['school_year'] ?? null)
+            ? GeneralSettingsService::normalizeSchoolYear((string) $validated['school_year'])
+            : $settingsService->getCurrentSchoolYearString();
+        $semester = array_key_exists('semester', $validated) && filled($validated['semester'])
+            ? $this->normalizeSemesterValue($validated['semester'])
+            : $this->normalizeSemesterValue($settingsService->getCurrentSemester());
+
+        $classes = Classes::forAcademicPeriod($schoolYear, $semester)
+            ->with(['Subject', 'Faculty', 'Room', 'Schedule.room'])
+            ->get();
+
+        $conflicts = $conflictService->detectConflictsForClasses($classes, policy: $updatedPolicy);
+
+        return response()->json([
+            'scheduling_policy' => $updatedPolicy,
             'conflicts' => $conflicts,
         ]);
     }
@@ -737,5 +795,14 @@ final class AdministratorSchedulingAnalyticsController extends Controller
                 'status' => $schedule->status ?? 'published',
             ]),
         ];
+    }
+
+    private function normalizeSemesterValue(mixed $semester): int|string
+    {
+        if (is_string($semester) && mb_strtolower(mb_trim($semester)) === 'summer') {
+            return 'summer';
+        }
+
+        return is_numeric($semester) ? (int) $semester : 1;
     }
 }

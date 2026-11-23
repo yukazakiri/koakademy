@@ -70,17 +70,20 @@ final class ScheduleOverlapRule implements DataAwareRule, ValidationRule
             ? mb_trim($class->faculty_id)
             : null;
 
+        $policy = ScheduleDelivery::policy();
+        $timeConflictModes = ScheduleDelivery::timeConflictCheckedModes($policy);
         $value = ScheduleDelivery::normalizeSchedules($value, $existingClass, $class->delivery_mode);
         foreach ($value as $schedule) {
             if (! is_array($schedule) || empty($schedule['day_of_week']) || empty($schedule['start_time']) || empty($schedule['end_time'])) {
                 continue;
             }
 
+            $deliveryMode = $schedule['delivery_mode'] ?? Classes::DELIVERY_FACE_TO_FACE;
             $scheduleIdForExclusion = $this->resolveScheduleIdForExclusion($schedule['id'] ?? null);
 
-            if ($schedule['delivery_mode'] !== Classes::DELIVERY_ONLINE && ! empty($schedule['room_id'])) {
+            if (ScheduleDelivery::checksRoomConflicts($deliveryMode, $policy) && ! empty($schedule['room_id'])) {
                 $roomConflict = $this->buildOverlapBaseQuery($schedule, $schoolYearVariants, $semester, $scheduleIdForExclusion)
-                    ->where('delivery_mode', '!=', Classes::DELIVERY_ONLINE)
+                    ->where('delivery_mode', Classes::DELIVERY_FACE_TO_FACE)
                     ->where('room_id', $schedule['room_id'])
                     ->first();
 
@@ -91,8 +94,9 @@ final class ScheduleOverlapRule implements DataAwareRule, ValidationRule
                 }
             }
 
-            if ($facultyId !== null) {
+            if ($facultyId !== null && ScheduleDelivery::checksFacultyConflicts($deliveryMode, $policy)) {
                 $facultyConflict = $this->buildOverlapBaseQuery($schedule, $schoolYearVariants, $semester, $scheduleIdForExclusion)
+                    ->whereIn('delivery_mode', $timeConflictModes)
                     ->whereHas('class', function (Builder $query) use ($facultyId): void {
                         $query->where('faculty_id', $facultyId);
                     })
@@ -105,8 +109,9 @@ final class ScheduleOverlapRule implements DataAwareRule, ValidationRule
                 }
             }
 
-            if (filled($class->section) && filled($class->classification)) {
+            if (filled($class->section) && filled($class->classification) && ScheduleDelivery::checksStudentCohortConflicts($deliveryMode, $policy)) {
                 $cohortConflict = $this->buildOverlapBaseQuery($schedule, $schoolYearVariants, $semester, $scheduleIdForExclusion)
+                    ->whereIn('delivery_mode', $timeConflictModes)
                     ->whereHas('class', fn (Builder $query) => $query
                         ->where('section', $class->section)
                         ->where('classification', $class->classification))
@@ -182,9 +187,15 @@ final class ScheduleOverlapRule implements DataAwareRule, ValidationRule
 
     private function conflictLocation(): string
     {
-        return $this->conflictingSchedule?->isOnline()
-            ? 'online'
-            : ($this->conflictingSchedule?->room?->name ?? 'room unassigned');
+        if ($this->conflictingSchedule?->isSynchronousOnline()) {
+            return 'online (synchronous)';
+        }
+
+        if ($this->conflictingSchedule?->isAsynchronousOnline()) {
+            return 'online (asynchronous)';
+        }
+
+        return $this->conflictingSchedule?->room?->name ?? 'room unassigned';
     }
 
     /**

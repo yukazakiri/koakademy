@@ -17,6 +17,7 @@ use App\Models\User;
 use App\Services\ClassEnrollmentService;
 use App\Services\EnrollmentBillingService;
 use App\Services\TenantContext;
+use App\Support\ScheduleDelivery;
 use DateTimeInterface;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -593,10 +594,19 @@ final class SectionTransferService
      */
     private function pairwiseClashes(Classes $left, Classes $right): array
     {
+        $policy = ScheduleDelivery::policy();
         $clashes = [];
 
         foreach ($left->schedules as $leftSchedule) {
+            if (! ScheduleDelivery::checksStudentCohortConflicts($leftSchedule->delivery_mode, $policy)) {
+                continue;
+            }
+
             foreach ($right->schedules as $rightSchedule) {
+                if (! ScheduleDelivery::checksStudentCohortConflicts($rightSchedule->delivery_mode, $policy)) {
+                    continue;
+                }
+
                 if (mb_strtolower((string) $leftSchedule->day_of_week) !== mb_strtolower((string) $rightSchedule->day_of_week)) {
                     continue;
                 }
@@ -607,7 +617,7 @@ final class SectionTransferService
 
                 $clashes[] = [
                     'day' => $leftSchedule->day_of_week,
-                    'time' => sprintf('%s - %s', $leftSchedule->formatted_start_time, $leftSchedule->formatted_start_time),
+                    'time' => sprintf('%s - %s', $leftSchedule->formatted_start_time, $leftSchedule->formatted_end_time),
                     'overlap' => sprintf(
                         '%s %s-%s clashes with %s %s-%s',
                         $left->subject_code,
@@ -701,7 +711,10 @@ final class SectionTransferService
                     'section' => (string) $class->section,
                     'day' => (string) $schedule->day_of_week,
                     'time' => sprintf('%s - %s', $schedule->formatted_start_time, $schedule->formatted_end_time),
-                    'room' => $schedule->room?->name ?? $class->room?->name,
+                    'delivery_mode' => $schedule->delivery_mode,
+                    'room' => $schedule->isOnline()
+                        ? ScheduleDelivery::locationLabel($schedule->delivery_mode)
+                        : ($schedule->room?->name ?? $class->room?->name),
                     'instructor' => $class->faculty?->full_name,
                 ];
             }

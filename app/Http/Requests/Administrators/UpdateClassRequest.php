@@ -61,7 +61,8 @@ final class UpdateClassRequest extends FormRequest
             'semester' => ['sometimes', 'nullable', Rule::in(['1', '2', 1, 2, 'summer'])],
             'school_year' => ['sometimes', 'nullable', 'string', 'max:50'],
             'section' => ['sometimes', 'nullable', Rule::in(['A', 'B', 'C', 'D'])],
-            'delivery_mode' => ['sometimes', Rule::in(['face_to_face', 'online'])],
+            'delivery_mode' => ['sometimes', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
+            'apply_delivery_mode_to_schedules' => ['sometimes', 'boolean'],
             'room_id' => ['sometimes', 'nullable', 'integer', 'exists:rooms,id'],
             'maximum_slots' => ['sometimes', 'nullable', 'integer', 'min:1'],
 
@@ -77,7 +78,7 @@ final class UpdateClassRequest extends FormRequest
             'schedules.*.day_of_week' => ['required_with:schedules', Rule::in(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])],
             'schedules.*.start_time' => ['required_with:schedules', 'date_format:H:i'],
             'schedules.*.end_time' => ['required_with:schedules', 'date_format:H:i', 'after:schedules.*.start_time'],
-            'schedules.*.delivery_mode' => ['sometimes', Rule::in(['face_to_face', 'online'])],
+            'schedules.*.delivery_mode' => ['sometimes', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
             'schedules.*.room_id' => ['nullable', 'integer', 'exists:rooms,id'],
             'schedules.*.component_type' => ['nullable', 'string', Rule::in(['lecture', 'lab'])],
             'schedules.*.pattern_group_id' => ['nullable', 'string', 'max:64'],
@@ -122,13 +123,19 @@ final class UpdateClassRequest extends FormRequest
             }
 
             // A faculty, cohort, or term change must also validate retained blocks.
-            $schedules = $class->schedules()->get()->map(fn ($schedule): array => [
-                'day_of_week' => $schedule->day_of_week,
-                'start_time' => $schedule->start_time?->format('H:i:s'),
-                'end_time' => $schedule->end_time?->format('H:i:s'),
-                'room_id' => $schedule->room_id,
-                'delivery_mode' => $schedule->delivery_mode,
-            ])->all();
+            $applyMode = $this->boolean('apply_delivery_mode_to_schedules') && is_string($this->input('delivery_mode'));
+            $targetDeliveryMode = $applyMode ? ScheduleDelivery::canonicalize($this->input('delivery_mode')) : null;
+            $schedules = $class->schedules()->get()->map(function ($schedule) use ($applyMode, $targetDeliveryMode): array {
+                $effectiveMode = $applyMode && $targetDeliveryMode !== null ? $targetDeliveryMode : $schedule->delivery_mode;
+
+                return [
+                    'day_of_week' => $schedule->day_of_week,
+                    'start_time' => $schedule->start_time?->format('H:i:s'),
+                    'end_time' => $schedule->end_time?->format('H:i:s'),
+                    'room_id' => ScheduleDelivery::isOnline($effectiveMode) ? null : $schedule->room_id,
+                    'delivery_mode' => $effectiveMode,
+                ];
+            })->all();
 
             $overlapValidator = ValidatorFacade::make(
                 [...$this->all(), 'schedules' => $schedules],
@@ -148,7 +155,11 @@ final class UpdateClassRequest extends FormRequest
             $class = Classes::query()->find((int) $class);
         }
 
-        if ($this->input('delivery_mode', $class?->delivery_mode) === Classes::DELIVERY_ONLINE) {
+        if ($this->exists('delivery_mode')) {
+            $this->merge(['delivery_mode' => ScheduleDelivery::normalizeInput($this->input('delivery_mode'))]);
+        }
+
+        if (ScheduleDelivery::isOnline($this->input('delivery_mode', $class?->delivery_mode))) {
             $this->merge(['room_id' => null]);
         }
 

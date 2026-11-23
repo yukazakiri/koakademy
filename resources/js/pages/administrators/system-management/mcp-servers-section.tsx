@@ -1,4 +1,14 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -176,8 +186,16 @@ export default function McpServersSection({ servers, canUpdate }: { servers: Mcp
         }
     };
 
-    const destroy = async (server: McpServerConfig) => {
-        if (!confirm(`Remove the MCP server "${server.name}"?`)) return;
+    const [serverPendingDelete, setServerPendingDelete] = React.useState<McpServerConfig | null>(null);
+
+    const destroy = (server: McpServerConfig) => {
+        setServerPendingDelete(server);
+    };
+
+    const confirmDestroy = async () => {
+        if (!serverPendingDelete) return;
+        const server = serverPendingDelete;
+        setServerPendingDelete(null);
         try {
             await axios.delete(route("administrators.system-management.ai.mcp-servers.destroy", server.id));
             toast.success("MCP server removed.");
@@ -506,6 +524,27 @@ export default function McpServersSection({ servers, canUpdate }: { servers: Mcp
                     </div>
                 )}
             </CardContent>
+
+            <AlertDialog open={serverPendingDelete !== null} onOpenChange={(open) => !open && setServerPendingDelete(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Remove MCP server?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Remove <span className="text-foreground font-medium">{serverPendingDelete?.name}</span> from the AI system
+                            configuration? Assigned assistants will no longer be able to call its tools.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={confirmDestroy}
+                        >
+                            Remove Server
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </Card>
     );
 }

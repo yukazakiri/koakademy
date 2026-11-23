@@ -38,6 +38,7 @@ interface ClassDetailProps {
         course_title: string;
         section: string;
         classification: string;
+        maximum_slots?: number | null;
         schedules?: Array<{ id: number; day_of_week: string; start_time: string; end_time: string; room_id: number }>;
         settings: ClassSettings;
     };
@@ -151,7 +152,7 @@ export default function ClassDetail({
                     classData={classData}
                     teacher={teacher}
                     schedule={schedule}
-                    enrollmentStats={{ current_count: students.length, max_slots: 40 }}
+                    enrollmentStats={{ current_count: students.length, max_slots: classData.maximum_slots ?? 40 }}
                     onSettingsClick={() => setIsSettingsOpen(true)}
                     onActivityLogClick={() => setIsActivityLogOpen(true)}
                 />
@@ -196,7 +197,7 @@ export default function ClassDetail({
                             students={students}
                             onViewProfile={handleViewStudentInfo}
                             onTrackAttendance={(id) => handleTrackAttendance(id as number)}
-                            onViewPublicInfo={() => toast.info("Public profile view coming soon")}
+                            onManageGrades={classData.classification !== "shs" ? () => handleTabChange("grades") : undefined}
                         />
                     </TabsContent>
                     {classData.classification !== "shs" && (

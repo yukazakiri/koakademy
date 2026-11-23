@@ -176,6 +176,7 @@ export default function SystemManagementAiPage({
     access,
     ai_config,
     mcp_servers,
+    trail_dashboard_url,
 }: SystemManagementPageProps) {
     const canUpdate = access.sections.ai?.can_update ?? false;
 
@@ -597,18 +598,20 @@ export default function SystemManagementAiPage({
                                 </CardDescription>
                             </div>
                             <div className="flex items-center gap-3">
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    asChild
-                                    className="gap-1.5"
-                                >
-                                    <a href="/trail" target="_blank" rel="noopener noreferrer">
-                                        <ExternalLink className="size-3.5" />
-                                        Trail Dashboard
-                                    </a>
-                                </Button>
+                                {trail_dashboard_url && (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        asChild
+                                        className="gap-1.5"
+                                    >
+                                        <a href={trail_dashboard_url} target="_blank" rel="noopener noreferrer">
+                                            <ExternalLink className="size-3.5" />
+                                            Trail Dashboard
+                                        </a>
+                                    </Button>
+                                )}
                                 <Label htmlFor="ai-master-switch" className="text-sm font-medium">
                                     AI Engine Active
                                 </Label>

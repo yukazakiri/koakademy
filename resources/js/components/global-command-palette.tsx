@@ -423,7 +423,7 @@ export function GlobalCommandContent({
                       keywords: "home overview",
                       shortcut: "G D",
                       icon: <IconHome className="h-4 w-4" />,
-                      onSelect: () => router.visit("/dashboard"),
+                      onSelect: () => router.visit("/faculty/dashboard"),
                   },
                   {
                       id: "nav:classes",
@@ -431,7 +431,7 @@ export function GlobalCommandContent({
                       keywords: "teaching sections",
                       shortcut: "G C",
                       icon: <IconUsers className="h-4 w-4" />,
-                      onSelect: () => router.visit("/classes"),
+                      onSelect: () => router.visit("/faculty/classes"),
                   },
                   {
                       id: "nav:schedule",
@@ -439,7 +439,7 @@ export function GlobalCommandContent({
                       keywords: "timetable agenda",
                       shortcut: "G S",
                       icon: <IconCalendarEvent className="h-4 w-4" />,
-                      onSelect: () => router.visit("/schedule"),
+                      onSelect: () => router.visit("/faculty/schedule"),
                   },
                   {
                       id: "nav:announcements",
@@ -447,7 +447,7 @@ export function GlobalCommandContent({
                       keywords: "news notifications",
                       shortcut: "G A",
                       icon: <IconBell className="h-4 w-4" />,
-                      onSelect: () => router.visit("/announcements"),
+                      onSelect: () => router.visit("/faculty/announcements"),
                   },
                   {
                       id: "nav:profile",
@@ -455,7 +455,7 @@ export function GlobalCommandContent({
                       keywords: "settings account",
                       shortcut: "G P",
                       icon: <IconUser className="h-4 w-4" />,
-                      onSelect: () => router.visit("/profile"),
+                      onSelect: () => router.visit("/faculty/profile"),
                   },
               ]
             : [
@@ -499,6 +499,14 @@ export function GlobalCommandContent({
                       icon: <IconBell className="h-4 w-4" />,
                       onSelect: () => router.visit("/student/announcements"),
                   },
+                  {
+                      id: "nav:student-profile",
+                      label: "Go to Profile",
+                      keywords: "settings account security password",
+                      shortcut: "G P",
+                      icon: <IconUser className="h-4 w-4" />,
+                      onSelect: () => router.visit("/student/profile"),
+                  },
               ];
 
         const productivityBase: ActionItem[] = [
@@ -508,7 +516,7 @@ export function GlobalCommandContent({
                 keywords: "profile account name email",
                 shortcut: "P A",
                 icon: <IconUser className="h-4 w-4" />,
-                onSelect: () => router.visit("/profile#profile-form"),
+                onSelect: () => router.visit(isInstructor ? "/faculty/profile#profile-form" : "/student/profile#profile-form"),
             },
             {
                 id: "prod:announcements",
@@ -516,7 +524,7 @@ export function GlobalCommandContent({
                 keywords: "announcements updates",
                 shortcut: "A A",
                 icon: <IconBell className="h-4 w-4" />,
-                onSelect: () => router.visit("/announcements"),
+                onSelect: () => router.visit(isInstructor ? "/faculty/announcements" : "/student/announcements"),
             },
         ];
 
@@ -529,7 +537,7 @@ export function GlobalCommandContent({
                 icon: <IconGridDots className="h-4 w-4" />,
                 onSelect: () => {
                     setLocalStorageSafe("koakademy.classes.viewMode", "board");
-                    router.visit("/classes");
+                    router.visit("/faculty/classes");
                 },
             },
             {
@@ -538,7 +546,7 @@ export function GlobalCommandContent({
                 keywords: "new add class",
                 shortcut: "C N",
                 icon: <IconUsers className="h-4 w-4" />,
-                onSelect: () => router.visit("/classes?create=1"),
+                onSelect: () => router.visit("/faculty/classes?create=1"),
             },
             {
                 id: "prod:classes-reset",
@@ -552,7 +560,7 @@ export function GlobalCommandContent({
                     setLocalStorageSafe("koakademy.classes.filter.room", "all");
                     setLocalStorageSafe("koakademy.classes.filter.onlyConflicts", "false");
                     setLocalStorageSafe("koakademy.classes.filter.onlyUnscheduled", "false");
-                    router.visit("/classes");
+                    router.visit("/faculty/classes");
                 },
             },
             {
@@ -563,7 +571,7 @@ export function GlobalCommandContent({
                 icon: <IconCalendarEvent className="h-4 w-4" />,
                 onSelect: () => {
                     setLocalStorageSafe(scheduleViewKey, "agenda");
-                    router.visit("/schedule");
+                    router.visit("/faculty/schedule");
                 },
             },
             {
@@ -574,7 +582,7 @@ export function GlobalCommandContent({
                 icon: <IconCalendarEvent className="h-4 w-4" />,
                 onSelect: () => {
                     setLocalStorageSafe(scheduleViewKey, "overview");
-                    router.visit("/schedule");
+                    router.visit("/faculty/schedule");
                 },
             },
             {
@@ -598,7 +606,7 @@ export function GlobalCommandContent({
                 keywords: "profile faculty office hours",
                 shortcut: "P F",
                 icon: <IconUser className="h-4 w-4" />,
-                onSelect: () => router.visit("/profile#faculty-form"),
+                onSelect: () => router.visit("/faculty/profile#faculty-form"),
             },
         ];
 

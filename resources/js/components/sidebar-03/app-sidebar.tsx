@@ -6,6 +6,7 @@ import { NotificationsPopover } from "@/components/sidebar-03/nav-notifications"
 import { TeamSwitcher } from "@/components/sidebar-03/team-switcher";
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, useSidebar } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { isStudentPortalRole } from "@/lib/portal-role";
 import { cn } from "@/lib/utils";
 import { User } from "@/types/user";
 import { Link, usePage } from "@inertiajs/react";
@@ -107,7 +108,7 @@ function getStudentRoutes(enabledRoutes: Record<string, boolean>): Route[] {
             id: "help",
             title: "Help & Support",
             icon: <IconHelp className="size-4" />,
-            link: "/help",
+            link: "/student/help",
         },
     ];
 }
@@ -259,7 +260,7 @@ function getFacultyRoutes(enabledRoutes: Record<string, boolean>): Route[] {
             id: "help",
             title: "Help & Support",
             icon: <IconHelp className="size-4" />,
-            link: "/help",
+            link: "/faculty/help",
         },
     ];
 }
@@ -273,7 +274,7 @@ export function DashboardSidebar({ user }: { user: User }) {
     const appName = branding?.appName || "School Portal";
     const organizationShortName = branding?.organizationShortName || "UNI";
 
-    const isStudent = ["student", "shs_student", "Student"].includes(user.role);
+    const isStudent = isStudentPortalRole(user.role);
     const routes = useFeatureFlagRoutes(isStudent);
 
     const teams = [
@@ -319,7 +320,10 @@ export function DashboardSidebar({ user }: { user: User }) {
                             </Tooltip>
                         </TooltipProvider>
                     )}
-                    <NotificationsPopover />
+                    <NotificationsPopover
+                        baseUrl={isStudent ? "/student/notifications" : "/faculty/notifications"}
+                        inboxUrl={isStudent ? "/student/notifications/inbox" : "/faculty/notifications/inbox"}
+                    />
                 </div>
 
                 {isCollapsed && (

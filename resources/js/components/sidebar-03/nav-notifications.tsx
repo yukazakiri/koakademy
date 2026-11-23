@@ -11,6 +11,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { isAdministratorPortalRole, isFacultyPortalRole, isStudentPortalRole } from "@/lib/portal-role";
 import { cn } from "@/lib/utils";
 import type { NotificationAction, PortalNotification } from "@/types/notification";
 import { router, usePage } from "@inertiajs/react";
@@ -24,7 +25,11 @@ interface PageProps {
     auth?: {
         user?: {
             id: number;
+            role?: string | null;
         };
+    };
+    user?: {
+        role?: string | null;
     };
     [key: string]: unknown;
 }
@@ -32,8 +37,7 @@ interface PageProps {
 interface NotificationsPopoverProps {
     /**
      * Base URL for notification endpoints.
-     * Defaults to "/notifications" for student/faculty portals.
-     * Use "/administrators/notifications" for admin portal.
+     * Defaults to the active portal's notification endpoint based on user role.
      */
     baseUrl?: string;
     inboxUrl?: string;
@@ -48,8 +52,18 @@ function nullableString(value: unknown): string | null {
     return typeof value === "string" && value !== "" ? value : null;
 }
 
-export function NotificationsPopover({ baseUrl = "/notifications", inboxUrl, renderTrigger }: NotificationsPopoverProps) {
+export function NotificationsPopover({ baseUrl, inboxUrl, renderTrigger }: NotificationsPopoverProps) {
     const { props } = usePage<PageProps>();
+    const role = props.auth?.user?.role ?? props.user?.role;
+    const defaultBaseUrl = isAdministratorPortalRole(role)
+        ? "/administrators/notifications"
+        : isFacultyPortalRole(role)
+          ? "/faculty/notifications"
+          : isStudentPortalRole(role)
+            ? "/student/notifications"
+            : "/student/notifications";
+    const resolvedBaseUrl = baseUrl ?? defaultBaseUrl;
+    const resolvedInboxUrl = inboxUrl ?? `${resolvedBaseUrl}/inbox`;
     const initialNotifications = props.notifications ?? [];
     const initialUnreadCount = props.unreadNotificationsCount ?? 0;
     const hasNotificationData = props.notifications !== undefined;
@@ -132,7 +146,7 @@ export function NotificationsPopover({ baseUrl = "/notifications", inboxUrl, ren
     const handleMarkAsRead = (e: MouseEvent, id: string) => {
         e.stopPropagation();
         router.post(
-            `${baseUrl}/${id}/read`,
+            `${resolvedBaseUrl}/${id}/read`,
             {},
             {
                 preserveScroll: true,
@@ -146,7 +160,7 @@ export function NotificationsPopover({ baseUrl = "/notifications", inboxUrl, ren
 
     const handleMarkAllAsRead = () => {
         router.post(
-            `${baseUrl}/mark-all-read`,
+            `${resolvedBaseUrl}/mark-all-read`,
             {},
             {
                 preserveScroll: true,
@@ -161,7 +175,7 @@ export function NotificationsPopover({ baseUrl = "/notifications", inboxUrl, ren
     const handleDelete = (e: MouseEvent, id: string) => {
         e.stopPropagation();
         const wasUnread = notifications.find((n) => n.id === id && !n.readAt);
-        router.delete(`${baseUrl}/${id}`, {
+        router.delete(`${resolvedBaseUrl}/${id}`, {
             preserveScroll: true,
             onSuccess: () => {
                 setNotifications((prev) => prev.filter((n) => n.id !== id));
@@ -180,7 +194,7 @@ export function NotificationsPopover({ baseUrl = "/notifications", inboxUrl, ren
         // Mark as read if unread
         if (!notification.readAt) {
             router.post(
-                `${baseUrl}/${notification.id}/read`,
+                `${resolvedBaseUrl}/${notification.id}/read`,
                 {},
                 {
                     preserveScroll: true,
@@ -209,7 +223,7 @@ export function NotificationsPopover({ baseUrl = "/notifications", inboxUrl, ren
 
         if (!notification.readAt) {
             router.post(
-                `${baseUrl}/${notification.id}/read`,
+                `${resolvedBaseUrl}/${notification.id}/read`,
                 {},
                 {
                     preserveScroll: true,
@@ -377,10 +391,10 @@ export function NotificationsPopover({ baseUrl = "/notifications", inboxUrl, ren
                         ))}
                     </div>
                 )}
-                {inboxUrl && (
+                {resolvedInboxUrl && (
                     <>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem className="m-1 justify-between px-3 py-2 font-medium" onClick={() => router.visit(inboxUrl)}>
+                        <DropdownMenuItem className="m-1 justify-between px-3 py-2 font-medium" onClick={() => router.visit(resolvedInboxUrl)}>
                             <span>View all notifications</span>
                             <IconArrowRight className="size-4" />
                         </DropdownMenuItem>

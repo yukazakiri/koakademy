@@ -39,6 +39,7 @@ import {
     type LucideIcon,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 
 interface Branding {
     currency: string;
@@ -1067,10 +1068,15 @@ export default function StudentDashboard({ user, is_new_user, student_data, id_c
                 },
             });
 
-            if (response.ok) {
-                const data = await response.json();
-                setQrCode(data.qr_code);
+            if (!response.ok) {
+                throw new Error(`QR refresh failed with status ${response.status}`);
             }
+
+            const data = await response.json();
+            setQrCode(data.qr_code);
+        } catch (error) {
+            console.error("Failed to refresh QR code:", error);
+            toast.error("Could not refresh your QR code. Please try again.");
         } finally {
             setIsRefreshingQr(false);
         }

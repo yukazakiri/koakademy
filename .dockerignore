@@ -23,6 +23,7 @@
 # -----------------------------------------------------------------------------
 # The **/ form also matches nested trees such as docs/node_modules, which
 # would otherwise be copied into the image by the final application copy.
+node_modules/
 **/node_modules
 vendor/
 

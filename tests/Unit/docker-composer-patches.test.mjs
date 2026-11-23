@@ -23,4 +23,18 @@ for (const dockerfile of ["docker/Dockerfile", "docker/Dockerfile.franken"]) {
             }
         }
     });
+
+    test(`${dockerfile} enforces optional native frontend bindings during npm ci before building assets`, () => {
+        const contents = readFileSync(new URL(dockerfile, root), "utf8");
+        const npmCi = contents.indexOf("RUN npm ci");
+        const npmBuild = contents.indexOf("RUN WAYFINDER_GENERATE=false npm run build");
+        assert.ok(npmCi >= 0 && npmCi < npmBuild, "npm ci must run before npm run build");
+
+        const installBlock = contents.slice(npmCi, npmBuild);
+        assert.match(installBlock, /--include=dev/, "npm ci must explicitly include dev dependencies");
+        assert.match(installBlock, /--include=optional/, "npm ci must explicitly include optional native dependencies");
+        assert.match(installBlock, /req\("lightningcss"\)/, "npm ci layer must verify lightningcss native binding");
+        assert.match(installBlock, /req\("@tailwindcss\/oxide"\)/, "npm ci layer must verify @tailwindcss/oxide native binding");
+        assert.match(installBlock, /req\("rolldown"\)/, "npm ci layer must verify rolldown native binding");
+    });
 }

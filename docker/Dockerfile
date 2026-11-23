@@ -65,7 +65,20 @@ COPY package.json package-lock.json ./
 # puppeteer.config.cjs disables the Chromium download that would otherwise run
 # on every npm install. It has to be in place before the install step.
 COPY puppeteer.config.cjs ./
-RUN npm ci
+# Native build bindings (lightningcss, @tailwindcss/oxide, rolldown) ship as
+# optionalDependencies, which npm silently skips on transient registry errors
+# while still exiting 0. Force dev + optional installation with retries and
+# verify the native bindings in the same layer so BuildKit can never cache an
+# incomplete node_modules tree.
+RUN npm ci \
+        --include=dev \
+        --include=optional \
+        --no-audit \
+        --no-fund \
+        --fetch-retries=5 \
+        --fetch-retry-mintimeout=20000 \
+        --fetch-retry-maxtimeout=120000 \
+    && node -e 'const { createRequire } = require("node:module"); const req = createRequire("/app/package.json"); req("lightningcss"); req("@tailwindcss/oxide"); req("rolldown"); createRequire(req.resolve("vite/package.json"))("lightningcss");'
 COPY . .
 # Copy PHP dependencies and generated Wayfinder files.
 COPY --from=vendor /app/vendor ./vendor

@@ -649,6 +649,7 @@ export interface SystemManagementPageProps {
     newsletter_config: NewsletterConfig;
     ai_config?: AiConfigPayload;
     mcp_servers?: McpServerConfig[];
+    trail_dashboard_url?: string | null;
     analytics: AnalyticsConfig;
     /** Every provider Koakademy knows how to render, for the dynamic UI. */
     analytics_catalog: AnalyticsProviderDefinition[];

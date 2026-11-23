@@ -21,6 +21,7 @@ export interface WeeklyScheduleEntry {
     subject_title: string;
     section: string;
     room: string;
+    delivery_mode?: string;
     course_codes?: string;
     classification?: string;
 }

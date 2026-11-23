@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { BookOpen, Building2, Calendar, Clock, GraduationCap, MapPin, Monitor, Pencil, Sparkles, UserCheck, Users } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ClassFormData, ClassFormOptions, ClassSettings, SubjectOption } from "../../lib/class-defaults";
-import { deliveryModeLabel, meetingDeliverySummary } from "../../lib/class-defaults";
+import { deliveryModeLabel, deliveryModeShortLabel, isOnlineDeliveryMode, meetingDeliverySummary } from "../../lib/class-defaults";
 import { FormSection } from "../form-section";
 
 type ReviewStepProps = {
@@ -167,12 +167,12 @@ export function ReviewStep({ data, options, collegeSubjects, onJumpToStep, isEdi
 
                     <ReviewRow label="Delivery mode">
                         <Badge variant="secondary" className="gap-1 font-medium capitalize">
-                            {deliverySummary === "online" ? <Monitor className="size-3.5" /> : <Building2 className="size-3.5" />}
+                            {isOnlineDeliveryMode(deliverySummary) ? <Monitor className="size-3.5" /> : <Building2 className="size-3.5" />}
                             {deliveryModeLabel(deliverySummary)}
                         </Badge>
                     </ReviewRow>
 
-                    {data.delivery_mode !== "online" ? (
+                    {!isOnlineDeliveryMode(data.delivery_mode) ? (
                         <ReviewRow label="Default campus room">
                             <span className="inline-flex items-center gap-1.5">
                                 <MapPin className="text-muted-foreground size-4" />
@@ -189,7 +189,8 @@ export function ReviewStep({ data, options, collegeSubjects, onJumpToStep, isEdi
                         ) : (
                             <div className="space-y-2 pt-1">
                                 {data.schedules.map((schedule, index) => {
-                                    const isOnline = (schedule.delivery_mode ?? data.delivery_mode) === "online";
+                                    const itemMode = schedule.delivery_mode ?? data.delivery_mode;
+                                    const isOnline = isOnlineDeliveryMode(itemMode);
                                     const room = options.rooms.find((r) => Number(r.id) === schedule.room_id);
 
                                     return (
@@ -208,7 +209,7 @@ export function ReviewStep({ data, options, collegeSubjects, onJumpToStep, isEdi
                                             </div>
 
                                             <span className="text-muted-foreground font-medium">
-                                                {isOnline ? "Online (No room)" : `Campus · ${room?.label ?? "Room unassigned"}`}
+                                                {isOnline ? `${deliveryModeShortLabel(itemMode)} (No room)` : `Campus · ${room?.label ?? "Room unassigned"}`}
                                             </span>
                                         </div>
                                     );

@@ -2,7 +2,15 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { BookOpen, Building2, Calendar, Clock, GraduationCap, MapPin, Monitor, Sparkles, UserCheck, Users } from "lucide-react";
 import type { ReactNode } from "react";
-import { deliveryModeLabel, meetingDeliverySummary, type ClassFormData, type ClassFormOptions, type SubjectOption } from "../lib/class-defaults";
+import {
+    deliveryModeLabel,
+    deliveryModeShortLabel,
+    isOnlineDeliveryMode,
+    meetingDeliverySummary,
+    type ClassFormData,
+    type ClassFormOptions,
+    type SubjectOption,
+} from "../lib/class-defaults";
 
 type ClassPreviewCardProps = {
     data: ClassFormData;
@@ -62,13 +70,13 @@ export function ClassPreviewCard({ data, options, collegeSubjects, semester, sch
                             variant="outline"
                             className={cn(
                                 "gap-1 text-xs font-medium",
-                                deliverySummary === "online" &&
+                                isOnlineDeliveryMode(deliverySummary) &&
                                     "border-indigo-500/30 bg-indigo-50/50 text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-300",
                                 deliverySummary === "face_to_face" &&
                                     "border-blue-500/30 bg-blue-50/50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300",
                             )}
                         >
-                            {deliverySummary === "online" ? <Monitor className="size-3" /> : <Building2 className="size-3" />}
+                            {isOnlineDeliveryMode(deliverySummary) ? <Monitor className="size-3" /> : <Building2 className="size-3" />}
                             {deliveryModeLabel(deliverySummary)}
                         </Badge>
                     </div>
@@ -113,8 +121,8 @@ export function ClassPreviewCard({ data, options, collegeSubjects, semester, sch
                             Campus Room
                         </span>
                         <p className="text-foreground mt-1 truncate font-semibold">
-                            {data.delivery_mode === "online" ? (
-                                <span className="font-medium text-indigo-600 dark:text-indigo-400">Online (Virtual)</span>
+                            {isOnlineDeliveryMode(data.delivery_mode) ? (
+                                <span className="font-medium text-indigo-600 dark:text-indigo-400">{deliveryModeLabel(data.delivery_mode)}</span>
                             ) : selectedRoom ? (
                                 selectedRoom.label
                             ) : (
@@ -167,7 +175,8 @@ export function ClassPreviewCard({ data, options, collegeSubjects, semester, sch
                     ) : (
                         <div className="space-y-1.5 pt-1">
                             {data.schedules.map((schedule, index) => {
-                                const isItemOnline = (schedule.delivery_mode ?? data.delivery_mode) === "online";
+                                const itemMode = schedule.delivery_mode ?? data.delivery_mode;
+                                const isItemOnline = isOnlineDeliveryMode(itemMode);
                                 const room = options.rooms.find((r) => Number(r.id) === schedule.room_id);
 
                                 return (
@@ -182,7 +191,7 @@ export function ClassPreviewCard({ data, options, collegeSubjects, semester, sch
                                             </span>
                                         </div>
                                         <span className="text-muted-foreground shrink-0 text-[11px] font-medium">
-                                            {isItemOnline ? "Online" : (room?.label ?? "Room pending")}
+                                            {isItemOnline ? deliveryModeShortLabel(itemMode) : (room?.label ?? "Room pending")}
                                         </span>
                                     </div>
                                 );

@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Monitor } from "lucide-react";
 import { useState } from "react";
+import { isOnlineDeliveryMode, isSynchronousOnlineMode, type DeliveryMode } from "../classes/lib/class-defaults";
 import { scheduleMinutes, scheduledHours } from "./scheduling-readiness";
 import type { ClassScheduleData, RoomOption, ScheduleEntry } from "./scheduling-types";
 
@@ -15,7 +16,7 @@ const apiTime = (time: string) => {
 };
 
 export type SessionValues = {
-    delivery_mode: "face_to_face" | "online";
+    delivery_mode: DeliveryMode;
     days: string[];
     start_time: string;
     end_time: string;
@@ -46,8 +47,9 @@ export default function SchedulingSessionDialog({
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
     const [confirmDelete, setConfirmDelete] = useState(false);
-    const [deliveryMode, setDeliveryMode] = useState<"face_to_face" | "online">(session?.delivery_mode ?? classItem.delivery_mode ?? "face_to_face");
-    const online = deliveryMode === "online";
+    const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>(session?.delivery_mode ?? classItem.delivery_mode ?? "face_to_face");
+    const online = isOnlineDeliveryMode(deliveryMode);
+    const synchronousOnline = isSynchronousOnlineMode(deliveryMode);
     const valid = selectedDays.length > 0 && start && end && end > start;
 
     const perform = async (action: () => Promise<void>) => {
@@ -143,8 +145,9 @@ export default function SchedulingSessionDialog({
                             <Select
                                 value={deliveryMode}
                                 onValueChange={(value) => {
-                                    setDeliveryMode(value as "face_to_face" | "online");
-                                    if (value === "online") setRoom(null);
+                                    const nextMode = value as DeliveryMode;
+                                    setDeliveryMode(nextMode);
+                                    if (isOnlineDeliveryMode(nextMode)) setRoom(null);
                                 }}
                             >
                                 <SelectTrigger id="session-delivery" className="w-full">
@@ -152,7 +155,8 @@ export default function SchedulingSessionDialog({
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="face_to_face">Face to face</SelectItem>
-                                    <SelectItem value="online">Online</SelectItem>
+                                    <SelectItem value="online">Online (Asynchronous)</SelectItem>
+                                    <SelectItem value="online_synchronous">Online (Synchronous)</SelectItem>
                                 </SelectContent>
                             </Select>
                             <p className="text-muted-foreground text-sm">Other meetings can use a different type.</p>
@@ -160,7 +164,9 @@ export default function SchedulingSessionDialog({
                         {online ? (
                             <p className="bg-muted/40 flex items-center gap-2 rounded-lg border p-4 text-sm">
                                 <Monitor className="size-4 shrink-0" aria-hidden="true" />
-                                Online meeting · No room reserved
+                                {synchronousOnline
+                                    ? "Online (Synchronous) · No room reserved; checked for faculty & cohort time conflicts"
+                                    : "Online (Asynchronous) · No room reserved; excluded from room & time conflicts by default"}
                             </p>
                         ) : (
                             <div className="space-y-2">

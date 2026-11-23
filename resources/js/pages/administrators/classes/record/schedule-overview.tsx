@@ -1,21 +1,26 @@
 import { WeeklySchedule, type WeeklyScheduleEvent } from "@/components/administrators/classes/weekly-schedule";
 import { Button } from "@/components/ui/button";
 import { Pencil } from "lucide-react";
+import { deliveryModeLocationLabel, isOnlineDeliveryMode } from "../lib/class-defaults";
 import { getScheduleEntriesForDay, parseTimeToMinutes, scheduleDayOrder } from "./schedule-utils";
 import type { ClassShowData } from "./types";
 
 export function ScheduleOverview({ classItem, canUpdate, onManage }: { classItem: ClassShowData; canUpdate: boolean; onManage: () => void }) {
-    const online = classItem.delivery_mode === "online";
+    const online = isOnlineDeliveryMode(classItem.delivery_mode);
     const events: WeeklyScheduleEvent[] = scheduleDayOrder.flatMap((day) =>
-        getScheduleEntriesForDay(classItem.schedule, day).map((entry, index) => ({
-            id: `${day}-${index}`,
-            day,
-            start: entry.start_time,
-            end: entry.end_time,
-            title: "",
-            location: (entry.delivery_mode ?? classItem.delivery_mode) === "online" ? undefined : entry.room?.name || "Room not assigned",
-            online: (entry.delivery_mode ?? classItem.delivery_mode) === "online",
-        })),
+        getScheduleEntriesForDay(classItem.schedule, day).map((entry, index) => {
+            const entryMode = entry.delivery_mode ?? classItem.delivery_mode;
+            const entryOnline = isOnlineDeliveryMode(entryMode);
+            return {
+                id: `${day}-${index}`,
+                day,
+                start: entry.start_time,
+                end: entry.end_time,
+                title: "",
+                location: entryOnline ? deliveryModeLocationLabel(entryMode) : entry.room?.name || "Room not assigned",
+                online: entryOnline,
+            };
+        }),
     );
     const hours = events.reduce((total, event) => {
         const duration = parseTimeToMinutes(event.end) - parseTimeToMinutes(event.start);
@@ -53,7 +58,10 @@ export function ScheduleOverview({ classItem, canUpdate, onManage }: { classItem
                                 ? `${events.length} ${events.length === 1 ? "session" : "sessions"} · ${Number(hours.toFixed(2))} ${hours === 1 ? "hour" : "hours"} per week`
                                 : "Add sessions to set the weekly schedule."}
                         </p>
-                        <p className="text-muted-foreground text-xs">Room, faculty, and cohort conflicts are checked when changes are saved.</p>
+                        <p className="text-muted-foreground text-xs">
+                            Face-to-face sessions check room, faculty, and cohort conflicts; synchronous online checks time conflicts only;
+                            asynchronous online skips conflicts by default.
+                        </p>
                     </div>
                     {canUpdate && (
                         <Button variant="outline" onClick={onManage} className="h-10 px-3">

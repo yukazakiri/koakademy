@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertTriangle, Building2, Layers, User as UserIcon, X } from "lucide-react";
+import { deliveryModeLocationLabel, type DeliveryMode } from "../classes/lib/class-defaults";
 
 type ConflictClass = {
     id?: number;
@@ -9,6 +10,7 @@ type ConflictClass = {
     section: string;
     room: string | null;
     faculty: string | null;
+    delivery_mode?: DeliveryMode;
 };
 
 type ScheduleConflict = {
@@ -93,7 +95,7 @@ export default function SchedulingConflictsPanel({
                                             {c.class_1.subject_code} <span className="text-muted-foreground font-normal">({c.class_1.section})</span>
                                         </div>
                                         <div className="text-muted-foreground text-xs">
-                                            {c.class_1.faculty || "TBA"} · {c.class_1.room || "No room"}
+                                            {c.class_1.faculty || "TBA"} · {deliveryModeLocationLabel(c.class_1.delivery_mode, c.class_1.room, "No room")}
                                         </div>
                                     </div>
                                     <div className="text-muted-foreground flex flex-col items-center text-[10px]">
@@ -105,7 +107,7 @@ export default function SchedulingConflictsPanel({
                                             {c.class_2.subject_code} <span className="text-muted-foreground font-normal">({c.class_2.section})</span>
                                         </div>
                                         <div className="text-muted-foreground text-xs">
-                                            {c.class_2.faculty || "TBA"} · {c.class_2.room || "No room"}
+                                            {c.class_2.faculty || "TBA"} · {deliveryModeLocationLabel(c.class_2.delivery_mode, c.class_2.room, "No room")}
                                         </div>
                                     </div>
                                 </div>

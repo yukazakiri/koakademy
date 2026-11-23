@@ -11,7 +11,7 @@ import { Link } from "@inertiajs/react";
 import { ArrowLeftRight, ExternalLink, Loader2, Search, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { route } from "ziggy-js";
-import { deliveryModeLabel, type DeliveryMode } from "../lib/class-defaults";
+import { deliveryModeLabel, type DeliveryMode, type DeliverySummary } from "../lib/class-defaults";
 
 interface StudentEntry {
     id: number;
@@ -28,7 +28,7 @@ interface ClassInfo {
     subject_code: string;
     section: string;
     delivery_mode?: DeliveryMode;
-    delivery_summary?: "face_to_face" | "online" | "mixed";
+    delivery_summary?: DeliverySummary;
     total_students: number;
 }
 

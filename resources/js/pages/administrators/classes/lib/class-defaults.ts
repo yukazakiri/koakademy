@@ -1,6 +1,37 @@
 export type Classification = "college" | "shs";
-export type DeliveryMode = "face_to_face" | "online";
+export type DeliveryMode = "face_to_face" | "online" | "online_synchronous";
 export type DeliverySummary = DeliveryMode | "mixed";
+
+export type SchedulingPolicy = {
+    default_online_delivery_mode: "online" | "online_synchronous";
+    check_room_conflicts: boolean;
+    check_faculty_conflicts: boolean;
+    check_student_cohort_conflicts: boolean;
+    check_synchronous_online_conflicts: boolean;
+    check_asynchronous_online_conflicts: boolean;
+};
+
+export function isOnlineDeliveryMode(mode?: string | null): boolean {
+    return mode === "online" || mode === "online_asynchronous" || mode === "online_synchronous";
+}
+
+export function isAsynchronousOnlineMode(mode?: string | null): boolean {
+    return mode === "online" || mode === "online_asynchronous";
+}
+
+export function isSynchronousOnlineMode(mode?: string | null): boolean {
+    return mode === "online_synchronous";
+}
+
+export function isValidDeliveryMode(mode: unknown): mode is DeliveryMode {
+    return mode === "face_to_face" || mode === "online" || mode === "online_synchronous";
+}
+
+export function canonicalDeliveryMode(mode?: string | null): DeliveryMode {
+    if (mode === "online_synchronous") return "online_synchronous";
+    if (mode === "online" || mode === "online_asynchronous") return "online";
+    return "face_to_face";
+}
 
 export type EntityOption = { id: number | string; label: string };
 export type ValueOption = { value: string; label: string };
@@ -19,6 +50,7 @@ export type ShsSubjectOption = { code: string; label: string; title?: string };
 export type ClassFormOptions = {
     classifications: ValueOption[];
     delivery_modes?: ValueOption[];
+    scheduling_policy?: SchedulingPolicy;
     sections: ValueOption[];
     semesters: ValueOption[];
     grade_levels: ValueOption[];
@@ -81,32 +113,52 @@ export type ClassFormData = {
 
 export type ClassDraft = Omit<ClassFormData, "delivery_mode"> & { delivery_mode?: DeliveryMode };
 
-export function deliveryModeLabel(mode?: DeliverySummary): string {
-    return mode === "mixed" ? "Mixed" : mode === "online" ? "Online" : "Face to face";
+export function deliveryModeLabel(mode?: DeliverySummary | string | null): string {
+    if (mode === "mixed") return "Mixed";
+    if (isSynchronousOnlineMode(mode)) return "Online (Synchronous)";
+    if (isAsynchronousOnlineMode(mode)) return "Online (Asynchronous)";
+    return "Face to face";
+}
+
+export function deliveryModeShortLabel(mode?: DeliverySummary | string | null): string {
+    if (mode === "mixed") return "Mixed";
+    if (isSynchronousOnlineMode(mode)) return "Online (Sync)";
+    if (isAsynchronousOnlineMode(mode)) return "Online (Async)";
+    return "Face to face";
+}
+
+export function deliveryModeLocationLabel(mode?: DeliveryMode | string | null, roomName?: string | null, fallback = "Room unassigned"): string {
+    if (isSynchronousOnlineMode(mode)) return "Online (Sync)";
+    if (isAsynchronousOnlineMode(mode)) return "Online (Async)";
+    return roomName || fallback;
 }
 
 export function meetingDeliverySummary(
     schedules: Pick<ClassSchedule, "delivery_mode">[],
     defaultMode: DeliveryMode = "face_to_face",
 ): DeliverySummary {
-    const modes = new Set(schedules.map((schedule) => schedule.delivery_mode ?? defaultMode));
-    return modes.size > 1 ? "mixed" : ([...modes][0] ?? defaultMode);
+    const normalizedDefault = canonicalDeliveryMode(defaultMode);
+    const modes = new Set(schedules.map((schedule) => canonicalDeliveryMode(schedule.delivery_mode ?? normalizedDefault)));
+    return modes.size > 1 ? "mixed" : ([...modes][0] ?? normalizedDefault);
 }
 
 export function normalizeClassDelivery<T extends { delivery_mode?: DeliveryMode; room_id: number | null; schedules: ClassSchedule[] }>(
     data: T,
 ): T & { delivery_mode: DeliveryMode } {
-    const delivery_mode = data.delivery_mode ?? "face_to_face";
+    const delivery_mode = canonicalDeliveryMode(data.delivery_mode);
 
     return {
         ...data,
         delivery_mode,
-        room_id: delivery_mode === "online" ? null : data.room_id || null,
-        schedules: data.schedules.map((schedule) => ({
-            ...schedule,
-            delivery_mode: schedule.delivery_mode ?? delivery_mode,
-            room_id: (schedule.delivery_mode ?? delivery_mode) === "online" ? null : schedule.room_id || null,
-        })),
+        room_id: isOnlineDeliveryMode(delivery_mode) ? null : data.room_id || null,
+        schedules: data.schedules.map((schedule) => {
+            const meetingMode = canonicalDeliveryMode(schedule.delivery_mode ?? delivery_mode);
+            return {
+                ...schedule,
+                delivery_mode: meetingMode,
+                room_id: isOnlineDeliveryMode(meetingMode) ? null : schedule.room_id || null,
+            };
+        }),
     };
 }
 
@@ -148,12 +200,13 @@ export type ClassStorePayload = {
 );
 
 export function createDefaultSchedule(defaultRoomId: number | null, delivery_mode: DeliveryMode = "face_to_face"): ClassSchedule {
+    const mode = canonicalDeliveryMode(delivery_mode);
     return {
         day_of_week: "Monday",
         start_time: "08:00",
         end_time: "09:00",
-        delivery_mode,
-        room_id: delivery_mode === "online" ? null : defaultRoomId || null,
+        delivery_mode: mode,
+        room_id: isOnlineDeliveryMode(mode) ? null : defaultRoomId || null,
     };
 }
 
@@ -343,10 +396,10 @@ export function isClassDraft(value: unknown): value is ClassDraft {
                 typeof schedule.day_of_week === "string" &&
                 typeof schedule.start_time === "string" &&
                 typeof schedule.end_time === "string" &&
-                (schedule.delivery_mode === undefined || schedule.delivery_mode === "face_to_face" || schedule.delivery_mode === "online") &&
+                (schedule.delivery_mode === undefined || isValidDeliveryMode(schedule.delivery_mode)) &&
                 (typeof schedule.room_id === "number" || schedule.room_id === null),
         ) &&
-        (draft.delivery_mode === undefined || draft.delivery_mode === "face_to_face" || draft.delivery_mode === "online") &&
+        (draft.delivery_mode === undefined || isValidDeliveryMode(draft.delivery_mode)) &&
         typeof draft.settings === "object" &&
         draft.settings !== null
     );

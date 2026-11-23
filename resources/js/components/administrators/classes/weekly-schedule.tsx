@@ -115,7 +115,7 @@ function ScheduleEvent({
 }) {
     const { event, startMinutes, endMinutes } = block;
     const time = `${scheduleTimeLabel(startMinutes)} – ${scheduleTimeLabel(endMinutes)}`;
-    const location = event.online ? "Online" : event.location;
+    const location = event.online ? event.location || "Online" : event.location;
     const label = [day, time, event.title, location, event.conflict ? "Schedule conflict" : ""].filter(Boolean).join(", ");
     const className = cn(
         "flex w-full min-w-0 flex-col gap-1 rounded-md border p-3 text-left text-sm",

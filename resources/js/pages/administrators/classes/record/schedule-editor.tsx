@@ -23,10 +23,11 @@ import { Link, router, useForm } from "@inertiajs/react";
 import { AlertTriangle, CalendarDays, CalendarPlus, MousePointer2, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { deliveryModeLocationLabel, isOnlineDeliveryMode, type DeliveryMode } from "../lib/class-defaults";
 import { scheduleDayOrder } from "./schedule-utils";
 import type { ClassShowData, RawScheduleEntry, RoomOption } from "./types";
 
-type Meeting = RawScheduleEntry & { temp_id: string; delivery_mode: "face_to_face" | "online" };
+type Meeting = RawScheduleEntry & { temp_id: string; delivery_mode: DeliveryMode };
 type SchedulePayload = { id?: number; day_of_week: string; start_time: string; end_time: string; delivery_mode: string; room_id: number | null };
 type CalendarMeetingData = { location: string; issue?: string };
 
@@ -72,7 +73,7 @@ function previewDateTime(schedule: Meeting): string {
 }
 
 function meetingLocation(meeting: Pick<Meeting, "room_id" | "delivery_mode" | "room_name">, rooms: RoomOption[]): string {
-    if (meeting.delivery_mode === "online") return "Online";
+    if (isOnlineDeliveryMode(meeting.delivery_mode)) return deliveryModeLocationLabel(meeting.delivery_mode);
     if (meeting.room_id === null) return "Room unassigned";
     return rooms.find((room) => room.id === meeting.room_id)?.label ?? meeting.room_name ?? "Room unassigned";
 }
@@ -324,7 +325,7 @@ export function ScheduleEditor({
             start_time,
             end_time,
             delivery_mode,
-            room_id: delivery_mode === "online" ? null : room_id,
+            room_id: isOnlineDeliveryMode(delivery_mode) ? null : room_id,
         }));
         form.transform((data) => ({ schedules, schedule_revision: data.schedule_revision }));
         setPreviewOpen(false);
@@ -528,15 +529,17 @@ export function ScheduleEditor({
                                                     className={selectClass}
                                                     value={meeting.delivery_mode}
                                                     disabled={form.processing}
-                                                    onChange={(event) =>
+                                                    onChange={(event) => {
+                                                        const nextMode = event.target.value as DeliveryMode;
                                                         updateMeeting(meeting.temp_id, {
-                                                            delivery_mode: event.target.value as Meeting["delivery_mode"],
-                                                            room_id: event.target.value === "online" ? null : meeting.room_id,
-                                                        })
-                                                    }
+                                                            delivery_mode: nextMode,
+                                                            room_id: isOnlineDeliveryMode(nextMode) ? null : meeting.room_id,
+                                                        });
+                                                    }}
                                                 >
                                                     <option value="face_to_face">Face to face</option>
-                                                    <option value="online">Online</option>
+                                                    <option value="online">Online (Asynchronous)</option>
+                                                    <option value="online_synchronous">Online (Synchronous)</option>
                                                 </select>
                                             </div>
                                             <div className="flex min-w-0 flex-col gap-1.5">
@@ -547,7 +550,7 @@ export function ScheduleEditor({
                                                     aria-describedby={issue ? `error-${meeting.temp_id}` : undefined}
                                                     className={selectClass}
                                                     value={meeting.room_id ?? ""}
-                                                    disabled={form.processing || meeting.delivery_mode === "online"}
+                                                    disabled={form.processing || isOnlineDeliveryMode(meeting.delivery_mode)}
                                                     onChange={(event) =>
                                                         updateMeeting(meeting.temp_id, {
                                                             room_id: event.target.value ? Number(event.target.value) : null,
@@ -556,7 +559,7 @@ export function ScheduleEditor({
                                                     }
                                                 >
                                                     <option value="">
-                                                        {meeting.delivery_mode === "online" ? "Not needed online" : "Assign later"}
+                                                        {isOnlineDeliveryMode(meeting.delivery_mode) ? "Not needed online" : "Assign later"}
                                                     </option>
                                                     {meeting.room_id && !rooms.some((room) => room.id === meeting.room_id) && (
                                                         <option value={meeting.room_id}>

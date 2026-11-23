@@ -5,7 +5,14 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, CalendarDays, Clock, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { type ClassSchedule, type DeliveryMode, type EntityOption, type ValueOption } from "../../lib/class-defaults";
+import {
+    isOnlineDeliveryMode,
+    isSynchronousOnlineMode,
+    type ClassSchedule,
+    type DeliveryMode,
+    type EntityOption,
+    type ValueOption,
+} from "../../lib/class-defaults";
 
 type ScheduleGridProps = {
     schedules: ClassSchedule[];
@@ -81,7 +88,7 @@ export function ScheduleGrid({ schedules, rooms, dayOptions, primaryRoomId, defa
                 start_time: start,
                 end_time: end,
                 delivery_mode: deliveryMode,
-                room_id: deliveryMode === "online" ? null : primaryRoomId,
+                room_id: isOnlineDeliveryMode(deliveryMode) ? null : primaryRoomId,
                 component_type: "lecture",
                 pattern_group_id: groupId,
             }));
@@ -163,7 +170,8 @@ export function ScheduleGrid({ schedules, rooms, dayOptions, primaryRoomId, defa
                             onChange={(event) => setDeliveryMode(event.target.value as DeliveryMode)}
                         >
                             <option value="face_to_face">Face to face (Campus)</option>
-                            <option value="online">Online (Virtual)</option>
+                            <option value="online">Online (Asynchronous)</option>
+                            <option value="online_synchronous">Online (Synchronous)</option>
                         </select>
                     </div>
 
@@ -230,7 +238,9 @@ export function ScheduleGrid({ schedules, rooms, dayOptions, primaryRoomId, defa
                                 schedule,
                                 schedules.filter((_, otherIndex) => otherIndex !== index),
                             );
-                            const isOnline = (schedule.delivery_mode ?? defaultDeliveryMode) === "online";
+                            const mode = schedule.delivery_mode ?? defaultDeliveryMode;
+                            const isOnline = isOnlineDeliveryMode(mode);
+                            const isSynchronous = isSynchronousOnlineMode(mode);
 
                             return (
                                 <div
@@ -283,15 +293,17 @@ export function ScheduleGrid({ schedules, rooms, dayOptions, primaryRoomId, defa
                                                 aria-label={`Meeting type for meeting ${index + 1}`}
                                                 className={selectClassName}
                                                 value={schedule.delivery_mode ?? defaultDeliveryMode}
-                                                onChange={(event) =>
+                                                onChange={(event) => {
+                                                    const nextMode = event.target.value as DeliveryMode;
                                                     update(index, {
-                                                        delivery_mode: event.target.value as DeliveryMode,
-                                                        room_id: event.target.value === "online" ? null : schedule.room_id,
-                                                    })
-                                                }
+                                                        delivery_mode: nextMode,
+                                                        room_id: isOnlineDeliveryMode(nextMode) ? null : schedule.room_id,
+                                                    });
+                                                }}
                                             >
                                                 <option value="face_to_face">Face to face</option>
-                                                <option value="online">Online</option>
+                                                <option value="online">Online (Asynchronous)</option>
+                                                <option value="online_synchronous">Online (Synchronous)</option>
                                             </select>
                                         </label>
                                         {!isOnline ? (
@@ -317,7 +329,9 @@ export function ScheduleGrid({ schedules, rooms, dayOptions, primaryRoomId, defa
                                                 </select>
                                             </label>
                                         ) : (
-                                            <span className="text-muted-foreground text-xs">No room needed</span>
+                                            <span className="text-muted-foreground text-xs">
+                                                {isSynchronous ? "No room needed · Checks time conflicts" : "No room needed · Asynchronous"}
+                                            </span>
                                         )}
 
                                         <Button

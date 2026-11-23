@@ -5,6 +5,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+    canonicalDeliveryMode,
+    isOnlineDeliveryMode,
+    type DeliveryMode,
+} from "@/pages/administrators/classes/lib/class-defaults";
 import { router } from "@inertiajs/react";
 import { IconAlertTriangle, IconCalendar, IconPlus } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
@@ -23,10 +28,12 @@ type EditSchedule = {
     day_of_week: string;
     start_time: string;
     end_time: string;
+    delivery_mode: DeliveryMode;
     room_id: string | number | null;
 };
 
 type EditClassForm = {
+    delivery_mode: DeliveryMode;
     room_id: string;
     faculty_id: string;
     maximum_slots: string;
@@ -42,6 +49,7 @@ type EditClassForm = {
 
 export function EditClassDialog({ open, onOpenChange, classItem, shs_strands, rooms, onSuccess }: EditClassDialogProps) {
     const [editForm, setEditForm] = useState<EditClassForm>({
+        delivery_mode: "face_to_face",
         room_id: "",
         faculty_id: "",
         maximum_slots: "",
@@ -72,22 +80,33 @@ export function EditClassDialog({ open, onOpenChange, classItem, shs_strands, ro
             const strandId = classItem.strand_id !== undefined && classItem.strand_id !== null ? String(classItem.strand_id) : "";
 
             const rawSchedules = Array.isArray(classItem.schedules) ? (classItem.schedules as unknown[]) : [];
+            const classDeliveryMode = canonicalDeliveryMode((classItem as unknown as { delivery_mode?: string }).delivery_mode);
 
             const normalizedSchedules: EditSchedule[] = rawSchedules.map((schedule) => {
                 const raw = schedule as Record<string, unknown>;
                 const roomIdValue = raw.room_id;
                 const roomId = typeof roomIdValue === "string" || typeof roomIdValue === "number" ? roomIdValue : null;
+                const scheduleDeliveryMode = canonicalDeliveryMode(
+                    typeof raw.delivery_mode === "string" ? raw.delivery_mode : classDeliveryMode,
+                );
 
                 return {
                     day_of_week: String(raw.day_of_week ?? "Monday"),
                     start_time: String(raw.start_time ?? "08:00"),
                     end_time: String(raw.end_time ?? "10:00"),
-                    room_id: roomId ?? (classItem.room_id !== undefined && classItem.room_id !== null ? classItem.room_id : null),
+                    delivery_mode: scheduleDeliveryMode,
+                    room_id: isOnlineDeliveryMode(scheduleDeliveryMode)
+                        ? null
+                        : (roomId ?? (classItem.room_id !== undefined && classItem.room_id !== null ? classItem.room_id : null)),
                 };
             });
 
-            const initialForm = {
-                room_id: classItem.room_id !== undefined && classItem.room_id !== null ? String(classItem.room_id) : "",
+            const initialForm: EditClassForm = {
+                delivery_mode: classDeliveryMode,
+                room_id:
+                    isOnlineDeliveryMode(classDeliveryMode) || classItem.room_id === undefined || classItem.room_id === null
+                        ? ""
+                        : String(classItem.room_id),
                 faculty_id: classItem.faculty_id !== undefined && classItem.faculty_id !== null ? String(classItem.faculty_id) : "",
                 maximum_slots: String(classItem.maximum_slots || 40),
                 semester: classItem.semester || "",
@@ -126,7 +145,16 @@ export function EditClassDialog({ open, onOpenChange, classItem, shs_strands, ro
     function handleUpdateClass() {
         if (!classItem) return;
 
-        router.put(`/classes/${classItem.id}`, editForm, {
+        const payload = {
+            ...editForm,
+            room_id: isOnlineDeliveryMode(editForm.delivery_mode) ? null : editForm.room_id || null,
+            schedules: editForm.schedules.map((sched) => ({
+                ...sched,
+                room_id: isOnlineDeliveryMode(sched.delivery_mode) ? null : sched.room_id || null,
+            })),
+        };
+
+        router.put(`/classes/${classItem.id}`, payload, {
             onSuccess: () => {
                 onOpenChange(false);
                 toast.success("Class updated successfully");
@@ -257,7 +285,30 @@ export function EditClassDialog({ open, onOpenChange, classItem, shs_strands, ro
                         </div>
                     )}
 
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                        <div className="space-y-2">
+                            <Label>Delivery Mode</Label>
+                            <Select
+                                value={editForm.delivery_mode}
+                                onValueChange={(value) => {
+                                    const nextMode = value as DeliveryMode;
+                                    setEditForm((prev) => ({
+                                        ...prev,
+                                        delivery_mode: nextMode,
+                                        room_id: isOnlineDeliveryMode(nextMode) ? "" : prev.room_id,
+                                    }));
+                                }}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select Delivery Mode" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="face_to_face">Face to face</SelectItem>
+                                    <SelectItem value="online">Online (Asynchronous)</SelectItem>
+                                    <SelectItem value="online_synchronous">Online (Synchronous)</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
                         <div className="space-y-2">
                             <Label>Section</Label>
                             <Select value={editForm.section} onValueChange={(value) => setEditForm({ ...editForm, section: value })}>
@@ -313,7 +364,8 @@ export function EditClassDialog({ open, onOpenChange, classItem, shs_strands, ro
                                                 day_of_week: "Monday",
                                                 start_time: "08:00",
                                                 end_time: "10:00",
-                                                room_id: prev.room_id,
+                                                delivery_mode: prev.delivery_mode,
+                                                room_id: isOnlineDeliveryMode(prev.delivery_mode) ? null : prev.room_id,
                                             },
                                         ],
                                     }));
@@ -339,96 +391,126 @@ export function EditClassDialog({ open, onOpenChange, classItem, shs_strands, ro
 
                         {editForm.schedules.length === 0 && <p className="text-muted-foreground py-4 text-center text-sm">No schedules added.</p>}
 
-                        {editForm.schedules.map((sched, idx) => (
-                            <div key={idx} className="grid grid-cols-12 items-end gap-2 border-b pb-4 last:border-0 last:pb-0">
-                                <div className="col-span-3 space-y-1">
-                                    <Label className="text-xs">Day</Label>
-                                    <Select
-                                        value={sched.day_of_week}
-                                        onValueChange={(val) => {
-                                            const newScheds = [...editForm.schedules];
-                                            newScheds[idx].day_of_week = val;
-                                            setEditForm((prev) => ({ ...prev, schedules: newScheds }));
-                                        }}
-                                    >
-                                        <SelectTrigger className="h-8 text-xs">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map((day) => (
-                                                <SelectItem key={day} value={day}>
-                                                    {day}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
+                        {editForm.schedules.map((sched, idx) => {
+                            const isOnline = isOnlineDeliveryMode(sched.delivery_mode);
+                            return (
+                                <div key={idx} className="grid grid-cols-12 items-end gap-2 border-b pb-4 last:border-0 last:pb-0">
+                                    <div className="col-span-2 space-y-1">
+                                        <Label className="text-xs">Day</Label>
+                                        <Select
+                                            value={sched.day_of_week}
+                                            onValueChange={(val) => {
+                                                const newScheds = [...editForm.schedules];
+                                                newScheds[idx].day_of_week = val;
+                                                setEditForm((prev) => ({ ...prev, schedules: newScheds }));
+                                            }}
+                                        >
+                                            <SelectTrigger className="h-8 text-xs">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map((day) => (
+                                                    <SelectItem key={day} value={day}>
+                                                        {day}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="col-span-2 space-y-1">
+                                        <Label className="text-xs">Start</Label>
+                                        <Input
+                                            type="time"
+                                            className="h-8 text-xs"
+                                            value={sched.start_time ? sched.start_time.substring(0, 5) : ""}
+                                            onChange={(e) => {
+                                                const newScheds = [...editForm.schedules];
+                                                newScheds[idx].start_time = e.target.value;
+                                                setEditForm((prev) => ({ ...prev, schedules: newScheds }));
+                                            }}
+                                        />
+                                    </div>
+                                    <div className="col-span-2 space-y-1">
+                                        <Label className="text-xs">End</Label>
+                                        <Input
+                                            type="time"
+                                            className="h-8 text-xs"
+                                            value={sched.end_time ? sched.end_time.substring(0, 5) : ""}
+                                            onChange={(e) => {
+                                                const newScheds = [...editForm.schedules];
+                                                newScheds[idx].end_time = e.target.value;
+                                                setEditForm((prev) => ({ ...prev, schedules: newScheds }));
+                                            }}
+                                        />
+                                    </div>
+                                    <div className="col-span-3 space-y-1">
+                                        <Label className="text-xs">Format</Label>
+                                        <Select
+                                            value={sched.delivery_mode}
+                                            onValueChange={(val) => {
+                                                const nextMode = val as DeliveryMode;
+                                                const newScheds = [...editForm.schedules];
+                                                newScheds[idx] = {
+                                                    ...newScheds[idx],
+                                                    delivery_mode: nextMode,
+                                                    room_id: isOnlineDeliveryMode(nextMode) ? null : newScheds[idx].room_id,
+                                                };
+                                                setEditForm((prev) => ({ ...prev, schedules: newScheds }));
+                                            }}
+                                        >
+                                            <SelectTrigger className="h-8 text-xs">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="face_to_face">Face to face</SelectItem>
+                                                <SelectItem value="online">Online (Async)</SelectItem>
+                                                <SelectItem value="online_synchronous">Online (Sync)</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="col-span-2 space-y-1">
+                                        <Label className="text-xs">Room</Label>
+                                        <Select
+                                            value={sched.room_id ? String(sched.room_id) : "none"}
+                                            disabled={isOnline}
+                                            onValueChange={(val) => {
+                                                const newScheds = [...editForm.schedules];
+                                                newScheds[idx].room_id = val === "none" ? null : val;
+                                                setEditForm((prev) => ({ ...prev, schedules: newScheds }));
+                                            }}
+                                        >
+                                            <SelectTrigger className="h-8 text-xs">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="none">{isOnline ? "No room (Online)" : "Unassigned"}</SelectItem>
+                                                {(rooms ?? []).map((room) => (
+                                                    <SelectItem key={room.id} value={String(room.id)}>
+                                                        {room.name}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="col-span-1">
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="text-destructive hover:bg-destructive/10 h-8 w-8"
+                                            onClick={() => {
+                                                setEditForm((prev) => ({
+                                                    ...prev,
+                                                    schedules: prev.schedules.filter((_, i) => i !== idx),
+                                                }));
+                                            }}
+                                        >
+                                            <span className="sr-only">Delete</span>
+                                            <IconPlus className="h-4 w-4 rotate-45" />
+                                        </Button>
+                                    </div>
                                 </div>
-                                <div className="col-span-3 space-y-1">
-                                    <Label className="text-xs">Start</Label>
-                                    <Input
-                                        type="time"
-                                        className="h-8 text-xs"
-                                        value={sched.start_time ? sched.start_time.substring(0, 5) : ""}
-                                        onChange={(e) => {
-                                            const newScheds = [...editForm.schedules];
-                                            newScheds[idx].start_time = e.target.value;
-                                            setEditForm((prev) => ({ ...prev, schedules: newScheds }));
-                                        }}
-                                    />
-                                </div>
-                                <div className="col-span-3 space-y-1">
-                                    <Label className="text-xs">End</Label>
-                                    <Input
-                                        type="time"
-                                        className="h-8 text-xs"
-                                        value={sched.end_time ? sched.end_time.substring(0, 5) : ""}
-                                        onChange={(e) => {
-                                            const newScheds = [...editForm.schedules];
-                                            newScheds[idx].end_time = e.target.value;
-                                            setEditForm((prev) => ({ ...prev, schedules: newScheds }));
-                                        }}
-                                    />
-                                </div>
-                                <div className="col-span-2 space-y-1">
-                                    <Label className="text-xs">Room</Label>
-                                    <Select
-                                        value={String(sched.room_id)}
-                                        onValueChange={(val) => {
-                                            const newScheds = [...editForm.schedules];
-                                            newScheds[idx].room_id = val;
-                                            setEditForm((prev) => ({ ...prev, schedules: newScheds }));
-                                        }}
-                                    >
-                                        <SelectTrigger className="h-8 text-xs">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {(rooms ?? []).map((room) => (
-                                                <SelectItem key={room.id} value={String(room.id)}>
-                                                    {room.name}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="col-span-1">
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="text-destructive hover:bg-destructive/10 h-8 w-8"
-                                        onClick={() => {
-                                            setEditForm((prev) => ({
-                                                ...prev,
-                                                schedules: prev.schedules.filter((_, i) => i !== idx),
-                                            }));
-                                        }}
-                                    >
-                                        <span className="sr-only">Delete</span>
-                                        <IconPlus className="h-4 w-4 rotate-45" />
-                                    </Button>
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
 

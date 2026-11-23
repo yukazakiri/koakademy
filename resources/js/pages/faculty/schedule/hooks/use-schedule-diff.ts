@@ -116,18 +116,27 @@ export const detectConflicts = (entries: CurrentEntry[]): Set<string> => {
 
     for (const group of byDay.values()) {
         const sorted = group
-            .filter((entry) => entry.start_minutes !== null && entry.end_minutes !== null)
+            .filter(
+                (entry) =>
+                    entry.start_minutes !== null &&
+                    entry.end_minutes !== null &&
+                    entry.delivery_mode !== "online" &&
+                    entry.delivery_mode !== "online_asynchronous",
+            )
             .slice()
             .sort((a, b) => (a.start_minutes ?? 0) - (b.start_minutes ?? 0));
 
-        for (let idx = 0; idx < sorted.length - 1; idx++) {
-            const current = sorted[idx];
-            const next = sorted[idx + 1];
-
-            if ((current.end_minutes ?? 0) > (next.start_minutes ?? 0)) {
+        let active: CurrentEntry[] = [];
+        for (const current of sorted) {
+            active = active.filter((entry) => (entry.end_minutes ?? 0) > (current.start_minutes ?? 0));
+            for (const previous of active) {
+                if (previous.class_id && current.class_id && String(previous.class_id) === String(current.class_id)) {
+                    continue;
+                }
+                conflicts.add(String(previous.id));
                 conflicts.add(String(current.id));
-                conflicts.add(String(next.id));
             }
+            active.push(current);
         }
     }
 

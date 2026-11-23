@@ -52,9 +52,10 @@ interface PageProps {
         };
     };
     user: User;
+    reply_url: string;
 }
 
-export default function HelpTicketShow({ ticket, user }: PageProps) {
+export default function HelpTicketShow({ ticket, user, reply_url }: PageProps) {
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const replyForm = useForm({
@@ -65,7 +66,7 @@ export default function HelpTicketShow({ ticket, user }: PageProps) {
     const submitReply = (e: React.FormEvent) => {
         e.preventDefault();
 
-        replyForm.post(route("help.reply", ticket.id), {
+        replyForm.post(reply_url, {
             forceFormData: true,
             onSuccess: () => {
                 toast.success("Reply sent successfully");

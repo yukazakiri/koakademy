@@ -1,9 +1,11 @@
 import { DigitalIdCard, type IdCardData } from "@/components/digital-id-card";
 import { Button } from "@/components/ui/button";
+import { isFacultyPortalRole } from "@/lib/portal-role";
 import { Head, router } from "@inertiajs/react";
 import { motion } from "framer-motion";
 import { AlertCircle, ArrowLeft, Printer, Share2 } from "lucide-react";
 import { useCallback, useState } from "react";
+import { toast } from "sonner";
 
 interface IdCardPageProps {
     id_card: {
@@ -22,6 +24,9 @@ interface IdCardPageProps {
 }
 
 export default function IdCardIndexPage({ id_card, user }: IdCardPageProps) {
+    // The server sends the role enum value (professor, instructor, ...), never "faculty".
+    const isFaculty = isFacultyPortalRole(user?.role);
+
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [qrCode, setQrCode] = useState(id_card?.qr_code ?? "");
 
@@ -31,7 +36,7 @@ export default function IdCardIndexPage({ id_card, user }: IdCardPageProps) {
         setIsRefreshing(true);
         try {
             // Determine the correct endpoint based on user role
-            const endpoint = user.role === "faculty" ? "/faculty/id-card/refresh" : "/student/id-card/refresh";
+            const endpoint = isFaculty ? "/faculty/id-card/refresh" : "/student/id-card/refresh";
 
             const response = await fetch(endpoint, {
                 method: "POST",
@@ -41,16 +46,19 @@ export default function IdCardIndexPage({ id_card, user }: IdCardPageProps) {
                 },
             });
 
-            if (response.ok) {
-                const data = await response.json();
-                setQrCode(data.qr_code);
+            if (!response.ok) {
+                throw new Error(`QR refresh failed with status ${response.status}`);
             }
+
+            const data = await response.json();
+            setQrCode(data.qr_code);
         } catch (error) {
             console.error("Failed to refresh QR code:", error);
+            toast.error("Could not refresh your QR code. Please try again.");
         } finally {
             setIsRefreshing(false);
         }
-    }, [user]);
+    }, [user, isFaculty]);
 
     const handlePrint = useCallback(() => {
         window.print();
@@ -71,9 +79,8 @@ export default function IdCardIndexPage({ id_card, user }: IdCardPageProps) {
     }, [id_card]);
 
     const handleBack = useCallback(() => {
-        const backUrl = user?.role === "faculty" ? "/faculty/dashboard" : "/student/dashboard";
-        router.visit(backUrl);
-    }, [user]);
+        router.visit(isFaculty ? "/faculty/dashboard" : "/student/dashboard");
+    }, [isFaculty]);
 
     return (
         <>
@@ -190,10 +197,10 @@ export default function IdCardIndexPage({ id_card, user }: IdCardPageProps) {
 }
 
 function NoIdCardMessage({ user }: { user: IdCardPageProps["user"] }) {
+    const isFaculty = isFacultyPortalRole(user?.role);
     const handleBack = useCallback(() => {
-        const backUrl = user?.role === "faculty" ? "/faculty/dashboard" : "/student/dashboard";
-        router.visit(backUrl);
-    }, [user]);
+        router.visit(isFaculty ? "/faculty/dashboard" : "/student/dashboard");
+    }, [isFaculty]);
 
     return (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md text-center">

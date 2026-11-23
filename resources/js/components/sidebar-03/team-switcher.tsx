@@ -31,6 +31,7 @@ import { User } from "@/types/user";
 import { Link, router, usePage } from "@inertiajs/react";
 import { Building2, Check, ChevronsUpDown, LogOut, Plus, Settings, Shield } from "lucide-react";
 import * as React from "react";
+import { toast } from "sonner";
 
 type Team = {
     id: string;
@@ -102,6 +103,8 @@ export function TeamSwitcher({ teams, user }: { teams: Team[]; user: User }) {
     else if (isFaculty) profileLink = "/faculty/profile";
     else if (isAdmin) profileLink = "/administrators/settings";
 
+    const getCsrfToken = () => document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? "";
+
     const handleSwitchOrganization = async (organizationId: number) => {
         try {
             const response = await fetch("/api/organizations/switch", {
@@ -110,6 +113,7 @@ export function TeamSwitcher({ teams, user }: { teams: Team[]; user: User }) {
                     "Content-Type": "application/json",
                     Accept: "application/json",
                     "X-Requested-With": "XMLHttpRequest",
+                    "X-CSRF-TOKEN": getCsrfToken(),
                 },
                 credentials: "same-origin",
                 body: JSON.stringify({ organization_id: organizationId }),
@@ -119,15 +123,17 @@ export function TeamSwitcher({ teams, user }: { teams: Team[]; user: User }) {
                 // Reload the page to reflect the new organization context
                 window.location.reload();
             } else {
-                console.error("Failed to switch organization");
+                const errorData = (await response.json().catch(() => ({}))) as { message?: string };
+                toast.error(errorData.message || "Could not switch organization. Please try again.");
             }
         } catch (error) {
             console.error("Error switching organization:", error);
+            toast.error("Could not switch organization. Please check your connection and try again.");
         }
     };
 
     const handleCreateOrganization = async () => {
-        if (!newOrgData.name || !newOrgData.code) return;
+        if (!newOrgData.name.trim() || !newOrgData.code.trim()) return;
 
         setIsSubmitting(true);
         try {
@@ -137,15 +143,21 @@ export function TeamSwitcher({ teams, user }: { teams: Team[]; user: User }) {
                     "Content-Type": "application/json",
                     Accept: "application/json",
                     "X-Requested-With": "XMLHttpRequest",
+                    "X-CSRF-TOKEN": getCsrfToken(),
                 },
                 credentials: "same-origin",
-                body: JSON.stringify(newOrgData),
+                body: JSON.stringify({
+                    name: newOrgData.name.trim(),
+                    code: newOrgData.code.trim(),
+                    description: newOrgData.description.trim() || null,
+                }),
             });
 
             if (response.ok) {
-                const data = await response.json();
+                const data = (await response.json().catch(() => ({}))) as { organization?: { id?: number } };
                 setShowCreateOrgDialog(false);
                 setNewOrgData({ name: "", code: "", description: "" });
+                toast.success("Organization created successfully.");
                 // Switch to the newly created organization
                 if (data.organization?.id) {
                     await handleSwitchOrganization(data.organization.id);
@@ -153,11 +165,16 @@ export function TeamSwitcher({ teams, user }: { teams: Team[]; user: User }) {
                     window.location.reload();
                 }
             } else {
-                const errorData = await response.json();
-                console.error("Failed to create organization:", errorData);
+                const errorData = (await response.json().catch(() => ({}))) as {
+                    message?: string;
+                    errors?: Record<string, string[]>;
+                };
+                const firstValidationError = errorData.errors ? Object.values(errorData.errors).flat()[0] : undefined;
+                toast.error(firstValidationError || errorData.message || "Could not create organization. Please review the form and try again.");
             }
         } catch (error) {
             console.error("Error creating organization:", error);
+            toast.error("Could not create organization. Please check your connection and try again.");
         } finally {
             setIsSubmitting(false);
         }

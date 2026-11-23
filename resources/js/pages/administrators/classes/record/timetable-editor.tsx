@@ -23,6 +23,7 @@ import { AlertCircle, CheckCircle2, Pencil, Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
+import { deliveryModeLabel, deliveryModeLocationLabel, isOnlineDeliveryMode, type DeliveryMode } from "../lib/class-defaults";
 import { parseTimeToMinutes, scheduleDayOrder } from "./schedule-utils";
 import type { ClassShowData, RawScheduleEntry, RoomOption, RoomScheduleEntry } from "./types";
 
@@ -76,9 +77,11 @@ function DraggableBlock({
         disabled: isOverlay,
     });
 
-    const online = entry.delivery_mode === "online";
+    const online = isOnlineDeliveryMode(entry.delivery_mode);
     const { top, height } = getGridPosition(entry.start_time, entry.end_time);
-    const roomName = online ? "Online" : rooms.find((r) => r.id === entry.room_id)?.label || "Room not assigned";
+    const roomName = online
+        ? deliveryModeLocationLabel(entry.delivery_mode)
+        : rooms.find((r) => r.id === entry.room_id)?.label || "Room not assigned";
 
     const [isResizing, setIsResizing] = useState<"top" | "bottom" | null>(null);
     const [previewTime, setPreviewTime] = useState<string | null>(null);
@@ -279,7 +282,7 @@ function DayColumn({
 
     const occupiedSlots = useMemo(() => {
         const slots: { top: number; height: number; title: string }[] = [];
-        const roomIds = [...new Set(entries.filter((entry) => entry.delivery_mode !== "online").map((entry) => entry.room_id))];
+        const roomIds = [...new Set(entries.filter((entry) => !isOnlineDeliveryMode(entry.delivery_mode)).map((entry) => entry.room_id))];
         roomIds.forEach((roomId) => {
             if (roomId === null) return;
             const roomScheds = roomSchedules[roomId] || [];
@@ -346,12 +349,12 @@ export function TimetableEditor({
     open: boolean;
     onOpenChange: (open: boolean) => void;
 }) {
-    const online = classItem.delivery_mode === "online";
+    const online = isOnlineDeliveryMode(classItem.delivery_mode);
     const { data, setData, transform, patch, processing, errors } = useForm({
         schedules: initialSchedules.map((s, i) => ({
             ...s,
             delivery_mode: s.delivery_mode ?? classItem.delivery_mode,
-            room_id: (s.delivery_mode ?? classItem.delivery_mode) === "online" ? null : s.room_id,
+            room_id: isOnlineDeliveryMode(s.delivery_mode ?? classItem.delivery_mode) ? null : s.room_id,
             temp_id: s.temp_id || `id-${i}-${Date.now()}`,
         })),
     });
@@ -463,7 +466,7 @@ export function TimetableEditor({
             "schedules",
             data.schedules.map((s) =>
                 s.temp_id === updated.temp_id
-                    ? ({ ...updated, room_id: updated.delivery_mode === "online" ? null : updated.room_id, temp_id: updated.temp_id! } as typeof s)
+                    ? ({ ...updated, room_id: isOnlineDeliveryMode(updated.delivery_mode) ? null : updated.room_id, temp_id: updated.temp_id! } as typeof s)
                     : s,
             ),
         );
@@ -473,7 +476,7 @@ export function TimetableEditor({
     const handleChangeRoom = (id: string, roomId: number) => {
         setData(
             "schedules",
-            data.schedules.map((s) => ((s.temp_id || String(s.id)) === id && s.delivery_mode !== "online" ? { ...s, room_id: roomId } : s)),
+            data.schedules.map((s) => ((s.temp_id || String(s.id)) === id && !isOnlineDeliveryMode(s.delivery_mode) ? { ...s, room_id: roomId } : s)),
         );
     };
 
@@ -487,7 +490,10 @@ export function TimetableEditor({
     const handleSubmit = () => {
         transform((payload) => ({
             ...payload,
-            schedules: payload.schedules.map((entry) => ({ ...entry, room_id: entry.delivery_mode === "online" ? null : entry.room_id })),
+            schedules: payload.schedules.map((entry) => ({
+                ...entry,
+                room_id: isOnlineDeliveryMode(entry.delivery_mode) ? null : entry.room_id,
+            })),
         }));
         patch(update.url(classItem.id), {
             onSuccess: () => {
@@ -572,8 +578,8 @@ export function TimetableEditor({
                                                 {entry.day_of_week} · {entry.start_time}–{entry.end_time}
                                             </p>
                                             <p className="text-muted-foreground">
-                                                {entry.delivery_mode === "online"
-                                                    ? "Online"
+                                                {isOnlineDeliveryMode(entry.delivery_mode)
+                                                    ? deliveryModeLabel(entry.delivery_mode)
                                                     : `Face to face · ${rooms.find((room) => room.id === entry.room_id)?.label || "Room not assigned"}`}
                                             </p>
                                             {conflicts.has(entry.temp_id) && <p className="text-destructive">Schedule conflict</p>}
@@ -723,24 +729,26 @@ export function TimetableEditor({
                                     </Label>
                                     <Select
                                         value={editingEntry.delivery_mode ?? classItem.delivery_mode}
-                                        onValueChange={(value) =>
+                                        onValueChange={(value) => {
+                                            const nextMode = value as DeliveryMode;
                                             setEditingEntry({
                                                 ...editingEntry,
-                                                delivery_mode: value as "face_to_face" | "online",
-                                                room_id: value === "online" ? null : editingEntry.room_id,
-                                            })
-                                        }
+                                                delivery_mode: nextMode,
+                                                room_id: isOnlineDeliveryMode(nextMode) ? null : editingEntry.room_id,
+                                            });
+                                        }}
                                     >
                                         <SelectTrigger id="record-meeting-delivery" className="col-span-3">
                                             <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value="face_to_face">Face to face</SelectItem>
-                                            <SelectItem value="online">Online</SelectItem>
+                                            <SelectItem value="online">Online (Asynchronous)</SelectItem>
+                                            <SelectItem value="online_synchronous">Online (Synchronous)</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </div>
-                                {editingEntry.delivery_mode === "online" ? (
+                                {isOnlineDeliveryMode(editingEntry.delivery_mode) ? (
                                     <p className="text-muted-foreground text-sm">No room reserved for this meeting.</p>
                                 ) : (
                                     <div className="grid grid-cols-4 items-center gap-4">

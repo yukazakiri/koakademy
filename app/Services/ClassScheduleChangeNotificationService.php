@@ -11,6 +11,7 @@ use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\User;
 use App\Notifications\ClassScheduleChangedNotification;
+use App\Support\ScheduleDelivery;
 use DateTimeImmutable;
 use DateTimeInterface;
 use Illuminate\Support\Collection;
@@ -223,7 +224,7 @@ final class ClassScheduleChangeNotificationService
                 'start_time' => $this->formatTime($schedule->start_time),
                 'end_time' => $this->formatTime($schedule->end_time),
                 'room_id' => ! $schedule->isOnline() && $schedule->room_id !== null ? (int) $schedule->room_id : null,
-                'room_name' => $schedule->isOnline() ? 'Online' : $schedule->room?->name,
+                'room_name' => $schedule->isOnline() ? ScheduleDelivery::locationLabel($schedule->delivery_mode) : $schedule->room?->name,
                 'delivery_mode' => $schedule->delivery_mode,
             ])
             ->sortBy(fn (array $schedule): string => sprintf(
@@ -274,8 +275,8 @@ final class ClassScheduleChangeNotificationService
                 $schedule['day_of_week'],
                 $this->displayTime($schedule['start_time']),
                 $this->displayTime($schedule['end_time']),
-                ($schedule['delivery_mode'] ?? Classes::DELIVERY_FACE_TO_FACE) === Classes::DELIVERY_ONLINE
-                    ? ' (Online)'
+                ScheduleDelivery::isOnline($schedule['delivery_mode'] ?? Classes::DELIVERY_FACE_TO_FACE)
+                    ? ' ('.ScheduleDelivery::locationLabel($schedule['delivery_mode'] ?? Classes::DELIVERY_FACE_TO_FACE).')'
                     : (! empty($schedule['room_name']) ? ' at '.$schedule['room_name'] : '')
             ))
             ->values()

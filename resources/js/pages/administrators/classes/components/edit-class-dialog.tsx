@@ -29,6 +29,7 @@ import {
     type ClassSchedule,
     type ClassSettings,
     type DeliveryMode,
+    type DeliverySummary,
     type EntityOption,
     type SubjectOption,
 } from "../lib/class-defaults";
@@ -38,7 +39,7 @@ type SelectedClass = {
     record_title: string;
     classification: "college" | "shs" | string;
     delivery_mode?: DeliveryMode;
-    delivery_summary?: "face_to_face" | "online" | "mixed";
+    delivery_summary?: DeliverySummary;
     subject_code: string;
     subject_title: string;
     section: string;
@@ -183,13 +184,17 @@ export function EditClassDialog({
                 room_id: selectedClass.room ? Number(selectedClass.room.id) : null,
                 maximum_slots: selectedClass.maximum_slots ?? 40,
                 schedules: (selectedClass.schedules ?? []).map((s) => ({
+                    id: s.id,
                     day_of_week: s.day_of_week,
                     start_time: s.start_time,
                     end_time: s.end_time,
                     delivery_mode: s.delivery_mode,
                     room_id: s.room_id,
+                    room_name: s.room_name,
                     component_type: s.component_type,
                     pattern_group_id: s.pattern_group_id,
+                    status: s.status,
+                    subject_id: s.subject_id,
                 })),
                 settings: {
                     background_color: selectedClass.settings?.background_color ?? "#ffffff",
@@ -293,7 +298,7 @@ export function EditClassDialog({
             return;
         }
 
-        form.transform(() => buildClassStorePayload(form.data));
+        form.transform(() => ({ ...buildClassStorePayload(form.data), schedules_match_by_id: true }));
 
         form.patch(updateClass.url(selectedClass.id), {
             preserveScroll: true,

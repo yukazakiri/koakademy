@@ -79,6 +79,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Redirect;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
@@ -423,6 +424,12 @@ final class AdministratorSystemManagementController extends Controller
 
     public function ai(AiSettingsService $aiSettings, McpServerService $mcpServers): Response
     {
+        $trailAvailable = class_exists(\Astro\Trail\Trail::class)
+            && (bool) config('trail.enabled', true)
+            && (bool) config('trail.dashboard.enabled', true)
+            && Gate::allows('viewTrail');
+        $trailPath = mb_trim((string) config('trail.path', 'trail'), '/');
+
         return $this->renderSystemManagementPage(
             'administrators/system-management/ai',
             'ai',
@@ -430,6 +437,7 @@ final class AdministratorSystemManagementController extends Controller
             [
                 'ai_config' => $aiSettings->forAdministration(),
                 'mcp_servers' => $mcpServers->forAdministration(),
+                'trail_dashboard_url' => $trailAvailable ? url($trailPath !== '' ? $trailPath : 'trail') : null,
             ],
         );
     }

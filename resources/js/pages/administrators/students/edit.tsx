@@ -2,6 +2,16 @@ import { generateId } from "@/actions/App/Http/Controllers/AdministratorStudentM
 import AdminLayout from "@/components/administrators/admin-layout";
 import { ConfiguredStudentField } from "@/components/administrators/configured-student-field";
 import { CustomStudentFields } from "@/components/administrators/custom-student-fields";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { AutocompleteFieldInput } from "@/components/ui/autocomplete-field-input";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -589,10 +599,17 @@ export default function AdministratorStudentEdit({ user, student, options, curre
         );
     };
 
-    const handleRemoveSubject = (id: number) => {
-        if (confirm("Remove this subject from the student's current load?")) {
-            router.delete(route("administrators.students.subjects.remove", [student.id, id]));
-        }
+    const [subjectPendingRemoval, setSubjectPendingRemoval] = useState<{ id: number; code: string; title: string } | null>(null);
+
+    const confirmRemoveSubject = () => {
+        if (!subjectPendingRemoval) return;
+        const { id, code } = subjectPendingRemoval;
+        setSubjectPendingRemoval(null);
+        router.delete(route("administrators.students.subjects.remove", [student.id, id]), {
+            preserveScroll: true,
+            onSuccess: () => toast.success(`Removed ${code} from student's load`),
+            onError: () => toast.error("Failed to remove subject"),
+        });
     };
 
     return (
@@ -1720,7 +1737,14 @@ export default function AdministratorStudentEdit({ user, student, options, curre
                                                 variant="ghost"
                                                 size="icon"
                                                 className="text-destructive hover:text-destructive"
-                                                onClick={() => handleRemoveSubject(enrollment.id)}
+                                                aria-label={`Remove ${enrollment.subject.code}`}
+                                                onClick={() =>
+                                                    setSubjectPendingRemoval({
+                                                        id: enrollment.id,
+                                                        code: enrollment.subject.code,
+                                                        title: enrollment.subject.title,
+                                                    })
+                                                }
                                             >
                                                 <Trash2 className="h-4 w-4" />
                                             </Button>
@@ -1775,6 +1799,30 @@ export default function AdministratorStudentEdit({ user, student, options, curre
                     {processing ? "Saving..." : "Save Student"}
                 </Button>
             </form>
+
+            <AlertDialog open={subjectPendingRemoval !== null} onOpenChange={(open) => !open && setSubjectPendingRemoval(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Remove subject from load?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Remove{" "}
+                            <span className="text-foreground font-medium">
+                                {subjectPendingRemoval?.code} — {subjectPendingRemoval?.title}
+                            </span>{" "}
+                            from this student&apos;s current academic load?
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={confirmRemoveSubject}
+                        >
+                            Remove Subject
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </AdminLayout>
     );
 }

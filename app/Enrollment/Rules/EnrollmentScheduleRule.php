@@ -9,6 +9,7 @@ use App\Contracts\Enrollment\EnrollmentRuleHandler;
 use App\Data\Enrollment\EnrollmentContext;
 use App\Data\Enrollment\RuleResult;
 use App\Models\Classes;
+use App\Support\ScheduleDelivery;
 
 final readonly class EnrollmentScheduleRule implements EnrollmentOperatorSchemaProvider, EnrollmentRuleHandler
 {
@@ -58,11 +59,26 @@ final readonly class EnrollmentScheduleRule implements EnrollmentOperatorSchemaP
             ->forAcademicPeriod((string) $enrollment->school_year, (int) $enrollment->semester)
             ->whereHas('class_enrollments', fn ($query) => $query->where('student_id', $enrollment->student_id)->where('status', true))
             ->with('schedules')->orderBy('id')->get();
+        $policy = ScheduleDelivery::policy();
         $events = [];
         $unchecked = [];
         foreach ($classes as $class) {
+            if ($class->schedules->isEmpty()) {
+                if (ScheduleDelivery::checksStudentCohortConflicts($class->delivery_mode, $policy)) {
+                    $unchecked[] = (int) $class->id;
+                }
+
+                continue;
+            }
+
             $valid = 0;
             foreach ($class->schedules as $schedule) {
+                if (! ScheduleDelivery::checksStudentCohortConflicts($schedule->delivery_mode, $policy)) {
+                    $valid++;
+
+                    continue;
+                }
+
                 $day = $this->day((string) $schedule->day_of_week);
                 $start = $schedule->start_time;
                 $end = $schedule->end_time;

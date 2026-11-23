@@ -1,6 +1,16 @@
 import { reviewRequirement, transition as transitionEnrollment } from "@/actions/App/Http/Controllers/AdministratorEnrollmentPolicyController";
 import { index as tuitionAdjustments } from "@/actions/App/Http/Controllers/AdministratorTuitionAdjustmentController";
 import AdminLayout from "@/components/administrators/admin-layout";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -359,8 +369,14 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
         );
     };
 
+    const [showUndoCashierDialog, setShowUndoCashierDialog] = useState(false);
+
     const handleUndoCashier = () => {
-        if (!confirm("Are you sure? This will revert status but NOT reverse financial transactions automatically.")) return;
+        setShowUndoCashierDialog(true);
+    };
+
+    const confirmUndoCashier = () => {
+        setShowUndoCashierDialog(false);
         router.post(
             route("administrators.enrollments.undo-cashier", enrollment.id),
             {},
@@ -443,10 +459,15 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
         );
     };
 
-    const handlePolicyTransition = (workflowTransition: EnrollmentData["workflow"]["allowed_transitions"][number]) => {
-        const reason = workflowTransition.requires_reason ? window.prompt("This transition requires an audited reason. Enter it below:") : null;
-        if (workflowTransition.requires_reason && !reason?.trim()) return;
+    const [pendingPolicyTransition, setPendingPolicyTransition] = useState<EnrollmentData["workflow"]["allowed_transitions"][number] | null>(null);
+    const [policyTransitionReason, setPolicyTransitionReason] = useState("");
+    const [submittingPolicyTransition, setSubmittingPolicyTransition] = useState(false);
 
+    const executePolicyTransition = (
+        workflowTransition: EnrollmentData["workflow"]["allowed_transitions"][number],
+        reason?: string | null,
+    ) => {
+        setSubmittingPolicyTransition(true);
         axios
             .post(transitionEnrollment.url(enrollment.id), {
                 transition_key: workflowTransition.key,
@@ -454,13 +475,28 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                 payload: reason ? { reason: reason.trim() } : {},
             })
             .then(() => {
+                setPendingPolicyTransition(null);
+                setPolicyTransitionReason("");
                 toast.success(`${workflowTransition.label} completed.`);
                 router.reload({ only: ["enrollment", "enrollment_pipeline"] });
             })
             .catch((error: unknown) => {
                 const message = axios.isAxiosError(error) ? error.response?.data?.message : null;
                 toast.error(message ?? "The enrollment transition could not be completed.");
+            })
+            .finally(() => {
+                setSubmittingPolicyTransition(false);
             });
+    };
+
+    const handlePolicyTransition = (workflowTransition: EnrollmentData["workflow"]["allowed_transitions"][number]) => {
+        if (workflowTransition.requires_reason) {
+            setPolicyTransitionReason("");
+            setPendingPolicyTransition(workflowTransition);
+            return;
+        }
+
+        executePolicyTransition(workflowTransition);
     };
 
     const handleRestoreSubjects = () => {
@@ -1658,6 +1694,81 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            <AlertDialog open={showUndoCashierDialog} onOpenChange={setShowUndoCashierDialog}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Undo cashier verification?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This will revert the enrollment status, but it will not automatically reverse any recorded financial transactions or
+                            payments.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={confirmUndoCashier}
+                        >
+                            Undo Verification
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            <Dialog
+                open={pendingPolicyTransition !== null}
+                onOpenChange={(open) => {
+                    if (!open && !submittingPolicyTransition) {
+                        setPendingPolicyTransition(null);
+                        setPolicyTransitionReason("");
+                    }
+                }}
+            >
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>{pendingPolicyTransition?.label ?? "Confirm transition"}</DialogTitle>
+                        <DialogDescription>
+                            This workflow transition requires an audited reason that will be recorded in the enrollment history.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-2">
+                        <Label htmlFor="policy-transition-reason">Audited Reason</Label>
+                        <Textarea
+                            id="policy-transition-reason"
+                            value={policyTransitionReason}
+                            onChange={(event) => setPolicyTransitionReason(event.target.value)}
+                            placeholder="Explain why this transition is being performed"
+                            rows={3}
+                            autoFocus
+                        />
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                                setPendingPolicyTransition(null);
+                                setPolicyTransitionReason("");
+                            }}
+                            disabled={submittingPolicyTransition}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            type="button"
+                            disabled={!policyTransitionReason.trim() || submittingPolicyTransition}
+                            onClick={() => {
+                                if (pendingPolicyTransition) {
+                                    executePolicyTransition(pendingPolicyTransition, policyTransitionReason);
+                                }
+                            }}
+                        >
+                            {submittingPolicyTransition ? "Submitting..." : "Confirm Transition"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </AdminLayout>
     );
 }
@@ -1960,10 +2071,10 @@ function EnrollClassButton({
     subjectCode: string;
 }) {
     const [processing, setProcessing] = useState(false);
+    const [confirmForceOpen, setConfirmForceOpen] = useState(false);
 
-    const handleEnroll = () => {
-        if (isFull && !confirm("Class is full. Force enroll?")) return;
-
+    const submitEnroll = () => {
+        setConfirmForceOpen(false);
         router.post(
             route("administrators.enrollments.enroll-class", enrollmentId),
             {
@@ -1979,10 +2090,40 @@ function EnrollClassButton({
         );
     };
 
+    const handleEnroll = () => {
+        if (isFull) {
+            setConfirmForceOpen(true);
+            return;
+        }
+        submitEnroll();
+    };
+
     return (
-        <Button size="sm" variant={isFull ? "destructive" : "secondary"} onClick={handleEnroll} disabled={processing} className="shadow-sm">
-            {isFull ? "Force Enroll" : "Enroll"}
-        </Button>
+        <>
+            <Button size="sm" variant={isFull ? "destructive" : "secondary"} onClick={handleEnroll} disabled={processing} className="shadow-sm">
+                {isFull ? "Force Enroll" : "Enroll"}
+            </Button>
+            <AlertDialog open={confirmForceOpen} onOpenChange={setConfirmForceOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Force enroll in full class?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This section for <span className="text-foreground font-medium">{subjectCode}</span> has already reached its maximum
+                            slot capacity. Force enrolling will exceed the configured limit.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={submitEnroll}
+                        >
+                            Force Enroll
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+        </>
     );
 }
 

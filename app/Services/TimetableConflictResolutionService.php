@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Models\Classes;
 use App\Models\Room;
 use App\Models\Schedule;
 use Carbon\Carbon;
@@ -189,23 +190,21 @@ final class TimetableConflictResolutionService
      */
     private function findAlternativeRooms(array $schedule): array
     {
-        $currentRoomId = $schedule['room_id'];
+        $currentRoomId = $schedule['room_id'] ?? null;
         $dayOfWeek = $schedule['day_of_week'];
         $startTime = $schedule['start_time'];
         $endTime = $schedule['end_time'];
 
-        // Find rooms that are available at the same time
-        $availableRooms = Room::query()->whereNotIn('id', [$currentRoomId])
+        // Find rooms that are available at the same time (face-to-face sessions in the current period only)
+        $availableRooms = Room::query()
+            ->when($currentRoomId !== null, fn ($query) => $query->whereNotIn('id', [$currentRoomId]))
+            ->where('is_active', true)
             ->whereDoesntHave('schedules', function ($query) use ($dayOfWeek, $startTime, $endTime): void {
-                $query->where('day_of_week', $dayOfWeek)
-                    ->where(function ($q) use ($startTime, $endTime): void {
-                        $q->whereBetween('start_time', [$startTime, $endTime])
-                            ->orWhereBetween('end_time', [$startTime, $endTime])
-                            ->orWhere(function ($subQ) use ($startTime, $endTime): void {
-                                $subQ->where('start_time', '<=', $startTime)
-                                    ->where('end_time', '>=', $endTime);
-                            });
-                    });
+                $query->currentAcademicPeriod()
+                    ->where('delivery_mode', Classes::DELIVERY_FACE_TO_FACE)
+                    ->where('day_of_week', $dayOfWeek)
+                    ->where('start_time', '<', $endTime)
+                    ->where('end_time', '>', $startTime);
             })
             ->get();
 
@@ -222,7 +221,11 @@ final class TimetableConflictResolutionService
      */
     private function findAlternativeTimeSlots(array $schedule): array
     {
-        $roomId = $schedule['room_id'];
+        $roomId = $schedule['room_id'] ?? null;
+        if ($roomId === null) {
+            return [];
+        }
+
         $dayOfWeek = $schedule['day_of_week'];
         $duration = Carbon::parse($schedule['end_time'])->diffInMinutes(Carbon::parse($schedule['start_time']));
 
@@ -238,17 +241,14 @@ final class TimetableConflictResolutionService
         foreach ($possibleSlots as $possibleSlot) {
             $endTime = Carbon::parse($possibleSlot)->addMinutes($duration)->format('H:i:s');
 
-            // Check if this slot is available
-            $isAvailable = ! Schedule::query()->where('room_id', $roomId)
+            // Check if this slot is available for face-to-face sessions in the current period
+            $isAvailable = ! Schedule::query()
+                ->currentAcademicPeriod()
+                ->where('delivery_mode', Classes::DELIVERY_FACE_TO_FACE)
+                ->where('room_id', $roomId)
                 ->where('day_of_week', $dayOfWeek)
-                ->where(function ($query) use ($possibleSlot, $endTime): void {
-                    $query->whereBetween('start_time', [$possibleSlot, $endTime])
-                        ->orWhereBetween('end_time', [$possibleSlot, $endTime])
-                        ->orWhere(function ($q) use ($possibleSlot, $endTime): void {
-                            $q->where('start_time', '<=', $possibleSlot)
-                                ->where('end_time', '>=', $endTime);
-                        });
-                })
+                ->where('start_time', '<', $endTime)
+                ->where('end_time', '>', $possibleSlot)
                 ->exists();
 
             if ($isAvailable) {

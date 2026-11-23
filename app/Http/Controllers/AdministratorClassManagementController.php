@@ -29,6 +29,7 @@ use App\Services\GeneralSettingsService;
 use App\Services\Scheduling\SchedulingService;
 use App\Support\Database\JsonArrayQuery;
 use App\Support\Database\SqlDialect;
+use App\Support\ScheduleDelivery;
 use Exception;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -479,10 +480,14 @@ final class AdministratorClassManagementController extends Controller
             unset($validated['schedules']);
         }
 
+        $applyDeliveryModeToSchedules = $request->boolean('apply_delivery_mode_to_schedules');
+        unset($validated['apply_delivery_mode_to_schedules']);
+
         $actor = Auth::user() instanceof User ? Auth::user() : null;
 
-        DB::transaction(function () use ($class, $validated, $schedules, $scheduleNotifications, $actor, $matchLegacySchedules): void {
-            // Saving an online class clears session rooms through the model hook.
+        DB::transaction(function () use ($class, $validated, $schedules, $scheduleNotifications, $actor, $matchLegacySchedules, $applyDeliveryModeToSchedules): void {
+            // Class delivery_mode is the default for new meetings; existing meetings only change
+            // when schedules are submitted or apply_delivery_mode_to_schedules is explicitly requested.
             $oldSnapshot = $scheduleNotifications->snapshot($class);
             $class->fill($validated);
             $class->save();
@@ -496,6 +501,19 @@ final class AdministratorClassManagementController extends Controller
                     $matchLegacySchedules,
                 );
             } else {
+                if ($applyDeliveryModeToSchedules && array_key_exists('delivery_mode', $validated)) {
+                    $targetMode = ScheduleDelivery::canonicalize($validated['delivery_mode']);
+                    $class->schedules()->get()->each(function (Schedule $schedule) use ($targetMode): void {
+                        $schedule->delivery_mode = $targetMode;
+                        if (ScheduleDelivery::isOnline($targetMode)) {
+                            $schedule->room_id = null;
+                        }
+                        $schedule->save();
+                    });
+                    $class->unsetRelation('schedules');
+                    $class->unsetRelation('Schedule');
+                }
+
                 $scheduleNotifications->notifyIfChanged($class, $oldSnapshot, $actor);
             }
         });
@@ -1667,10 +1685,8 @@ final class AdministratorClassManagementController extends Controller
                 ['value' => 'college', 'label' => 'College'],
                 ['value' => 'shs', 'label' => 'Senior High School (SHS)'],
             ],
-            'delivery_modes' => [
-                ['value' => 'face_to_face', 'label' => 'Face to face'],
-                ['value' => 'online', 'label' => 'Online'],
-            ],
+            'delivery_modes' => ScheduleDelivery::options(),
+            'scheduling_policy' => app(GeneralSettingsService::class)->getSchedulingConfig(),
             'sections' => [
                 ['value' => 'A', 'label' => 'Section A'],
                 ['value' => 'B', 'label' => 'Section B'],

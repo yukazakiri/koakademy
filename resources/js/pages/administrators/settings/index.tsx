@@ -10,9 +10,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { User } from "@/types/user";
 import { Head, useForm } from "@inertiajs/react";
-import { Building2, Calendar, Globe, LayoutDashboard, Mail, Save, Search, ShieldCheck } from "lucide-react";
+import { Building2, Calendar, CalendarClock, Globe, LayoutDashboard, Mail, Save, Search, ShieldCheck } from "lucide-react";
 import { useEffect } from "react";
 import { toast } from "sonner";
+import { route } from "ziggy-js";
+import type { SchedulingPolicy } from "../classes/lib/class-defaults";
+
+const DEFAULT_SCHEDULING_POLICY: SchedulingPolicy = {
+    default_online_delivery_mode: "online",
+    check_room_conflicts: true,
+    check_faculty_conflicts: true,
+    check_student_cohort_conflicts: true,
+    check_synchronous_online_conflicts: true,
+    check_asynchronous_online_conflicts: false,
+};
 
 type GeneralSettings = {
     site_name: string | null;
@@ -37,19 +48,21 @@ type GeneralSettings = {
     library_module_enabled: boolean;
     seo_title: string | null;
     seo_keywords: string | null;
+    scheduling: SchedulingPolicy;
 };
 
 interface SettingsPageProps {
     user: User;
-    settings: GeneralSettings;
+    settings: Omit<GeneralSettings, "scheduling">;
+    scheduling_config?: Partial<SchedulingPolicy>;
     flash: {
         success?: string;
         error?: string;
     } | null;
 }
 
-export default function AdministratorSettingsIndex({ user, settings, flash }: SettingsPageProps) {
-    const { data, setData, patch, processing, errors, wasSuccessful } = useForm<GeneralSettings>({
+export default function AdministratorSettingsIndex({ user, settings, scheduling_config, flash }: SettingsPageProps) {
+    const { data, setData, patch, processing, errors } = useForm<GeneralSettings>({
         site_name: settings.site_name || "",
         site_description: settings.site_description || "",
         theme_color: settings.theme_color || "slate",
@@ -72,7 +85,18 @@ export default function AdministratorSettingsIndex({ user, settings, flash }: Se
         library_module_enabled: settings.library_module_enabled,
         seo_title: settings.seo_title || "",
         seo_keywords: settings.seo_keywords || "",
+        scheduling: {
+            ...DEFAULT_SCHEDULING_POLICY,
+            ...scheduling_config,
+        },
     });
+
+    const updateScheduling = <K extends keyof SchedulingPolicy>(key: K, value: SchedulingPolicy[K]) => {
+        setData("scheduling", {
+            ...data.scheduling,
+            [key]: value,
+        });
+    };
 
     useEffect(() => {
         if (flash?.success) {
@@ -272,6 +296,112 @@ export default function AdministratorSettingsIndex({ user, settings, flash }: Se
                                         <Switch
                                             checked={data.enable_clearance_check}
                                             onCheckedChange={(val) => setData("enable_clearance_check", val)}
+                                        />
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <CalendarClock className="text-primary h-5 w-5" />
+                                        Scheduling & Online Delivery Policy
+                                    </CardTitle>
+                                    <CardDescription>
+                                        Configure how room, faculty, and student/cohort conflicts are evaluated across face-to-face, synchronous
+                                        online, and asynchronous online classes.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <div className="space-y-2 rounded-lg border p-4">
+                                        <Label htmlFor="default_online_delivery_mode" className="text-base">
+                                            Default Online Delivery Format
+                                        </Label>
+                                        <p className="text-muted-foreground text-sm">
+                                            Determines whether generic online classes default to asynchronous (self-paced) or synchronous (live).
+                                        </p>
+                                        <Select
+                                            value={data.scheduling.default_online_delivery_mode}
+                                            onValueChange={(val) =>
+                                                updateScheduling("default_online_delivery_mode", val as "online" | "online_synchronous")
+                                            }
+                                        >
+                                            <SelectTrigger id="default_online_delivery_mode" className="mt-2 max-w-md">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="online">Online (Asynchronous) — Self-paced</SelectItem>
+                                                <SelectItem value="online_synchronous">Online (Synchronous) — Live sessions</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+                                    <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+                                        <div className="space-y-0.5">
+                                            <Label className="text-base">Check Room Conflicts (Face to Face)</Label>
+                                            <p className="text-muted-foreground text-sm">
+                                                Prevent overlapping face-to-face sessions in the same physical room. Online classes never reserve
+                                                rooms.
+                                            </p>
+                                        </div>
+                                        <Switch
+                                            checked={data.scheduling.check_room_conflicts}
+                                            onCheckedChange={(val) => updateScheduling("check_room_conflicts", val)}
+                                        />
+                                    </div>
+
+                                    <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+                                        <div className="space-y-0.5">
+                                            <Label className="text-base">Check Faculty Time Conflicts</Label>
+                                            <p className="text-muted-foreground text-sm">
+                                                Prevent an instructor from being assigned to overlapping conflict-checked sessions.
+                                            </p>
+                                        </div>
+                                        <Switch
+                                            checked={data.scheduling.check_faculty_conflicts}
+                                            onCheckedChange={(val) => updateScheduling("check_faculty_conflicts", val)}
+                                        />
+                                    </div>
+
+                                    <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+                                        <div className="space-y-0.5">
+                                            <Label className="text-base">Check Student & Cohort Conflicts</Label>
+                                            <p className="text-muted-foreground text-sm">
+                                                Prevent overlapping schedules for the same student cohort (course, year/grade, section) and enrolled
+                                                students.
+                                            </p>
+                                        </div>
+                                        <Switch
+                                            checked={data.scheduling.check_student_cohort_conflicts}
+                                            onCheckedChange={(val) => updateScheduling("check_student_cohort_conflicts", val)}
+                                        />
+                                    </div>
+
+                                    <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+                                        <div className="space-y-0.5">
+                                            <Label className="text-base">Check Synchronous Online Time Conflicts</Label>
+                                            <p className="text-muted-foreground text-sm">
+                                                Check faculty and student/cohort time conflicts for live online (synchronous) sessions while still
+                                                skipping room checks.
+                                            </p>
+                                        </div>
+                                        <Switch
+                                            checked={data.scheduling.check_synchronous_online_conflicts}
+                                            onCheckedChange={(val) => updateScheduling("check_synchronous_online_conflicts", val)}
+                                        />
+                                    </div>
+
+                                    <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+                                        <div className="space-y-0.5">
+                                            <Label className="text-base">Check Asynchronous Online Time Conflicts</Label>
+                                            <p className="text-muted-foreground text-sm">
+                                                Disabled by default. Enable only if self-paced asynchronous online classes should also be checked for
+                                                faculty and student/cohort overlaps.
+                                            </p>
+                                        </div>
+                                        <Switch
+                                            checked={data.scheduling.check_asynchronous_online_conflicts}
+                                            onCheckedChange={(val) => updateScheduling("check_asynchronous_online_conflicts", val)}
                                         />
                                     </div>
                                 </CardContent>

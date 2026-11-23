@@ -5,6 +5,7 @@ import { Link, router } from "@inertiajs/react";
 import { Archive, ArrowLeft, Pencil, RotateCcw } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { deliveryModeLabel } from "../lib/class-defaults";
 import type { ClassShowCapabilities, ClassShowData } from "./types";
 
 export function RecordHeader({ classItem, capabilities }: { classItem: ClassShowData; capabilities: ClassShowCapabilities }) {
@@ -32,13 +33,7 @@ export function RecordHeader({ classItem, capabilities }: { classItem: ClassShow
                             ·
                         </span>
                         <span className="text-muted-foreground">{classItem.classification === "shs" ? "Senior high school" : "College"}</span>
-                        <Badge variant="outline">
-                            {classItem.delivery_summary === "mixed"
-                                ? "Mixed"
-                                : (classItem.delivery_summary ?? classItem.delivery_mode) === "online"
-                                  ? "Online"
-                                  : "Face to face"}
-                        </Badge>
+                        <Badge variant="outline">{deliveryModeLabel(classItem.delivery_summary ?? classItem.delivery_mode)}</Badge>
                         {classItem.is_archived && <Badge variant="outline">Archived</Badge>}
                     </div>
                     <h1 className="text-2xl font-semibold tracking-tight text-balance">{classItem.record_title}</h1>

@@ -8,6 +8,7 @@ use App\Models\Classes;
 use App\Models\Course;
 use App\Models\Schedule;
 use App\Models\Subject;
+use App\Support\ScheduleDelivery;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -237,9 +238,11 @@ final readonly class CourseScheduleExportService
                     'section' => $class->section ?: '—',
                     'units' => $subject instanceof Subject ? $subject->units : null,
                     'schedule' => $firstMeeting->start_time->format('g:i A').' – '.$firstMeeting->end_time->format('g:i A').' '.$days->map(fn (string $day): string => self::DAY_ABBREVIATIONS[$day] ?? Str::upper($day))->implode(''),
-                    'room' => $firstMeeting->isOnline() ? 'Online' : ($firstMeeting->room?->name ?: '—'),
+                    'room' => ScheduleDelivery::locationLabel($firstMeeting->delivery_mode, $firstMeeting->room?->name, '—'),
                     'delivery_mode' => $firstMeeting->delivery_mode,
-                    'face_to_face' => $firstMeeting->isOnline() ? 'Online' : $days->map(fn (string $day): string => Str::upper($day))->implode(', '),
+                    'face_to_face' => $firstMeeting->isOnline()
+                        ? ScheduleDelivery::locationLabel($firstMeeting->delivery_mode)
+                        : $days->map(fn (string $day): string => Str::upper($day))->implode(', '),
                     '_year' => $year,
                     '_day_order' => $days->map(fn (string $day): int => self::DAY_ORDER[$day] ?? 99)->min() ?? 99,
                     '_start_minutes' => ((int) $firstMeeting->start_time->format('H') * 60) + (int) $firstMeeting->start_time->format('i'),

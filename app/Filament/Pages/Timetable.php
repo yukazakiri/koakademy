@@ -14,6 +14,7 @@ use App\Services\GeneralSettingsService;
 use App\Services\PdfGenerationService;
 use App\Services\TenantContext;
 use App\Services\TimetableConflictService;
+use App\Support\ScheduleDelivery;
 use BackedEnum;
 use Exception;
 use Filament\Actions\Action;
@@ -292,7 +293,8 @@ final class Timetable extends Page implements HasForms, HasTable
                     ->searchable(),
 
                 TextColumn::make('room.name')
-                    ->label('Room')
+                    ->label('Location')
+                    ->getStateUsing(fn ($record): string => ScheduleDelivery::locationLabel($record->delivery_mode, $record->room?->name, 'TBA'))
                     ->visible(fn (): bool => $this->selectedView !== 'room')
                     ->searchable(),
 
@@ -572,7 +574,8 @@ final class Timetable extends Page implements HasForms, HasTable
         return [
             'subject' => $schedule->class->subject->title ?? 'N/A',
             'faculty' => $schedule->class->faculty ? $schedule->class->faculty->full_name : 'N/A',
-            'room' => $schedule->room->name ?? 'N/A',
+            'room' => ScheduleDelivery::locationLabel($schedule->delivery_mode, $schedule->room?->name, 'N/A'),
+            'delivery_mode' => $schedule->delivery_mode,
             'time' => $schedule->start_time->format('H:i').' - '.$schedule->end_time->format('H:i'),
             'section' => $schedule->class->section ?? 'N/A',
             'course_codes' => $schedule->class->course_codes ?? [],
@@ -708,6 +711,7 @@ final class Timetable extends Page implements HasForms, HasTable
 
         return match ($this->selectedView) {
             'room' => $baseQuery->clone()
+                ->where('delivery_mode', Classes::DELIVERY_FACE_TO_FACE)
                 ->where('room_id', $this->selectedId),
 
             'class' => $baseQuery->clone()

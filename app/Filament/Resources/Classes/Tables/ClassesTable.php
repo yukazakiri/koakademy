@@ -13,6 +13,7 @@ use App\Models\ShsTrack;
 use App\Models\Subject;
 use App\Support\Database\JsonArrayQuery;
 use App\Support\Database\SqlDialect;
+use App\Support\ScheduleDelivery;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
@@ -189,6 +190,19 @@ final class ClassesTable
                     ->searchable()
                     ->sortable(),
 
+                TextColumn::make('delivery_mode')
+                    ->label('Delivery')
+                    ->badge()
+                    ->getStateUsing(fn (Classes $classes): string => $classes->deliverySummary())
+                    ->formatStateUsing(fn (string $state): string => ScheduleDelivery::shortLabel($state))
+                    ->color(fn (string $state): string => match ($state) {
+                        Classes::DELIVERY_ONLINE => 'info',
+                        Classes::DELIVERY_ONLINE_SYNCHRONOUS => 'warning',
+                        'mixed' => 'gray',
+                        default => 'primary',
+                    })
+                    ->toggleable(),
+
                 BadgeColumn::make('semester')
                     ->colors([
                         'primary' => '1st',
@@ -232,6 +246,11 @@ final class ClassesTable
                         'shs' => 'Senior High School',
                     ])
                     ->placeholder('All Types'),
+
+                SelectFilter::make('delivery_mode')
+                    ->label('Delivery Mode')
+                    ->options(ScheduleDelivery::selectOptions())
+                    ->placeholder('All Modes'),
 
                 SelectFilter::make('course')
                     ->label('Course (College)')

@@ -186,18 +186,40 @@ it('reports conflicting room, faculty and cohort against the affected meeting', 
     $other = Classes::factory()->create([...$base, 'section' => $kind === 'cohort' ? 'A' : 'B', 'faculty_id' => $kind === 'faculty' ? $faculty->id : null, 'subject_code' => 'CS101']);
     Schedule::factory()->create([
         'class_id' => $other->id, 'room_id' => $kind === 'room' ? $room->id : null,
-        'delivery_mode' => $kind === 'room' ? 'face_to_face' : 'online',
+        'delivery_mode' => $kind === 'room' ? 'face_to_face' : 'online_synchronous',
         'day_of_week' => 'Monday', 'start_time' => '08:00', 'end_time' => '10:00',
     ]);
     $response = $this->patch(route('administrators.classes.schedule.update', $class), [
         'schedule_revision' => app(SchedulingService::class)->revision($class),
-        'schedules' => [['day_of_week' => 'Monday', 'start_time' => '09:00', 'end_time' => '11:00', 'room_id' => $kind === 'room' ? $room->id : null, 'delivery_mode' => $kind === 'room' ? 'face_to_face' : 'online']],
+        'schedules' => [['day_of_week' => 'Monday', 'start_time' => '09:00', 'end_time' => '11:00', 'room_id' => $kind === 'room' ? $room->id : null, 'delivery_mode' => $kind === 'room' ? 'face_to_face' : 'online_synchronous']],
     ]);
     $response->assertInvalid(['schedules.0' => match ($kind) {
         'room' => 'Room 201', 'faculty' => 'faculty member', 'cohort' => 'student cohort',
     }]);
     expect($class->schedules()->count())->toBe(0);
 })->with(['room', 'faculty', 'cohort']);
+
+it('allows asynchronous online meetings to overlap face-to-face faculty and cohort schedules by default', function () {
+    $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
+    $room = Room::factory()->create(['name' => 'Room 202', 'is_active' => true]);
+    $faculty = Faculty::factory()->create();
+    $course = Course::factory()->create();
+    $subject = Subject::factory()->create(['course_id' => $course->id, 'academic_year' => 1]);
+    $base = ['classification' => 'college', 'course_codes' => [$course->id], 'subject_ids' => [$subject->id], 'subject_id' => $subject->id, 'academic_year' => 1, 'school_year' => '2026 - 2027', 'semester' => 1, 'section' => 'A', 'faculty_id' => $faculty->id];
+    $campus = Classes::factory()->create([...$base, 'room_id' => $room->id]);
+    $asyncClass = Classes::factory()->create([...$base, 'delivery_mode' => 'online', 'subject_code' => 'CS102']);
+    Schedule::factory()->create([
+        'class_id' => $campus->id, 'room_id' => $room->id, 'delivery_mode' => 'face_to_face',
+        'day_of_week' => 'Monday', 'start_time' => '08:00', 'end_time' => '10:00',
+    ]);
+
+    $this->patch(route('administrators.classes.schedule.update', $asyncClass), [
+        'schedule_revision' => app(SchedulingService::class)->revision($asyncClass),
+        'schedules' => [['day_of_week' => 'Monday', 'start_time' => '09:00', 'end_time' => '11:00', 'room_id' => $room->id, 'delivery_mode' => 'online']],
+    ])->assertRedirect(route('administrators.classes.show', $asyncClass))->assertSessionHasNoErrors();
+
+    expect($asyncClass->schedules()->sole()->room_id)->toBeNull();
+});
 
 it('allows clearing all meetings and rejects unauthorized updates', function () {
     $class = Classes::factory()->create();

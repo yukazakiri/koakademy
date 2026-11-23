@@ -32,6 +32,7 @@ import {
     Users,
 } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 
 interface AttendanceChartData {
     date: string;
@@ -747,12 +748,15 @@ function DashboardContent({ user, is_new_user, faculty_data, id_card, current_se
                     "X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") ?? "",
                 },
             });
-            if (response.ok) {
-                const data = await response.json();
-                setQrCode(data.qr_code);
+            if (!response.ok) {
+                throw new Error(`QR refresh failed with status ${response.status}`);
             }
+
+            const data = await response.json();
+            setQrCode(data.qr_code);
         } catch (error) {
             console.error("Failed to refresh QR code:", error);
+            toast.error("Could not refresh your QR code. Please try again.");
         } finally {
             setIsRefreshingQr(false);
         }

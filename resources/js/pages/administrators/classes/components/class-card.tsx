@@ -5,7 +5,7 @@ import { show } from "@/routes/administrators/classes";
 import { Link } from "@inertiajs/react";
 import { BookOpen, Building2, Calendar, GraduationCap, MapPin, Monitor, UserCheck } from "lucide-react";
 import type { ClassRow } from "../columns";
-import { deliveryModeLabel } from "../lib/class-defaults";
+import { deliveryModeLabel, deliveryModeShortLabel, isOnlineDeliveryMode } from "../lib/class-defaults";
 import { ClassEnrollment, classProgramLabel, semesterLabel } from "./class-list-details";
 import { ClassRowActions, type ClassActionHandlers } from "./class-row-actions";
 
@@ -21,7 +21,7 @@ export function ClassCard({
 }) {
     const isCollege = classRow.classification !== "shs";
     const delivery = classRow.delivery_summary ?? classRow.delivery_mode;
-    const isOnline = delivery === "online";
+    const isOnline = isOnlineDeliveryMode(delivery);
     const isUnassignedFaculty = !classRow.faculty || classRow.faculty === "TBA";
 
     return (
@@ -111,7 +111,7 @@ export function ClassCard({
                         </span>
                         <p className="text-foreground mt-1 truncate font-semibold">
                             {isOnline ? (
-                                <span className="font-medium text-indigo-600 dark:text-indigo-400">Online</span>
+                                <span className="font-medium text-indigo-600 dark:text-indigo-400">{deliveryModeShortLabel(delivery)}</span>
                             ) : (
                                 classRow.room || <span className="text-muted-foreground font-normal">Unassigned</span>
                             )}

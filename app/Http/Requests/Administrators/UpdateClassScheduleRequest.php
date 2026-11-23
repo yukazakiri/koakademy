@@ -44,7 +44,7 @@ final class UpdateClassScheduleRequest extends FormRequest
             'schedules.*.day_of_week' => ['required', Rule::in(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])],
             'schedules.*.start_time' => ['required', 'date_format:H:i'],
             'schedules.*.end_time' => ['required', 'date_format:H:i', 'after:schedules.*.start_time'],
-            'schedules.*.delivery_mode' => ['required', Rule::in(['face_to_face', 'online'])],
+            'schedules.*.delivery_mode' => ['required', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
             'schedules.*.room_id' => ['nullable', 'integer', 'exists:rooms,id'],
         ];
     }

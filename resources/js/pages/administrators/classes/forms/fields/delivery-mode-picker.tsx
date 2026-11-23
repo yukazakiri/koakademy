@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { Check, Monitor, School } from "lucide-react";
+import { Check, Clock, Radio, School } from "lucide-react";
 import type { ReactNode } from "react";
 import type { DeliveryMode } from "../../lib/class-defaults";
 
@@ -19,15 +19,22 @@ const choices: Array<{
         value: "face_to_face",
         title: "Face to face",
         badge: "Campus",
-        hint: "Sessions meet in a physical campus classroom or lab.",
+        hint: "Meets in a physical room. Checked for room, faculty, and student/cohort conflicts.",
         icon: <School className="size-5" aria-hidden="true" />,
     },
     {
         value: "online",
-        title: "Online",
-        badge: "Remote",
-        hint: "Sessions meet via video link. No campus room is reserved.",
-        icon: <Monitor className="size-5" aria-hidden="true" />,
+        title: "Online (Asynchronous)",
+        badge: "Async",
+        hint: "Self-paced online. No room reserved and excluded from room and time conflicts by default.",
+        icon: <Clock className="size-5" aria-hidden="true" />,
+    },
+    {
+        value: "online_synchronous",
+        title: "Online (Synchronous)",
+        badge: "Sync",
+        hint: "Live online sessions. No room reserved; checked for faculty and student/cohort time conflicts.",
+        icon: <Radio className="size-5" aria-hidden="true" />,
     },
 ];
 
@@ -41,7 +48,7 @@ export function DeliveryModePicker({ value, onChange }: DeliveryModePickerProps)
                 </p>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-3">
                 {choices.map((choice) => {
                     const isSelected = value === choice.value;
 
@@ -49,7 +56,7 @@ export function DeliveryModePicker({ value, onChange }: DeliveryModePickerProps)
                         <label
                             key={choice.value}
                             className={cn(
-                                "relative flex cursor-pointer items-start gap-3.5 rounded-xl border p-4 transition-all outline-none",
+                                "relative flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-all outline-none",
                                 "hover:border-primary/40 hover:bg-muted/30",
                                 "has-focus-visible:ring-ring/50 has-focus-visible:ring-3",
                                 isSelected ? "border-primary bg-primary/[0.04] ring-primary/20 shadow-xs ring-1" : "border-border bg-card",
@@ -66,7 +73,7 @@ export function DeliveryModePicker({ value, onChange }: DeliveryModePickerProps)
 
                             <div
                                 className={cn(
-                                    "flex size-10 shrink-0 items-center justify-center rounded-lg border transition-colors",
+                                    "flex size-9 shrink-0 items-center justify-center rounded-lg border transition-colors",
                                     isSelected
                                         ? "border-primary/20 bg-primary/10 text-primary"
                                         : "border-border/60 bg-muted/50 text-muted-foreground",
@@ -77,9 +84,9 @@ export function DeliveryModePicker({ value, onChange }: DeliveryModePickerProps)
                             </div>
 
                             <div className="min-w-0 flex-1 space-y-1">
-                                <div className="flex items-center gap-2">
+                                <div className="flex flex-wrap items-center gap-1.5">
                                     <span className="text-foreground text-sm font-semibold">{choice.title}</span>
-                                    <span className="text-muted-foreground font-mono text-xs font-medium">({choice.badge})</span>
+                                    <span className="text-muted-foreground font-mono text-[11px] font-medium">({choice.badge})</span>
                                 </div>
                                 <p className="text-muted-foreground text-xs leading-relaxed text-pretty">{choice.hint}</p>
                             </div>

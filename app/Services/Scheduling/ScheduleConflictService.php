@@ -6,6 +6,7 @@ namespace App\Services\Scheduling;
 
 use App\Models\Classes;
 use App\Models\Schedule;
+use App\Support\ScheduleDelivery;
 use Illuminate\Support\Collection;
 
 final class ScheduleConflictService
@@ -14,10 +15,12 @@ final class ScheduleConflictService
      * Detect room, faculty, and cohort-section conflicts across a collection of classes.
      *
      * @param  iterable<int, Classes>  $classes
+     * @param  array<string, mixed>|null  $policy
      * @return array<int, array<string, mixed>>
      */
-    public function detectConflictsForClasses(iterable $classes, bool $includeSectionConflicts = true): array
+    public function detectConflictsForClasses(iterable $classes, bool $includeSectionConflicts = true, ?array $policy = null): array
     {
+        $resolvedPolicy = ScheduleDelivery::policy($policy);
         $conflicts = [];
         $allSchedules = [];
 
@@ -60,19 +63,26 @@ final class ScheduleConflictService
                     continue;
                 }
 
-                $roomConflict = ! $a['schedule']->isOnline()
-                    && ! $b['schedule']->isOnline()
+                $sameClass = (int) $a['class']->id === (int) $b['class']->id;
+
+                $roomConflict = ScheduleDelivery::checksRoomConflicts($a['schedule']->delivery_mode, $resolvedPolicy)
+                    && ScheduleDelivery::checksRoomConflicts($b['schedule']->delivery_mode, $resolvedPolicy)
                     && $a['schedule']->room_id
                     && $b['schedule']->room_id
                     && (int) $a['schedule']->room_id === (int) $b['schedule']->room_id;
 
-                $facultyConflict = $a['class']->faculty_id
+                $facultyConflict = ! $sameClass
+                    && ScheduleDelivery::checksFacultyConflicts($a['schedule']->delivery_mode, $resolvedPolicy)
+                    && ScheduleDelivery::checksFacultyConflicts($b['schedule']->delivery_mode, $resolvedPolicy)
+                    && $a['class']->faculty_id
                     && $b['class']->faculty_id
                     && (string) $a['class']->faculty_id === (string) $b['class']->faculty_id;
 
                 $sectionConflict = $includeSectionConflicts
                     && ! $roomConflict
                     && ! $facultyConflict
+                    && ScheduleDelivery::checksStudentCohortConflicts($a['schedule']->delivery_mode, $resolvedPolicy)
+                    && ScheduleDelivery::checksStudentCohortConflicts($b['schedule']->delivery_mode, $resolvedPolicy)
                     && $this->sharesStudentCohort($a['class'], $b['class']);
 
                 if ($roomConflict || $facultyConflict || $sectionConflict) {
@@ -93,7 +103,10 @@ final class ScheduleConflictService
                             'id' => $a['class']->id,
                             'subject_code' => $a['class']->subject_code,
                             'section' => $a['class']->section,
-                            'room' => $a['schedule']->room?->name,
+                            'delivery_mode' => $a['schedule']->delivery_mode,
+                            'room' => $a['schedule']->isOnline()
+                                ? ScheduleDelivery::shortLabel($a['schedule']->delivery_mode)
+                                : $a['schedule']->room?->name,
                             'faculty' => $a['class']->Faculty
                                 ? $a['class']->Faculty->first_name.' '.$a['class']->Faculty->last_name
                                 : null,
@@ -102,7 +115,10 @@ final class ScheduleConflictService
                             'id' => $b['class']->id,
                             'subject_code' => $b['class']->subject_code,
                             'section' => $b['class']->section,
-                            'room' => $b['schedule']->room?->name,
+                            'delivery_mode' => $b['schedule']->delivery_mode,
+                            'room' => $b['schedule']->isOnline()
+                                ? ScheduleDelivery::shortLabel($b['schedule']->delivery_mode)
+                                : $b['schedule']->room?->name,
                             'faculty' => $b['class']->Faculty
                                 ? $b['class']->Faculty->first_name.' '.$b['class']->Faculty->last_name
                                 : null,
@@ -168,21 +184,24 @@ final class ScheduleConflictService
 
     /**
      * Check if two classes have any overlapping schedule blocks on the same day.
+     *
+     * @param  array<string, mixed>|null  $policy
      */
-    public function hasScheduleConflict(Classes $classA, Classes $classB): bool
+    public function hasScheduleConflict(Classes $classA, Classes $classB, ?array $policy = null): bool
     {
+        $resolvedPolicy = ScheduleDelivery::policy($policy);
         $schedulesA = $classA->relationLoaded('schedules') ? $classA->schedules : $classA->schedules()->get();
         $schedulesB = $classB->relationLoaded('schedules') ? $classB->schedules : $classB->schedules()->get();
 
         foreach ($schedulesA as $schedA) {
-            if (! $schedA->start_time || ! $schedA->end_time) {
+            if (! $schedA->start_time || ! $schedA->end_time || ! ScheduleDelivery::checksTimeConflicts($schedA->delivery_mode, $resolvedPolicy)) {
                 continue;
             }
             $startA = (int) $schedA->start_time->format('H') * 60 + (int) $schedA->start_time->format('i');
             $endA = (int) $schedA->end_time->format('H') * 60 + (int) $schedA->end_time->format('i');
 
             foreach ($schedulesB as $schedB) {
-                if (! $schedB->start_time || ! $schedB->end_time) {
+                if (! $schedB->start_time || ! $schedB->end_time || ! ScheduleDelivery::checksTimeConflicts($schedB->delivery_mode, $resolvedPolicy)) {
                     continue;
                 }
                 if ($schedA->day_of_week !== $schedB->day_of_week) {

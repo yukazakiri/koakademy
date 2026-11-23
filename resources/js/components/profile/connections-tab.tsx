@@ -1,3 +1,13 @@
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -5,6 +15,7 @@ import { Frame, FrameHeader, FramePanel, FrameTitle } from "@/components/reui/fr
 import { SiFacebook, SiGithub, SiGoogle, SiX } from "@icons-pack/react-simple-icons";
 import { router, usePage } from "@inertiajs/react";
 import { Link2, Plus, Share2, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 type ConnectedAccount = {
@@ -78,6 +89,7 @@ const providerConfigs = [
 export function ConnectionsTab({ connectedAccounts }: ConnectionsTabProps) {
     const { socialAuthProviders = [] } = usePage<{ socialAuthProviders?: SocialAuthProvider[] }>().props;
     const enabledProviderKeys = new Set(socialAuthProviders.map((provider) => provider.key));
+    const [pendingDisconnect, setPendingDisconnect] = useState<{ provider: string; label: string; accountId?: number } | null>(null);
 
     const handleConnect = (provider: string) => {
         window.location.href = `/integrations/${provider}/connect`;
@@ -85,10 +97,13 @@ export function ConnectionsTab({ connectedAccounts }: ConnectionsTabProps) {
 
     const handleDisconnect = (provider: string, accountId?: number) => {
         const label = providerConfigs.find((config) => config.key === provider)?.label ?? provider;
+        setPendingDisconnect({ provider, label, accountId });
+    };
 
-        if (!confirm(`Are you sure you want to disconnect ${label}?`)) {
-            return;
-        }
+    const confirmDisconnect = () => {
+        if (!pendingDisconnect) return;
+        const { provider, label, accountId } = pendingDisconnect;
+        setPendingDisconnect(null);
 
         router.post(
             `/integrations/${provider}/disconnect`,
@@ -96,6 +111,7 @@ export function ConnectionsTab({ connectedAccounts }: ConnectionsTabProps) {
             {
                 preserveScroll: true,
                 onSuccess: () => toast.success(`${label} disconnected successfully`),
+                onError: () => toast.error(`Failed to disconnect ${label}`),
             },
         );
     };
@@ -176,6 +192,26 @@ export function ConnectionsTab({ connectedAccounts }: ConnectionsTabProps) {
                     );
                 })}
             </FramePanel>
+
+            <AlertDialog open={pendingDisconnect !== null} onOpenChange={(open) => !open && setPendingDisconnect(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Disconnect {pendingDisconnect?.label}?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Are you sure you want to disconnect {pendingDisconnect?.label} from your account?
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={confirmDisconnect}
+                        >
+                            Disconnect
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </Frame>
     );
 }

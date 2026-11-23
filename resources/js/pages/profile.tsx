@@ -8,6 +8,16 @@ import { ArrowLeft, BookOpen, CheckCircle2, Contact, GraduationCap, ListChecks, 
 import { toast } from "sonner";
 
 import PortalLayout from "@/components/portal-layout";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Badge as ReUiBadge } from "@/components/reui/badge";
 import { Button } from "@/components/ui/button";
@@ -446,9 +456,20 @@ export default function ProfilePage() {
     const profileTabValues = ["profile", "id-card", "accounts", "personalization", "experimental", "connections", "integrations"];
     const [activeProfileTab, setActiveProfileTab] = useState(() => {
         if (typeof window === "undefined") return "profile";
-        const requestedTab = new URLSearchParams(window.location.search).get("tab");
+        const rawTab = new URLSearchParams(window.location.search).get("tab");
+        const requestedTab = rawTab === "security" || rawTab === "password" ? "accounts" : rawTab;
         return requestedTab && profileTabValues.includes(requestedTab) ? requestedTab : "profile";
     });
+    const [pendingProfileTab, setPendingProfileTab] = useState<string | null>(null);
+
+    const switchProfileTab = (value: string) => {
+        setActiveProfileTab(value);
+        if (typeof window !== "undefined") {
+            const url = new URL(window.location.href);
+            url.searchParams.set("tab", value);
+            window.history.replaceState({}, "", url);
+        }
+    };
 
     const paths = {
         profile_update: endpoints?.profile_update || "/profile",
@@ -1068,15 +1089,11 @@ export default function ProfilePage() {
                     <Tabs
                         value={activeProfileTab}
                         onValueChange={(value) => {
-                            if (hasChanges && value !== activeProfileTab && !window.confirm("You have unsaved changes. Switch tabs anyway?")) {
+                            if (hasChanges && value !== activeProfileTab) {
+                                setPendingProfileTab(value);
                                 return;
                             }
-                            setActiveProfileTab(value);
-                            if (typeof window !== "undefined") {
-                                const url = new URL(window.location.href);
-                                url.searchParams.set("tab", value);
-                                window.history.replaceState({}, "", url);
-                            }
+                            switchProfileTab(value);
                         }}
                         className="grid w-full min-w-0 gap-4 lg:grid-cols-[17rem_minmax(0,1fr)] lg:gap-6"
                     >
@@ -1540,6 +1557,30 @@ export default function ProfilePage() {
                             </Button>
                         </motion.div>
                     )}
+                    <AlertDialog open={pendingProfileTab !== null} onOpenChange={(open) => !open && setPendingProfileTab(null)}>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Unsaved changes</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    You have unsaved profile changes. Switching tabs will keep your draft in memory until you save or discard it.
+                                    Continue switching tabs?
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel>Stay here</AlertDialogCancel>
+                                <AlertDialogAction
+                                    onClick={() => {
+                                        if (pendingProfileTab) {
+                                            switchProfileTab(pendingProfileTab);
+                                            setPendingProfileTab(null);
+                                        }
+                                    }}
+                                >
+                                    Switch tab
+                                </AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
                 </div>
             </PortalLayout>
         </>

@@ -884,11 +884,19 @@ final class ProfileController extends Controller
     }
 
     /**
-     * Show change password form
+     * Redirect legacy change-password URLs to the profile Security & Access tab.
      */
-    public function showChangePassword()
+    public function showChangePassword(Request $request): RedirectResponse
     {
-        return Inertia::render('profile/change-password');
+        if ($request->routeIs('student.*')) {
+            return redirect()->route('student.profile', ['tab' => 'accounts']);
+        }
+
+        if ($request->routeIs('faculty.*')) {
+            return redirect()->route('faculty.profile', ['tab' => 'accounts']);
+        }
+
+        return redirect()->to('/profile?tab=accounts');
     }
 
     /**

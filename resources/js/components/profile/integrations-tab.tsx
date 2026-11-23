@@ -1,4 +1,14 @@
 import React, { useState } from "react";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge as ReUiBadge } from "@/components/reui/badge";
 import { Button } from "@/components/ui/button";
@@ -160,29 +170,24 @@ export function IntegrationsTab({
         window.location.href = calendarFeed?.download_url || "/calendar/download";
     };
 
+    const [pendingDisconnect, setPendingDisconnect] = useState<{
+        provider: string;
+        label: string;
+        accountId?: number;
+        description: string;
+    } | null>(null);
+
     const handleGoogleToggle = (checked: boolean) => {
         if (checked) {
             window.location.href = "/integrations/google/connect";
             return;
         }
 
-        if (!window.confirm("Disconnect Google from your profile? This removes the linked account and calendar access.")) {
-            return;
-        }
-
-        router.post(
-            "/integrations/google/disconnect",
-            {},
-            {
-                preserveScroll: true,
-                onSuccess: () => {
-                    toast.success("Google disconnected successfully.");
-                },
-                onError: () => {
-                    toast.error("Failed to disconnect Google.");
-                },
-            },
-        );
+        setPendingDisconnect({
+            provider: "google",
+            label: "Google",
+            description: "Disconnect Google from your profile? This removes the linked account and calendar access.",
+        });
     };
 
     const handleSyncGoogleCalendar = () => {
@@ -228,17 +233,26 @@ export function IntegrationsTab({
     const handleDisconnectSocial = (provider: string, accountId?: number) => {
         const label = socialProviderConfigs.find((config) => config.key === provider)?.label ?? provider;
 
-        if (!window.confirm(`Are you sure you want to disconnect ${label}?`)) {
-            return;
-        }
+        setPendingDisconnect({
+            provider,
+            label,
+            accountId,
+            description: `Are you sure you want to disconnect ${label} from your account?`,
+        });
+    };
+
+    const confirmDisconnect = () => {
+        if (!pendingDisconnect) return;
+        const { provider, label, accountId } = pendingDisconnect;
+        setPendingDisconnect(null);
 
         router.post(
             `/integrations/${provider}/disconnect`,
             accountId ? { account_id: accountId } : {},
             {
                 preserveScroll: true,
-                onSuccess: () => toast.success(`${label} disconnected successfully`),
-                onError: () => toast.error(`Failed to disconnect ${label}`),
+                onSuccess: () => toast.success(`${label} disconnected successfully.`),
+                onError: () => toast.error(`Failed to disconnect ${label}.`),
             },
         );
     };
@@ -698,6 +712,24 @@ export function IntegrationsTab({
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+            {/* Disconnect Confirmation Dialog */}
+            <AlertDialog open={pendingDisconnect !== null} onOpenChange={(open) => !open && setPendingDisconnect(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Disconnect {pendingDisconnect?.label}?</AlertDialogTitle>
+                        <AlertDialogDescription>{pendingDisconnect?.description}</AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={confirmDisconnect}
+                        >
+                            Disconnect
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }

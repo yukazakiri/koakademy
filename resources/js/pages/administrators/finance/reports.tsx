@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { User } from "@/types/user";
 import { Head, Link, usePage } from "@inertiajs/react";
 import {
+    IconAlertTriangle,
     IconCalendar,
     IconCash,
     IconChartBar,
@@ -26,8 +27,9 @@ import {
     IconUsers,
 } from "@tabler/icons-react";
 import { format } from "date-fns";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Bar, BarChart, Cell, Pie, PieChart, XAxis, YAxis } from "recharts";
+import { toast } from "sonner";
 import { route } from "ziggy-js";
 
 interface Branding {
@@ -213,6 +215,32 @@ const reportTabs = ["daily", "collection", "outstanding", "scholarship", "revenu
 
 type ReportTab = (typeof reportTabs)[number];
 
+const REPORT_ERROR_MESSAGE = "We could not load this report. Check your connection and try again.";
+
+async function fetchReportJson<T>(url: string): Promise<T> {
+    const response = await fetch(url, { headers: { Accept: "application/json" } });
+
+    if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { message?: string; error?: string };
+        throw new Error(payload.error || payload.message || `Report request failed with HTTP ${response.status}`);
+    }
+
+    return (await response.json()) as T;
+}
+
+function escapeCsvCell(value: unknown): string {
+    if (value === null || value === undefined) {
+        return '""';
+    }
+
+    let text = String(value);
+    if (/^[=+\-@]/.test(text)) {
+        text = `'${text}`;
+    }
+
+    return `"${text.replace(/"/g, '""')}"`;
+}
+
 function initialReportTab(): ReportTab {
     if (typeof window === "undefined") {
         return "daily";
@@ -230,6 +258,7 @@ export default function ReportsPage({ user, filters }: ReportsProps) {
 
     const [activeTab, setActiveTab] = useState<ReportTab>(() => initialReportTab());
     const [loading, setLoading] = useState(false);
+    const [reportErrors, setReportErrors] = useState<Partial<Record<ReportTab, string>>>({});
 
     // Date states
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -250,6 +279,17 @@ export default function ReportsPage({ user, filters }: ReportsProps) {
     const [fullyPaidData, setFullyPaidData] = useState<FullyPaidData | null>(null);
     const [cashierData, setCashierData] = useState<CashierData | null>(null);
 
+    const setTabError = useCallback((tab: ReportTab, message: string | null) => {
+        setReportErrors((prev) => {
+            if (!message) {
+                const next = { ...prev };
+                delete next[tab];
+                return next;
+            }
+            return { ...prev, [tab]: message };
+        });
+    }, []);
+
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat(currency === "USD" ? "en-US" : "en-PH", {
             style: "currency",
@@ -259,19 +299,24 @@ export default function ReportsPage({ user, filters }: ReportsProps) {
 
     const fetchDailyCollection = useCallback(async () => {
         setLoading(true);
+        setTabError("daily", null);
         try {
-            const response = await fetch(route("administrators.finance.reports.daily-collection", { date: format(selectedDate, "yyyy-MM-dd") }));
-            const data = await response.json();
+            const data = await fetchReportJson<DailyCollectionData>(
+                route("administrators.finance.reports.daily-collection", { date: format(selectedDate, "yyyy-MM-dd") }),
+            );
             setDailyData(data);
         } catch (error) {
             console.error("Failed to fetch daily collection:", error);
+            setTabError("daily", REPORT_ERROR_MESSAGE);
+            toast.error(REPORT_ERROR_MESSAGE);
         } finally {
             setLoading(false);
         }
-    }, [selectedDate]);
+    }, [selectedDate, setTabError]);
 
     const fetchCollectionReport = useCallback(async () => {
         setLoading(true);
+        setTabError("collection", null);
         try {
             const params = new URLSearchParams({
                 start_date: format(startDate, "yyyy-MM-dd"),
@@ -279,156 +324,220 @@ export default function ReportsPage({ user, filters }: ReportsProps) {
             });
             if (paymentMethod) params.append("payment_method", paymentMethod);
 
-            const response = await fetch(route("administrators.finance.reports.collection") + `?${params}`);
-            const data = await response.json();
+            const data = await fetchReportJson<CollectionData>(route("administrators.finance.reports.collection") + `?${params}`);
             setCollectionData(data);
         } catch (error) {
             console.error("Failed to fetch collection report:", error);
+            setTabError("collection", REPORT_ERROR_MESSAGE);
+            toast.error(REPORT_ERROR_MESSAGE);
         } finally {
             setLoading(false);
         }
-    }, [startDate, endDate, paymentMethod]);
+    }, [startDate, endDate, paymentMethod, setTabError]);
 
     const fetchOutstandingBalances = useCallback(async () => {
         setLoading(true);
+        setTabError("outstanding", null);
         try {
             const params = new URLSearchParams({
                 school_year: schoolYear,
                 semester: semester,
             });
 
-            const response = await fetch(route("administrators.finance.reports.outstanding-balances") + `?${params}`);
-            const data = await response.json();
+            const data = await fetchReportJson<OutstandingData>(route("administrators.finance.reports.outstanding-balances") + `?${params}`);
             setOutstandingData(data);
         } catch (error) {
             console.error("Failed to fetch outstanding balances:", error);
+            setTabError("outstanding", REPORT_ERROR_MESSAGE);
+            toast.error(REPORT_ERROR_MESSAGE);
         } finally {
             setLoading(false);
         }
-    }, [schoolYear, semester]);
+    }, [schoolYear, semester, setTabError]);
 
     const fetchScholarshipReport = useCallback(async () => {
         setLoading(true);
+        setTabError("scholarship", null);
         try {
             const params = new URLSearchParams({
                 school_year: schoolYear,
                 semester: semester,
             });
 
-            const response = await fetch(route("administrators.finance.reports.scholarship") + `?${params}`);
-            const data = await response.json();
+            const data = await fetchReportJson<ScholarshipData>(route("administrators.finance.reports.scholarship") + `?${params}`);
             setScholarshipData(data);
         } catch (error) {
             console.error("Failed to fetch scholarship report:", error);
+            setTabError("scholarship", REPORT_ERROR_MESSAGE);
+            toast.error(REPORT_ERROR_MESSAGE);
         } finally {
             setLoading(false);
         }
-    }, [schoolYear, semester]);
+    }, [schoolYear, semester, setTabError]);
 
     const fetchRevenueBreakdown = useCallback(async () => {
         setLoading(true);
+        setTabError("revenue", null);
         try {
             const params = new URLSearchParams({
                 school_year: schoolYear,
                 semester: semester,
             });
 
-            const response = await fetch(route("administrators.finance.reports.revenue-breakdown") + `?${params}`);
-            const data = await response.json();
+            const data = await fetchReportJson<RevenueData>(route("administrators.finance.reports.revenue-breakdown") + `?${params}`);
             setRevenueData(data);
         } catch (error) {
             console.error("Failed to fetch revenue breakdown:", error);
+            setTabError("revenue", REPORT_ERROR_MESSAGE);
+            toast.error(REPORT_ERROR_MESSAGE);
         } finally {
             setLoading(false);
         }
-    }, [schoolYear, semester]);
+    }, [schoolYear, semester, setTabError]);
 
     const fetchFullyPaidReport = useCallback(async () => {
         setLoading(true);
+        setTabError("fullypaid", null);
         try {
             const params = new URLSearchParams({
                 school_year: schoolYear,
                 semester: semester,
             });
 
-            const response = await fetch(route("administrators.finance.reports.fully-paid") + `?${params}`);
-            const data = await response.json();
+            const data = await fetchReportJson<FullyPaidData>(route("administrators.finance.reports.fully-paid") + `?${params}`);
             setFullyPaidData(data);
         } catch (error) {
             console.error("Failed to fetch fully paid report:", error);
+            setTabError("fullypaid", REPORT_ERROR_MESSAGE);
+            toast.error(REPORT_ERROR_MESSAGE);
         } finally {
             setLoading(false);
         }
-    }, [schoolYear, semester]);
+    }, [schoolYear, semester, setTabError]);
 
     const fetchCashierPerformance = useCallback(async () => {
         setLoading(true);
+        setTabError("cashier", null);
         try {
             const params = new URLSearchParams({
                 start_date: format(startDate, "yyyy-MM-dd"),
                 end_date: format(endDate, "yyyy-MM-dd"),
             });
 
-            const response = await fetch(route("administrators.finance.reports.cashier-performance") + `?${params}`);
-            const data = await response.json();
+            const data = await fetchReportJson<CashierData>(route("administrators.finance.reports.cashier-performance") + `?${params}`);
             setCashierData(data);
         } catch (error) {
             console.error("Failed to fetch cashier performance:", error);
+            setTabError("cashier", REPORT_ERROR_MESSAGE);
+            toast.error(REPORT_ERROR_MESSAGE);
         } finally {
             setLoading(false);
         }
-    }, [startDate, endDate]);
+    }, [startDate, endDate, setTabError]);
 
-    const handleGenerateReport = () => {
+    const handleGenerateReport = useCallback(() => {
         switch (activeTab) {
             case "daily":
-                fetchDailyCollection();
+                void fetchDailyCollection();
                 break;
             case "collection":
-                fetchCollectionReport();
+                void fetchCollectionReport();
                 break;
             case "outstanding":
-                fetchOutstandingBalances();
+                void fetchOutstandingBalances();
                 break;
             case "scholarship":
-                fetchScholarshipReport();
+                void fetchScholarshipReport();
                 break;
             case "revenue":
-                fetchRevenueBreakdown();
+                void fetchRevenueBreakdown();
                 break;
             case "fullypaid":
-                fetchFullyPaidReport();
+                void fetchFullyPaidReport();
                 break;
             case "cashier":
-                fetchCashierPerformance();
+                void fetchCashierPerformance();
                 break;
         }
-    };
+    }, [
+        activeTab,
+        fetchCashierPerformance,
+        fetchCollectionReport,
+        fetchDailyCollection,
+        fetchFullyPaidReport,
+        fetchOutstandingBalances,
+        fetchRevenueBreakdown,
+        fetchScholarshipReport,
+    ]);
+
+    useEffect(() => {
+        if (loading || reportErrors[activeTab]) return;
+
+        const hasTabData =
+            (activeTab === "daily" && dailyData !== null) ||
+            (activeTab === "collection" && collectionData !== null) ||
+            (activeTab === "outstanding" && outstandingData !== null) ||
+            (activeTab === "scholarship" && scholarshipData !== null) ||
+            (activeTab === "revenue" && revenueData !== null) ||
+            (activeTab === "fullypaid" && fullyPaidData !== null) ||
+            (activeTab === "cashier" && cashierData !== null);
+
+        if (!hasTabData) {
+            handleGenerateReport();
+        }
+    }, [
+        activeTab,
+        cashierData,
+        collectionData,
+        dailyData,
+        fullyPaidData,
+        handleGenerateReport,
+        loading,
+        outstandingData,
+        reportErrors,
+        revenueData,
+        scholarshipData,
+    ]);
 
     const exportToCSV = (data: Record<string, unknown>[], filename: string) => {
         if (!data || data.length === 0) return;
 
         const headers = Object.keys(data[0]);
-        const csvContent = [
-            headers.join(","),
-            ...data.map((row) =>
-                headers
-                    .map((header) => {
-                        const value = row[header];
-                        if (typeof value === "string" && value.includes(",")) {
-                            return `"${value}"`;
-                        }
-                        return value;
-                    })
-                    .join(","),
-            ),
-        ].join("\n");
+        const csvContent = `\uFEFF${[
+            headers.map((header) => escapeCsvCell(header)).join(","),
+            ...data.map((row) => headers.map((header) => escapeCsvCell(row[header])).join(",")),
+        ].join("\r\n")}`;
 
         const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
+        link.href = url;
         link.download = `${filename}_${format(new Date(), "yyyy-MM-dd")}.csv`;
+        document.body.appendChild(link);
         link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    };
+
+    const renderReportError = (tab: ReportTab) => {
+        const errorMessage = reportErrors[tab];
+        if (!errorMessage || loading) return null;
+
+        return (
+            <div
+                role="alert"
+                className="flex flex-col items-start justify-between gap-3 rounded-lg border border-red-500/30 bg-red-500/5 p-4 text-sm text-red-700 sm:flex-row sm:items-center dark:text-red-300"
+            >
+                <div className="flex items-center gap-2.5">
+                    <IconAlertTriangle className="size-4 shrink-0" />
+                    <span>{errorMessage}</span>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={handleGenerateReport}>
+                    <IconRefresh className="mr-2 size-3.5" />
+                    Try again
+                </Button>
+            </div>
+        );
     };
 
     const renderLoadingSkeleton = () => (
@@ -558,6 +667,7 @@ export default function ReportsPage({ user, filters }: ReportsProps) {
                             </div>
 
                             {loading && renderLoadingSkeleton()}
+                            {renderReportError("daily")}
 
                             {!loading && dailyData && (
                                 <>
@@ -755,6 +865,7 @@ export default function ReportsPage({ user, filters }: ReportsProps) {
                             </div>
 
                             {loading && renderLoadingSkeleton()}
+                            {renderReportError("collection")}
 
                             {!loading && collectionData && (
                                 <>
@@ -935,6 +1046,7 @@ export default function ReportsPage({ user, filters }: ReportsProps) {
                             </div>
 
                             {loading && renderLoadingSkeleton()}
+                            {renderReportError("outstanding")}
 
                             {!loading && outstandingData && (
                                 <>
@@ -1111,6 +1223,7 @@ export default function ReportsPage({ user, filters }: ReportsProps) {
                             </div>
 
                             {loading && renderLoadingSkeleton()}
+                            {renderReportError("scholarship")}
 
                             {!loading && scholarshipData && (
                                 <>
@@ -1314,6 +1427,7 @@ export default function ReportsPage({ user, filters }: ReportsProps) {
                             </div>
 
                             {loading && renderLoadingSkeleton()}
+                            {renderReportError("revenue")}
 
                             {!loading && revenueData && (
                                 <>
@@ -1501,6 +1615,7 @@ export default function ReportsPage({ user, filters }: ReportsProps) {
                             </div>
 
                             {loading && renderLoadingSkeleton()}
+                            {renderReportError("fullypaid")}
 
                             {!loading && fullyPaidData && (
                                 <>
@@ -1643,6 +1758,7 @@ export default function ReportsPage({ user, filters }: ReportsProps) {
                             </div>
 
                             {loading && renderLoadingSkeleton()}
+                            {renderReportError("cashier")}
 
                             {!loading && cashierData && (
                                 <>

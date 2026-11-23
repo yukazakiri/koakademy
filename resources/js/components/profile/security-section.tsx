@@ -1,7 +1,18 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemSeparator, ItemTitle } from "@/components/ui/item";
 import { Label } from "@/components/ui/label";
@@ -61,6 +72,11 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
     const [twoFactorProcessing, setTwoFactorProcessing] = useState(false);
     const [showRecoveryCodes, setShowRecoveryCodes] = useState(false);
     const [securityTwoFactorProcessing, setSecurityTwoFactorProcessing] = useState(false);
+    const [disableTwoFactorOpen, setDisableTwoFactorOpen] = useState(false);
+    const [disableTwoFactorPassword, setDisableTwoFactorPassword] = useState("");
+    const [disableTwoFactorProcessing, setDisableTwoFactorProcessing] = useState(false);
+    const [passkeyIdPendingDelete, setPasskeyIdPendingDelete] = useState<number | null>(null);
+    const [apiKeyIdPendingDelete, setApiKeyIdPendingDelete] = useState<number | null>(null);
 
     useEffect(() => {
         fetchPasskeys();
@@ -145,16 +161,25 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
     };
 
     const handleDisableTwoFactor = () => {
-        if (confirm("Are you sure you want to disable two-factor authentication?")) {
-            const password = prompt("Please confirm your password to disable 2FA:");
-            if (!password) return;
+        setDisableTwoFactorPassword("");
+        setDisableTwoFactorOpen(true);
+    };
 
-            router.delete(paths.two_factor_disable, {
-                data: { password },
-                onSuccess: () => toast.success("Two-factor authentication disabled."),
-                onError: () => toast.error("Incorrect password or failed to disable."),
-            });
-        }
+    const submitDisableTwoFactor = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!disableTwoFactorPassword) return;
+
+        setDisableTwoFactorProcessing(true);
+        router.delete(paths.two_factor_disable, {
+            data: { password: disableTwoFactorPassword },
+            onSuccess: () => {
+                setDisableTwoFactorOpen(false);
+                setDisableTwoFactorPassword("");
+                toast.success("Two-factor authentication disabled.");
+            },
+            onError: () => toast.error("Incorrect password or failed to disable."),
+            onFinish: () => setDisableTwoFactorProcessing(false),
+        });
     };
 
     const handleRegenerateRecoveryCodes = () => {
@@ -289,17 +314,22 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
     };
 
     const handleDeletePasskey = (id: number) => {
-        if (confirm("Are you sure you want to delete this passkey?")) {
-            router.delete(`${paths.passkeys}/${id}`, {
-                onSuccess: () => {
-                    toast.success("Passkey deleted.");
-                    fetchPasskeys();
-                },
-                onError: () => {
-                    toast.error("Failed to delete passkey.");
-                },
-            });
-        }
+        setPasskeyIdPendingDelete(id);
+    };
+
+    const confirmDeletePasskey = () => {
+        if (passkeyIdPendingDelete === null) return;
+        const id = passkeyIdPendingDelete;
+        setPasskeyIdPendingDelete(null);
+        router.delete(`${paths.passkeys}/${id}`, {
+            onSuccess: () => {
+                toast.success("Passkey deleted.");
+                fetchPasskeys();
+            },
+            onError: () => {
+                toast.error("Failed to delete passkey.");
+            },
+        });
     };
 
     const handleAddApiKey = async (e: React.FormEvent) => {
@@ -331,16 +361,21 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
         }
     };
 
-    const handleDeleteApiKey = async (id: number) => {
-        if (confirm("Are you sure you want to delete this API key? Any applications using it will no longer have access.")) {
-            try {
-                await axios.delete(`${paths.api_keys}/${id}`);
-                toast.success("API key deleted successfully.");
-                fetchApiTokens();
-            } catch (error) {
-                console.error("Failed to delete API key", error);
-                toast.error("Failed to delete API key.");
-            }
+    const handleDeleteApiKey = (id: number) => {
+        setApiKeyIdPendingDelete(id);
+    };
+
+    const confirmDeleteApiKey = async () => {
+        if (apiKeyIdPendingDelete === null) return;
+        const id = apiKeyIdPendingDelete;
+        setApiKeyIdPendingDelete(null);
+        try {
+            await axios.delete(`${paths.api_keys}/${id}`);
+            toast.success("API key deleted successfully.");
+            fetchApiTokens();
+        } catch (error) {
+            console.error("Failed to delete API key", error);
+            toast.error("Failed to delete API key.");
         }
     };
 
@@ -897,6 +932,91 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                     </CardContent>
                 </Card>
             )}
+
+            <Dialog
+                open={disableTwoFactorOpen}
+                onOpenChange={(open) => {
+                    setDisableTwoFactorOpen(open);
+                    if (!open) setDisableTwoFactorPassword("");
+                }}
+            >
+                <DialogContent className="sm:max-w-md">
+                    <form onSubmit={submitDisableTwoFactor}>
+                        <DialogHeader>
+                            <DialogTitle>Disable two-factor authentication?</DialogTitle>
+                            <DialogDescription>
+                                Confirm your current password to remove authenticator app two-factor protection from your account.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="my-4 space-y-2">
+                            <Label htmlFor="disable-2fa-password">Current Password</Label>
+                            <Input
+                                id="disable-2fa-password"
+                                type="password"
+                                autoComplete="current-password"
+                                value={disableTwoFactorPassword}
+                                onChange={(e) => setDisableTwoFactorPassword(e.target.value)}
+                                placeholder="Enter your current password"
+                                required
+                                autoFocus
+                            />
+                        </div>
+                        <DialogFooter>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => setDisableTwoFactorOpen(false)}
+                                disabled={disableTwoFactorProcessing}
+                            >
+                                Cancel
+                            </Button>
+                            <Button type="submit" variant="destructive" disabled={disableTwoFactorProcessing || !disableTwoFactorPassword}>
+                                {disableTwoFactorProcessing ? "Disabling..." : "Disable 2FA"}
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
+
+            <AlertDialog open={passkeyIdPendingDelete !== null} onOpenChange={(open) => !open && setPasskeyIdPendingDelete(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Delete passkey?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This passkey will no longer be able to sign in to your account. You can register a new passkey at any time.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={confirmDeletePasskey}
+                        >
+                            Delete Passkey
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            <AlertDialog open={apiKeyIdPendingDelete !== null} onOpenChange={(open) => !open && setApiKeyIdPendingDelete(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Revoke API key?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Any applications or integrations using this API key will immediately lose access. This action cannot be undone.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={confirmDeleteApiKey}
+                        >
+                            Revoke Key
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }

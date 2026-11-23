@@ -29,7 +29,7 @@ export function QuickActionsSheet({ classId, onOpenSettings }: QuickActionsSheet
                             className="bg-card text-card-foreground group h-32 flex-col gap-3 rounded-2xl border shadow-sm transition-all hover:border-emerald-500/20 hover:bg-emerald-500/5 hover:shadow-md"
                             asChild
                         >
-                            <Link href={`/classes/${classId}?view=attendance`}>
+                            <Link href={`/faculty/classes/${classId}?tab=attendance`}>
                                 <div className="rounded-full bg-emerald-500/10 p-3 transition-colors group-hover:bg-emerald-500/20">
                                     <IconChecklist className="size-8 text-emerald-600" />
                                 </div>
@@ -44,7 +44,7 @@ export function QuickActionsSheet({ classId, onOpenSettings }: QuickActionsSheet
                             className="bg-card text-card-foreground group h-32 flex-col gap-3 rounded-2xl border shadow-sm transition-all hover:border-blue-500/20 hover:bg-blue-500/5 hover:shadow-md"
                             asChild
                         >
-                            <Link href={`/classes/${classId}?view=classwork`}>
+                            <Link href={`/faculty/classes/${classId}?tab=classwork`}>
                                 <div className="rounded-full bg-blue-500/10 p-3 transition-colors group-hover:bg-blue-500/20">
                                     <IconFilePlus className="size-8 text-blue-600" />
                                 </div>
@@ -59,7 +59,7 @@ export function QuickActionsSheet({ classId, onOpenSettings }: QuickActionsSheet
                             className="bg-card text-card-foreground group h-32 flex-col gap-3 rounded-2xl border shadow-sm transition-all hover:border-violet-500/20 hover:bg-violet-500/5 hover:shadow-md"
                             asChild
                         >
-                            <Link href={`/classes/${classId}?view=stream`}>
+                            <Link href={`/faculty/classes/${classId}?tab=stream`}>
                                 <div className="rounded-full bg-violet-500/10 p-3 transition-colors group-hover:bg-violet-500/20">
                                     <IconMessagePlus className="size-8 text-violet-600" />
                                 </div>
@@ -74,7 +74,7 @@ export function QuickActionsSheet({ classId, onOpenSettings }: QuickActionsSheet
                             className="bg-card text-card-foreground group h-32 flex-col gap-3 rounded-2xl border shadow-sm transition-all hover:border-orange-500/20 hover:bg-orange-500/5 hover:shadow-md"
                             asChild
                         >
-                            <Link href={`/classes/${classId}?view=people`}>
+                            <Link href={`/faculty/classes/${classId}?tab=people`}>
                                 <div className="rounded-full bg-orange-500/10 p-3 transition-colors group-hover:bg-orange-500/20">
                                     <IconUsers className="size-8 text-orange-600" />
                                 </div>
@@ -93,7 +93,7 @@ export function QuickActionsSheet({ classId, onOpenSettings }: QuickActionsSheet
                             Class Settings
                         </Button>
                         <Button variant="ghost" className="w-full justify-start" asChild>
-                            <Link href="/schedule">
+                            <Link href="/faculty/schedule">
                                 <IconCalendar className="mr-2 size-4" />
                                 View Full Schedule
                             </Link>

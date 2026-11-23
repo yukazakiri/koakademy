@@ -78,7 +78,7 @@ export function UpcomingClassesGrid({ classes }: UpcomingClassesGridProps) {
                         <p className="text-muted-foreground mt-1 text-sm">Create a new class to get started</p>
                     </div>
                     <Button asChild size="sm" className="mt-2">
-                        <Link href="/faculty/classes/create">Create Class</Link>
+                        <Link href="/faculty/classes?create=1">Create Class</Link>
                     </Button>
                 </div>
             </motion.div>

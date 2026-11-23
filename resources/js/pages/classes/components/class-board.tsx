@@ -1,6 +1,7 @@
 import { ClassData } from "@/components/data-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { isAdministratorPortalRole, isFacultyPortalRole, isStudentPortalRole } from "@/lib/portal-role";
 import { cn } from "@/lib/utils";
 import { User } from "@/types/user";
 import { Link, usePage } from "@inertiajs/react";
@@ -366,18 +367,14 @@ function BoardTile({
     const theme = resolveBoardTheme(classItem);
     const accent = resolveAccentVisual(classItem);
 
-    const { props } = usePage<{ user: User }>();
-    const user = props.user;
-
-    const isFaculty = ["professor", "instructor", "associate_professor", "assistant_professor", "part_time_faculty"].includes(user.role);
-    const isStudent = ["student", "shs_student", "graduate_student"].includes(user.role);
-    const isAdmin = ["admin", "super_admin", "developer", "president"].includes(user.role);
+    const { props } = usePage<{ user?: User; auth?: { user?: User } }>();
+    const role = props.auth?.user?.role ?? props.user?.role;
 
     const getBaseUrl = () => {
-        if (isFaculty) return "/faculty/classes";
-        if (isStudent) return "/student/classes";
-        if (isAdmin) return "/administrators/classes";
-        return "/classes";
+        if (isFacultyPortalRole(role)) return "/faculty/classes";
+        if (isStudentPortalRole(role)) return "/student/classes";
+        if (isAdministratorPortalRole(role)) return "/administrators/classes";
+        return "/faculty/classes";
     };
 
     const baseUrl = getBaseUrl();

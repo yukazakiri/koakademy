@@ -25,7 +25,7 @@ export function QuickActions({ classes = [] }: QuickActionsProps) {
     const [uploadModalOpen, setUploadModalOpen] = useState(false);
 
     const handleManageClasses = () => {
-        router.visit("/classes");
+        router.visit("/faculty/classes");
     };
 
     return (

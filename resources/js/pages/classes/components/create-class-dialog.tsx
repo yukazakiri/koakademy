@@ -74,7 +74,7 @@ export function CreateClassDialog({
 
         if (!strandId) return;
 
-        fetch(`/classes/strand-subjects?strand_id=${strandId}`, {
+        fetch(`/faculty/classes/strand-subjects?strand_id=${strandId}`, {
             headers: { "X-Requested-With": "XMLHttpRequest" },
         })
             .then((response) => response.json())
@@ -87,7 +87,7 @@ export function CreateClassDialog({
     }
 
     function handleSubmit() {
-        router.post("/classes/create", formData, {
+        router.post("/faculty/classes/create", formData, {
             onSuccess: () => {
                 onOpenChange(false);
                 setFormStep(1);

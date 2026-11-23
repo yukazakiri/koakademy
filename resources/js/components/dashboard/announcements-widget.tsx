@@ -9,13 +9,25 @@ interface Announcement {
     type: "info" | "warning" | "important";
 }
 
-import { Link } from "@inertiajs/react";
+import { isAdministratorPortalRole, isStudentPortalRole } from "@/lib/portal-role";
+import { Link, usePage } from "@inertiajs/react";
 
 interface AnnouncementsWidgetProps {
     announcements: Announcement[];
+    viewAllHref?: string;
 }
 
-export function AnnouncementsWidget({ announcements }: AnnouncementsWidgetProps) {
+export function AnnouncementsWidget({ announcements, viewAllHref }: AnnouncementsWidgetProps) {
+    const { props } = usePage<{ auth?: { user?: { role?: string | null } }; user?: { role?: string | null } }>();
+    const role = props.auth?.user?.role ?? props.user?.role;
+    const resolvedHref =
+        viewAllHref ??
+        (isAdministratorPortalRole(role)
+            ? "/administrators/announcements"
+            : isStudentPortalRole(role)
+              ? "/student/announcements"
+              : "/faculty/announcements");
+
     return (
         <Card className="border-border/60 shadow-sm">
             <CardHeader className="pb-3">
@@ -25,7 +37,7 @@ export function AnnouncementsWidget({ announcements }: AnnouncementsWidgetProps)
                         <CardTitle className="text-base">Announcements</CardTitle>
                     </div>
                     <Button variant="ghost" size="sm" className="h-8 text-xs" asChild>
-                        <Link href="/announcements">
+                        <Link href={resolvedHref}>
                             View All <IconChevronRight className="ml-1 size-3" />
                         </Link>
                     </Button>

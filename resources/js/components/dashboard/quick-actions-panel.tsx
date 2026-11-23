@@ -96,7 +96,7 @@ export function QuickActionsPanel({ classes = [] }: QuickActionsPanelProps) {
                     <motion.button
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
-                        onClick={() => router.visit("/faculty/classes/create")}
+                        onClick={() => router.visit("/faculty/classes?create=1")}
                         className="bg-primary text-primary-foreground hover:bg-primary/90 flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium shadow-sm transition-colors"
                     >
                         <IconPlus className="h-3.5 w-3.5" />

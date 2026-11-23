@@ -1,7 +1,8 @@
 import type { User } from "@/types/user";
+import type { DeliveryMode, DeliverySummary } from "../lib/class-defaults";
 
 export type WeeklyScheduleEntry = {
-    delivery_mode?: "face_to_face" | "online";
+    delivery_mode?: DeliveryMode;
     start_time: string;
     end_time: string;
     time_range: string;
@@ -13,7 +14,7 @@ export type WeeklyScheduleEntry = {
 };
 
 export type RawScheduleEntry = {
-    delivery_mode?: "face_to_face" | "online";
+    delivery_mode?: DeliveryMode;
     id?: number;
     day_of_week: string;
     start_time: string;
@@ -41,8 +42,8 @@ export type ClassShowData = {
     id: number;
     record_title: string;
     classification: string;
-    delivery_mode: "face_to_face" | "online";
-    delivery_summary?: "face_to_face" | "online" | "mixed";
+    delivery_mode: DeliveryMode;
+    delivery_summary?: DeliverySummary;
 
     subjects: string[];
     associated_courses: string | null;

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Services\GeneralSettingsService;
+use App\Support\ScheduleDelivery;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory; // Import Builder
@@ -76,14 +77,65 @@ final class Schedule extends Model
 
     public function isOnline(): bool
     {
-        return $this->delivery_mode === Classes::DELIVERY_ONLINE;
+        return ScheduleDelivery::isOnline($this->delivery_mode);
+    }
+
+    public function isAsynchronousOnline(): bool
+    {
+        return ScheduleDelivery::isAsynchronousOnline($this->delivery_mode);
+    }
+
+    public function isSynchronousOnline(): bool
+    {
+        return ScheduleDelivery::isSynchronousOnline($this->delivery_mode);
+    }
+
+    public function isFaceToFace(): bool
+    {
+        return ScheduleDelivery::isFaceToFace($this->delivery_mode);
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $policy
+     */
+    public function checksRoomConflicts(?array $policy = null): bool
+    {
+        return ScheduleDelivery::checksRoomConflicts($this->delivery_mode, $policy);
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $policy
+     */
+    public function checksTimeConflicts(?array $policy = null): bool
+    {
+        return ScheduleDelivery::checksTimeConflicts($this->delivery_mode, $policy);
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $policy
+     */
+    public function checksFacultyConflicts(?array $policy = null): bool
+    {
+        return ScheduleDelivery::checksFacultyConflicts($this->delivery_mode, $policy);
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $policy
+     */
+    public function checksStudentCohortConflicts(?array $policy = null): bool
+    {
+        return ScheduleDelivery::checksStudentCohortConflicts($this->delivery_mode, $policy);
     }
 
     protected static function booted(): void
     {
         self::saving(function (Schedule $schedule): void {
             // A class mode is only the default for new meetings.
-            $schedule->delivery_mode ??= Classes::withTrashed()->whereKey($schedule->class_id)->value('delivery_mode') ?? Classes::DELIVERY_FACE_TO_FACE;
+            $schedule->delivery_mode = ScheduleDelivery::canonicalize(
+                $schedule->delivery_mode
+                    ?? Classes::withTrashed()->whereKey($schedule->class_id)->value('delivery_mode')
+                    ?? Classes::DELIVERY_FACE_TO_FACE
+            );
             if ($schedule->isOnline()) {
                 $schedule->room_id = null;
                 $schedule->unsetRelation('room');

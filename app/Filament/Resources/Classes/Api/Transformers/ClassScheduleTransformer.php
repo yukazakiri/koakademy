@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Classes\Api\Transformers;
 
 use App\Models\Classes;
+use App\Support\ScheduleDelivery;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
@@ -38,6 +39,8 @@ final class ClassScheduleTransformer extends JsonResource
                 ]);
             }),
             'classification' => $this->resource->classification ?? 'college',
+            'delivery_mode' => $this->resource->delivery_mode ?? Classes::DELIVERY_FACE_TO_FACE,
+            'delivery_summary' => $this->resource->deliverySummary(),
             'academic_year' => $this->resource->academic_year,
             'semester' => $this->resource->semester,
             'school_year' => $this->resource->school_year,
@@ -76,7 +79,9 @@ final class ClassScheduleTransformer extends JsonResource
                     : null,
                 'room' => [
                     'id' => $schedule->Room?->id,
-                    'name' => $schedule->isOnline() ? 'Online' : $schedule->Room?->name,
+                    'name' => $schedule->isOnline()
+                        ? ScheduleDelivery::locationLabel($schedule->delivery_mode)
+                        : $schedule->Room?->name,
                     'code' => $schedule->Room?->class_code,
                 ],
                 'formatted_schedule' => $schedule->day_of_week && $schedule->start_time && $schedule->end_time
@@ -85,7 +90,7 @@ final class ClassScheduleTransformer extends JsonResource
                         $schedule->day_of_week,
                         $schedule->start_time->format('H:i'),
                         $schedule->end_time->format('H:i'),
-                        $schedule->isOnline() ? 'Online' : ($schedule->Room?->name ?? 'TBA')
+                        ScheduleDelivery::locationLabel($schedule->delivery_mode, $schedule->Room?->name, 'TBA')
                     )
                     : null,
             ])->values() ?? []),
@@ -129,7 +134,9 @@ final class ClassScheduleTransformer extends JsonResource
                     : null,
                 'room' => [
                     'id' => $schedule->Room?->id,
-                    'name' => $schedule->isOnline() ? 'Online' : $schedule->Room?->name,
+                    'name' => $schedule->isOnline()
+                        ? ScheduleDelivery::locationLabel($schedule->delivery_mode)
+                        : $schedule->Room?->name,
                 ],
             ])->toArray();
         }

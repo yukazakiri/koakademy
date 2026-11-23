@@ -378,6 +378,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/scheduling-analytics/classes/{class}/schedules', [AdministratorSchedulingAnalyticsController::class, 'storeClassSchedules'])->whereNumber('class')->name('scheduling-analytics.classes.schedules.store');
         Route::post('/scheduling-analytics/generate-offerings', [AdministratorSchedulingAnalyticsController::class, 'generateOfferings'])->name('scheduling-analytics.offerings.generate');
         Route::post('/scheduling-analytics/publish', [AdministratorSchedulingAnalyticsController::class, 'publishTerm'])->name('scheduling-analytics.publish');
+        Route::patch('/scheduling-analytics/policy', [AdministratorSchedulingAnalyticsController::class, 'updateSchedulingPolicy'])->name('scheduling-analytics.policy.update');
 
         // Faculty Management
         Route::get('/faculties', [AdministratorFacultyManagementController::class, 'index'])->name('faculties.index');

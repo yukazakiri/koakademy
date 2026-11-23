@@ -157,6 +157,7 @@ final class ComprehensiveScheduleService
 
         foreach ($rooms as $room) {
             $schedulesQuery = Schedule::query()
+                ->where('delivery_mode', Classes::DELIVERY_FACE_TO_FACE)
                 ->where('room_id', $room->id)
                 ->whereHas('class', function (Builder $q) use ($schoolYear, $semester) {
                     $q->forAcademicPeriod($schoolYear, $semester);

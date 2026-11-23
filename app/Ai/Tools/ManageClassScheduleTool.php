@@ -16,10 +16,12 @@ use App\Services\Ai\Exceptions\EntityNotFoundException;
 use App\Services\Ai\InstitutionEntityResolver;
 use App\Services\GeneralSettingsService;
 use App\Services\TimetableConflictService;
+use App\Support\ScheduleDelivery;
 use Carbon\Carbon;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use InvalidArgumentException;
 use Laravel\Ai\Approvals\Approval;
 use Laravel\Ai\Concerns\InteractsWithApprovals;
@@ -73,7 +75,7 @@ final class ManageClassScheduleTool implements Approvable, Tool
                         'day_of_week' => $s->string()->description('Monday, Tuesday, Wednesday, Thursday, Friday, Saturday.'),
                         'start_time' => $s->string()->description('HH:MM format.'),
                         'end_time' => $s->string()->description('HH:MM format.'),
-                        'delivery_mode' => $s->string()->enum(['face_to_face', 'online'])->description('Delivery type for this meeting.'),
+                        'delivery_mode' => $s->string()->enum(['face_to_face', 'online', 'online_asynchronous', 'online_synchronous'])->description('Delivery type: face_to_face, online (asynchronous), or online_synchronous.'),
                         'room_name' => $s->string()->description('Room name or number.'),
                         'faculty_id' => $s->string()->description('Faculty UUID or employee number.'),
                         'faculty_name' => $s->string()->description('Instructor name.'),
@@ -87,7 +89,7 @@ final class ManageClassScheduleTool implements Approvable, Tool
             'day_of_week' => $schema->string()->description('Meeting day (Monday, Tuesday, Wednesday, Thursday, Friday, Saturday).'),
             'start_time' => $schema->string()->description('Start time in HH:MM format (e.g. "09:00", "13:30").'),
             'end_time' => $schema->string()->description('End time in HH:MM format (e.g. "10:30", "15:00").'),
-            'delivery_mode' => $schema->string()->enum(['face_to_face', 'online'])->description('Delivery type of the meeting being created or rescheduled.'),
+            'delivery_mode' => $schema->string()->enum(['face_to_face', 'online', 'online_asynchronous', 'online_synchronous'])->description('Delivery type of the meeting: face_to_face, online (asynchronous), or online_synchronous.'),
             'room_id' => $schema->integer()->description('Room database ID.'),
             'room_name' => $schema->string()->description('Room name or number (e.g. "Room 201").'),
             'faculty_id' => $schema->string()->description('Faculty reference: the internal UUID or the employee/faculty ID number (e.g. 800188). Never assume a faculty key is a plain integer.'),
@@ -292,7 +294,7 @@ final class ManageClassScheduleTool implements Approvable, Tool
             'day_of_week' => 'nullable|string',
             'start_time' => 'nullable|string',
             'end_time' => 'nullable|string',
-            'delivery_mode' => 'sometimes|in:face_to_face,online',
+            'delivery_mode' => ['sometimes', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
             'room_id' => 'nullable|integer',
             'room_name' => 'nullable|string',
             'faculty_id' => 'nullable',
@@ -304,9 +306,10 @@ final class ManageClassScheduleTool implements Approvable, Tool
 
         $schoolYear = $validated['school_year'] ?? $this->settings->getCurrentSchoolYearString();
         $semester = $validated['semester'] ?? $this->settings->getCurrentSemester();
+        $deliveryMode = ScheduleDelivery::canonicalize($validated['delivery_mode'] ?? Classes::DELIVERY_FACE_TO_FACE);
 
-        $roomId = ($validated['delivery_mode'] ?? null) === Classes::DELIVERY_ONLINE ? null : ($validated['room_id'] ?? null);
-        if (($validated['delivery_mode'] ?? null) !== Classes::DELIVERY_ONLINE && ! $roomId && filled($validated['room_name'] ?? null)) {
+        $roomId = ScheduleDelivery::isOnline($deliveryMode) ? null : ($validated['room_id'] ?? null);
+        if (! ScheduleDelivery::isOnline($deliveryMode) && ! $roomId && filled($validated['room_name'] ?? null)) {
             $roomId = $this->resolveOptionalRoom(null, $validated['room_name'])?->id;
         }
 
@@ -315,7 +318,7 @@ final class ManageClassScheduleTool implements Approvable, Tool
         $subject = $this->resolveSubjectByCode((string) $validated['subject_code']);
 
         try {
-            return DB::transaction(function () use ($validated, $schoolYear, $semester, $roomId, $facultyId, $subject) {
+            return DB::transaction(function () use ($validated, $schoolYear, $semester, $deliveryMode, $roomId, $facultyId, $subject) {
                 $class = Classes::query()->create([
                     'subject_code' => mb_strtoupper(mb_trim($validated['subject_code'])),
                     'section' => mb_trim($validated['section']),
@@ -323,7 +326,7 @@ final class ManageClassScheduleTool implements Approvable, Tool
                     'school_year' => $schoolYear,
                     'semester' => $semester,
                     'room_id' => $roomId,
-                    'delivery_mode' => $validated['delivery_mode'] ?? Classes::DELIVERY_FACE_TO_FACE,
+                    'delivery_mode' => $deliveryMode,
                     'faculty_id' => $facultyId,
                     'maximum_slots' => (int) ($validated['maximum_slots'] ?? 40),
                 ]);
@@ -333,7 +336,7 @@ final class ManageClassScheduleTool implements Approvable, Tool
                     $startTime = Carbon::parse($validated['start_time'])->format('H:i:s');
                     $endTime = Carbon::parse($validated['end_time'])->format('H:i:s');
 
-                    $this->guardScheduleConflicts($roomId, $facultyId, $dayOfWeek, $startTime, $endTime, $schoolYear, $semester);
+                    $this->guardScheduleConflicts($roomId, $facultyId, $dayOfWeek, $startTime, $endTime, $schoolYear, $semester, deliveryMode: $deliveryMode);
 
                     Schedule::query()->create([
                         'class_id' => $class->id,
@@ -341,7 +344,7 @@ final class ManageClassScheduleTool implements Approvable, Tool
                         'start_time' => $startTime,
                         'end_time' => $endTime,
                         'room_id' => $roomId,
-                        'delivery_mode' => $validated['delivery_mode'] ?? Classes::DELIVERY_FACE_TO_FACE,
+                        'delivery_mode' => $deliveryMode,
                     ]);
                 }
 
@@ -374,7 +377,7 @@ final class ManageClassScheduleTool implements Approvable, Tool
             'classes.*.day_of_week' => 'nullable|string',
             'classes.*.start_time' => 'nullable|string',
             'classes.*.end_time' => 'nullable|string',
-            'classes.*.delivery_mode' => 'sometimes|in:face_to_face,online',
+            'classes.*.delivery_mode' => ['sometimes', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
             'classes.*.room_id' => 'nullable|integer',
             'classes.*.room_name' => 'nullable|string',
             'classes.*.faculty_id' => 'nullable',
@@ -398,8 +401,11 @@ final class ManageClassScheduleTool implements Approvable, Tool
                 $subjectCode = mb_strtoupper(mb_trim((string) $cData['subject_code']));
                 $section = mb_trim((string) $cData['section']);
 
-                $roomId = ($cData['delivery_mode'] ?? null) === Classes::DELIVERY_ONLINE ? null : ($cData['room_id'] ?? null);
-                if (($cData['delivery_mode'] ?? null) !== Classes::DELIVERY_ONLINE && ! $roomId && filled($cData['room_name'] ?? null)) {
+                $batchDeliveryMode = isset($cData['delivery_mode'])
+                    ? ScheduleDelivery::canonicalize($cData['delivery_mode'])
+                    : null;
+                $roomId = ScheduleDelivery::isOnline($batchDeliveryMode) ? null : ($cData['room_id'] ?? null);
+                if (! ScheduleDelivery::isOnline($batchDeliveryMode) && ! $roomId && filled($cData['room_name'] ?? null)) {
                     $roomId = $this->resolveOptionalRoom(null, $cData['room_name'])?->id;
                 }
 
@@ -431,7 +437,7 @@ final class ManageClassScheduleTool implements Approvable, Tool
                 } else {
                     $class = Classes::query()->create([
                         'subject_code' => $subjectCode,
-                        'delivery_mode' => $cData['delivery_mode'] ?? Classes::DELIVERY_FACE_TO_FACE,
+                        'delivery_mode' => $batchDeliveryMode ?? Classes::DELIVERY_FACE_TO_FACE,
                         'section' => $section,
                         'subject_id' => $subject?->id,
                         'school_year' => $schoolYear,
@@ -449,13 +455,14 @@ final class ManageClassScheduleTool implements Approvable, Tool
 
                 if (filled($cData['day_of_week'] ?? null) && filled($cData['start_time'] ?? null) && filled($cData['end_time'] ?? null)) {
                     $existingMeeting = $class->schedules()->first();
-                    $roomId = ($cData['delivery_mode'] ?? $existingMeeting?->delivery_mode ?? $class->delivery_mode) === Classes::DELIVERY_ONLINE ? null : $roomId;
+                    $meetingDeliveryMode = ScheduleDelivery::canonicalize($batchDeliveryMode ?? $existingMeeting?->delivery_mode ?? $class->delivery_mode);
+                    $roomId = ScheduleDelivery::isOnline($meetingDeliveryMode) ? null : $roomId;
                     $dayOfWeek = mb_convert_case(mb_trim((string) $cData['day_of_week']), MB_CASE_TITLE);
                     $startTime = Carbon::parse($cData['start_time'])->format('H:i:s');
                     $endTime = Carbon::parse($cData['end_time'])->format('H:i:s');
 
                     try {
-                        $this->guardScheduleConflicts($roomId, $facultyId, $dayOfWeek, $startTime, $endTime, $schoolYear, $semester);
+                        $this->guardScheduleConflicts($roomId, $facultyId, $dayOfWeek, $startTime, $endTime, $schoolYear, $semester, deliveryMode: $meetingDeliveryMode);
                     } catch (Throwable $conflictEx) {
                         $warnings[] = "{$subjectCode} ({$section}): ".$conflictEx->getMessage();
                     }
@@ -466,7 +473,7 @@ final class ManageClassScheduleTool implements Approvable, Tool
                         'start_time' => $startTime,
                         'end_time' => $endTime,
                     ], [
-                        'delivery_mode' => $cData['delivery_mode'] ?? $class->delivery_mode,
+                        'delivery_mode' => $meetingDeliveryMode,
                         'room_id' => $roomId,
                     ]);
                 }
@@ -492,7 +499,7 @@ final class ManageClassScheduleTool implements Approvable, Tool
             'day_of_week' => 'required|string',
             'start_time' => 'required|string',
             'end_time' => 'required|string',
-            'delivery_mode' => 'sometimes|in:face_to_face,online',
+            'delivery_mode' => ['sometimes', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
             'room_id' => 'nullable|integer',
             'room_name' => 'nullable|string',
         ]);
@@ -521,13 +528,13 @@ final class ManageClassScheduleTool implements Approvable, Tool
             $schedule = Schedule::query()->where('class_id', $class->id)->first();
         }
 
-        $deliveryMode = $validated['delivery_mode'] ?? $schedule?->delivery_mode ?? $class->delivery_mode;
-        if ($deliveryMode !== Classes::DELIVERY_ONLINE && ! $roomId && filled($validated['room_name'] ?? null)) {
+        $deliveryMode = ScheduleDelivery::canonicalize($validated['delivery_mode'] ?? $schedule?->delivery_mode ?? $class->delivery_mode);
+        if (! ScheduleDelivery::isOnline($deliveryMode) && ! $roomId && filled($validated['room_name'] ?? null)) {
             $roomId = $this->resolveOptionalRoom(null, $validated['room_name'])?->id;
         }
-        $effectiveRoomId = $deliveryMode === Classes::DELIVERY_ONLINE ? null : (array_key_exists('room_id', $validated) ? $roomId : ($roomId ?? ($schedule instanceof Schedule ? $schedule->room_id : $class->room_id)));
+        $effectiveRoomId = ScheduleDelivery::isOnline($deliveryMode) ? null : (array_key_exists('room_id', $validated) ? $roomId : ($roomId ?? ($schedule instanceof Schedule ? $schedule->room_id : $class->room_id)));
         try {
-            $this->guardScheduleConflicts($effectiveRoomId, $class->faculty_id, $dayOfWeek, $startTime, $endTime, $class->school_year, (int) $class->semester, $schedule?->id, $class->id);
+            $this->guardScheduleConflicts($effectiveRoomId, $class->faculty_id, $dayOfWeek, $startTime, $endTime, $class->school_year, $class->semester, $schedule?->id, $class->id, $deliveryMode);
         } catch (InvalidArgumentException $e) {
             return json_encode(['error' => true, 'message' => $e->getMessage()]);
         }
@@ -712,12 +719,17 @@ final class ManageClassScheduleTool implements Approvable, Tool
         string $startTime,
         string $endTime,
         string $schoolYear,
-        int $semester,
+        int|string $semester,
         ?int $excludeScheduleId = null,
-        ?int $excludeClassId = null
+        ?int $excludeClassId = null,
+        string $deliveryMode = Classes::DELIVERY_FACE_TO_FACE,
     ): void {
-        if ($roomId) {
+        $policy = ScheduleDelivery::policy();
+        $timeConflictModes = ScheduleDelivery::timeConflictCheckedModes($policy);
+
+        if ($roomId && ScheduleDelivery::checksRoomConflicts($deliveryMode, $policy)) {
             $roomConflict = Schedule::query()
+                ->where('delivery_mode', Classes::DELIVERY_FACE_TO_FACE)
                 ->where('room_id', $roomId)
                 ->where('day_of_week', $dayOfWeek)
                 ->when($excludeScheduleId, fn ($q) => $q->whereKeyNot($excludeScheduleId))
@@ -741,8 +753,9 @@ final class ManageClassScheduleTool implements Approvable, Tool
             }
         }
 
-        if ($facultyId) {
+        if ($facultyId && ScheduleDelivery::checksFacultyConflicts($deliveryMode, $policy)) {
             $facultyConflict = Schedule::query()
+                ->whereIn('delivery_mode', $timeConflictModes)
                 ->where('day_of_week', $dayOfWeek)
                 ->when($excludeScheduleId, fn ($q) => $q->whereKeyNot($excludeScheduleId))
                 ->whereHas('class', function ($q) use ($facultyId, $schoolYear, $semester, $excludeClassId) {

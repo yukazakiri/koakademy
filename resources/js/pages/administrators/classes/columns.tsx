@@ -6,7 +6,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { ClassEnrollment, ClassFaculty, classProgramLabel, semesterLabel } from "./components/class-list-details";
 import { ClassRowActions, type ClassActionHandlers } from "./components/class-row-actions";
 import { DataTableColumnHeader } from "./data-table-column-header";
-import { deliveryModeLabel, type DeliveryMode } from "./lib/class-defaults";
+import { deliveryModeLabel, type DeliveryMode, type DeliverySummary } from "./lib/class-defaults";
 
 export type ClassRow = {
     id: number;
@@ -18,13 +18,14 @@ export type ClassRow = {
     semester: string | number;
     classification: "college" | "shs" | string;
     delivery_mode?: DeliveryMode;
-    delivery_summary?: "face_to_face" | "online" | "mixed";
+    delivery_summary?: DeliverySummary;
     academic_year: number | null;
     grade_level: string | null;
     course_abbreviations: string[] | null;
     shs_track: string | null;
     shs_strand: string | null;
     faculty: string;
+    room?: string | null;
     students_count: number;
     maximum_slots: number;
     deleted_at: string | null;

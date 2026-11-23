@@ -10,17 +10,25 @@ import { index as classesIndex, create as createClass, edit as editClass, show a
 import { index as plannerIndex, publish } from "@/routes/administrators/scheduling-analytics";
 import { store as storeSessions } from "@/routes/administrators/scheduling-analytics/classes/schedules";
 import { generate } from "@/routes/administrators/scheduling-analytics/offerings";
+import { update as updatePolicy } from "@/routes/administrators/scheduling-analytics/policy";
 import { destroy as destroySession, update as updateSession } from "@/routes/administrators/scheduling-analytics/schedules";
 import { search as searchStudents, schedule as studentSchedule } from "@/routes/administrators/scheduling-analytics/students";
 import { Head, Link, router } from "@inertiajs/react";
 import axios from "axios";
-import { ArrowLeft, MoreHorizontal, Plus, Search } from "lucide-react";
+import { ArrowLeft, MoreHorizontal, Plus, Search, SlidersHorizontal } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { deliveryModeLabel, meetingDeliverySummary } from "./classes/lib/class-defaults";
+import {
+    deliveryModeLabel,
+    deliveryModeShortLabel,
+    isOnlineDeliveryMode,
+    meetingDeliverySummary,
+    type SchedulingPolicy,
+} from "./classes/lib/class-defaults";
 import GenerateOfferingsDialog, { type GenerateOfferingsPayload } from "./components/generate-offerings-dialog";
 import ScheduleExportDialog from "./components/schedule-export-dialog";
 import SchedulingFiltersBar, { emptyPlannerFilters, type PlannerFilters } from "./components/scheduling-filters-bar";
+import SchedulingPolicyDialog, { DEFAULT_SCHEDULING_POLICY } from "./components/scheduling-policy-dialog";
 import { scheduledHours } from "./components/scheduling-readiness";
 import SchedulingReviewDialog from "./components/scheduling-review-dialog";
 import SchedulingSessionDialog, { type SessionValues } from "./components/scheduling-session-dialog";
@@ -71,6 +79,11 @@ export default function SchedulingAnalytics({
     const [conflictsOpen, setConflictsOpen] = useState(false);
     const [generateOpen, setGenerateOpen] = useState(false);
     const [exportOpen, setExportOpen] = useState(false);
+    const [policyOpen, setPolicyOpen] = useState(false);
+    const [schedulingPolicy, setSchedulingPolicy] = useState<SchedulingPolicy>({
+        ...DEFAULT_SCHEDULING_POLICY,
+        ...creation_options.scheduling_policy,
+    });
     const [publishing, setPublishing] = useState(false);
     const [studentQuery, setStudentQuery] = useState("");
     const [students, setStudents] = useState<StudentSearchResult[]>([]);
@@ -83,6 +96,11 @@ export default function SchedulingAnalytics({
 
     useEffect(() => setClasses(schedule_data), [schedule_data]);
     useEffect(() => setConflicts(stats.schedule_conflicts), [stats.schedule_conflicts]);
+    useEffect(() => {
+        if (creation_options.scheduling_policy) {
+            setSchedulingPolicy({ ...DEFAULT_SCHEDULING_POLICY, ...creation_options.scheduling_policy });
+        }
+    }, [creation_options.scheduling_policy]);
     useEffect(() => {
         const controller = new AbortController();
         const query = studentQuery.trim();
@@ -153,16 +171,20 @@ export default function SchedulingAnalytics({
     const events: WeeklyScheduleEvent[] = visibleClasses.flatMap((item) =>
         item.schedules
             .filter((session) => viewFilters.room === "all" || String(session.room_id) === viewFilters.room)
-            .map((session, index) => ({
-                id: `${item.id}:${session.id ?? index}`,
-                day: session.day_of_week,
-                start: session.start_time,
-                end: session.end_time,
-                title: `${item.subject_code}${viewFilters.section === "all" ? ` · ${item.section}` : ""}`,
-                location: session.room ?? "Room to assign",
-                online: (session.delivery_mode ?? item.delivery_mode) === "online",
-                conflict: session.id !== undefined && conflictIds.has(session.id),
-            })),
+            .map((session, index) => {
+                const mode = session.delivery_mode ?? item.delivery_mode;
+                const isOnline = isOnlineDeliveryMode(mode);
+                return {
+                    id: `${item.id}:${session.id ?? index}`,
+                    day: session.day_of_week,
+                    start: session.start_time,
+                    end: session.end_time,
+                    title: `${item.subject_code}${viewFilters.section === "all" ? ` · ${item.section}` : ""}`,
+                    location: isOnline ? deliveryModeShortLabel(mode) : (session.room ?? "Room to assign"),
+                    online: isOnline,
+                    conflict: session.id !== undefined && conflictIds.has(session.id),
+                };
+            }),
     );
 
     const saveSession = async (values: SessionValues) => {
@@ -222,6 +244,22 @@ export default function SchedulingAnalytics({
             throw error;
         }
     };
+    const saveSchedulingPolicy = async (nextPolicy: SchedulingPolicy) => {
+        try {
+            const response = await axios.patch<{ scheduling_policy: SchedulingPolicy; conflicts: ScheduleConflict[] }>(updatePolicy.url(), {
+                ...nextPolicy,
+                school_year: schoolYear,
+                semester,
+            });
+            setSchedulingPolicy(response.data.scheduling_policy);
+            setConflicts(response.data.conflicts ?? []);
+            toast.success("Scheduling conflict rules updated.");
+        } catch (error) {
+            toast.error(requestError(error).message);
+            throw error;
+        }
+    };
+
     const publishTerm = async () => {
         setPublishing(true);
         try {
@@ -260,6 +298,10 @@ export default function SchedulingAnalytics({
                             </p>
                         </div>
                         <div className="flex items-center gap-2">
+                            <Button variant="outline" onClick={() => setPolicyOpen(true)}>
+                                <SlidersHorizontal className="mr-1.5 size-4" aria-hidden="true" />
+                                Conflict rules
+                            </Button>
                             <Button onClick={() => setReviewOpen(true)} disabled={publishing}>
                                 Review schedule
                             </Button>
@@ -270,6 +312,7 @@ export default function SchedulingAnalytics({
                                     </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => setPolicyOpen(true)}>Conflict &amp; online delivery rules</DropdownMenuItem>
                                     <DropdownMenuItem onClick={() => setGenerateOpen(true)}>Add classes from curriculum</DropdownMenuItem>
                                     <DropdownMenuItem asChild>
                                         <Link href={createClass()}>Create a class</Link>
@@ -524,6 +567,12 @@ export default function SchedulingAnalytics({
                 onOpenChange={setExportOpen}
                 courses={filters.available_courses}
                 initialCourseId={viewFilters.course === "all" ? null : Number(viewFilters.course)}
+            />
+            <SchedulingPolicyDialog
+                open={policyOpen}
+                onOpenChange={setPolicyOpen}
+                policy={schedulingPolicy}
+                onSave={saveSchedulingPolicy}
             />
         </AdminLayout>
     );

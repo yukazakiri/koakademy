@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Sparkles } from "lucide-react";
+import { isOnlineDeliveryMode, type DeliveryMode } from "../classes/lib/class-defaults";
 
 type CourseOption = { id: number; code: string; title: string; curriculum_year?: string | null };
 type RoomOption = { id: number; name: string; class_code: string | null };
@@ -18,7 +19,7 @@ export type GenerateOfferingsPayload = {
     sections: string[];
     maximum_slots: number;
     room_id: number | null;
-    delivery_mode: "face_to_face" | "online";
+    delivery_mode: DeliveryMode;
     course_id?: number;
     academic_year?: number;
     shs_strand_id?: number;
@@ -57,7 +58,7 @@ export default function GenerateOfferingsDialog({
     const [sections, setSections] = React.useState<string[]>(["A"]);
     const [maximumSlots, setMaximumSlots] = React.useState<number>(40);
     const [defaultRoomId, setDefaultRoomId] = React.useState<string>("none");
-    const [deliveryMode, setDeliveryMode] = React.useState<"face_to_face" | "online">("face_to_face");
+    const [deliveryMode, setDeliveryMode] = React.useState<DeliveryMode>("face_to_face");
     const [isGenerating, setIsGenerating] = React.useState(false);
 
     React.useEffect(() => {
@@ -84,7 +85,7 @@ export default function GenerateOfferingsDialog({
                 semester,
                 sections,
                 maximum_slots: maximumSlots,
-                room_id: deliveryMode === "online" || defaultRoomId === "none" ? null : parseInt(defaultRoomId, 10),
+                room_id: isOnlineDeliveryMode(deliveryMode) || defaultRoomId === "none" ? null : parseInt(defaultRoomId, 10),
                 delivery_mode: deliveryMode,
                 ...(classification === "college"
                     ? {
@@ -229,13 +230,14 @@ export default function GenerateOfferingsDialog({
 
                     <div className="space-y-2">
                         <Label htmlFor="offerings-delivery-mode">Default for new meetings</Label>
-                        <Select value={deliveryMode} onValueChange={(value) => setDeliveryMode(value as "face_to_face" | "online")}>
+                        <Select value={deliveryMode} onValueChange={(value) => setDeliveryMode(value as DeliveryMode)}>
                             <SelectTrigger id="offerings-delivery-mode" className="w-full">
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="face_to_face">Face to face</SelectItem>
-                                <SelectItem value="online">Online</SelectItem>
+                                <SelectItem value="online">Online (Asynchronous)</SelectItem>
+                                <SelectItem value="online_synchronous">Online (Synchronous)</SelectItem>
                             </SelectContent>
                         </Select>
                     </div>
@@ -251,7 +253,7 @@ export default function GenerateOfferingsDialog({
                                 onChange={(e) => setMaximumSlots(Math.max(1, parseInt(e.target.value || "40", 10)))}
                             />
                         </div>
-                        {deliveryMode === "online" ? (
+                        {isOnlineDeliveryMode(deliveryMode) ? (
                             <p className="text-muted-foreground self-end py-2 text-sm">Online meetings do not reserve a room.</p>
                         ) : (
                             <div className="space-y-1.5">

@@ -26,7 +26,7 @@ use Illuminate\Database\Eloquent\Builder;
  * (or scope via a relationship — see `ClassEnrollment` which overrides the scope).
  *
  * @method static Builder<static> currentAcademicPeriod()
- * @method static Builder<static> forAcademicPeriod(string $schoolYear, int $semester)
+ * @method static Builder<static> forAcademicPeriod(string $schoolYear, int|string $semester)
  */
 trait HasAcademicPeriodScope
 {
@@ -56,7 +56,7 @@ trait HasAcademicPeriodScope
      * @param  Builder<static>  $query
      * @return Builder<static>
      */
-    public function scopeForAcademicPeriod(Builder $query, string $schoolYear, int $semester): Builder
+    public function scopeForAcademicPeriod(Builder $query, string $schoolYear, int|string $semester): Builder
     {
         $variants = $this->resolveSchoolYearVariants($schoolYear);
 

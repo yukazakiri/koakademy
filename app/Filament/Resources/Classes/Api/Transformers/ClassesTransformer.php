@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Classes\Api\Transformers;
 
 use App\Models\Classes;
+use App\Support\ScheduleDelivery;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
@@ -31,6 +32,8 @@ final class ClassesTransformer extends JsonResource
             'school_year' => $this->resource->school_year,
             'course_codes' => $this->resource->course_codes,
             'section' => $this->resource->section,
+            'delivery_mode' => $this->resource->delivery_mode ?? Classes::DELIVERY_FACE_TO_FACE,
+            'delivery_summary' => $this->resource->deliverySummary(),
             'room_id' => $this->resource->room_id,
             'classification' => $this->resource->classification,
             'maximum_slots' => $this->resource->maximum_slots,
@@ -60,7 +63,9 @@ final class ClassesTransformer extends JsonResource
                 'start_time' => $schedule->start_time,
                 'end_time' => $schedule->end_time,
                 'room_id' => $schedule->room_id,
-                'room_name' => $schedule->isOnline() ? 'Online' : $schedule->room?->name,
+                'room_name' => $schedule->isOnline()
+                    ? ScheduleDelivery::locationLabel($schedule->delivery_mode)
+                    : $schedule->room?->name,
                 'formatted_time' => $schedule->formatted_time,
             ]),
 

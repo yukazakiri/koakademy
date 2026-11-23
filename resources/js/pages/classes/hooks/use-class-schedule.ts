@@ -8,6 +8,7 @@ export type ClassSchedule = {
     day_of_week: DayOfWeek | string;
     start_time: string;
     end_time: string;
+    delivery_mode?: string;
     room_id?: string | number | null;
     room?: string | null;
 };
@@ -26,6 +27,7 @@ export type ScheduleEvent = {
     startLabel: string;
     endLabel: string;
     roomLabel: string;
+    deliveryMode?: string;
     accent: AccentVisual;
 };
 
@@ -206,7 +208,8 @@ function buildScheduleEvents(
             .filter((schedule) =>
                 Boolean(schedule.day_of_week && schedule.start_time && schedule.end_time && isValidDay(String(schedule.day_of_week))),
             ) as Array<
-            Required<Pick<ClassSchedule, "day_of_week" | "start_time" | "end_time">> & Partial<Pick<ClassSchedule, "id" | "room_id" | "room">>
+            Required<Pick<ClassSchedule, "day_of_week" | "start_time" | "end_time">> &
+                Partial<Pick<ClassSchedule, "id" | "room_id" | "room" | "delivery_mode">>
         >;
 
         if (!parsedSchedules.length) {
@@ -237,7 +240,14 @@ function buildScheduleEvents(
             eventKeys.add(eventKey);
             validEventCount += 1;
 
-            const roomLabel = schedule.room || (roomId ? roomsById.get(roomId) : undefined) || classItem.room || "Room TBA";
+            const classDeliveryMode = (classItem as unknown as { delivery_mode?: string }).delivery_mode;
+            const deliveryMode = schedule.delivery_mode ?? classDeliveryMode ?? "face_to_face";
+            const roomLabel =
+                deliveryMode === "online_synchronous"
+                    ? "Online (Sync)"
+                    : deliveryMode === "online" || deliveryMode === "online_asynchronous"
+                      ? "Online (Async)"
+                      : schedule.room || (roomId ? roomsById.get(roomId) : undefined) || classItem.room || "Room TBA";
 
             events.push({
                 scheduleId: scheduleId || eventKey,
@@ -248,6 +258,7 @@ function buildScheduleEvents(
                 startLabel: formatMinutesToTime(startMinutes),
                 endLabel: formatMinutesToTime(endMinutes),
                 roomLabel,
+                deliveryMode,
                 accent: resolveAccentVisual(classItem),
             });
         }
@@ -257,10 +268,12 @@ function buildScheduleEvents(
         }
     }
 
-    // Conflict detection
+    // Conflict detection (skip asynchronous online sessions)
     const conflictIds = new Set<string>();
     for (const day of DAYS) {
-        const dayEvents = events.filter((event) => event.day === day).sort((a, b) => a.startMinutes - b.startMinutes);
+        const dayEvents = events
+            .filter((event) => event.day === day && event.deliveryMode !== "online" && event.deliveryMode !== "online_asynchronous")
+            .sort((a, b) => a.startMinutes - b.startMinutes);
         let activeEvents: ScheduleEvent[] = [];
 
         for (const current of dayEvents) {

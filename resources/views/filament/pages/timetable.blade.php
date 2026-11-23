@@ -275,7 +275,7 @@
                                                                 }
 
                                                                 if($selectedView !== 'room') {
-                                                                    $tooltipContent[] = "Room: " . ($schedule->room?->name ?? 'N/A');
+                                                                    $tooltipContent[] = "Location: " . \App\Support\ScheduleDelivery::locationLabel($schedule->delivery_mode, $schedule->room?->name, 'N/A');
                                                                 }
 
                                                                 if($selectedView !== 'faculty') {
@@ -369,7 +369,7 @@
                                                                             @if($selectedView !== 'room')
                                                                                 <div class="flex items-center gap-1 text-xs opacity-80 truncate">
                                                                                     <x-filament::icon icon="heroicon-m-map-pin" class="h-3 w-3 shrink-0" />
-                                                                                    <span class="truncate">{{ $schedule->room?->name ?? 'N/A' }}</span>
+                                                                                    <span class="truncate">{{ \App\Support\ScheduleDelivery::locationLabel($schedule->delivery_mode, $schedule->room?->name, 'N/A') }}</span>
                                                                                 </div>
                                                                             @endif
                                                                             @if($selectedView !== 'faculty')

@@ -44,7 +44,7 @@ final class UpdateClassesRequest extends FormRequest
             'course_codes.*' => 'nullable|integer',
             'section' => 'sometimes|nullable|string',
             'room_id' => 'sometimes|nullable|integer',
-            'delivery_mode' => 'sometimes|in:face_to_face,online',
+            'delivery_mode' => ['sometimes', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
             'classification' => 'sometimes|nullable|string',
             'maximum_slots' => 'sometimes|nullable|integer',
             'shs_track_id' => 'sometimes|nullable|integer',
@@ -59,7 +59,7 @@ final class UpdateClassesRequest extends FormRequest
             'schedules.*.day_of_week' => 'required_with:schedules|string|in:Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday',
             'schedules.*.start_time' => 'required_with:schedules',
             'schedules.*.end_time' => 'required_with:schedules|after:schedules.*.start_time',
-            'schedules.*.delivery_mode' => 'sometimes|in:face_to_face,online',
+            'schedules.*.delivery_mode' => ['sometimes', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
             'schedules.*.id' => ['sometimes', 'integer', 'distinct', Rule::exists('schedule', 'id')->where('class_id', $classId)],
             'schedules.*.room_id' => 'nullable|exists:rooms,id',
 
@@ -83,8 +83,18 @@ final class UpdateClassesRequest extends FormRequest
     {
         $record = $this->route('id');
         $class = $record instanceof Classes ? $record : Classes::query()->find($record);
+        if ($this->exists('delivery_mode')) {
+            $this->merge(['delivery_mode' => ScheduleDelivery::normalizeInput($this->input('delivery_mode'))]);
+        }
+        if (ScheduleDelivery::isOnline($this->input('delivery_mode', $class?->delivery_mode))) {
+            $this->merge(['room_id' => null]);
+        }
         if ($this->has('schedules')) {
-            $this->merge(['schedules' => ScheduleDelivery::normalizeSchedules($this->input('schedules'), $class)]);
+            $this->merge(['schedules' => ScheduleDelivery::normalizeSchedules(
+                $this->input('schedules'),
+                $class,
+                is_string($this->input('delivery_mode')) ? $this->input('delivery_mode') : null,
+            )]);
         }
     }
 }

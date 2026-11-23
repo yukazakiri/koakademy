@@ -6,9 +6,12 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use App\Services\GeneralSettingsService;
+use App\Support\ScheduleDelivery;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -32,6 +35,7 @@ final class AdministratorSettingsController extends Controller
                 'role' => $user->role?->getLabel() ?? 'Administrator',
             ],
             'settings' => $globalSettings,
+            'scheduling_config' => $settingsService->getSchedulingConfig(),
             'flash' => session('flash'),
         ]);
     }
@@ -72,12 +76,28 @@ final class AdministratorSettingsController extends Controller
 
             'seo_title' => ['nullable', 'string', 'max:255'],
             'seo_keywords' => ['nullable', 'string', 'max:255'],
+
+            'scheduling' => ['sometimes', 'array'],
+            'scheduling.default_online_delivery_mode' => ['sometimes', Rule::in(ScheduleDelivery::ONLINE_MODES)],
+            'scheduling.check_room_conflicts' => ['sometimes', 'boolean'],
+            'scheduling.check_faculty_conflicts' => ['sometimes', 'boolean'],
+            'scheduling.check_student_cohort_conflicts' => ['sometimes', 'boolean'],
+            'scheduling.check_synchronous_online_conflicts' => ['sometimes', 'boolean'],
+            'scheduling.check_asynchronous_online_conflicts' => ['sometimes', 'boolean'],
         ]);
+
+        $schedulingAttributes = is_array($validated['scheduling'] ?? null) ? $validated['scheduling'] : null;
+        $generalAttributes = Arr::except($validated, ['scheduling']);
 
         $settings = $settingsService->getGlobalSettingsModel();
 
-        if ($settings instanceof \App\Models\GeneralSetting) {
-            $settings->update($validated);
+        if ($settings instanceof \App\Models\GeneralSetting && $generalAttributes !== []) {
+            $settings->update($generalAttributes);
+            $settingsService->replaceGlobalSettings($settings->fresh());
+        }
+
+        if ($schedulingAttributes !== null) {
+            $settingsService->updateSchedulingConfig($schedulingAttributes);
         }
 
         return redirect()->back()->with('flash', [

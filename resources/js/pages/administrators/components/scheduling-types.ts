@@ -1,8 +1,9 @@
 import type { User } from "@/types/user";
+import type { DeliveryMode, DeliverySummary, SchedulingPolicy } from "../classes/lib/class-defaults";
 // ── Types ──────────────────────────────────────────────────────────
 
 export type ScheduleEntry = {
-    delivery_mode?: "face_to_face" | "online";
+    delivery_mode?: DeliveryMode;
     id?: number;
     day_of_week: string;
     start_time: string;
@@ -17,8 +18,8 @@ export type ScheduleEntry = {
 
 export type ClassScheduleData = {
     id: number;
-    delivery_mode?: "face_to_face" | "online";
-    delivery_summary?: "face_to_face" | "online" | "mixed";
+    delivery_mode?: DeliveryMode;
+    delivery_summary?: DeliverySummary;
     subject_code: string;
     subject_title: string;
     section: string;
@@ -53,14 +54,14 @@ export type ScheduleConflict = {
     time: string;
     schedule_1_id?: number;
     schedule_2_id?: number;
-    class_1: { id?: number; subject_code: string; section: string; room: string | null; faculty: string | null };
-    class_2: { id?: number; subject_code: string; section: string; room: string | null; faculty: string | null };
+    class_1: { id?: number; subject_code: string; section: string; room: string | null; faculty: string | null; delivery_mode?: DeliveryMode };
+    class_2: { id?: number; subject_code: string; section: string; room: string | null; faculty: string | null; delivery_mode?: DeliveryMode };
     conflict_type: "room" | "faculty" | "section";
 };
 
 export type ScheduleUpdateResponse = {
     schedule: {
-        delivery_mode?: "face_to_face" | "online";
+        delivery_mode?: DeliveryMode;
         id?: number;
         day_of_week: string;
         start_time: string;
@@ -133,6 +134,8 @@ export interface SchedulingAnalyticsProps {
         shs_strands: Array<{ id: number; strand_name: string; track_id: number; track_name: string | null }>;
         sections: string[];
         semesters: Array<{ value: string; label: string }>;
+        delivery_modes?: Array<{ value: string; label: string }>;
+        scheduling_policy?: SchedulingPolicy;
     };
     defaults: { semester: string; school_year: string };
 }

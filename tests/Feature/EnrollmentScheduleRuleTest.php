@@ -6,8 +6,10 @@ use App\Data\Enrollment\EnrollmentContext;
 use App\Enrollment\EnrollmentPolicyRegistry;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
+use App\Models\GeneralSetting;
 use App\Models\Schedule;
 use App\Models\StudentEnrollment;
+use App\Services\GeneralSettingsService;
 
 it('checks saved schedules using normalized days and configurable travel gaps', function (string $day, string $start, int $gap, bool $passed): void {
     $enrollment = StudentEnrollment::factory()->create(['school_year' => '2035 - 2036', 'semester' => 1]);
@@ -89,3 +91,59 @@ it('rejects unsupported schedule policy configuration before publication', funct
     'negative gap' => [['minimum_gap_minutes' => -1]],
     'unknown missing mode' => [['missing_schedule' => 'ignore_everything']],
 ]);
+
+it('skips asynchronous online classes from schedule overlap and missing-schedule checks by default', function (): void {
+    $enrollment = StudentEnrollment::factory()->create(['school_year' => '2035 - 2036', 'semester' => 1]);
+    $campus = Classes::factory()->create([
+        'school_id' => $enrollment->school_id,
+        'school_year' => '2035 - 2036',
+        'semester' => 1,
+        'delivery_mode' => 'face_to_face',
+    ]);
+    $asyncWithOverlap = Classes::factory()->create([
+        'school_id' => $enrollment->school_id,
+        'school_year' => '2035 - 2036',
+        'semester' => 1,
+        'delivery_mode' => 'online',
+    ]);
+    $asyncUnscheduled = Classes::factory()->create([
+        'school_id' => $enrollment->school_id,
+        'school_year' => '2035 - 2036',
+        'semester' => 1,
+        'delivery_mode' => 'online',
+    ]);
+
+    foreach ([$campus, $asyncWithOverlap, $asyncUnscheduled] as $class) {
+        ClassEnrollment::query()->create(['student_id' => $enrollment->student_id, 'class_id' => $class->id, 'status' => true]);
+    }
+
+    Schedule::factory()->create(['class_id' => $campus->id, 'delivery_mode' => 'face_to_face', 'day_of_week' => 'Monday', 'start_time' => '09:00', 'end_time' => '10:00']);
+    Schedule::factory()->create(['class_id' => $asyncWithOverlap->id, 'delivery_mode' => 'online', 'day_of_week' => 'Monday', 'start_time' => '09:30', 'end_time' => '10:30']);
+
+    $result = app(EnrollmentPolicyRegistry::class)->rule('academics.verified_schedule')->evaluate(EnrollmentContext::fromEnrollment($enrollment), []);
+
+    expect($result->passed)->toBeTrue()
+        ->and($result->metadata['unchecked_class_ids'])->toBe([]);
+});
+
+it('enforces schedule overlap checks for synchronous online classes and honors configurable scheduling policy', function (): void {
+    GeneralSetting::factory()->create(['school_starting_date' => '2035-06-01', 'school_ending_date' => '2036-03-31', 'semester' => 1]);
+    $enrollment = StudentEnrollment::factory()->create(['school_year' => '2035 - 2036', 'semester' => 1]);
+    $campus = Classes::factory()->create(['school_id' => $enrollment->school_id, 'school_year' => '2035 - 2036', 'semester' => 1, 'delivery_mode' => 'face_to_face']);
+    $syncOnline = Classes::factory()->create(['school_id' => $enrollment->school_id, 'school_year' => '2035 - 2036', 'semester' => 1, 'delivery_mode' => 'online_synchronous']);
+
+    ClassEnrollment::query()->create(['student_id' => $enrollment->student_id, 'class_id' => $campus->id, 'status' => true]);
+    ClassEnrollment::query()->create(['student_id' => $enrollment->student_id, 'class_id' => $syncOnline->id, 'status' => true]);
+
+    Schedule::factory()->create(['class_id' => $campus->id, 'delivery_mode' => 'face_to_face', 'day_of_week' => 'Monday', 'start_time' => '09:00', 'end_time' => '10:00']);
+    Schedule::factory()->create(['class_id' => $syncOnline->id, 'delivery_mode' => 'online_synchronous', 'day_of_week' => 'Monday', 'start_time' => '09:30', 'end_time' => '10:30']);
+
+    $rule = app(EnrollmentPolicyRegistry::class)->rule('academics.verified_schedule');
+    $blocked = $rule->evaluate(EnrollmentContext::fromEnrollment($enrollment), []);
+    expect($blocked->passed)->toBeFalse();
+
+    app(GeneralSettingsService::class)->updateSchedulingConfig(['check_synchronous_online_conflicts' => false]);
+
+    $allowed = $rule->evaluate(EnrollmentContext::fromEnrollment($enrollment), []);
+    expect($allowed->passed)->toBeTrue();
+});

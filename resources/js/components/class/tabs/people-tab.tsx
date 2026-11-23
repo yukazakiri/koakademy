@@ -21,24 +21,25 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { StudentEntry, TeacherEntry } from "@/types/class-detail-types";
 import { router } from "@inertiajs/react";
 import {
-    IconBell,
     IconDotsVertical,
     IconDownload,
     IconExchange,
-    IconEye,
     IconFileInfo,
     IconFileSpreadsheet,
     IconFileTypePdf,
     IconMail,
+    IconSearch,
     IconTrash,
     IconUser,
     IconUserCheck,
+    IconX,
 } from "@tabler/icons-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 interface PeopleTabProps {
@@ -50,13 +51,25 @@ interface PeopleTabProps {
     students: StudentEntry[];
     onViewProfile: (student: StudentEntry) => void;
     onTrackAttendance: (studentId: number) => void;
-    onViewPublicInfo: (student: StudentEntry) => void;
+    onManageGrades?: (student: StudentEntry) => void;
 }
 
-export function PeopleTab({ classData, teacher, students, onViewProfile, onTrackAttendance, onViewPublicInfo }: PeopleTabProps) {
+export function PeopleTab({ classData, teacher, students, onViewProfile, onTrackAttendance, onManageGrades }: PeopleTabProps) {
     const [moveStudentOpen, setMoveStudentOpen] = useState(false);
     const [selectedStudentForMove, setSelectedStudentForMove] = useState<{ id: number | string; name: string } | null>(null);
     const [studentPendingRemoval, setStudentPendingRemoval] = useState<{ id: number | string; name: string } | null>(null);
+    const [searchQuery, setSearchQuery] = useState("");
+
+    const filteredStudents = useMemo(() => {
+        const query = searchQuery.trim().toLowerCase();
+        if (!query) return students;
+        return students.filter((student) => {
+            const name = student.name.toLowerCase();
+            const studentId = String(student.student_id ?? "").toLowerCase();
+            const email = (student.email ?? "").toLowerCase();
+            return name.includes(query) || studentId.includes(query) || email.includes(query);
+        });
+    }, [students, searchQuery]);
 
     return (
         <div className="space-y-6">
@@ -151,13 +164,45 @@ export function PeopleTab({ classData, teacher, students, onViewProfile, onTrack
                                 </DropdownMenu>
                             </div>
                         </div>
+                        {students.length > 0 && (
+                            <div className="relative">
+                                <IconSearch className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+                                <Input
+                                    type="search"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder="Filter roster by name, student ID, or email..."
+                                    aria-label="Filter enrolled students"
+                                    className="pr-9 pl-9"
+                                />
+                                {searchQuery && (
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => setSearchQuery("")}
+                                        aria-label="Clear student filter"
+                                        className="text-muted-foreground hover:text-foreground absolute top-1/2 right-1 size-7 -translate-y-1/2"
+                                    >
+                                        <IconX className="size-3.5" />
+                                    </Button>
+                                )}
+                            </div>
+                        )}
                         {students.length === 0 ? (
                             <div className="border-border/60 text-muted-foreground rounded-lg border border-dashed p-6 text-center">
                                 No students enrolled yet.
                             </div>
+                        ) : filteredStudents.length === 0 ? (
+                            <div className="border-border/60 text-muted-foreground flex flex-col items-center gap-2 rounded-lg border border-dashed p-6 text-center">
+                                <p>No students match &ldquo;{searchQuery}&rdquo;.</p>
+                                <Button type="button" variant="outline" size="sm" onClick={() => setSearchQuery("")}>
+                                    Clear filter
+                                </Button>
+                            </div>
                         ) : (
                             <div className="space-y-2">
-                                {students.map((student) => (
+                                {filteredStudents.map((student) => (
                                     <div
                                         key={student.id}
                                         className="border-border/60 bg-background/60 flex min-w-0 items-start gap-3 rounded-lg border p-3 sm:items-center"
@@ -187,7 +232,12 @@ export function PeopleTab({ classData, teacher, students, onViewProfile, onTrack
                                             </Badge>
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-8 w-8 rounded-full"
+                                                        aria-label={`Actions for ${student.name}`}
+                                                    >
                                                         <IconDotsVertical className="h-4 w-4" />
                                                     </Button>
                                                 </DropdownMenuTrigger>
@@ -196,6 +246,24 @@ export function PeopleTab({ classData, teacher, students, onViewProfile, onTrack
                                                     <DropdownMenuItem onSelect={() => onViewProfile(student)}>
                                                         <IconUser className="mr-2 h-4 w-4" />
                                                         View Profile
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem
+                                                        onClick={() => window.open(`mailto:${student.email}`, "_blank")}
+                                                        disabled={!student.email}
+                                                    >
+                                                        <IconMail className="mr-2 h-4 w-4" />
+                                                        Email Student
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuSeparator />
+                                                    {onManageGrades && (
+                                                        <DropdownMenuItem onSelect={() => onManageGrades(student)}>
+                                                            <IconFileInfo className="mr-2 h-4 w-4" />
+                                                            Manage Grades
+                                                        </DropdownMenuItem>
+                                                    )}
+                                                    <DropdownMenuItem onSelect={() => onTrackAttendance(student.id as number)}>
+                                                        <IconUserCheck className="mr-2 h-4 w-4" />
+                                                        Track Attendance
                                                     </DropdownMenuItem>
                                                     <DropdownMenuSeparator />
                                                     <DropdownMenuItem
@@ -210,7 +278,6 @@ export function PeopleTab({ classData, teacher, students, onViewProfile, onTrack
                                                         <IconExchange className="mr-2 h-4 w-4" />
                                                         Request Transfer
                                                     </DropdownMenuItem>
-                                                    <DropdownMenuSeparator />
                                                     <DropdownMenuItem
                                                         className="text-destructive focus:text-destructive"
                                                         onSelect={(e) => {
@@ -220,48 +287,6 @@ export function PeopleTab({ classData, teacher, students, onViewProfile, onTrack
                                                     >
                                                         <IconTrash className="mr-2 h-4 w-4" />
                                                         Remove from Class
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuSeparator />
-                                                    <DropdownMenuItem
-                                                        onClick={() => window.open(`mailto:${student.email}`, "_blank")}
-                                                        disabled={!student.email}
-                                                    >
-                                                        <IconMail className="mr-2 h-4 w-4" />
-                                                        Email Student
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem
-                                                        onClick={() => {
-                                                            toast.info(`Notification feature for ${student.name} coming soon`);
-                                                        }}
-                                                    >
-                                                        <IconBell className="mr-2 h-4 w-4" />
-                                                        Notify Student
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem onClick={() => onViewPublicInfo(student)}>
-                                                        <IconEye className="mr-2 h-4 w-4" />
-                                                        View Public Info
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuSeparator />
-                                                    <DropdownMenuItem
-                                                        onClick={() => {
-                                                            toast.info(`Grade management for ${student.name} coming soon`);
-                                                        }}
-                                                    >
-                                                        <IconFileInfo className="mr-2 h-4 w-4" />
-                                                        Manage Grades
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem onClick={() => onTrackAttendance(student.id as number)}>
-                                                        <IconUserCheck className="mr-2 h-4 w-4" />
-                                                        Track Attendance
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuSeparator />
-                                                    <DropdownMenuItem
-                                                        onClick={() => {
-                                                            toast.info(`Additional actions menu coming soon`);
-                                                        }}
-                                                        className="text-muted-foreground"
-                                                    >
-                                                        More Actions...
                                                     </DropdownMenuItem>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>

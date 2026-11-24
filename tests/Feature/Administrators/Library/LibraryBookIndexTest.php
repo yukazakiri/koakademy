@@ -219,7 +219,7 @@ it('filters books by hosted digital edition status and reports eBook stats', fun
     $admin = User::factory()->create(['role' => UserRole::Admin]);
 
     $publishedDownloadable = Book::factory()->create(['title' => 'Downloadable eBook']);
-    \Modules\LibrarySystem\Models\DigitalEdition::query()->create([
+    Modules\LibrarySystem\Models\DigitalEdition::query()->create([
         'book_id' => $publishedDownloadable->id,
         'disk' => 'library',
         'path' => 'digital-editions/downloadable.pdf',
@@ -227,15 +227,15 @@ it('filters books by hosted digital edition status and reports eBook stats', fun
         'mime_type' => 'application/pdf',
         'size_bytes' => 2048,
         'sha256' => hash('sha256', 'downloadable'),
-        'status' => \Modules\LibrarySystem\Enums\DigitalEditionStatus::Published,
+        'status' => Modules\LibrarySystem\Enums\DigitalEditionStatus::Published,
         'downloads_allowed' => true,
-        'rights_basis' => \Modules\LibrarySystem\Enums\DigitalRightsBasis::OpenLicense,
+        'rights_basis' => Modules\LibrarySystem\Enums\DigitalRightsBasis::OpenLicense,
         'rights_confirmed_at' => now(),
         'published_at' => now(),
     ]);
 
     $publishedReadOnly = Book::factory()->create(['title' => 'Read-Only eBook']);
-    \Modules\LibrarySystem\Models\DigitalEdition::query()->create([
+    Modules\LibrarySystem\Models\DigitalEdition::query()->create([
         'book_id' => $publishedReadOnly->id,
         'disk' => 'library',
         'path' => 'digital-editions/readonly.pdf',
@@ -243,15 +243,15 @@ it('filters books by hosted digital edition status and reports eBook stats', fun
         'mime_type' => 'application/pdf',
         'size_bytes' => 1024,
         'sha256' => hash('sha256', 'readonly'),
-        'status' => \Modules\LibrarySystem\Enums\DigitalEditionStatus::Published,
+        'status' => Modules\LibrarySystem\Enums\DigitalEditionStatus::Published,
         'downloads_allowed' => false,
-        'rights_basis' => \Modules\LibrarySystem\Enums\DigitalRightsBasis::KoakademyOwned,
+        'rights_basis' => Modules\LibrarySystem\Enums\DigitalRightsBasis::KoakademyOwned,
         'rights_confirmed_at' => now(),
         'published_at' => now(),
     ]);
 
     $draftBook = Book::factory()->create(['title' => 'Draft eBook']);
-    \Modules\LibrarySystem\Models\DigitalEdition::query()->create([
+    Modules\LibrarySystem\Models\DigitalEdition::query()->create([
         'book_id' => $draftBook->id,
         'disk' => 'library',
         'path' => 'digital-editions/draft.pdf',
@@ -259,7 +259,7 @@ it('filters books by hosted digital edition status and reports eBook stats', fun
         'mime_type' => 'application/pdf',
         'size_bytes' => 512,
         'sha256' => hash('sha256', 'draft'),
-        'status' => \Modules\LibrarySystem\Enums\DigitalEditionStatus::Draft,
+        'status' => Modules\LibrarySystem\Enums\DigitalEditionStatus::Draft,
         'downloads_allowed' => false,
     ]);
 

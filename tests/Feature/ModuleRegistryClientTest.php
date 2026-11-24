@@ -118,3 +118,80 @@ it('can force a fresh catalog fetch without waiting for the cache ttl', function
 
     Http::assertSentCount(2);
 });
+
+it('trims trailing newlines when reading the public key from a file', function (): void {
+    $keyPair = sodium_crypto_sign_keypair();
+    $publicKey = sodium_crypto_sign_publickey($keyPair);
+    $secretKey = sodium_crypto_sign_secretkey($keyPair);
+    $url = moduleRegistryTestUrl('key-file');
+    $payload = unsignedModuleRegistryPayload();
+    $canonicalPayload = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR);
+    $payload['signature'] = [
+        'algorithm' => 'ed25519',
+        'value' => mb_rtrim(strtr(base64_encode(sodium_crypto_sign_detached($canonicalPayload, $secretKey)), '+/', '-_'), '='),
+    ];
+
+    $keyFile = tempnam(sys_get_temp_dir(), 'registry-key-');
+    expect($keyFile)->toBeString();
+
+    try {
+        file_put_contents($keyFile, mb_rtrim(strtr(base64_encode($publicKey), '+/', '-_'), '=')."\n");
+
+        config([
+            'modules-marketplace.registry_url' => $url,
+            'modules-marketplace.require_signature' => true,
+            'modules-marketplace.public_key' => null,
+            'modules-marketplace.public_key_file' => $keyFile,
+        ]);
+        Http::fake([$url => Http::response($payload)]);
+
+        expect(app(RegistryClient::class)->all())->toHaveCount(1);
+    } finally {
+        @unlink($keyFile);
+    }
+});
+
+it('does not remap the retired official key for non-official registry URLs', function (): void {
+    $keyPair = sodium_crypto_sign_keypair();
+    $secretKey = sodium_crypto_sign_secretkey($keyPair);
+    $url = moduleRegistryTestUrl('custom-retired-key');
+    $payload = unsignedModuleRegistryPayload();
+    $canonicalPayload = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR);
+    $payload['signature'] = [
+        'algorithm' => 'ed25519',
+        'value' => mb_rtrim(strtr(base64_encode(sodium_crypto_sign_detached($canonicalPayload, $secretKey)), '+/', '-_'), '='),
+    ];
+
+    config([
+        'modules-marketplace.registry_url' => $url,
+        'modules-marketplace.require_signature' => true,
+        'modules-marketplace.public_key' => 'gnGm74yPDu7umv6sF0lzepJnEVEx7b9_HYDrAxjxYYs',
+    ]);
+    Http::fake([$url => Http::response($payload)]);
+
+    expect(fn (): array => app(RegistryClient::class)->all())
+        ->toThrow(ModuleRegistryException::class, 'could not be verified');
+});
+
+it('verifies the official registry signed with the rotated key even when an older deployment still configures the retired default key', function (): void {
+    $officialUrl = 'https://yukazakiri.github.io/koakademy-modules/registry.json';
+    $payload = [
+        'schema' => 1,
+        'modules' => [],
+        'signature' => [
+            'algorithm' => 'ed25519',
+            'value' => str_repeat('A', 86),
+        ],
+    ];
+
+    config([
+        'modules-marketplace.registry_url' => $officialUrl,
+        'modules-marketplace.require_signature' => true,
+        'modules-marketplace.public_key' => 'gnGm74yPDu7umv6sF0lzepJnEVEx7b9_HYDrAxjxYYs',
+    ]);
+    Http::fake([$officialUrl => Http::response($payload)]);
+
+    // Still strictly enforces Ed25519 verification against the current official key.
+    expect(fn (): array => app(RegistryClient::class)->all(forceRefresh: true))
+        ->toThrow(ModuleRegistryException::class, 'could not be verified');
+});

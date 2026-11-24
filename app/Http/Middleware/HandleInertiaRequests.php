@@ -12,6 +12,7 @@ use App\Features\Toggles\StudentSignaturePad;
 use App\Models\GeneralSetting;
 use App\Models\School;
 use App\Models\User;
+use App\Modules\ModuleAccessService;
 use App\Services\Ai\AiAgentAccess;
 use App\Services\AnalyticsSettingsService;
 use App\Services\FacultyClassShareService;
@@ -71,6 +72,9 @@ final class HandleInertiaRequests extends Middleware
         $featureValues = $onboardingService->getAllFeatureValues($user);
         $studentInformationUpdatesEnabled = $user && Feature::for($user)->active(StudentInformationUpdates::class);
         $libraryEnabled = (bool) $generalSettingsService->getGlobalSetting('library_module_enabled', false);
+        $onlineResourcesModuleEnabled = app(ModuleAccessService::class)->isAvailable('OnlineResources');
+        $sidebarFeatureFlags = $onboardingService->getSidebarFeatureFlags($featureValues);
+        $sidebarFeatureFlags['online-resources'] = ($sidebarFeatureFlags['online-resources'] ?? false) && $onlineResourcesModuleEnabled;
         $aiAgentFlags = app(AiAgentAccess::class)->flagsFor($user);
 
         return array_merge(
@@ -116,7 +120,7 @@ final class HandleInertiaRequests extends Middleware
                 'featureFlags' => [
                     'experimentalKeys' => config('onboarding.experimental_feature_keys', []),
                     'enabledRoutes' => array_merge(
-                        $onboardingService->getSidebarFeatureFlags($featureValues),
+                        $sidebarFeatureFlags,
                         ['library' => $libraryEnabled]
                     ),
                     'library' => $libraryEnabled,

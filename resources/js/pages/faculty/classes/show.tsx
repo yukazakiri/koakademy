@@ -7,6 +7,7 @@ import { StudentProfileSheet } from "@/components/class/student-profile-sheet";
 import { AttendanceTab } from "@/components/class/tabs/attendance-tab";
 import { ClassworkTab } from "@/components/class/tabs/classwork-tab";
 import { PeopleTab } from "@/components/class/tabs/people-tab";
+import { ClassResourcesTab, type CopyableClassOptionPayload, type OnlineResourceCategoryPayload } from "@/components/class/tabs/resources-tab";
 import { StreamTab } from "@/components/class/tabs/stream-tab";
 import FacultyLayout from "@/components/faculty/faculty-layout";
 import { GradeSheet } from "@/components/grade-sheet";
@@ -17,7 +18,7 @@ import { AttendanceOverview, ClassPostEntry, ClassSettings, ScheduleEntry, Stude
 import { User } from "@/types/user";
 import { Head, Link } from "@inertiajs/react";
 import axios from "axios";
-import { ArrowLeft, BookOpenCheck, GraduationCap, Radio, UserCheck, UsersRound } from "lucide-react";
+import { ArrowLeft, BookOpenCheck, GraduationCap, Link2, Radio, UserCheck, UsersRound } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -51,6 +52,9 @@ interface ClassDetailProps {
     auto_average: boolean;
     grading_policy: GradingConfigPayload;
     rooms?: { id: number; name: string }[];
+    online_resources_module_enabled?: boolean;
+    online_resources?: OnlineResourceCategoryPayload[];
+    copyable_classes?: CopyableClassOptionPayload[];
 }
 
 export default function ClassDetail({
@@ -65,11 +69,17 @@ export default function ClassDetail({
     auto_average,
     grading_policy,
     rooms = [],
+    online_resources_module_enabled = true,
+    online_resources = [],
+    copyable_classes = [],
 }: ClassDetailProps) {
     const tabs = useMemo<ClassroomTab[]>(
         () => [
             { value: "stream", label: "Stream", icon: Radio },
             { value: "classwork", label: "Classwork", icon: BookOpenCheck },
+            ...(online_resources_module_enabled
+                ? [{ value: "resources" as const, label: "Resources", icon: Link2, description: "Curated class links and QR codes" }]
+                : []),
             { value: "attendance", label: "Attendance", icon: UserCheck, description: "Manage sessions and student records" },
             { value: "people", label: "People", icon: UsersRound, description: "Manage the class roster" },
             {
@@ -80,7 +90,7 @@ export default function ClassDetail({
                 disabled: classData.classification === "shs",
             },
         ],
-        [classData.classification],
+        [classData.classification, online_resources_module_enabled],
     );
     const [activeTab, setActiveTab] = useState("stream");
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -175,6 +185,15 @@ export default function ClassDetail({
                             currentFacultyId={current_faculty.id}
                             classPosts={posts}
                             students={students}
+                        />
+                    </TabsContent>
+                    <TabsContent value="resources" className="mt-4">
+                        <ClassResourcesTab
+                            classId={classData.id}
+                            categories={online_resources}
+                            copyableClasses={copyable_classes}
+                            enableOnlineResources={classData.settings.enable_online_resources ?? true}
+                            onOpenSettings={() => setIsSettingsOpen(true)}
                         />
                     </TabsContent>
                     <TabsContent value="attendance" className="mt-4">

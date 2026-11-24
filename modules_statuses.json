@@ -6,5 +6,6 @@
     "Announcement": true,
     "Inventory": true,
     "Forms": true,
+    "OnlineResources": true,
     "EnterpriseReporting": true
 }

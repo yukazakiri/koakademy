@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "b9e4d31217278735be89f17b80ac9cf0",
+    "content-hash": "28aeda13cd19ce989ff77212bfa97d17",
     "packages": [
         {
             "name": "achyutn/filament-log-viewer",
@@ -6082,6 +6082,64 @@
                 "source": "https://github.com/yukazakiri/koakademy-module-notification-center"
             },
             "time": "2026-10-27T06:13:12+00:00"
+        },
+        {
+            "name": "koakademy/online-resources",
+            "version": "v1.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/yukazakiri/koakademy-module-online-resources.git",
+                "reference": "c37748d274bbaed8616d662b489b630f0fc52a32"
+            },
+            "require": {
+                "endroid/qr-code": "^6.0",
+                "inertiajs/inertia-laravel": "^3.0",
+                "laravel/framework": "^13.0",
+                "nwidart/laravel-modules": "^13.0",
+                "php": ">=8.5 <8.6",
+                "spatie/laravel-pdf": "^2.2"
+            },
+            "require-dev": {
+                "laravel/pint": "^1.24",
+                "orchestra/testbench": "^11.0",
+                "pestphp/pest": "^5.0",
+                "pestphp/pest-plugin-laravel": "^5.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Modules\\OnlineResources\\Providers\\OnlineResourcesServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Modules\\OnlineResources\\": "app/",
+                    "Modules\\OnlineResources\\Database\\Factories\\": "database/factories/",
+                    "Modules\\OnlineResources\\Database\\Seeders\\": "database/seeders/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "Modules\\OnlineResources\\Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "pest --compact"
+                ]
+            },
+            "license": [
+                "AGPL-3.0-or-later"
+            ],
+            "authors": [
+                {
+                    "name": "KoAkademy contributors"
+                }
+            ],
+            "description": "Categorized online resources and permanent QR code quick-access hub for KoAkademy schools, classes, and student portals.",
+            "time": "2026-11-24T06:20:35+00:00"
         },
         {
             "name": "koakademy/student-medical-records",

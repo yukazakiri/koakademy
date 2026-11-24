@@ -45,6 +45,7 @@ use App\Features\Toggles\StudentDeveloperMode;
 use App\Features\Toggles\StudentGradesPreview;
 use App\Features\Toggles\StudentHelp;
 use App\Features\Toggles\StudentInformationUpdates;
+use App\Features\Toggles\StudentOnlineResources;
 use App\Features\Toggles\StudentSchedule;
 use App\Features\Toggles\StudentSettings;
 use App\Features\Toggles\StudentSignaturePad;
@@ -92,6 +93,7 @@ final class FeatureToggleRegistry
         'student-tuition' => StudentTuition::class,
         'student-schedule' => StudentSchedule::class,
         'student-announcements' => StudentAnnouncements::class,
+        'student-online-resources' => StudentOnlineResources::class,
         'student-settings' => StudentSettings::class,
         'student-information-updates' => StudentInformationUpdates::class,
         'student-help' => StudentHelp::class,

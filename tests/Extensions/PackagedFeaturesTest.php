@@ -25,6 +25,7 @@ it('runs each extracted feature from exactly one Composer-owned package', functi
     ['Inventory', 'koakademy/inventory'],
     ['LibrarySystem', 'koakademy/library-system'],
     ['NotificationCenter', 'koakademy/notification-center'],
+    ['OnlineResources', 'koakademy/online-resources'],
     ['StudentMedicalRecords', 'koakademy/student-medical-records'],
 ]);
 

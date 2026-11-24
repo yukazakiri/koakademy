@@ -238,6 +238,52 @@ final class FacultyClassController extends Controller
                 'name' => $room->name,
             ]));
 
+        $onlineResourcesModuleEnabled = class_exists(\Modules\OnlineResources\Services\OnlineResourceService::class)
+            && app(\App\Modules\ModuleAccessService::class)->isAvailable('OnlineResources');
+
+        $onlineResources = [];
+        $copyableClasses = [];
+
+        if ($onlineResourcesModuleEnabled) {
+            $onlineResourceService = app(\Modules\OnlineResources\Services\OnlineResourceService::class);
+            $onlineResources = $onlineResourceService->serializedForOwner(
+                owner: $class,
+                onlyActive: false,
+                includeAdminMeta: true,
+            );
+
+            $copyableClassIds = \Modules\OnlineResources\Models\OnlineResourceCategory::withoutGlobalScopes()
+                ->where('school_id', $class->school_id)
+                ->where('owner_type', 'class')
+                ->where('owner_id', '!=', $class->id)
+                ->distinct()
+                ->pluck('owner_id');
+
+            $copyableClasses = $copyableClassIds->isNotEmpty()
+                ? Classes::withoutGlobalScopes()
+                    ->with(['subject', 'SubjectByCodeFallback', 'ShsSubject'])
+                    ->where('school_id', $class->school_id)
+                    ->where('faculty_id', $faculty->id)
+                    ->whereIn('id', $copyableClassIds)
+                    ->orderByDesc('id')
+                    ->get()
+                    ->map(function (Classes $other): array {
+                        $subj = $other->isShs()
+                            ? $other->ShsSubject
+                            : ($other->subject ?: $other->SubjectByCodeFallback);
+                        $code = $subj?->code ?? $other->subject_code ?? 'Class';
+
+                        return [
+                            'id' => $other->id,
+                            'label' => mb_trim($code.($other->section ? " • {$other->section}" : '')),
+                            'term' => mb_trim(($other->school_year ?? '').($other->semester ? " · Sem {$other->semester}" : '')),
+                        ];
+                    })
+                    ->values()
+                    ->all()
+                : [];
+        }
+
         return Inertia::render('faculty/classes/show', [
             'user' => [
                 'name' => $user->name,
@@ -261,6 +307,9 @@ final class FacultyClassController extends Controller
             'grading_policy' => $gradingSystem->getConfig(),
             'attendance' => $attendance,
             'rooms' => $rooms,
+            'online_resources_module_enabled' => $onlineResourcesModuleEnabled,
+            'online_resources' => $onlineResources,
+            'copyable_classes' => $copyableClasses,
             'flash' => session('flash'),
         ]);
     }
@@ -955,6 +1004,7 @@ final class FacultyClassController extends Controller
             'enable_announcements' => ['required', 'boolean'],
             'enable_grade_visibility' => ['required', 'boolean'],
             'enable_attendance_tracking' => ['required', 'boolean'],
+            'enable_online_resources' => ['sometimes', 'boolean'],
             'allow_late_submissions' => ['required', 'boolean'],
             'enable_discussion_board' => ['required', 'boolean'],
             'notify_students_on_schedule_changes' => ['required', 'boolean'],

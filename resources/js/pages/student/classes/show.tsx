@@ -5,6 +5,8 @@ import { ClassworkTab } from "@/components/class/tabs/classwork-tab";
 import { StudentAttendanceTab } from "@/components/class/tabs/student-attendance-tab";
 import { StudentGradesTab } from "@/components/class/tabs/student-grades-tab";
 import { StudentPeopleTab } from "@/components/class/tabs/student-people-tab";
+import type { OnlineResourceCategoryPayload } from "@/components/class/tabs/resources-tab";
+import { StudentResourcesTab } from "@/components/class/tabs/student-resources-tab";
 import { StudentStreamTab } from "@/components/class/tabs/student-stream-tab";
 import StudentLayout from "@/components/student/student-layout";
 import { Button } from "@/components/ui/button";
@@ -12,7 +14,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { ClassPostEntry, ClassSettings, ScheduleEntry, TeacherEntry } from "@/types/class-detail-types";
 import { User } from "@/types/user";
 import { Head, Link } from "@inertiajs/react";
-import { ArrowLeft, BookOpenCheck, GraduationCap, Radio, UserCheck, UsersRound } from "lucide-react";
+import { ArrowLeft, BookOpenCheck, GraduationCap, Link2, Radio, UserCheck, UsersRound } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 interface StudentClassShowProps {
@@ -43,6 +45,8 @@ interface StudentClassShowProps {
         history: Array<{ id: number; date: string; status: string; remarks: string; topic: string }>;
     };
     classmates: Array<{ id: number; name: string; avatar: string }>;
+    online_resources_module_enabled?: boolean;
+    online_resources?: OnlineResourceCategoryPayload[];
 }
 
 export default function StudentClassShow({
@@ -54,12 +58,19 @@ export default function StudentClassShow({
     my_grades,
     my_attendance,
     classmates = [],
+    online_resources_module_enabled = true,
+    online_resources = [],
 }: StudentClassShowProps) {
+    const onlineResourcesEnabled = online_resources_module_enabled && (classData.settings.enable_online_resources ?? true);
+
     const tabs = useMemo<ClassroomTab[]>(() => {
         const available: ClassroomTab[] = [
             { value: "stream", label: "Stream", icon: Radio },
             { value: "classwork", label: "Classwork", icon: BookOpenCheck },
         ];
+        if (onlineResourcesEnabled) {
+            available.push({ value: "resources", label: "Resources", icon: Link2, description: "Class reference links and guides" });
+        }
         if (classData.settings.enable_attendance_tracking) {
             available.push({ value: "attendance", label: "My attendance", icon: UserCheck, description: "Review attendance history and totals" });
         }
@@ -68,7 +79,7 @@ export default function StudentClassShow({
             available.push({ value: "grades", label: "My grades", icon: GraduationCap, description: "Review published term grades" });
         }
         return available;
-    }, [classData.settings.enable_attendance_tracking, classData.settings.enable_grade_visibility]);
+    }, [onlineResourcesEnabled, classData.settings.enable_attendance_tracking, classData.settings.enable_grade_visibility]);
     const [activeTab, setActiveTab] = useState("stream");
 
     useEffect(() => {
@@ -117,6 +128,11 @@ export default function StudentClassShow({
                     <TabsContent value="classwork" className="mt-4">
                         <ClassworkTab classId={classData.id} classPosts={posts} isStudentView />
                     </TabsContent>
+                    {onlineResourcesEnabled && (
+                        <TabsContent value="resources" className="mt-4">
+                            <StudentResourcesTab categories={online_resources} />
+                        </TabsContent>
+                    )}
                     {classData.settings.enable_attendance_tracking && (
                         <TabsContent value="attendance" className="mt-4">
                             <StudentAttendanceTab stats={my_attendance.stats} history={my_attendance.history} />

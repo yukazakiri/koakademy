@@ -11,14 +11,14 @@ it('parses every shipped module manifest and status entry', function (): void {
     $manifests = $repository->all();
 
     expect($manifests)
-        ->toHaveCount(9)
+        ->toHaveCount(10)
         ->each->toBeInstanceOf(ModuleManifest::class);
 
     foreach ($manifests as $manifest) {
         expect($manifest->composerPackage)->toStartWith('koakademy/');
     }
 
-    expect($repository->enabled())->toHaveCount(8);
+    expect($repository->enabled())->toHaveCount(9);
 });
 
 it('round trips the public module contract', function (): void {

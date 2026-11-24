@@ -190,6 +190,18 @@ final class StudentClassController extends Controller
             return $post;
         });
 
+        $onlineResourcesModuleEnabled = class_exists(\Modules\OnlineResources\Services\OnlineResourceService::class)
+            && app(\App\Modules\ModuleAccessService::class)->isAvailable('OnlineResources');
+
+        $onlineResources = $onlineResourcesModuleEnabled
+            ? app(\Modules\OnlineResources\Services\OnlineResourceService::class)->serializedForOwner(
+                owner: $class,
+                onlyActive: true,
+                includeAdminMeta: false,
+                viewer: $user,
+            )
+            : [];
+
         return Inertia::render('student/classes/show', [
             'user' => [
                 'name' => $user->name,
@@ -207,6 +219,8 @@ final class StudentClassController extends Controller
                 'history' => $attendanceHistory,
             ],
             'classmates' => $classmates,
+            'online_resources_module_enabled' => $onlineResourcesModuleEnabled,
+            'online_resources' => $onlineResources,
             'flash' => session('flash'),
         ]);
     }

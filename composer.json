@@ -48,6 +48,7 @@
         "koakademy/inventory": "^1.1",
         "koakademy/library-system": "^1.4",
         "koakademy/notification-center": "^1.1",
+        "koakademy/online-resources": "^1.0",
         "koakademy/student-medical-records": "^1.1",
         "laraowl/client": "^1.0",
         "laravel/ai": "^1.0",
@@ -178,6 +179,10 @@
         "module-notification-center": {
             "type": "git",
             "url": "https://github.com/yukazakiri/koakademy-module-notification-center.git"
+        },
+        "module-online-resources": {
+            "type": "git",
+            "url": "https://github.com/yukazakiri/koakademy-module-online-resources.git"
         },
         "module-student-medical-records": {
             "type": "git",

@@ -614,6 +614,27 @@ check_storage_permissions() {
     "
 }
 
+fix_passport_key_permissions() {
+    web_user="${WEB_USER:-${USER:-www-data}}"
+    web_group="${WEB_GROUP:-${USER:-www-data}}"
+
+    if [ -f "storage/oauth-private.key" ]; then
+        if [ "$(id -u)" = "0" ]; then
+            chown "${web_user}:${web_group}" storage/oauth-private.key 2>/dev/null || true
+        fi
+
+        chmod 600 storage/oauth-private.key 2>/dev/null || true
+    fi
+
+    if [ -f "storage/oauth-public.key" ]; then
+        if [ "$(id -u)" = "0" ]; then
+            chown "${web_user}:${web_group}" storage/oauth-public.key 2>/dev/null || true
+        fi
+
+        chmod 660 storage/oauth-public.key 2>/dev/null || true
+    fi
+}
+
 fix_storage_permissions() {
     echo "Fixing storage and cache permissions..."
 
@@ -636,6 +657,10 @@ fix_storage_permissions() {
     fi
 
     chmod -R 775 storage bootstrap/cache 2>/dev/null || true
+
+    # Restore strict permissions on Passport OAuth signing keys after the
+    # recursive chmod above; league/oauth2-server rejects keys with 0775 mode.
+    fix_passport_key_permissions
 
     echo "Storage and cache permissions fixed."
 }
@@ -693,14 +718,18 @@ ensure_storage_link() {
 }
 
 ensure_passport_keys() {
-    if [ -n "${PASSPORT_PRIVATE_KEY:-}" ] || [ -f "storage/oauth-private.key" ]; then
+    if [ -n "${PASSPORT_PRIVATE_KEY:-}" ]; then
         return 0
     fi
 
-    echo "Initializing persistent Passport OAuth signing keys..."
-    php artisan passport:keys --no-interaction || {
-        echo "WARN: php artisan passport:keys failed; continuing startup."
-    }
+    if [ ! -f "storage/oauth-private.key" ]; then
+        echo "Initializing persistent Passport OAuth signing keys..."
+        php artisan passport:keys --no-interaction || {
+            echo "WARN: php artisan passport:keys failed; continuing startup."
+        }
+    fi
+
+    fix_passport_key_permissions
 }
 
 ensure_vendor_view_dirs() {

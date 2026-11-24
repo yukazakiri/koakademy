@@ -13,6 +13,12 @@ use JsonException;
 
 final class RegistryClient
 {
+    private const string OFFICIAL_REGISTRY_URL = 'https://yukazakiri.github.io/koakademy-modules/registry.json';
+
+    private const string RETIRED_OFFICIAL_PUBLIC_KEY = 'gnGm74yPDu7umv6sF0lzepJnEVEx7b9_HYDrAxjxYYs';
+
+    private const string CURRENT_OFFICIAL_PUBLIC_KEY = 'KCJJ_FC2iE_wABYvTlN9mAe-ShCj4bIN4CCcTqIKM8U';
+
     /**
      * @return list<RegistryEntry>
      */
@@ -53,7 +59,7 @@ final class RegistryClient
                 throw new ModuleRegistryException('The module registry response must be a JSON object.');
             }
 
-            $this->verifySignature($payload);
+            $this->verifySignature($payload, $url);
 
             if (($payload['schema'] ?? null) !== 1 || ! is_array($payload['modules'] ?? null) || ! array_is_list($payload['modules'])) {
                 throw new ModuleRegistryException('The module registry response does not match schema version 1.');
@@ -86,7 +92,7 @@ final class RegistryClient
     /**
      * @param  array<array-key, mixed>  $payload
      */
-    private function verifySignature(array $payload): void
+    private function verifySignature(array $payload, string $registryUrl): void
     {
         if (! (bool) config('modules-marketplace.require_signature', true)) {
             return;
@@ -109,7 +115,13 @@ final class RegistryClient
             throw new ModuleRegistryException('The module registry public key is not configured.');
         }
 
-        $signatureBytes = $this->decodeBase64Url($signature['value']);
+        $publicKey = mb_trim($publicKey);
+
+        if ($registryUrl === self::OFFICIAL_REGISTRY_URL && $publicKey === self::RETIRED_OFFICIAL_PUBLIC_KEY) {
+            $publicKey = self::CURRENT_OFFICIAL_PUBLIC_KEY;
+        }
+
+        $signatureBytes = $this->decodeBase64Url(mb_trim($signature['value']));
         $publicKeyBytes = $this->decodeBase64Url($publicKey);
 
         if (
@@ -138,7 +150,7 @@ final class RegistryClient
 
     private function decodeBase64Url(string $value): string|false
     {
-        $normalized = strtr($value, '-_', '+/');
+        $normalized = strtr(mb_trim($value), '-_', '+/');
         $remainder = mb_strlen($normalized, '8bit') % 4;
 
         if ($remainder !== 0) {

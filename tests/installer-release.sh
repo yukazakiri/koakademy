@@ -158,9 +158,13 @@ if [[ "$channel" == stable ]]; then
         printf 'The active Swarm installation must not reinitialize the manager.\n' >&2
         exit 1
     fi
+    sed -i 's/^MODULE_REGISTRY_PUBLIC_KEY=.*/MODULE_REGISTRY_PUBLIC_KEY=gnGm74yPDu7umv6sF0lzepJnEVEx7b9_HYDrAxjxYYs/' \
+        "$state_directory/runtime/runtime.env"
     export KOAKADEMY_INSTALLER_TEST_IMAGE="ghcr.io/yukazakiri/koakademy:sha-1111111111111111111111111111111111111111"
     bash "$state_directory/runtime/bin/koakademy" update --stable
     unset KOAKADEMY_INSTALLER_TEST_IMAGE
+    grep -Fq 'MODULE_REGISTRY_PUBLIC_KEY=KCJJ_FC2iE_wABYvTlN9mAe-ShCj4bIN4CCcTqIKM8U' \
+        "$state_directory/runtime/runtime.env"
 
     # A resumed install must adopt the image the current operator resolves
     # instead of redeploying the stale recorded reference.

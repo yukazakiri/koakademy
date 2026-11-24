@@ -1115,6 +1115,10 @@ perform_update() {
     if [[ -z "${KOAKADEMY_NETWORK:-}" ]]; then
         set_runtime KOAKADEMY_NETWORK "${STACK_NAME}_private"
     fi
+    if [[ "${MODULE_REGISTRY_PUBLIC_KEY:-}" == "gnGm74yPDu7umv6sF0lzepJnEVEx7b9_HYDrAxjxYYs" ]] && \
+       [[ -z "${MODULE_REGISTRY_URL:-}" || "${MODULE_REGISTRY_URL}" == "https://yukazakiri.github.io/koakademy-modules/registry.json" ]]; then
+        set_runtime MODULE_REGISTRY_PUBLIC_KEY "KCJJ_FC2iE_wABYvTlN9mAe-ShCj4bIN4CCcTqIKM8U"
+    fi
     ensure_overlay_network
     if [[ "$channel_explicit" != true ]]; then
         channel="${RELEASE_CHANNEL:-stable}"

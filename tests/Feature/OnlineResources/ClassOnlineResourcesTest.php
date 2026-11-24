@@ -14,12 +14,14 @@ use App\Models\User;
 use App\Services\TenantContext;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Laravel\Pennant\Feature;
 use Modules\OnlineResources\Contracts\OnlineResourceScopeHandler;
 use Modules\OnlineResources\Enums\OnlineResourceVisibility;
 use Modules\OnlineResources\Models\OnlineResourceCategory;
 use Modules\OnlineResources\Models\OnlineResourceLink;
+use Modules\OnlineResources\Services\OnlineResourceMetadataService;
 use Modules\OnlineResources\Services\OnlineResourceScopeRegistry;
 
 use function Pest\Laravel\actingAs;
@@ -439,4 +441,38 @@ it('supports registering new polymorphic scope handlers dynamically', function (
     expect($registry->keys())->toContain('department')
         ->and($registry->forKey('department'))->toBe($customHandler)
         ->and($registry->forModel(new School))->toBe($customHandler);
+});
+
+it('fetches link metadata for class instructors and blocks other faculty from that class endpoint', function (): void {
+    $scenario = createOnlineResourceClassScenario();
+
+    app()->instance(
+        OnlineResourceMetadataService::class,
+        new OnlineResourceMetadataService(static fn (): array => ['93.184.216.34']),
+    );
+
+    Http::fake([
+        'https://cs.example.edu/week-1-slides' => Http::response(
+            '<html><head><title>Week 1: Algorithms Overview</title></head></html>',
+            200,
+            ['Content-Type' => 'text/html'],
+        ),
+    ]);
+
+    actingAs($scenario['facultyUser'])
+        ->postJson(route('faculty.classes.resources.links.metadata', ['class' => $scenario['class']->id]), [
+            'url' => 'https://cs.example.edu/week-1-slides',
+        ])
+        ->assertSuccessful()
+        ->assertExactJson([
+            'title' => 'Week 1: Algorithms Overview',
+            'description' => null,
+            'source' => 'page',
+        ]);
+
+    actingAs($scenario['otherFacultyUser'])
+        ->postJson(route('faculty.classes.resources.links.metadata', ['class' => $scenario['class']->id]), [
+            'url' => 'https://cs.example.edu/week-1-slides',
+        ])
+        ->assertForbidden();
 });

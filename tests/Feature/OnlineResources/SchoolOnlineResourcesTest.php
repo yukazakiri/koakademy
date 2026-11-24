@@ -7,10 +7,12 @@ use App\Models\School;
 use App\Models\User;
 use App\Services\ModuleAdminNavigationService;
 use App\Services\TenantContext;
+use Illuminate\Support\Facades\Http;
 use Modules\OnlineResources\Enums\OnlineResourceAudience;
 use Modules\OnlineResources\Enums\OnlineResourceVisibility;
 use Modules\OnlineResources\Models\OnlineResourceCategory;
 use Modules\OnlineResources\Models\OnlineResourceLink;
+use Modules\OnlineResources\Services\OnlineResourceMetadataService;
 use Spatie\LaravelPdf\Facades\Pdf;
 
 use function Pest\Laravel\actingAs;
@@ -256,4 +258,37 @@ it('discovers the standalone OnlineResources module in admin navigation', functi
     expect($entry)->not->toBeNull()
         ->and($entry['inertiaPage'] ?? null)->toBe('OnlineResources/Admin/Index')
         ->and($entry['link'] ?? null)->toBe('/administrators/online-resources');
+});
+
+it('fetches link metadata for administrators and rejects unsafe URLs', function (): void {
+    app()->instance(
+        OnlineResourceMetadataService::class,
+        new OnlineResourceMetadataService(static fn (): array => ['93.184.216.34']),
+    );
+
+    Http::fake([
+        'https://scholar.example.edu/research-portal' => Http::response(
+            '<html><head><meta property="og:title" content="Campus Research Portal"></head></html>',
+            200,
+            ['Content-Type' => 'text/html; charset=UTF-8'],
+        ),
+    ]);
+
+    actingAs($this->admin)
+        ->postJson(route('administrators.online-resources.links.metadata'), [
+            'url' => 'https://scholar.example.edu/research-portal',
+        ])
+        ->assertSuccessful()
+        ->assertExactJson([
+            'title' => 'Campus Research Portal',
+            'description' => null,
+            'source' => 'page',
+        ]);
+
+    actingAs($this->admin)
+        ->postJson(route('administrators.online-resources.links.metadata'), [
+            'url' => 'javascript:alert(1)',
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['url']);
 });

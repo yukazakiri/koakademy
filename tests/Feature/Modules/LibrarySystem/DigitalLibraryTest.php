@@ -40,8 +40,95 @@ dataset('digital library authenticated roles', collect(UserRole::cases())
     ->mapWithKeys(fn (UserRole $role): array => [$role->value => [$role]])
     ->all());
 
-it('redirects guests from the digital library', function (): void {
-    $this->get(route('library.index'))->assertRedirect('/login');
+it('allows guests to browse the catalog and read published eBooks online without an account', function (): void {
+    Storage::fake('library-test');
+    $book = createDigitalLibraryBook(['title' => 'Open Access Handbook']);
+    $edition = createPublishedDigitalEdition($book, downloadsAllowed: true);
+    $pdfContent = "%PDF-1.4\n%KoAkademy open reader fixture content for byte range streaming";
+    Storage::disk('library-test')->put($edition->path, $pdfContent);
+
+    $this->get(route('library.index'))
+        ->assertSuccessful()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('library/index', false)
+            ->where('books.total', 1)
+            ->where('access.is_authenticated', false)
+            ->where('books.data.0.title', 'Open Access Handbook')
+            ->where('books.data.0.available_online', true)
+            ->where('books.data.0.downloads_allowed', true)
+            ->missing('books.data.0.path')
+            ->missing('books.data.0.disk')
+            ->missing('books.data.0.sha256'));
+
+    $this->get(route('library.books.show', $book))
+        ->assertSuccessful()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('library/show', false)
+            ->where('access.is_authenticated', false)
+            ->where('access.can_download', false)
+            ->where('access.download_requires_auth', true));
+
+    $this->get(route('library.books.read', $book))
+        ->assertSuccessful()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('library/read', false)
+            ->where('reader.is_guest', true)
+            ->where('reader.sync_enabled', false)
+            ->where('reader.can_download', false)
+            ->where('reader.download_requires_auth', true)
+            ->where('reader.download_url', null));
+
+    $contentResponse = $this->get(route('library.books.content', $book))
+        ->assertSuccessful()
+        ->assertHeader('content-type', 'application/pdf')
+        ->assertHeader('x-content-type-options', 'nosniff')
+        ->assertHeader('x-robots-tag', 'noindex, nofollow');
+
+    expect((string) $contentResponse->headers->get('content-disposition'))->toStartWith('inline;');
+
+    $rangeResponse = $this->withHeaders(['Range' => 'bytes=0-15'])
+        ->get(route('library.books.content', $book));
+
+    $rangeResponse->assertStatus(206);
+    expect((string) $rangeResponse->headers->get('content-range'))->toStartWith('bytes 0-15/');
+});
+
+it('requires an authenticated account for PDF downloads, authenticate bounce, favorites, progress, and bookmarks', function (): void {
+    Storage::fake('library-test');
+    $book = createDigitalLibraryBook();
+    $edition = createPublishedDigitalEdition($book, downloadsAllowed: true);
+    Storage::disk('library-test')->put($edition->path, "%PDF-1.4\nProtected download fixture");
+
+    $this->get(route('library.books.download', $book))->assertRedirect('/login');
+    $this->get(route('library.books.authenticate', $book))->assertRedirect('/login');
+    $this->post(route('library.books.favorite', $book))->assertRedirect('/login');
+    $this->delete(route('library.books.unfavorite', $book))->assertRedirect('/login');
+
+    $this->putJson(route('library.books.progress', $book), [
+        'last_page' => 2,
+        'total_pages' => 10,
+    ])->assertUnauthorized();
+
+    $this->postJson(route('library.books.bookmarks.store', $book), [
+        'page' => 2,
+        'label' => 'Page 2',
+    ])->assertUnauthorized();
+});
+
+it('bounces authenticated users from the authenticate endpoint back to the book or reader ready to download', function (): void {
+    Storage::fake('library-test');
+    $user = User::factory()->create(['role' => UserRole::Student]);
+    $book = createDigitalLibraryBook();
+    $edition = createPublishedDigitalEdition($book, downloadsAllowed: true);
+    Storage::disk('library-test')->put($edition->path, "%PDF-1.4\nBounce fixture");
+
+    actingAs($user)
+        ->get(route('library.books.authenticate', $book))
+        ->assertRedirect(route('library.books.show', ['book' => $book, 'action' => 'download']));
+
+    actingAs($user)
+        ->get(route('library.books.authenticate', ['book' => $book, 'from' => 'read']))
+        ->assertRedirect(route('library.books.read', ['book' => $book, 'action' => 'download']));
 });
 
 it('allows every authenticated role to browse the digital library', function (UserRole $role): void {
@@ -55,11 +142,15 @@ it('allows every authenticated role to browse the digital library', function (Us
             ->where('books.total', 0));
 })->with('digital library authenticated roles');
 
-it('returns forbidden and hides access when the library module is disabled', function (): void {
+it('returns forbidden and hides access when the library module is disabled for both guests and authenticated users', function (): void {
     GeneralSetting::query()->firstOrFail()->update(['library_module_enabled' => false]);
     $user = User::factory()->create(['role' => UserRole::Student]);
     $book = createDigitalLibraryBook();
     createPublishedDigitalEdition($book);
+
+    $this->get(route('library.index'))->assertForbidden();
+    $this->get(route('library.books.read', $book))->assertForbidden();
+    $this->get(route('library.books.content', $book))->assertForbidden();
 
     actingAs($user)
         ->get(route('library.index'))
@@ -256,6 +347,9 @@ it('returns not found for draft expired and missing digital editions', function 
         $edition->update(['rights_expires_at' => now()->subMinute()]);
         Storage::disk('library-test')->put($edition->path, "%PDF-1.4\nExpired");
     }
+
+    $this->get(route('library.books.read', $book))->assertNotFound();
+    $this->get(route('library.books.content', $book))->assertNotFound();
 
     actingAs($student)
         ->get(route('library.books.content', $book))

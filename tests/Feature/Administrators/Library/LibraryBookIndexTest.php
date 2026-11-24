@@ -214,3 +214,100 @@ it('forbids non-administrator roles from the books index', function (UserRole $r
     UserRole::Professor,
     UserRole::User,
 ]);
+
+it('filters books by hosted digital edition status and reports eBook stats', function (): void {
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+
+    $publishedDownloadable = Book::factory()->create(['title' => 'Downloadable eBook']);
+    \Modules\LibrarySystem\Models\DigitalEdition::query()->create([
+        'book_id' => $publishedDownloadable->id,
+        'disk' => 'library',
+        'path' => 'digital-editions/downloadable.pdf',
+        'original_name' => 'downloadable.pdf',
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 2048,
+        'sha256' => hash('sha256', 'downloadable'),
+        'status' => \Modules\LibrarySystem\Enums\DigitalEditionStatus::Published,
+        'downloads_allowed' => true,
+        'rights_basis' => \Modules\LibrarySystem\Enums\DigitalRightsBasis::OpenLicense,
+        'rights_confirmed_at' => now(),
+        'published_at' => now(),
+    ]);
+
+    $publishedReadOnly = Book::factory()->create(['title' => 'Read-Only eBook']);
+    \Modules\LibrarySystem\Models\DigitalEdition::query()->create([
+        'book_id' => $publishedReadOnly->id,
+        'disk' => 'library',
+        'path' => 'digital-editions/readonly.pdf',
+        'original_name' => 'readonly.pdf',
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 1024,
+        'sha256' => hash('sha256', 'readonly'),
+        'status' => \Modules\LibrarySystem\Enums\DigitalEditionStatus::Published,
+        'downloads_allowed' => false,
+        'rights_basis' => \Modules\LibrarySystem\Enums\DigitalRightsBasis::KoakademyOwned,
+        'rights_confirmed_at' => now(),
+        'published_at' => now(),
+    ]);
+
+    $draftBook = Book::factory()->create(['title' => 'Draft eBook']);
+    \Modules\LibrarySystem\Models\DigitalEdition::query()->create([
+        'book_id' => $draftBook->id,
+        'disk' => 'library',
+        'path' => 'digital-editions/draft.pdf',
+        'original_name' => 'draft.pdf',
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 512,
+        'sha256' => hash('sha256', 'draft'),
+        'status' => \Modules\LibrarySystem\Enums\DigitalEditionStatus::Draft,
+        'downloads_allowed' => false,
+    ]);
+
+    Book::factory()->create(['title' => 'Print Only Book']);
+
+    actingAs($admin)
+        ->get(route('administrators.library.books.index', ['digital' => 'published']))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->has('books.data', 2)
+            ->where('filters.digital', 'published')
+            ->where('stats.published_ebooks', 2)
+            ->where('stats.draft_ebooks', 1)
+        );
+
+    actingAs($admin)
+        ->get(route('administrators.library.books.index', ['digital' => 'downloadable']))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->has('books.data', 1)
+            ->where('books.data.0.title', 'Downloadable eBook')
+            ->where('books.data.0.digital_edition.downloads_allowed', true)
+            ->missing('books.data.0.digital_edition.path')
+        );
+
+    actingAs($admin)
+        ->get(route('administrators.library.books.index', ['digital' => 'draft']))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->has('books.data', 1)
+            ->where('books.data.0.title', 'Draft eBook')
+        );
+
+    actingAs($admin)
+        ->get(route('administrators.library.books.index', ['digital' => 'none']))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->has('books.data', 1)
+            ->where('books.data.0.title', 'Print Only Book')
+            ->where('books.data.0.digital_edition', null)
+        );
+
+    actingAs($admin)
+        ->get(route('administrators.library.index'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('stats.published_ebooks', 2)
+            ->where('stats.draft_ebooks', 1)
+            ->where('stats.downloadable_ebooks', 1)
+        );
+});

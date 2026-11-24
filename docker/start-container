@@ -627,6 +627,7 @@ fix_storage_permissions() {
         storage/framework/views \
         storage/app/public \
         storage/app/private \
+        storage/app/private/library \
         storage/logs \
         bootstrap/cache
 

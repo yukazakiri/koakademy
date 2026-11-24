@@ -1,6 +1,6 @@
 import { Head, Link, usePage } from "@inertiajs/react";
 import { motion } from "framer-motion";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, BookOpen } from "lucide-react";
 import { useState, type ComponentProps, type ReactNode } from "react";
 
 import { AnnouncementBanner } from "@/components/announcement-banner";
@@ -79,9 +79,13 @@ export function AuthLayout({
     const page = usePage<{
         branding?: Partial<Branding> | null;
         announcements?: ComponentProps<typeof AnnouncementBanner>["announcements"];
+        featureFlags?: {
+            enabledRoutes?: Record<string, boolean>;
+        };
     }>();
 
     const branding = resolveBranding(page.props.branding);
+    const libraryEnabled = Boolean(page.props.featureFlags?.enabledRoutes?.library);
     const appName = branding.appName;
     const organizationName = branding.organizationName;
     const organizationShortName = branding.organizationShortName;
@@ -175,6 +179,15 @@ export function AuthLayout({
                     </div>
 
                     <div className="flex items-center gap-2">
+                        {libraryEnabled && (
+                            <Link
+                                href="/library"
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card/70 px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-accent hover:text-accent-foreground"
+                            >
+                                <BookOpen className="size-3.5" />
+                                <span>Digital Library</span>
+                            </Link>
+                        )}
                         <ThemeToggle />
                     </div>
                 </header>

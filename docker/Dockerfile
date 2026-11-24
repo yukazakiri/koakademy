@@ -227,6 +227,7 @@ RUN groupadd --force -g ${GROUP_ID} ${USER} \
     storage/framework/views \
     storage/framework/cache \
     storage/framework/testing \
+    storage/app/private/library \
     storage/logs \
     bootstrap/cache \
     .config \

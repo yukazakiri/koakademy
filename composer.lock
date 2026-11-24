@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "4ab2acae965527d80f59f8dcc1c8eb1c",
+    "content-hash": "c7cd7efe34025cdd4e77906fd5ca6966",
     "packages": [
         {
             "name": "achyutn/filament-log-viewer",
@@ -5956,16 +5956,16 @@
         },
         {
             "name": "koakademy/library-system",
-            "version": "v1.1.0",
+            "version": "v1.2.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/yukazakiri/koakademy-module-library-system.git",
-                "reference": "677b5ff42d7711b22211dff695bb96d7b39f0d53"
+                "reference": "d16cf1cf7645cb66cc49e497a23915fdb12b481d"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/yukazakiri/koakademy-module-library-system/zipball/677b5ff42d7711b22211dff695bb96d7b39f0d53",
-                "reference": "677b5ff42d7711b22211dff695bb96d7b39f0d53",
+                "url": "https://api.github.com/repos/yukazakiri/koakademy-module-library-system/zipball/d16cf1cf7645cb66cc49e497a23915fdb12b481d",
+                "reference": "d16cf1cf7645cb66cc49e497a23915fdb12b481d",
                 "shasum": ""
             },
             "require": {
@@ -6015,7 +6015,7 @@
                 "issues": "https://github.com/yukazakiri/koakademy-module-library-system/issues",
                 "source": "https://github.com/yukazakiri/koakademy-module-library-system"
             },
-            "time": "2026-10-27T05:13:14+00:00"
+            "time": "2026-11-24T05:02:43+00:00"
         },
         {
             "name": "koakademy/notification-center",
@@ -24934,5 +24934,5 @@
         "php": ">=8.5.12 <8.6"
     },
     "platform-dev": {},
-    "plugin-api-version": "2.9.0"
+    "plugin-api-version": "2.6.0"
 }

@@ -6,8 +6,10 @@ namespace App\Http\Requests\Administrators;
 
 use App\Models\GeneralSetting;
 use App\Models\McpServer;
+use App\Services\Ai\AiEndpointGuard;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 /**
  * Creating or updating an external MCP server.
@@ -47,15 +49,15 @@ final class UpsertMcpServerRequest extends FormRequest
             'auth_type' => ['required', Rule::in([
                 McpServer::AUTH_NONE,
                 McpServer::AUTH_BEARER,
-                McpServer::AUTH_OAUTH,
             ])],
-            // Required when creating a bearer-authenticated server, but optional
-            // on update: the token is write-only, so a blank field on an edit
-            // means "keep the stored one" rather than "clear it".
+            // Required when creating a bearer-authenticated server or switching
+            // a server without a stored token to bearer auth. Optional on edit
+            // when a token is already stored, since the field is write-only.
             'token' => [
                 'nullable', 'string', 'max:4096',
                 Rule::requiredIf(
-                    $this->isCreating() && $this->input('auth_type') === McpServer::AUTH_BEARER,
+                    $this->input('auth_type') === McpServer::AUTH_BEARER
+                    && ($this->isCreating() || $this->existingServer()?->bearerToken() === null),
                 ),
             ],
             'enabled_tools' => ['nullable', 'array', 'max:200'],
@@ -65,6 +67,40 @@ final class UpsertMcpServerRequest extends FormRequest
             'is_active' => ['nullable', 'boolean'],
             'timeout_seconds' => ['nullable', 'integer', 'between:1,120'],
             'cache_ttl_seconds' => ['nullable', 'integer', 'between:0,3600'],
+        ];
+    }
+
+    /**
+     * @return array<int, callable(Validator): void>
+     */
+    public function after(): array
+    {
+        return [
+            function (Validator $validator): void {
+                if ($this->isCreating() && $this->currentSchoolId() === null) {
+                    $validator->errors()->add(
+                        'school_id',
+                        'Select an active school before configuring an external MCP server.',
+                    );
+                }
+
+                if ($this->input('transport') === McpServer::TRANSPORT_LOCAL
+                    && $this->input('auth_type') === McpServer::AUTH_BEARER) {
+                    $validator->errors()->add(
+                        'auth_type',
+                        'Bearer authentication requires the web transport. Configure local MCP servers without HTTP bearer authentication.',
+                    );
+                }
+
+                if ($this->input('transport') === McpServer::TRANSPORT_WEB && is_string($this->input('url')) && filled($this->input('url'))) {
+                    $guard = app(AiEndpointGuard::class);
+                    $reason = $guard->unsafeReason($guard->normalize($this->input('url')), resolveDns: false);
+
+                    if ($reason !== null) {
+                        $validator->errors()->add('url', $guard->rejectionMessage($reason));
+                    }
+                }
+            },
         ];
     }
 

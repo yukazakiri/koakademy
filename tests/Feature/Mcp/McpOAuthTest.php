@@ -632,3 +632,47 @@ it('authenticates through pkce and keeps oauth tokens read only', function (): v
         'refresh_token' => $refreshToken,
     ])->assertBadRequest()->assertJsonPath('error', 'invalid_grant');
 });
+
+it('returns 403 instead of 500 when the oauth consent session request is missing or corrupted', function (?string $sessionAuthRequest): void {
+    $user = User::factory()->create(['role' => UserRole::Instructor]);
+    $clientId = $this->postJson('/oauth/register', [
+        'client_name' => 'Expired session client',
+        'redirect_uris' => ['http://127.0.0.1:52817/callback'],
+    ])->assertCreated()->json('client_id');
+
+    $session = ['authToken' => 'valid-token'];
+    if ($sessionAuthRequest !== null) {
+        $session['authRequest'] = $sessionAuthRequest;
+    }
+
+    $this->actingAs($user)
+        ->withSession($session)
+        ->post('/oauth/authorize', [
+            'client_id' => $clientId,
+            'auth_token' => 'valid-token',
+        ])
+        ->assertForbidden();
+
+    expect(Passport::authCode()->newQuery()->where('user_id', $user->id)->count())->toBe(0);
+})->with([
+    'missing authRequest' => null,
+    'corrupted authRequest' => 'not-a-valid-serialized-request',
+]);
+
+it('returns json 401 with oauth discovery header on mcp endpoint even without json accept header', function (): void {
+    $response = $this->withHeaders([
+        'Accept' => 'text/event-stream',
+        'Content-Type' => 'application/json',
+    ])->post('/mcp/koakademy', [
+        'jsonrpc' => '2.0',
+        'id' => 1,
+        'method' => 'tools/list',
+    ]);
+
+    $response->assertUnauthorized()
+        ->assertJsonPath('error', true)
+        ->assertJsonPath('code', 'UNAUTHENTICATED');
+
+    expect($response->headers->get('WWW-Authenticate'))
+        ->toContain('/.well-known/oauth-protected-resource/mcp/koakademy');
+});

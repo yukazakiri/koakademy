@@ -8,9 +8,11 @@ use App\Mcp\McpOAuth;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Laravel\Passport\Bridge\Scope;
+use Laravel\Passport\Exceptions\InvalidAuthTokenException;
 use Laravel\Passport\Http\Controllers\ApproveAuthorizationController;
 use Psr\Http\Message\ResponseInterface;
 use Symfony\Component\HttpFoundation\Response;
+use Throwable;
 
 final class ApproveMcpAuthorizationController extends ApproveAuthorizationController
 {
@@ -18,10 +20,21 @@ final class ApproveMcpAuthorizationController extends ApproveAuthorizationContro
     {
         $validated = $request->validate(['allow_write' => ['sometimes', 'boolean']]);
 
+        try {
+            $authRequest = $this->getAuthRequestFromSession($request);
+        } catch (InvalidAuthTokenException $e) {
+            throw $e;
+        } catch (Throwable) {
+            $request->session()->forget(['authToken', 'authRequest']);
+
+            throw new InvalidAuthTokenException(
+                'The authorization request has expired or is no longer present in the session. Please restart authorization from your MCP client.'
+            );
+        }
+
         // Serialize consent and account-wide revocation on the user row. The
         // transaction also covers persistence of the new authorization code.
-        return (new User)->getConnection()->transaction(function () use ($request, $psrResponse, $validated): Response {
-            $authRequest = $this->getAuthRequestFromSession($request);
+        return (new User)->getConnection()->transaction(function () use ($request, $psrResponse, $validated, $authRequest): Response {
             $userId = $authRequest->getUser()?->getIdentifier();
             $connection = (new User)->getConnection();
             if ($connection->getDriverName() === 'sqlite') {

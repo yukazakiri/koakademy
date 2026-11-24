@@ -348,7 +348,7 @@ function buildValidTestPdf(string $pageText, array $info = []): string
         2 => '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
         3 => '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
         4 => '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-        5 => '<< /Length '.strlen($stream)." >>\nstream\n{$stream}\nendstream",
+        5 => '<< /Length '.mb_strlen($stream, '8bit')." >>\nstream\n{$stream}\nendstream",
         6 => '<< '.implode(' ', $infoEntries).' >>',
     ];
 
@@ -356,11 +356,11 @@ function buildValidTestPdf(string $pageText, array $info = []): string
     $offsets = [0 => 0];
 
     foreach ($objects as $id => $body) {
-        $offsets[$id] = strlen($pdf);
+        $offsets[$id] = mb_strlen($pdf, '8bit');
         $pdf .= "{$id} 0 obj\n{$body}\nendobj\n";
     }
 
-    $xrefOffset = strlen($pdf);
+    $xrefOffset = mb_strlen($pdf, '8bit');
     $count = count($objects) + 1;
     $pdf .= "xref\n0 {$count}\n";
     $pdf .= "0000000000 65535 f \n";

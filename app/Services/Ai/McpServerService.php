@@ -6,7 +6,9 @@ namespace App\Services\Ai;
 
 use App\Ai\Mcp\McpClientRegistry;
 use App\Models\McpServer;
+use App\Services\TenantContext;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Reads and writes the external MCP server configuration, including the
@@ -53,6 +55,12 @@ final class McpServerService
      */
     public function create(array $validated): McpServer
     {
+        if (app(TenantContext::class)->getCurrentSchoolId() === null) {
+            throw ValidationException::withMessages([
+                'school_id' => ['Select an active school before configuring an external MCP server.'],
+            ]);
+        }
+
         $server = new McpServer;
         $server->fill($this->attributes($validated));
 

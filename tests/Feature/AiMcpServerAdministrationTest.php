@@ -220,3 +220,59 @@ it('will not let one school update or delete another school server', function ()
 
     expect(McpServer::withoutSchoolScope()->find($theirs->id))->not->toBeNull();
 });
+
+it('rejects unsupported oauth auth_type and local bearer combinations', function (): void {
+    $this->actingAs($this->admin)
+        ->post('/administrators/system-management/ai/mcp-servers', mcpPayload([
+            'auth_type' => McpServer::AUTH_OAUTH,
+        ]))
+        ->assertSessionHasErrors('auth_type');
+
+    $this->actingAs($this->admin)
+        ->post('/administrators/system-management/ai/mcp-servers', mcpPayload([
+            'transport' => McpServer::TRANSPORT_LOCAL,
+            'url' => null,
+            'command' => 'php',
+            'auth_type' => McpServer::AUTH_BEARER,
+            'token' => 'secret-token',
+        ]))
+        ->assertSessionHasErrors('auth_type');
+
+    expect(McpServer::query()->count())->toBe(0);
+});
+
+it('rejects unsafe external mcp server urls to prevent ssrf', function (string $unsafeUrl): void {
+    $this->actingAs($this->admin)
+        ->post('/administrators/system-management/ai/mcp-servers', mcpPayload([
+            'url' => $unsafeUrl,
+        ]))
+        ->assertSessionHasErrors('url');
+
+    expect(McpServer::query()->count())->toBe(0);
+})->with([
+    'plain http' => 'http://mcp.example.test/tracker',
+    'loopback ip' => 'https://127.0.0.1/mcp',
+    'cloud metadata ip' => 'https://169.254.169.254/latest/meta-data/',
+    'private lan ip' => 'https://10.0.0.15/mcp',
+]);
+
+it('requires an active school context instead of crashing with a database error', function (): void {
+    app(TenantContext::class)->clear();
+
+    $this->actingAs($this->admin)
+        ->post('/administrators/system-management/ai/mcp-servers', mcpPayload())
+        ->assertSessionHasErrors('school_id');
+
+    expect(McpServer::withoutSchoolScope()->count())->toBe(0);
+});
+
+it('requires a token when switching an unauthenticated server to bearer auth', function (): void {
+    $server = McpServer::query()->create(mcpPayload(['auth_type' => McpServer::AUTH_NONE]));
+
+    $this->actingAs($this->admin)
+        ->put("/administrators/system-management/ai/mcp-servers/{$server->id}", mcpPayload([
+            'auth_type' => McpServer::AUTH_BEARER,
+            'token' => null,
+        ]))
+        ->assertSessionHasErrors('token');
+});

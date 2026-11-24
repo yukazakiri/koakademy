@@ -108,6 +108,9 @@ final class ResilientMcpServerTool extends McpServerTool
             'ManageCurriculumSubjectTool' => Approval::required(
                 'Modify curriculum subject catalog?'
             ),
+            'ManageRoomTool' => Approval::required(
+                'Create, update, or modify institutional room or facility record?'
+            ),
             'ApplyApprovedCurriculumImportTool' => Approval::required(
                 'Apply approved curriculum import to institution records?'
             ),

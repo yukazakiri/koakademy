@@ -6,10 +6,13 @@ use App\Ai\Mcp\ExternalMcpTool;
 use App\Ai\Mcp\ExternalMcpToolResolver;
 use App\Ai\Mcp\McpClientFactory;
 use App\Ai\Mcp\McpClientRegistry;
+use App\Ai\Mcp\PinnedHttpTransport;
 use App\Models\McpServer;
 use App\Models\School;
+use App\Services\Ai\AiEndpointGuard;
 use App\Services\TenantContext;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Tools\Request;
 use Laravel\Mcp\Client;
 use Laravel\Mcp\Client\Primitives\Tool as ClientTool;
@@ -315,4 +318,177 @@ it('reports a discovery failure instead of throwing', function (): void {
     expect($result['tools'])->toBe([])
         ->and($result['error'])->not->toBeNull()
         ->and($server->refresh()->last_error)->not->toBeNull();
+});
+
+it('refuses to build a client for unsafe urls or unsupported auth types', function (): void {
+    $factory = new McpClientFactory;
+
+    $ssrfServer = makeServer(['name' => 'metadata', 'url' => 'https://169.254.169.254/latest/meta-data/']);
+    expect(fn (): Client => $factory->make($ssrfServer))
+        ->toThrow(InvalidArgumentException::class);
+
+    $oauthServer = makeServer(['name' => 'oauth-server', 'auth_type' => McpServer::AUTH_OAUTH]);
+    expect(fn (): Client => $factory->make($oauthServer))
+        ->toThrow(InvalidArgumentException::class);
+
+    $localBearer = makeServer([
+        'name' => 'local-bearer',
+        'transport' => McpServer::TRANSPORT_LOCAL,
+        'url' => null,
+        'command' => 'php',
+        'auth_type' => McpServer::AUTH_BEARER,
+    ]);
+    expect(fn (): Client => $factory->make($localBearer))
+        ->toThrow(InvalidArgumentException::class);
+});
+
+it('fails closed when DNS pinning is unavailable or returns no addresses', function (): void {
+    Http::preventStrayRequests();
+    Http::fake();
+
+    $unresolvedTransport = new PinnedHttpTransport('https://mcp.example.test/tracker');
+    expect(fn () => $unresolvedTransport->send('{}'))
+        ->toThrow(InvalidArgumentException::class);
+
+    config(['ai.security.allowed_private_hosts' => ['unresolvable-allowlisted.invalid', 'pinned-mcp.invalid']]);
+
+    $guard = new AiEndpointGuard;
+    $resolvedHosts = new ReflectionProperty($guard, 'resolvedHosts');
+    $resolvedHosts->setValue($guard, [
+        'unresolvable-allowlisted.invalid' => [],
+        'pinned-mcp.invalid' => ['127.0.0.1'],
+    ]);
+
+    $allowlistedNoDns = new PinnedHttpTransport('http://unresolvable-allowlisted.invalid:8080/mcp', $guard);
+    expect(fn () => $allowlistedNoDns->send('{}'))
+        ->toThrow(InvalidArgumentException::class, 'could not be resolved for DNS pinning');
+
+    $noCurl = new PinnedHttpTransport('http://pinned-mcp.invalid:8080/mcp', $guard, curlPinningSupported: false);
+    expect(fn () => $noCurl->send('{}'))
+        ->toThrow(RuntimeException::class, 'CURLOPT_RESOLVE');
+
+    Http::assertNothingSent();
+});
+
+it('pins streamed MCP requests through CurlHandler, ignores environment proxies, and handles SSE responses', function (): void {
+    // Spawn a local TCP server on an ephemeral loopback port that handles two
+    // requests: a JSON response and a multi-event text/event-stream SSE
+    // response. Sending to a non-existent `.invalid` hostname with HTTP_PROXY
+    // pointed at a dead port proves Guzzle routes through CurlHandler, ignores
+    // environment proxies, and honors CURLOPT_RESOLVE instead of falling back
+    // to StreamHandler or delegating DNS to a proxy.
+    $serverScript = <<<'PHP'
+$server = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
+if ($server === false) {
+    fwrite(STDERR, $errstr);
+    exit(1);
+}
+echo stream_socket_get_name($server, false)."\n";
+fflush(STDOUT);
+for ($i = 0; $i < 2; $i++) {
+    $conn = @stream_socket_accept($server, 5);
+    if ($conn === false) {
+        break;
+    }
+    stream_set_timeout($conn, 2);
+    $raw = '';
+    while (! str_contains($raw, "\r\n\r\n") && ! feof($conn)) {
+        $chunk = fread($conn, 4096);
+        if ($chunk === false || $chunk === '') {
+            break;
+        }
+        $raw .= $chunk;
+    }
+    preg_match('/^Host:\s*([^\r\n]+)/mi', $raw, $m);
+    $hostHeader = trim($m[1] ?? '');
+
+    if ($i === 0) {
+        $payload = json_encode(['jsonrpc' => '2.0', 'id' => 1, 'result' => ['pinned_host' => $hostHeader]]);
+        $response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ".strlen($payload)."\r\nConnection: close\r\n\r\n".$payload;
+        fwrite($conn, $response);
+    } else {
+        $event1 = 'data: '.json_encode(['jsonrpc' => '2.0', 'method' => 'notifications/progress', 'params' => ['progress' => 1]])."\n\n";
+        $event2 = 'data: '.json_encode(['jsonrpc' => '2.0', 'id' => 2, 'result' => ['sse_host' => $hostHeader]])."\n\n";
+        $body = $event1.$event2;
+        $response = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n";
+        fwrite($conn, $response);
+        fflush($conn);
+        fwrite($conn, $event1);
+        fflush($conn);
+        usleep(20_000);
+        fwrite($conn, $event2);
+        fflush($conn);
+    }
+    fclose($conn);
+}
+fclose($server);
+PHP;
+
+    $process = proc_open(
+        [PHP_BINARY, '-r', $serverScript],
+        [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+        $pipes,
+    );
+
+    expect($process)->not->toBeFalse();
+
+    $previousHttpProxy = getenv('HTTP_PROXY');
+    $previousLowerHttpProxy = getenv('http_proxy');
+
+    try {
+        putenv('HTTP_PROXY=http://127.0.0.1:1');
+        putenv('http_proxy=http://127.0.0.1:1');
+
+        fclose($pipes[0]);
+        stream_set_timeout($pipes[1], 5);
+        $boundAddress = mb_trim((string) fgets($pipes[1]));
+        expect($boundAddress)->toStartWith('127.0.0.1:');
+
+        $port = (int) explode(':', $boundAddress)[1];
+
+        config(['ai.security.allowed_private_hosts' => ['pinned-mcp.invalid']]);
+
+        $guard = app(AiEndpointGuard::class);
+        $resolvedHosts = new ReflectionProperty($guard, 'resolvedHosts');
+        $resolvedHosts->setValue($guard, ['pinned-mcp.invalid' => ['127.0.0.1']]);
+
+        $server = makeServer([
+            'name' => 'pinned-real-handler',
+            'url' => "http://pinned-mcp.invalid:{$port}/mcp",
+        ]);
+
+        $client = (new McpClientFactory)->make($server);
+        $transportProp = new ReflectionProperty($client, 'transport');
+        /** @var PinnedHttpTransport $transport */
+        $transport = $transportProp->getValue($client);
+
+        expect($transport)->toBeInstanceOf(PinnedHttpTransport::class);
+
+        $transport->send('{"jsonrpc":"2.0","id":1,"method":"ping"}');
+
+        expect(json_decode($transport->receive(), true))->toBe([
+            'jsonrpc' => '2.0',
+            'id' => 1,
+            'result' => ['pinned_host' => "pinned-mcp.invalid:{$port}"],
+        ]);
+
+        $transport->send('{"jsonrpc":"2.0","id":2,"method":"tools/list"}');
+
+        expect(json_decode($transport->receive(), true))->toBe([
+            'jsonrpc' => '2.0',
+            'method' => 'notifications/progress',
+            'params' => ['progress' => 1],
+        ])->and(json_decode($transport->receive(), true))->toBe([
+            'jsonrpc' => '2.0',
+            'id' => 2,
+            'result' => ['sse_host' => "pinned-mcp.invalid:{$port}"],
+        ]);
+    } finally {
+        putenv($previousHttpProxy === false ? 'HTTP_PROXY' : 'HTTP_PROXY='.$previousHttpProxy);
+        putenv($previousLowerHttpProxy === false ? 'http_proxy' : 'http_proxy='.$previousLowerHttpProxy);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        proc_terminate($process);
+        proc_close($process);
+    }
 });

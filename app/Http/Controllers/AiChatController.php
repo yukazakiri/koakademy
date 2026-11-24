@@ -210,6 +210,10 @@ final class AiChatController extends Controller
         }
 
         return response()->stream(function () use ($agentInstance, $prompt, $promptForPersistence, $replayedRawAttachments, $conversationId, $aiAttachments, $selectedProvider, $selectedModel, $agentKey, $aiSettings, $supportsDocumentAttachments, $run, $runService) {
+            if (function_exists('set_time_limit')) {
+                @set_time_limit(0);
+            }
+
             $stream = null;
             $errorText = null;
 

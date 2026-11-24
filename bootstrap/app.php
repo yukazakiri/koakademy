@@ -111,9 +111,10 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         $exceptions->render(function (Throwable $e, $request) {
-            if ($request->is('classes/*/posts') || $request->is('api/*')) {
+            if ($request->is('classes/*/posts') || $request->is('api/*') || $request->is('mcp/*')) {
                 $statusCode = 500;
                 $code = 'SERVER_ERROR';
+                $headers = [];
 
                 if ($e instanceof Illuminate\Auth\AuthenticationException) {
                     $statusCode = 401;
@@ -130,6 +131,7 @@ return Application::configure(basePath: dirname(__DIR__))
                     ], $statusCode);
                 } elseif ($e instanceof Symfony\Component\HttpKernel\Exception\HttpExceptionInterface) {
                     $statusCode = $e->getStatusCode();
+                    $headers = $e->getHeaders();
                     $code = $statusCode === 403 ? 'FORBIDDEN' : ($statusCode === 404 ? 'NOT_FOUND' : 'HTTP_ERROR');
                 } elseif ($e instanceof Spatie\Permission\Exceptions\UnauthorizedException) {
                     $statusCode = 403;
@@ -147,7 +149,7 @@ return Application::configure(basePath: dirname(__DIR__))
                     'error' => true,
                     'message' => $message,
                     'code' => $code,
-                ], $statusCode);
+                ], $statusCode, $headers);
             }
         });
         // Sentry stays registered unconditionally. The integration is inert

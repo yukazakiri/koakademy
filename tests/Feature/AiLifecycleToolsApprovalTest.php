@@ -191,6 +191,7 @@ it('requires user approval for mutations in AI ManageSubjectEnrollmentTool', fun
 it('enforces approvals in ResilientMcpServerTool for wrapped MCP tools', function (): void {
     $wrappedEnrollment = new ResilientMcpServerTool(new McpManageEnrollmentTool);
     $wrappedSubject = new ResilientMcpServerTool(new McpManageSubjectEnrollmentTool);
+    $wrappedRoom = new ResilientMcpServerTool(new App\Mcp\Tools\ManageRoomTool);
 
     $reflector = new ReflectionClass(ResilientMcpServerTool::class);
     $needsApproval = $reflector->getMethod('needsApproval');
@@ -203,6 +204,13 @@ it('enforces approvals in ResilientMcpServerTool for wrapped MCP tools', functio
     $subjectApproval = $needsApproval->invoke($wrappedSubject, new AiRequest([]));
     expect($subjectApproval)->toBeInstanceOf(Approval::class)
         ->and($subjectApproval->reason)->toContain('modifies official coursework');
+
+    $roomMutationApproval = $needsApproval->invoke($wrappedRoom, new AiRequest(['action' => 'create', 'name' => 'Room 401']));
+    expect($roomMutationApproval)->toBeInstanceOf(Approval::class)
+        ->and($roomMutationApproval->reason)->toContain('room or facility');
+
+    $roomReadCheck = $needsApproval->invoke($wrappedRoom, new AiRequest(['action' => 'get']));
+    expect($roomReadCheck)->toBeFalse();
 });
 
 it('executes AI investigation tools returning structured findings', function (): void {

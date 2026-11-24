@@ -49,12 +49,16 @@ Features vary in maturity. Treat this as a **codebase to evaluate and improve**,
 
 <table>
 <tr>
-<td width="50%"><img src="docs/src/assets/screenshots/enrollments.png" alt="Enrollment management screen"><br><sub><b>Enrollment</b> — applicants, verification, and registrar workflows</sub></td>
-<td width="50%"><img src="docs/src/assets/screenshots/classes.png" alt="Class management screen"><br><sub><b>Academics</b> — classes, curricula, and schedules</sub></td>
+<td width="50%"><img src="docs/src/assets/screenshots/enrollments.png" alt="Enrollment management and blueprint studio"><br><sub><b>Enrollment</b> — applicants, verification, and versioned admission blueprints</sub></td>
+<td width="50%"><img src="docs/src/assets/screenshots/classes.png" alt="Class management and weekly schedule planner"><br><sub><b>Academics</b> — class offerings, curricula, and conflict-aware schedules</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/src/assets/screenshots/finance.png" alt="Finance dashboard"><br><sub><b>Finance</b> — assessments, payments, and records</sub></td>
-<td width="50%"><img src="docs/src/assets/screenshots/library.png" alt="Library catalogue"><br><sub><b>Library</b> — cataloguing and digital reading workflows</sub></td>
+<td width="50%"><img src="docs/src/assets/screenshots/finance.png" alt="Finance desk and collection analytics"><br><sub><b>Finance</b> — tuition assessment, cashier queues, and collection tracking</sub></td>
+<td width="50%"><img src="docs/src/assets/screenshots/library.png" alt="Digital library catalogue"><br><sub><b>Library</b> — physical circulation, cataloguing, and online eBooks</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/src/assets/screenshots/faculty-portal.png" alt="Faculty portal dashboard"><br><sub><b>Faculty Portal</b> — daily classes, attendance, rosters, and grading</sub></td>
+<td width="50%"><img src="docs/src/assets/screenshots/student-portal.png" alt="Student portal dashboard"><br><sub><b>Student Portal</b> — schedules, academic progress, tuition, and digital ID</sub></td>
 </tr>
 </table>
 

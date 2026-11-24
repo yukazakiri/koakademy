@@ -9,8 +9,8 @@ use App\Ai\Mcp\McpClientRegistry;
 use App\Ai\Mcp\PinnedHttpTransport;
 use App\Models\McpServer;
 use App\Models\School;
+use App\Services\Ai\AiEndpointGuard;
 use App\Services\TenantContext;
-use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Tools\Request;
@@ -342,7 +342,7 @@ it('refuses to build a client for unsafe urls or unsupported auth types', functi
         ->toThrow(InvalidArgumentException::class);
 });
 
-it('validates DNS and pins resolved addresses on outbound MCP HTTP requests', function (): void {
+it('fails closed when DNS pinning is unavailable or returns no addresses', function (): void {
     Http::preventStrayRequests();
     Http::fake();
 
@@ -350,25 +350,108 @@ it('validates DNS and pins resolved addresses on outbound MCP HTTP requests', fu
     expect(fn () => $unresolvedTransport->send('{}'))
         ->toThrow(InvalidArgumentException::class);
 
+    config(['ai.security.allowed_private_hosts' => ['unresolvable-allowlisted.invalid', 'pinned-mcp.invalid']]);
+
+    $guard = new AiEndpointGuard;
+    $resolvedHosts = new ReflectionProperty($guard, 'resolvedHosts');
+    $resolvedHosts->setValue($guard, [
+        'unresolvable-allowlisted.invalid' => [],
+        'pinned-mcp.invalid' => ['127.0.0.1'],
+    ]);
+
+    $allowlistedNoDns = new PinnedHttpTransport('http://unresolvable-allowlisted.invalid:8080/mcp', $guard);
+    expect(fn () => $allowlistedNoDns->send('{}'))
+        ->toThrow(InvalidArgumentException::class, 'could not be resolved for DNS pinning');
+
+    $noCurl = new PinnedHttpTransport('http://pinned-mcp.invalid:8080/mcp', $guard, curlPinningSupported: false);
+    expect(fn () => $noCurl->send('{}'))
+        ->toThrow(RuntimeException::class, 'CURLOPT_RESOLVE');
+
     Http::assertNothingSent();
+});
 
-    config(['ai.security.allowed_private_hosts' => ['localhost']]);
+it('pins streamed MCP requests through CurlHandler to the validated IP address', function (): void {
+    // Spawn a one-shot local TCP server on an ephemeral loopback port.
+    // Sending to a non-existent `.invalid` hostname via HttpTransport::send()
+    // (which sets stream => true) can only succeed when Guzzle routes through
+    // CurlHandler and libcurl honors CURLOPT_RESOLVE instead of falling back
+    // to StreamHandler and re-querying system DNS.
+    $serverScript = <<<'PHP'
+$server = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
+if ($server === false) {
+    fwrite(STDERR, $errstr);
+    exit(1);
+}
+echo stream_socket_get_name($server, false)."\n";
+fflush(STDOUT);
+$conn = @stream_socket_accept($server, 5);
+if ($conn !== false) {
+    stream_set_timeout($conn, 2);
+    $raw = '';
+    while (! str_contains($raw, "\r\n\r\n") && ! feof($conn)) {
+        $chunk = fread($conn, 4096);
+        if ($chunk === false || $chunk === '') {
+            break;
+        }
+        $raw .= $chunk;
+    }
+    preg_match('/^Host:\s*([^\r\n]+)/mi', $raw, $m);
+    $hostHeader = trim($m[1] ?? '');
+    $payload = json_encode(['jsonrpc' => '2.0', 'id' => 1, 'result' => ['pinned_host' => $hostHeader]]);
+    $response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ".strlen($payload)."\r\nConnection: close\r\n\r\n".$payload;
+    fwrite($conn, $response);
+    fclose($conn);
+}
+fclose($server);
+PHP;
 
-    $server = makeServer(['name' => 'allowlisted-local', 'url' => 'http://localhost:8080/mcp']);
-    $client = (new McpClientFactory)->make($server);
+    $process = proc_open(
+        [PHP_BINARY, '-r', $serverScript],
+        [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+        $pipes,
+    );
 
-    $transportProp = new ReflectionProperty($client, 'transport');
-    $transport = $transportProp->getValue($client);
+    expect($process)->not->toBeFalse();
 
-    expect($transport)->toBeInstanceOf(PinnedHttpTransport::class);
+    try {
+        fclose($pipes[0]);
+        stream_set_timeout($pipes[1], 5);
+        $boundAddress = mb_trim((string) fgets($pipes[1]));
+        expect($boundAddress)->toStartWith('127.0.0.1:');
 
-    $requestMethod = new ReflectionMethod($transport, 'request');
-    /** @var PendingRequest $pending */
-    $pending = $requestMethod->invoke($transport);
-    $options = $pending->getOptions();
+        $port = (int) explode(':', $boundAddress)[1];
 
-    expect($options['allow_redirects'] ?? null)->toBeFalse()
-        ->and($options['curl'][CURLOPT_RESOLVE] ?? [])->toHaveCount(1)
-        ->and($options['curl'][CURLOPT_RESOLVE][0])->toStartWith('localhost:8080:')
-        ->and($options['curl'][CURLOPT_RESOLVE][0])->toContain('127.0.0.1');
+        config(['ai.security.allowed_private_hosts' => ['pinned-mcp.invalid']]);
+
+        $guard = app(AiEndpointGuard::class);
+        $resolvedHosts = new ReflectionProperty($guard, 'resolvedHosts');
+        $resolvedHosts->setValue($guard, ['pinned-mcp.invalid' => ['127.0.0.1']]);
+
+        $server = makeServer([
+            'name' => 'pinned-real-handler',
+            'url' => "http://pinned-mcp.invalid:{$port}/mcp",
+        ]);
+
+        $client = (new McpClientFactory)->make($server);
+        $transportProp = new ReflectionProperty($client, 'transport');
+        /** @var PinnedHttpTransport $transport */
+        $transport = $transportProp->getValue($client);
+
+        expect($transport)->toBeInstanceOf(PinnedHttpTransport::class);
+
+        $transport->send('{"jsonrpc":"2.0","id":1,"method":"ping"}');
+
+        $received = json_decode($transport->receive(), true);
+
+        expect($received)->toBe([
+            'jsonrpc' => '2.0',
+            'id' => 1,
+            'result' => ['pinned_host' => "pinned-mcp.invalid:{$port}"],
+        ]);
+    } finally {
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        proc_terminate($process);
+        proc_close($process);
+    }
 });

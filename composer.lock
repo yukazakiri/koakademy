@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "c7cd7efe34025cdd4e77906fd5ca6966",
+    "content-hash": "4dcdd353e586e6da16815fb368cf749b",
     "packages": [
         {
             "name": "achyutn/filament-log-viewer",
@@ -5956,16 +5956,16 @@
         },
         {
             "name": "koakademy/library-system",
-            "version": "v1.2.0",
+            "version": "v1.3.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/yukazakiri/koakademy-module-library-system.git",
-                "reference": "d16cf1cf7645cb66cc49e497a23915fdb12b481d"
+                "reference": "a20104a4242a2a44cc56c08b14c1df186a20aa85"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/yukazakiri/koakademy-module-library-system/zipball/d16cf1cf7645cb66cc49e497a23915fdb12b481d",
-                "reference": "d16cf1cf7645cb66cc49e497a23915fdb12b481d",
+                "url": "https://api.github.com/repos/yukazakiri/koakademy-module-library-system/zipball/a20104a4242a2a44cc56c08b14c1df186a20aa85",
+                "reference": "a20104a4242a2a44cc56c08b14c1df186a20aa85",
                 "shasum": ""
             },
             "require": {
@@ -5975,6 +5975,7 @@
                 "laravel/framework": "^13.0",
                 "nwidart/laravel-modules": "^13.0",
                 "php": ">=8.5.12 <8.6",
+                "smalot/pdfparser": "^2.12",
                 "spatie/laravel-tags": "^4.10"
             },
             "require-dev": {
@@ -6015,7 +6016,7 @@
                 "issues": "https://github.com/yukazakiri/koakademy-module-library-system/issues",
                 "source": "https://github.com/yukazakiri/koakademy-module-library-system"
             },
-            "time": "2026-11-24T05:02:43+00:00"
+            "time": "2026-11-24T06:25:14+00:00"
         },
         {
             "name": "koakademy/notification-center",

@@ -23,6 +23,7 @@ it('shows installed modules in the marketplace and persists status changes', fun
             'Inventory' => true,
             'LibrarySystem' => true,
             'NotificationCenter' => true,
+            'OnlineResources' => true,
             'StudentMedicalRecords' => true,
         ], JSON_THROW_ON_ERROR));
 
@@ -43,7 +44,7 @@ it('shows installed modules in the marketplace and persists status changes', fun
             ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
                 ->component('administrators/module-marketplace/index', false)
                 ->where('marketplace.enabled', true)
-                ->has('marketplace.modules', 9)
+                ->has('marketplace.modules', 10)
                 ->where('marketplace.modules.0.installed', true)
                 ->where('marketplace.modules.0.installation_source', 'composer'));
 

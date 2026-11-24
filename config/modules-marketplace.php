@@ -17,6 +17,6 @@ return [
     'registry_url' => env('MODULE_REGISTRY_URL', 'https://yukazakiri.github.io/koakademy-modules/registry.json'),
     'cache_ttl' => (int) env('MODULE_REGISTRY_CACHE_TTL', 3600),
     'require_signature' => (bool) env('MODULE_REGISTRY_REQUIRE_SIGNATURE', true),
-    'public_key' => env('MODULE_REGISTRY_PUBLIC_KEY', 'gnGm74yPDu7umv6sF0lzepJnEVEx7b9_HYDrAxjxYYs'),
+    'public_key' => env('MODULE_REGISTRY_PUBLIC_KEY', 'KCJJ_FC2iE_wABYvTlN9mAe-ShCj4bIN4CCcTqIKM8U'),
     'public_key_file' => env('MODULE_REGISTRY_PUBLIC_KEY_FILE'),
 ];

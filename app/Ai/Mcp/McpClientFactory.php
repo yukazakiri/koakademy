@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Ai\Mcp;
 
 use App\Models\McpServer;
+use App\Services\Ai\AiEndpointGuard;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use Laravel\Mcp\Client;
@@ -22,8 +23,16 @@ final class McpClientFactory
 {
     public function make(McpServer $server): Client
     {
+        if ($server->auth_type === McpServer::AUTH_OAUTH) {
+            throw new InvalidArgumentException('OAuth authentication for external MCP servers is not yet supported.');
+        }
+
         if ($server->transport === McpServer::TRANSPORT_LOCAL && $server->auth_type === McpServer::AUTH_BEARER) {
             throw new InvalidArgumentException('Bearer authentication requires the web transport. Configure local MCP servers without HTTP bearer authentication.');
+        }
+
+        if ($server->transport !== McpServer::TRANSPORT_LOCAL) {
+            app(AiEndpointGuard::class)->assertSafe((string) $server->url, resolveDns: false);
         }
 
         $client = match ($server->transport) {
@@ -58,6 +67,10 @@ final class McpClientFactory
     public function probe(McpServer $server): void
     {
         try {
+            if ($server->transport !== McpServer::TRANSPORT_LOCAL) {
+                app(AiEndpointGuard::class)->assertSafe((string) $server->url);
+            }
+
             $this->make($server)->connect();
 
             $server->forceFill([

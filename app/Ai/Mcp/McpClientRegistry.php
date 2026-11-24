@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Ai\Mcp;
 
 use App\Models\McpServer;
+use App\Services\Ai\AiEndpointGuard;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -81,6 +82,10 @@ final class McpClientRegistry
      */
     public function tools(McpServer $server): Collection
     {
+        if ($server->transport !== McpServer::TRANSPORT_LOCAL) {
+            app(AiEndpointGuard::class)->assertSafe((string) $server->url);
+        }
+
         $client = $this->client($server->name);
 
         if ($client === null) {

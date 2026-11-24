@@ -316,3 +316,27 @@ it('reports a discovery failure instead of throwing', function (): void {
         ->and($result['error'])->not->toBeNull()
         ->and($server->refresh()->last_error)->not->toBeNull();
 });
+
+it('refuses to build a client for unsafe urls or unsupported auth types', function (): void {
+    $factory = new McpClientFactory;
+
+    $ssrfServer = makeServer(['name' => 'metadata', 'url' => 'https://169.254.169.254/latest/meta-data/']);
+    expect(fn (): Client => $factory->make($ssrfServer))
+        ->toThrow(InvalidArgumentException::class);
+
+    $oauthServer = makeServer(['name' => 'oauth-server', 'auth_type' => McpServer::AUTH_OAUTH]);
+    expect($oauthServer->isUsable())->toBeFalse()
+        ->and(fn (): Client => $factory->make($oauthServer))
+        ->toThrow(InvalidArgumentException::class);
+
+    $localBearer = makeServer([
+        'name' => 'local-bearer',
+        'transport' => McpServer::TRANSPORT_LOCAL,
+        'url' => null,
+        'command' => 'php',
+        'auth_type' => McpServer::AUTH_BEARER,
+    ]);
+    expect($localBearer->isUsable())->toBeFalse()
+        ->and(fn (): Client => $factory->make($localBearer))
+        ->toThrow(InvalidArgumentException::class);
+});

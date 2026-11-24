@@ -79,6 +79,14 @@ final class McpServer extends Model
             return false;
         }
 
+        if ($this->auth_type === self::AUTH_OAUTH) {
+            return false;
+        }
+
+        if ($this->transport === self::TRANSPORT_LOCAL && $this->auth_type === self::AUTH_BEARER) {
+            return false;
+        }
+
         return match ($this->transport) {
             self::TRANSPORT_WEB => filled($this->url),
             self::TRANSPORT_LOCAL => filled($this->command),

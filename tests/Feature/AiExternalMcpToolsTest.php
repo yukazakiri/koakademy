@@ -370,12 +370,13 @@ it('fails closed when DNS pinning is unavailable or returns no addresses', funct
     Http::assertNothingSent();
 });
 
-it('pins streamed MCP requests through CurlHandler to the validated IP address', function (): void {
-    // Spawn a one-shot local TCP server on an ephemeral loopback port.
-    // Sending to a non-existent `.invalid` hostname via HttpTransport::send()
-    // (which sets stream => true) can only succeed when Guzzle routes through
-    // CurlHandler and libcurl honors CURLOPT_RESOLVE instead of falling back
-    // to StreamHandler and re-querying system DNS.
+it('pins streamed MCP requests through CurlHandler, ignores environment proxies, and handles SSE responses', function (): void {
+    // Spawn a local TCP server on an ephemeral loopback port that handles two
+    // requests: a JSON response and a multi-event text/event-stream SSE
+    // response. Sending to a non-existent `.invalid` hostname with HTTP_PROXY
+    // pointed at a dead port proves Guzzle routes through CurlHandler, ignores
+    // environment proxies, and honors CURLOPT_RESOLVE instead of falling back
+    // to StreamHandler or delegating DNS to a proxy.
     $serverScript = <<<'PHP'
 $server = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
 if ($server === false) {
@@ -384,8 +385,11 @@ if ($server === false) {
 }
 echo stream_socket_get_name($server, false)."\n";
 fflush(STDOUT);
-$conn = @stream_socket_accept($server, 5);
-if ($conn !== false) {
+for ($i = 0; $i < 2; $i++) {
+    $conn = @stream_socket_accept($server, 5);
+    if ($conn === false) {
+        break;
+    }
     stream_set_timeout($conn, 2);
     $raw = '';
     while (! str_contains($raw, "\r\n\r\n") && ! feof($conn)) {
@@ -397,9 +401,24 @@ if ($conn !== false) {
     }
     preg_match('/^Host:\s*([^\r\n]+)/mi', $raw, $m);
     $hostHeader = trim($m[1] ?? '');
-    $payload = json_encode(['jsonrpc' => '2.0', 'id' => 1, 'result' => ['pinned_host' => $hostHeader]]);
-    $response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ".strlen($payload)."\r\nConnection: close\r\n\r\n".$payload;
-    fwrite($conn, $response);
+
+    if ($i === 0) {
+        $payload = json_encode(['jsonrpc' => '2.0', 'id' => 1, 'result' => ['pinned_host' => $hostHeader]]);
+        $response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ".strlen($payload)."\r\nConnection: close\r\n\r\n".$payload;
+        fwrite($conn, $response);
+    } else {
+        $event1 = 'data: '.json_encode(['jsonrpc' => '2.0', 'method' => 'notifications/progress', 'params' => ['progress' => 1]])."\n\n";
+        $event2 = 'data: '.json_encode(['jsonrpc' => '2.0', 'id' => 2, 'result' => ['sse_host' => $hostHeader]])."\n\n";
+        $body = $event1.$event2;
+        $response = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n";
+        fwrite($conn, $response);
+        fflush($conn);
+        fwrite($conn, $event1);
+        fflush($conn);
+        usleep(20_000);
+        fwrite($conn, $event2);
+        fflush($conn);
+    }
     fclose($conn);
 }
 fclose($server);
@@ -413,7 +432,13 @@ PHP;
 
     expect($process)->not->toBeFalse();
 
+    $previousHttpProxy = getenv('HTTP_PROXY');
+    $previousLowerHttpProxy = getenv('http_proxy');
+
     try {
+        putenv('HTTP_PROXY=http://127.0.0.1:1');
+        putenv('http_proxy=http://127.0.0.1:1');
+
         fclose($pipes[0]);
         stream_set_timeout($pipes[1], 5);
         $boundAddress = mb_trim((string) fgets($pipes[1]));
@@ -441,14 +466,26 @@ PHP;
 
         $transport->send('{"jsonrpc":"2.0","id":1,"method":"ping"}');
 
-        $received = json_decode($transport->receive(), true);
-
-        expect($received)->toBe([
+        expect(json_decode($transport->receive(), true))->toBe([
             'jsonrpc' => '2.0',
             'id' => 1,
             'result' => ['pinned_host' => "pinned-mcp.invalid:{$port}"],
         ]);
+
+        $transport->send('{"jsonrpc":"2.0","id":2,"method":"tools/list"}');
+
+        expect(json_decode($transport->receive(), true))->toBe([
+            'jsonrpc' => '2.0',
+            'method' => 'notifications/progress',
+            'params' => ['progress' => 1],
+        ])->and(json_decode($transport->receive(), true))->toBe([
+            'jsonrpc' => '2.0',
+            'id' => 2,
+            'result' => ['sse_host' => "pinned-mcp.invalid:{$port}"],
+        ]);
     } finally {
+        putenv($previousHttpProxy === false ? 'HTTP_PROXY' : 'HTTP_PROXY='.$previousHttpProxy);
+        putenv($previousLowerHttpProxy === false ? 'http_proxy' : 'http_proxy='.$previousLowerHttpProxy);
         fclose($pipes[1]);
         fclose($pipes[2]);
         proc_terminate($process);

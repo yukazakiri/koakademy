@@ -41,9 +41,12 @@ final class PinnedHttpTransport extends HttpTransport
 
         // HttpTransport::send() sets ['stream' => true], which makes Guzzle's
         // default handler route to StreamHandler and silently ignore
-        // CURLOPT_RESOLVE. Binding CurlHandler directly ensures every request,
-        // streamed or not, connects only to the validated pinned addresses.
-        $request = parent::request($headers)->setHandler(new CurlHandler);
+        // CURLOPT_RESOLVE. Binding CurlHandler directly and disabling proxies
+        // ensures every request, streamed or not, connects directly to the
+        // validated pinned addresses instead of delegating DNS to a proxy.
+        $request = parent::request($headers)
+            ->setHandler(new CurlHandler)
+            ->withOptions(['proxy' => '']);
 
         if ($resolved !== []) {
             $request = $request->withOptions(['curl' => [CURLOPT_RESOLVE => $resolved]]);

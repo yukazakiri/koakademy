@@ -143,7 +143,7 @@ const definitions: PageDefinitionInput[] = [
     { routePattern: /^\/administrators\/audit-logs$/, component: "administrators/audit-logs/index", variant: "list" },
     { routePattern: /^\/administrators\/registrar\/analytics$/, component: "administrators/registrar/analytics", variant: "analytics" },
     { routePattern: /^\/administrators\/registrar\/reports$/, component: "administrators/registrar/reports", variant: "analytics" },
-    { routePattern: /^\/administrators\/scheduling-analytics$/, component: "administrators/scheduling-analytics", variant: "analytics" },
+    { routePattern: /^\/administrators\/scheduling-analytics$/, component: "administrators/schedule-canvas", variant: "analytics" },
     { routePattern: /^\/administrators\/schedule-board$/, component: "administrators/schedule-board", variant: "analytics" },
     { routePattern: /^\/administrators\/schedule-xray$/, component: "administrators/schedule-xray", variant: "analytics" },
     { routePattern: /^\/administrators\/schedule-floorboard$/, component: "administrators/schedule-floorboard", variant: "analytics" },

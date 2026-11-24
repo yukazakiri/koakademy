@@ -368,7 +368,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::delete('/curriculum/programs/{course}/subjects/{subject}', [AdministratorCurriculumManagementController::class, 'destroySubject'])->name('curriculum.programs.subjects.destroy');
 
         // Scheduling Analytics (Schedule Studio) & Reinvented Schedule Board
-        Route::get('/schedule', function (\Illuminate\Http\Request $request) {
+        Route::get('/schedule', function (Illuminate\Http\Request $request) {
             return redirect()->route('administrators.scheduling-analytics.index', $request->query());
         })->name('schedule.redirect');
         Route::get('/schedule-board', [AdministratorSchedulingAnalyticsController::class, 'board'])->name('schedule-board.index');

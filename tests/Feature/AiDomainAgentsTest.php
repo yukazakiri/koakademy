@@ -506,6 +506,34 @@ it('names every MCP tool in the instructions under its exposed name', function (
     expect($unnamed)->toBe([]);
 });
 
+it('does not register duplicate native and wrapped MCP tools on the same agent', function (): void {
+    $agents = [
+        new AdminExecutiveAgent,
+        new RegistrarAuditAgent,
+        new BursarFinanceAgent,
+        new CampusSupportAgent,
+    ];
+
+    $duplicates = [];
+
+    foreach ($agents as $agent) {
+        $seen = [];
+
+        foreach ($agent->tools() as $tool) {
+            $exposedName = $tool instanceof McpServerTool ? $tool->name() : class_basename($tool);
+            $normalized = mb_strtolower((string) preg_replace('/[^a-z0-9]/i', '', $exposedName));
+
+            if (isset($seen[$normalized])) {
+                $duplicates[] = class_basename($agent).': '.$seen[$normalized].' vs '.$exposedName;
+            }
+
+            $seen[$normalized] = $exposedName;
+        }
+    }
+
+    expect($duplicates)->toBe([]);
+});
+
 /**
  * A bridged tool has to actually run, not merely appear in the array. The
  * adapter builds an MCP request from the AI request and hands back the

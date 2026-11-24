@@ -6,10 +6,13 @@ use App\Ai\Mcp\ExternalMcpTool;
 use App\Ai\Mcp\ExternalMcpToolResolver;
 use App\Ai\Mcp\McpClientFactory;
 use App\Ai\Mcp\McpClientRegistry;
+use App\Ai\Mcp\PinnedHttpTransport;
 use App\Models\McpServer;
 use App\Models\School;
 use App\Services\TenantContext;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Tools\Request;
 use Laravel\Mcp\Client;
 use Laravel\Mcp\Client\Primitives\Tool as ClientTool;
@@ -325,8 +328,7 @@ it('refuses to build a client for unsafe urls or unsupported auth types', functi
         ->toThrow(InvalidArgumentException::class);
 
     $oauthServer = makeServer(['name' => 'oauth-server', 'auth_type' => McpServer::AUTH_OAUTH]);
-    expect($oauthServer->isUsable())->toBeFalse()
-        ->and(fn (): Client => $factory->make($oauthServer))
+    expect(fn (): Client => $factory->make($oauthServer))
         ->toThrow(InvalidArgumentException::class);
 
     $localBearer = makeServer([
@@ -336,7 +338,37 @@ it('refuses to build a client for unsafe urls or unsupported auth types', functi
         'command' => 'php',
         'auth_type' => McpServer::AUTH_BEARER,
     ]);
-    expect($localBearer->isUsable())->toBeFalse()
-        ->and(fn (): Client => $factory->make($localBearer))
+    expect(fn (): Client => $factory->make($localBearer))
         ->toThrow(InvalidArgumentException::class);
+});
+
+it('validates DNS and pins resolved addresses on outbound MCP HTTP requests', function (): void {
+    Http::preventStrayRequests();
+    Http::fake();
+
+    $unresolvedTransport = new PinnedHttpTransport('https://mcp.example.test/tracker');
+    expect(fn () => $unresolvedTransport->send('{}'))
+        ->toThrow(InvalidArgumentException::class);
+
+    Http::assertNothingSent();
+
+    config(['ai.security.allowed_private_hosts' => ['localhost']]);
+
+    $server = makeServer(['name' => 'allowlisted-local', 'url' => 'http://localhost:8080/mcp']);
+    $client = (new McpClientFactory)->make($server);
+
+    $transportProp = new ReflectionProperty($client, 'transport');
+    $transport = $transportProp->getValue($client);
+
+    expect($transport)->toBeInstanceOf(PinnedHttpTransport::class);
+
+    $requestMethod = new ReflectionMethod($transport, 'request');
+    /** @var PendingRequest $pending */
+    $pending = $requestMethod->invoke($transport);
+    $options = $pending->getOptions();
+
+    expect($options['allow_redirects'] ?? null)->toBeFalse()
+        ->and($options['curl'][CURLOPT_RESOLVE] ?? [])->toHaveCount(1)
+        ->and($options['curl'][CURLOPT_RESOLVE][0])->toStartWith('localhost:8080:')
+        ->and($options['curl'][CURLOPT_RESOLVE][0])->toContain('127.0.0.1');
 });

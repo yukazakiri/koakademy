@@ -40,7 +40,7 @@ final class McpClientFactory
                 (string) $server->command,
                 array_values((array) $server->command_arguments),
             ),
-            default => Client::web((string) $server->url),
+            default => new WebClient(new PinnedHttpTransport((string) $server->url)),
         };
 
         // An unauthenticated server must never inherit a bearer token meant

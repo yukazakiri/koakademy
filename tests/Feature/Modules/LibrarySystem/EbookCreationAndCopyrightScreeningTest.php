@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
+use Modules\LibrarySystem\Ai\Agents\LibraryDocumentCatalogAgent;
 use Modules\LibrarySystem\Enums\BookFormat;
 use Modules\LibrarySystem\Enums\DigitalEditionStatus;
 use Modules\LibrarySystem\Models\Author;
@@ -320,6 +321,163 @@ it('requires documented permission notes before publishing PDFs flagged with cop
         ->and($edition->isAccessible())->toBeTrue();
 });
 
+it('extracts author, category, journal publisher, abstract, and excludes References pages from commercial publisher false positives', function (): void {
+    $librarian = User::factory()->create(['role' => UserRole::Librarian]);
+    $businessCategory = Category::factory()->create(['name' => 'Business Administration']);
+
+    $academicPdf = buildMultiPageTestPdf([
+        [
+            'From the editor',
+            'Advancing Small Business Strategy in Turbulent Times',
+            'Timothy R. Mcilveene',
+            '1a',
+            '1 Business Administration, University of West Florida',
+            'Keywords: small business strategy, organizational resilience, artificial intelligence (AI)',
+            'https://doi.org/10.53703/001c.157794',
+            'Journal of Small Business Strategy',
+            'Vol. 36, Issue 2, 2026',
+            'Small and medium-sized enterprises are central to innovation, employment, and community development across turbulent global markets.',
+            'Introduction',
+            'Small businesses have long been recognized as vital engines of innovation.',
+        ],
+        [
+            'Published: March 31, 2026 CDT.',
+            'This is an open-access article distributed under the terms of the Creative Commons Attribution 4.0 International License (CCBY-4.0).',
+            'View this license legal deed at http://creativecommons.org/licenses/by/4.0',
+        ],
+        [
+            'References',
+            'Mark, M., & Pearson, C. S. (2001). The Hero and the Outlaw. McGraw-Hill.',
+            'Lazarus, R. S. (1991). Emotion and adaptation. Oxford University Press.',
+            'Freeman, R. E. (1984). Strategic management. Cambridge University Press.',
+        ],
+    ], [
+        'Title' => 'Advancing Small Business Strategy in Turbulent Times',
+        'Producer' => 'Prince 15.1 (www.princexml.com)',
+    ]);
+
+    $response = actingAs($librarian)
+        ->postJson(route('administrators.library.books.inspect-pdf'), [
+            'pdf' => UploadedFile::fake()->createWithContent('small-business-strategy.pdf', $academicPdf),
+            'use_ai' => false,
+        ])
+        ->assertOk();
+
+    $response->assertJsonPath('metadata.author', 'Timothy R. Mcilveene')
+        ->assertJsonPath('metadata.category', 'Business Administration')
+        ->assertJsonPath('metadata.matched_category_id', $businessCategory->id)
+        ->assertJsonPath('metadata.publisher', 'Journal of Small Business Strategy')
+        ->assertJsonPath('metadata.publication_year', 2026)
+        ->assertJsonPath('rights_scan.risk_level', 'open')
+        ->assertJsonPath('rights_scan.piracy_blocked', false)
+        ->assertJsonPath('rights_scan.suggested_rights.rights_basis', 'open_license')
+        ->assertJsonPath('rights_scan.suggested_rights.license_url', 'http://creativecommons.org/licenses/by/4.0')
+        ->assertJsonPath('ai_decision.status', 'skipped_by_user');
+
+    expect($response->json('metadata.description'))->toContain('Small and medium-sized enterprises are central to innovation')
+        ->and($response->json('rights_scan.reference_pages_excluded'))->toContain(3);
+});
+
+it('utilizes Laravel AI structured output to match author and category and surface copyright decision reasoning', function (): void {
+    $librarian = User::factory()->create(['role' => UserRole::Librarian]);
+    $author = Author::factory()->create(['name' => 'Timothy R. Mcilveene']);
+    $category = Category::factory()->create(['name' => 'Business & Management']);
+
+    LibraryDocumentCatalogAgent::fake([
+        [
+            'title' => 'Advancing Small Business Strategy in Turbulent Times',
+            'author_name' => 'Timothy R. Mcilveene',
+            'matched_author_id' => $author->id,
+            'category_name' => 'Business & Management',
+            'matched_category_id' => $category->id,
+            'publisher' => 'Journal of Small Business Strategy',
+            'publication_year' => 2026,
+            'isbn' => null,
+            'description' => 'An editorial overview examining resilience, ethical AI adoption, customer retention, and trade policy uncertainty in SMEs.',
+            'rights_risk_level' => 'open',
+            'recommended_rights_basis' => 'open_license',
+            'rights_holder' => 'Journal of Small Business Strategy',
+            'license_url' => 'https://creativecommons.org/licenses/by/4.0',
+            'confidence' => 'high',
+            'decision_summary' => 'Open-access editorial published under CC BY 4.0; matched existing catalog author and Business & Management category.',
+            'decision_reasons' => [
+                'Explicit CC BY 4.0 open-access license statement on document colophon.',
+                'Topic and keywords align with Business & Management.',
+            ],
+        ],
+    ]);
+
+    $minimalPdf = buildValidTestPdf(
+        'An editorial overview of SME resilience and ethical AI. Licensed under Creative Commons Attribution 4.0 https://creativecommons.org/licenses/by/4.0',
+        [
+            'Title' => 'Advancing Small Business Strategy in Turbulent Times',
+        ]
+    );
+
+    $response = actingAs($librarian)
+        ->postJson(route('administrators.library.books.inspect-pdf'), [
+            'pdf' => UploadedFile::fake()->createWithContent('editorial.pdf', $minimalPdf),
+            'use_ai' => true,
+        ])
+        ->assertOk();
+
+    LibraryDocumentCatalogAgent::assertPrompted(fn ($prompt): bool => str_contains($prompt->prompt, 'Business & Management'));
+
+    $response->assertJsonPath('ai_decision.used', true)
+        ->assertJsonPath('ai_decision.status', 'applied')
+        ->assertJsonPath('ai_decision.confidence', 'high')
+        ->assertJsonPath('metadata.matched_author_id', $author->id)
+        ->assertJsonPath('metadata.matched_category_id', $category->id)
+        ->assertJsonPath('metadata.publisher', 'Journal of Small Business Strategy')
+        ->assertJsonPath('metadata.publication_year', 2026)
+        ->assertJsonPath('rights_scan.risk_level', 'open')
+        ->assertJsonPath('rights_scan.ai_decision.used', true)
+        ->assertJsonPath('needs_metadata_review', false);
+});
+
+it('never allows Laravel AI to override deterministic piracy hard-blocks', function (): void {
+    $librarian = User::factory()->create(['role' => UserRole::Librarian]);
+
+    LibraryDocumentCatalogAgent::fake([
+        [
+            'title' => 'Supposedly Open Book',
+            'author_name' => 'Someone',
+            'matched_author_id' => null,
+            'category_name' => 'General',
+            'matched_category_id' => null,
+            'publisher' => null,
+            'publication_year' => 2024,
+            'isbn' => null,
+            'description' => 'Should never be called on piracy files.',
+            'rights_risk_level' => 'open',
+            'recommended_rights_basis' => 'open_license',
+            'rights_holder' => null,
+            'license_url' => null,
+            'confidence' => 'high',
+            'decision_summary' => 'Should never run.',
+            'decision_reasons' => [],
+        ],
+    ]);
+
+    $piratedPdf = buildValidTestPdf(
+        'Downloaded from OceanOfPDF.com — Creative Commons Attribution 4.0',
+        ['Title' => 'Pirated Sample']
+    );
+
+    actingAs($librarian)
+        ->postJson(route('administrators.library.books.inspect-pdf'), [
+            'pdf' => UploadedFile::fake()->createWithContent('pirated.pdf', $piratedPdf),
+            'use_ai' => true,
+        ])
+        ->assertOk()
+        ->assertJsonPath('rights_scan.piracy_blocked', true)
+        ->assertJsonPath('rights_scan.risk_level', 'critical')
+        ->assertJsonPath('ai_decision.used', false)
+        ->assertJsonPath('ai_decision.status', 'skipped_piracy_blocked');
+
+    LibraryDocumentCatalogAgent::assertNeverPrompted();
+});
+
 /**
  * Build a minimal standards-compliant PDF 1.4 document with selectable text and Info dictionary
  * so smalot/pdfparser can parse metadata and page text deterministically in tests.
@@ -328,29 +486,69 @@ it('requires documented permission notes before publishing PDFs flagged with cop
  */
 function buildValidTestPdf(string $pageText, array $info = []): string
 {
+    return buildMultiPageTestPdf([$pageText !== '' ? [$pageText] : []], $info);
+}
+
+/**
+ * Build a multi-page standards-compliant PDF 1.4 document with line-separated selectable text.
+ *
+ * @param  list<list<string>>  $pagesLines
+ * @param  array<string, string>  $info
+ */
+function buildMultiPageTestPdf(array $pagesLines, array $info = []): string
+{
     $escapePdf = static fn (string $text): string => str_replace(
         ['\\', '(', ')', "\r", "\n"],
         ['\\\\', '\\(', '\\)', '', ' '],
         $text
     );
 
-    $stream = $pageText !== ''
-        ? "BT\n/F1 12 Tf\n72 720 Td\n(".$escapePdf($pageText).") Tj\nET"
-        : '';
-
     $infoEntries = [];
     foreach ($info as $key => $value) {
         $infoEntries[] = "/{$key} (".$escapePdf($value).')';
     }
 
+    $pageCount = count($pagesLines);
+    $fontObjectId = 3;
+    $infoObjectId = 4;
+    $nextObjectId = 5;
+
+    $pageObjectIds = [];
+    $dynamicObjects = [];
+
+    foreach ($pagesLines as $lines) {
+        $pageObjectId = $nextObjectId++;
+        $contentObjectId = $nextObjectId++;
+        $pageObjectIds[] = $pageObjectId;
+
+        $streamParts = [];
+        if ($lines !== []) {
+            $streamParts[] = 'BT';
+            $streamParts[] = '/F1 11 Tf';
+            $streamParts[] = '14 TL';
+            $streamParts[] = '72 740 Td';
+            foreach ($lines as $idx => $line) {
+                $prefix = $idx === 0 ? '' : 'T* ';
+                $streamParts[] = $prefix.'('.$escapePdf($line).') Tj';
+            }
+            $streamParts[] = 'ET';
+        }
+        $stream = implode("\n", $streamParts);
+
+        $dynamicObjects[$pageObjectId] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 {$fontObjectId} 0 R >> >> /Contents {$contentObjectId} 0 R >>";
+        $dynamicObjects[$contentObjectId] = '<< /Length '.mb_strlen($stream, '8bit')." >>\nstream\n{$stream}\nendstream";
+    }
+
+    $kidsRefs = implode(' ', array_map(static fn (int $id): string => "{$id} 0 R", $pageObjectIds));
+
     $objects = [
         1 => '<< /Type /Catalog /Pages 2 0 R >>',
-        2 => '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-        3 => '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
-        4 => '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-        5 => '<< /Length '.mb_strlen($stream, '8bit')." >>\nstream\n{$stream}\nendstream",
-        6 => '<< '.implode(' ', $infoEntries).' >>',
+        2 => "<< /Type /Pages /Kids [{$kidsRefs}] /Count {$pageCount} >>",
+        $fontObjectId => '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+        $infoObjectId => '<< '.implode(' ', $infoEntries).' >>',
+        ...$dynamicObjects,
     ];
+    ksort($objects);
 
     $pdf = "%PDF-1.4\n";
     $offsets = [0 => 0];
@@ -369,7 +567,7 @@ function buildValidTestPdf(string $pageText, array $info = []): string
         $pdf .= sprintf("%010d 00000 n \n", $offsets[$id]);
     }
 
-    $pdf .= "trailer\n<< /Size {$count} /Root 1 0 R /Info 6 0 R >>\n";
+    $pdf .= "trailer\n<< /Size {$count} /Root 1 0 R /Info {$infoObjectId} 0 R >>\n";
     $pdf .= "startxref\n{$xrefOffset}\n%%EOF\n";
 
     return $pdf;

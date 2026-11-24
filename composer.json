@@ -46,7 +46,7 @@
         "koakademy/cashier": "^1.1",
         "koakademy/forms": "^1.10",
         "koakademy/inventory": "^1.1",
-        "koakademy/library-system": "^1.3",
+        "koakademy/library-system": "^1.4",
         "koakademy/notification-center": "^1.1",
         "koakademy/student-medical-records": "^1.1",
         "laraowl/client": "^1.0",

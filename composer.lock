@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "4dcdd353e586e6da16815fb368cf749b",
+    "content-hash": "b9e4d31217278735be89f17b80ac9cf0",
     "packages": [
         {
             "name": "achyutn/filament-log-viewer",
@@ -5956,16 +5956,16 @@
         },
         {
             "name": "koakademy/library-system",
-            "version": "v1.3.0",
+            "version": "v1.4.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/yukazakiri/koakademy-module-library-system.git",
-                "reference": "a20104a4242a2a44cc56c08b14c1df186a20aa85"
+                "reference": "02a5f66841264f5e4d1cef115c3e0685f50de659"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/yukazakiri/koakademy-module-library-system/zipball/a20104a4242a2a44cc56c08b14c1df186a20aa85",
-                "reference": "a20104a4242a2a44cc56c08b14c1df186a20aa85",
+                "url": "https://api.github.com/repos/yukazakiri/koakademy-module-library-system/zipball/02a5f66841264f5e4d1cef115c3e0685f50de659",
+                "reference": "02a5f66841264f5e4d1cef115c3e0685f50de659",
                 "shasum": ""
             },
             "require": {
@@ -5980,6 +5980,9 @@
             },
             "require-dev": {
                 "pestphp/pest": "^5.0"
+            },
+            "suggest": {
+                "laravel/ai": "Enables structured Laravel AI cataloging (author, category, abstract) and copyright decisioning for uploaded eBook PDFs."
             },
             "type": "library",
             "extra": {
@@ -6016,7 +6019,7 @@
                 "issues": "https://github.com/yukazakiri/koakademy-module-library-system/issues",
                 "source": "https://github.com/yukazakiri/koakademy-module-library-system"
             },
-            "time": "2026-11-24T06:25:14+00:00"
+            "time": "2026-11-24T07:18:12+00:00"
         },
         {
             "name": "koakademy/notification-center",

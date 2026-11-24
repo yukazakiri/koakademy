@@ -11,9 +11,11 @@ use Inertia\Testing\AssertableInertia as Assert;
 use Modules\LibrarySystem\Ai\Agents\LibraryDocumentCatalogAgent;
 use Modules\LibrarySystem\Enums\BookFormat;
 use Modules\LibrarySystem\Enums\DigitalEditionStatus;
+use Modules\LibrarySystem\Enums\DigitalEditionVisibility;
 use Modules\LibrarySystem\Models\Author;
 use Modules\LibrarySystem\Models\Book;
 use Modules\LibrarySystem\Models\Category;
+use Modules\LibrarySystem\Models\DigitalEdition;
 
 use function Pest\Laravel\actingAs;
 
@@ -476,6 +478,231 @@ it('never allows Laravel AI to override deterministic piracy hard-blocks', funct
         ->assertJsonPath('ai_decision.status', 'skipped_piracy_blocked');
 
     LibraryDocumentCatalogAgent::assertNeverPrompted();
+});
+
+it('allows administrators to configure digital edition visibility and filter account-required ebooks', function (): void {
+    $librarian = User::factory()->create(['role' => UserRole::Librarian]);
+    $author = Author::factory()->create(['name' => 'Katherine Johnson']);
+    $category = Category::factory()->create(['name' => 'Mathematics']);
+
+    $openPdf = buildValidTestPdf(
+        'Open Textbook. Creative Commons CC BY 4.0 https://creativecommons.org/licenses/by/4.0/',
+        ['Title' => 'Orbital Mechanics Notes']
+    );
+
+    actingAs($librarian)
+        ->post(route('administrators.library.books.store'), [
+            'format' => 'ebook',
+            'title' => 'Orbital Mechanics Notes',
+            'author_id' => $author->id,
+            'category_id' => $category->id,
+            'publication_year' => 2025,
+            'digital_pdf' => UploadedFile::fake()->createWithContent('orbital.pdf', $openPdf),
+            'digital_visibility' => 'authenticated',
+            'digital_rights_basis' => 'open_license',
+            'digital_license_url' => 'https://creativecommons.org/licenses/by/4.0/',
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertRedirect();
+
+    $gatedBook = Book::query()->where('title', 'Orbital Mechanics Notes')->firstOrFail();
+    $gatedEdition = $gatedBook->digitalEdition()->firstOrFail();
+
+    expect($gatedEdition->status)->toBe(DigitalEditionStatus::Draft)
+        ->and($gatedEdition->visibility)->toBe(DigitalEditionVisibility::Authenticated);
+
+    // Edit page exposes visibility and options
+    actingAs($librarian)
+        ->get(route('administrators.library.books.edit', $gatedBook))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('book.digital_edition.visibility', 'authenticated')
+            ->has('options.digital_visibilities', 3));
+
+    // Update visibility to members_only and publish
+    actingAs($librarian)
+        ->put(route('administrators.library.books.digital-edition.update', $gatedBook), [
+            'status' => 'published',
+            'visibility' => 'members_only',
+            'downloads_allowed' => false,
+            'rights_basis' => 'open_license',
+            'license_url' => 'https://creativecommons.org/licenses/by/4.0/',
+            'rights_confirmed' => true,
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertRedirect();
+
+    expect($gatedEdition->refresh()->status)->toBe(DigitalEditionStatus::Published)
+        ->and($gatedEdition->visibility)->toBe(DigitalEditionVisibility::MembersOnly);
+
+    // Create a second public eBook to confirm the account_required filter excludes it
+    $publicBook = Book::factory()->create([
+        'title' => 'Open Public Guide',
+        'format' => BookFormat::Ebook,
+        'author_id' => $author->id,
+        'category_id' => $category->id,
+        'total_copies' => 0,
+        'available_copies' => 0,
+    ]);
+    $publicPath = "library/ebooks/{$publicBook->id}/public.pdf";
+    Storage::disk('library-test')->put($publicPath, $openPdf);
+
+    DigitalEdition::query()->create([
+        'book_id' => $publicBook->id,
+        'disk' => 'library-test',
+        'path' => $publicPath,
+        'original_name' => 'public.pdf',
+        'mime_type' => 'application/pdf',
+        'size_bytes' => mb_strlen($openPdf),
+        'sha256' => hash('sha256', $openPdf),
+        'status' => DigitalEditionStatus::Published,
+        'visibility' => DigitalEditionVisibility::Public,
+        'downloads_allowed' => false,
+        'rights_basis' => 'open_license',
+        'license_url' => 'https://creativecommons.org/licenses/by/4.0/',
+        'uploaded_by' => $librarian->id,
+        'uploaded_at' => now(),
+        'published_by' => $librarian->id,
+        'published_at' => now(),
+        'rights_confirmed_by' => $librarian->id,
+        'rights_confirmed_at' => now(),
+    ]);
+
+    actingAs($librarian)
+        ->get(route('administrators.library.books.index', ['digital' => 'account_required']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('books.data', 1)
+            ->where('books.data.0.id', $gatedBook->id)
+            ->where('books.data.0.digital_edition.visibility', 'members_only'));
+});
+
+it('enforces public, authenticated, and members_only visibility across catalog, show, reader, and PDF stream', function (): void {
+    $student = User::factory()->create(['role' => UserRole::Student]);
+    $author = Author::factory()->create(['name' => 'Marie Curie']);
+    $category = Category::factory()->create(['name' => 'Physics']);
+
+    $pdfBytes = buildValidTestPdf('Sample published digital edition content.', ['Title' => 'Physics Monograph']);
+
+    $makePublishedEbook = function (
+        string $title,
+        DigitalEditionVisibility $visibility,
+        BookFormat $format = BookFormat::Ebook,
+    ) use ($author, $category, $pdfBytes): Book {
+        $book = Book::factory()->create([
+            'title' => $title,
+            'format' => $format,
+            'author_id' => $author->id,
+            'category_id' => $category->id,
+            'total_copies' => $format === BookFormat::Ebook ? 0 : 2,
+            'available_copies' => $format === BookFormat::Ebook ? 0 : 2,
+            'status' => 'available',
+        ]);
+
+        $path = "library/ebooks/{$book->id}/edition.pdf";
+        Storage::disk('library-test')->put($path, $pdfBytes);
+
+        DigitalEdition::query()->create([
+            'book_id' => $book->id,
+            'disk' => 'library-test',
+            'path' => $path,
+            'original_name' => 'edition.pdf',
+            'mime_type' => 'application/pdf',
+            'size_bytes' => mb_strlen($pdfBytes),
+            'sha256' => hash('sha256', $pdfBytes),
+            'status' => DigitalEditionStatus::Published,
+            'visibility' => $visibility,
+            'downloads_allowed' => false,
+            'rights_basis' => 'open_license',
+            'license_url' => 'https://creativecommons.org/licenses/by/4.0/',
+            'uploaded_at' => now(),
+            'published_at' => now(),
+            'rights_confirmed_at' => now(),
+        ]);
+
+        return $book;
+    };
+
+    $publicBook = $makePublishedEbook('Public Open Reader Book', DigitalEditionVisibility::Public);
+    $authBook = $makePublishedEbook('Account Gated Reader Book', DigitalEditionVisibility::Authenticated);
+    $membersEbook = $makePublishedEbook('Members Only Hidden eBook', DigitalEditionVisibility::MembersOnly);
+    $membersHybrid = $makePublishedEbook('Members Only Hybrid Book', DigitalEditionVisibility::MembersOnly, BookFormat::Hybrid);
+
+    // 1. Guest catalog: sees public, authenticated, and hybrid (physical only), but NOT members_only ebook-only
+    $this->get(route('library.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('stats.catalog_books', 3)
+            ->where('stats.available_online', 2)
+            ->has('books.data', 3));
+
+    // 2. Public visibility: guest can view show, reader, and PDF content
+    $this->get(route('library.books.show', $publicBook))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('book.visibility', 'public')
+            ->where('book.requires_account_to_read', false)
+            ->where('access.can_read', true)
+            ->where('access.read_requires_auth', false));
+
+    $this->get(route('library.books.read', $publicBook))->assertOk();
+    $this->get(route('library.books.content', $publicBook))->assertOk();
+
+    // 3. Authenticated visibility: guest sees detail with sign-in gate, blocked on /read & /content
+    $this->get(route('library.books.show', $authBook))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('book.visibility', 'authenticated')
+            ->where('book.requires_account_to_read', true)
+            ->where('access.can_read', false)
+            ->where('access.read_requires_auth', true));
+
+    $this->get(route('library.books.read', $authBook))->assertRedirect(route('login'));
+    $this->getJson(route('library.books.read', $authBook))->assertUnauthorized();
+    $this->get(route('library.books.content', $authBook))->assertUnauthorized();
+
+    // 4. Members-only eBook-only: guest redirected on show & read, 401 on content
+    $this->get(route('library.books.show', $membersEbook))->assertRedirect(route('login'));
+    $this->get(route('library.books.read', $membersEbook))->assertRedirect(route('login'));
+    $this->get(route('library.books.content', $membersEbook))->assertUnauthorized();
+
+    // 5. Members-only hybrid: guest can still see the physical book record, but digital edition is hidden
+    $this->get(route('library.books.show', $membersHybrid))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('book.available_online', false)
+            ->where('book.visibility', null)
+            ->where('access.can_read', false)
+            ->where('access.read_requires_auth', false));
+
+    $this->get(route('library.books.read', $membersHybrid))->assertRedirect(route('login'));
+    $this->get(route('library.books.content', $membersHybrid))->assertUnauthorized();
+
+    // 6. Signed-in student: sees all 4 books & all 4 digital editions, can open & stream every one
+    actingAs($student)
+        ->get(route('library.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('stats.catalog_books', 4)
+            ->where('stats.available_online', 4)
+            ->has('books.data', 4));
+
+    actingAs($student)
+        ->get(route('library.books.authenticate', ['book' => $authBook, 'from' => 'read', 'action' => 'read']))
+        ->assertRedirect(route('library.books.read', $authBook));
+
+    foreach ([$authBook, $membersEbook, $membersHybrid] as $restrictedBook) {
+        actingAs($student)
+            ->get(route('library.books.show', $restrictedBook))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('book.available_online', true)
+                ->where('access.can_read', true)
+                ->where('access.read_requires_auth', false));
+
+        actingAs($student)->get(route('library.books.read', $restrictedBook))->assertOk();
+        actingAs($student)->get(route('library.books.content', $restrictedBook))->assertOk();
+    }
 });
 
 /**

@@ -49,14 +49,75 @@ export type CourseOption = { id: number; code: string; title: string };
 export type RoomOption = { id: number; name: string; class_code: string | null; capacity?: number; type?: string; building?: string | null };
 export type FacultyOption = { id: string; name: string; department: string | null };
 
+export type ConflictKind = "room" | "faculty" | "section";
+
 export type ScheduleConflict = {
     day: string;
     time: string;
+    overlap_start?: string;
+    overlap_end?: string;
+    overlap_minutes?: number;
     schedule_1_id?: number;
     schedule_2_id?: number;
+    room_id?: number | null;
+    faculty_id?: string | null;
     class_1: { id?: number; subject_code: string; section: string; room: string | null; faculty: string | null; delivery_mode?: DeliveryMode };
     class_2: { id?: number; subject_code: string; section: string; room: string | null; faculty: string | null; delivery_mode?: DeliveryMode };
-    conflict_type: "room" | "faculty" | "section";
+    conflict_type: ConflictKind;
+    conflict_types?: ConflictKind[];
+};
+
+export type HeatmapCell = {
+    day: string;
+    hour: number;
+    active_sessions: number;
+    occupied_rooms: number;
+    free_rooms: number;
+    online_sessions: number;
+    conflict_sessions: number;
+    room_utilization_pct: number;
+};
+
+export type UtilizationSummary = {
+    total_active_rooms: number;
+    total_scheduled_sessions: number;
+    overcrowded_sessions_count: number;
+    unassigned_room_sessions_count: number;
+    average_room_utilization_pct: number;
+    peak_hour: HeatmapCell | null;
+    heatmap: HeatmapCell[];
+};
+
+export type SuggestedRoom = {
+    room_id: number;
+    name: string;
+    class_code: string | null;
+    capacity: number;
+    type: string;
+    building: string | null;
+    fits_capacity: boolean;
+    score: number;
+    reason: string;
+};
+
+export type SuggestedSlot = {
+    day_of_week: string;
+    start_time: string;
+    end_time: string;
+    time_range: string;
+    room_id: number | null;
+    room_name: string | null;
+    same_day: boolean;
+    same_room: boolean;
+    score: number;
+    reason: string;
+};
+
+export type ResolutionSuggestions = {
+    schedule_id: number;
+    available_rooms: SuggestedRoom[];
+    available_slots: SuggestedSlot[];
+    can_convert_to_online: boolean;
 };
 
 export type ScheduleUpdateResponse = {
@@ -73,7 +134,9 @@ export type ScheduleUpdateResponse = {
         pattern_group_id?: string | null;
         status?: string;
     };
+    class?: ClassScheduleData | null;
     conflicts: ScheduleConflict[];
+    utilization?: UtilizationSummary | null;
 };
 
 export type ScheduleStats = {
@@ -85,6 +148,7 @@ export type ScheduleStats = {
     classes_by_year_level: Record<string, number>;
     classes_by_course: Record<string, number>;
     schedule_conflicts: ScheduleConflict[];
+    utilization?: UtilizationSummary;
 };
 
 export type StudentSearchResult = {
@@ -111,6 +175,7 @@ export interface SchedulingAnalyticsProps {
     user: User;
     schedule_data: ClassScheduleData[];
     stats: ScheduleStats;
+    scheduling_policy?: SchedulingPolicy;
     term_context?: {
         school_year: string;
         semester: string;

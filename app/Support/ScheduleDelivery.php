@@ -40,13 +40,35 @@ final class ScheduleDelivery
         self::ONLINE_ASYNCHRONOUS_ALIAS,
     ];
 
+    /** @var list<string> */
+    public const array WEEKDAYS_MON_SAT = [
+        'Monday',
+        'Tuesday',
+        'Wednesday',
+        'Thursday',
+        'Friday',
+        'Saturday',
+    ];
+
+    /** @var list<string> */
+    public const array ALL_DAYS = [
+        'Monday',
+        'Tuesday',
+        'Wednesday',
+        'Thursday',
+        'Friday',
+        'Saturday',
+        'Sunday',
+    ];
+
     /** @var array{
      *     default_online_delivery_mode: string,
      *     check_room_conflicts: bool,
      *     check_faculty_conflicts: bool,
      *     check_student_cohort_conflicts: bool,
      *     check_synchronous_online_conflicts: bool,
-     *     check_asynchronous_online_conflicts: bool
+     *     check_asynchronous_online_conflicts: bool,
+     *     allow_sunday_scheduling: bool
      * } */
     public const array DEFAULT_POLICY = [
         'default_online_delivery_mode' => Classes::DELIVERY_ONLINE,
@@ -55,6 +77,7 @@ final class ScheduleDelivery
         'check_student_cohort_conflicts' => true,
         'check_synchronous_online_conflicts' => true,
         'check_asynchronous_online_conflicts' => false,
+        'allow_sunday_scheduling' => false,
     ];
 
     public static function canonicalize(mixed $mode, string $fallback = Classes::DELIVERY_FACE_TO_FACE): string
@@ -192,7 +215,8 @@ final class ScheduleDelivery
      *     check_faculty_conflicts: bool,
      *     check_student_cohort_conflicts: bool,
      *     check_synchronous_online_conflicts: bool,
-     *     check_asynchronous_online_conflicts: bool
+     *     check_asynchronous_online_conflicts: bool,
+     *     allow_sunday_scheduling: bool
      * }
      */
     public static function policy(?array $override = null): array
@@ -220,7 +244,8 @@ final class ScheduleDelivery
      *     check_faculty_conflicts: bool,
      *     check_student_cohort_conflicts: bool,
      *     check_synchronous_online_conflicts: bool,
-     *     check_asynchronous_online_conflicts: bool
+     *     check_asynchronous_online_conflicts: bool,
+     *     allow_sunday_scheduling: bool
      * }
      */
     public static function sanitizePolicy(array $attributes): array
@@ -237,7 +262,25 @@ final class ScheduleDelivery
             'check_student_cohort_conflicts' => (bool) ($attributes['check_student_cohort_conflicts'] ?? self::DEFAULT_POLICY['check_student_cohort_conflicts']),
             'check_synchronous_online_conflicts' => (bool) ($attributes['check_synchronous_online_conflicts'] ?? self::DEFAULT_POLICY['check_synchronous_online_conflicts']),
             'check_asynchronous_online_conflicts' => (bool) ($attributes['check_asynchronous_online_conflicts'] ?? self::DEFAULT_POLICY['check_asynchronous_online_conflicts']),
+            'allow_sunday_scheduling' => (bool) ($attributes['allow_sunday_scheduling'] ?? self::DEFAULT_POLICY['allow_sunday_scheduling']),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $policy
+     */
+    public static function allowsSunday(?array $policy = null): bool
+    {
+        return self::policy($policy)['allow_sunday_scheduling'];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $policy
+     * @return list<string>
+     */
+    public static function allowedDays(?array $policy = null): array
+    {
+        return self::allowsSunday($policy) ? self::ALL_DAYS : self::WEEKDAYS_MON_SAT;
     }
 
     /**

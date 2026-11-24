@@ -1,6 +1,8 @@
 import { WeeklySchedule, type WeeklyScheduleEvent } from "@/components/administrators/classes/weekly-schedule";
-import { Button } from "@/components/ui/button";
-import { Pencil } from "lucide-react";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { index as scheduleStudioIndex } from "@/routes/administrators/scheduling-analytics";
+import { Link } from "@inertiajs/react";
+import { CalendarDays, Pencil } from "lucide-react";
 import { deliveryModeLocationLabel, isOnlineDeliveryMode } from "../lib/class-defaults";
 import { getScheduleEntriesForDay, parseTimeToMinutes, scheduleDayOrder } from "./schedule-utils";
 import type { ClassShowData } from "./types";
@@ -63,12 +65,18 @@ export function ScheduleOverview({ classItem, canUpdate, onManage }: { classItem
                             asynchronous online skips conflicts by default.
                         </p>
                     </div>
-                    {canUpdate && (
-                        <Button variant="outline" onClick={onManage} className="h-10 px-3">
-                            <Pencil className="size-4" aria-hidden="true" />
-                            {events.length ? "Edit schedule" : "Add session"}
-                        </Button>
-                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Link href={scheduleStudioIndex.url()} className={buttonVariants({ variant: "ghost", className: "h-10 px-3" })}>
+                            <CalendarDays className="size-4" aria-hidden="true" />
+                            Open Schedule Studio
+                        </Link>
+                        {canUpdate && (
+                            <Button variant="outline" onClick={onManage} className="h-10 px-3">
+                                <Pencil className="size-4" aria-hidden="true" />
+                                {events.length ? "Edit schedule" : "Add session"}
+                            </Button>
+                        )}
+                    </div>
                 </div>
                 <div className="border-t">
                     <WeeklySchedule

@@ -1,7 +1,7 @@
 import type { NavItem, NavSubItem } from "@/components/nav-main";
 import { Badge } from "@/components/ui/badge";
 import { index as libraryIndex } from "@/routes/library";
-import { IconBooks, IconCalendar, IconDashboard, IconReceipt, IconSchool, IconSpeakerphone, IconUsers } from "@tabler/icons-react";
+import { IconBooks, IconCalendar, IconDashboard, IconQrcode, IconReceipt, IconSchool, IconSpeakerphone, IconUsers } from "@tabler/icons-react";
 
 export interface StudentPortalClass {
     id: number;
@@ -76,6 +76,16 @@ export function getStudentPortalNavigation(
                       title: "Digital Library",
                       icon: IconBooks,
                       url: libraryIndex.url(),
+                  },
+              ]
+            : []),
+        ...(isEnabled("online-resources")
+            ? [
+                  {
+                      id: "online-resources",
+                      title: "Online Resources",
+                      icon: IconQrcode,
+                      url: "/student/resources",
                   },
               ]
             : []),

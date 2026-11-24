@@ -144,6 +144,7 @@ final class Classes extends Model
             'enable_announcements' => true,
             'enable_grade_visibility' => true,
             'enable_attendance_tracking' => false,
+            'enable_online_resources' => true,
             'allow_late_submissions' => false,
             'enable_discussion_board' => false,
             'notify_students_on_schedule_changes' => true,
@@ -233,13 +234,13 @@ final class Classes extends Model
             ->currentAcademicPeriod();
     }
 
-    public function Subject()
+    public function Subject(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
         // Use subject_id relationship if available, otherwise fallback to code
         return $this->belongsTo(Subject::class, 'subject_id', 'id');
     }
 
-    public function SubjectByCodeFallback()
+    public function SubjectByCodeFallback(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
         return $this->belongsTo(Subject::class, 'subject_code', 'code');
     }
@@ -254,7 +255,7 @@ final class Classes extends Model
         return $this->belongsTo(Subject::class, 'subject_code', 'code');
     }
 
-    public function ShsSubject()
+    public function ShsSubject(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
         return $this->belongsTo(StrandSubject::class, 'subject_code', 'code');
     }

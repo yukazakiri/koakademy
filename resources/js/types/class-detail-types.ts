@@ -172,7 +172,7 @@ export interface AttendanceOverview {
     };
 }
 
-export type ClassTab = "stream" | "classwork" | "attendance" | "people" | "grades";
+export type ClassTab = "stream" | "classwork" | "resources" | "attendance" | "people" | "grades";
 
 export interface ClassSettings {
     accent_color: string | null;
@@ -184,6 +184,7 @@ export interface ClassSettings {
     enable_performance_analytics: boolean;
     allow_late_submissions: boolean;
     enable_discussion_board: boolean;
+    enable_online_resources?: boolean;
     notify_students_on_schedule_changes: boolean;
     start_date: string | null;
 }

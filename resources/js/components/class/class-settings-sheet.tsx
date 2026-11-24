@@ -58,6 +58,7 @@ export function ClassSettingsDialog({ open, onOpenChange, classData, rooms }: Cl
         enable_performance_analytics: !!classData.settings.enable_performance_analytics,
         allow_late_submissions: !!classData.settings.allow_late_submissions,
         enable_discussion_board: !!classData.settings.enable_discussion_board,
+        enable_online_resources: classData.settings.enable_online_resources ?? true,
         notify_students_on_schedule_changes: classData.settings.notify_students_on_schedule_changes ?? true,
         start_date: classData.start_date ?? classData.settings.start_date ?? null,
     });
@@ -241,6 +242,7 @@ export function ClassSettingsDialog({ open, onOpenChange, classData, rooms }: Cl
                                     ["enable_attendance_tracking", "Attendance Tracking"],
                                     ["allow_late_submissions", "Late Submissions"],
                                     ["enable_discussion_board", "Discussion Board"],
+                                    ["enable_online_resources", "Online Resources"],
                                     ["notify_students_on_schedule_changes", "Schedule Alerts"],
                                     ["enable_performance_analytics", "Analytics"],
                                 ].map(([key, label]) => (

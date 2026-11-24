@@ -79,6 +79,10 @@ export function SiteHeader({ user }: SiteHeaderProps) {
             return "Announcements";
         }
 
+        if (path.includes("/resources")) {
+            return "Online Resources";
+        }
+
         return "Dashboard";
     })();
 

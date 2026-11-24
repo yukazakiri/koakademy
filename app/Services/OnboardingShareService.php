@@ -34,6 +34,7 @@ final class OnboardingShareService
         'student-tuition' => ['tuition'],
         'student-schedule' => ['schedule'],
         'student-classes' => ['classes'],
+        'student-online-resources' => ['online-resources'],
     ];
 
     /**

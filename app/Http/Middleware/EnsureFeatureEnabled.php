@@ -53,6 +53,7 @@ final class EnsureFeatureEnabled
         'student.classes*' => 'student-classes',
         'student.tuition*' => 'student-tuition',
         'student.schedule*' => 'student-schedule',
+        'student.resources*' => 'student-online-resources',
     ];
 
     public function __construct(private readonly FeatureAccessService $access) {}

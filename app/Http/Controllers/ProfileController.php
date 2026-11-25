@@ -42,6 +42,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
@@ -52,6 +53,7 @@ use Inertia\Response;
 use Jenssegers\Agent\Agent;
 use Laravel\Pennant\Feature;
 use PragmaRX\Google2FA\Google2FA;
+use Spatie\Activitylog\Models\Activity;
 
 final class ProfileController extends Controller
 {
@@ -254,6 +256,7 @@ final class ProfileController extends Controller
             'default_income_mode' => (string) config('income_brackets.default_mode', 'annual'),
             'api_tokens' => $apiTokens,
             'sessions' => $this->getSessions($request),
+            'security_activity' => $this->getSecurityActivity($user),
             'faculty' => $faculty ? [
                 'id' => $faculty->id,
                 'first_name' => $faculty->first_name,
@@ -447,6 +450,15 @@ final class ProfileController extends Controller
             $enabled ? 'mfa_email_enabled' : 'mfa_email_disabled',
             'success',
         );
+
+        if (! $enabled) {
+            $user->notify(new SecurityActivityNotification(
+                actionTitle: 'Email Verification Codes Disabled',
+                actionSummary: 'Email one-time verification codes were turned off for your account.',
+                ipAddress: $request->ip(),
+                userAgent: $request->userAgent(),
+            ));
+        }
 
         return back()->with('flash', [
             'success' => $enabled ? 'Email authentication enabled.' : 'Email authentication disabled.',
@@ -699,13 +711,16 @@ final class ProfileController extends Controller
             $attributes['website'] = $validated['website'] ?? null;
         }
 
+        $previousEmail = (string) $user->email;
         $user->update($attributes);
 
-        // If email changed, also update faculty record if exists
+        // If email changed, also update faculty record if exists and alert the previous address.
         if ($user->wasChanged('email')) {
-            Faculty::where('email', $user->getOriginal('email'))->update([
+            Faculty::where('email', $previousEmail)->update([
                 'email' => $validated['email'],
             ]);
+
+            $this->notifyEmailChanged($user, $previousEmail, (string) $validated['email'], $request);
         }
 
         // Get updated faculty information if exists
@@ -809,11 +824,16 @@ final class ProfileController extends Controller
 
         $this->syncStudentProfileRelations($student, $validated);
 
-        // If email changed, also update user record
+        // If email changed, also update user record and alert the previous address
         if ($emailChanged) {
+            $previousEmail = (string) $user->email;
             $user->update([
                 'email' => $validated['email'],
             ]);
+
+            if (mb_strtolower(mb_trim($previousEmail)) !== mb_strtolower(mb_trim((string) $validated['email']))) {
+                $this->notifyEmailChanged($user, $previousEmail, (string) $validated['email'], $request);
+            }
         }
 
         return back()->with('flash', [
@@ -952,11 +972,16 @@ final class ProfileController extends Controller
             'age' => $validated['age'] ?? null,
         ]);
 
-        // If email changed, also update user record
+        // If email changed, also update user record and alert the previous address
         if ($faculty->wasChanged('email')) {
+            $previousEmail = (string) $user->email;
             $user->update([
                 'email' => $validated['email'],
             ]);
+
+            if (mb_strtolower(mb_trim($previousEmail)) !== mb_strtolower(mb_trim((string) $validated['email']))) {
+                $this->notifyEmailChanged($user, $previousEmail, (string) $validated['email'], $request);
+            }
         }
 
         return back()->with('flash', [
@@ -1388,6 +1413,80 @@ final class ProfileController extends Controller
                     'value' => $modeKey,
                     'label' => (string) ($modeConfig['label'] ?? $modeKey),
                     'brackets' => $brackets,
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    private function notifyEmailChanged(User $user, string $previousEmail, string $newEmail, Request $request): void
+    {
+        app(UserSecurityActivityService::class)->record($user, 'email_changed', 'success');
+
+        if (filled($previousEmail) && mb_strtolower(mb_trim($previousEmail)) !== mb_strtolower(mb_trim($newEmail))) {
+            Notification::route('mail', $previousEmail)->notify(new SecurityActivityNotification(
+                actionTitle: 'Account Email Address Changed',
+                actionSummary: "The email address on your account was changed from {$previousEmail} to {$newEmail}.",
+                ipAddress: $request->ip(),
+                userAgent: $request->userAgent(),
+            ));
+        }
+    }
+
+    /**
+     * Get recent user-security activity log entries for the authenticated user.
+     *
+     * @return array<int, array{id: int, event: string, label: string, outcome: string, browser: string, platform: string, occurred_at: string, occurred_at_iso: string|null}>
+     */
+    private function getSecurityActivity(User $user): array
+    {
+        $table = (string) config('activitylog.table_name', 'activity_log');
+        $connection = config('activitylog.database_connection');
+        if (! Schema::connection(is_string($connection) && $connection !== '' ? $connection : null)->hasTable($table)) {
+            return [];
+        }
+
+        $labels = [
+            'signed_in' => 'Signed in',
+            'signed_out' => 'Signed out',
+            'sign_in_failed' => 'Failed sign-in attempt',
+            'mfa_passed' => 'Two-factor verification passed',
+            'mfa_failed' => 'Two-factor verification failed',
+            'mfa_app_enabled' => 'Authenticator app enabled',
+            'mfa_app_disabled' => 'Authenticator app removed',
+            'mfa_email_enabled' => 'Email codes enabled',
+            'mfa_email_disabled' => 'Email codes disabled',
+            'mfa_challenges_enabled' => '2FA login protection enabled',
+            'mfa_challenges_paused' => '2FA login protection paused',
+            'mfa_recovery_codes_regenerated' => 'Recovery codes regenerated',
+            'passkey_added' => 'Passkey added',
+            'passkey_deleted' => 'Passkey removed',
+            'password_changed' => 'Password changed',
+            'password_reset' => 'Password reset',
+            'email_changed' => 'Account email changed',
+            'social_account_connected' => 'Social account connected',
+            'social_account_disconnected' => 'Social account disconnected',
+            'faculty_id_verified' => 'Faculty ID verified',
+        ];
+
+        return Activity::query()
+            ->inLog('user-security')
+            ->forSubject($user)
+            ->latest('id')
+            ->limit(10)
+            ->get()
+            ->map(function (Activity $activity) use ($labels): array {
+                $event = (string) ($activity->event ?? 'security_event');
+
+                return [
+                    'id' => (int) $activity->id,
+                    'event' => $event,
+                    'label' => $labels[$event] ?? Str::headline($event),
+                    'outcome' => (string) ($activity->getProperty('outcome') ?? 'success'),
+                    'browser' => (string) ($activity->getProperty('browser') ?? 'Unknown browser'),
+                    'platform' => (string) ($activity->getProperty('platform') ?? 'Unknown OS'),
+                    'occurred_at' => $activity->created_at?->diffForHumans() ?? 'Recently',
+                    'occurred_at_iso' => $activity->created_at?->toIso8601String(),
                 ];
             })
             ->values()

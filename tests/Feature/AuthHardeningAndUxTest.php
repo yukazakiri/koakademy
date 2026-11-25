@@ -311,3 +311,60 @@ it('dispatches security alert notifications on password change and pausing 2FA',
         fn (SecurityActivityNotification $n): bool => $n->actionTitle === 'Two-Factor Login Protection Paused',
     );
 });
+
+it('dispatches a security alert notification when disabling email 2FA', function (): void {
+    Notification::fake();
+
+    $user = User::factory()->create([
+        'role' => UserRole::Student,
+        'password' => Hash::make('ValidPass123!'),
+        'has_email_authentication' => true,
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('student.profile.email-auth.toggle'), [
+            'enabled' => false,
+            'password' => 'ValidPass123!',
+        ])
+        ->assertSessionHasNoErrors();
+
+    Notification::assertSentTo(
+        $user,
+        SecurityActivityNotification::class,
+        fn (SecurityActivityNotification $n): bool => $n->actionTitle === 'Email Verification Codes Disabled',
+    );
+});
+
+it('notifies the previous email address and logs activity when a user changes their account email', function (): void {
+    Notification::fake();
+    activity()->enableLogging();
+
+    $user = User::factory()->create([
+        'role' => UserRole::Student,
+        'name' => 'Student One',
+        'email' => 'old-address@school.edu',
+        'password' => Hash::make('ValidPass123!'),
+    ]);
+
+    $this->actingAs($user)
+        ->put(route('student.profile.update'), [
+            'name' => 'Student One',
+            'email' => 'new-address@school.edu',
+        ])
+        ->assertSessionHasNoErrors();
+
+    Notification::assertSentOnDemand(
+        SecurityActivityNotification::class,
+        fn (SecurityActivityNotification $notification, array $channels, object $notifiable): bool => $notification->actionTitle === 'Account Email Address Changed'
+            && ($notifiable->routes['mail'] ?? null) === 'old-address@school.edu',
+    );
+
+    $this->actingAs($user->fresh())
+        ->get(route('student.profile'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->where('security_activity.0.event', 'email_changed')
+            ->where('security_activity.0.label', 'Account email changed')
+            ->where('security_activity.0.outcome', 'success')
+        );
+});

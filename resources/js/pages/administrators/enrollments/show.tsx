@@ -1,5 +1,4 @@
 import { reviewRequirement, transition as transitionEnrollment } from "@/actions/App/Http/Controllers/AdministratorEnrollmentPolicyController";
-import { index as tuitionAdjustments } from "@/actions/App/Http/Controllers/AdministratorTuitionAdjustmentController";
 import AdminLayout from "@/components/administrators/admin-layout";
 import {
     AlertDialog,
@@ -15,8 +14,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -25,27 +23,22 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { User } from "@/types/user";
-import { Head, Link, router, useForm, usePage } from "@inertiajs/react";
+import { Head, Link, router, usePage } from "@inertiajs/react";
 import axios from "axios";
 import {
-    AlertTriangle,
     ArrowLeft,
+    ArrowLeftRight,
     Ban,
     Banknote,
     CalendarDays,
     CheckCircle2,
     ClipboardList,
-    Download,
     ExternalLink,
     Files,
     FileText,
@@ -55,7 +48,6 @@ import {
     Printer,
     RefreshCcw,
     School,
-    ShieldAlert,
     Undo2,
     UserCheck,
     User as UserIcon,
@@ -64,217 +56,16 @@ import {
 import React, { useState } from "react";
 import { toast } from "sonner";
 import { route } from "ziggy-js";
-
-// Define types based on Controller output
-interface Branding {
-    currency: string;
-}
-
-interface EnrollmentData {
-    id: number;
-    student_id: string | number;
-    status: string;
-    workflow_runtime: "legacy" | "policy_v1";
-    allows_no_receipt_transition: boolean;
-    workflow: {
-        current_step_key: string | null;
-        terminal_outcome: string | null;
-        can_cancel: boolean;
-        outstanding_payments: { transactions: number; amount: number };
-        allowed_payment_methods: string[];
-        steps: Array<{ key: string; label: string; terminal: boolean }>;
-        allowed_transitions: Array<{
-            key: string;
-            label: string;
-            to: string;
-            requires_reason: boolean;
-            target_actions: string[];
-            payment_configuration: {
-                receipt_mode?: "required" | "optional" | "none";
-                allow_no_receipt?: boolean;
-            } | null;
-        }>;
-    };
-    school_year: string;
-    semester: number;
-    academic_year: number;
-    signature: unknown;
-    student: {
-        id: number;
-        full_name: string;
-        email: string | null;
-        student_id: string | number;
-        course_code: string | null;
-        student_url?: string;
-    };
-    subjects_enrolled: Array<{
-        id: number;
-        subject_code: string;
-        subject_title: string;
-        units: number;
-        lecture_fee: number;
-        lab_fee: number;
-    }>;
-    class_enrollments: Array<{
-        id: number;
-        class_id: number;
-        subject_code: string;
-        subject_title: string;
-        section: string;
-        faculty: string;
-        schedule: string;
-        room: string;
-        grades: {
-            prelim: number | null;
-            midterm: number | null;
-            finals: number | null;
-            average: number | null;
-        };
-        status: boolean;
-    }>;
-    missing_classes: Array<{
-        class_id: number | null;
-        subject_code: string;
-        subject_title: string;
-        section: string;
-        faculty: string;
-        available_slots: number | null;
-        max_slots: number;
-        is_full: boolean;
-        enrollment_status?: string;
-    }>;
-    tuition: {
-        total_tuition: number;
-        total_lectures: number;
-        total_laboratory: number;
-        total_miscelaneous_fees: number;
-        additional_fees_total: number;
-        discount: number;
-        downpayment: number;
-        required_downpayment: number;
-        overall_tuition: number;
-        total_balance: number;
-        balance_due: number;
-        total_paid?: number;
-        status?: string;
-    } | null;
-    additional_fees: Array<{
-        id: number;
-        fee_name: string;
-        amount: number;
-        is_separate_transaction: boolean;
-        transaction_number: string | null;
-    }>;
-    transactions: Array<{
-        id: number;
-        transaction_number: string;
-        invoicenumber: string;
-        description: string;
-        status: string;
-        total_amount: number | null;
-        amount: number;
-        transaction_date: string;
-        created_at: string;
-    }>;
-    resources: Array<{
-        id: number;
-        type: string;
-        file_name: string;
-        file_size: number;
-        created_at: string;
-        download_url: string;
-    }>;
-    requirements: Array<{
-        id: number;
-        key: string;
-        label: string;
-        description: string | null;
-        status: "pending" | "verified" | "waived";
-        required: boolean;
-        enforcement_step: string | null;
-        evidence_path: string | null;
-        verified_at: string | null;
-        waived_at: string | null;
-        waiver_reason: string | null;
-    }>;
-    pending_class_schedule_changes: Array<{
-        id: number;
-        class_id: number | null;
-        class_title: string;
-        subject_code: string | null;
-        subject_title: string | null;
-        section: string | null;
-        faculty: string | null;
-        old_schedule: string[];
-        new_schedule: string[];
-        changed_by: string | null;
-        changed_at: string | null;
-    }>;
-}
-
-interface RecentDeletion {
-    id: number;
-    log_name: string;
-    description: string;
-    subject_code: string;
-    subject_title: string;
-    subject_id: number | null;
-    class_id: number | null;
-    grade: number | null;
-    created_at: string;
-    created_at_human: string;
-    causer: string;
-}
-
-interface PageProps {
-    user: User;
-    enrollment: EnrollmentData;
-    auth: {
-        user: User;
-        can_verify_head: boolean;
-        can_verify_cashier: boolean;
-        is_super_admin: boolean;
-        can_manage_tuition: boolean;
-        can_advance_pipeline: boolean;
-        can_review_requirements: boolean;
-        can_reopen: boolean;
-    };
-    recent_deletions?: RecentDeletion[];
-    enrollment_pipeline: {
-        submitted_label: string;
-        pending_status: string;
-        pending_label: string;
-        pending_color: string;
-        department_verified_status: string;
-        department_verified_label: string;
-        department_verified_color: string;
-        cashier_verified_status: string;
-        cashier_verified_label: string;
-        cashier_verified_color: string;
-        steps: Array<{
-            status: string;
-            label: string;
-            color: string;
-            allowed_roles: string[];
-            is_core: boolean;
-            key: string;
-            action_type?: "standard" | "department_verification" | "cashier_verification";
-            is_completion?: boolean;
-        }>;
-        status_options: Array<{ value: string; label: string }>;
-        status_classes: Record<string, string>;
-        next_step?: {
-            status: string;
-            label: string;
-            color: string;
-            allowed_roles: string[];
-            is_core: boolean;
-            key: string;
-            action_type?: "standard" | "department_verification" | "cashier_verification";
-            is_completion?: boolean;
-        } | null;
-    };
-}
+import { EnrollmentLoadChangeDialog } from "./enrollment-load-change-dialog";
+import { EnrollmentTransferDialog } from "./enrollment-transfer-dialog";
+import {
+    CancelEnrollmentDialog,
+    QuickEnrollDialog,
+    RestoreSubjectsDialog,
+    VerifyCashierDialog,
+} from "./show/enrollment-action-dialogs";
+import { EnrollmentDetailTabs } from "./show/enrollment-detail-tabs";
+import type { Branding, EnrollmentData, ShowEnrollmentPageProps as PageProps } from "./show/types";
 
 export default function ShowEnrollment({ user, enrollment, auth, recent_deletions = [], enrollment_pipeline }: PageProps) {
     const studentUrl = enrollment.student.student_url || `/administrators/students/${enrollment.student.id}`;
@@ -291,6 +82,8 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
 
     const [activeTab, setActiveTab] = useState("classes");
     const [showUndoDialog, setShowUndoDialog] = useState(false);
+    const [showLoadChangeDialog, setShowLoadChangeDialog] = useState(false);
+    const [showTransferDialog, setShowTransferDialog] = useState(false);
     const [showScheduleChangesDialog, setShowScheduleChangesDialog] = useState(false);
     const [selectedDeletions, setSelectedDeletions] = useState<number[]>([]);
     const [restoringSubjects, setRestoringSubjects] = useState(false);
@@ -786,6 +579,25 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                 </DialogContent>
             </Dialog>
 
+            <EnrollmentLoadChangeDialog
+                open={showLoadChangeDialog}
+                onOpenChange={setShowLoadChangeDialog}
+                enrollmentId={enrollment.id}
+                courseId={null}
+                studentName={enrollment.student.full_name}
+                currency={currency}
+                onChanged={() => router.reload()}
+            />
+
+            <EnrollmentTransferDialog
+                open={showTransferDialog}
+                onOpenChange={setShowTransferDialog}
+                enrollmentId={enrollment.id}
+                studentName={enrollment.student.full_name}
+                currency={currency}
+                onTransferred={() => router.reload()}
+            />
+
             <div className="space-y-6 pb-20">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="flex items-start gap-3 sm:gap-4">
@@ -821,6 +633,24 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                             <UserIcon className="mr-2 size-4" />
                             Student record
                         </Link>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setShowLoadChangeDialog(true)}
+                            className="rounded-full shadow-sm transition-[transform,box-shadow] duration-200 active:scale-[0.98]"
+                        >
+                            <ArrowLeftRight className="mr-2 size-4" />
+                            Add / Drop / Swap
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setShowTransferDialog(true)}
+                            className="rounded-full shadow-sm transition-[transform,box-shadow] duration-200 active:scale-[0.98]"
+                        >
+                            <School className="mr-2 size-4" />
+                            Shift / Transfer
+                        </Button>
                         <Link
                             href={route("administrators.enrollments.edit", enrollment.id)}
                             className={buttonVariants({
@@ -1172,433 +1002,20 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                                 )}
                             </TabsList>
 
-                            {/* CLASSES TAB */}
-                            <TabsContent value="classes" className="mt-5 space-y-5">
-                                {/* Active Enrollments */}
-                                <Card className="border-border/70 rounded-2xl shadow-sm">
-                                    <CardHeader className="gap-1">
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <CardTitle className="tracking-[-0.01em]">Class schedule</CardTitle>
-                                                <CardDescription>Enrolled subjects and class assignments</CardDescription>
-                                            </div>
-                                            <Badge variant="secondary">{enrollment.class_enrollments.length} Classes</Badge>
-                                        </div>
-                                    </CardHeader>
-                                    <CardContent className="p-0">
-                                        <Table>
-                                            <TableHeader>
-                                                <TableRow>
-                                                    <TableHead className="pl-6">Subject</TableHead>
-                                                    <TableHead>Schedule & Room</TableHead>
-                                                    <TableHead>Faculty</TableHead>
-                                                    <TableHead className="pr-6 text-center">Grades</TableHead>
-                                                </TableRow>
-                                            </TableHeader>
-                                            <TableBody>
-                                                {enrollment.class_enrollments.length === 0 ? (
-                                                    <TableRow>
-                                                        <TableCell colSpan={4} className="text-muted-foreground py-12 text-center">
-                                                            No classes enrolled yet.
-                                                        </TableCell>
-                                                    </TableRow>
-                                                ) : (
-                                                    enrollment.class_enrollments.map((cls) => (
-                                                        <TableRow key={cls.id} className="hover:bg-muted/30 transition-colors">
-                                                            <TableCell className="pl-6 align-top">
-                                                                <div className="font-semibold">{cls.subject_code}</div>
-                                                                <div className="text-muted-foreground line-clamp-1 text-xs">{cls.subject_title}</div>
-                                                                <Badge variant="outline" className="mt-1 h-5 text-[10px]">
-                                                                    {cls.section}
-                                                                </Badge>
-                                                            </TableCell>
-                                                            <TableCell className="align-top">
-                                                                <div className="text-sm font-medium">{cls.schedule}</div>
-                                                                <div className="text-muted-foreground flex items-center gap-1 text-xs">
-                                                                    <School className="h-3 w-3" /> {cls.room}
-                                                                </div>
-                                                            </TableCell>
-                                                            <TableCell className="align-top">
-                                                                <div className="flex items-center gap-2">
-                                                                    <Avatar className="h-6 w-6">
-                                                                        <AvatarFallback className="text-[10px]">
-                                                                            {cls.faculty.charAt(0)}
-                                                                        </AvatarFallback>
-                                                                    </Avatar>
-                                                                    <span className="text-sm">{cls.faculty}</span>
-                                                                </div>
-                                                            </TableCell>
-                                                            <TableCell className="pr-6 text-center align-top">
-                                                                <div className="flex justify-center gap-1 font-mono text-xs">
-                                                                    <span
-                                                                        title="Prelim"
-                                                                        className={cn(
-                                                                            "bg-muted rounded px-1.5 py-0.5",
-                                                                            cls.grades.prelim ? "text-foreground" : "text-muted-foreground/50",
-                                                                        )}
-                                                                    >
-                                                                        {cls.grades.prelim ?? "-"}
-                                                                    </span>
-                                                                    <span
-                                                                        title="Midterm"
-                                                                        className={cn(
-                                                                            "bg-muted rounded px-1.5 py-0.5",
-                                                                            cls.grades.midterm ? "text-foreground" : "text-muted-foreground/50",
-                                                                        )}
-                                                                    >
-                                                                        {cls.grades.midterm ?? "-"}
-                                                                    </span>
-                                                                    <span
-                                                                        title="Finals"
-                                                                        className={cn(
-                                                                            "bg-muted rounded px-1.5 py-0.5",
-                                                                            cls.grades.finals ? "text-foreground" : "text-muted-foreground/50",
-                                                                        )}
-                                                                    >
-                                                                        {cls.grades.finals ?? "-"}
-                                                                    </span>
-                                                                </div>
-                                                            </TableCell>
-                                                        </TableRow>
-                                                    ))
-                                                )}
-                                            </TableBody>
-                                        </Table>
-                                    </CardContent>
-                                </Card>
-
-                                {/* Missing Classes - Enhanced UI */}
-                                {enrollment.missing_classes.length > 0 && (
-                                    <div className="overflow-hidden rounded-2xl border border-amber-200 bg-amber-50 shadow-sm dark:border-amber-900 dark:bg-amber-950/20">
-                                        <div className="flex items-center gap-3 border-b border-amber-200 bg-amber-100/50 p-4 dark:border-amber-900 dark:bg-amber-900/40">
-                                            <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-500" />
-                                            <div>
-                                                <h3 className="font-semibold text-amber-900 dark:text-amber-200">
-                                                    Action Required: Missing Class Assignments
-                                                </h3>
-                                                <p className="text-xs text-amber-700 dark:text-amber-400">
-                                                    The student is enrolled in these subjects but not assigned to any class section.
-                                                </p>
-                                            </div>
-                                        </div>
-                                        <div className="p-0">
-                                            <Table>
-                                                <TableBody>
-                                                    {enrollment.missing_classes.map((cls, idx) => (
-                                                        <TableRow key={idx} className="hover:bg-amber-100/20">
-                                                            <TableCell className="pl-6">
-                                                                <div className="font-medium text-amber-900 dark:text-amber-200">
-                                                                    {cls.subject_code}
-                                                                </div>
-                                                                <div className="text-xs text-amber-700 dark:text-amber-400">{cls.subject_title}</div>
-                                                            </TableCell>
-                                                            <TableCell>
-                                                                {cls.class_id ? (
-                                                                    <div className="flex flex-col">
-                                                                        <span className="text-muted-foreground text-xs">Available:</span>
-                                                                        <Badge variant="outline" className="bg-background w-fit">
-                                                                            {cls.section}
-                                                                        </Badge>
-                                                                    </div>
-                                                                ) : (
-                                                                    <span className="text-muted-foreground text-xs italic">
-                                                                        No class offering available
-                                                                    </span>
-                                                                )}
-                                                            </TableCell>
-                                                            <TableCell>
-                                                                {cls.class_id && (
-                                                                    <div className="flex flex-col">
-                                                                        <span className="text-muted-foreground text-xs">Slots:</span>
-                                                                        <span
-                                                                            className={cn(
-                                                                                "text-sm font-medium",
-                                                                                cls.is_full ? "text-red-600" : "text-green-600",
-                                                                            )}
-                                                                        >
-                                                                            {cls.available_slots} / {cls.max_slots}
-                                                                        </span>
-                                                                    </div>
-                                                                )}
-                                                            </TableCell>
-                                                            <TableCell className="pr-6 text-right">
-                                                                {cls.class_id && (
-                                                                    <EnrollClassButton
-                                                                        enrollmentId={enrollment.id}
-                                                                        classId={cls.class_id}
-                                                                        isFull={cls.is_full}
-                                                                        subjectCode={cls.subject_code}
-                                                                    />
-                                                                )}
-                                                            </TableCell>
-                                                        </TableRow>
-                                                    ))}
-                                                </TableBody>
-                                            </Table>
-                                        </div>
-                                    </div>
-                                )}
-                            </TabsContent>
-
-                            {/* FINANCIAL TAB */}
-                            <TabsContent value="financial" className="mt-5 space-y-5">
-                                <div className="grid gap-6 md:grid-cols-2">
-                                    <Card className="border-border/70 rounded-2xl shadow-sm">
-                                        <CardHeader className="gap-1">
-                                            <CardTitle className="tracking-[-0.01em]">Fees breakdown</CardTitle>
-                                            <CardDescription>Detailed assessment of fees</CardDescription>
-                                        </CardHeader>
-                                        <CardContent className="space-y-4">
-                                            <div className="space-y-2">
-                                                <div className="mb-2 flex items-center justify-between">
-                                                    <h4 className="text-sm font-semibold">Breakdown</h4>
-                                                    {auth.can_manage_tuition && (
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className="text-muted-foreground hover:text-foreground h-6 w-6"
-                                                            aria-label="Open tuition adjustment workspace"
-                                                            onClick={() =>
-                                                                router.visit(tuitionAdjustments.url({ query: { enrollment: enrollment.id } }))
-                                                            }
-                                                        >
-                                                            <Pencil className="h-3 w-3" />
-                                                        </Button>
-                                                    )}
-                                                </div>
-                                                <div className="flex justify-between text-sm">
-                                                    <span className="text-muted-foreground">Tuition Fee (Lectures)</span>
-                                                    <span>{formatMoney(enrollment.tuition?.total_lectures)}</span>
-                                                </div>
-                                                <div className="flex justify-between text-sm">
-                                                    <span className="text-muted-foreground">Laboratory Fee</span>
-                                                    <span>{formatMoney(enrollment.tuition?.total_laboratory)}</span>
-                                                </div>
-                                                <div className="flex justify-between text-sm">
-                                                    <span className="text-muted-foreground">Miscellaneous Fee</span>
-                                                    <span>{formatMoney(enrollment.tuition?.total_miscelaneous_fees)}</span>
-                                                </div>
-                                                {enrollment.additional_fees.map((fee) => (
-                                                    <div key={fee.id} className="flex justify-between text-sm">
-                                                        <span className="text-muted-foreground">{fee.fee_name}</span>
-                                                        <span>{formatMoney(fee.amount)}</span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                            <Separator />
-                                            <div className="space-y-2">
-                                                <div className="flex justify-between text-sm font-medium">
-                                                    <span>Assessed Fees</span>
-                                                    <span>{formatMoney(enrollment.tuition?.overall_tuition)}</span>
-                                                </div>
-                                                {enrollment.tuition?.discount ? (
-                                                    <div className="flex justify-between text-sm text-green-600">
-                                                        <span>Discount</span>
-                                                        <span>{enrollment.tuition.discount}% applied</span>
-                                                    </div>
-                                                ) : null}
-                                                <div className="flex justify-between pt-2 text-base font-bold">
-                                                    <span>Total Assessment</span>
-                                                    <span>{formatMoney(enrollment.tuition?.overall_tuition)}</span>
-                                                </div>
-                                                <div className="flex justify-between text-sm">
-                                                    <span>Required Downpayment</span>
-                                                    <span>{formatMoney(requiredDownpayment)}</span>
-                                                </div>
-                                                <div className="flex justify-between text-sm text-green-600">
-                                                    <span>Total Paid</span>
-                                                    <span>- {formatMoney(totalPaid)}</span>
-                                                </div>
-                                                <div className="flex justify-between text-base font-bold">
-                                                    <span>Remaining Balance</span>
-                                                    <span>{formatMoney(balanceDue)}</span>
-                                                </div>
-                                            </div>
-                                        </CardContent>
-                                    </Card>
-
-                                    <Card className="border-border/70 rounded-2xl shadow-sm">
-                                        <CardHeader className="gap-1">
-                                            <CardTitle className="tracking-[-0.01em]">Transaction history</CardTitle>
-                                            <CardDescription>Payments and adjustments</CardDescription>
-                                        </CardHeader>
-                                        <CardContent>
-                                            <div className="border-muted relative ml-3 space-y-6 border-l">
-                                                {enrollment.transactions.length === 0 ? (
-                                                    <p className="text-muted-foreground pl-6 text-sm">No transactions recorded yet.</p>
-                                                ) : (
-                                                    enrollment.transactions.map((tx) => (
-                                                        <div key={tx.id} className="relative pl-6">
-                                                            <div
-                                                                className={cn(
-                                                                    "border-background absolute top-1.5 -left-1.5 h-3 w-3 rounded-full border-2",
-                                                                    tx.status === "Paid" || tx.status === "Completed" ? "bg-green-500" : "bg-muted",
-                                                                )}
-                                                            />
-                                                            <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                                                                <div>
-                                                                    <p className="text-sm font-medium">{tx.description}</p>
-                                                                    <div className="mt-1 flex items-center gap-2">
-                                                                        <Badge variant="outline" className="h-5 text-[10px]">
-                                                                            {tx.invoicenumber}
-                                                                        </Badge>
-                                                                        <span className="text-muted-foreground text-xs">
-                                                                            {new Date(tx.created_at).toLocaleDateString()}
-                                                                        </span>
-                                                                    </div>
-                                                                </div>
-                                                                <div className="flex flex-col items-end">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className="text-sm font-bold">
-                                                                            {formatMoney(tx.amount || tx.total_amount)}
-                                                                        </span>
-                                                                        {auth.can_verify_cashier && (
-                                                                            <EditTransactionDialog enrollmentId={enrollment.id} transaction={tx} />
-                                                                        )}
-                                                                    </div>
-                                                                    <Badge
-                                                                        variant={
-                                                                            tx.status === "Paid" || tx.status === "Completed"
-                                                                                ? "default"
-                                                                                : "secondary"
-                                                                        }
-                                                                        className={cn(
-                                                                            "mt-1 h-5 text-[10px]",
-                                                                            (tx.status === "Paid" || tx.status === "Completed") &&
-                                                                                "border-green-200 bg-green-100 text-green-800 hover:bg-green-100",
-                                                                        )}
-                                                                    >
-                                                                        {tx.status}
-                                                                    </Badge>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    ))
-                                                )}
-                                            </div>
-                                        </CardContent>
-                                    </Card>
-                                </div>
-                            </TabsContent>
-
-                            {/* RESOURCES TAB */}
-                            <TabsContent value="resources" className="mt-5 space-y-5">
-                                <Card className="border-border/70 rounded-2xl shadow-sm">
-                                    <CardHeader className="gap-1">
-                                        <CardTitle className="tracking-[-0.01em]">Generated documents</CardTitle>
-                                        <CardDescription>Official enrollment forms and assessments</CardDescription>
-                                    </CardHeader>
-                                    <CardContent>
-                                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                                            {enrollment.resources.map((res) => (
-                                                <div
-                                                    key={res.id}
-                                                    className="bg-card/60 border-border/70 hover:bg-muted/30 flex items-start gap-4 rounded-xl border p-4 transition-[background-color,box-shadow] duration-200 hover:shadow-sm"
-                                                >
-                                                    <div className="bg-primary/10 text-primary rounded-md p-2">
-                                                        <FileText className="h-6 w-6" />
-                                                    </div>
-                                                    <div className="flex-1 space-y-1">
-                                                        <p className="text-sm font-medium capitalize">{res.type.replace("_", " ")}</p>
-                                                        <p className="text-muted-foreground max-w-[150px] truncate font-mono text-xs">
-                                                            {res.file_name}
-                                                        </p>
-                                                        <p className="text-muted-foreground text-[10px]">
-                                                            {new Date(res.created_at).toLocaleString()}
-                                                        </p>
-                                                    </div>
-                                                    <a
-                                                        href={res.download_url}
-                                                        target="_blank"
-                                                        rel="noreferrer"
-                                                        className={buttonVariants({
-                                                            variant: "ghost",
-                                                            size: "icon",
-                                                            className: "text-muted-foreground h-8 w-8",
-                                                        })}
-                                                    >
-                                                        <Download className="h-4 w-4" />
-                                                    </a>
-                                                </div>
-                                            ))}
-                                            {enrollment.resources.length === 0 && (
-                                                <div className="text-muted-foreground col-span-full py-12 text-center">No documents available.</div>
-                                            )}
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            </TabsContent>
-
-                            <TabsContent value="requirements" className="mt-5 space-y-5">
-                                <Card className="border-border/70 rounded-2xl shadow-sm">
-                                    <CardHeader className="gap-1">
-                                        <CardTitle className="tracking-[-0.01em]">Enrollment requirements</CardTitle>
-                                        <CardDescription>
-                                            Required items must be verified or waived with a reason before their configured workflow step.
-                                        </CardDescription>
-                                    </CardHeader>
-                                    <CardContent className="space-y-3">
-                                        {enrollment.requirements.map((requirement) => (
-                                            <div
-                                                key={requirement.id}
-                                                className="bg-card/60 border-border/70 hover:bg-muted/20 flex flex-col gap-4 rounded-xl border p-4 transition-colors sm:flex-row sm:items-center sm:justify-between"
-                                            >
-                                                <div className="min-w-0">
-                                                    <div className="flex flex-wrap items-center gap-2">
-                                                        <p className="font-medium">{requirement.label}</p>
-                                                        <Badge
-                                                            variant={requirement.status === "pending" ? "secondary" : "outline"}
-                                                            className={cn(
-                                                                requirement.status === "verified" && "border-green-200 bg-green-50 text-green-700",
-                                                                requirement.status === "waived" && "border-amber-200 bg-amber-50 text-amber-700",
-                                                            )}
-                                                        >
-                                                            {requirement.status}
-                                                        </Badge>
-                                                        {requirement.required && <Badge variant="outline">Required</Badge>}
-                                                    </div>
-                                                    {requirement.description && (
-                                                        <p className="text-muted-foreground mt-1 text-sm">{requirement.description}</p>
-                                                    )}
-                                                    <p className="text-muted-foreground mt-1 text-xs">
-                                                        {requirement.enforcement_step
-                                                            ? `Enforced before ${requirement.enforcement_step.replaceAll("_", " ")}`
-                                                            : "Collected for review without a workflow gate"}
-                                                    </p>
-                                                    {requirement.waiver_reason && (
-                                                        <p className="mt-2 text-sm text-amber-700">Waiver reason: {requirement.waiver_reason}</p>
-                                                    )}
-                                                </div>
-                                                {requirement.status === "pending" && auth.can_review_requirements && (
-                                                    <div className="flex shrink-0 gap-2">
-                                                        <Button
-                                                            type="button"
-                                                            size="sm"
-                                                            disabled={reviewingRequirementId === requirement.id}
-                                                            onClick={() => reviewEnrollmentRequirement(requirement.id, "verify")}
-                                                        >
-                                                            <CheckCircle2 className="h-4 w-4" />
-                                                            Verify
-                                                        </Button>
-                                                        <Button
-                                                            type="button"
-                                                            size="sm"
-                                                            variant="outline"
-                                                            disabled={reviewingRequirementId === requirement.id}
-                                                            onClick={() => {
-                                                                setWaivingRequirementId(requirement.id);
-                                                                setWaiverReason("");
-                                                            }}
-                                                        >
-                                                            Waive
-                                                        </Button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </CardContent>
-                                </Card>
-                            </TabsContent>
+                            <EnrollmentDetailTabs
+                                enrollment={enrollment}
+                                auth={auth}
+                                formatMoney={formatMoney}
+                                requiredDownpayment={requiredDownpayment}
+                                totalPaid={totalPaid}
+                                balanceDue={balanceDue}
+                                reviewingRequirementId={reviewingRequirementId}
+                                onReviewRequirement={reviewEnrollmentRequirement}
+                                onStartWaiveRequirement={(requirementId) => {
+                                    setWaivingRequirementId(requirementId);
+                                    setWaiverReason("");
+                                }}
+                            />
                         </Tabs>
                     </main>
                 </div>
@@ -1773,640 +1190,3 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
     );
 }
 
-// --- Subcomponents ---
-
-function EditTransactionDialog({ enrollmentId, transaction }: { enrollmentId: number; transaction: EnrollmentData["transactions"][number] }) {
-    const { data, setData, patch, processing, errors } = useForm({
-        amount: transaction.amount || transaction.total_amount || 0,
-        invoicenumber: transaction.invoicenumber || "",
-    });
-    const [open, setOpen] = useState(false);
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        patch(route("administrators.enrollments.transactions.update", [enrollmentId, transaction.id]), {
-            onSuccess: () => {
-                setOpen(false);
-                toast.success("Transaction updated");
-            },
-            onError: () => toast.error("Failed to update transaction"),
-        });
-    };
-
-    return (
-        <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground h-6 w-6">
-                    <Pencil className="h-3 w-3" />
-                </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
-                <DialogHeader>
-                    <DialogTitle>Edit Transaction</DialogTitle>
-                    <DialogDescription>Modify amount and invoice number. Use with caution.</DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4 py-4">
-                    <div className="grid gap-2">
-                        <Label htmlFor="tx-invoice">Invoice Number</Label>
-                        <Input id="tx-invoice" value={data.invoicenumber} onChange={(e) => setData("invoicenumber", e.target.value)} required />
-                        {errors.invoicenumber && <p className="text-xs text-red-500">{errors.invoicenumber}</p>}
-                    </div>
-                    <div className="grid gap-2">
-                        <Label htmlFor="tx-amount">Amount</Label>
-                        <Input
-                            id="tx-amount"
-                            type="number"
-                            step="0.01"
-                            value={data.amount}
-                            onChange={(e) => setData("amount", parseFloat(e.target.value))}
-                            required
-                        />
-                        {errors.amount && <p className="text-xs text-red-500">{errors.amount}</p>}
-                    </div>
-                    <DialogFooter>
-                        <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
-                            Cancel
-                        </Button>
-                        <Button type="submit" disabled={processing}>
-                            Save Changes
-                        </Button>
-                    </DialogFooter>
-                </form>
-            </DialogContent>
-        </Dialog>
-    );
-}
-
-type SeparateFeeTransactionField = `separate_fee_${number}_transaction`;
-type CashierPaymentForm = {
-    transition_key: string | null;
-    invoicenumber: string;
-    payment_method: string;
-    reason: string;
-    settlements: {
-        registration_fee: number;
-        tuition_fee: number;
-        miscelanous_fee: number;
-        others: number;
-    };
-} & Partial<Record<SeparateFeeTransactionField, string>>;
-
-function VerifyCashierDialog({
-    enrollmentId,
-    tuition,
-    additionalFees,
-    label = "Verify & Enroll",
-    transitionKey,
-    requiresReason = false,
-    receiptMode = "required",
-    allowedPaymentMethods = [],
-    buttonClassName,
-}: {
-    enrollmentId: number;
-    tuition: EnrollmentData["tuition"];
-    additionalFees: EnrollmentData["additional_fees"];
-    label?: string;
-    transitionKey?: string;
-    requiresReason?: boolean;
-    receiptMode?: "required" | "optional" | "none";
-    allowedPaymentMethods?: string[];
-    buttonClassName?: string;
-}) {
-    const { props } = usePage<{ branding?: Branding }>();
-    const currency = props.branding?.currency || "PHP";
-    const outstandingBalance = Number(tuition?.balance_due ?? tuition?.total_balance ?? 0);
-    const requiredPayment = Number(tuition?.required_downpayment ?? tuition?.downpayment ?? 5000);
-    const separateTransactionFees = additionalFees.filter((fee) => fee.is_separate_transaction);
-    const separateFeesTotal = separateTransactionFees.reduce((total, fee) => total + Number(fee.amount), 0);
-    const mainRequiredPayment = Math.max(0, requiredPayment - separateFeesTotal);
-    const mainOutstandingBalance = Math.max(0, outstandingBalance - separateFeesTotal);
-    const defaultTuitionPayment = Math.min(mainRequiredPayment, mainOutstandingBalance);
-    const separateFeeTransactionFields = Object.fromEntries(
-        separateTransactionFees.map((fee) => [`separate_fee_${fee.id}_transaction`, fee.transaction_number ?? ""]),
-    ) as Partial<Record<SeparateFeeTransactionField, string>>;
-    const { data, setData, post, processing, errors, reset } = useForm<CashierPaymentForm>({
-        transition_key: transitionKey ?? null,
-        invoicenumber: "",
-        payment_method: allowedPaymentMethods[0] ?? "Cash",
-        reason: "",
-        settlements: {
-            registration_fee: 0,
-            tuition_fee: defaultTuitionPayment,
-            miscelanous_fee: 0,
-            others: 0,
-        },
-        ...separateFeeTransactionFields,
-    });
-    const [open, setOpen] = useState(false);
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        post(route("administrators.enrollments.verify-cashier", enrollmentId), {
-            onSuccess: () => {
-                setOpen(false);
-                toast.success("Successfully enrolled student");
-                reset();
-            },
-            onError: () => toast.error("Failed to process enrollment"),
-        });
-    };
-
-    return (
-        <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-                <Button className={cn("h-10 w-full bg-emerald-600 shadow-sm hover:bg-emerald-700", buttonClassName)}>
-                    <CheckCircle2 className="mr-2 h-4 w-4" />
-                    {label}
-                </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[500px]">
-                <DialogHeader>
-                    <DialogTitle>Cashier Verification</DialogTitle>
-                    <DialogDescription>Confirm the actual payment received to finalize enrollment.</DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4 py-4">
-                    <div className="grid gap-2">
-                        <Label htmlFor="invoice">Invoice / OR Number</Label>
-                        <Input
-                            id="invoice"
-                            required={receiptMode === "required"}
-                            placeholder="Enter Invoice No."
-                            value={data.invoicenumber}
-                            onChange={(e) => setData("invoicenumber", e.target.value)}
-                        />
-                        {errors.invoicenumber && <p className="text-xs text-red-500">{errors.invoicenumber}</p>}
-                    </div>
-
-                    {separateTransactionFees.length > 0 && (
-                        <div className="space-y-3 rounded-lg border p-3">
-                            <div>
-                                <p className="text-sm font-medium">Separate fee receipts</p>
-                                <p className="text-muted-foreground text-xs">Each fee is recorded as its own cashier ledger transaction.</p>
-                            </div>
-                            {separateTransactionFees.map((fee) => {
-                                const field = `separate_fee_${fee.id}_transaction` as SeparateFeeTransactionField;
-
-                                return (
-                                    <div key={fee.id} className="grid gap-2">
-                                        <Label htmlFor={field} className="flex items-center justify-between gap-3">
-                                            <span>{fee.fee_name} invoice / OR number</span>
-                                            <span className="text-muted-foreground font-normal">
-                                                {new Intl.NumberFormat(currency === "USD" ? "en-US" : "en-PH", {
-                                                    style: "currency",
-                                                    currency,
-                                                }).format(Number(fee.amount))}
-                                            </span>
-                                        </Label>
-                                        <Input
-                                            id={field}
-                                            required={receiptMode === "required"}
-                                            placeholder={`Enter receipt for ${fee.fee_name}`}
-                                            value={data[field] ?? ""}
-                                            onChange={(event) => setData(field, event.target.value)}
-                                        />
-                                        {errors[field] && <p className="text-xs text-red-500">{errors[field]}</p>}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
-
-                    {requiresReason && (
-                        <div className="grid gap-2">
-                            <Label htmlFor="payment-transition-reason">Audited reason</Label>
-                            <Textarea
-                                id="payment-transition-reason"
-                                required
-                                value={data.reason}
-                                onChange={(event) => setData("reason", event.target.value)}
-                                placeholder="Explain why this transition is being completed"
-                            />
-                        </div>
-                    )}
-
-                    <div className="grid gap-2">
-                        <Label htmlFor="payment_method">Payment Method</Label>
-                        <Select value={data.payment_method} onValueChange={(val) => setData("payment_method", val)}>
-                            <SelectTrigger>
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {(allowedPaymentMethods.length > 0
-                                    ? allowedPaymentMethods
-                                    : ["Cash", "Check", "Bank Transfer", "Credit Card", "Debit Card", "Online Payment"]
-                                ).map((method) => (
-                                    <SelectItem key={method} value={method}>
-                                        {method}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-
-                    <div className="bg-muted/40 rounded-lg border p-3 text-sm">
-                        <div className="flex justify-between gap-4">
-                            <span className="text-muted-foreground">Required Downpayment</span>
-                            <span className="font-medium">
-                                {new Intl.NumberFormat(currency === "USD" ? "en-US" : "en-PH", { style: "currency", currency }).format(
-                                    mainRequiredPayment,
-                                )}
-                            </span>
-                        </div>
-                        {separateFeesTotal > 0 && (
-                            <div className="mt-1 flex justify-between gap-4">
-                                <span className="text-muted-foreground">Separate fees</span>
-                                <span className="font-medium">
-                                    {new Intl.NumberFormat(currency === "USD" ? "en-US" : "en-PH", { style: "currency", currency }).format(
-                                        separateFeesTotal,
-                                    )}
-                                </span>
-                            </div>
-                        )}
-                        <div className="mt-1 flex justify-between gap-4">
-                            <span className="text-muted-foreground">Current Balance</span>
-                            <span className="font-medium">
-                                {new Intl.NumberFormat(currency === "USD" ? "en-US" : "en-PH", { style: "currency", currency }).format(
-                                    outstandingBalance,
-                                )}
-                            </span>
-                        </div>
-                    </div>
-
-                    <div className="grid gap-2">
-                        <Label>Payment Amount</Label>
-                        <div className="relative">
-                            <span className="text-muted-foreground absolute top-2.5 left-3">{currency === "USD" ? "$" : "₱"}</span>
-                            <Input
-                                type="number"
-                                className="pl-7"
-                                value={data.settlements.tuition_fee}
-                                onChange={(e) => setData("settlements", { ...data.settlements, tuition_fee: parseFloat(e.target.value) || 0 })}
-                            />
-                        </div>
-                    </div>
-
-                    <DialogFooter>
-                        <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
-                            Cancel
-                        </Button>
-                        <Button type="submit" disabled={processing}>
-                            Confirm Enrollment
-                        </Button>
-                    </DialogFooter>
-                </form>
-            </DialogContent>
-        </Dialog>
-    );
-}
-
-function EnrollClassButton({
-    enrollmentId,
-    classId,
-    isFull,
-    subjectCode,
-}: {
-    enrollmentId: number;
-    classId: number;
-    isFull: boolean;
-    subjectCode: string;
-}) {
-    const [processing, setProcessing] = useState(false);
-    const [confirmForceOpen, setConfirmForceOpen] = useState(false);
-
-    const submitEnroll = () => {
-        setConfirmForceOpen(false);
-        router.post(
-            route("administrators.enrollments.enroll-class", enrollmentId),
-            {
-                class_id: classId,
-                force_enrollment: isFull, // Force if full
-            },
-            {
-                onStart: () => setProcessing(true),
-                onFinish: () => setProcessing(false),
-                onSuccess: () => toast.success(`Enrolled in ${subjectCode}`),
-                onError: () => toast.error("Failed to enroll"),
-            },
-        );
-    };
-
-    const handleEnroll = () => {
-        if (isFull) {
-            setConfirmForceOpen(true);
-            return;
-        }
-        submitEnroll();
-    };
-
-    return (
-        <>
-            <Button size="sm" variant={isFull ? "destructive" : "secondary"} onClick={handleEnroll} disabled={processing} className="shadow-sm">
-                {isFull ? "Force Enroll" : "Enroll"}
-            </Button>
-            <AlertDialog open={confirmForceOpen} onOpenChange={setConfirmForceOpen}>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Force enroll in full class?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            This section for <span className="text-foreground font-medium">{subjectCode}</span> has already reached its maximum
-                            slot capacity. Force enrolling will exceed the configured limit.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                            onClick={submitEnroll}
-                        >
-                            Force Enroll
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
-        </>
-    );
-}
-
-function QuickEnrollDialog({ enrollmentId }: { enrollmentId: number }) {
-    const { data, setData, post, processing, reset } = useForm({
-        remarks: "",
-        confirm_emergency: false,
-        confirm_payment: false,
-    });
-    const [open, setOpen] = useState(false);
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        post(route("administrators.enrollments.quick-enroll", enrollmentId), {
-            onSuccess: () => {
-                setOpen(false);
-                toast.success("Quick enrollment successful");
-                reset();
-            },
-            onError: () => toast.error("Quick enrollment failed"),
-        });
-    };
-
-    return (
-        <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-                <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                    <ShieldAlert className="mr-2 h-4 w-4" /> Quick Enroll (Super Admin)
-                </DropdownMenuItem>
-            </DialogTrigger>
-            <DialogContent className="border-red-200 sm:max-w-[500px]">
-                <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2 text-red-600">
-                        <ShieldAlert className="h-5 w-5" /> Emergency Quick Enroll
-                    </DialogTitle>
-                    <DialogDescription>Bypass all verification steps. Use only in exceptional circumstances.</DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4 py-4">
-                    <div className="grid gap-2">
-                        <Label htmlFor="remarks">Justification / Remarks</Label>
-                        <Textarea
-                            id="remarks"
-                            required
-                            placeholder="Explain why verification is being bypassed..."
-                            value={data.remarks}
-                            onChange={(e) => setData("remarks", e.target.value)}
-                        />
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                        <input
-                            type="checkbox"
-                            id="confirm_emergency"
-                            className="rounded border-gray-300"
-                            checked={data.confirm_emergency}
-                            onChange={(e) => setData("confirm_emergency", e.target.checked)}
-                            required
-                        />
-                        <Label htmlFor="confirm_emergency" className="text-xs">
-                            I confirm this is an emergency enrollment
-                        </Label>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                        <input
-                            type="checkbox"
-                            id="confirm_payment"
-                            className="rounded border-gray-300"
-                            checked={data.confirm_payment}
-                            onChange={(e) => setData("confirm_payment", e.target.checked)}
-                            required
-                        />
-                        <Label htmlFor="confirm_payment" className="text-xs">
-                            I confirm payment has been verified manually
-                        </Label>
-                    </div>
-
-                    <DialogFooter>
-                        <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
-                            Cancel
-                        </Button>
-                        <Button type="submit" variant="destructive" disabled={processing}>
-                            Quick Enroll
-                        </Button>
-                    </DialogFooter>
-                </form>
-            </DialogContent>
-        </Dialog>
-    );
-}
-
-function CancelEnrollmentDialog({
-    enrollmentId,
-    studentName,
-    outstandingPayments,
-    formatMoney,
-}: {
-    enrollmentId: number;
-    studentName: string;
-    outstandingPayments: { transactions: number; amount: number };
-    formatMoney: (amount: number | null | undefined) => string;
-}) {
-    const [open, setOpen] = useState(false);
-    const [reason, setReason] = useState("");
-    const [acknowledgePayments, setAcknowledgePayments] = useState(false);
-    const [processing, setProcessing] = useState(false);
-    const hasPayments = outstandingPayments.transactions > 0;
-    const idempotencyKey = () => (typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `cancel-${Date.now()}-${Math.random()}`);
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        setProcessing(true);
-
-        axios
-            .post(route("administrators.enrollments.cancel", enrollmentId), {
-                reason,
-                idempotency_key: idempotencyKey(),
-                acknowledge_outstanding_payments: acknowledgePayments,
-            })
-            .then(() => {
-                setOpen(false);
-                setReason("");
-                toast.success("Enrollment cancelled");
-                router.reload({ only: ["enrollment"] });
-            })
-            .catch((error: unknown) => {
-                const message = axios.isAxiosError(error)
-                    ? ((error.response?.data?.message as string | undefined) ??
-                      (Object.values(error.response?.data?.errors ?? {})[0] as string[] | undefined)?.[0])
-                    : null;
-                toast.error(message ?? "The enrollment could not be cancelled.");
-            })
-            .finally(() => setProcessing(false));
-    };
-
-    return (
-        <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-                <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-red-600 focus:text-red-600">
-                    <Ban className="mr-2 h-4 w-4" /> Cancel enrollment
-                </DropdownMenuItem>
-            </DialogTrigger>
-            <DialogContent className="border-red-200 sm:max-w-[520px]">
-                <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2 text-red-600">
-                        <Ban className="h-5 w-5" /> Cancel this enrollment
-                    </DialogTitle>
-                    <DialogDescription>
-                        Cancelling stops this enrollment for {studentName}, including an enrollment already verified by cashier. The outcome is
-                        recorded in the enrollment history and the student stops counting as enrolled for this term. Use &ldquo;Undo
-                        cancellation&rdquo; for a recorded error. Released class seats must be reassigned separately.
-                    </DialogDescription>
-                </DialogHeader>
-
-                <form onSubmit={handleSubmit} className="space-y-4 py-2">
-                    <div className="grid gap-2">
-                        <Label htmlFor="cancel-reason">Reason (required)</Label>
-                        <Textarea
-                            id="cancel-reason"
-                            required
-                            rows={3}
-                            placeholder="Why is this enrollment being cancelled? e.g. applicant withdrew, duplicate application."
-                            value={reason}
-                            onChange={(e) => setReason(e.target.value)}
-                        />
-                        <p className="text-muted-foreground text-xs">
-                            Reserved class seats held by this enrollment are released. Subjects, tuition, and the reporting status are kept as
-                            history. Completed student/account status is not demoted; finance handles any refund or balance correction separately.
-                        </p>
-                    </div>
-
-                    {hasPayments && (
-                        <div className="space-y-2 rounded-lg border border-red-200 bg-red-50/60 p-3 dark:bg-red-950/30">
-                            <div className="flex items-start gap-2 text-sm">
-                                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
-                                <span>
-                                    {formatMoney(outstandingPayments.amount)} across {outstandingPayments.transactions} recorded payment reference(s)
-                                    is still associated. Cancelling does not refund it.
-                                </span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <Checkbox
-                                    id="cancel-acknowledge-payments"
-                                    checked={acknowledgePayments}
-                                    onCheckedChange={(checked) => setAcknowledgePayments(checked === true)}
-                                />
-                                <Label htmlFor="cancel-acknowledge-payments" className="text-xs font-normal">
-                                    I will handle the refund separately in the finance module.
-                                </Label>
-                            </div>
-                        </div>
-                    )}
-
-                    <DialogFooter>
-                        <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
-                            Keep enrollment
-                        </Button>
-                        <Button type="submit" variant="destructive" disabled={processing || (hasPayments && !acknowledgePayments)}>
-                            {processing ? "Cancelling…" : "Cancel enrollment"}
-                        </Button>
-                    </DialogFooter>
-                </form>
-            </DialogContent>
-        </Dialog>
-    );
-}
-
-function RestoreSubjectsDialog({
-    open,
-    onOpenChange,
-    recentDeletions,
-    selectedDeletions,
-    onToggleSelection,
-    onSelectAll,
-    onRestore,
-    restoring,
-}: {
-    open: boolean;
-    onOpenChange: (open: boolean) => void;
-    recentDeletions: RecentDeletion[];
-    selectedDeletions: number[];
-    onToggleSelection: (id: number) => void;
-    onSelectAll: () => void;
-    onRestore: () => void;
-    restoring: boolean;
-}) {
-    return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[550px]">
-                <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2">
-                        <Undo2 className="h-5 w-5" /> Restore Deleted Subjects
-                    </DialogTitle>
-                    <DialogDescription>
-                        Select subjects to restore. This will recreate the subject enrollments and attempt to re-enroll in their original classes.
-                    </DialogDescription>
-                </DialogHeader>
-                <div className="max-h-[300px] space-y-2 overflow-y-auto py-4">
-                    <div className="flex items-center gap-2 pb-2">
-                        <Checkbox
-                            id="select-all"
-                            checked={selectedDeletions.length === recentDeletions.length && recentDeletions.length > 0}
-                            onCheckedChange={onSelectAll}
-                        />
-                        <label htmlFor="select-all" className="text-sm font-medium">
-                            Select All ({recentDeletions.length} items)
-                        </label>
-                    </div>
-                    <Separator />
-                    {recentDeletions.map((deletion) => (
-                        <div key={deletion.id} className="hover:bg-muted/50 flex items-start gap-3 rounded-lg border p-3 transition-colors">
-                            <Checkbox
-                                id={`deletion-${deletion.id}`}
-                                checked={selectedDeletions.includes(deletion.id)}
-                                onCheckedChange={() => onToggleSelection(deletion.id)}
-                                className="mt-0.5"
-                            />
-                            <div className="flex-1">
-                                <div className="flex items-center justify-between">
-                                    <label htmlFor={`deletion-${deletion.id}`} className="cursor-pointer font-medium">
-                                        {deletion.subject_code}
-                                    </label>
-                                    <span className="text-muted-foreground text-xs">{deletion.created_at_human}</span>
-                                </div>
-                                <p className="text-muted-foreground text-sm">{deletion.subject_title}</p>
-                                <p className="text-muted-foreground mt-1 text-xs">
-                                    Deleted by: {deletion.causer}
-                                    {deletion.class_id && ` | Class ID: ${deletion.class_id}`}
-                                </p>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-                <DialogFooter>
-                    <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-                        Cancel
-                    </Button>
-                    <Button onClick={onRestore} disabled={restoring || selectedDeletions.length === 0}>
-                        <Undo2 className="mr-2 h-4 w-4" />
-                        Restore {selectedDeletions.length} Subject{selectedDeletions.length !== 1 ? "s" : ""}
-                    </Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
-    );
-}

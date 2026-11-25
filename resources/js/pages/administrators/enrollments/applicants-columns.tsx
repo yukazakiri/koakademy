@@ -1,6 +1,7 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -84,6 +85,27 @@ function SortableHeader({
 }
 
 export const createApplicantColumns = ({ actions, stageMeta, pipelineStatusLabels }: ColumnOptions): ColumnDef<ApplicantRow>[] => [
+    {
+        id: "select",
+        enableSorting: false,
+        enableHiding: false,
+        header: ({ table }) => (
+            <Checkbox
+                checked={table.getIsAllPageRowsSelected() || (table.getIsSomePageRowsSelected() && "indeterminate")}
+                onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+                aria-label="Select all applicants"
+            />
+        ),
+        cell: ({ row }) => (
+            <div onClick={(event) => event.stopPropagation()}>
+                <Checkbox
+                    checked={row.getIsSelected()}
+                    onCheckedChange={(value) => row.toggleSelected(!!value)}
+                    aria-label={`Select ${row.original.name}`}
+                />
+            </div>
+        ),
+    },
     {
         accessorKey: "name",
         header: ({ column }) => <SortableHeader column={column} label="Applicant" />,

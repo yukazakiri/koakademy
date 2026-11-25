@@ -30,7 +30,9 @@ use App\Models\ClassEnrollment;
 use App\Models\Classes;
 use App\Models\Course;
 use App\Models\EnrollmentDiscount;
+use App\Models\EnrollmentPolicy;
 use App\Models\EnrollmentRequirement;
+use App\Models\GeneralSetting;
 use App\Models\Resource;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
@@ -47,12 +49,14 @@ use App\Services\AssessmentFormDataService;
 use App\Services\ClassScheduleChangeNotificationService;
 use App\Services\CurriculumCapabilityResolver;
 use App\Services\EnrollmentBillingService;
+use App\Services\EnrollmentPeriodService;
 use App\Services\EnrollmentPipelineService;
 use App\Services\EnrollmentService;
 use App\Services\GeneralSettingsService;
 use App\Services\PdfGenerationService;
 use App\Services\QueueAssessmentExportService;
 use App\Services\StudentDirectoryQuery;
+use App\Services\StudentHoldService;
 use App\Services\TenantContext;
 use App\Services\TuitionAdjustmentRecalculationService;
 use App\Settings\SiteSettings;
@@ -77,6 +81,7 @@ use Laravel\Pennant\Feature;
 use Maatwebsite\Excel\Facades\Excel;
 use RuntimeException;
 use Spatie\Activitylog\Models\Activity;
+use Spatie\Permission\Models\Role;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
@@ -96,6 +101,8 @@ final class AdministratorEnrollmentManagementController extends Controller
         private readonly EnrollmentFeePolicy $feePolicy,
         private readonly ApplicantDirectoryService $applicantDirectory,
         private readonly ApplicantCancellationService $applicantCancellation,
+        private readonly EnrollmentPeriodService $enrollmentPeriodService,
+        private readonly StudentHoldService $studentHoldService,
     ) {}
 
     public function index(GeneralSettingsService $settingsService): Response|RedirectResponse
@@ -106,6 +113,7 @@ final class AdministratorEnrollmentManagementController extends Controller
             return redirect('/login');
         }
 
+        $resolvedPipeline = $this->resolveActivePipelinePayload($user);
         $workflowSetupRequired = ! $this->enrollmentPipelineService->hasWorkflowSetup();
         if ($workflowSetupRequired) {
             $scheme = request()->getScheme();
@@ -146,7 +154,15 @@ final class AdministratorEnrollmentManagementController extends Controller
                     'trashed_count' => 0,
                     'active_count' => 0,
                     'by_status' => [],
+                    'unpaid_balance_total' => 0.0,
+                    'unpaid_count' => 0,
+                    'in_pipeline_count' => 0,
+                    'completed_count' => 0,
                 ],
+                'board_enrollments' => [],
+                'permissions' => $this->enrollmentIndexPermissions($user),
+                'pipeline_meta' => $resolvedPipeline['pipeline_meta'],
+                'enrollment_period' => $this->enrollmentPeriodService->describe(),
                 'flash' => session('flash'),
                 'filters' => [
                     'search' => null,
@@ -155,6 +171,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                     'department_filter' => 'all',
                     'year_level_filter' => 'all',
                     'course_filter' => 'all',
+                    'payment_filter' => 'all',
                     'currentSemester' => $settingsService->getCurrentSemester(),
                     'currentSchoolYear' => $settingsService->getCurrentSchoolYearStart(),
                     'systemSemester' => $settingsService->getSystemDefaultSemester(),
@@ -162,12 +179,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                     'availableSemesters' => $settingsService->getAvailableSemesters(),
                     'availableSchoolYears' => $settingsService->getAvailableSchoolYears(),
                 ],
-                'enrollment_pipeline' => [
-                    ...$this->enrollmentPipelineService->getConfiguration(),
-                    'steps' => $this->enrollmentPipelineService->getSteps(),
-                    'status_options' => $this->enrollmentPipelineService->getStatusOptions(),
-                    'status_classes' => $this->enrollmentPipelineService->getStatusColorClasses(),
-                ],
+                'enrollment_pipeline' => $resolvedPipeline['enrollment_pipeline'],
                 'enrollment_stats' => $this->enrollmentPipelineService->getStatsConfiguration(),
                 'assessment_export_options' => [
                     'student_limits' => config('assessment-exports.student_limit_options'),
@@ -264,98 +276,186 @@ final class AdministratorEnrollmentManagementController extends Controller
             ->where('status', StudentStatus::Applicant)
             ->count();
 
+        $completionStatuses = collect($resolvedPipeline['enrollment_pipeline']['steps'] ?? [])
+            ->filter(fn (array $step): bool => (bool) ($step['is_completion'] ?? false))
+            ->pluck('status')
+            ->merge([
+                $resolvedPipeline['enrollment_pipeline']['cashier_verified_status'] ?? null,
+                'Enrolled',
+                'Completed',
+            ])
+            ->filter(fn (mixed $status): bool => is_string($status) && $status !== '')
+            ->unique()
+            ->values()
+            ->all();
+
+        $unpaidSummary = function () use ($excludingAbandoned, $currentSchoolYearString, $currentSemester): array {
+            $row = $excludingAbandoned(StudentEnrollment::query()
+                ->where('student_enrollment.school_year', $currentSchoolYearString)
+                ->where('student_enrollment.semester', $currentSemester))
+                ->join('student_tuition', 'student_tuition.enrollment_id', '=', 'student_enrollment.id')
+                ->whereNull('student_tuition.deleted_at')
+                ->where('student_tuition.total_balance', '>', 0)
+                ->selectRaw('COUNT(*) as unpaid_count, COALESCE(SUM(student_tuition.total_balance), 0) as unpaid_total')
+                ->first();
+
+            return [
+                'unpaid_count' => (int) ($row->unpaid_count ?? 0),
+                'unpaid_balance_total' => (float) ($row->unpaid_total ?? 0),
+            ];
+        };
+
+        $pipelineCounts = function () use ($excludingAbandoned, $currentSchoolYearString, $currentSemester, $completionStatuses): array {
+            $base = $excludingAbandoned(StudentEnrollment::query()
+                ->where('school_year', $currentSchoolYearString)
+                ->where('semester', $currentSemester));
+
+            $completedCount = (clone $base)->whereIn('status', $completionStatuses)->count();
+            $inPipelineCount = (clone $base)->where(function ($query) use ($completionStatuses): void {
+                $query->whereNull('status')->orWhereNotIn('status', $completionStatuses);
+            })->count();
+
+            return [
+                'completed_count' => $completedCount,
+                'in_pipeline_count' => $inPipelineCount,
+            ];
+        };
+
         $search = request('search');
         $statusFilter = request('status_filter', 'all');
         $departmentFilter = request('department_filter', 'all');
         $yearLevelFilter = request('year_level_filter', 'all');
         $courseFilter = request('course_filter', 'all');
+        $paymentFilter = request('payment_filter', 'all');
         $sort = request('sort', 'created_at');
         $direction = request('direction', 'desc') === 'asc' ? 'asc' : 'desc';
         $perPageInput = request('per_page', ApiPagination::defaultPerPage());
         $perPage = ApiPagination::perPage($perPageInput);
 
-        $enrollments = fn () => StudentEnrollment::query()
-            ->withTrashed()
-            ->where('student_enrollment.school_year', $currentSchoolYearString)
-            ->where('student_enrollment.semester', $currentSemester)
-            ->when($statusFilter && $statusFilter !== 'all', function ($query) use ($statusFilter) {
-                if ($statusFilter === 'active') {
-                    $query->whereNull('student_enrollment.deleted_at');
-                } elseif ($statusFilter === 'trashed') {
-                    $query->onlyTrashed();
-                } elseif ($statusFilter === 'cancelled') {
-                    // Cancellation is a terminal outcome, not a reporting status.
-                    $query->where('student_enrollment.terminal_outcome', EnrollmentCancellationService::OUTCOME);
-                } else {
-                    $query->where('student_enrollment.status', $statusFilter);
-                }
-            })
-            ->when($departmentFilter && $departmentFilter !== 'all', function ($query) use ($departmentFilter) {
-                $query->whereHas('course.department', fn ($q) => $q->where('code', $departmentFilter));
-            })
-            ->when($yearLevelFilter && $yearLevelFilter !== 'all', function ($query) use ($yearLevelFilter) {
-                $query->where('student_enrollment.academic_year', (int) $yearLevelFilter);
-            })
-            ->when($courseFilter && $courseFilter !== 'all', function ($query) use ($courseFilter) {
-                $query->where('student_enrollment.course_id', (int) $courseFilter);
-            })
-            ->when(is_string($search) && mb_trim($search) !== '', function ($query) use ($search) {
-                $searchTerm = mb_trim($search);
-                $like = "%{$searchTerm}%";
-                $query->where(function ($q) use ($like) {
-                    $q->whereHas('student', function ($sq) use ($like) {
-                        $sq->where('first_name', 'like', $like)
-                            ->orWhere('last_name', 'like', $like)
-                            ->orWhere('student_id', 'like', $like)
-                            ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", [$like])
-                            ->orWhereRaw("CONCAT(last_name, ', ', first_name) LIKE ?", [$like]);
-                    })
-                        ->orWhereHas('course', fn ($sq) => $sq->where('code', 'like', $like)->orWhere('title', 'like', $like))
-                        ->orWhere('student_enrollment.status', 'like', $like);
-                });
-            })
-            ->with(['student.Course', 'course.department', 'studentTuition'])
-            ->withCount('subjectsEnrolled')
-            ->when($sort === 'student_name', function ($query) use ($direction) {
-                $query->orderBy(
-                    Student::select('last_name')
-                        ->whereColumn('students.id', 'student_enrollment.student_id')
-                        ->limit(1),
-                    $direction
-                );
-            }, function ($query) use ($sort, $direction) {
-                if ($sort === 'created_at') {
-                    $query->orderBy('student_enrollment.created_at', $direction)
-                        ->orderBy('student_enrollment.id', $direction);
-                } else {
-                    $query->orderByDesc('student_enrollment.created_at')
-                        ->orderByDesc('student_enrollment.id');
-                }
-            })
-            ->paginate($perPage, ['*'], 'page', (int) request('page', 1))
-            ->withQueryString()
-            ->through(fn (StudentEnrollment $enrollment): array => [
-                'id' => $enrollment->id,
-                'student_id' => $enrollment->student_id,
-                'student_name' => $enrollment->student?->full_name,
-                'course_id' => $enrollment->course_id,
-                'course' => $enrollment->course?->code,
-                'course_title' => $enrollment->course?->title,
-                'department' => $enrollment->course?->department?->code,
-                'status' => $enrollment->status ?? 'N/A',
-                'terminal_outcome' => $enrollment->terminal_outcome,
-                'school_year' => $enrollment->school_year,
-                'semester' => $enrollment->semester,
-                'academic_year' => $enrollment->academic_year,
-                'subjects_count' => $enrollment->subjects_enrolled_count,
-                'tuition' => $enrollment->studentTuition ? [
-                    'overall' => $enrollment->studentTuition->overall_tuition,
-                    'balance' => $enrollment->studentTuition->total_balance,
-                ] : null,
-                'created_at' => $enrollment->created_at?->toDateTimeString(),
-                'deleted_at' => $enrollment->deleted_at?->toDateTimeString(),
-                'is_trashed' => $enrollment->trashed(),
-            ]);
+        $buildFilteredQuery = function (bool $includeStatusFilter = true) use (
+            $currentSchoolYearString,
+            $currentSemester,
+            $statusFilter,
+            $departmentFilter,
+            $yearLevelFilter,
+            $courseFilter,
+            $paymentFilter,
+            $search
+        ): Builder {
+            return StudentEnrollment::query()
+                ->withTrashed()
+                ->where('student_enrollment.school_year', $currentSchoolYearString)
+                ->where('student_enrollment.semester', $currentSemester)
+                ->when($includeStatusFilter && $statusFilter && $statusFilter !== 'all', function ($query) use ($statusFilter) {
+                    if ($statusFilter === 'active') {
+                        $query->whereNull('student_enrollment.deleted_at');
+                    } elseif ($statusFilter === 'trashed') {
+                        $query->onlyTrashed();
+                    } elseif ($statusFilter === 'cancelled') {
+                        // Cancellation is a terminal outcome, not a reporting status.
+                        $query->where('student_enrollment.terminal_outcome', EnrollmentCancellationService::OUTCOME);
+                    } else {
+                        $query->where('student_enrollment.status', $statusFilter);
+                    }
+                })
+                ->when($departmentFilter && $departmentFilter !== 'all', function ($query) use ($departmentFilter) {
+                    $query->whereHas('course.department', fn ($q) => $q->where('code', $departmentFilter));
+                })
+                ->when($yearLevelFilter && $yearLevelFilter !== 'all', function ($query) use ($yearLevelFilter) {
+                    $query->where('student_enrollment.academic_year', (int) $yearLevelFilter);
+                })
+                ->when($courseFilter && $courseFilter !== 'all', function ($query) use ($courseFilter) {
+                    $query->where('student_enrollment.course_id', (int) $courseFilter);
+                })
+                ->when($paymentFilter === 'unpaid', function ($query) {
+                    $query->whereHas('studentTuition', fn ($q) => $q->where('total_balance', '>', 0));
+                })
+                ->when($paymentFilter === 'paid', function ($query) {
+                    $query->where(function ($q): void {
+                        $q->whereDoesntHave('studentTuition')
+                            ->orWhereHas('studentTuition', fn ($tq) => $tq->where('total_balance', '<=', 0));
+                    });
+                })
+                ->when(is_string($search) && mb_trim($search) !== '', function ($query) use ($search) {
+                    $searchTerm = mb_trim($search);
+                    $like = "%{$searchTerm}%";
+                    $query->where(function ($q) use ($like) {
+                        $q->whereHas('student', function ($sq) use ($like) {
+                            $sq->where('first_name', 'like', $like)
+                                ->orWhere('last_name', 'like', $like)
+                                ->orWhere('student_id', 'like', $like)
+                                ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", [$like])
+                                ->orWhereRaw("CONCAT(last_name, ', ', first_name) LIKE ?", [$like]);
+                        })
+                            ->orWhereHas('course', fn ($sq) => $sq->where('code', 'like', $like)->orWhere('title', 'like', $like))
+                            ->orWhere('student_enrollment.status', 'like', $like);
+                    });
+                })
+                ->with(['student.Course', 'course.department', 'studentTuition', 'policySnapshot'])
+                ->withCount('subjectsEnrolled');
+        };
+
+        $enrollments = function () use ($buildFilteredQuery, $sort, $direction, $perPage, $user) {
+            $paginator = $buildFilteredQuery(true)
+                ->when($sort === 'student_name', function ($query) use ($direction) {
+                    $query->orderBy(
+                        Student::select('last_name')
+                            ->whereColumn('students.id', 'student_enrollment.student_id')
+                            ->limit(1),
+                        $direction
+                    );
+                }, function ($query) use ($sort, $direction) {
+                    if ($sort === 'tuition') {
+                        $query->orderBy(
+                            StudentTuition::select('overall_tuition')
+                                ->whereColumn('student_tuition.enrollment_id', 'student_enrollment.id')
+                                ->limit(1),
+                            $direction
+                        );
+                    } elseif ($sort === 'created_at') {
+                        $query->orderBy('student_enrollment.created_at', $direction)
+                            ->orderBy('student_enrollment.id', $direction);
+                    } else {
+                        $query->orderByDesc('student_enrollment.created_at')
+                            ->orderByDesc('student_enrollment.id');
+                    }
+                })
+                ->paginate($perPage, ['*'], 'page', (int) request('page', 1))
+                ->withQueryString();
+
+            $pageHoldSummaries = $this->studentHoldService->summariesForStudents(
+                $paginator->getCollection()->pluck('student_id')->filter()->map(fn ($id): int => (int) $id)->values()->all(),
+            );
+            $paginator->setCollection(
+                $paginator->getCollection()->map(
+                    fn (StudentEnrollment $enrollment): array => $this->serializeEnrollmentRow($enrollment, $user, $pageHoldSummaries[(int) $enrollment->student_id] ?? null),
+                ),
+            );
+
+            return $paginator;
+        };
+
+        $boardEnrollments = function () use ($buildFilteredQuery, $user): array {
+            $rows = $buildFilteredQuery(false)
+                ->whereNull('student_enrollment.deleted_at')
+                ->where(function ($outcomes): void {
+                    $outcomes->whereNull('student_enrollment.terminal_outcome')
+                        ->orWhereNotIn('student_enrollment.terminal_outcome', StudentDirectoryQuery::ABANDONED_TERMINAL_OUTCOMES);
+                })
+                ->orderByDesc('student_enrollment.created_at')
+                ->orderByDesc('student_enrollment.id')
+                ->limit(150)
+                ->get();
+
+            $boardHoldSummaries = $this->studentHoldService->summariesForStudents(
+                $rows->pluck('student_id')->filter()->map(fn ($id): int => (int) $id)->values()->all(),
+            );
+
+            return $rows
+                ->map(fn (StudentEnrollment $enrollment): array => $this->serializeEnrollmentRow($enrollment, $user, $boardHoldSummaries[(int) $enrollment->student_id] ?? null))
+                ->values()
+                ->all();
+        };
 
         $scheme = request()->getScheme();
         $adminHost = (string) config('app.admin_host');
@@ -376,16 +476,39 @@ final class AdministratorEnrollmentManagementController extends Controller
             ],
             'applicantsCount' => $applicantsCount,
             'enrollments' => $enrollments,
-            'analytics' => fn (): array => [
-                'current_semester_count' => $enrolledThisSemester instanceof Closure ? $enrolledThisSemester() : $enrolledThisSemester,
-                'current_school_year_count' => $enrolledThisSchoolYear instanceof Closure ? $enrolledThisSchoolYear() : $enrolledThisSchoolYear,
-                'previous_semester_count' => $enrolledPreviousSemester instanceof Closure ? $enrolledPreviousSemester() : $enrolledPreviousSemester,
-                'by_department' => $enrolledByDepartment instanceof Closure ? $enrolledByDepartment() : $enrolledByDepartment,
-                'by_year_level' => $enrolledByYearLevel instanceof Closure ? $enrolledByYearLevel() : $enrolledByYearLevel,
-                'trashed_count' => $trashedCount instanceof Closure ? $trashedCount() : $trashedCount,
-                'active_count' => $activeCount instanceof Closure ? $activeCount() : $activeCount,
-                'by_status' => $enrollmentByStatus instanceof Closure ? $enrollmentByStatus() : $enrollmentByStatus,
-            ],
+            'board_enrollments' => $boardEnrollments,
+            'permissions' => $this->enrollmentIndexPermissions($user),
+            'pipeline_meta' => $resolvedPipeline['pipeline_meta'],
+            'analytics' => function () use (
+                $enrolledThisSemester,
+                $enrolledThisSchoolYear,
+                $enrolledPreviousSemester,
+                $enrolledByDepartment,
+                $enrolledByYearLevel,
+                $trashedCount,
+                $activeCount,
+                $enrollmentByStatus,
+                $unpaidSummary,
+                $pipelineCounts
+            ): array {
+                $unpaid = $unpaidSummary();
+                $pipeline = $pipelineCounts();
+
+                return [
+                    'current_semester_count' => $enrolledThisSemester instanceof Closure ? $enrolledThisSemester() : $enrolledThisSemester,
+                    'current_school_year_count' => $enrolledThisSchoolYear instanceof Closure ? $enrolledThisSchoolYear() : $enrolledThisSchoolYear,
+                    'previous_semester_count' => $enrolledPreviousSemester instanceof Closure ? $enrolledPreviousSemester() : $enrolledPreviousSemester,
+                    'by_department' => $enrolledByDepartment instanceof Closure ? $enrolledByDepartment() : $enrolledByDepartment,
+                    'by_year_level' => $enrolledByYearLevel instanceof Closure ? $enrolledByYearLevel() : $enrolledByYearLevel,
+                    'trashed_count' => $trashedCount instanceof Closure ? $trashedCount() : $trashedCount,
+                    'active_count' => $activeCount instanceof Closure ? $activeCount() : $activeCount,
+                    'by_status' => $enrollmentByStatus instanceof Closure ? $enrollmentByStatus() : $enrollmentByStatus,
+                    'unpaid_balance_total' => $unpaid['unpaid_balance_total'],
+                    'unpaid_count' => $unpaid['unpaid_count'],
+                    'in_pipeline_count' => $pipeline['in_pipeline_count'],
+                    'completed_count' => $pipeline['completed_count'],
+                ];
+            },
             'flash' => session('flash'),
             'filters' => [
                 'search' => $search,
@@ -397,6 +520,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'department_filter' => $departmentFilter,
                 'year_level_filter' => $yearLevelFilter,
                 'course_filter' => $courseFilter,
+                'payment_filter' => $paymentFilter,
                 'currentSemester' => $currentSemester,
                 'currentSchoolYear' => $currentSchoolYearStart,
                 'systemSemester' => $settingsService->getSystemDefaultSemester(),
@@ -413,12 +537,8 @@ final class AdministratorEnrollmentManagementController extends Controller
                     'title' => $c->title,
                 ])
                 ->values(),
-            'enrollment_pipeline' => [
-                ...$this->enrollmentPipelineService->getConfiguration(),
-                'steps' => $this->enrollmentPipelineService->getSteps(),
-                'status_options' => $this->enrollmentPipelineService->getStatusOptions(),
-                'status_classes' => $this->enrollmentPipelineService->getStatusColorClasses(),
-            ],
+            'enrollment_pipeline' => $resolvedPipeline['enrollment_pipeline'],
+            'enrollment_period' => $this->enrollmentPeriodService->describe($currentSchoolYearString, $currentSemester),
             'enrollment_stats' => $this->enrollmentPipelineService->getStatsConfiguration(),
             'assessment_export_options' => [
                 'student_limits' => config('assessment-exports.student_limit_options'),
@@ -453,12 +573,7 @@ final class AdministratorEnrollmentManagementController extends Controller
             'stage_meta' => $this->applicantDirectory->stageMeta(),
             'filter_options' => $this->applicantDirectory->filterOptions(),
             'cancellation_reasons' => $this->applicantCancellation->reasons(),
-            'enrollment_pipeline' => [
-                ...$this->enrollmentPipelineService->getConfiguration(),
-                'steps' => $this->enrollmentPipelineService->getSteps(),
-                'status_options' => $this->enrollmentPipelineService->getStatusOptions(),
-                'status_classes' => $this->enrollmentPipelineService->getStatusColorClasses(),
-            ],
+            'enrollment_pipeline' => $this->resolveActivePipelinePayload($user)['enrollment_pipeline'],
             'flash' => session('flash'),
         ]);
     }
@@ -632,6 +747,402 @@ final class AdministratorEnrollmentManagementController extends Controller
         return back()->with('flash', [
             'success' => sprintf('Approval email queued for %s.', $student->full_name),
         ]);
+    }
+
+    /**
+     * Lightweight dossier backing the slide-over inspection sheet on /administrators/enrollments.
+     */
+    public function summary(int $enrollment): JsonResponse
+    {
+        $user = Auth::user();
+        abort_unless($user instanceof User, 403);
+
+        $record = StudentEnrollment::withTrashed()
+            ->with([
+                'student.Course',
+                'course.department',
+                'subjectsEnrolled.subject',
+                'studentTuition',
+                'additionalFees',
+                'resources',
+                'requirements',
+                'policySnapshot',
+                'workflowEvents' => fn ($query) => $query->latest()->limit(12),
+            ])
+            ->findOrFail($enrollment);
+
+        $enrollmentTransactions = $record->enrollmentTransactions()
+            ->with('transaction')
+            ->latest()
+            ->limit(8)
+            ->get();
+
+        $activeClassEnrollments = $record->student
+            ? $record->student->classEnrollments()
+                ->with(['class'])
+                ->where('status', true)
+                ->whereHas('class', function ($query) use ($record): void {
+                    $query->where('school_year', $record->school_year)
+                        ->where('semester', $record->semester);
+                })
+                ->get()
+            : collect();
+
+        $enrolledSubjectCodes = $activeClassEnrollments
+            ->pluck('class.subject_code')
+            ->filter()
+            ->flatMap(fn ($code): array => array_map(trim(...), explode(',', (string) $code)))
+            ->map(fn (string $code): string => mb_strtolower($code))
+            ->unique()
+            ->all();
+
+        $missingClassesCount = $record->subjectsEnrolled
+            ->filter(function ($se) use ($enrolledSubjectCodes): bool {
+                $code = $se->subject?->code;
+
+                return is_string($code) && $code !== '' && ! in_array(mb_strtolower(mb_trim($code)), $enrolledSubjectCodes, true);
+            })
+            ->count();
+
+        $tuitionSummary = $record->studentTuition
+            ? $this->enrollmentBillingService->toSummaryArray(
+                $record->studentTuition,
+                (float) $record->additionalFees->sum('amount')
+            )
+            : null;
+
+        $workflow = $this->workflowView($record, $user);
+        $isPolicyRuntime = $record->workflow_runtime === StudentEnrollment::WorkflowRuntimePolicyV1 && $record->policySnapshot !== null;
+        $policyTransitions = $isPolicyRuntime && ! $record->trashed() && $record->terminal_outcome !== EnrollmentCancellationService::OUTCOME
+            ? $this->resolvePolicyRowTransitions($record, $user)
+            : [];
+
+        if ($isPolicyRuntime) {
+            $projected = $this->enrollmentPipelineService->getConfigurationFor($record);
+            $steps = collect($projected['steps'] ?? [])->map(fn (array $step): array => [
+                ...$step,
+                'is_completion' => ($projected['completion_step_key'] ?? null) === ($step['key'] ?? null),
+            ])->values()->all();
+            $primaryTransition = $policyTransitions[0] ?? null;
+            $nextStep = $primaryTransition ? [
+                'key' => $primaryTransition['to'],
+                'status' => $primaryTransition['to_status'],
+                'label' => $primaryTransition['label'],
+                'action_type' => $primaryTransition['action_type'],
+                'transition_key' => $primaryTransition['key'],
+                'requires_reason' => $primaryTransition['requires_reason'],
+            ] : null;
+        } else {
+            $nextStep = $this->enrollmentPipelineService->getNextStep($record->status);
+            $steps = $this->enrollmentPipelineService->getSteps();
+        }
+        $indexPermissions = $this->enrollmentIndexPermissions($user);
+
+        // Assemble a concise chronological timeline for the ReUI Timeline component.
+        $timeline = collect();
+
+        if ($record->created_at !== null) {
+            $timeline->push([
+                'id' => 'created-'.$record->id,
+                'type' => 'created',
+                'title' => 'Enrollment record created',
+                'description' => sprintf(
+                    '%s · %s (Sem %s)',
+                    $record->course?->code ?? 'Program unassigned',
+                    $record->school_year ?? 'Current term',
+                    (string) ($record->semester ?? '—')
+                ),
+                'timestamp' => $record->created_at->toISOString(),
+                'date_label' => $record->created_at->format('M j, Y · g:i A'),
+                'tone' => 'info',
+            ]);
+        }
+
+        foreach ($record->workflowEvents as $event) {
+            $toLabel = $event->status ?: ($event->to_step_key ? Str::headline((string) $event->to_step_key) : 'Workflow updated');
+            $timeline->push([
+                'id' => 'wf-'.$event->id,
+                'type' => 'workflow',
+                'title' => $event->terminal_outcome === 'cancelled'
+                    ? 'Enrollment cancelled'
+                    : sprintf('Moved to %s', $toLabel),
+                'description' => $event->reason ?: ($event->from_step_key ? sprintf('Transitioned from %s', Str::headline((string) $event->from_step_key)) : 'Pipeline step recorded'),
+                'timestamp' => $event->created_at?->toISOString(),
+                'date_label' => $event->created_at?->format('M j, Y · g:i A') ?? '—',
+                'tone' => $event->terminal_outcome === 'cancelled' ? 'destructive' : 'success',
+            ]);
+        }
+
+        foreach ($enrollmentTransactions as $studentTx) {
+            $tx = $studentTx->transaction;
+            if (! $tx) {
+                continue;
+            }
+            $txAmount = (float) ($studentTx->amount ?? $tx->raw_total_amount ?? $tx->total_amount ?? 0);
+            $timeline->push([
+                'id' => 'tx-'.$tx->id,
+                'type' => 'payment',
+                'title' => sprintf('Payment recorded (%s)', $tx->invoicenumber ?: $tx->transaction_number ?: '#'.$tx->id),
+                'description' => sprintf('Amount: %s · %s', number_format($txAmount, 2), $tx->description ?: ($tx->status ?? 'Settled')),
+                'timestamp' => $tx->created_at?->toISOString(),
+                'date_label' => $tx->created_at?->format('M j, Y · g:i A') ?? '—',
+                'tone' => 'success',
+            ]);
+        }
+
+        if ($record->deleted_at !== null) {
+            $timeline->push([
+                'id' => 'deleted-'.$record->id,
+                'type' => 'deleted',
+                'title' => 'Moved to trash',
+                'description' => 'Soft-deleted enrollment record (can be restored).',
+                'timestamp' => $record->deleted_at->toISOString(),
+                'date_label' => $record->deleted_at->format('M j, Y · g:i A'),
+                'tone' => 'destructive',
+            ]);
+        }
+
+        $sortedTimeline = $timeline
+            ->sortByDesc(fn (array $item): string => (string) ($item['timestamp'] ?? ''))
+            ->values()
+            ->take(12)
+            ->all();
+
+        $totalUnits = $record->subjectsEnrolled->sum(fn ($se): float => (float) ($se->subject?->units ?? 0));
+
+        return response()->json([
+            'enrollment' => [
+                'id' => $record->id,
+                'student_id' => $record->student_id,
+                'status' => $record->status ?? 'N/A',
+                'terminal_outcome' => $record->terminal_outcome,
+                'workflow_runtime' => $record->workflow_runtime,
+                'current_step_key' => $record->current_step_key,
+                'allows_no_receipt_transition' => $record->allowsConfiguredNoReceiptTransition(),
+                'school_year' => $record->school_year,
+                'semester' => $record->semester,
+                'academic_year' => $record->academic_year,
+                'course_code' => $record->course?->code,
+                'course_title' => $record->course?->title,
+                'department' => $record->course?->department?->code,
+                'remarks' => $record->remarks,
+                'created_at' => $record->created_at?->toISOString(),
+                'deleted_at' => $record->deleted_at?->toISOString(),
+                'is_trashed' => $record->trashed(),
+                'show_url' => route('administrators.enrollments.show', $record->id),
+                'edit_url' => route('administrators.enrollments.edit', $record->id),
+                'assessment_download_url' => route('assessment.download', ['record' => $record->id]),
+                'assessment_preview_url' => route('administrators.enrollments.assessment-preview', $record->id),
+            ],
+            'student' => [
+                'id' => $record->student?->id,
+                'student_number' => $record->student?->student_id,
+                'full_name' => $record->student?->full_name ?? 'Unknown Student',
+                'email' => $record->student?->email,
+                'phone' => $record->student?->phone,
+                'course_code' => $record->student?->Course?->code,
+                'student_url' => $record->student?->id ? route('administrators.students.show', $record->student->id) : null,
+            ],
+            'workflow' => [
+                ...$workflow,
+                'engine' => $isPolicyRuntime ? 'policy_v1' : 'legacy',
+                'steps' => $steps,
+                'next_step' => $nextStep,
+                'allowed_transitions' => $policyTransitions,
+            ],
+            'permissions' => [
+                ...$indexPermissions,
+                'can_advance_pipeline' => ! $record->trashed()
+                    && $record->terminal_outcome !== EnrollmentCancellationService::OUTCOME
+                    && ($isPolicyRuntime
+                        ? count($policyTransitions) > 0
+                        : $this->enrollmentPipelineService->canUserAdvanceToNextStep($user, $record->status)),
+                'can_cancel' => (bool) ($workflow['can_cancel'] ?? false),
+                'can_review_requirements' => $user->can('Update:StudentEnrollment') || $user->hasRole('super_admin'),
+            ],
+            'subjects' => $record->subjectsEnrolled->map(fn ($se): array => [
+                'id' => $se->id,
+                'code' => $se->subject?->code ?? 'Unknown',
+                'title' => $se->subject?->title ?? 'Untitled subject',
+                'units' => (float) ($se->subject?->units ?? 0),
+                'lecture_fee' => (float) ($se->lecture ?? 0),
+                'lab_fee' => (float) ($se->laboratory ?? 0),
+            ])->values()->all(),
+            'total_units' => $totalUnits,
+            'class_enrollments_count' => $activeClassEnrollments->count(),
+            'missing_classes_count' => $missingClassesCount,
+            'tuition' => $tuitionSummary,
+            'transactions' => $enrollmentTransactions->map(function ($studentTransaction): ?array {
+                $tx = $studentTransaction->transaction;
+                if (! $tx) {
+                    return null;
+                }
+
+                return [
+                    'id' => $tx->id,
+                    'invoicenumber' => $tx->invoicenumber ?: $tx->transaction_number,
+                    'description' => $tx->description,
+                    'status' => $tx->status,
+                    'amount' => (float) ($studentTransaction->amount ?? $tx->raw_total_amount ?? $tx->total_amount ?? 0),
+                    'created_at' => $tx->created_at?->toISOString(),
+                ];
+            })->filter()->values()->all(),
+            'requirements' => $record->requirements->map(fn ($requirement): array => [
+                'id' => $requirement->id,
+                'key' => $requirement->requirement_key,
+                'label' => $requirement->label,
+                'status' => $requirement->status,
+                'required' => (bool) $requirement->is_required,
+                'verified_at' => $requirement->verified_at?->toISOString(),
+                'waived_at' => $requirement->waived_at?->toISOString(),
+            ])->values()->all(),
+            'holds' => $record->student_id
+                ? $this->studentHoldService
+                    ->allHoldsForStudent((int) $record->student_id)
+                    ->map(fn ($hold): array => $this->studentHoldService->serializeHold($hold))
+                    ->values()
+                    ->all()
+                : [],
+            'hold_offices' => $this->studentHoldService->officeOptions(),
+            'resources_count' => $record->resources->count(),
+            'timeline' => $sortedTimeline,
+        ]);
+    }
+
+    /**
+     * Perform authorized bulk workflow operations on selected enrollment records.
+     */
+    public function bulkAction(Request $request): RedirectResponse
+    {
+        $user = Auth::user();
+        abort_unless($user instanceof User, 403);
+
+        $validated = $request->validate([
+            'action' => ['required', 'string', 'in:advance,resend_assessment,delete,restore'],
+            'ids' => ['required', 'array', 'min:1', 'max:100'],
+            'ids.*' => ['integer', 'distinct'],
+        ]);
+
+        $action = $validated['action'];
+        $ids = array_values(array_unique(array_map('intval', $validated['ids'])));
+
+        $records = StudentEnrollment::withTrashed()
+            ->with(['policySnapshot'])
+            ->whereIn('id', $ids)
+            ->get();
+
+        $processed = 0;
+        $skipped = 0;
+
+        foreach ($records as $record) {
+            try {
+                if ($action === 'advance') {
+                    if ($record->trashed() || $record->terminal_outcome === EnrollmentCancellationService::OUTCOME) {
+                        $skipped++;
+
+                        continue;
+                    }
+
+                    if ($record->workflow_runtime === StudentEnrollment::WorkflowRuntimePolicyV1 && $record->policySnapshot !== null) {
+                        $transitions = $this->resolvePolicyRowTransitions($record, $user);
+                        $eligible = array_values(array_filter(
+                            $transitions,
+                            fn (array $transition): bool => ! $transition['needs_payment'] && ! $transition['requires_reason']
+                        ));
+
+                        if (count($eligible) !== 1) {
+                            $skipped++;
+
+                            continue;
+                        }
+
+                        $this->workflowCoordinator->transition($record, $user, $eligible[0]['key']);
+                        $processed++;
+
+                        continue;
+                    }
+
+                    $nextStep = $this->enrollmentPipelineService->getNextStep($record->status);
+                    if (
+                        $nextStep === null
+                        || ($nextStep['action_type'] ?? 'standard') === 'cashier_verification'
+                        || ! $this->enrollmentPipelineService->canUserAdvanceToNextStep($user, $record->status)
+                    ) {
+                        $skipped++;
+
+                        continue;
+                    }
+
+                    if (($nextStep['action_type'] ?? 'standard') === 'department_verification') {
+                        $this->workflowCoordinator->verifyAcademic($record, $user);
+                    } else {
+                        $this->workflowCoordinator->transition($record, $user, null);
+                    }
+                    $processed++;
+                } elseif ($action === 'resend_assessment') {
+                    if ($record->trashed()) {
+                        $skipped++;
+
+                        continue;
+                    }
+
+                    $result = $this->enrollmentService->resendAssessmentNotification($record);
+                    if ($result['success']) {
+                        $processed++;
+                    } else {
+                        $skipped++;
+                    }
+                } elseif ($action === 'delete') {
+                    if ($record->trashed()) {
+                        $skipped++;
+
+                        continue;
+                    }
+
+                    $record->delete();
+                    $processed++;
+                } elseif ($action === 'restore') {
+                    if (! $record->trashed()) {
+                        $skipped++;
+
+                        continue;
+                    }
+
+                    $record->restore();
+                    $processed++;
+                }
+            } catch (Throwable) {
+                $skipped++;
+            }
+        }
+
+        if ($processed === 0) {
+            return back()->with('flash', [
+                'error' => match ($action) {
+                    'advance' => 'No selected enrollments could be advanced automatically (cashier steps require receipt entry).',
+                    'resend_assessment' => 'No selected enrollments were eligible for assessment emails.',
+                    'delete' => 'No active enrollments were deleted.',
+                    'restore' => 'No deleted enrollments were restored.',
+                },
+            ]);
+        }
+
+        $verb = match ($action) {
+            'advance' => 'advanced to the next stage',
+            'resend_assessment' => 'queued for assessment email delivery',
+            'delete' => 'moved to trash',
+            'restore' => 'restored',
+        };
+
+        $message = sprintf(
+            '%d enrollment%s %s%s.',
+            $processed,
+            $processed === 1 ? '' : 's',
+            $verb,
+            $skipped > 0 ? sprintf(' (%d skipped)', $skipped) : ''
+        );
+
+        return back()->with('flash', ['success' => $message]);
     }
 
     public function show(StudentEnrollment $enrollment): Response
@@ -1620,6 +2131,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 ],
             ],
             'billingConfiguration' => EnrollmentFeeCalculator::Defaults,
+            'enrollment_period' => $this->enrollmentPeriodService->describe($currentSchoolYear, $currentSemester),
             'discounts' => $this->discountOptions(),
             'flash' => session('flash'),
         ]);
@@ -1638,6 +2150,21 @@ final class AdministratorEnrollmentManagementController extends Controller
             $result = $this->withoutEnrollmentSearchSyncing(fn (): array => DB::transaction(function () use ($validated, $settingsService): array {
                 $student = Student::with('Course')->findOrFail($validated['student_id']);
                 $schoolYear = $settingsService->getCurrentSchoolYearString();
+                $periodStatus = $this->enrollmentPeriodService->assertEnrollmentAllowed(
+                    overrideWindow: (bool) ($validated['override_window'] ?? false),
+                    schoolYear: $schoolYear,
+                    semester: (int) $validated['semester'],
+                );
+                $validated['additional_fees'] = $this->enrollmentPeriodService->appendLateFeeIfApplicable(
+                    $validated['additional_fees'] ?? [],
+                    $periodStatus,
+                );
+                $this->studentHoldService->assertNoBlockingEnrollmentHolds(
+                    student: $student,
+                    actor: Auth::user() instanceof User ? Auth::user() : null,
+                    overrideHolds: (bool) ($validated['override_holds'] ?? false),
+                    overrideReason: isset($validated['override_holds_reason']) ? (string) $validated['override_holds_reason'] : null,
+                );
 
                 // Check for existing enrollment in the same period
                 $existingEnrollment = StudentEnrollment::query()
@@ -2074,6 +2601,11 @@ final class AdministratorEnrollmentManagementController extends Controller
             'academic_year' => $student->academic_year,
             'formatted_academic_year' => $student->formatted_academic_year,
             'miscellaneous_fee' => $feeConfiguration['miscellaneous_fee_override'] ?? $student->Course?->getMiscellaneousFee() ?? EnrollmentFeeCalculator::Defaults['miscellaneous_fee_fallback'],
+            'active_holds' => $this->studentHoldService
+                ->activeHoldsForStudent((int) $student->id)
+                ->map(fn ($hold): array => $this->studentHoldService->serializeHold($hold))
+                ->values()
+                ->all(),
         ]);
     }
 
@@ -2524,6 +3056,279 @@ final class AdministratorEnrollmentManagementController extends Controller
             ->values();
 
         return response()->json(['courses' => $courses]);
+    }
+
+    /**
+     * @return array{can_verify_head: bool, can_verify_cashier: bool, can_delete: bool, can_reopen: bool, is_super_admin: bool}
+     */
+    private function enrollmentIndexPermissions(User $user): array
+    {
+        return [
+            'can_verify_head' => (
+                $user->can('verify_by_head_dept_guest::enrollment')
+                || $user->hasRole('super_admin')
+                || $this->enrollmentPipelineService->canUserPerformStep(
+                    $user,
+                    $this->enrollmentPipelineService->getStepByActionType('department_verification') ?? ['allowed_roles' => []]
+                )
+            ),
+            'can_verify_cashier' => (
+                $user->can('verify_by_cashier_guest::enrollment')
+                || $user->hasRole('super_admin')
+                || $this->enrollmentPipelineService->canUserPerformStep(
+                    $user,
+                    $this->enrollmentPipelineService->getStepByActionType('cashier_verification') ?? ['allowed_roles' => []]
+                )
+            ),
+            'can_delete' => $user->can('Delete:StudentEnrollment') || $user->hasRole('super_admin') || $user->hasRole('admin') || $user->hasRole('registrar'),
+            'can_reopen' => $user->can('Reopen:StudentEnrollment') || $user->hasRole('super_admin'),
+            'is_super_admin' => $user->hasRole('super_admin'),
+        ];
+    }
+
+    /**
+     * Resolve the active enrollment pipeline (either Dynamic Policy Engine v1 or Legacy Pipeline)
+     * plus configuration metadata for the /administrators/enrollments workspace.
+     *
+     * @return array{enrollment_pipeline: array<string, mixed>, pipeline_meta: array<string, mixed>}
+     */
+    private function resolveActivePipelinePayload(User $user): array
+    {
+        $canConfigure = $user->can('updateEnrollmentPipeline', GeneralSetting::class) || $user->hasRole('super_admin');
+        $configureUrl = route('administrators.system-management.enrollment-pipeline.index');
+        $availableRoles = Role::query()->orderBy('name')->pluck('name')->values()->all();
+
+        if (Feature::active(DynamicEnrollmentPolicies::class)) {
+            $activePolicies = EnrollmentPolicy::query()
+                ->where('is_enabled', true)
+                ->whereHas('activeVersion')
+                ->with('activeVersion')
+                ->orderByRaw('CASE WHEN school_id IS NULL AND course_id IS NULL AND student_type IS NULL AND school_year IS NULL AND semester IS NULL THEN 0 ELSE 1 END')
+                ->orderBy('id')
+                ->get();
+
+            /** @var EnrollmentPolicy|null $primaryPolicy */
+            $primaryPolicy = $activePolicies->first();
+
+            if ($primaryPolicy !== null && $primaryPolicy->activeVersion !== null) {
+                $configuration = $primaryPolicy->activeVersion->configuration;
+                $policySteps = collect(data_get($configuration, 'workflow.steps', []));
+
+                if ($policySteps->isNotEmpty()) {
+                    $entryStep = $policySteps->firstWhere('entry', true) ?? $policySteps->first();
+                    $completionStep = $policySteps->firstWhere('terminal', true) ?? $policySteps->last();
+
+                    $steps = $policySteps->map(function (array $step) use ($completionStep): array {
+                        $handlers = collect($step['actions'] ?? [])->pluck('handler');
+                        $actionType = match (true) {
+                            $handlers->contains('enrollment.verify_payment') => 'cashier_verification',
+                            $handlers->contains('enrollment.verify_academic') => 'department_verification',
+                            default => 'standard',
+                        };
+                        $fallback = collect($step['transitions'] ?? [])->firstWhere('fallback', true)
+                            ?? collect($step['transitions'] ?? [])->first();
+                        $status = (string) ($step['status'] ?? $step['label'] ?? $step['key']);
+
+                        return [
+                            'key' => (string) $step['key'],
+                            'status' => $status,
+                            'label' => (string) ($step['label'] ?? $status),
+                            'color' => (string) ($step['color'] ?? ((bool) ($step['terminal'] ?? false) ? 'green' : 'blue')),
+                            'allowed_roles' => [],
+                            'is_core' => false,
+                            'action_type' => $actionType,
+                            'next_step_key' => is_array($fallback) ? ($fallback['to'] ?? null) : null,
+                            'is_completion' => (bool) ($step['terminal'] ?? false) || $step['key'] === ($completionStep['key'] ?? null),
+                        ];
+                    })->values()->all();
+
+                    $deptStep = collect($steps)->firstWhere('action_type', 'department_verification');
+                    $cashierStep = collect($steps)->firstWhere('action_type', 'cashier_verification') ?? collect($steps)->last();
+                    $entryStatus = (string) ($entryStep['status'] ?? $entryStep['label'] ?? ($steps[0]['status'] ?? 'Pending'));
+
+                    $statusClasses = [];
+                    foreach ($steps as $s) {
+                        $statusClasses[$s['status']] = $this->enrollmentPipelineService->getStatusColorClasses()[$s['status']]
+                            ?? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 border-blue-200';
+                    }
+
+                    return [
+                        'enrollment_pipeline' => [
+                            'submitted_label' => (string) ($entryStep['label'] ?? 'Submitted'),
+                            'entry_step_key' => (string) ($entryStep['key'] ?? ($steps[0]['key'] ?? 'pending')),
+                            'completion_step_key' => (string) ($completionStep['key'] ?? ($steps[count($steps) - 1]['key'] ?? 'enrolled')),
+                            'pending_status' => $entryStatus,
+                            'pending_label' => (string) ($entryStep['label'] ?? $entryStatus),
+                            'pending_color' => (string) ($entryStep['color'] ?? 'amber'),
+                            'pending_roles' => [],
+                            'department_verified_status' => (string) ($deptStep['status'] ?? ($steps[1]['status'] ?? $entryStatus)),
+                            'department_verified_label' => (string) ($deptStep['label'] ?? 'Department Verification'),
+                            'department_verified_color' => (string) ($deptStep['color'] ?? 'blue'),
+                            'department_verified_roles' => [],
+                            'cashier_verified_status' => (string) ($cashierStep['status'] ?? 'Enrolled'),
+                            'cashier_verified_label' => (string) ($cashierStep['label'] ?? 'Enrolled'),
+                            'cashier_verified_color' => (string) ($cashierStep['color'] ?? 'green'),
+                            'cashier_verified_roles' => [],
+                            'additional_steps' => [],
+                            'steps' => $steps,
+                            'status_options' => collect($steps)->map(fn (array $s): array => [
+                                'value' => $s['status'],
+                                'label' => $s['label'],
+                            ])->values()->all(),
+                            'status_classes' => $statusClasses,
+                        ],
+                        'pipeline_meta' => [
+                            'engine' => 'policy_v1',
+                            'policy_id' => $primaryPolicy->id,
+                            'policy_name' => $primaryPolicy->name,
+                            'policy_version' => $primaryPolicy->activeVersion->version,
+                            'active_policies_count' => $activePolicies->count(),
+                            'configure_url' => $configureUrl,
+                            'can_configure' => $canConfigure,
+                            'available_roles' => $availableRoles,
+                        ],
+                    ];
+                }
+            }
+        }
+
+        return [
+            'enrollment_pipeline' => [
+                ...$this->enrollmentPipelineService->getConfiguration(),
+                'steps' => $this->enrollmentPipelineService->getSteps(),
+                'status_options' => $this->enrollmentPipelineService->getStatusOptions(),
+                'status_classes' => $this->enrollmentPipelineService->getStatusColorClasses(),
+            ],
+            'pipeline_meta' => [
+                'engine' => 'legacy',
+                'policy_id' => null,
+                'policy_name' => null,
+                'policy_version' => null,
+                'active_policies_count' => 0,
+                'configure_url' => $configureUrl,
+                'can_configure' => $canConfigure,
+                'available_roles' => $availableRoles,
+            ],
+        ];
+    }
+
+    /**
+     * @return array<int, array{key: string, label: string, to: string, to_status: string, requires_reason: bool, needs_payment: bool, action_type: string}>
+     */
+    private function resolvePolicyRowTransitions(StudentEnrollment $enrollment, User $user): array
+    {
+        $enrollment->loadMissing('policySnapshot');
+        if ($enrollment->policySnapshot === null) {
+            return [];
+        }
+
+        $steps = collect(data_get($enrollment->policySnapshot->configuration, 'workflow.steps', []));
+        $available = $this->transitionEngine->availableTransitions($enrollment, $user);
+
+        return collect($available)->map(function (array $transition) use ($steps): array {
+            $target = $steps->firstWhere('key', $transition['to'] ?? null);
+            $handlers = is_array($target) ? collect($target['actions'] ?? [])->pluck('handler') : collect();
+            $needsPayment = $handlers->contains('enrollment.verify_payment');
+            $actionType = match (true) {
+                $needsPayment => 'cashier_verification',
+                $handlers->contains('enrollment.verify_academic') => 'department_verification',
+                default => 'standard',
+            };
+            $toStatus = is_array($target)
+                ? (string) ($target['status'] ?? $target['label'] ?? $target['key'])
+                : (string) ($transition['to'] ?? '');
+
+            return [
+                'key' => (string) $transition['key'],
+                'label' => (string) ($transition['label'] ?? $transition['key']),
+                'to' => (string) ($transition['to'] ?? ''),
+                'to_status' => $toStatus,
+                'requires_reason' => (bool) ($transition['requires_reason'] ?? false),
+                'needs_payment' => $needsPayment,
+                'action_type' => $actionType,
+            ];
+        })->values()->all();
+    }
+
+    /**
+     * @param  array{active_count: int, blocking_count: int, offices: list<string>}|null  $holdSummary
+     * @return array<string, mixed>
+     */
+    private function serializeEnrollmentRow(StudentEnrollment $enrollment, User $user, ?array $holdSummary = null): array
+    {
+        $isCancelled = $enrollment->terminal_outcome === EnrollmentCancellationService::OUTCOME;
+        $isPolicyRuntime = $enrollment->workflow_runtime === StudentEnrollment::WorkflowRuntimePolicyV1 && $enrollment->policySnapshot !== null;
+        $allowedTransitions = [];
+
+        if ($isPolicyRuntime) {
+            $allowedTransitions = (! $enrollment->trashed() && ! $isCancelled)
+                ? $this->resolvePolicyRowTransitions($enrollment, $user)
+                : [];
+            $primary = $allowedTransitions[0] ?? null;
+            $nextStep = $primary ? [
+                'key' => $primary['to'],
+                'status' => $primary['to_status'],
+                'label' => $primary['label'],
+                'action_type' => $primary['action_type'],
+                'transition_key' => $primary['key'],
+                'requires_reason' => $primary['requires_reason'],
+            ] : null;
+            $canAdvance = count($allowedTransitions) > 0;
+        } else {
+            $legacyNext = $this->enrollmentPipelineService->getNextStep($enrollment->status);
+            $nextStep = $legacyNext ? [
+                'key' => (string) ($legacyNext['key'] ?? ''),
+                'status' => (string) ($legacyNext['status'] ?? ''),
+                'label' => (string) ($legacyNext['label'] ?? ''),
+                'action_type' => (string) ($legacyNext['action_type'] ?? 'standard'),
+                'transition_key' => null,
+                'requires_reason' => false,
+            ] : null;
+            $canAdvance = ! $enrollment->trashed()
+                && ! $isCancelled
+                && $legacyNext !== null
+                && $this->enrollmentPipelineService->canUserAdvanceToNextStep($user, $enrollment->status);
+        }
+
+        $overallTuition = $enrollment->studentTuition ? (float) $enrollment->studentTuition->overall_tuition : null;
+        $balanceTuition = $enrollment->studentTuition ? (float) $enrollment->studentTuition->total_balance : null;
+        $paidTuition = ($overallTuition !== null && $balanceTuition !== null)
+            ? max(0.0, round($overallTuition - $balanceTuition, 2))
+            : null;
+
+        return [
+            'id' => $enrollment->id,
+            'student_id' => $enrollment->student_id,
+            'student_number' => $enrollment->student?->student_id,
+            'student_name' => $enrollment->student?->full_name,
+            'student_email' => $enrollment->student?->email,
+            'course_id' => $enrollment->course_id,
+            'course' => $enrollment->course?->code,
+            'course_title' => $enrollment->course?->title,
+            'department' => $enrollment->course?->department?->code,
+            'status' => $enrollment->status ?? 'N/A',
+            'terminal_outcome' => $enrollment->terminal_outcome,
+            'workflow_runtime' => $enrollment->workflow_runtime,
+            'current_step_key' => $enrollment->current_step_key,
+            'school_year' => $enrollment->school_year,
+            'semester' => $enrollment->semester,
+            'academic_year' => $enrollment->academic_year,
+            'subjects_count' => $enrollment->subjects_enrolled_count ?? 0,
+            'tuition' => $enrollment->studentTuition ? [
+                'overall' => $overallTuition,
+                'balance' => $balanceTuition,
+                'paid' => $paidTuition,
+            ] : null,
+            'next_step' => $nextStep,
+            'allowed_transitions' => $allowedTransitions,
+            'can_advance' => $canAdvance,
+            'active_holds_count' => (int) ($holdSummary['active_count'] ?? 0),
+            'blocking_holds_count' => (int) ($holdSummary['blocking_count'] ?? 0),
+            'hold_offices' => $holdSummary['offices'] ?? [],
+            'created_at' => $enrollment->created_at?->toDateTimeString(),
+            'deleted_at' => $enrollment->deleted_at?->toDateTimeString(),
+            'is_trashed' => $enrollment->trashed(),
+        ];
     }
 
     /** @return array<string, mixed> */

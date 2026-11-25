@@ -2,15 +2,21 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\AdministratorApplicantBulkActionController;
 use App\Http\Controllers\AdministratorAuditLogController;
+use App\Http\Controllers\AdministratorBatchEnrollmentController;
 use App\Http\Controllers\AdministratorClassManagementController;
 use App\Http\Controllers\AdministratorCourseSchedulePdfController;
 use App\Http\Controllers\AdministratorCurriculumImportController;
 use App\Http\Controllers\AdministratorCurriculumManagementController;
 use App\Http\Controllers\AdministratorDashboardController;
 use App\Http\Controllers\AdministratorEnrollmentDiscountController;
+use App\Http\Controllers\AdministratorEnrollmentLoadChangeController;
 use App\Http\Controllers\AdministratorEnrollmentManagementController;
+use App\Http\Controllers\AdministratorEnrollmentPeriodController;
 use App\Http\Controllers\AdministratorEnrollmentPolicyController;
+use App\Http\Controllers\AdministratorEnrollmentTransferController;
+use App\Http\Controllers\AdministratorEnrollmentWaitlistController;
 use App\Http\Controllers\AdministratorFacultyCustomFieldController;
 use App\Http\Controllers\AdministratorFacultyImportController;
 use App\Http\Controllers\AdministratorFacultyManagementController;
@@ -25,6 +31,7 @@ use App\Http\Controllers\AdministratorRegistrarInsightsController;
 use App\Http\Controllers\AdministratorRolesController;
 use App\Http\Controllers\AdministratorSchedulingAnalyticsController;
 use App\Http\Controllers\AdministratorStudentDocumentController;
+use App\Http\Controllers\AdministratorStudentHoldController;
 use App\Http\Controllers\AdministratorStudentManagementController;
 use App\Http\Controllers\AdministratorTuitionAdjustmentController;
 use App\Http\Controllers\AdministratorTuitionUpdateRequestController;
@@ -90,6 +97,7 @@ Route::middleware(['auth', 'administrators.only'])
 
         Route::get('/enrollments', [AdministratorEnrollmentManagementController::class, 'index'])->name('enrollments.index');
         Route::get('/enrollments/applicants', [AdministratorEnrollmentManagementController::class, 'applicants'])->name('enrollments.applicants');
+        Route::post('/enrollments/applicants/bulk-action', AdministratorApplicantBulkActionController::class)->name('enrollments.applicants.bulk-action');
         Route::get('/registrar/analytics', [AdministratorRegistrarInsightsController::class, 'analytics'])->name('registrar.analytics.index');
         Route::get('/registrar/analytics/export', [AdministratorRegistrarInsightsController::class, 'export'])->name('registrar.analytics.export');
         Route::post('/registrar/analytics/student-profile-imports', [AdministratorRegistrarInsightsController::class, 'storeStudentProfileImport'])
@@ -113,8 +121,37 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/registrar/documents/preview', [AdministratorRegistrarDocumentController::class, 'preview'])->name('registrar.documents.preview');
         Route::get('/registrar/documents/pdf', [AdministratorRegistrarDocumentController::class, 'pdf'])->name('registrar.documents.pdf');
         Route::get('/enrollments/create', [AdministratorEnrollmentManagementController::class, 'create'])->name('enrollments.create');
+        Route::get('/enrollments/batch', [AdministratorBatchEnrollmentController::class, 'index'])->name('enrollments.batch.index');
+        Route::get('/enrollments/batch/preview', [AdministratorBatchEnrollmentController::class, 'preview'])->name('enrollments.batch.preview');
+        Route::post('/enrollments/batch', [AdministratorBatchEnrollmentController::class, 'store'])->name('enrollments.batch.store');
+        Route::get('/enrollments/waitlists', [AdministratorEnrollmentWaitlistController::class, 'index'])->name('enrollments.waitlists.index');
+        Route::post('/enrollments/waitlists', [AdministratorEnrollmentWaitlistController::class, 'store'])->name('enrollments.waitlists.store');
+        Route::post('/enrollments/waitlists/auto-assign', [AdministratorEnrollmentWaitlistController::class, 'autoAssign'])->name('enrollments.waitlists.auto-assign');
+        Route::post('/enrollments/waitlists/assign/{subjectEnrollment}', [AdministratorEnrollmentWaitlistController::class, 'assign'])
+            ->whereNumber('subjectEnrollment')
+            ->name('enrollments.waitlists.assign');
+        Route::post('/enrollments/waitlists/{waitlist}/promote', [AdministratorEnrollmentWaitlistController::class, 'promote'])
+            ->whereNumber('waitlist')
+            ->name('enrollments.waitlists.promote');
+        Route::delete('/enrollments/waitlists/{waitlist}', [AdministratorEnrollmentWaitlistController::class, 'destroy'])
+            ->whereNumber('waitlist')
+            ->name('enrollments.waitlists.destroy');
         Route::post('/enrollments', [AdministratorEnrollmentManagementController::class, 'store'])->name('enrollments.store');
+        Route::post('/enrollments/bulk-action', [AdministratorEnrollmentManagementController::class, 'bulkAction'])->name('enrollments.bulk-action');
         Route::post('/enrollments/discounts', [AdministratorEnrollmentDiscountController::class, 'store'])->name('enrollments.discounts.store');
+        Route::get('/enrollments/period', [AdministratorEnrollmentPeriodController::class, 'show'])->name('enrollments.period.show');
+        Route::put('/enrollments/period', [AdministratorEnrollmentPeriodController::class, 'upsert'])->name('enrollments.period.upsert');
+        Route::get('/enrollments/holds', [AdministratorStudentHoldController::class, 'index'])->name('enrollments.holds.index');
+        Route::post('/enrollments/holds', [AdministratorStudentHoldController::class, 'store'])->name('enrollments.holds.store');
+        Route::get('/enrollments/holds/students/{student}', [AdministratorStudentHoldController::class, 'forStudent'])
+            ->whereNumber('student')
+            ->name('enrollments.holds.student');
+        Route::post('/enrollments/holds/{hold}/release', [AdministratorStudentHoldController::class, 'release'])
+            ->whereNumber('hold')
+            ->name('enrollments.holds.release');
+        Route::post('/enrollments/holds/{hold}/override', [AdministratorStudentHoldController::class, 'override'])
+            ->whereNumber('hold')
+            ->name('enrollments.holds.override');
 
         // Enrollment Form Data API endpoints
         Route::get('/enrollments/api/students', [AdministratorEnrollmentManagementController::class, 'searchStudents'])->name('enrollments.api.students');
@@ -141,6 +178,7 @@ Route::middleware(['auth', 'administrators.only'])
             ->whereNumber('student')
             ->name('enrollments.applicants.cancel.revert');
         Route::get('/enrollments/{enrollment}', [AdministratorEnrollmentManagementController::class, 'show'])->whereNumber('enrollment')->name('enrollments.show');
+        Route::get('/enrollments/{enrollment}/summary', [AdministratorEnrollmentManagementController::class, 'summary'])->whereNumber('enrollment')->name('enrollments.summary');
 
         // Enrollment Actions
         Route::post('/enrollments/{enrollment}/verify-head-dept', [AdministratorEnrollmentManagementController::class, 'verifyHeadDept'])->whereNumber('enrollment')->name('enrollments.verify-head-dept');
@@ -175,6 +213,36 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/enrollments/{enrollment}/restore', [AdministratorEnrollmentManagementController::class, 'restore'])->whereNumber('enrollment')->name('enrollments.restore');
         Route::get('/enrollments/{enrollment}/activity-log', [AdministratorEnrollmentManagementController::class, 'activityLog'])->whereNumber('enrollment')->name('enrollments.activity-log');
         Route::post('/enrollments/{enrollment}/restore-subjects', [AdministratorEnrollmentManagementController::class, 'restoreSubjects'])->whereNumber('enrollment')->name('enrollments.restore-subjects');
+        Route::get('/enrollments/{enrollment}/load-changes', [AdministratorEnrollmentLoadChangeController::class, 'index'])
+            ->whereNumber('enrollment')
+            ->name('enrollments.load-changes.index');
+        Route::post('/enrollments/{enrollment}/load-changes/preview', [AdministratorEnrollmentLoadChangeController::class, 'preview'])
+            ->whereNumber('enrollment')
+            ->name('enrollments.load-changes.preview');
+        Route::post('/enrollments/{enrollment}/load-changes', [AdministratorEnrollmentLoadChangeController::class, 'store'])
+            ->whereNumber('enrollment')
+            ->name('enrollments.load-changes.store');
+        Route::post('/enrollments/{enrollment}/load-changes/{loadChange}/approve', [AdministratorEnrollmentLoadChangeController::class, 'approve'])
+            ->whereNumber(['enrollment', 'loadChange'])
+            ->name('enrollments.load-changes.approve');
+        Route::post('/enrollments/{enrollment}/load-changes/{loadChange}/reject', [AdministratorEnrollmentLoadChangeController::class, 'reject'])
+            ->whereNumber(['enrollment', 'loadChange'])
+            ->name('enrollments.load-changes.reject');
+        Route::get('/enrollments/{enrollment}/load-changes/{loadChange}/slip', [AdministratorEnrollmentLoadChangeController::class, 'slip'])
+            ->whereNumber(['enrollment', 'loadChange'])
+            ->name('enrollments.load-changes.slip');
+        Route::get('/enrollments/{enrollment}/transfers', [AdministratorEnrollmentTransferController::class, 'index'])
+            ->whereNumber('enrollment')
+            ->name('enrollments.transfers.index');
+        Route::post('/enrollments/{enrollment}/transfers/preview', [AdministratorEnrollmentTransferController::class, 'preview'])
+            ->whereNumber('enrollment')
+            ->name('enrollments.transfers.preview');
+        Route::post('/enrollments/{enrollment}/transfers/section', [AdministratorEnrollmentTransferController::class, 'transferSection'])
+            ->whereNumber('enrollment')
+            ->name('enrollments.transfers.section');
+        Route::post('/enrollments/{enrollment}/transfers/program', [AdministratorEnrollmentTransferController::class, 'shiftProgram'])
+            ->whereNumber('enrollment')
+            ->name('enrollments.transfers.program');
 
         // Enrollment Reports
         Route::post('/enrollments/reports/bulk-assessments', [AdministratorEnrollmentManagementController::class, 'generateBulkAssessments'])->name('enrollments.reports.bulk-assessments');

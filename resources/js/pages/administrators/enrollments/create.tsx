@@ -1,45 +1,26 @@
 import { store as storeDiscount } from "@/actions/App/Http/Controllers/AdministratorEnrollmentDiscountController";
 import { calculateSubjectFees, getStudentDetails } from "@/actions/App/Http/Controllers/AdministratorEnrollmentManagementController";
 import AdminLayout from "@/components/administrators/admin-layout";
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
-
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import type { User } from "@/types/user";
 import { Head, Link, router, usePage } from "@inertiajs/react";
 import axios from "axios";
 import {
     AlertTriangle,
     ArrowLeft,
     BookOpen,
-    Calculator,
-    Calendar,
     Check,
-    CheckCircle2,
-    ChevronDown,
     ChevronsUpDown,
     Loader2,
     Plus,
@@ -52,221 +33,23 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { route } from "ziggy-js";
-
-// Types
-interface StudentOption {
-    id: number;
-    student_id: string | number | null;
-    full_name: string;
-    email: string;
-    course_id: number | null;
-    course_code: string | null;
-    course_title?: string | null;
-    curriculum_kind?: string | null;
-    qualification_level?: string | null;
-    tesda_program_type?: string | null;
-    duration_hours?: number | null;
-    duration_years?: number | string | null;
-    internship_hours?: number | null;
-    bundled_qualifications?: string[] | null;
-    academic_year: number | null;
-    formatted_academic_year: string | null;
-    label: string;
-}
-
-interface StudentDetails {
-    id: number;
-    student_id: string | number | null;
-    full_name: string;
-    email: string;
-    course_id: number | null;
-    course_code: string | null;
-    course_name: string | null;
-    curriculum_kind?: string | null;
-    qualification_level?: string | null;
-    duration_hours?: number | null;
-    tesda_program_type?: string | null;
-    duration_years?: number | string | null;
-    internship_hours?: number | null;
-    bundled_qualifications?: string[] | null;
-    academic_year: number | null;
-    formatted_academic_year: string | null;
-    miscellaneous_fee: number;
-}
-
-interface SubjectOption {
-    id: number;
-    code: string;
-    title: string;
-    lecture: number;
-    laboratory: number;
-    lec_per_unit: number;
-    lab_per_unit: number;
-    has_classes: boolean;
-    label: string;
-}
-
-interface SectionOption {
-    id: number;
-    section: string;
-    faculty: string;
-    enrolled_count: number;
-    max_slots: number;
-    available_slots: number | null;
-    is_full: boolean;
-    label: string;
-    schedule: string;
-    schedules?: {
-        day: string;
-        start_time: string;
-        end_time: string;
-        room: string | null;
-    }[];
-}
-
-interface SubjectEnrollment {
-    id: string;
-    subject_id: number;
-    subject_code: string;
-    subject_title: string;
-    class_id: number | null;
-    is_modular: boolean;
-    exclude_from_tuition: boolean;
-    lecture_units: number;
-    laboratory_units: number;
-    lecture_fee: number;
-    laboratory_fee: number;
-    lec_per_unit: number;
-    lab_per_unit: number;
-    section_options: SectionOption[];
-    loading_sections: boolean;
-    has_classes: boolean;
-}
-
-interface AdditionalFee {
-    id: string;
-    fee_name: string;
-    amount: number;
-}
-
-interface DiscountOption {
-    id: number;
-    name: string;
-    percentage: number;
-}
-
-interface PendingOverloadConfirmation {
-    mode: "select" | "submit";
-    subjectId?: number;
-    classId?: number;
-    sections: Array<{
-        subject_code: string;
-        section: SectionOption;
-    }>;
-}
-
-interface EnrollmentSubject {
-    subject_id: number;
-    subject_code: string;
-    subject_title: string;
-    class_id: number | null;
-    is_modular: boolean;
-    exclude_from_tuition: boolean;
-    lecture_units: number;
-    laboratory_units: number;
-    lecture_fee: number;
-    laboratory_fee: number;
-    lec_per_unit: number;
-    lab_per_unit: number;
-    has_classes: boolean;
-}
-
-interface EnrollmentData {
-    id: number;
-    semester: number;
-    academic_year: number;
-    school_year: string;
-    student: StudentDetails;
-    subjects: EnrollmentSubject[];
-    tuition: {
-        discount: number;
-        discount_id: number | null;
-        downpayment: number;
-        miscellaneous_fee: number;
-    } | null;
-    additional_fees: Array<{
-        fee_name: string;
-        amount: number;
-    }>;
-}
-
-interface BillingConfiguration {
-    nstp_lecture_multiplier: number;
-    modular_laboratory_multiplier: number;
-    modular_fee: number;
-    default_downpayment: number;
-    discount_scope?: "lecture_only" | "lecture_and_laboratory";
-    course_lecture_rate_per_unit?: number;
-    course_laboratory_rate_per_unit?: number;
-}
-
-interface CreateEnrollmentProps {
-    billingConfiguration: BillingConfiguration;
-    user: User;
-    settings: {
-        currentSemester: number;
-        currentSchoolYear: string;
-        availableSemesters: { value: number; label: string }[];
-        availableAcademicYears: Record<string, string>;
-    };
-    discounts: DiscountOption[];
-    enrollment?: EnrollmentData;
-    flash?: {
-        success?: string;
-        error?: string;
-    };
-}
-
-interface Branding {
-    currency: string;
-}
-
-// Generate unique ID
-function generateId(): string {
-    return Math.random().toString(36).substring(2, 9);
-}
-
-// Time helper
-function getMinutesFromTime(timeStr: string): number {
-    if (!timeStr) return 0;
-
-    // Handle ISO string or full datetime
-    if (timeStr.includes("T")) {
-        const date = new Date(timeStr);
-        if (!isNaN(date.getTime())) {
-            return date.getHours() * 60 + date.getMinutes();
-        }
-    }
-
-    const [h, m] = timeStr.split(":").map(Number);
-    if (isNaN(h) || isNaN(m)) return 0;
-    return h * 60 + m;
-}
-
-const START_HOUR = 7; // 7 AM
-const END_HOUR = 21; // 9 PM
-const TOTAL_MINUTES = (END_HOUR - START_HOUR) * 60;
-const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const COLORS = [
-    "bg-blue-100 border-blue-300 text-blue-800 dark:bg-blue-900/30 dark:border-blue-700 dark:text-blue-300",
-    "bg-green-100 border-green-300 text-green-800 dark:bg-green-900/30 dark:border-green-700 dark:text-green-300",
-    "bg-purple-100 border-purple-300 text-purple-800 dark:bg-purple-900/30 dark:border-purple-700 dark:text-purple-300",
-    "bg-orange-100 border-orange-300 text-orange-800 dark:bg-orange-900/30 dark:border-orange-700 dark:text-orange-300",
-    "bg-pink-100 border-pink-300 text-pink-800 dark:bg-pink-900/30 dark:border-pink-700 dark:text-pink-300",
-    "bg-teal-100 border-teal-300 text-teal-800 dark:bg-teal-900/30 dark:border-teal-700 dark:text-teal-300",
-    "bg-indigo-100 border-indigo-300 text-indigo-800 dark:bg-indigo-900/30 dark:border-indigo-700 dark:text-indigo-300",
-    "bg-red-100 border-red-300 text-red-800 dark:bg-red-900/30 dark:border-red-700 dark:text-red-300",
-];
+import { AssessmentSidebar } from "./create/assessment-sidebar";
+import { CreateEnrollmentDialogs } from "./create/create-enrollment-dialogs";
+import { SchedulePreviewCard } from "./create/schedule-preview-card";
+import {
+    generateId,
+    type AdditionalFee,
+    type Branding,
+    type CreateEnrollmentProps,
+    type DiscountOption,
+    type PendingOverloadConfirmation,
+    type SectionOption,
+    type StudentDetails,
+    type StudentOption,
+    type SubjectEnrollment,
+    type SubjectOption,
+} from "./create/types";
+import type { StudentHoldItem } from "./types";
 
 export default function AdministratorEnrollmentCreate({
     user,
@@ -275,6 +58,7 @@ export default function AdministratorEnrollmentCreate({
     enrollment,
     flash,
     billingConfiguration: initialBillingConfiguration,
+    enrollment_period: enrollmentPeriod,
 }: CreateEnrollmentProps) {
     const { props } = usePage<{ branding?: Branding }>();
     const currency = props.branding?.currency || "PHP";
@@ -289,6 +73,10 @@ export default function AdministratorEnrollmentCreate({
     };
 
     const isEdit = Boolean(enrollment);
+    const [overrideWindow, setOverrideWindow] = useState(false);
+    const [studentHolds, setStudentHolds] = useState<StudentHoldItem[]>([]);
+    const [overrideHolds, setOverrideHolds] = useState(false);
+    const [overrideHoldsReason, setOverrideHoldsReason] = useState("");
     const [billingConfiguration, setBillingConfiguration] = useState(initialBillingConfiguration);
     const [billingLoading, setBillingLoading] = useState(false);
     const [billingError, setBillingError] = useState(false);
@@ -397,6 +185,9 @@ export default function AdministratorEnrollmentCreate({
                 setBillingConfiguration(details.billing_configuration);
                 setMiscellaneousFee(Number(details.miscellaneous_fee) || 0);
                 setDownpayment(Number(details.billing_configuration.default_downpayment) || 0);
+                setStudentHolds(Array.isArray(details.active_holds) ? details.active_holds : []);
+                setOverrideHolds(false);
+                setOverrideHoldsReason("");
             })
             .catch((error) => {
                 if (error.name !== "AbortError") {
@@ -790,6 +581,9 @@ export default function AdministratorEnrollmentCreate({
             downpayment,
             additional_fees: fees,
             force_overload: forceOverload || selectedFullSections.some(({ section }) => confirmedOverloadClassIds.includes(section.id)),
+            override_window: overrideWindow,
+            override_holds: overrideHolds,
+            override_holds_reason: overrideHolds ? overrideHoldsReason.trim() : null,
             ...(isEdit && { notify_student: notifyStudent, change_reason: changeReason }),
         };
 
@@ -955,6 +749,82 @@ export default function AdministratorEnrollmentCreate({
                             <div className="bg-destructive/10 border-destructive/50 text-destructive flex items-center gap-2 rounded-lg border px-4 py-3">
                                 <AlertTriangle className="h-4 w-4" />
                                 {flash.error}
+                            </div>
+                        )}
+
+                        {/* Registration Window Status Banner */}
+                        {!isEdit && enrollmentPeriod?.configured && (!enrollmentPeriod.can_enroll || enrollmentPeriod.is_late) && (
+                            <div
+                                className={cn(
+                                    "flex flex-col gap-3 rounded-lg border px-4 py-3 sm:flex-row sm:items-center sm:justify-between",
+                                    !enrollmentPeriod.can_enroll
+                                        ? "border-destructive/40 bg-destructive/10 text-destructive"
+                                        : "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300",
+                                )}
+                            >
+                                <div className="flex items-start gap-2.5 text-sm">
+                                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                                    <div>
+                                        <p className="font-semibold">{enrollmentPeriod.phase_label}</p>
+                                        <p className="text-xs opacity-90">
+                                            {enrollmentPeriod.summary_text}
+                                            {enrollmentPeriod.is_late && enrollmentPeriod.auto_apply_late_fee && enrollmentPeriod.late_fee_amount > 0
+                                                ? ` · "${enrollmentPeriod.late_fee_label}" (${formatCurrency(enrollmentPeriod.late_fee_amount)}) will be automatically added upon submission.`
+                                                : ""}
+                                        </p>
+                                    </div>
+                                </div>
+                                {!enrollmentPeriod.can_enroll && enrollmentPeriod.enforce_windows && (
+                                    <label className="flex shrink-0 cursor-pointer items-center gap-2 rounded-md border border-current/25 bg-background/80 px-3 py-1.5 text-xs font-medium">
+                                        <Switch checked={overrideWindow} onCheckedChange={setOverrideWindow} />
+                                        Admin override
+                                    </label>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Active Student Holds Warning & Audited Override */}
+                        {!isEdit && studentHolds.length > 0 && (
+                            <div className="border-destructive/40 bg-destructive/5 space-y-3 rounded-lg border px-4 py-3">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="flex items-start gap-2.5 text-sm">
+                                        <AlertTriangle className="text-destructive mt-0.5 h-4 w-4 shrink-0" />
+                                        <div>
+                                            <p className="text-destructive font-semibold">
+                                                Active Student Holds ({studentHolds.length})
+                                            </p>
+                                            <ul className="mt-1 space-y-1 text-xs">
+                                                {studentHolds.map((hold) => (
+                                                    <li key={hold.id}>
+                                                        <span className="font-semibold">[{hold.office_label}]</span> {hold.title} —{" "}
+                                                        <span className="text-muted-foreground">{hold.reason}</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    </div>
+                                    {studentHolds.some((h) => h.severity === "blocking" && h.blocks_enrollment) && (
+                                        <label className="bg-background/80 flex shrink-0 cursor-pointer items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium">
+                                            <Switch checked={overrideHolds} onCheckedChange={setOverrideHolds} />
+                                            Audited override
+                                        </label>
+                                    )}
+                                </div>
+                                {overrideHolds && (
+                                    <div className="space-y-1">
+                                        <Label htmlFor="override-holds-reason" className="text-xs font-medium">
+                                            Override audit justification (required)
+                                        </Label>
+                                        <Textarea
+                                            id="override-holds-reason"
+                                            rows={2}
+                                            value={overrideHoldsReason}
+                                            onChange={(e) => setOverrideHoldsReason(e.target.value)}
+                                            placeholder="Enter promissory note reference or authorized clearance waiver..."
+                                            className="bg-background text-xs"
+                                        />
+                                    </div>
+                                )}
                             </div>
                         )}
 
@@ -1376,124 +1246,7 @@ export default function AdministratorEnrollmentCreate({
                         )}
 
                         {/* Schedule Matrix */}
-                        {subjectsEnrolled.some((s) => s.class_id) && (
-                            <Collapsible defaultOpen>
-                                <Card>
-                                    <CardHeader className="pb-3">
-                                        <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-2">
-                                                <div className="bg-primary text-primary-foreground flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold">
-                                                    <Calendar className="h-4 w-4" />
-                                                </div>
-                                                <div>
-                                                    <CardTitle className="text-lg">Class Schedule</CardTitle>
-                                                    <CardDescription>Schedule matrix of enrolled subjects</CardDescription>
-                                                </div>
-                                            </div>
-                                            <CollapsibleTrigger asChild>
-                                                <Button variant="ghost" size="sm" className="w-9 p-0">
-                                                    <ChevronDown className="h-4 w-4" />
-                                                    <span className="sr-only">Toggle</span>
-                                                </Button>
-                                            </CollapsibleTrigger>
-                                        </div>
-                                    </CardHeader>
-                                    <CollapsibleContent>
-                                        <CardContent>
-                                            <div className="overflow-x-auto rounded-md border">
-                                                <div className="flex h-[600px] min-w-[800px]">
-                                                    {/* Time Column */}
-                                                    <div className="bg-muted/30 w-16 flex-none border-r">
-                                                        <div className="bg-muted/50 h-8 border-b"></div> {/* Header spacer */}
-                                                        {Array.from({ length: END_HOUR - START_HOUR }).map((_, i) => (
-                                                            <div
-                                                                key={i}
-                                                                className="text-muted-foreground relative h-[calc(100%/(14))] border-b p-1 text-right text-[10px]"
-                                                            >
-                                                                <span className="relative -top-2">
-                                                                    {(START_HOUR + i) % 12 || 12} {START_HOUR + i >= 12 ? "PM" : "AM"}
-                                                                </span>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-
-                                                    {/* Days Columns */}
-                                                    <div className="grid h-full flex-1 grid-cols-6 divide-x">
-                                                        {DAYS.map((day) => (
-                                                            <div key={day} className="relative flex h-full min-w-[100px] flex-col">
-                                                                {/* Header */}
-                                                                <div className="bg-muted/50 sticky top-0 z-10 flex h-8 flex-none items-center justify-center border-b text-xs font-medium">
-                                                                    {day.slice(0, 3)}
-                                                                </div>
-
-                                                                {/* Grid Body - Relative Container for Absolutes */}
-                                                                <div className="relative flex-1">
-                                                                    {/* Grid Lines */}
-                                                                    {Array.from({
-                                                                        length: END_HOUR - START_HOUR,
-                                                                    }).map((_, i) => (
-                                                                        <div
-                                                                            key={i}
-                                                                            className="border-muted/50 h-[calc(100%/(14))] border-b border-dashed"
-                                                                        ></div>
-                                                                    ))}
-
-                                                                    {/* Events */}
-                                                                    {subjectsEnrolled
-                                                                        .filter((s) => s.class_id)
-                                                                        .map((subject, index) => {
-                                                                            const section = subject.section_options.find(
-                                                                                (opt) => opt.id === subject.class_id,
-                                                                            );
-                                                                            if (!section?.schedules) return null;
-
-                                                                            return section.schedules
-                                                                                .filter((sched) => sched.day.toLowerCase() === day.toLowerCase())
-                                                                                .map((sched, schedIndex) => {
-                                                                                    const startMin =
-                                                                                        getMinutesFromTime(sched.start_time) - START_HOUR * 60;
-                                                                                    const endMin =
-                                                                                        getMinutesFromTime(sched.end_time) - START_HOUR * 60;
-                                                                                    const top = (startMin / TOTAL_MINUTES) * 100;
-                                                                                    const height = ((endMin - startMin) / TOTAL_MINUTES) * 100;
-
-                                                                                    return (
-                                                                                        <div
-                                                                                            key={`${subject.id}-${schedIndex}`}
-                                                                                            className={cn(
-                                                                                                "absolute left-[3%] w-[94%] cursor-help overflow-hidden rounded border p-1 text-[10px] leading-tight shadow-sm transition-all hover:z-20 hover:scale-[1.02]",
-                                                                                                COLORS[index % COLORS.length],
-                                                                                            )}
-                                                                                            style={{
-                                                                                                top: `${top}%`,
-                                                                                                height: `${height}%`,
-                                                                                            }}
-                                                                                            title={`${subject.subject_code}\n${sched.start_time} - ${sched.end_time}\n${sched.room || "TBA"}`}
-                                                                                        >
-                                                                                            <div className="truncate font-bold">
-                                                                                                {subject.subject_code}
-                                                                                            </div>
-                                                                                            <div className="truncate opacity-90">
-                                                                                                {sched.room || "TBA"}
-                                                                                            </div>
-                                                                                            <div className="truncate text-[9px] opacity-75">
-                                                                                                {section.section}
-                                                                                            </div>
-                                                                                        </div>
-                                                                                    );
-                                                                                });
-                                                                        })}
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </CardContent>
-                                    </CollapsibleContent>
-                                </Card>
-                            </Collapsible>
-                        )}
+                        <SchedulePreviewCard subjectsEnrolled={subjectsEnrolled} />
 
                         {/* Additional Fees */}
                         {selectedStudent && (
@@ -1566,317 +1319,51 @@ export default function AdministratorEnrollmentCreate({
                     </div>
 
                     {/* Sidebar - Assessment Summary */}
-                    <div className="lg:w-80">
-                        <div className="space-y-4 lg:sticky lg:top-4">
-                            <Card>
-                                <CardHeader className="pb-3">
-                                    <div className="flex items-center gap-2">
-                                        <Calculator className="text-primary h-5 w-5" />
-                                        <CardTitle className="text-lg">Assessment</CardTitle>
-                                    </div>
-                                </CardHeader>
-                                <CardContent className="space-y-4">
-                                    {/* Units Summary */}
-                                    <div className="grid grid-cols-3 gap-2 text-center">
-                                        <div className="rounded-lg bg-blue-50 p-2 dark:bg-blue-950/30">
-                                            <div className="text-lg font-bold text-blue-600">{totals.subjectsCount}</div>
-                                            <div className="text-muted-foreground text-[10px]">Subjects</div>
-                                        </div>
-                                        <div className="rounded-lg bg-green-50 p-2 dark:bg-green-950/30">
-                                            <div className="text-lg font-bold text-green-600">{totals.totalLectureUnits}</div>
-                                            <div className="text-muted-foreground text-[10px]">Lecture</div>
-                                        </div>
-                                        <div className="rounded-lg bg-purple-50 p-2 dark:bg-purple-950/30">
-                                            <div className="text-lg font-bold text-purple-600">{totals.totalLabUnits}</div>
-                                            <div className="text-muted-foreground text-[10px]">Lab</div>
-                                        </div>
-                                    </div>
-
-                                    <Separator />
-
-                                    {/* Discount */}
-                                    <div className="space-y-2">
-                                        <Label className="text-xs">Discount</Label>
-                                        <div className="flex items-center gap-2">
-                                            <Select value={selectedDiscountValue} onValueChange={handleDiscountChange}>
-                                                <SelectTrigger className="h-9 flex-1">
-                                                    <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="none">No Discount</SelectItem>
-                                                    {discountId === null && parseInt(discount) > 0 && (
-                                                        <SelectItem value="legacy">Current Discount ({discount}%)</SelectItem>
-                                                    )}
-                                                    {discountOptions.map((option) => (
-                                                        <SelectItem key={option.id} value={option.id.toString()}>
-                                                            {option.name} ({option.percentage}%)
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="icon"
-                                                className="h-9 w-9 shrink-0"
-                                                aria-label="Create discount"
-                                                title="Create discount"
-                                                onClick={() => setDiscountDialogOpen(true)}
-                                            >
-                                                <Plus className="h-4 w-4" />
-                                            </Button>
-                                        </div>
-                                        <p className="text-muted-foreground text-xs">Discounts apply to lecture fees only.</p>
-                                    </div>
-
-                                    {/* Miscellaneous fee override */}
-                                    <div className="space-y-2">
-                                        <Label htmlFor="miscellaneous-fee" className="text-xs">
-                                            Miscellaneous Fee
-                                        </Label>
-                                        <Input
-                                            id="miscellaneous-fee"
-                                            type="number"
-                                            min="0"
-                                            step="0.01"
-                                            value={miscellaneousFee}
-                                            onChange={(event) => setMiscellaneousFee(Math.max(0, Number(event.target.value)))}
-                                            className="h-9"
-                                        />
-                                        <p className="text-muted-foreground text-xs">Overrides the course fee for this enrollment only.</p>
-                                    </div>
-
-                                    {/* Fees Breakdown */}
-                                    <div className="space-y-2 text-sm">
-                                        <div className="flex justify-between">
-                                            <span className="text-muted-foreground">Lecture Fees</span>
-                                            <span>{formatCurrency(totals.totalLectures)}</span>
-                                        </div>
-                                        {totals.discountAmount > 0 && (
-                                            <div className="flex justify-between text-green-600">
-                                                <span>Discount (-{discount}%)</span>
-                                                <span>-{formatCurrency(totals.discountAmount)}</span>
-                                            </div>
-                                        )}
-                                        <div className="flex justify-between">
-                                            <span className="text-muted-foreground">Laboratory Fees</span>
-                                            <span>{formatCurrency(totals.totalLaboratory)}</span>
-                                        </div>
-                                        {totals.modularCount > 0 && (
-                                            <div className="flex justify-between">
-                                                <span className="text-muted-foreground">Modular ({totals.modularCount})</span>
-                                                <span>{formatCurrency(totals.totalModularFee)}</span>
-                                            </div>
-                                        )}
-                                        {totals.excludedSubjectsCount > 0 && (
-                                            <div className="flex justify-between text-amber-600 dark:text-amber-400">
-                                                <span>Excluded subjects</span>
-                                                <span>{totals.excludedSubjectsCount}</span>
-                                            </div>
-                                        )}
-                                        <div className="flex justify-between">
-                                            <span className="text-muted-foreground">Miscellaneous</span>
-                                            <span>{formatCurrency(totals.miscellaneous)}</span>
-                                        </div>
-                                        {totals.totalAdditionalFees > 0 && (
-                                            <div className="flex justify-between">
-                                                <span className="text-muted-foreground">Additional</span>
-                                                <span>{formatCurrency(totals.totalAdditionalFees)}</span>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <Separator />
-
-                                    {/* Total */}
-                                    <div className="flex justify-between text-lg font-bold">
-                                        <span>Total</span>
-                                        <span className="text-primary">{formatCurrency(totals.overallTotal)}</span>
-                                    </div>
-
-                                    {/* Required Downpayment */}
-                                    <div className="space-y-2">
-                                        <Label className="text-xs">Required Downpayment</Label>
-                                        <Input
-                                            type="number"
-                                            min={500}
-                                            step={10}
-                                            value={downpayment}
-                                            onChange={(e) => setDownpayment(parseFloat(e.target.value) || 0)}
-                                            className="h-9"
-                                        />
-                                    </div>
-
-                                    {/* Projected balance after the required downpayment is received */}
-                                    <div
-                                        className={cn(
-                                            "flex justify-between rounded-lg p-3 font-bold",
-                                            totals.balance > 0
-                                                ? "bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-400"
-                                                : "bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400",
-                                        )}
-                                    >
-                                        <span>Projected Balance</span>
-                                        <span>{formatCurrency(totals.balance)}</span>
-                                    </div>
-                                    <p className="text-muted-foreground text-xs">
-                                        This downpayment is only counted as paid after cashier verification.
-                                    </p>
-
-                                    {/* Notify Student - Edit Mode Only */}
-                                    {isEdit && (
-                                        <>
-                                            <Separator />
-                                            <div className="space-y-3">
-                                                <div className="flex items-center gap-2">
-                                                    <Switch id="notify-student" checked={notifyStudent} onCheckedChange={setNotifyStudent} />
-                                                    <Label htmlFor="notify-student" className="cursor-pointer text-sm font-medium">
-                                                        Notify student of changes
-                                                    </Label>
-                                                </div>
-                                                {notifyStudent && (
-                                                    <div className="space-y-2">
-                                                        <Label htmlFor="change-reason" className="text-xs">
-                                                            Reason for change
-                                                        </Label>
-                                                        <Textarea
-                                                            id="change-reason"
-                                                            placeholder="e.g., Section reassignment due to class size balancing"
-                                                            value={changeReason}
-                                                            onChange={(e) => setChangeReason(e.target.value)}
-                                                            rows={3}
-                                                            className="resize-none text-sm"
-                                                        />
-                                                        <p className="text-muted-foreground text-xs">
-                                                            An email with the updated class schedule and assessment PDF will be sent to{" "}
-                                                            {selectedStudent?.email || "the student"}.
-                                                        </p>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </>
-                                    )}
-
-                                    {/* Submit Button */}
-                                    <Button
-                                        type="submit"
-                                        className="w-full"
-                                        size="lg"
-                                        disabled={submitting || !selectedStudent || subjectsEnrolled.length === 0}
-                                    >
-                                        {submitting ? (
-                                            <>
-                                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                                {isEdit ? "Saving..." : "Creating..."}
-                                            </>
-                                        ) : (
-                                            <>
-                                                <CheckCircle2 className="mr-2 h-4 w-4" />
-                                                {isEdit ? "Save Changes" : "Create Enrollment"}
-                                            </>
-                                        )}
-                                    </Button>
-                                </CardContent>
-                            </Card>
-                        </div>
-                    </div>
+                    <AssessmentSidebar
+                        isEdit={isEdit}
+                        submitting={submitting}
+                        selectedStudent={selectedStudent}
+                        subjectsCount={subjectsEnrolled.length}
+                        totals={totals}
+                        discount={discount}
+                        discountId={discountId}
+                        selectedDiscountValue={selectedDiscountValue}
+                        discountOptions={discountOptions}
+                        onDiscountChange={handleDiscountChange}
+                        onOpenCreateDiscount={() => setDiscountDialogOpen(true)}
+                        miscellaneousFee={miscellaneousFee}
+                        onMiscellaneousFeeChange={setMiscellaneousFee}
+                        downpayment={downpayment}
+                        onDownpaymentChange={setDownpayment}
+                        notifyStudent={notifyStudent}
+                        onNotifyStudentChange={setNotifyStudent}
+                        changeReason={changeReason}
+                        onChangeReasonChange={setChangeReason}
+                        formatCurrency={formatCurrency}
+                    />
                 </div>
             </form>
 
-            <Dialog
-                open={discountDialogOpen}
-                onOpenChange={(open) => {
+            <CreateEnrollmentDialogs
+                discountDialogOpen={discountDialogOpen}
+                onDiscountDialogOpenChange={(open) => {
                     setDiscountDialogOpen(open);
                     if (!open) {
                         setDiscountErrors({});
                     }
                 }}
-            >
-                <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                        <DialogTitle>Create Discount</DialogTitle>
-                        <DialogDescription>Add a reusable discount preset for future enrollments.</DialogDescription>
-                    </DialogHeader>
-                    <form className="space-y-4" onSubmit={handleCreateDiscount}>
-                        <div className="space-y-2">
-                            <Label htmlFor="discount-name">Discount name</Label>
-                            <Input
-                                id="discount-name"
-                                value={discountName}
-                                onChange={(event) => setDiscountName(event.target.value)}
-                                placeholder="e.g., Athletic Scholarship"
-                                maxLength={120}
-                                autoFocus
-                            />
-                            {discountErrors.name && <p className="text-destructive text-xs">{discountErrors.name}</p>}
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="discount-percentage">Lecture fee discount (%)</Label>
-                            <Input
-                                id="discount-percentage"
-                                type="number"
-                                min="1"
-                                max="100"
-                                step="1"
-                                value={discountPercentage}
-                                onChange={(event) => setDiscountPercentage(event.target.value)}
-                                placeholder="1–100"
-                            />
-                            {discountErrors.percentage && <p className="text-destructive text-xs">{discountErrors.percentage}</p>}
-                        </div>
-                        <DialogFooter>
-                            <Button type="button" variant="outline" onClick={() => setDiscountDialogOpen(false)} disabled={creatingDiscount}>
-                                Cancel
-                            </Button>
-                            <Button type="submit" disabled={creatingDiscount || !discountName.trim() || !discountPercentage}>
-                                {creatingDiscount && <Loader2 className="h-4 w-4 animate-spin" />}
-                                Create Discount
-                            </Button>
-                        </DialogFooter>
-                    </form>
-                </DialogContent>
-            </Dialog>
-
-            <AlertDialog
-                open={Boolean(pendingOverloadConfirmation)}
-                onOpenChange={(open) => {
-                    if (!open) {
-                        setPendingOverloadConfirmation(null);
-                    }
-                }}
-            >
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Force enroll into full class?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            The selected class has no available slots. Confirming will overload the class and enroll the student anyway.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-
-                    {pendingOverloadConfirmation && (
-                        <div className="space-y-2 rounded-md border bg-orange-50 p-3 text-sm dark:bg-orange-950/20">
-                            {pendingOverloadConfirmation.sections.map(({ subject_code, section }) => (
-                                <div key={`${subject_code}-${section.id}`} className="space-y-1">
-                                    <div className="font-medium">
-                                        {subject_code} - Section {section.section}
-                                    </div>
-                                    <div className="text-muted-foreground text-xs">
-                                        {section.enrolled_count}/{section.max_slots} slots filled
-                                        {section.faculty ? ` • ${section.faculty}` : ""}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-
-                    <AlertDialogFooter>
-                        <AlertDialogCancel disabled={submitting}>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={confirmOverloadEnrollment} disabled={submitting} className="bg-orange-600 hover:bg-orange-700">
-                            Confirm overload
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
+                discountName={discountName}
+                onDiscountNameChange={setDiscountName}
+                discountPercentage={discountPercentage}
+                onDiscountPercentageChange={setDiscountPercentage}
+                discountErrors={discountErrors}
+                creatingDiscount={creatingDiscount}
+                onCreateDiscount={handleCreateDiscount}
+                pendingOverloadConfirmation={pendingOverloadConfirmation}
+                onDismissOverload={() => setPendingOverloadConfirmation(null)}
+                onConfirmOverload={confirmOverloadEnrollment}
+                submitting={submitting}
+            />
         </AdminLayout>
     );
 }

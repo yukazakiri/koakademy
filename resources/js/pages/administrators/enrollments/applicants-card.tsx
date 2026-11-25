@@ -33,6 +33,7 @@ type ApplicantsCardProps = {
     onResetFilters: () => void;
     hasActiveFilters: boolean;
     onRowClick: (applicant: ApplicantRow) => void;
+    selectionActions?: (selectedRows: ApplicantRow[]) => React.ReactNode;
     actions: ApplicantActions;
     pipelineStatusLabels?: Record<string, string>;
 };
@@ -69,6 +70,7 @@ export function ApplicantsCard({
     onResetFilters,
     hasActiveFilters,
     onRowClick,
+    selectionActions,
     actions,
     pipelineStatusLabels,
 }: ApplicantsCardProps) {
@@ -185,6 +187,7 @@ export function ApplicantsCard({
                     dataKey="applicants"
                     isLoading={isSearching}
                     onRowClick={onRowClick}
+                    selectionActions={selectionActions}
                     tableVariant="spreadsheet"
                     emptyTitle="No applicants match this view"
                     emptyDescription={

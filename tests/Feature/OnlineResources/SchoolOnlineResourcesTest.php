@@ -292,3 +292,34 @@ it('fetches link metadata for administrators and rejects unsafe URLs', function 
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['url']);
 });
+
+it('serves direct single-link QR downloads and clears broken link reports for administrators', function (): void {
+    $category = OnlineResourceCategory::factory()->forSchoolOwner($this->school)->create([
+        'name' => 'Direct Links',
+    ]);
+    $link = OnlineResourceLink::factory()->forCategory($category)->create([
+        'title' => 'Wi-Fi Setup Guide',
+        'url' => 'https://it.example.edu/wifi',
+        'broken_report_count' => 2,
+        'last_reported_broken_at' => now(),
+    ]);
+
+    $svg = actingAs($this->admin)
+        ->get(route('administrators.online-resources.links.qr.svg', ['link' => $link->id]));
+    $svg->assertSuccessful();
+    expect((string) $svg->headers->get('Content-Type'))->toStartWith('image/svg+xml')
+        ->and($svg->getContent())->toContain('<svg');
+
+    $png = actingAs($this->admin)
+        ->get(route('administrators.online-resources.links.qr.png', ['link' => $link->id]));
+    $png->assertSuccessful()
+        ->assertHeader('Content-Type', 'image/png');
+    expect(str_starts_with((string) $png->getContent(), "\x89PNG"))->toBeTrue();
+
+    actingAs($this->admin)
+        ->post(route('administrators.online-resources.links.clear-broken-report', ['link' => $link->id]))
+        ->assertRedirect();
+
+    expect($link->fresh()->broken_report_count)->toBe(0)
+        ->and($link->fresh()->last_reported_broken_at)->toBeNull();
+});

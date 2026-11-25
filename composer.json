@@ -48,7 +48,7 @@
         "koakademy/inventory": "^1.1",
         "koakademy/library-system": "^1.5",
         "koakademy/notification-center": "^1.1",
-        "koakademy/online-resources": "^1.1",
+        "koakademy/online-resources": "^1.2",
         "koakademy/student-medical-records": "^1.1",
         "laraowl/client": "^1.0",
         "laravel/ai": "^1.0",

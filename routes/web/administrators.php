@@ -11,6 +11,7 @@ use App\Http\Controllers\AdministratorCurriculumImportController;
 use App\Http\Controllers\AdministratorCurriculumManagementController;
 use App\Http\Controllers\AdministratorDashboardController;
 use App\Http\Controllers\AdministratorEnrollmentDiscountController;
+use App\Http\Controllers\AdministratorEnrollmentLoadChangeController;
 use App\Http\Controllers\AdministratorEnrollmentManagementController;
 use App\Http\Controllers\AdministratorEnrollmentPeriodController;
 use App\Http\Controllers\AdministratorEnrollmentPolicyController;
@@ -198,6 +199,24 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/enrollments/{enrollment}/restore', [AdministratorEnrollmentManagementController::class, 'restore'])->whereNumber('enrollment')->name('enrollments.restore');
         Route::get('/enrollments/{enrollment}/activity-log', [AdministratorEnrollmentManagementController::class, 'activityLog'])->whereNumber('enrollment')->name('enrollments.activity-log');
         Route::post('/enrollments/{enrollment}/restore-subjects', [AdministratorEnrollmentManagementController::class, 'restoreSubjects'])->whereNumber('enrollment')->name('enrollments.restore-subjects');
+        Route::get('/enrollments/{enrollment}/load-changes', [AdministratorEnrollmentLoadChangeController::class, 'index'])
+            ->whereNumber('enrollment')
+            ->name('enrollments.load-changes.index');
+        Route::post('/enrollments/{enrollment}/load-changes/preview', [AdministratorEnrollmentLoadChangeController::class, 'preview'])
+            ->whereNumber('enrollment')
+            ->name('enrollments.load-changes.preview');
+        Route::post('/enrollments/{enrollment}/load-changes', [AdministratorEnrollmentLoadChangeController::class, 'store'])
+            ->whereNumber('enrollment')
+            ->name('enrollments.load-changes.store');
+        Route::post('/enrollments/{enrollment}/load-changes/{loadChange}/approve', [AdministratorEnrollmentLoadChangeController::class, 'approve'])
+            ->whereNumber(['enrollment', 'loadChange'])
+            ->name('enrollments.load-changes.approve');
+        Route::post('/enrollments/{enrollment}/load-changes/{loadChange}/reject', [AdministratorEnrollmentLoadChangeController::class, 'reject'])
+            ->whereNumber(['enrollment', 'loadChange'])
+            ->name('enrollments.load-changes.reject');
+        Route::get('/enrollments/{enrollment}/load-changes/{loadChange}/slip', [AdministratorEnrollmentLoadChangeController::class, 'slip'])
+            ->whereNumber(['enrollment', 'loadChange'])
+            ->name('enrollments.load-changes.slip');
 
         // Enrollment Reports
         Route::post('/enrollments/reports/bulk-assessments', [AdministratorEnrollmentManagementController::class, 'generateBulkAssessments'])->name('enrollments.reports.bulk-assessments');

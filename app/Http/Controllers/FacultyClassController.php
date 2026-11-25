@@ -242,6 +242,9 @@ final class FacultyClassController extends Controller
             && app(\App\Modules\ModuleAccessService::class)->isAvailable('OnlineResources');
 
         $onlineResources = [];
+        $onlineResourcesHub = null;
+        $onlineResourcesHubSettings = null;
+        $onlineResourcesHeaderMeta = null;
         $copyableClasses = [];
 
         if ($onlineResourcesModuleEnabled) {
@@ -251,6 +254,26 @@ final class FacultyClassController extends Controller
                 onlyActive: false,
                 includeAdminMeta: true,
             );
+
+            if (class_exists(\Modules\OnlineResources\Services\OnlineResourceThemeService::class)) {
+                $themeService = app(\Modules\OnlineResources\Services\OnlineResourceThemeService::class);
+                $scopeRegistry = app(\Modules\OnlineResources\Services\OnlineResourceScopeRegistry::class);
+                $qrService = app(\Modules\OnlineResources\Services\OnlineResourceQrService::class);
+
+                $onlineResourcesHeaderMeta = $scopeRegistry->forModel($class)->resolveHeaderMeta($class);
+                $onlineResourcesHubSettings = $themeService->serializeHubSetting(
+                    owner: $class,
+                    setting: $themeService->forOwner($class),
+                    headerMeta: $onlineResourcesHeaderMeta,
+                    schoolFallback: $themeService->schoolFallbackForOwner($class),
+                );
+                $onlineResourcesHub = [
+                    'url' => $qrService->classHubUrl($class),
+                    'qr_svg_url' => route('faculty.classes.resources.hub.qr.svg', ['class' => $class->id]),
+                    'qr_png_url' => route('faculty.classes.resources.hub.qr.png', ['class' => $class->id]),
+                    'sheet_pdf_url' => route('faculty.classes.resources.sheet.pdf', ['class' => $class->id]),
+                ];
+            }
 
             $copyableClassIds = \Modules\OnlineResources\Models\OnlineResourceCategory::withoutGlobalScopes()
                 ->where('school_id', $class->school_id)
@@ -309,6 +332,9 @@ final class FacultyClassController extends Controller
             'rooms' => $rooms,
             'online_resources_module_enabled' => $onlineResourcesModuleEnabled,
             'online_resources' => $onlineResources,
+            'online_resources_hub' => $onlineResourcesHub,
+            'online_resources_hub_settings' => $onlineResourcesHubSettings,
+            'online_resources_header_meta' => $onlineResourcesHeaderMeta,
             'copyable_classes' => $copyableClasses,
             'flash' => session('flash'),
         ]);

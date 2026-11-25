@@ -16,6 +16,14 @@ export interface ClassResourcesTabProps {
     categories: OnlineResourceCategoryPayload[];
     copyableClasses?: CopyableClassOptionPayload[];
     enableOnlineResources: boolean;
+    hub?: {
+        url: string;
+        qr_svg_url: string;
+        qr_png_url: string;
+        sheet_pdf_url: string;
+    } | null;
+    hubSettings?: Record<string, unknown> | null;
+    headerMeta?: Record<string, unknown> | null;
     onOpenSettings?: () => void;
 }
 

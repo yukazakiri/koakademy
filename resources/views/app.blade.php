@@ -43,19 +43,54 @@
         $twitterHandle = data_get($seoMetadata, 'twitter_handle');
         $canonicalOverride = data_get($seoMetadata, 'canonical_url');
 
-        // Get page-specific data from Inertia shared props (set by docs controller)
+        // Get page-specific SEO data from Inertia shared props
+        $pageSeo = \Inertia\Inertia::getShared('page_seo');
         $pageTitle = \Inertia\Inertia::getShared('page_title');
         $pageDescription = \Inertia\Inertia::getShared('page_description');
         $pageOgImage = \Inertia\Inertia::getShared('page_og_image');
+        $ogSiteName = $resolvedAppName;
+        $ogType = $isDocsPage ? 'article' : 'website';
+        $structuredDataJson = null;
 
-        // Use page-specific data if on docs page, otherwise use site defaults
-        if ($isDocsPage && $pageTitle) {
+        // Use page-specific SEO when provided by a public page controller (e.g. Online Resources Hub)
+        if (is_array($pageSeo) && ! empty($pageSeo['title'])) {
+            $metaTitle = (string) $pageSeo['title'];
+            $metaDescription = (string) ($pageSeo['description'] ?? '');
+            $ogTitle = (string) ($pageSeo['og_title'] ?? $metaTitle);
+            $ogDescription = (string) ($pageSeo['og_description'] ?? $metaDescription);
+            $ogSiteName = (string) ($pageSeo['site_name'] ?? $resolvedAppName);
+            $ogType = (string) ($pageSeo['og_type'] ?? 'website');
+            $ogImage = $resolveAssetUrl(is_string($pageSeo['og_image'] ?? null) ? $pageSeo['og_image'] : null);
+            $seoKeywords = is_string($pageSeo['keywords'] ?? null) ? $pageSeo['keywords'] : $seoKeywords;
+            $twitterCard = is_string($pageSeo['twitter_card'] ?? null) ? $pageSeo['twitter_card'] : $twitterCard;
+
+            if (is_string($pageSeo['robots'] ?? null) && mb_trim($pageSeo['robots']) !== '') {
+                $robots = app()->environment('production')
+                    ? $pageSeo['robots']
+                    : 'noindex, nofollow';
+            }
+
+            if (is_string($pageSeo['canonical_url'] ?? null) && mb_trim($pageSeo['canonical_url']) !== '') {
+                $canonicalOverride = $pageSeo['canonical_url'];
+            }
+
+            if (is_array($pageSeo['structured_data'] ?? null) && ($pageSeo['allow_indexing'] ?? false) === true) {
+                $structuredDataJson = json_encode(
+                    $pageSeo['structured_data'],
+                    JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT,
+                );
+            }
+        } elseif ($isDocsPage && $pageTitle) {
             $metaTitle = $pageTitle;
             $metaDescription = $pageDescription ?? '';
+            $ogTitle = $metaTitle;
+            $ogDescription = $metaDescription;
             $ogImage = $pageOgImage;
         } else {
             $metaTitle = $seoTitle;
             $metaDescription = $siteDescription;
+            $ogTitle = $metaTitle;
+            $ogDescription = $metaDescription;
 
             if (data_get($seoMetadata, 'og_image')) {
                 $ogImage = $resolveAssetUrl(data_get($seoMetadata, 'og_image'));
@@ -109,10 +144,10 @@
     @endif
 
     {{-- Open Graph / Facebook --}}
-    <meta property="og:site_name" content="{{ $resolvedAppName }}">
-    <meta property="og:title" content="{{ $metaTitle }}">
-    <meta property="og:description" content="{{ $metaDescription }}">
-    <meta property="og:type" content="{{ $isDocsPage ? 'article' : 'website' }}">
+    <meta property="og:site_name" content="{{ $ogSiteName }}">
+    <meta property="og:title" content="{{ $ogTitle }}">
+    <meta property="og:description" content="{{ $ogDescription }}">
+    <meta property="og:type" content="{{ $ogType }}">
     <meta property="og:url" content="{{ $currentUrl }}">
     @if($ogImage)
         <meta property="og:image" content="{{ $ogImage }}">
@@ -126,14 +161,18 @@
     @if(is_string($twitterHandle) && mb_trim($twitterHandle) !== '')
         <meta name="twitter:site" content="{{ $twitterHandle }}">
     @endif
-    <meta name="twitter:title" content="{{ $metaTitle }}">
-    <meta name="twitter:description" content="{{ $metaDescription }}">
+    <meta name="twitter:title" content="{{ $ogTitle }}">
+    <meta name="twitter:description" content="{{ $ogDescription }}">
     @if($ogImage)
         <meta name="twitter:image" content="{{ $ogImage }}">
     @endif
 
     {{-- Canonical URL --}}
     <link rel="canonical" href="{{ $canonicalUrl }}">
+
+    @if(is_string($structuredDataJson) && $structuredDataJson !== '')
+        <script type="application/ld+json">{!! $structuredDataJson !!}</script>
+    @endif
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

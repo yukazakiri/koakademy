@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "b501838d06768ed56a49ae767a411a33",
+    "content-hash": "11b2de29d5b6b6a64ce2ad40de6e2df2",
     "packages": [
         {
             "name": "achyutn/filament-log-viewer",
@@ -6085,11 +6085,11 @@
         },
         {
             "name": "koakademy/online-resources",
-            "version": "v1.2.0",
+            "version": "v1.3.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/yukazakiri/koakademy-module-online-resources.git",
-                "reference": "f9cac2204b50db9c3d43ee1eefd94bdc476af50d"
+                "reference": "f3a485a9af9db2ab9369a1d722f8c7ca62e41f72"
             },
             "require": {
                 "endroid/qr-code": "^6.0",
@@ -6139,7 +6139,7 @@
                 }
             ],
             "description": "Categorized online resources and permanent QR code quick-access hub for KoAkademy schools, classes, and student portals.",
-            "time": "2026-11-25T01:07:09+00:00"
+            "time": "2026-11-25T03:13:44+00:00"
         },
         {
             "name": "koakademy/student-medical-records",

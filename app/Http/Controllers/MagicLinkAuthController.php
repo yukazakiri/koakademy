@@ -149,13 +149,7 @@ final class MagicLinkAuthController extends Controller
             return redirect()->route('two-factor.login');
         }
 
-        $destination = match (true) {
-            $user->isAdministrative() => '/administrators',
-            $user->role?->isStudent() => '/student/dashboard',
-            default => '/faculty/dashboard',
-        };
-
-        return redirect()->intended($destination)->with('status', 'Welcome back! You have been securely signed in.');
+        return redirect()->intended($user->homeUrl())->with('status', 'Welcome back! You have been securely signed in.');
     }
 
     private function maskEmail(string $email): string

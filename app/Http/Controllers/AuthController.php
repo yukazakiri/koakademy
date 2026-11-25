@@ -169,6 +169,13 @@ final class AuthController extends Controller
         ]);
     }
 
+    public function cancelSocialSignup(Request $request): RedirectResponse
+    {
+        $request->session()->forget('socialite_signup');
+
+        return redirect()->route('signup');
+    }
+
     public function signup(Request $request)
     {
         $request->merge([
@@ -391,15 +398,7 @@ final class AuthController extends Controller
      */
     private function getRedirectForUser(User $user): string
     {
-        if ($user->isAdministrative()) {
-            return '/administrators';
-        }
-
-        if ($user->role?->isStudent()) {
-            return '/student/dashboard';
-        }
-
-        return '/faculty/dashboard';
+        return $user->homeUrl();
     }
 
     /**

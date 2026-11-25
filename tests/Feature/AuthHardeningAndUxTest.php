@@ -5,8 +5,10 @@ declare(strict_types=1);
 use App\Enums\UserRole;
 use App\Models\Faculty;
 use App\Models\User;
+use App\Notifications\SecurityActivityNotification;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 use Inertia\Testing\AssertableInertia;
 use PragmaRX\Google2FA\Google2FA;
 
@@ -236,4 +238,76 @@ it('returns JSON status codes from two-factor email code endpoint for AJAX clien
         ->postJson(route('two-factor.send-email'))
         ->assertStatus(422)
         ->assertJsonPath('error', 'Email authentication is not enabled for this account.');
+});
+
+it('redirects already authenticated users away from guest auth pages to their role homeUrl', function (): void {
+    $student = User::factory()->create(['role' => UserRole::Student]);
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+
+    $this->actingAs($student)->get('/login')->assertRedirect('/student/dashboard');
+    $this->actingAs($student)->get('/signup')->assertRedirect('/student/dashboard');
+    $this->actingAs($student)->get('/forgot-password')->assertRedirect('/student/dashboard');
+    $this->actingAs($admin)->get('/login')->assertRedirect('/administrators');
+});
+
+it('cancels pending socialite signup from session', function (): void {
+    $this->withSession(['socialite_signup' => ['provider' => 'google', 'email' => 'wrong@school.edu']])
+        ->post(route('signup.cancel-social'))
+        ->assertRedirect(route('signup'))
+        ->assertSessionMissing('socialite_signup');
+});
+
+it('requires password confirmation to delete a passkey and dispatches security alert notifications', function (): void {
+    Notification::fake();
+
+    $user = User::factory()->create([
+        'role' => UserRole::Student,
+        'password' => Hash::make('ValidPass123!'),
+    ]);
+
+    $passkey = $user->passkeys()->create([
+        'name' => 'MacBook Touch ID',
+        'credential_id' => 'Y3JlZGVudGlhbC0x',
+        'credential' => [],
+    ]);
+
+    // Missing or wrong password must be rejected
+    $this->actingAs($user)
+        ->delete(route('student.passkeys.destroy', ['id' => $passkey->id]), [])
+        ->assertSessionHasErrors('password');
+
+    expect($user->passkeys()->count())->toBe(1);
+
+    // Valid password deletes passkey and sends a security notification
+    $this->actingAs($user)
+        ->delete(route('student.passkeys.destroy', ['id' => $passkey->id]), [
+            'password' => 'ValidPass123!',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($user->passkeys()->count())->toBe(0);
+    Notification::assertSentTo($user, SecurityActivityNotification::class);
+});
+
+it('dispatches security alert notifications on password change and pausing 2FA', function (): void {
+    Notification::fake();
+
+    $user = User::factory()->create([
+        'role' => UserRole::Student,
+        'password' => Hash::make('OldPass123!'),
+        'security_two_factor_enabled' => true,
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('student.profile.two-factor.login-challenges'), [
+            'enabled' => false,
+            'password' => 'OldPass123!',
+        ])
+        ->assertSessionHasNoErrors();
+
+    Notification::assertSentTo(
+        $user,
+        SecurityActivityNotification::class,
+        fn (SecurityActivityNotification $n): bool => $n->actionTitle === 'Two-Factor Login Protection Paused',
+    );
 });

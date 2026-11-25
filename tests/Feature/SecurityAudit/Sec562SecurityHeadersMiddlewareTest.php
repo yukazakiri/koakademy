@@ -13,7 +13,8 @@ it('adds baseline security headers on web routes', function (): void {
         ->assertHeader('X-Frame-Options', 'SAMEORIGIN')
         ->assertHeader('X-Content-Type-Options', 'nosniff')
         ->assertHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
-        ->assertHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+        ->assertHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()')
+        ->assertHeader('Content-Security-Policy', "frame-ancestors 'self'; base-uri 'self'; object-src 'none'");
 });
 
 it('adds baseline security headers on API routes', function (): void {

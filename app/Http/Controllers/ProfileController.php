@@ -20,6 +20,7 @@ use App\Models\Faculty;
 use App\Models\GeneralSetting;
 use App\Models\Student;
 use App\Models\User;
+use App\Notifications\SecurityActivityNotification;
 use App\Services\BetaAccessService;
 use App\Services\DigitalIdCardService;
 use App\Services\FeatureToggleRegistry;
@@ -477,6 +478,15 @@ final class ProfileController extends Controller
             'success',
         );
 
+        if (! $enabled) {
+            $user->notify(new SecurityActivityNotification(
+                actionTitle: 'Two-Factor Login Protection Paused',
+                actionSummary: 'Two-factor login challenges were paused on your account.',
+                ipAddress: $request->ip(),
+                userAgent: $request->userAgent(),
+            ));
+        }
+
         return back()->with('flash', [
             'success' => $enabled
                 ? 'Two-factor login challenges enabled.'
@@ -569,6 +579,12 @@ final class ProfileController extends Controller
         $user->save();
 
         app(UserSecurityActivityService::class)->record($user, 'mfa_app_disabled', 'success');
+        $user->notify(new SecurityActivityNotification(
+            actionTitle: 'Authenticator App Removed',
+            actionSummary: 'Authenticator app two-factor authentication was removed from your account.',
+            ipAddress: $request->ip(),
+            userAgent: $request->userAgent(),
+        ));
 
         return back()->with('flash', [
             'success' => 'Two factor authentication has been disabled.',
@@ -999,6 +1015,12 @@ final class ProfileController extends Controller
         $request->session()->regenerate();
         $request->session()->put('user_session_version', (int) $user->session_version);
         app(UserSecurityActivityService::class)->record($user, 'password_changed', 'success');
+        $user->notify(new SecurityActivityNotification(
+            actionTitle: 'Password Changed',
+            actionSummary: 'Your account password was changed and other active sessions/tokens were signed out.',
+            ipAddress: $request->ip(),
+            userAgent: $request->userAgent(),
+        ));
 
         return back()->with('flash', [
             'success' => 'Password changed successfully!',

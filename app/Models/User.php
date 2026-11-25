@@ -749,6 +749,19 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
         $this->notify(new ResetPasswordNotification($token));
     }
 
+    public function homeUrl(): string
+    {
+        if ($this->isAdministrative()) {
+            return '/administrators';
+        }
+
+        if ($this->role?->isStudent()) {
+            return '/student/dashboard';
+        }
+
+        return '/faculty/dashboard';
+    }
+
     public function canAccessAdminPortal(): bool
     {
         $superAdminRole = (string) config('filament-shield.super_admin.name', UserRole::SuperAdmin->value);

@@ -14,6 +14,7 @@ use App\Http\Requests\Api\V1\UpdateMobilePasswordRequest;
 use App\Http\Resources\Api\V1\UserResource;
 use App\Models\User;
 use App\Notifications\FilamentEmailAuthenticationCode;
+use App\Notifications\SecurityActivityNotification;
 use App\Services\Auth\LoginAttemptService;
 use App\Services\Auth\TwoFactorAttemptService;
 use App\Services\OnlineUserPresenceService;
@@ -301,6 +302,13 @@ final class AuthTokenController extends Controller
         }
         $tokens->delete();
         $user->revokeMcpOAuthTokens();
+        app(UserSecurityActivityService::class)->record($user, 'password_changed', 'success', guard: 'sanctum');
+        $user->notify(new SecurityActivityNotification(
+            actionTitle: 'Password Changed',
+            actionSummary: 'Your account password was changed from the mobile app and other active sessions/tokens were signed out.',
+            ipAddress: $request->ip(),
+            userAgent: $request->userAgent(),
+        ));
 
         return response()->json(['message' => 'The password has been updated.']);
     }

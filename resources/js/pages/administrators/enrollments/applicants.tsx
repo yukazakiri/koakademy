@@ -3,17 +3,28 @@ import { Filter, FilterFieldConfig } from "@/components/reui/filters";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { bulkAction as applicantBulkActionRoute } from "@/routes/administrators/enrollments/applicants";
 import { Head, Link, router } from "@inertiajs/react";
 import {
     ArrowRight,
+    Award,
     Building2,
     CalendarClock,
     CheckCircle2,
+    CircleSlash2,
     ClipboardCheck,
     FileWarning,
     GraduationCap,
+    Loader2,
+    MailCheck,
     Sparkles,
+    UserCheck,
     UserPlus,
     Users,
 } from "lucide-react";
@@ -99,6 +110,15 @@ export default function AdministratorEnrollmentApplicants({
 
     const [cancelApplicant, setCancelApplicant] = useState<ApplicantRow | null>(null);
     const [isCancelling, setIsCancelling] = useState(false);
+
+    // Bulk action state
+    const [bulkBusy, setBulkBusy] = useState(false);
+    const [bulkScholarshipRows, setBulkScholarshipRows] = useState<ApplicantRow[] | null>(null);
+    const [bulkScholarshipValue, setBulkScholarshipValue] = useState<string>("none");
+    const [bulkCancelRows, setBulkCancelRows] = useState<ApplicantRow[] | null>(null);
+    const [bulkCancelReason, setBulkCancelReason] = useState<string>(cancellationReasons[0]?.value ?? "");
+    const [bulkCancelNote, setBulkCancelNote] = useState<string>("");
+    const [bulkCancelSendEmail, setBulkCancelSendEmail] = useState<boolean>(true);
 
     const searchInputRef = useRef<HTMLInputElement>(null);
     const searchDraftRef = useRef(filters.search || "");
@@ -485,6 +505,32 @@ export default function AdministratorEnrollmentApplicants({
         );
     };
 
+    const runBulkAction = (
+        payload: {
+            action: "notify_approval" | "set_scholarship" | "convert_to_enrollment" | "cancel";
+            ids: number[];
+            scholarship_type?: string | null;
+            reason?: string;
+            note?: string | null;
+            send_email?: boolean;
+        },
+        onDone?: () => void,
+    ) => {
+        if (payload.ids.length === 0) return;
+        setBulkBusy(true);
+        router.post(applicantBulkActionRoute.url(), payload, {
+            preserveScroll: true,
+            onSuccess: () => {
+                onDone?.();
+            },
+            onError: (errors) => {
+                const first = Object.values(errors as Record<string, string>)[0];
+                toast.error(first ?? "Bulk action could not be completed.");
+            },
+            onFinish: () => setBulkBusy(false),
+        });
+    };
+
     const actions: ApplicantActions = {
         onOpenReview: (applicant) => setReviewApplicant(applicant),
         onManageScholarship: handleManageClick,
@@ -726,6 +772,73 @@ export default function AdministratorEnrollmentApplicants({
                     onResetFilters={resetFilters}
                     hasActiveFilters={hasActiveFilters}
                     onRowClick={(applicant) => setReviewApplicant(applicant)}
+                    selectionActions={(selectedRows) => (
+                        <div className="bg-muted/70 border-border/80 flex flex-wrap items-center gap-1.5 rounded-lg border px-2.5 py-1">
+                            <span className="text-xs font-semibold tabular-nums">{selectedRows.length} selected</span>
+                            <Button
+                                type="button"
+                                size="xs"
+                                variant="outline"
+                                className="h-7 gap-1 text-xs"
+                                disabled={bulkBusy}
+                                onClick={() =>
+                                    runBulkAction({
+                                        action: "notify_approval",
+                                        ids: selectedRows.map((row) => row.id),
+                                    })
+                                }
+                            >
+                                {bulkBusy ? <Loader2 className="size-3 animate-spin" /> : <MailCheck className="size-3" />}
+                                Notify approval
+                            </Button>
+                            <Button
+                                type="button"
+                                size="xs"
+                                variant="outline"
+                                className="h-7 gap-1 text-xs"
+                                disabled={bulkBusy}
+                                onClick={() => {
+                                    setBulkScholarshipValue("none");
+                                    setBulkScholarshipRows(selectedRows);
+                                }}
+                            >
+                                <Award className="size-3" />
+                                Tag scholarship
+                            </Button>
+                            <Button
+                                type="button"
+                                size="xs"
+                                variant="secondary"
+                                className="h-7 gap-1 text-xs"
+                                disabled={bulkBusy}
+                                onClick={() =>
+                                    runBulkAction({
+                                        action: "convert_to_enrollment",
+                                        ids: selectedRows.map((row) => row.id),
+                                    })
+                                }
+                            >
+                                <UserCheck className="size-3" />
+                                Convert to enrollment
+                            </Button>
+                            <Button
+                                type="button"
+                                size="xs"
+                                variant="ghost"
+                                className="text-destructive hover:text-destructive h-7 gap-1 text-xs"
+                                disabled={bulkBusy}
+                                onClick={() => {
+                                    setBulkCancelReason(cancellationReasons[0]?.value ?? "");
+                                    setBulkCancelNote("");
+                                    setBulkCancelSendEmail(true);
+                                    setBulkCancelRows(selectedRows);
+                                }}
+                            >
+                                <CircleSlash2 className="size-3" />
+                                Cancel selected
+                            </Button>
+                        </div>
+                    )}
                     actions={actions}
                     pipelineStatusLabels={pipelineStatusLabels}
                 />
@@ -777,6 +890,133 @@ export default function AdministratorEnrollmentApplicants({
                 onOpenChange={(open) => !open && setForceDeleteApplicant(null)}
                 onConfirm={handleForceDeleteApplicant}
             />
+
+            {/* Bulk Scholarship Tagging Dialog */}
+            <Dialog open={bulkScholarshipRows !== null} onOpenChange={(open) => !open && setBulkScholarshipRows(null)}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Tag Scholarship in Bulk</DialogTitle>
+                        <DialogDescription>
+                            Apply or clear a scholarship classification for {bulkScholarshipRows?.length ?? 0} selected applicant
+                            {(bulkScholarshipRows?.length ?? 0) === 1 ? "" : "s"}.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-2 py-2">
+                        <Label className="text-xs">Scholarship classification</Label>
+                        <Select value={bulkScholarshipValue} onValueChange={setBulkScholarshipValue}>
+                            <SelectTrigger className="h-9 text-xs">
+                                <SelectValue placeholder="Choose scholarship" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="none">No Scholarship (clear)</SelectItem>
+                                <SelectItem value="tdp">TDP (Tulong Dunong Program)</SelectItem>
+                                <SelectItem value="tes">TES (Tertiary Education Subsidy)</SelectItem>
+                                <SelectItem value="institutional">Institutional Scholarship</SelectItem>
+                                <SelectItem value="private">Private/External Scholarship</SelectItem>
+                                <SelectItem value="other">Other Scholarship</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <DialogFooter>
+                        <Button type="button" variant="outline" size="sm" onClick={() => setBulkScholarshipRows(null)}>
+                            Cancel
+                        </Button>
+                        <Button
+                            type="button"
+                            size="sm"
+                            disabled={bulkBusy}
+                            onClick={() => {
+                                if (!bulkScholarshipRows) return;
+                                runBulkAction(
+                                    {
+                                        action: "set_scholarship",
+                                        ids: bulkScholarshipRows.map((row) => row.id),
+                                        scholarship_type: bulkScholarshipValue === "none" ? null : bulkScholarshipValue,
+                                    },
+                                    () => setBulkScholarshipRows(null),
+                                );
+                            }}
+                        >
+                            {bulkBusy && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+                            Apply scholarship
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Bulk Cancellation Dialog */}
+            <Dialog open={bulkCancelRows !== null} onOpenChange={(open) => !open && setBulkCancelRows(null)}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Cancel Selected Applications</DialogTitle>
+                        <DialogDescription>
+                            Close {bulkCancelRows?.length ?? 0} selected application{(bulkCancelRows?.length ?? 0) === 1 ? "" : "s"} with a shared
+                            reason.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-3 py-1">
+                        <div className="space-y-1.5">
+                            <Label className="text-xs">Cancellation reason</Label>
+                            <Select value={bulkCancelReason} onValueChange={setBulkCancelReason}>
+                                <SelectTrigger className="h-9 text-xs">
+                                    <SelectValue placeholder="Select a reason" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {cancellationReasons.map((r) => (
+                                        <SelectItem key={r.value} value={r.value}>
+                                            {r.label}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label htmlFor="bulk-cancel-note" className="text-xs">
+                                Note (required if selected reason requires details)
+                            </Label>
+                            <Textarea
+                                id="bulk-cancel-note"
+                                rows={3}
+                                value={bulkCancelNote}
+                                onChange={(e) => setBulkCancelNote(e.target.value)}
+                                placeholder="Provide context for the cancellation decision..."
+                                className="text-xs"
+                            />
+                        </div>
+                        <label className="flex items-center gap-2 text-xs">
+                            <Checkbox checked={bulkCancelSendEmail} onCheckedChange={(v) => setBulkCancelSendEmail(Boolean(v))} />
+                            Send cancellation email to applicants with an email on file
+                        </label>
+                    </div>
+                    <DialogFooter>
+                        <Button type="button" variant="outline" size="sm" onClick={() => setBulkCancelRows(null)}>
+                            Back
+                        </Button>
+                        <Button
+                            type="button"
+                            size="sm"
+                            variant="destructive"
+                            disabled={bulkBusy || !bulkCancelReason}
+                            onClick={() => {
+                                if (!bulkCancelRows) return;
+                                runBulkAction(
+                                    {
+                                        action: "cancel",
+                                        ids: bulkCancelRows.map((row) => row.id),
+                                        reason: bulkCancelReason,
+                                        note: bulkCancelNote.trim() || null,
+                                        send_email: bulkCancelSendEmail,
+                                    },
+                                    () => setBulkCancelRows(null),
+                                );
+                            }}
+                        >
+                            {bulkBusy && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+                            Cancel applications
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </AdminLayout>
     );
 }

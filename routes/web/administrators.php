@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\AdministratorApplicantBulkActionController;
 use App\Http\Controllers\AdministratorAuditLogController;
 use App\Http\Controllers\AdministratorClassManagementController;
 use App\Http\Controllers\AdministratorCourseSchedulePdfController;
@@ -92,6 +93,7 @@ Route::middleware(['auth', 'administrators.only'])
 
         Route::get('/enrollments', [AdministratorEnrollmentManagementController::class, 'index'])->name('enrollments.index');
         Route::get('/enrollments/applicants', [AdministratorEnrollmentManagementController::class, 'applicants'])->name('enrollments.applicants');
+        Route::post('/enrollments/applicants/bulk-action', AdministratorApplicantBulkActionController::class)->name('enrollments.applicants.bulk-action');
         Route::get('/registrar/analytics', [AdministratorRegistrarInsightsController::class, 'analytics'])->name('registrar.analytics.index');
         Route::get('/registrar/analytics/export', [AdministratorRegistrarInsightsController::class, 'export'])->name('registrar.analytics.export');
         Route::post('/registrar/analytics/student-profile-imports', [AdministratorRegistrarInsightsController::class, 'storeStudentProfileImport'])

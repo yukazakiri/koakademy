@@ -42,6 +42,7 @@ final class SaveEnrollmentRequest extends FormRequest
             'notify_student' => ['nullable', 'boolean'],
             'change_reason' => ['nullable', 'string', 'max:1000'],
             'force_overload' => ['nullable', 'boolean'],
+            'override_window' => ['nullable', 'boolean'],
         ];
     }
 }

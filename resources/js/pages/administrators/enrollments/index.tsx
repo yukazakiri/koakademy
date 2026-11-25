@@ -25,13 +25,17 @@ import {
     Ban,
     BookOpen,
     Building2,
+    CalendarCheck2,
+    CalendarClock,
     CircleDollarSign,
+    Clock,
     Download,
     FileSpreadsheet,
     Filter,
     GraduationCap,
     KanbanSquare,
     ListFilter,
+    Lock,
     MoreHorizontal,
     RotateCcw,
     Search,
@@ -46,7 +50,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { route } from "ziggy-js";
 import type { EnrollmentRow, EnrollmentTransitionOption } from "./columns";
-import { EnrollmentConfigSheet } from "./enrollment-config-sheet";
+import { EnrollmentConfigSheet, type EnrollmentConfigTab } from "./enrollment-config-sheet";
 import { EnrollmentDataGrid } from "./enrollment-data-grid";
 import { EnrollmentDetailSheet } from "./enrollment-detail-sheet";
 import { BulkReportsDialog, DeleteEnrollmentDialog, ForceDeleteEnrollmentDialog, RestoreEnrollmentDialog } from "./enrollment-dialogs";
@@ -136,6 +140,7 @@ export default function AdministratorEnrollmentsIndex({
     enrollments,
     board_enrollments,
     pipeline_meta,
+    enrollment_period,
     analytics,
     filters,
     available_courses,
@@ -147,6 +152,12 @@ export default function AdministratorEnrollmentsIndex({
 
     const [workspacePrefs, setWorkspacePrefs] = useState<EnrollmentWorkspacePreferences>(() => loadWorkspacePrefs());
     const [configSheetOpen, setConfigSheetOpen] = useState(false);
+    const [configSheetTab, setConfigSheetTab] = useState<EnrollmentConfigTab>("workspace");
+
+    const openConfigSheet = useCallback((tab: EnrollmentConfigTab = "workspace") => {
+        setConfigSheetTab(tab);
+        setConfigSheetOpen(true);
+    }, []);
 
     const handleWorkspacePrefsChange = useCallback((next: EnrollmentWorkspacePreferences) => {
         setWorkspacePrefs(next);
@@ -690,7 +701,7 @@ export default function AdministratorEnrollmentsIndex({
                         {!workflow_setup_required && pipeline_meta && (
                             <button
                                 type="button"
-                                onClick={() => setConfigSheetOpen(true)}
+                                onClick={() => openConfigSheet("pipeline")}
                                 className="focus-visible:ring-ring inline-flex items-center rounded-full hover:opacity-90 focus-visible:ring-2 focus-visible:outline-none"
                                 title="Inspect or configure active enrollment pipeline"
                             >
@@ -704,6 +715,42 @@ export default function AdministratorEnrollmentsIndex({
                                     {pipeline_meta.engine === "policy_v1"
                                         ? `${pipeline_meta.policy_name ?? "Policy"}${pipeline_meta.policy_version ? ` · v${pipeline_meta.policy_version}` : ""}`
                                         : `Pipeline · ${enrollment_pipeline.steps.length} stages`}
+                                </Badge>
+                            </button>
+                        )}
+                        {enrollment_period && (
+                            <button
+                                type="button"
+                                onClick={() => openConfigSheet("window")}
+                                className="focus-visible:ring-ring inline-flex items-center rounded-full hover:opacity-90 focus-visible:ring-2 focus-visible:outline-none"
+                                title={enrollment_period.summary_text}
+                            >
+                                <Badge
+                                    variant={
+                                        enrollment_period.tone === "success"
+                                            ? "success-light"
+                                            : enrollment_period.tone === "warning"
+                                              ? "warning-light"
+                                              : enrollment_period.tone === "destructive"
+                                                ? "destructive-light"
+                                                : enrollment_period.tone === "info"
+                                                  ? "info-light"
+                                                  : "outline"
+                                    }
+                                    radius="full"
+                                    size="lg"
+                                    className="gap-1.5 font-normal"
+                                >
+                                    {enrollment_period.phase === "regular" ? (
+                                        <CalendarCheck2 className="size-3" aria-hidden="true" />
+                                    ) : enrollment_period.phase === "late" ? (
+                                        <Clock className="size-3" aria-hidden="true" />
+                                    ) : enrollment_period.phase === "closed" ? (
+                                        <Lock className="size-3" aria-hidden="true" />
+                                    ) : (
+                                        <CalendarClock className="size-3" aria-hidden="true" />
+                                    )}
+                                    {enrollment_period.configured ? enrollment_period.phase_label : "Set window"}
                                 </Badge>
                             </button>
                         )}
@@ -1039,11 +1086,14 @@ export default function AdministratorEnrollmentsIndex({
             <EnrollmentConfigSheet
                 open={configSheetOpen}
                 onOpenChange={setConfigSheetOpen}
+                initialTab={configSheetTab}
                 preferences={workspacePrefs}
                 onPreferencesChange={handleWorkspacePrefsChange}
                 onResetPreferences={handleResetWorkspacePrefs}
                 pipeline={enrollment_pipeline}
                 pipelineMeta={pipeline_meta}
+                enrollmentPeriod={enrollment_period}
+                currency={currency}
                 onPipelineSaved={() => router.reload()}
             />
 

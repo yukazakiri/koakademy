@@ -10,6 +10,7 @@ use App\Http\Controllers\AdministratorCurriculumManagementController;
 use App\Http\Controllers\AdministratorDashboardController;
 use App\Http\Controllers\AdministratorEnrollmentDiscountController;
 use App\Http\Controllers\AdministratorEnrollmentManagementController;
+use App\Http\Controllers\AdministratorEnrollmentPeriodController;
 use App\Http\Controllers\AdministratorEnrollmentPolicyController;
 use App\Http\Controllers\AdministratorFacultyCustomFieldController;
 use App\Http\Controllers\AdministratorFacultyImportController;
@@ -116,6 +117,8 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/enrollments', [AdministratorEnrollmentManagementController::class, 'store'])->name('enrollments.store');
         Route::post('/enrollments/bulk-action', [AdministratorEnrollmentManagementController::class, 'bulkAction'])->name('enrollments.bulk-action');
         Route::post('/enrollments/discounts', [AdministratorEnrollmentDiscountController::class, 'store'])->name('enrollments.discounts.store');
+        Route::get('/enrollments/period', [AdministratorEnrollmentPeriodController::class, 'show'])->name('enrollments.period.show');
+        Route::put('/enrollments/period', [AdministratorEnrollmentPeriodController::class, 'upsert'])->name('enrollments.period.upsert');
 
         // Enrollment Form Data API endpoints
         Route::get('/enrollments/api/students', [AdministratorEnrollmentManagementController::class, 'searchStudents'])->name('enrollments.api.students');

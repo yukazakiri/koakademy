@@ -210,8 +210,11 @@ interface BillingConfiguration {
     course_laboratory_rate_per_unit?: number;
 }
 
+import type { EnrollmentPeriodSummary } from "./types";
+
 interface CreateEnrollmentProps {
     billingConfiguration: BillingConfiguration;
+    enrollment_period?: EnrollmentPeriodSummary;
     user: User;
     settings: {
         currentSemester: number;
@@ -275,6 +278,7 @@ export default function AdministratorEnrollmentCreate({
     enrollment,
     flash,
     billingConfiguration: initialBillingConfiguration,
+    enrollment_period: enrollmentPeriod,
 }: CreateEnrollmentProps) {
     const { props } = usePage<{ branding?: Branding }>();
     const currency = props.branding?.currency || "PHP";
@@ -289,6 +293,7 @@ export default function AdministratorEnrollmentCreate({
     };
 
     const isEdit = Boolean(enrollment);
+    const [overrideWindow, setOverrideWindow] = useState(false);
     const [billingConfiguration, setBillingConfiguration] = useState(initialBillingConfiguration);
     const [billingLoading, setBillingLoading] = useState(false);
     const [billingError, setBillingError] = useState(false);
@@ -790,6 +795,7 @@ export default function AdministratorEnrollmentCreate({
             downpayment,
             additional_fees: fees,
             force_overload: forceOverload || selectedFullSections.some(({ section }) => confirmedOverloadClassIds.includes(section.id)),
+            override_window: overrideWindow,
             ...(isEdit && { notify_student: notifyStudent, change_reason: changeReason }),
         };
 
@@ -955,6 +961,37 @@ export default function AdministratorEnrollmentCreate({
                             <div className="bg-destructive/10 border-destructive/50 text-destructive flex items-center gap-2 rounded-lg border px-4 py-3">
                                 <AlertTriangle className="h-4 w-4" />
                                 {flash.error}
+                            </div>
+                        )}
+
+                        {/* Registration Window Status Banner */}
+                        {!isEdit && enrollmentPeriod?.configured && (!enrollmentPeriod.can_enroll || enrollmentPeriod.is_late) && (
+                            <div
+                                className={cn(
+                                    "flex flex-col gap-3 rounded-lg border px-4 py-3 sm:flex-row sm:items-center sm:justify-between",
+                                    !enrollmentPeriod.can_enroll
+                                        ? "border-destructive/40 bg-destructive/10 text-destructive"
+                                        : "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300",
+                                )}
+                            >
+                                <div className="flex items-start gap-2.5 text-sm">
+                                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                                    <div>
+                                        <p className="font-semibold">{enrollmentPeriod.phase_label}</p>
+                                        <p className="text-xs opacity-90">
+                                            {enrollmentPeriod.summary_text}
+                                            {enrollmentPeriod.is_late && enrollmentPeriod.auto_apply_late_fee && enrollmentPeriod.late_fee_amount > 0
+                                                ? ` · "${enrollmentPeriod.late_fee_label}" (${formatCurrency(enrollmentPeriod.late_fee_amount)}) will be automatically added upon submission.`
+                                                : ""}
+                                        </p>
+                                    </div>
+                                </div>
+                                {!enrollmentPeriod.can_enroll && enrollmentPeriod.enforce_windows && (
+                                    <label className="flex shrink-0 cursor-pointer items-center gap-2 rounded-md border border-current/25 bg-background/80 px-3 py-1.5 text-xs font-medium">
+                                        <Switch checked={overrideWindow} onCheckedChange={setOverrideWindow} />
+                                        Admin override
+                                    </label>
+                                )}
                             </div>
                         )}
 

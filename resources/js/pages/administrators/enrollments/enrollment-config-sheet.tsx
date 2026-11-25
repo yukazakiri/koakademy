@@ -1,3 +1,4 @@
+import { upsert as upsertEnrollmentPeriod } from "@/actions/App/Http/Controllers/AdministratorEnrollmentPeriodController";
 import { updateEnrollmentPipeline } from "@/actions/App/Http/Controllers/AdministratorSystemManagementController";
 import { Alert, AlertDescription, AlertTitle } from "@/components/reui/alert";
 import { Badge } from "@/components/reui/badge";
@@ -10,13 +11,27 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { Link, router } from "@inertiajs/react";
-import { ArrowDown, ArrowUp, ArrowUpRight, Layers, Loader2, Plus, RotateCcw, Save, SlidersHorizontal, Trash2, Workflow } from "lucide-react";
+import {
+    ArrowDown,
+    ArrowUp,
+    ArrowUpRight,
+    CalendarClock,
+    Layers,
+    Loader2,
+    Plus,
+    RotateCcw,
+    Save,
+    SlidersHorizontal,
+    Trash2,
+    Workflow,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { resolvePipelineColor } from "./enrollment-utils";
-import type { EnrollmentPipeline, EnrollmentWorkspacePreferences, PipelineMeta } from "./types";
+import type { EnrollmentPeriodSummary, EnrollmentPipeline, EnrollmentWorkspacePreferences, PipelineMeta } from "./types";
 
 type EditablePipelineStep = {
     key: string;
@@ -27,16 +42,29 @@ type EditablePipelineStep = {
     allowed_roles: string[];
 };
 
+export type EnrollmentConfigTab = "workspace" | "window" | "pipeline";
+
 type EnrollmentConfigSheetProps = {
     open: boolean;
     onOpenChange: (open: boolean) => void;
+    initialTab?: EnrollmentConfigTab;
     preferences: EnrollmentWorkspacePreferences;
     onPreferencesChange: (next: EnrollmentWorkspacePreferences) => void;
     onResetPreferences: () => void;
     pipeline: EnrollmentPipeline;
     pipelineMeta?: PipelineMeta;
+    enrollmentPeriod?: EnrollmentPeriodSummary;
+    currency?: string;
     onPipelineSaved?: () => void;
 };
+
+function toDateTimeLocalValue(iso: string | null | undefined): string {
+    if (!iso) return "";
+    const parsed = new Date(iso);
+    if (Number.isNaN(parsed.getTime())) return "";
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}T${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
+}
 
 const COLOR_OPTIONS = [
     { value: "amber", label: "Amber" },
@@ -56,23 +84,42 @@ const ACTION_TYPE_OPTIONS = [
 export function EnrollmentConfigSheet({
     open,
     onOpenChange,
+    initialTab = "workspace",
     preferences,
     onPreferencesChange,
     onResetPreferences,
     pipeline,
     pipelineMeta,
+    enrollmentPeriod,
+    currency = "PHP",
     onPipelineSaved,
 }: EnrollmentConfigSheetProps) {
     const isPolicyEngine = pipelineMeta?.engine === "policy_v1";
     const canConfigurePipeline = Boolean(pipelineMeta?.can_configure);
     const configureUrl = pipelineMeta?.configure_url ?? "/administrators/system-management/enrollment-pipeline";
 
+    const [activeTab, setActiveTab] = useState<EnrollmentConfigTab>(initialTab);
     const [steps, setSteps] = useState<EditablePipelineStep[]>([]);
     const [submittedLabel, setSubmittedLabel] = useState(pipeline.submitted_label || "Submitted");
     const [savingPipeline, setSavingPipeline] = useState(false);
 
+    // Registration Window form state
+    const [regularStartsAt, setRegularStartsAt] = useState("");
+    const [regularEndsAt, setRegularEndsAt] = useState("");
+    const [lateStartsAt, setLateStartsAt] = useState("");
+    const [lateEndsAt, setLateEndsAt] = useState("");
+    const [addDropDeadlineAt, setAddDropDeadlineAt] = useState("");
+    const [lateFeeLabel, setLateFeeLabel] = useState("Late Enrollment Fee");
+    const [lateFeeAmount, setLateFeeAmount] = useState("0");
+    const [autoApplyLateFee, setAutoApplyLateFee] = useState(false);
+    const [enforceWindows, setEnforceWindows] = useState(false);
+    const [isManuallyClosed, setIsManuallyClosed] = useState(false);
+    const [periodNotes, setPeriodNotes] = useState("");
+    const [savingPeriod, setSavingPeriod] = useState(false);
+
     useEffect(() => {
         if (!open) return;
+        setActiveTab(initialTab);
         setSubmittedLabel(pipeline.submitted_label || "Submitted");
         setSteps(
             pipeline.steps.map((step, index) => ({
@@ -84,7 +131,51 @@ export function EnrollmentConfigSheet({
                 allowed_roles: Array.isArray(step.allowed_roles) ? step.allowed_roles : [],
             })),
         );
-    }, [open, pipeline]);
+        setRegularStartsAt(toDateTimeLocalValue(enrollmentPeriod?.regular_starts_at));
+        setRegularEndsAt(toDateTimeLocalValue(enrollmentPeriod?.regular_ends_at));
+        setLateStartsAt(toDateTimeLocalValue(enrollmentPeriod?.late_starts_at));
+        setLateEndsAt(toDateTimeLocalValue(enrollmentPeriod?.late_ends_at));
+        setAddDropDeadlineAt(toDateTimeLocalValue(enrollmentPeriod?.add_drop_deadline_at));
+        setLateFeeLabel(enrollmentPeriod?.late_fee_label || "Late Enrollment Fee");
+        setLateFeeAmount(String(enrollmentPeriod?.late_fee_amount ?? 0));
+        setAutoApplyLateFee(Boolean(enrollmentPeriod?.auto_apply_late_fee));
+        setEnforceWindows(Boolean(enrollmentPeriod?.enforce_windows));
+        setIsManuallyClosed(Boolean(enrollmentPeriod?.is_manually_closed));
+        setPeriodNotes(enrollmentPeriod?.notes || "");
+    }, [open, initialTab, pipeline, enrollmentPeriod]);
+
+    const handleSavePeriod = (event: React.FormEvent) => {
+        event.preventDefault();
+        setSavingPeriod(true);
+        router.put(
+            upsertEnrollmentPeriod.url(),
+            {
+                regular_starts_at: regularStartsAt || null,
+                regular_ends_at: regularEndsAt || null,
+                late_starts_at: lateStartsAt || null,
+                late_ends_at: lateEndsAt || null,
+                add_drop_deadline_at: addDropDeadlineAt || null,
+                late_fee_label: lateFeeLabel.trim() || "Late Enrollment Fee",
+                late_fee_amount: Number(lateFeeAmount) || 0,
+                auto_apply_late_fee: autoApplyLateFee,
+                enforce_windows: enforceWindows,
+                is_manually_closed: isManuallyClosed,
+                notes: periodNotes.trim() || null,
+            },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    toast.success("Registration window saved for this term.");
+                    onPipelineSaved?.();
+                },
+                onError: (errors) => {
+                    const firstError = Object.values(errors)[0];
+                    toast.error(typeof firstError === "string" ? firstError : "Could not save registration window.");
+                },
+                onFinish: () => setSavingPeriod(false),
+            },
+        );
+    };
 
     const updatePref = <K extends keyof EnrollmentWorkspacePreferences>(key: K, value: EnrollmentWorkspacePreferences[K]) => {
         onPreferencesChange({ ...preferences, [key]: value });
@@ -200,12 +291,16 @@ export function EnrollmentConfigSheet({
                     </div>
                 </SheetHeader>
 
-                <Tabs defaultValue="workspace" className="flex min-h-0 flex-1 flex-col">
+                <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as EnrollmentConfigTab)} className="flex min-h-0 flex-1 flex-col">
                     <div className="border-border/70 shrink-0 border-b px-5 py-2.5">
-                        <TabsList className="grid w-full grid-cols-2">
+                        <TabsList className="grid w-full grid-cols-3">
                             <TabsTrigger value="workspace" className="gap-1.5 text-xs">
                                 <Layers className="size-3.5" />
                                 Workspace
+                            </TabsTrigger>
+                            <TabsTrigger value="window" className="gap-1.5 text-xs">
+                                <CalendarClock className="size-3.5" />
+                                Window
                             </TabsTrigger>
                             <TabsTrigger value="pipeline" className="gap-1.5 text-xs">
                                 <Workflow className="size-3.5" />
@@ -320,7 +415,217 @@ export function EnrollmentConfigSheet({
                         </Frame>
                     </TabsContent>
 
-                    {/* TAB 2: ACTIVE PIPELINE & INLINE CONFIGURATOR */}
+                    {/* TAB 2: REGISTRATION WINDOW & LATE FEE CONTROLS */}
+                    <TabsContent value="window" className="mt-0 flex-1 space-y-4 overflow-y-auto px-5 py-5">
+                        <form onSubmit={handleSavePeriod} className="space-y-4">
+                            {enrollmentPeriod && (
+                                <Frame spacing="sm">
+                                    <FramePanel className="flex items-center justify-between gap-3 p-3.5">
+                                        <div className="min-w-0">
+                                            <p className="text-xs font-semibold">
+                                                {enrollmentPeriod.school_year} · Sem {enrollmentPeriod.semester}
+                                            </p>
+                                            <p className="text-muted-foreground text-[11px]">{enrollmentPeriod.summary_text}</p>
+                                        </div>
+                                        <Badge
+                                            variant={
+                                                enrollmentPeriod.tone === "success"
+                                                    ? "success-light"
+                                                    : enrollmentPeriod.tone === "warning"
+                                                      ? "warning-light"
+                                                      : enrollmentPeriod.tone === "destructive"
+                                                        ? "destructive-light"
+                                                        : enrollmentPeriod.tone === "info"
+                                                          ? "info-light"
+                                                          : "secondary"
+                                            }
+                                            radius="full"
+                                            size="lg"
+                                        >
+                                            {enrollmentPeriod.phase_label}
+                                        </Badge>
+                                    </FramePanel>
+                                </Frame>
+                            )}
+
+                            <Frame spacing="sm">
+                                <FrameHeader>
+                                    <FrameTitle className="text-xs font-semibold tracking-wide uppercase">Registration dates</FrameTitle>
+                                    <FrameDescription className="text-xs">
+                                        Configure Regular enrollment, Late enrollment, and the Add/Drop subject cutoff for this term.
+                                    </FrameDescription>
+                                </FrameHeader>
+                                <FramePanel className="space-y-3">
+                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                        <div className="space-y-1">
+                                            <Label htmlFor="period-regular-start" className="text-xs">
+                                                Regular opens
+                                            </Label>
+                                            <Input
+                                                id="period-regular-start"
+                                                type="datetime-local"
+                                                value={regularStartsAt}
+                                                onChange={(e) => setRegularStartsAt(e.target.value)}
+                                                className="h-8 text-xs"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label htmlFor="period-regular-end" className="text-xs">
+                                                Regular closes
+                                            </Label>
+                                            <Input
+                                                id="period-regular-end"
+                                                type="datetime-local"
+                                                value={regularEndsAt}
+                                                onChange={(e) => setRegularEndsAt(e.target.value)}
+                                                className="h-8 text-xs"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                        <div className="space-y-1">
+                                            <Label htmlFor="period-late-start" className="text-xs">
+                                                Late enrollment opens
+                                            </Label>
+                                            <Input
+                                                id="period-late-start"
+                                                type="datetime-local"
+                                                value={lateStartsAt}
+                                                onChange={(e) => setLateStartsAt(e.target.value)}
+                                                className="h-8 text-xs"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label htmlFor="period-late-end" className="text-xs">
+                                                Late enrollment closes
+                                            </Label>
+                                            <Input
+                                                id="period-late-end"
+                                                type="datetime-local"
+                                                value={lateEndsAt}
+                                                onChange={(e) => setLateEndsAt(e.target.value)}
+                                                className="h-8 text-xs"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <Label htmlFor="period-add-drop" className="text-xs">
+                                            Add / Drop / Swap deadline
+                                        </Label>
+                                        <Input
+                                            id="period-add-drop"
+                                            type="datetime-local"
+                                            value={addDropDeadlineAt}
+                                            onChange={(e) => setAddDropDeadlineAt(e.target.value)}
+                                            className="h-8 text-xs"
+                                        />
+                                    </div>
+                                </FramePanel>
+                            </Frame>
+
+                            <Frame spacing="sm">
+                                <FrameHeader>
+                                    <FrameTitle className="text-xs font-semibold tracking-wide uppercase">
+                                        Late fee &amp; enforcement rules
+                                    </FrameTitle>
+                                </FrameHeader>
+                                <FramePanel className="divide-y p-0">
+                                    <div className="flex items-center justify-between gap-3 px-3.5 py-3">
+                                        <div className="min-w-0">
+                                            <p className="text-xs font-medium">Auto-apply late enrollment fee</p>
+                                            <p className="text-muted-foreground text-[11px]">
+                                                Automatically adds an additional fee line to enrollments submitted during the late window.
+                                            </p>
+                                        </div>
+                                        <Switch
+                                            checked={autoApplyLateFee}
+                                            onCheckedChange={setAutoApplyLateFee}
+                                            aria-label="Auto-apply late enrollment fee"
+                                        />
+                                    </div>
+                                    {autoApplyLateFee && (
+                                        <div className="grid grid-cols-1 gap-3 px-3.5 py-3 sm:grid-cols-2">
+                                            <div className="space-y-1">
+                                                <Label htmlFor="period-late-fee-label" className="text-xs">
+                                                    Fee label
+                                                </Label>
+                                                <Input
+                                                    id="period-late-fee-label"
+                                                    value={lateFeeLabel}
+                                                    onChange={(e) => setLateFeeLabel(e.target.value)}
+                                                    placeholder="Late Enrollment Fee"
+                                                    className="h-8 text-xs"
+                                                />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <Label htmlFor="period-late-fee-amount" className="text-xs">
+                                                    Fee amount ({currency})
+                                                </Label>
+                                                <Input
+                                                    id="period-late-fee-amount"
+                                                    type="number"
+                                                    min={0}
+                                                    step="0.01"
+                                                    value={lateFeeAmount}
+                                                    onChange={(e) => setLateFeeAmount(e.target.value)}
+                                                    className="h-8 text-xs tabular-nums"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+                                    <div className="flex items-center justify-between gap-3 px-3.5 py-3">
+                                        <div className="min-w-0">
+                                            <p className="text-xs font-medium">Enforce registration window</p>
+                                            <p className="text-muted-foreground text-[11px]">
+                                                Block new enrollments outside Regular/Late windows unless an administrator explicitly overrides.
+                                            </p>
+                                        </div>
+                                        <Switch
+                                            checked={enforceWindows}
+                                            onCheckedChange={setEnforceWindows}
+                                            aria-label="Enforce registration window"
+                                        />
+                                    </div>
+                                    <div className="flex items-center justify-between gap-3 px-3.5 py-3">
+                                        <div className="min-w-0">
+                                            <p className="text-xs font-medium">Emergency close registration</p>
+                                            <p className="text-muted-foreground text-[11px]">
+                                                Immediately marks registration and add/drop as closed regardless of dates.
+                                            </p>
+                                        </div>
+                                        <Switch
+                                            checked={isManuallyClosed}
+                                            onCheckedChange={setIsManuallyClosed}
+                                            aria-label="Emergency close registration"
+                                        />
+                                    </div>
+                                </FramePanel>
+                            </Frame>
+
+                            <div className="space-y-1.5">
+                                <Label htmlFor="period-notes" className="text-xs">
+                                    Internal registrar notes
+                                </Label>
+                                <Textarea
+                                    id="period-notes"
+                                    rows={2}
+                                    value={periodNotes}
+                                    onChange={(e) => setPeriodNotes(e.target.value)}
+                                    placeholder="Optional memo about registration cutoffs or fee waivers..."
+                                    className="text-xs"
+                                />
+                            </div>
+
+                            <Button type="submit" size="sm" disabled={savingPeriod} className="w-full gap-1.5">
+                                {savingPeriod ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+                                Save registration window
+                            </Button>
+                        </form>
+                    </TabsContent>
+
+                    {/* TAB 3: ACTIVE PIPELINE & INLINE CONFIGURATOR */}
                     <TabsContent value="pipeline" className="mt-0 flex-1 space-y-4 overflow-y-auto px-5 py-5">
                         <Frame spacing="sm">
                             <FrameHeader className="flex-row items-center justify-between gap-2">

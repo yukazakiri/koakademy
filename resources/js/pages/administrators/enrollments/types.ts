@@ -179,6 +179,31 @@ export interface PipelineMeta {
     available_roles: string[];
 }
 
+export interface EnrollmentPeriodSummary {
+    id: number | null;
+    configured: boolean;
+    school_year: string;
+    semester: number;
+    phase: "unconfigured" | "upcoming" | "regular" | "late" | "closed";
+    phase_label: string;
+    tone: "neutral" | "info" | "success" | "warning" | "destructive";
+    can_enroll: boolean;
+    is_late: boolean;
+    add_drop_open: boolean;
+    enforce_windows: boolean;
+    is_manually_closed: boolean;
+    auto_apply_late_fee: boolean;
+    late_fee_amount: number;
+    late_fee_label: string;
+    regular_starts_at: string | null;
+    regular_ends_at: string | null;
+    late_starts_at: string | null;
+    late_ends_at: string | null;
+    add_drop_deadline_at: string | null;
+    notes: string | null;
+    summary_text: string;
+}
+
 export interface EnrollmentWorkspacePreferences {
     defaultView: "table" | "board";
     density: "comfortable" | "compact";
@@ -329,6 +354,7 @@ export interface EnrollmentManagementProps {
     board_enrollments?: EnrollmentRow[];
     permissions?: EnrollmentIndexPermissions;
     pipeline_meta?: PipelineMeta;
+    enrollment_period?: EnrollmentPeriodSummary;
     analytics: {
         current_semester_count: number;
         current_school_year_count: number;

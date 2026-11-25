@@ -49,6 +49,7 @@ use App\Services\AssessmentFormDataService;
 use App\Services\ClassScheduleChangeNotificationService;
 use App\Services\CurriculumCapabilityResolver;
 use App\Services\EnrollmentBillingService;
+use App\Services\EnrollmentPeriodService;
 use App\Services\EnrollmentPipelineService;
 use App\Services\EnrollmentService;
 use App\Services\GeneralSettingsService;
@@ -99,6 +100,7 @@ final class AdministratorEnrollmentManagementController extends Controller
         private readonly EnrollmentFeePolicy $feePolicy,
         private readonly ApplicantDirectoryService $applicantDirectory,
         private readonly ApplicantCancellationService $applicantCancellation,
+        private readonly EnrollmentPeriodService $enrollmentPeriodService,
     ) {}
 
     public function index(GeneralSettingsService $settingsService): Response|RedirectResponse
@@ -158,6 +160,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'board_enrollments' => [],
                 'permissions' => $this->enrollmentIndexPermissions($user),
                 'pipeline_meta' => $resolvedPipeline['pipeline_meta'],
+                'enrollment_period' => $this->enrollmentPeriodService->describe(),
                 'flash' => session('flash'),
                 'filters' => [
                     'search' => null,
@@ -513,6 +516,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 ])
                 ->values(),
             'enrollment_pipeline' => $resolvedPipeline['enrollment_pipeline'],
+            'enrollment_period' => $this->enrollmentPeriodService->describe($currentSchoolYearString, $currentSemester),
             'enrollment_stats' => $this->enrollmentPipelineService->getStatsConfiguration(),
             'assessment_export_options' => [
                 'student_limits' => config('assessment-exports.student_limit_options'),
@@ -2097,6 +2101,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 ],
             ],
             'billingConfiguration' => EnrollmentFeeCalculator::Defaults,
+            'enrollment_period' => $this->enrollmentPeriodService->describe($currentSchoolYear, $currentSemester),
             'discounts' => $this->discountOptions(),
             'flash' => session('flash'),
         ]);
@@ -2115,6 +2120,15 @@ final class AdministratorEnrollmentManagementController extends Controller
             $result = $this->withoutEnrollmentSearchSyncing(fn (): array => DB::transaction(function () use ($validated, $settingsService): array {
                 $student = Student::with('Course')->findOrFail($validated['student_id']);
                 $schoolYear = $settingsService->getCurrentSchoolYearString();
+                $periodStatus = $this->enrollmentPeriodService->assertEnrollmentAllowed(
+                    overrideWindow: (bool) ($validated['override_window'] ?? false),
+                    schoolYear: $schoolYear,
+                    semester: (int) $validated['semester'],
+                );
+                $validated['additional_fees'] = $this->enrollmentPeriodService->appendLateFeeIfApplicable(
+                    $validated['additional_fees'] ?? [],
+                    $periodStatus,
+                );
 
                 // Check for existing enrollment in the same period
                 $existingEnrollment = StudentEnrollment::query()

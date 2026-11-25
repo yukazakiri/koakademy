@@ -45,8 +45,12 @@ Route::get('/', function () {
 Route::middleware('auth')->get('/dashboard', function () {
     $user = Auth::user();
 
-    if ($user instanceof App\Models\User) {
-        return redirect($user->homeUrl());
+    if ($user instanceof App\Models\User && $user->isAdministrative()) {
+        return redirect()->route('administrators.dashboard');
+    }
+
+    if ($user instanceof App\Models\User && $user->role?->isStudent()) {
+        return redirect()->route('student.dashboard');
     }
 
     return redirect()->route('faculty.dashboard');

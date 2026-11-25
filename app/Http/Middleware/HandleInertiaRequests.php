@@ -148,6 +148,13 @@ final class HandleInertiaRequests extends Middleware
                 ],
                 'demoMode' => $this->getDemoModeData(),
                 'status' => fn () => session('status'),
+                'passwordPolicy' => fn (): array => [
+                    'minLength' => app()->isProduction() ? 12 : 8,
+                    'requireLetters' => true,
+                    'requireMixedCase' => app()->isProduction(),
+                    'requireNumbers' => true,
+                    'requireSymbols' => app()->isProduction(),
+                ],
                 'featureNotice' => fn (): ?array => $request->attributes->get('feature_notice'),
                 'settings' => fn (): array => $settingsService->getSettings($user),
                 'socialAuthProviders' => $socialiteProviderService->enabledProviders(...),

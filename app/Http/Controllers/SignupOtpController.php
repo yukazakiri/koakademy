@@ -15,7 +15,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 final class SignupOtpController extends Controller
@@ -65,8 +64,8 @@ final class SignupOtpController extends Controller
             }
         }
 
-        // Generate OTP
-        $otp = mb_strtoupper(Str::random(6));
+        // Generate 6-digit numeric OTP
+        $otp = mb_str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
 
         // Store in cache for 10 minutes
         $this->signupOtps->issue($email, $otp);

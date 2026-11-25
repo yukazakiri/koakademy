@@ -20,7 +20,6 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
@@ -156,7 +155,7 @@ final class SignupController extends Controller
             }
         }
 
-        $otp = mb_strtoupper(Str::random(6));
+        $otp = mb_str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
 
         $this->signupOtps->issue($email, $otp);
 
@@ -232,7 +231,8 @@ final class SignupController extends Controller
             ], 422);
         }
 
-        if (! $this->signupOtps->verify($email, (string) $request->otp)) {
+        $otp = preg_replace('/[\s-]+/', '', (string) $request->otp) ?? '';
+        if (! $this->signupOtps->verify($email, $otp)) {
             return response()->json([
                 'message' => $this->signupOtpError($email),
                 'errors' => ['otp' => [$this->signupOtpError($email)]],
@@ -324,7 +324,8 @@ final class SignupController extends Controller
             ], 422);
         }
 
-        if (! $this->signupOtps->verify($email, (string) $request->otp)) {
+        $otp = preg_replace('/[\s-]+/', '', (string) $request->otp) ?? '';
+        if (! $this->signupOtps->verify($email, $otp)) {
             return response()->json([
                 'message' => $this->signupOtpError($email),
                 'errors' => ['otp' => [$this->signupOtpError($email)]],

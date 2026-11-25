@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Models\User;
+use App\Services\UserSecurityActivityService;
 use App\Support\ConfiguresPasskeysForRequest;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\JsonResponse;
@@ -57,12 +59,17 @@ final class PasskeyController extends Controller
         }
 
         try {
+            $user = $this->currentUser();
             $storePasskey(
-                $this->currentUser(),
+                $user,
                 $request->string('name')->toString(),
                 $this->credentialFromRequest($request),
                 WebAuthn::fromJson($serializedOptions, PublicKeyCredentialCreationOptions::class),
             );
+
+            if ($user instanceof User) {
+                app(UserSecurityActivityService::class)->record($user, 'passkey_added', 'success');
+            }
 
             return back()->with('flash', [
                 'success' => 'Passkey added successfully.',
@@ -82,6 +89,10 @@ final class PasskeyController extends Controller
         $passkey = $user->passkeys()->whereKey($id)->firstOrFail();
 
         $deletePasskey($user, $passkey);
+
+        if ($user instanceof User) {
+            app(UserSecurityActivityService::class)->record($user, 'passkey_deleted', 'success');
+        }
 
         return back()->with('flash', [
             'success' => 'Passkey deleted successfully.',

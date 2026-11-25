@@ -77,10 +77,20 @@ it('disables login challenges without deleting existing two factor credentials',
         'credential' => ['publicKeyCredentialId' => $credentialId],
     ]);
 
+    // Pausing 2FA without password confirmation must be rejected
+    $this->actingAs($user)
+        ->post(route('student.profile.two-factor.login-challenges'), [
+            'enabled' => false,
+        ])
+        ->assertSessionHasErrors('password');
+
+    expect($user->fresh()->security_two_factor_enabled)->toBeTrue();
+
     $response = $this
         ->actingAs($user)
         ->post(route('student.profile.two-factor.login-challenges'), [
             'enabled' => false,
+            'password' => 'password',
         ]);
 
     $response->assertRedirect();

@@ -68,7 +68,8 @@ Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:lo
 // Passwordless Magic Link
 Route::get('/magic-link', [App\Http\Controllers\MagicLinkAuthController::class, 'show'])->name('magic-link.request');
 Route::post('/magic-link/send', [App\Http\Controllers\MagicLinkAuthController::class, 'send'])->middleware('throttle:magic-link')->name('magic-link.send');
-Route::get('/magic-link/verify/{user}', [App\Http\Controllers\MagicLinkAuthController::class, 'verify'])->name('magic-link.verify');
+Route::get('/magic-link/verify/{user}', [App\Http\Controllers\MagicLinkAuthController::class, 'verify'])->middleware('throttle:10,1')->name('magic-link.verify');
+Route::post('/magic-link/verify/{user}', [App\Http\Controllers\MagicLinkAuthController::class, 'consume'])->middleware('throttle:10,1')->name('magic-link.consume');
 
 Route::get('/auth/{provider}/redirect', [SocialAuthController::class, 'redirect'])->name('social.auth.redirect');
 Route::get('/auth/{provider}/callback', [SocialAuthController::class, 'callback'])->name('social.auth.callback');
@@ -111,8 +112,8 @@ Route::post('/reset-password', [PasswordResetController::class, 'update'])->midd
 Route::get('/terms-of-service', fn () => Inertia::render('terms-of-service'))->name('terms-of-service');
 Route::get('/privacy-policy', fn () => Inertia::render('privacy-policy'))->name('privacy-policy');
 
-// Faculty verification (authenticated but not yet verified)
-Route::middleware(['auth'])->group(function (): void {
+// Faculty verification (authenticated faculty not yet verified)
+Route::middleware(['auth', 'faculty.only'])->group(function (): void {
     Route::get('/faculty-verify', [FacultyVerificationController::class, 'showForm'])->name('faculty-verify');
-    Route::post('/faculty-verify', [FacultyVerificationController::class, 'verify']);
+    Route::post('/faculty-verify', [FacultyVerificationController::class, 'verify'])->middleware('throttle:10,1');
 });

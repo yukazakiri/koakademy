@@ -9,6 +9,7 @@ use App\Features\Toggles\AdminDeveloperMode;
 use App\Features\Toggles\FacultyDeveloperMode;
 use App\Features\Toggles\StudentDeveloperMode;
 use App\Features\Toggles\StudentInformationUpdates;
+use App\Filament\Auth\MultiFactor\SecurityAwareAppAuthentication;
 use App\Http\Requests\ToggleExperimentalFeaturesRequest;
 use App\Http\Requests\UpdateBetaAccessRequest;
 use App\Http\Requests\UpdatePaymentWorkspacePreferencesRequest;
@@ -24,6 +25,7 @@ use App\Services\DigitalIdCardService;
 use App\Services\FeatureToggleRegistry;
 use App\Services\StudentProfileCompletionService;
 use App\Services\StudentSchoolOptionService;
+use App\Services\UserSecurityActivityService;
 use App\Settings\SiteSettings;
 use Endroid\QrCode\Builder\Builder;
 use Endroid\QrCode\Encoding\Encoding;
@@ -46,6 +48,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
+use Jenssegers\Agent\Agent;
 use Laravel\Pennant\Feature;
 use PragmaRX\Google2FA\Google2FA;
 
@@ -227,8 +230,11 @@ final class ProfileController extends Controller
                 'security_two_factor_enabled' => $user->security_two_factor_enabled ?? true,
                 'two_factor_enabled' => ! is_null($user->app_authentication_secret),
                 'email_two_factor_enabled' => $user->hasEmailAuthentication(),
-                'recovery_codes' => $user->app_authentication_recovery_codes,
+                'recovery_codes_count' => is_array($user->app_authentication_recovery_codes)
+                    ? count($user->app_authentication_recovery_codes)
+                    : 0,
             ],
+            'newly_generated_recovery_codes' => session('flash.recovery_codes'),
             'feature_flags' => [
                 'experimental' => collect($availableForRole)
                     ->filter(function (string $featureKey) use ($user): bool {
@@ -336,12 +342,14 @@ final class ProfileController extends Controller
     /**
      * Enable Two Factor Authentication
      */
-    public function enableTwoFactor()
+    public function enableTwoFactor(Request $request)
     {
         $google2fa = new Google2FA();
         $secret = $google2fa->generateSecretKey();
 
         $user = Auth::user();
+        $request->session()->put('two_factor.pending_secret', $secret);
+
         $qrCodeUrl = $google2fa->getQRCodeUrl(
             config('app.name'),
             $user->email,
@@ -375,24 +383,35 @@ final class ProfileController extends Controller
     {
         $request->validate([
             'code' => 'required|string',
-            'secret' => 'required|string',
         ]);
 
+        $secret = $request->session()->get('two_factor.pending_secret');
+
+        if (! is_string($secret) || $secret === '') {
+            return back()->withErrors(['code' => 'Two-factor setup session expired. Please start setup again.']);
+        }
+
+        $code = preg_replace('/[\s-]+/', '', (string) $request->input('code')) ?? '';
         $google2fa = new Google2FA();
-        $valid = $google2fa->verifyKey($request->secret, $request->code);
+        $valid = $google2fa->verifyKey($secret, $code);
 
         if (! $valid) {
             return back()->withErrors(['code' => 'The provided two factor authentication code was invalid.']);
         }
 
+        /** @var User $user */
         $user = Auth::user();
-        $user->app_authentication_secret = $request->secret;
-
-        // Generate recovery codes
-        $recoveryCodes = Collection::times(8, fn (): string => Str::random(10).'-'.Str::random(10))->toArray();
-        $user->app_authentication_recovery_codes = $recoveryCodes;
-
+        $user->app_authentication_secret = $secret;
         $user->save();
+
+        // Generate and hash recovery codes using Filament's AppAuthentication provider
+        // so codes work identically across Web, Filament Admin, and Mobile API.
+        $appAuth = app(SecurityAwareAppAuthentication::class);
+        $recoveryCodes = $appAuth->generateRecoveryCodes();
+        $appAuth->saveRecoveryCodes($user, $recoveryCodes);
+
+        $request->session()->forget('two_factor.pending_secret');
+        app(UserSecurityActivityService::class)->record($user, 'mfa_app_enabled', 'success');
 
         return back()->with('flash', [
             'success' => 'Two factor authentication has been enabled.',
@@ -407,13 +426,29 @@ final class ProfileController extends Controller
     {
         $request->validate([
             'enabled' => 'required|boolean',
+            'password' => ['nullable', 'string'],
         ]);
 
+        /** @var User $user */
         $user = Auth::user();
-        $user->toggleEmailAuthentication($request->enabled);
+        $enabled = $request->boolean('enabled');
+
+        if (! $enabled) {
+            $password = (string) $request->input('password', '');
+            if ($password === '' || ! Hash::check($password, $user->password)) {
+                return back()->withErrors(['password' => 'Please confirm your current password to disable email authentication.']);
+            }
+        }
+
+        $user->toggleEmailAuthentication($enabled);
+        app(UserSecurityActivityService::class)->record(
+            $user,
+            $enabled ? 'mfa_email_enabled' : 'mfa_email_disabled',
+            'success',
+        );
 
         return back()->with('flash', [
-            'success' => $request->enabled ? 'Email authentication enabled.' : 'Email authentication disabled.',
+            'success' => $enabled ? 'Email authentication enabled.' : 'Email authentication disabled.',
         ]);
     }
 
@@ -421,13 +456,29 @@ final class ProfileController extends Controller
     {
         $request->validate([
             'enabled' => 'required|boolean',
+            'password' => ['nullable', 'string'],
         ]);
 
+        /** @var User $user */
         $user = Auth::user();
-        $user->toggleSecurityTwoFactor($request->boolean('enabled'));
+        $enabled = $request->boolean('enabled');
+
+        if (! $enabled) {
+            $password = (string) $request->input('password', '');
+            if ($password === '' || ! Hash::check($password, $user->password)) {
+                return back()->withErrors(['password' => 'Please confirm your current password to pause two-factor login protection.']);
+            }
+        }
+
+        $user->toggleSecurityTwoFactor($enabled);
+        app(UserSecurityActivityService::class)->record(
+            $user,
+            $enabled ? 'mfa_challenges_enabled' : 'mfa_challenges_paused',
+            'success',
+        );
 
         return back()->with('flash', [
-            'success' => $request->boolean('enabled')
+            'success' => $enabled
                 ? 'Two-factor login challenges enabled.'
                 : 'Two-factor login challenges disabled.',
         ]);
@@ -511,10 +562,13 @@ final class ProfileController extends Controller
             return back()->withErrors(['password' => 'This password does not match our records.']);
         }
 
+        /** @var User $user */
         $user = Auth::user();
         $user->app_authentication_secret = null;
         $user->app_authentication_recovery_codes = null;
         $user->save();
+
+        app(UserSecurityActivityService::class)->record($user, 'mfa_app_disabled', 'success');
 
         return back()->with('flash', [
             'success' => 'Two factor authentication has been disabled.',
@@ -526,15 +580,26 @@ final class ProfileController extends Controller
      */
     public function regenerateRecoveryCodes(Request $request)
     {
+        $request->validate([
+            'password' => 'required|string',
+        ]);
+
+        /** @var User $user */
         $user = Auth::user();
+
+        if (! Hash::check((string) $request->input('password'), $user->password)) {
+            return back()->withErrors(['password' => 'This password does not match our records.']);
+        }
 
         if (! $user->app_authentication_secret) {
             return back()->withErrors(['error' => 'Two factor authentication is not enabled.']);
         }
 
-        $recoveryCodes = Collection::times(8, fn (): string => Str::random(10).'-'.Str::random(10))->toArray();
-        $user->app_authentication_recovery_codes = $recoveryCodes;
-        $user->save();
+        $appAuth = app(SecurityAwareAppAuthentication::class);
+        $recoveryCodes = $appAuth->generateRecoveryCodes();
+        $appAuth->saveRecoveryCodes($user, $recoveryCodes);
+
+        app(UserSecurityActivityService::class)->record($user, 'mfa_recovery_codes_regenerated', 'success');
 
         return back()->with('flash', [
             'success' => 'Recovery codes have been regenerated.',
@@ -933,6 +998,7 @@ final class ProfileController extends Controller
 
         $request->session()->regenerate();
         $request->session()->put('user_session_version', (int) $user->session_version);
+        app(UserSecurityActivityService::class)->record($user, 'password_changed', 'success');
 
         return back()->with('flash', [
             'success' => 'Password changed successfully!',
@@ -1319,13 +1385,21 @@ final class ProfileController extends Controller
             ->where('user_id', Auth::id())
             ->orderBy('last_activity', 'desc')
             ->get()
-            ->map(fn ($session): array => [
-                'id' => $session->id,
-                'ip_address' => $session->ip_address,
-                'is_current_device' => $session->id === $request->session()->getId(),
-                'last_active' => Carbon::createFromTimestamp($session->last_activity)->diffForHumans(),
-                'user_agent' => $session->user_agent,
-            ]);
+            ->map(function ($session) use ($request): array {
+                $agent = new Agent;
+                $agent->setUserAgent((string) $session->user_agent);
+
+                return [
+                    'id' => $session->id,
+                    'ip_address' => $session->ip_address,
+                    'is_current_device' => $session->id === $request->session()->getId(),
+                    'last_active' => Carbon::createFromTimestamp($session->last_activity)->diffForHumans(),
+                    'user_agent' => $session->user_agent,
+                    'browser' => $agent->browser() ?: 'Unknown browser',
+                    'platform' => $agent->platform() ?: 'Unknown OS',
+                    'is_desktop' => $agent->isDesktop(),
+                ];
+            });
     }
 
     /**

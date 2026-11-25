@@ -178,9 +178,7 @@ of date serves traffic against a schema it does not expect. The installer and
 `koakademy update` run `php artisan migrate --force` in a dedicated job before
 the application rollout, so the schema is current before any replica starts.
 
-Set `AUTO_MIGRATE=true` only when a single, controlled container owns the
-schema, such as a throwaway development box. A fleet that migrates from every
-replica races itself and can leave a half applied schema behind.
+Set `AUTO_MIGRATE=true` only when a single container owns the schema or when an unattended PaaS auto-deploy workflow (such as Dokploy GitHub Auto Deploy) cannot run a separate release job beforehand. When `AUTO_MIGRATE=true`, keep `AUTO_MIGRATE_LOCK=true` (the default) so booting HTTP containers run `php artisan app:migrate-locked` behind a blocking advisory/cache lock (`MIGRATE_LOCK_TIMEOUT=300`) instead of racing each other, and keep `AUTO_MIGRATE=false` on `horizon` and `scheduler` containers.
 
 Operators who run the application without the installer have to run the
 migration themselves, once, before starting the application:

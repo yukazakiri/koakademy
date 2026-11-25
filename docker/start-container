@@ -81,6 +81,7 @@ for variable_name in DB_CONNECTION DB_HOST DB_PORT DB_DATABASE DB_USERNAME DB_PA
     PULSE_RUN_MIGRATIONS PULSE_AUTO_CREATE_DATABASE PULSE_PURGE_ON_START \
     TELESCOPE_ENABLED NIGHTWATCH_ENABLED LARAOWL_ENABLED LARALYZE_ENABLED \
     HORIZON_IN_HTTP_CONTAINER LOG_LEVEL \
+    AUTO_MIGRATE_LOCK MIGRATE_LOCK_TIMEOUT \
     RETAIN_PREVIOUS_BUILD_ASSETS BUILD_ASSETS_RETENTION_DAYS \
     INERTIA_SOFT_VERSION_UPDATES INERTIA_FORCE_RELOAD_VERSION APP_UPDATE_POLL_INTERVAL \
     INERTIA_SSR_ENABLED INERTIA_SSR_RUNTIME INERTIA_SSR_URL \
@@ -854,7 +855,20 @@ run_migrations_if_enabled() {
 
     echo "Running database migrations..."
 
-    if [ "${app_env}" = "demo" ]; then
+    migrate_lock_timeout="$(strip_optional_quotes "${MIGRATE_LOCK_TIMEOUT:-300}")"
+    case "${migrate_lock_timeout}" in
+        ''|*[!0-9]*)
+            migrate_lock_timeout=300
+            ;;
+    esac
+
+    if is_truthy "${AUTO_MIGRATE_LOCK:-true}"; then
+        if [ "${app_env}" = "demo" ]; then
+            php artisan app:migrate-locked --seed --lock-timeout="${migrate_lock_timeout}" --no-interaction
+        else
+            php artisan app:migrate-locked --lock-timeout="${migrate_lock_timeout}" --no-interaction
+        fi
+    elif [ "${app_env}" = "demo" ]; then
         php artisan migrate --seed --force --no-interaction
     else
         php artisan migrate --force --no-interaction

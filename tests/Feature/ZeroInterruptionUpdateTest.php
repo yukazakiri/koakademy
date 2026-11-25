@@ -168,3 +168,32 @@ it('exposes opaque build metadata on /build-version without leaking app semver',
     expect($response->headers->get('Cache-Control'))->toContain('no-store')
         ->and($response->getContent())->not->toContain('9.9.9-secret');
 });
+
+it('runs migrations behind a blocking lock via app:migrate-locked', function (): void {
+    $this->artisan('app:migrate-locked', [
+        '--lock-timeout' => 5,
+    ])->assertExitCode(0);
+});
+
+it('fails cleanly when the migration lock is held past lock-timeout', function (): void {
+    config(['cache.default' => 'array']);
+
+    $connectionName = (string) config('database.default');
+    $lock = Illuminate\Support\Facades\Cache::store('array')->lock("koakademy:migrations:{$connectionName}", 60);
+
+    expect($lock->get())->toBeTrue();
+
+    try {
+        $this->artisan('app:migrate-locked', [
+            '--lock-timeout' => 1,
+        ])
+            ->expectsOutputToContain('Timed out after 1s waiting for the cache migration lock')
+            ->assertExitCode(1);
+    } finally {
+        $lock->release();
+    }
+
+    $this->artisan('app:migrate-locked', [
+        '--lock-timeout' => 5,
+    ])->assertExitCode(0);
+});

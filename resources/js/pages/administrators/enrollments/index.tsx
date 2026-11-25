@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { index as batchEnrollmentRoute } from "@/actions/App/Http/Controllers/AdministratorBatchEnrollmentController";
+import { index as waitlistsIndexRoute } from "@/actions/App/Http/Controllers/AdministratorEnrollmentWaitlistController";
 import { index as holdsIndexRoute } from "@/actions/App/Http/Controllers/AdministratorStudentHoldController";
 import { bulkAction as enrollmentBulkActionRoute } from "@/routes/administrators/enrollments";
 import { store as storeTransitionRoute } from "@/routes/administrators/enrollments/transitions";
@@ -845,6 +846,12 @@ export default function AdministratorEnrollmentsIndex({
                                         <Link href={batchEnrollmentRoute.url()} className="flex items-center">
                                             <Layers className="mr-2 size-4" />
                                             Batch / Block enrollment
+                                        </Link>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem asChild>
+                                        <Link href={waitlistsIndexRoute.url()} className="flex items-center">
+                                            <Clock className="mr-2 size-4" />
+                                            Class waitlists &amp; auto-assign
                                         </Link>
                                     </DropdownMenuItem>
                                     <DropdownMenuItem asChild>

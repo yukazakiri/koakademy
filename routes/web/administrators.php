@@ -15,6 +15,7 @@ use App\Http\Controllers\AdministratorEnrollmentLoadChangeController;
 use App\Http\Controllers\AdministratorEnrollmentManagementController;
 use App\Http\Controllers\AdministratorEnrollmentPeriodController;
 use App\Http\Controllers\AdministratorEnrollmentPolicyController;
+use App\Http\Controllers\AdministratorEnrollmentWaitlistController;
 use App\Http\Controllers\AdministratorFacultyCustomFieldController;
 use App\Http\Controllers\AdministratorFacultyImportController;
 use App\Http\Controllers\AdministratorFacultyManagementController;
@@ -122,6 +123,18 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/enrollments/batch', [AdministratorBatchEnrollmentController::class, 'index'])->name('enrollments.batch.index');
         Route::get('/enrollments/batch/preview', [AdministratorBatchEnrollmentController::class, 'preview'])->name('enrollments.batch.preview');
         Route::post('/enrollments/batch', [AdministratorBatchEnrollmentController::class, 'store'])->name('enrollments.batch.store');
+        Route::get('/enrollments/waitlists', [AdministratorEnrollmentWaitlistController::class, 'index'])->name('enrollments.waitlists.index');
+        Route::post('/enrollments/waitlists', [AdministratorEnrollmentWaitlistController::class, 'store'])->name('enrollments.waitlists.store');
+        Route::post('/enrollments/waitlists/auto-assign', [AdministratorEnrollmentWaitlistController::class, 'autoAssign'])->name('enrollments.waitlists.auto-assign');
+        Route::post('/enrollments/waitlists/assign/{subjectEnrollment}', [AdministratorEnrollmentWaitlistController::class, 'assign'])
+            ->whereNumber('subjectEnrollment')
+            ->name('enrollments.waitlists.assign');
+        Route::post('/enrollments/waitlists/{waitlist}/promote', [AdministratorEnrollmentWaitlistController::class, 'promote'])
+            ->whereNumber('waitlist')
+            ->name('enrollments.waitlists.promote');
+        Route::delete('/enrollments/waitlists/{waitlist}', [AdministratorEnrollmentWaitlistController::class, 'destroy'])
+            ->whereNumber('waitlist')
+            ->name('enrollments.waitlists.destroy');
         Route::post('/enrollments', [AdministratorEnrollmentManagementController::class, 'store'])->name('enrollments.store');
         Route::post('/enrollments/bulk-action', [AdministratorEnrollmentManagementController::class, 'bulkAction'])->name('enrollments.bulk-action');
         Route::post('/enrollments/discounts', [AdministratorEnrollmentDiscountController::class, 'store'])->name('enrollments.discounts.store');

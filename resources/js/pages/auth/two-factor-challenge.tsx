@@ -163,8 +163,9 @@ export default function TwoFactorChallengePage() {
         }
     };
 
-    const handleCodeSubmit = (e: FormEvent) => {
-        e.preventDefault();
+    const handleCodeSubmit = (e?: FormEvent) => {
+        e?.preventDefault();
+        if (form.processing) return;
         form.post("/two-factor-challenge");
     };
 
@@ -343,6 +344,7 @@ export default function TwoFactorChallengePage() {
                             autoComplete="one-time-code"
                             value={form.data.code}
                             onChange={(value) => form.setData("code", value.replace(/\D/g, "").slice(0, 6))}
+                            onComplete={() => handleCodeSubmit()}
                         >
                             <InputOTPGroup>
                                 <InputOTPSlot index={0} className="h-12 w-11 text-base font-mono font-semibold" />
@@ -439,6 +441,7 @@ export default function TwoFactorChallengePage() {
                                     autoComplete="one-time-code"
                                     value={form.data.code}
                                     onChange={(value) => form.setData("code", value.replace(/\D/g, "").slice(0, 6))}
+                                    onComplete={() => handleCodeSubmit()}
                                 >
                                     <InputOTPGroup>
                                         <InputOTPSlot index={0} className="h-12 w-11 text-base font-mono font-semibold" />

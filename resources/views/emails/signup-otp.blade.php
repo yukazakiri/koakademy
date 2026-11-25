@@ -3,131 +3,112 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
+    <meta name="supported-color-schemes" content="light dark">
     <title>{{ $appName }} — Verify Your Email</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;500;600;700&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root { color-scheme: light dark; supported-color-schemes: light dark; }
+        @media (prefers-color-scheme: dark) {
+            .email-bg { background-color: #09090b !important; }
+            .email-card { background-color: #18181b !important; border-color: #27272a !important; }
+            .email-banner { background-color: #27272a !important; border-color: #3f3f46 !important; }
+            .email-heading { color: #fafafa !important; }
+            .email-text { color: #d4d4d8 !important; }
+            .email-muted { color: #a1a1aa !important; }
+            .email-code-box { background-color: #09090b !important; border-color: #27272a !important; }
+            .email-code-value { color: #fafafa !important; }
+            .email-meta { background-color: #27272a !important; border-color: #3f3f46 !important; }
+            .email-notice { background-color: #1e293b !important; border-left-color: #60a5fa !important; }
+            .email-notice-title { color: #93c5fd !important; }
+        }
+    </style>
 </head>
-<body style="margin: 0; padding: 0; background: #f4f1eb; font-family: 'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background: #f4f1eb;">
+<body class="email-bg" style="margin: 0; padding: 0; background-color: #f4f4f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #18181b;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="email-bg" style="background-color: #f4f4f5;">
         <tr>
-            <td align="center" style="padding: 50px 20px;">
-                <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="max-width: 640px; width: 100%;">
-
-                    {{-- Header --}}
+            <td align="center" style="padding: 40px 16px;">
+                <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width: 600px; width: 100%;">
                     <tr>
-                        <td style="padding: 0 0 30px 0;">
-                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-                                <tr>
-                                    <td style="width: 50px; border-top: 3px solid #1a365d;"></td>
-                                    <td style="padding: 0 20px;">
-                                        <div style="font-family: 'Crimson Pro', serif; font-size: 24px; font-weight: 700; color: #1a365d; letter-spacing: 2px; text-transform: uppercase;">{{ $appName }}</div>
-                                    </td>
-                                    <td style="width: 50px; border-top: 3px solid #1a365d;"></td>
-                                </tr>
-                            </table>
+                        <td style="padding: 0 0 24px 0; text-align: center;">
+                            <div class="email-heading" style="font-size: 20px; font-weight: 700; color: #18181b; letter-spacing: 1.5px; text-transform: uppercase;">
+                                {{ $appName }}
+                            </div>
                         </td>
                     </tr>
 
-                    {{-- Body --}}
                     <tr>
                         <td>
-                            <div style="background: #ffffff; border: 1px solid #e2ddd5; box-shadow: 0 4px 20px rgba(0,0,0,0.05);">
-
-                                {{-- Hero --}}
-                                <div style="background: #1a365d; padding: 40px; text-align: center;">
-                                    <div style="display: inline-block; padding: 6px 16px; background: rgba(255,255,255,0.15); border-radius: 4px; margin-bottom: 16px;">
-                                        <span style="font-size: 11px; font-weight: 600; color: #ffffff; letter-spacing: 2px; text-transform: uppercase;">Email Verification</span>
+                            <div class="email-card" style="background-color: #ffffff; border: 1px solid #e4e4e7; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);">
+                                <div class="email-banner" style="background-color: #fafafa; padding: 32px; text-align: center; border-bottom: 1px solid #e4e4e7;">
+                                    <div style="display: inline-block; padding: 4px 12px; background-color: rgba(59, 130, 246, 0.12); border-radius: 9999px; margin-bottom: 12px;">
+                                        <span style="font-size: 11px; font-weight: 600; color: #2563eb; letter-spacing: 1px; text-transform: uppercase;">Email Verification</span>
                                     </div>
-                                    <h1 style="font-family: 'Crimson Pro', serif; font-size: 28px; font-weight: 600; color: #ffffff; margin: 0; line-height: 1.3;">Confirm Your Account</h1>
-                                    <p style="font-size: 14px; color: rgba(255,255,255,0.7); margin: 12px 0 0;">Use this code to complete your signup</p>
+                                    <h1 class="email-heading" style="font-size: 24px; font-weight: 700; color: #18181b; margin: 0; line-height: 1.3;">
+                                        Confirm Your Account
+                                    </h1>
+                                    <p class="email-muted" style="font-size: 13px; color: #52525b; margin: 8px 0 0;">
+                                        Use this 6-digit code to complete your signup
+                                    </p>
                                 </div>
 
-                                {{-- Content --}}
-                                <div style="padding: 50px 50px 40px;">
-                                    <p style="font-size: 16px; line-height: 1.8; color: #2d3748; margin: 0 0 30px;">
-                                        Welcome to {{ $appName }}. To finish creating your account, please enter the verification code below:
+                                <div style="padding: 32px;">
+                                    <p class="email-text" style="font-size: 15px; line-height: 1.65; color: #3f3f46; margin: 0 0 24px;">
+                                        Welcome to {{ $appName }}. To finish creating your account, enter the verification code below:
                                     </p>
 
-                                    {{-- OTP Code --}}
-                                    <div style="text-align: center; background: #faf9f7; border: 1px solid #e2ddd5; border-radius: 4px; padding: 32px 20px; margin: 0 0 30px;">
-                                        <p style="font-size: 12px; font-weight: 600; color: #718096; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 12px;">Your Verification Code</p>
-                                        <div style="font-family: 'Crimson Pro', serif; font-size: 40px; font-weight: 700; color: #1a365d; letter-spacing: 12px; line-height: 1;">{{ $otp }}</div>
-                                    </div>
-
-                                    {{-- Expiry Warning --}}
-                                    <div style="border-left: 3px solid #c53030; padding-left: 20px; margin: 0 0 30px;">
-                                        <p style="font-size: 14px; color: #c53030; font-weight: 600; margin: 0 0 4px;">This code expires in 10 minutes.</p>
-                                        <p style="font-size: 14px; color: #718096; margin: 0;">For your security, this code can only be used once and will become invalid after 10 minutes.</p>
-                                    </div>
-
-                                    {{-- Details --}}
-                                    <div style="background: #faf9f7; border: 1px solid #e2ddd5; margin-bottom: 34px;">
-                                        <div style="padding: 16px 24px; background: #f4f1eb; border-bottom: 1px solid #e2ddd5;">
-                                            <span style="font-family: 'Crimson Pro', serif; font-size: 16px; font-weight: 600; color: #1a365d;">Request Details</span>
-                                        </div>
-                                        <div style="padding: 20px 24px;">
-                                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-                                                <tr>
-                                                    <td style="padding: 8px 0; border-bottom: 1px solid #e2ddd5; width: 40%;">
-                                                        <span style="font-size: 14px; color: #718096;">Requested</span>
-                                                    </td>
-                                                    <td style="padding: 8px 0; border-bottom: 1px solid #e2ddd5;">
-                                                        <span style="font-size: 14px; color: #1a365d; font-weight: 500;">{{ now()->format('F j, Y \a\t g:i A') }}</span>
-                                                    </td>
-                                                </tr>
-                                                <tr>
-                                                    <td style="padding: 8px 0; border-bottom: 1px solid #e2ddd5;">
-                                                        <span style="font-size: 14px; color: #718096;">Validity</span>
-                                                    </td>
-                                                    <td style="padding: 8px 0; border-bottom: 1px solid #e2ddd5;">
-                                                        <span style="font-size: 14px; color: #1a365d; font-weight: 500;">10 minutes</span>
-                                                    </td>
-                                                </tr>
-                                                <tr>
-                                                    <td style="padding: 8px 0;">
-                                                        <span style="font-size: 14px; color: #718096;">Type</span>
-                                                    </td>
-                                                    <td style="padding: 8px 0;">
-                                                        <span style="font-size: 14px; color: #1a365d; font-weight: 500;">One-Time Code</span>
-                                                    </td>
-                                                </tr>
-                                            </table>
+                                    <div class="email-code-box" style="text-align: center; background-color: #fafafa; border: 1px solid #e4e4e7; border-radius: 12px; padding: 24px 16px; margin: 0 0 24px;">
+                                        <p class="email-muted" style="font-size: 11px; font-weight: 600; color: #71717a; letter-spacing: 1.5px; text-transform: uppercase; margin: 0 0 12px;">
+                                            Your Verification Code
+                                        </p>
+                                        <div class="email-code-value" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace; font-size: 36px; font-weight: 700; color: #18181b; letter-spacing: 10px; line-height: 1;">
+                                            {{ $otp }}
                                         </div>
                                     </div>
 
-                                    <div style="border-left: 3px solid #1a365d; padding-left: 24px;">
-                                        <p style="font-size: 14px; line-height: 1.8; color: #4a5568; margin: 0;">
-                                            If you did not request to create an account, please disregard this email. No further action is required on your part.
+                                    <div class="email-notice" style="border-left: 3px solid #2563eb; background-color: #eff6ff; padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 0 0 24px;">
+                                        <p class="email-notice-title" style="font-size: 13px; color: #1d4ed8; font-weight: 600; margin: 0 0 4px;">
+                                            This code expires in 10 minutes.
+                                        </p>
+                                        <p class="email-muted" style="font-size: 12px; color: #52525b; margin: 0; line-height: 1.5;">
+                                            For your security, this code can only be used once and will become invalid after 10 minutes.
                                         </p>
                                     </div>
-                                </div>
 
-                                {{-- Footer --}}
-                                <div style="background: #f4f1eb; padding: 24px 50px; border-top: 1px solid #e2ddd5;">
-                                    <p style="font-size: 12px; color: #718096; margin: 0; text-align: center;">
-                                        This is an automated message from {{ $appName }}. Do not reply to this email.
-                                    </p>
+                                    <div class="email-meta" style="background-color: #f4f4f5; border: 1px solid #e4e4e7; border-radius: 10px; padding: 14px 18px; margin-bottom: 24px;">
+                                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                                            <tr>
+                                                <td class="email-muted" style="padding: 5px 0; color: #71717a; font-size: 12px; width: 40%;">Requested</td>
+                                                <td class="email-heading" style="padding: 5px 0; color: #18181b; font-size: 12px; font-weight: 500;">{{ now()->format('F j, Y \a\t g:i A') }}</td>
+                                            </tr>
+                                            <tr>
+                                                <td class="email-muted" style="padding: 5px 0; color: #71717a; font-size: 12px;">Validity</td>
+                                                <td class="email-heading" style="padding: 5px 0; color: #18181b; font-size: 12px; font-weight: 500;">10 minutes</td>
+                                            </tr>
+                                            <tr>
+                                                <td class="email-muted" style="padding: 5px 0; color: #71717a; font-size: 12px;">Type</td>
+                                                <td class="email-heading" style="padding: 5px 0; color: #18181b; font-size: 12px; font-weight: 500;">One-Time Code</td>
+                                            </tr>
+                                        </table>
+                                    </div>
+
+                                    <div style="border-top: 1px solid #e4e4e7; padding-top: 16px;">
+                                        <p class="email-muted" style="font-size: 12px; line-height: 1.6; color: #71717a; margin: 0;">
+                                            If you did not request to create an account, you can safely disregard this email. No further action is required on your part.
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                         </td>
                     </tr>
 
-                    {{-- Bottom Branding --}}
                     <tr>
-                        <td style="padding: 30px 0;">
-                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-                                <tr>
-                                    <td align="center">
-                                        <p style="font-size: 12px; color: #a0aec0; margin: 0 0 8px;">
-                                            {{ $appName }} &bull; {{ $orgName }}
-                                        </p>
-                                        <p style="font-size: 11px; color: #cbd5e0; margin: 0;">
-                                            &copy; {{ date('Y') }} {{ $orgName }}. All rights reserved.
-                                        </p>
-                                    </td>
-                                </tr>
-                            </table>
+                        <td style="padding: 24px 0; text-align: center;">
+                            <p class="email-muted" style="font-size: 11px; color: #71717a; margin: 0 0 6px;">
+                                {{ $appName }} &bull; {{ $orgName }}
+                            </p>
+                            <p class="email-muted" style="font-size: 11px; color: #a1a1aa; margin: 0;">
+                                &copy; {{ date('Y') }} {{ $orgName }}. All rights reserved.
+                            </p>
                         </td>
                     </tr>
                 </table>

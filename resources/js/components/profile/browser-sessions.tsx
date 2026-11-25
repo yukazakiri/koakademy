@@ -5,9 +5,20 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { router } from "@inertiajs/react";
-import { Loader2, Monitor, Smartphone } from "lucide-react";
+import { AlertTriangle, CheckCircle2, History, Loader2, Monitor, Smartphone } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+
+export interface SecurityActivityItem {
+    id: number;
+    event: string;
+    label: string;
+    outcome: string;
+    browser: string;
+    platform: string;
+    occurred_at: string;
+    occurred_at_iso: string | null;
+}
 
 interface BrowserSessionsProps {
     sessions: Array<{
@@ -20,12 +31,13 @@ interface BrowserSessionsProps {
         platform?: string;
         is_desktop?: boolean;
     }>;
+    securityActivity?: SecurityActivityItem[];
     paths: {
         browser_sessions_logout: string;
     };
 }
 
-export function BrowserSessions({ sessions, paths }: BrowserSessionsProps) {
+export function BrowserSessions({ sessions, securityActivity = [], paths }: BrowserSessionsProps) {
     const [confirmingLogout, setConfirmingLogout] = useState(false);
     const [logoutForm, setLogoutForm] = useState({ password: "" });
     const [logoutError, setLogoutError] = useState<string | null>(null);
@@ -116,6 +128,59 @@ export function BrowserSessions({ sessions, paths }: BrowserSessionsProps) {
                             Log Out Other Browser Sessions
                         </Button>
                     </div>
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                        <History className="size-5" />
+                        Recent Security Activity
+                    </CardTitle>
+                    <CardDescription>Recent sign-ins, verification changes, and account security events</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {securityActivity.length > 0 ? (
+                        <div className="divide-border divide-y rounded-lg border">
+                            {securityActivity.map((item) => {
+                                const isFailure = item.outcome !== "success";
+                                const deviceMeta =
+                                    item.browser && item.platform && item.browser !== "Unknown"
+                                        ? `${item.browser} on ${item.platform}`
+                                        : item.platform && item.platform !== "Unknown"
+                                          ? item.platform
+                                          : null;
+
+                                return (
+                                    <div key={item.id} className="flex items-start justify-between gap-3 px-3.5 py-3">
+                                        <div className="flex min-w-0 items-start gap-2.5">
+                                            {isFailure ? (
+                                                <AlertTriangle className="text-destructive mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                                            ) : (
+                                                <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+                                            )}
+                                            <div className="min-w-0 space-y-0.5">
+                                                <p className="text-sm leading-snug font-medium">{item.label}</p>
+                                                <p className="text-muted-foreground text-xs">
+                                                    {deviceMeta ? `${deviceMeta} • ` : ""}
+                                                    <time dateTime={item.occurred_at_iso ?? undefined} title={item.occurred_at_iso ?? undefined}>
+                                                        {item.occurred_at}
+                                                    </time>
+                                                </p>
+                                            </div>
+                                        </div>
+                                        {isFailure && (
+                                            <Badge variant="destructive" className="h-5 shrink-0 text-[10px] capitalize">
+                                                {item.outcome}
+                                            </Badge>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <p className="text-muted-foreground text-sm">No recent security events recorded yet.</p>
+                    )}
                 </CardContent>
             </Card>
 

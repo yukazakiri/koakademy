@@ -111,8 +111,10 @@ export function LoginForm({ className, demoMode, errors, status, ...props }: Log
                     toast.error(err);
                 });
             },
-            onSuccess: () => {
-                toast.success("Welcome back!");
+            onSuccess: (page) => {
+                if (page.component !== "auth/two-factor-challenge") {
+                    toast.success("Welcome back!");
+                }
             },
         });
     };

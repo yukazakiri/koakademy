@@ -90,7 +90,8 @@ export function SignupStepper({
     const { passwordPolicy } = usePage<{ passwordPolicy?: Partial<PasswordPolicy> }>().props;
     const saved = useRef(socialiteSignup?.email ? null : loadPersistedState());
 
-    const [currentStep, setCurrentStep] = useState(saved.current?.currentStep ?? 0);
+    // Cap restored step at Step 1 (Personal & Password) because passwords are never persisted.
+    const [currentStep, setCurrentStep] = useState(Math.min(saved.current?.currentStep ?? 0, 1));
     const [isCheckingEmail, setIsCheckingEmail] = useState(false);
     const [isSendingOtp, setIsSendingOtp] = useState(false);
     const [otpCooldown, setOtpCooldown] = useState(0);

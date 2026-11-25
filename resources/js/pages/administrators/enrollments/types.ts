@@ -1,6 +1,6 @@
 import type { SemesterSelectorProps } from "@/components/semester-selector";
 import type { User } from "@/types/user";
-import type { EnrollmentRow } from "./columns";
+import type { EnrollmentRow, EnrollmentTransitionOption } from "./columns";
 
 /**
  * Where an applicant sits in the admissions funnel.
@@ -168,6 +168,142 @@ export type ApplicantStats = {
     deleted: number;
 };
 
+export interface PipelineMeta {
+    engine: "policy_v1" | "legacy";
+    policy_id: number | null;
+    policy_name: string | null;
+    policy_version: number | null;
+    active_policies_count: number;
+    configure_url: string;
+    can_configure: boolean;
+    available_roles: string[];
+}
+
+export interface EnrollmentWorkspacePreferences {
+    defaultView: "table" | "board";
+    density: "comfortable" | "compact";
+    showPipelineStrip: boolean;
+    showDepartmentChips: boolean;
+    showTuitionBars: boolean;
+    collapseCompletedLane: boolean;
+    completedPreviewLimit: number;
+}
+
+export interface EnrollmentIndexPermissions {
+    can_verify_head: boolean;
+    can_verify_cashier: boolean;
+    can_delete: boolean;
+    can_reopen: boolean;
+    is_super_admin: boolean;
+}
+
+export interface EnrollmentDetailSummary {
+    enrollment: {
+        id: number;
+        student_id: number | string | null;
+        status: string;
+        terminal_outcome: string | null;
+        workflow_runtime: string | null;
+        current_step_key: string | null;
+        allows_no_receipt_transition: boolean;
+        school_year: string | null;
+        semester: number | null;
+        academic_year: number | null;
+        course_code: string | null;
+        course_title: string | null;
+        department: string | null;
+        remarks: string | null;
+        created_at: string | null;
+        deleted_at: string | null;
+        is_trashed: boolean;
+        show_url: string;
+        edit_url: string;
+        assessment_download_url: string;
+        assessment_preview_url: string;
+    };
+    student: {
+        id: number | null;
+        student_number: string | number | null;
+        full_name: string;
+        email: string | null;
+        phone: string | null;
+        course_code: string | null;
+        student_url: string | null;
+    };
+    workflow: {
+        engine?: "policy_v1" | "legacy";
+        current_step_key: string | null;
+        terminal_outcome: string | null;
+        can_cancel: boolean;
+        outstanding_payments?: {
+            count: number;
+            amount: number;
+        };
+        allowed_payment_methods: string[];
+        steps: EnrollmentPipeline["steps"];
+        next_step: EnrollmentPipeline["next_step"];
+        allowed_transitions?: EnrollmentTransitionOption[];
+    };
+    permissions: EnrollmentIndexPermissions & {
+        can_advance_pipeline: boolean;
+        can_cancel: boolean;
+        can_review_requirements?: boolean;
+    };
+    subjects: Array<{
+        id: number;
+        code: string;
+        title: string;
+        units: number;
+        lecture_fee: number;
+        lab_fee: number;
+    }>;
+    total_units: number;
+    class_enrollments_count: number;
+    missing_classes_count: number;
+    tuition: {
+        id: number;
+        overall_tuition: number;
+        total_balance: number;
+        total_paid: number;
+        total_tuition: number;
+        total_lectures: number;
+        total_laboratory: number;
+        total_miscelaneous_fees: number;
+        additional_fees_total: number;
+        discount: number;
+        downpayment: number;
+        required_downpayment: number;
+        status: string;
+    } | null;
+    transactions: Array<{
+        id: number;
+        invoicenumber: string | null;
+        description: string | null;
+        status: string | null;
+        amount: number;
+        created_at: string | null;
+    }>;
+    requirements: Array<{
+        id: number;
+        key: string;
+        label: string;
+        status: string;
+        required: boolean;
+        verified_at: string | null;
+        waived_at: string | null;
+    }>;
+    resources_count: number;
+    timeline: Array<{
+        id: string;
+        type: "created" | "workflow" | "payment" | "deleted";
+        title: string;
+        description: string;
+        timestamp: string | null;
+        date_label: string;
+        tone: "info" | "success" | "destructive";
+    }>;
+}
+
 export interface EnrollmentManagementProps {
     user: User;
     workflow_setup_required: boolean;
@@ -190,6 +326,9 @@ export interface EnrollmentManagementProps {
         from: number;
         to: number;
     };
+    board_enrollments?: EnrollmentRow[];
+    permissions?: EnrollmentIndexPermissions;
+    pipeline_meta?: PipelineMeta;
     analytics: {
         current_semester_count: number;
         current_school_year_count: number;
@@ -199,6 +338,10 @@ export interface EnrollmentManagementProps {
         trashed_count: number;
         active_count: number;
         by_status: { status: string; count: number }[];
+        unpaid_balance_total?: number;
+        unpaid_count?: number;
+        in_pipeline_count?: number;
+        completed_count?: number;
     };
     filters: SemesterSelectorProps & {
         search?: string;
@@ -209,6 +352,7 @@ export interface EnrollmentManagementProps {
         department_filter?: string;
         year_level_filter?: string;
         course_filter?: string;
+        payment_filter?: string;
     };
     enrollment_pipeline: EnrollmentPipeline;
     assessment_export_options: {
@@ -302,10 +446,11 @@ export interface EnrollmentPipeline {
     next_step?: {
         status: string;
         label: string;
-        color: string;
-        allowed_roles: string[];
-        is_core: boolean;
+        color?: string;
+        allowed_roles?: string[];
+        is_core?: boolean;
         key: string;
+        action_type?: "standard" | "department_verification" | "cashier_verification" | string;
     } | null;
 }
 

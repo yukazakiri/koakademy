@@ -114,6 +114,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/registrar/documents/pdf', [AdministratorRegistrarDocumentController::class, 'pdf'])->name('registrar.documents.pdf');
         Route::get('/enrollments/create', [AdministratorEnrollmentManagementController::class, 'create'])->name('enrollments.create');
         Route::post('/enrollments', [AdministratorEnrollmentManagementController::class, 'store'])->name('enrollments.store');
+        Route::post('/enrollments/bulk-action', [AdministratorEnrollmentManagementController::class, 'bulkAction'])->name('enrollments.bulk-action');
         Route::post('/enrollments/discounts', [AdministratorEnrollmentDiscountController::class, 'store'])->name('enrollments.discounts.store');
 
         // Enrollment Form Data API endpoints
@@ -141,6 +142,7 @@ Route::middleware(['auth', 'administrators.only'])
             ->whereNumber('student')
             ->name('enrollments.applicants.cancel.revert');
         Route::get('/enrollments/{enrollment}', [AdministratorEnrollmentManagementController::class, 'show'])->whereNumber('enrollment')->name('enrollments.show');
+        Route::get('/enrollments/{enrollment}/summary', [AdministratorEnrollmentManagementController::class, 'summary'])->whereNumber('enrollment')->name('enrollments.summary');
 
         // Enrollment Actions
         Route::post('/enrollments/{enrollment}/verify-head-dept', [AdministratorEnrollmentManagementController::class, 'verifyHeadDept'])->whereNumber('enrollment')->name('enrollments.verify-head-dept');

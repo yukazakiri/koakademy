@@ -16,17 +16,31 @@ import { ColumnDef } from "@tanstack/react-table";
 import { AlertTriangle, ArrowUpDown, Copy, Eye, FileText, MoreHorizontal, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { route } from "ziggy-js";
 
+export type EnrollmentTransitionOption = {
+    key: string;
+    label: string;
+    to: string;
+    to_status: string;
+    requires_reason: boolean;
+    needs_payment: boolean;
+    action_type: string;
+};
+
 // Define the shape of our data based on the controller output
 export type EnrollmentRow = {
     id: number;
     student_id: number | string | null;
+    student_number?: string | number | null;
     student_name: string | null;
+    student_email?: string | null;
     course_id: number | null;
     course: string | null;
     course_title: string | null;
     department: string | null;
     status: string | null;
     terminal_outcome: string | null;
+    workflow_runtime?: string | null;
+    current_step_key?: string | null;
     school_year: string | null;
     semester: number | null;
     academic_year: number | null;
@@ -34,7 +48,18 @@ export type EnrollmentRow = {
     tuition: {
         overall: number;
         balance: number;
+        paid?: number | null;
     } | null;
+    next_step?: {
+        key: string;
+        status: string;
+        label: string;
+        action_type?: string;
+        transition_key?: string | null;
+        requires_reason?: boolean;
+    } | null;
+    allowed_transitions?: EnrollmentTransitionOption[];
+    can_advance?: boolean;
     created_at: string | null;
     deleted_at?: string | null;
     is_trashed?: boolean;

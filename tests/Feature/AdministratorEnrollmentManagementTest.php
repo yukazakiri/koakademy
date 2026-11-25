@@ -2033,3 +2033,302 @@ it('requires payment acknowledgement for legacy paid caches before cashier cance
     expect((float) $tuition->refresh()->paid)->toBe(500.0);
     expect((float) $tuition->overall_tuition)->toBe(1000.0);
 });
+
+it('returns a structured enrollment dossier summary for the slide-over inspection sheet', function (): void {
+    GeneralSetting::factory()->create([
+        'school_starting_date' => '2024-08-01',
+        'school_ending_date' => '2025-05-30',
+        'semester' => 1,
+        'more_configs' => [
+            'enrollment_pipeline' => [
+                'steps' => [
+                    [
+                        'key' => 'pending',
+                        'status' => 'Pending',
+                        'label' => 'Pending',
+                        'color' => 'amber',
+                        'allowed_roles' => ['admin'],
+                        'action_type' => 'standard',
+                    ],
+                    [
+                        'key' => 'department_verification',
+                        'status' => 'Verified By Dept Head',
+                        'label' => 'Department Verification',
+                        'color' => 'blue',
+                        'allowed_roles' => ['admin'],
+                        'action_type' => 'department_verification',
+                    ],
+                    [
+                        'key' => 'cashier_verification',
+                        'status' => 'Verified By Cashier',
+                        'label' => 'Cashier Verification',
+                        'color' => 'green',
+                        'allowed_roles' => ['cashier', 'admin'],
+                        'action_type' => 'cashier_verification',
+                    ],
+                ],
+                'entry_step_key' => 'pending',
+                'completion_step_key' => 'cashier_verification',
+            ],
+        ],
+    ]);
+
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $department = Department::factory()->create(['code' => 'IT']);
+    $course = Course::factory()->create(['code' => 'BSIT', 'department_id' => $department->id]);
+    $student = Student::factory()->create(['course_id' => $course->id]);
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'school_year' => '2024 - 2025',
+        'semester' => 1,
+        'status' => 'Pending',
+    ]);
+    StudentTuition::query()->create([
+        'student_id' => $student->id,
+        'enrollment_id' => $enrollment->id,
+        'semester' => 1,
+        'school_year' => '2024 - 2025',
+        'academic_year' => 1,
+        'overall_tuition' => 6500,
+        'total_tuition' => 6500,
+        'total_balance' => 3200,
+        'downpayment' => 1500,
+    ]);
+
+    $this->actingAs($admin)
+        ->getJson(portalUrlForAdministrators("/administrators/enrollments/{$enrollment->id}/summary"))
+        ->assertOk()
+        ->assertJsonPath('enrollment.id', $enrollment->id)
+        ->assertJsonPath('enrollment.course_code', 'BSIT')
+        ->assertJsonPath('enrollment.department', 'IT')
+        ->assertJsonPath('student.id', $student->id)
+        ->assertJsonPath('tuition.overall_tuition', 6500)
+        ->assertJsonPath('workflow.next_step.action_type', 'department_verification')
+        ->assertJsonStructure([
+            'enrollment' => ['id', 'status', 'show_url', 'edit_url', 'assessment_download_url'],
+            'student' => ['id', 'full_name', 'email', 'student_url'],
+            'workflow' => ['steps', 'next_step'],
+            'permissions' => ['can_verify_head', 'can_verify_cashier', 'can_advance_pipeline'],
+            'subjects',
+            'tuition',
+            'transactions',
+            'requirements',
+            'timeline',
+        ]);
+});
+
+it('supports board enrollments, unpaid payment filtering, and bulk workflow actions', function (): void {
+    GeneralSetting::factory()->create([
+        'school_starting_date' => '2024-08-01',
+        'school_ending_date' => '2025-05-30',
+        'semester' => 1,
+        'more_configs' => [
+            'enrollment_pipeline' => [
+                'steps' => [
+                    [
+                        'key' => 'pending',
+                        'status' => 'Pending',
+                        'label' => 'Pending',
+                        'color' => 'amber',
+                        'allowed_roles' => ['admin'],
+                        'action_type' => 'standard',
+                    ],
+                    [
+                        'key' => 'department_verification',
+                        'status' => 'Verified By Dept Head',
+                        'label' => 'Department Verification',
+                        'color' => 'blue',
+                        'allowed_roles' => ['admin'],
+                        'action_type' => 'department_verification',
+                    ],
+                    [
+                        'key' => 'cashier_verification',
+                        'status' => 'Verified By Cashier',
+                        'label' => 'Cashier Verification',
+                        'color' => 'green',
+                        'allowed_roles' => ['cashier'],
+                        'action_type' => 'cashier_verification',
+                    ],
+                ],
+                'entry_step_key' => 'pending',
+                'completion_step_key' => 'cashier_verification',
+            ],
+        ],
+    ]);
+
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $admin->assignRole(Spatie\Permission\Models\Role::findOrCreate('admin', 'web'));
+    $course = Course::factory()->create(['code' => 'BSIT']);
+
+    $unpaidEnrollment = StudentEnrollment::factory()->legacyWorkflow()->create([
+        'course_id' => $course->id,
+        'school_year' => '2024 - 2025',
+        'semester' => 1,
+        'status' => 'Pending',
+    ]);
+    StudentTuition::query()->create([
+        'student_id' => $unpaidEnrollment->student_id,
+        'enrollment_id' => $unpaidEnrollment->id,
+        'semester' => 1,
+        'school_year' => '2024 - 2025',
+        'academic_year' => 1,
+        'overall_tuition' => 5000,
+        'total_tuition' => 5000,
+        'total_balance' => 2500,
+    ]);
+
+    $paidEnrollment = StudentEnrollment::factory()->legacyWorkflow()->create([
+        'course_id' => $course->id,
+        'school_year' => '2024 - 2025',
+        'semester' => 1,
+        'status' => 'Verified By Dept Head',
+    ]);
+    StudentTuition::query()->create([
+        'student_id' => $paidEnrollment->student_id,
+        'enrollment_id' => $paidEnrollment->id,
+        'semester' => 1,
+        'school_year' => '2024 - 2025',
+        'academic_year' => 1,
+        'overall_tuition' => 5000,
+        'total_tuition' => 5000,
+        'total_balance' => 0,
+    ]);
+
+    $this->actingAs($admin)
+        ->get(portalUrlForAdministrators('/administrators/enrollments?payment_filter=unpaid'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->where('filters.payment_filter', 'unpaid')
+            ->where('analytics.unpaid_count', 1)
+            ->where('analytics.unpaid_balance_total', 2500)
+            ->where('analytics.in_pipeline_count', 2)
+            ->has('enrollments.data', 1)
+            ->where('enrollments.data.0.id', $unpaidEnrollment->id)
+            ->has('board_enrollments', 1)
+        );
+
+    // Bulk advance advances pending->dept head and safely skips dept head->cashier (requires receipt)
+    $this->actingAs($admin)
+        ->post(portalUrlForAdministrators('/administrators/enrollments/bulk-action'), [
+            'action' => 'advance',
+            'ids' => [$unpaidEnrollment->id, $paidEnrollment->id],
+        ])
+        ->assertRedirect();
+
+    expect($unpaidEnrollment->refresh()->status)->toBe('Verified By Dept Head')
+        ->and($paidEnrollment->refresh()->status)->toBe('Verified By Dept Head');
+
+    // Bulk delete & restore
+    $this->actingAs($admin)
+        ->post(portalUrlForAdministrators('/administrators/enrollments/bulk-action'), [
+            'action' => 'delete',
+            'ids' => [$unpaidEnrollment->id],
+        ])
+        ->assertRedirect();
+
+    expect($unpaidEnrollment->refresh()->trashed())->toBeTrue();
+
+    $this->actingAs($admin)
+        ->post(portalUrlForAdministrators('/administrators/enrollments/bulk-action'), [
+            'action' => 'restore',
+            'ids' => [$unpaidEnrollment->id],
+        ])
+        ->assertRedirect();
+
+    expect($unpaidEnrollment->refresh()->trashed())->toBeFalse();
+});
+
+it('dynamically projects published policy v1 steps and metadata onto the enrollments workspace', function (): void {
+    GeneralSetting::factory()->create([
+        'school_starting_date' => '2024-08-01',
+        'school_ending_date' => '2025-05-30',
+        'semester' => 1,
+        'more_configs' => [],
+    ]);
+
+    Laravel\Pennant\Feature::activate(App\Features\DynamicEnrollmentPolicies::class);
+
+    App\Models\EnrollmentPolicy::query()->delete();
+
+    $policy = App\Models\EnrollmentPolicy::query()->create([
+        'name' => 'Custom 4-Step Registrar Policy',
+        'scope_key' => App\Models\EnrollmentPolicy::scopeKey([]),
+        'is_enabled' => true,
+    ]);
+
+    $version = App\Models\EnrollmentPolicyVersion::query()->create([
+        'enrollment_policy_id' => $policy->id,
+        'version' => 1,
+        'state' => App\Models\EnrollmentPolicyVersion::Published,
+        'schema_version' => 1,
+        'checksum' => hash('sha256', 'custom-4-step-policy-v1'),
+        'published_at' => now(),
+        'configuration' => [
+            'workflow' => [
+                'steps' => [
+                    [
+                        'key' => 'intake',
+                        'status' => 'Intake Submitted',
+                        'label' => 'Intake Review',
+                        'color' => 'amber',
+                        'entry' => true,
+                        'actions' => [],
+                        'transitions' => [
+                            ['key' => 'to_advising', 'label' => 'Send to Advising', 'to' => 'advising', 'fallback' => true],
+                        ],
+                    ],
+                    [
+                        'key' => 'advising',
+                        'status' => 'Advising Approved',
+                        'label' => 'Academic Advising',
+                        'color' => 'blue',
+                        'actions' => [['handler' => 'enrollment.verify_academic']],
+                        'transitions' => [
+                            ['key' => 'to_finance', 'label' => 'Send to Finance', 'to' => 'finance', 'fallback' => true],
+                        ],
+                    ],
+                    [
+                        'key' => 'finance',
+                        'status' => 'Finance Cleared',
+                        'label' => 'Cashier Clearance',
+                        'color' => 'purple',
+                        'actions' => [['handler' => 'enrollment.verify_payment']],
+                        'transitions' => [
+                            ['key' => 'to_complete', 'label' => 'Finalize', 'to' => 'complete', 'fallback' => true],
+                        ],
+                    ],
+                    [
+                        'key' => 'complete',
+                        'status' => 'Officially Enrolled',
+                        'label' => 'Officially Enrolled',
+                        'color' => 'green',
+                        'terminal' => true,
+                        'actions' => [],
+                        'transitions' => [],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $policy->update(['active_version_id' => $version->id]);
+
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $admin->assignRole(Spatie\Permission\Models\Role::findOrCreate('super_admin', 'web'));
+
+    $this->actingAs($admin)
+        ->get(portalUrlForAdministrators('/administrators/enrollments'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->where('workflow_setup_required', false)
+            ->where('pipeline_meta.engine', 'policy_v1')
+            ->where('pipeline_meta.policy_name', 'Custom 4-Step Registrar Policy')
+            ->where('pipeline_meta.policy_version', 1)
+            ->has('enrollment_pipeline.steps', 4)
+            ->where('enrollment_pipeline.steps.0.status', 'Intake Submitted')
+            ->where('enrollment_pipeline.steps.1.action_type', 'department_verification')
+            ->where('enrollment_pipeline.steps.2.action_type', 'cashier_verification')
+            ->where('enrollment_pipeline.steps.3.is_completion', true)
+        );
+});

@@ -23,6 +23,7 @@ const DEFAULT_SCHEDULING_POLICY: SchedulingPolicy = {
     check_student_cohort_conflicts: true,
     check_synchronous_online_conflicts: true,
     check_asynchronous_online_conflicts: false,
+    allow_sunday_scheduling: false,
 };
 
 type GeneralSettings = {
@@ -402,6 +403,20 @@ export default function AdministratorSettingsIndex({ user, settings, scheduling_
                                         <Switch
                                             checked={data.scheduling.check_asynchronous_online_conflicts}
                                             onCheckedChange={(val) => updateScheduling("check_asynchronous_online_conflicts", val)}
+                                        />
+                                    </div>
+
+                                    <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+                                        <div className="space-y-0.5">
+                                            <Label className="text-base">Allow Sunday Scheduling</Label>
+                                            <p className="text-muted-foreground text-sm">
+                                                Disabled by default (Monday–Saturday). Enable to allow scheduling classes on Sunday across the
+                                                Schedule Studio and class forms.
+                                            </p>
+                                        </div>
+                                        <Switch
+                                            checked={data.scheduling.allow_sunday_scheduling}
+                                            onCheckedChange={(val) => updateScheduling("allow_sunday_scheduling", val)}
                                         />
                                     </div>
                                 </CardContent>

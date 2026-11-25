@@ -367,11 +367,21 @@ Route::middleware(['auth', 'administrators.only'])
         Route::put('/curriculum/programs/{course}/subjects/{subject}', [AdministratorCurriculumManagementController::class, 'updateSubject'])->name('curriculum.programs.subjects.update');
         Route::delete('/curriculum/programs/{course}/subjects/{subject}', [AdministratorCurriculumManagementController::class, 'destroySubject'])->name('curriculum.programs.subjects.destroy');
 
-        // Scheduling Analytics
+        // Scheduling Analytics (Schedule Studio) & Reinvented Schedule Board
+        Route::get('/schedule', function (Illuminate\Http\Request $request) {
+            return redirect()->route('administrators.scheduling-analytics.index', $request->query());
+        })->name('schedule.redirect');
+        Route::get('/schedule-board', [AdministratorSchedulingAnalyticsController::class, 'board'])->name('schedule-board.index');
+        Route::get('/schedule-xray', [AdministratorSchedulingAnalyticsController::class, 'xray'])->name('schedule-xray.index');
+        Route::get('/schedule-floorboard', [AdministratorSchedulingAnalyticsController::class, 'floorboard'])->name('schedule-floorboard.index');
+        Route::get('/schedule-triage', [AdministratorSchedulingAnalyticsController::class, 'triage'])->name('schedule-triage.index');
+        Route::get('/schedule-canvas', [AdministratorSchedulingAnalyticsController::class, 'canvas'])->name('schedule-canvas.index');
         Route::get('/scheduling-analytics', [AdministratorSchedulingAnalyticsController::class, 'index'])->name('scheduling-analytics.index');
         Route::get('/scheduling-analytics/courses/{course}/pdf', AdministratorCourseSchedulePdfController::class)->name('scheduling-analytics.courses.pdf');
         Route::get('/scheduling-analytics/students/search', [AdministratorSchedulingAnalyticsController::class, 'searchStudents'])->name('scheduling-analytics.students.search');
         Route::get('/scheduling-analytics/students/{studentId}/schedule', [AdministratorSchedulingAnalyticsController::class, 'getStudentSchedule'])->name('scheduling-analytics.students.schedule');
+        Route::get('/scheduling-analytics/schedules/{schedule}/suggestions', [AdministratorSchedulingAnalyticsController::class, 'suggestResolutions'])->name('scheduling-analytics.schedules.suggestions');
+        Route::post('/scheduling-analytics/schedules/batch-update', [AdministratorSchedulingAnalyticsController::class, 'batchUpdateSchedules'])->name('scheduling-analytics.schedules.batch-update');
         Route::patch('/scheduling-analytics/schedules/{schedule}', [AdministratorSchedulingAnalyticsController::class, 'updateSchedule'])->name('scheduling-analytics.schedules.update');
         Route::delete('/scheduling-analytics/schedules/{schedule}', [AdministratorSchedulingAnalyticsController::class, 'destroySchedule'])->name('scheduling-analytics.schedules.destroy');
         Route::post('/scheduling-analytics/classes', [AdministratorSchedulingAnalyticsController::class, 'storeClass'])->name('scheduling-analytics.classes.store');

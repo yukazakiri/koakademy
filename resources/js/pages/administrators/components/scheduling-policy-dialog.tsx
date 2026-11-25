@@ -14,6 +14,7 @@ export const DEFAULT_SCHEDULING_POLICY: SchedulingPolicy = {
     check_student_cohort_conflicts: true,
     check_synchronous_online_conflicts: true,
     check_asynchronous_online_conflicts: false,
+    allow_sunday_scheduling: false,
 };
 
 type SchedulingPolicyDialogProps = {
@@ -146,6 +147,20 @@ export default function SchedulingPolicyDialog({ open, onOpenChange, policy, onS
                         <Switch
                             checked={draft.check_asynchronous_online_conflicts}
                             onCheckedChange={(checked) => update("check_asynchronous_online_conflicts", checked)}
+                        />
+                    </div>
+
+                    <div className="flex items-center justify-between gap-4 rounded-lg border p-3.5">
+                        <div className="space-y-0.5">
+                            <Label className="text-sm font-medium">Allow Sunday Scheduling</Label>
+                            <p className="text-muted-foreground text-xs">
+                                Off by default (Monday–Saturday). Enable to include Sunday as a schedulable day in the Schedule Studio and session
+                                forms.
+                            </p>
+                        </div>
+                        <Switch
+                            checked={draft.allow_sunday_scheduling}
+                            onCheckedChange={(checked) => update("allow_sunday_scheduling", checked)}
                         />
                     </div>
                 </div>

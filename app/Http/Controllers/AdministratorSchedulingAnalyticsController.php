@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\Administrators\BatchUpdateSchedulesRequest;
 use App\Http\Requests\Administrators\StoreClassRequest;
 use App\Http\Requests\UpdateScheduleRequest;
 use App\Models\Classes;
@@ -39,222 +40,103 @@ final class AdministratorSchedulingAnalyticsController extends Controller
         ClassCurriculumPlacementService $curriculumPlacement,
         ScheduleConflictService $conflictService,
     ): Response|\Illuminate\Http\RedirectResponse {
-        $user = Auth::user();
-
-        if (! $user instanceof User) {
-            return redirect('/login');
-        }
-
-        $defaultSchoolYear = $generalSettingsService->getCurrentSchoolYearString();
-        $defaultSemester = $generalSettingsService->getCurrentSemester();
-
-        $selectedSchoolYear = is_string($request->input('school_year')) && mb_trim($request->input('school_year')) !== ''
-            ? GeneralSettingsService::normalizeSchoolYear($request->input('school_year'))
-            : $defaultSchoolYear;
-
-        $requestedSemester = $request->input('semester');
-        $selectedSemester = $requestedSemester !== null && $requestedSemester !== ''
-            ? ($requestedSemester === 'summer' ? 'summer' : (is_numeric($requestedSemester) ? (int) $requestedSemester : 1))
-            : $defaultSemester;
-
-        // Base query for the selected academic period
-        $query = ($request->filled('school_year') || $request->filled('semester'))
-            ? Classes::forAcademicPeriod($selectedSchoolYear, $selectedSemester)
-            : Classes::currentAcademicPeriod();
-
-        $classes = $query
-            ->with(['Subject', 'subjects', 'Faculty', 'Room', 'Schedule.room'])
-            ->withCount('ClassStudents')
-            ->get();
-
-        // Get all options needed for filtering and class creation
-        $allRooms = Room::query()
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get(['id', 'name', 'class_code', 'capacity', 'type', 'building']);
-
-        $allFaculty = Faculty::query()
-            ->orderBy('last_name')
-            ->orderBy('first_name')
-            ->get(['id', 'first_name', 'last_name', 'department']);
-
-        $allCourses = Course::query()
-            ->where('is_active', true)
-            ->orderBy('code')
-            ->get(['id', 'code', 'title', 'curriculum_year']);
-
-        $shsTracks = ShsTrack::query()
-            ->orderBy('track_name')
-            ->get(['id', 'track_name']);
-
-        $shsStrands = ShsStrand::query()
-            ->with('track:id,track_name')
-            ->orderBy('strand_name')
-            ->get(['id', 'strand_name', 'track_id']);
-
-        // Process schedule data with normalized year levels and curriculum hour targets
-        $scheduleData = $classes->map(
-            fn (Classes $class): array => $this->formatClassForPlanner($class, $curriculumPlacement, $conflictService)
+        return $this->renderScheduleWorkspace(
+            'administrators/schedule-canvas',
+            $request,
+            $generalSettingsService,
+            $curriculumPlacement,
+            $conflictService,
         );
+    }
 
-        // Get available year levels from the processed data
-        $availableYearLevels = $scheduleData->pluck('year_levels')
-            ->flatten()
-            ->unique()
-            ->filter()
-            ->sort(function ($a, $b): int {
-                $isYearA = str_contains($a, 'Year');
-                $isYearB = str_contains($b, 'Year');
-                if ($isYearA && ! $isYearB) {
-                    return -1;
-                }
-                if (! $isYearA && $isYearB) {
-                    return 1;
-                }
+    /**
+     * Reinvented focus-first Schedule Board page (Sections / Rooms / Teachers directory + calm timetable).
+     */
+    public function board(
+        Request $request,
+        GeneralSettingsService $generalSettingsService,
+        ClassCurriculumPlacementService $curriculumPlacement,
+        ScheduleConflictService $conflictService,
+    ): Response|\Illuminate\Http\RedirectResponse {
+        return $this->renderScheduleWorkspace(
+            'administrators/schedule-board',
+            $request,
+            $generalSettingsService,
+            $curriculumPlacement,
+            $conflictService,
+        );
+    }
 
-                return strnatcmp($a, $b);
-            })
-            ->values()
-            ->toArray();
+    /**
+     * Constraint-first Availability X-Ray page (pick a class -> see guaranteed open slots & plain-English blockers).
+     */
+    public function xray(
+        Request $request,
+        GeneralSettingsService $generalSettingsService,
+        ClassCurriculumPlacementService $curriculumPlacement,
+        ScheduleConflictService $conflictService,
+    ): Response|\Illuminate\Http\RedirectResponse {
+        return $this->renderScheduleWorkspace(
+            'administrators/schedule-xray',
+            $request,
+            $generalSettingsService,
+            $curriculumPlacement,
+            $conflictService,
+        );
+    }
 
-        // Get available sections from the processed data (or standard A-D)
-        $availableSections = $scheduleData->pluck('section')
-            ->merge(['A', 'B', 'C', 'D'])
-            ->unique()
-            ->filter()
-            ->sort()
-            ->values()
-            ->toArray();
+    /**
+     * Concept B: Spatial Campus Floorboard (physical room cards organized by Day & Time Wave, zero vertical calendar).
+     */
+    public function floorboard(
+        Request $request,
+        GeneralSettingsService $generalSettingsService,
+        ClassCurriculumPlacementService $curriculumPlacement,
+        ScheduleConflictService $conflictService,
+    ): Response|\Illuminate\Http\RedirectResponse {
+        return $this->renderScheduleWorkspace(
+            'administrators/schedule-floorboard',
+            $request,
+            $generalSettingsService,
+            $curriculumPlacement,
+            $conflictService,
+        );
+    }
 
-        $unscheduledCount = $scheduleData->filter(fn (array $item): bool => (bool) ($item['is_unscheduled'] ?? false))->count();
-        $incompleteCount = $scheduleData->filter(
-            fn (array $item): bool => ! ($item['is_unscheduled'] ?? false) && ! ($item['is_complete'] ?? true)
-        )->count();
-        $draftSchedulesCount = $classes->flatMap(fn (Classes $c) => $c->Schedule)
-            ->filter(fn (Schedule $s): bool => ($s->status ?? 'published') === 'draft')
-            ->count();
+    /**
+     * Concept C: Root-Cause Triage Inbox (collapses raw conflicts into finite human decisions with 1-click keyboard fixes).
+     */
+    public function triage(
+        Request $request,
+        GeneralSettingsService $generalSettingsService,
+        ClassCurriculumPlacementService $curriculumPlacement,
+        ScheduleConflictService $conflictService,
+    ): Response|\Illuminate\Http\RedirectResponse {
+        return $this->renderScheduleWorkspace(
+            'administrators/schedule-triage',
+            $request,
+            $generalSettingsService,
+            $curriculumPlacement,
+            $conflictService,
+        );
+    }
 
-        // Get statistics
-        $stats = [
-            'total_classes' => $classes->count(),
-            'total_students' => $classes->sum('class_students_count'),
-            'unscheduled_classes_count' => $unscheduledCount,
-            'incomplete_classes_count' => $incompleteCount,
-            'draft_schedules_count' => $draftSchedulesCount,
-            'classes_by_year_level' => $scheduleData->groupBy('grade_level')
-                ->map(fn ($group): int => $group->count())
-                ->toArray(),
-            'classes_by_course' => $classes->groupBy('formatted_course_codes')
-                ->map(fn ($group): int => $group->count())
-                ->toArray(),
-            'schedule_conflicts' => $conflictService->detectConflictsForClasses($classes),
-        ];
-
-        $availableSchoolYears = collect($generalSettingsService->getAvailableSchoolYears())
-            ->values()
-            ->push($selectedSchoolYear)
-            ->unique()
-            ->values()
-            ->all();
-
-        $semesterLabel = match ((string) $selectedSemester) {
-            '1' => '1st Semester',
-            '2' => '2nd Semester',
-            'summer' => 'Summer Term',
-            default => "Semester {$selectedSemester}",
-        };
-
-        return Inertia::render('administrators/scheduling-analytics', [
-            'user' => [
-                'name' => $user->name,
-                'email' => $user->email,
-                'avatar' => $user->avatar_url ?? null,
-                'role' => $user->role?->getLabel() ?? 'Administrator',
-            ],
-            'schedule_data' => $scheduleData,
-            'stats' => $stats,
-            'term_context' => [
-                'school_year' => $selectedSchoolYear,
-                'semester' => (string) $selectedSemester,
-                'semester_label' => $semesterLabel,
-                'available_school_years' => $availableSchoolYears,
-                'available_semesters' => [
-                    ['value' => '1', 'label' => '1st Semester'],
-                    ['value' => '2', 'label' => '2nd Semester'],
-                    ['value' => 'summer', 'label' => 'Summer'],
-                ],
-            ],
-            'filters' => [
-                'available_courses' => $allCourses->map(fn ($course): array => [
-                    'id' => $course->id,
-                    'code' => $course->code,
-                    'title' => $course->title,
-                ])->values(),
-                'available_year_levels' => $availableYearLevels,
-                'available_sections' => $availableSections,
-                'available_rooms' => $allRooms->map(fn ($room): array => [
-                    'id' => $room->id,
-                    'name' => $room->name,
-                    'class_code' => $room->class_code,
-                    'capacity' => $room->capacity ?? 40,
-                    'type' => $room->type ?? 'lecture',
-                    'building' => $room->building,
-                ])->values(),
-                'available_faculty' => $allFaculty->map(fn ($faculty): array => [
-                    'id' => $faculty->id,
-                    'name' => $faculty->first_name.' '.$faculty->last_name,
-                    'department' => $faculty->department,
-                ])->values(),
-                'current_filters' => [
-                    'course' => $request->input('course'),
-                    'year_level' => $request->input('year_level'),
-                    'section' => $request->input('section'),
-                ],
-            ],
-            'creation_options' => [
-                'rooms' => $allRooms->map(fn ($room): array => [
-                    'id' => $room->id,
-                    'name' => $room->name,
-                    'class_code' => $room->class_code,
-                    'capacity' => $room->capacity ?? 40,
-                    'type' => $room->type ?? 'lecture',
-                    'building' => $room->building,
-                ])->values(),
-                'faculty' => $allFaculty->map(fn ($faculty): array => [
-                    'id' => $faculty->id,
-                    'name' => $faculty->first_name.' '.$faculty->last_name,
-                    'department' => $faculty->department,
-                ])->values(),
-                'courses' => $allCourses->map(fn ($course): array => [
-                    'id' => $course->id,
-                    'code' => $course->code,
-                    'title' => $course->title,
-                    'curriculum_year' => $course->curriculum_year,
-                ])->values(),
-                'shs_tracks' => $shsTracks->map(fn ($track): array => [
-                    'id' => $track->id,
-                    'track_name' => $track->track_name,
-                ])->values(),
-                'shs_strands' => $shsStrands->map(fn ($strand): array => [
-                    'id' => $strand->id,
-                    'strand_name' => $strand->strand_name,
-                    'track_id' => $strand->track_id,
-                    'track_name' => $strand->track?->track_name,
-                ])->values(),
-                'sections' => ['A', 'B', 'C', 'D'],
-                'delivery_modes' => ScheduleDelivery::options(),
-                'semesters' => [
-                    ['value' => '1', 'label' => '1st Semester'],
-                    ['value' => '2', 'label' => '2nd Semester'],
-                    ['value' => 'summer', 'label' => 'Summer'],
-                ],
-            ],
-            'scheduling_policy' => $generalSettingsService->getSchedulingConfig(),
-            'defaults' => [
-                'semester' => (string) $selectedSemester,
-                'school_year' => $selectedSchoolYear,
-            ],
-        ]);
+    /**
+     * Minimalist distraction-free Weekly Schedule Canvas (zero sidebars; 3 purpose-built tabs: Rooms, Students & Sections, Teachers).
+     */
+    public function canvas(
+        Request $request,
+        GeneralSettingsService $generalSettingsService,
+        ClassCurriculumPlacementService $curriculumPlacement,
+        ScheduleConflictService $conflictService,
+    ): Response|\Illuminate\Http\RedirectResponse {
+        return $this->renderScheduleWorkspace(
+            'administrators/schedule-canvas',
+            $request,
+            $generalSettingsService,
+            $curriculumPlacement,
+            $conflictService,
+        );
     }
 
     /**
@@ -351,6 +233,7 @@ final class AdministratorSchedulingAnalyticsController extends Controller
         UpdateScheduleRequest $request,
         Schedule $schedule,
         SchedulingService $schedulingService,
+        ClassCurriculumPlacementService $curriculumPlacement,
         ScheduleConflictService $conflictService,
     ): JsonResponse {
         $validated = $request->validated();
@@ -364,17 +247,21 @@ final class AdministratorSchedulingAnalyticsController extends Controller
         );
 
         $class = Classes::query()
-            ->with(['Subject', 'Faculty', 'Room', 'Schedule.room'])
+            ->with(['Subject', 'subjects', 'Faculty', 'Room', 'Schedule.room'])
+            ->withCount('ClassStudents')
             ->find($schedule->class_id);
 
         $conflicts = [];
+        $utilization = null;
         if ($class) {
             $classSemester = $this->normalizeSemesterValue($class->semester);
             $allClasses = Classes::forAcademicPeriod((string) $class->school_year, $classSemester)
                 ->with(['Subject', 'Faculty', 'Room', 'Schedule.room'])
+                ->withCount('ClassStudents')
                 ->get();
 
             $conflicts = $conflictService->detectConflictsForClasses($allClasses);
+            $utilization = $conflictService->computeUtilizationSummary($allClasses, $this->activeRooms(), $conflicts);
         }
 
         return response()->json([
@@ -391,7 +278,9 @@ final class AdministratorSchedulingAnalyticsController extends Controller
                 'pattern_group_id' => $schedule->pattern_group_id,
                 'status' => $schedule->status ?? 'published',
             ],
+            'class' => $class ? $this->formatClassForPlanner($class, $curriculumPlacement, $conflictService) : null,
             'conflicts' => $conflicts,
+            'utilization' => $utilization,
         ]);
     }
 
@@ -402,6 +291,7 @@ final class AdministratorSchedulingAnalyticsController extends Controller
         Request $request,
         Schedule $schedule,
         SchedulingService $schedulingService,
+        ClassCurriculumPlacementService $curriculumPlacement,
         ScheduleConflictService $conflictService,
     ): JsonResponse {
         $class = $schedule->class;
@@ -416,15 +306,27 @@ final class AdministratorSchedulingAnalyticsController extends Controller
         $allClasses = $class
             ? Classes::forAcademicPeriod((string) $class->school_year, $this->normalizeSemesterValue($class->semester))
                 ->with(['Subject', 'Faculty', 'Room', 'Schedule.room'])
+                ->withCount('ClassStudents')
                 ->get()
             : Classes::currentAcademicPeriod()
                 ->with(['Subject', 'Faculty', 'Room', 'Schedule.room'])
+                ->withCount('ClassStudents')
                 ->get();
 
         $conflicts = $conflictService->detectConflictsForClasses($allClasses);
+        $utilization = $conflictService->computeUtilizationSummary($allClasses, $this->activeRooms(), $conflicts);
+
+        $updatedClass = $class
+            ? Classes::query()
+                ->with(['Subject', 'subjects', 'Faculty', 'Room', 'Schedule.room'])
+                ->withCount('ClassStudents')
+                ->find($class->id)
+            : null;
 
         return response()->json([
+            'class' => $updatedClass ? $this->formatClassForPlanner($updatedClass, $curriculumPlacement, $conflictService) : null,
             'conflicts' => $conflicts,
+            'utilization' => $utilization,
         ]);
     }
 
@@ -499,13 +401,16 @@ final class AdministratorSchedulingAnalyticsController extends Controller
 
         $allClasses = Classes::forAcademicPeriod((string) $class->school_year, $this->normalizeSemesterValue($class->semester))
             ->with(['Subject', 'Faculty', 'Room', 'Schedule.room'])
+            ->withCount('ClassStudents')
             ->get();
 
         $conflicts = $conflictService->detectConflictsForClasses($allClasses);
+        $utilization = $conflictService->computeUtilizationSummary($allClasses, $this->activeRooms(), $conflicts);
 
         return response()->json([
             'class' => $response,
             'conflicts' => $conflicts,
+            'utilization' => $utilization,
         ]);
     }
 
@@ -531,13 +436,17 @@ final class AdministratorSchedulingAnalyticsController extends Controller
 
         $validated = $request->validate([
             'days' => ['required', 'array', 'min:1'],
-            'days.*' => ['required', 'string', Rule::in(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'])],
+            'days.*' => ['required', 'string', Rule::in(ScheduleDelivery::allowedDays())],
             'start_time' => ['required', 'date_format:H:i'],
             'end_time' => ['required', 'date_format:H:i', 'after:start_time'],
             'room_id' => ['nullable', 'integer', 'exists:rooms,id'],
             'delivery_mode' => ['sometimes', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
             'component_type' => ['nullable', 'string', Rule::in(['lecture', 'lab'])],
             'status' => ['nullable', 'string', Rule::in(['draft', 'published'])],
+        ], [
+            'days.*.in' => ScheduleDelivery::allowsSunday()
+                ? 'Please select a valid day of the week.'
+                : 'Sunday scheduling is disabled. Enable Sunday scheduling in Scheduling Rules to schedule on Sunday.',
         ]);
 
         $actor = Auth::user() instanceof User ? Auth::user() : null;
@@ -561,11 +470,117 @@ final class AdministratorSchedulingAnalyticsController extends Controller
 
         $allClasses = Classes::forAcademicPeriod((string) $class->school_year, $this->normalizeSemesterValue($class->semester))
             ->with(['Subject', 'Faculty', 'Room', 'Schedule.room'])
+            ->withCount('ClassStudents')
             ->get();
+
+        $conflicts = $conflictService->detectConflictsForClasses($allClasses);
+        $utilization = $conflictService->computeUtilizationSummary($allClasses, $this->activeRooms(), $conflicts);
 
         return response()->json([
             'class' => $this->formatClassForPlanner($class, $curriculumPlacement, $conflictService),
-            'conflicts' => $conflictService->detectConflictsForClasses($allClasses),
+            'conflicts' => $conflicts,
+            'utilization' => $utilization,
+        ]);
+    }
+
+    /**
+     * Suggest conflict-free rooms and alternative time slots for a schedule block.
+     */
+    public function suggestResolutions(
+        Request $request,
+        Schedule $schedule,
+        ScheduleConflictService $conflictService,
+        GeneralSettingsService $settingsService,
+    ): JsonResponse {
+        abort_unless($request->user()?->isAdministrative() ?? false, 403);
+
+        $schedule->loadMissing(['class', 'room']);
+        $class = $schedule->class;
+
+        if (! $class instanceof Classes) {
+            return response()->json([
+                'schedule_id' => $schedule->id,
+                'available_rooms' => [],
+                'available_slots' => [],
+                'can_convert_to_online' => false,
+            ]);
+        }
+
+        $termClasses = Classes::forAcademicPeriod((string) $class->school_year, $this->normalizeSemesterValue($class->semester))
+            ->with(['Subject', 'Faculty', 'Room', 'Schedule.room'])
+            ->withCount('ClassStudents')
+            ->get();
+
+        $policy = $settingsService->getSchedulingConfig();
+        $suggestions = $conflictService->suggestResolutions($schedule, $termClasses, $this->activeRooms(), $policy);
+
+        return response()->json($suggestions);
+    }
+
+    /**
+     * Atomically update multiple schedule blocks (swaps, multi-block shifts) and recompute conflicts.
+     */
+    public function batchUpdateSchedules(
+        BatchUpdateSchedulesRequest $request,
+        SchedulingService $schedulingService,
+        ClassCurriculumPlacementService $curriculumPlacement,
+        ScheduleConflictService $conflictService,
+    ): JsonResponse {
+        $validated = $request->validated();
+        $actor = Auth::user() instanceof User ? Auth::user() : null;
+
+        /** @var list<array<string, mixed>> $operations */
+        $operations = array_values($validated['operations']);
+
+        $updatedSchedules = $schedulingService->batchUpdateScheduleBlocks($operations, $actor);
+
+        $affectedClassIds = $updatedSchedules
+            ->pluck('class_id')
+            ->filter()
+            ->unique()
+            ->values();
+
+        $updatedClasses = Classes::query()
+            ->whereIn('id', $affectedClassIds)
+            ->with(['Subject', 'subjects', 'Faculty', 'Room', 'Schedule.room'])
+            ->withCount('ClassStudents')
+            ->get();
+
+        $referenceClass = $updatedClasses->first();
+
+        $allClasses = $referenceClass instanceof Classes
+            ? Classes::forAcademicPeriod((string) $referenceClass->school_year, $this->normalizeSemesterValue($referenceClass->semester))
+                ->with(['Subject', 'Faculty', 'Room', 'Schedule.room'])
+                ->withCount('ClassStudents')
+                ->get()
+            : Classes::currentAcademicPeriod()
+                ->with(['Subject', 'Faculty', 'Room', 'Schedule.room'])
+                ->withCount('ClassStudents')
+                ->get();
+
+        $conflicts = $conflictService->detectConflictsForClasses($allClasses);
+        $utilization = $conflictService->computeUtilizationSummary($allClasses, $this->activeRooms(), $conflicts);
+
+        return response()->json([
+            'schedules' => $updatedSchedules->map(fn (Schedule $schedule): array => [
+                'id' => $schedule->id,
+                'class_id' => $schedule->class_id,
+                'day_of_week' => $schedule->day_of_week,
+                'start_time' => $schedule->formatted_start_time,
+                'end_time' => $schedule->formatted_end_time,
+                'time_range' => $schedule->time_range,
+                'room' => $schedule->room?->name,
+                'room_id' => $schedule->room_id,
+                'delivery_mode' => $schedule->delivery_mode,
+                'component_type' => $schedule->component_type ?? 'lecture',
+                'pattern_group_id' => $schedule->pattern_group_id,
+                'status' => $schedule->status ?? 'published',
+            ])->values(),
+            'classes' => $updatedClasses->map(
+                fn (Classes $class): array => $this->formatClassForPlanner($class, $curriculumPlacement, $conflictService)
+            )->values(),
+            'conflicts' => $conflicts,
+            'utilization' => $utilization,
         ]);
     }
 
@@ -685,6 +700,7 @@ final class AdministratorSchedulingAnalyticsController extends Controller
             'check_student_cohort_conflicts' => ['sometimes', 'boolean'],
             'check_synchronous_online_conflicts' => ['sometimes', 'boolean'],
             'check_asynchronous_online_conflicts' => ['sometimes', 'boolean'],
+            'allow_sunday_scheduling' => ['sometimes', 'boolean'],
             'school_year' => ['nullable', 'string', 'max:50'],
             'semester' => ['nullable', Rule::in(['1', '2', 1, 2, 'summer'])],
         ]);
@@ -701,14 +717,259 @@ final class AdministratorSchedulingAnalyticsController extends Controller
 
         $classes = Classes::forAcademicPeriod($schoolYear, $semester)
             ->with(['Subject', 'Faculty', 'Room', 'Schedule.room'])
+            ->withCount('ClassStudents')
             ->get();
 
         $conflicts = $conflictService->detectConflictsForClasses($classes, policy: $updatedPolicy);
+        $utilization = $conflictService->computeUtilizationSummary($classes, $this->activeRooms(), $conflicts);
 
         return response()->json([
             'scheduling_policy' => $updatedPolicy,
             'conflicts' => $conflicts,
+            'utilization' => $utilization,
         ]);
+    }
+
+    private function renderScheduleWorkspace(
+        string $component,
+        Request $request,
+        GeneralSettingsService $generalSettingsService,
+        ClassCurriculumPlacementService $curriculumPlacement,
+        ScheduleConflictService $conflictService,
+    ): Response|\Illuminate\Http\RedirectResponse {
+        $user = Auth::user();
+
+        if (! $user instanceof User) {
+            return redirect('/login');
+        }
+
+        $defaultSchoolYear = $generalSettingsService->getCurrentSchoolYearString();
+        $defaultSemester = $generalSettingsService->getCurrentSemester();
+
+        $selectedSchoolYear = is_string($request->input('school_year')) && mb_trim($request->input('school_year')) !== ''
+            ? GeneralSettingsService::normalizeSchoolYear($request->input('school_year'))
+            : $defaultSchoolYear;
+
+        $requestedSemester = $request->input('semester');
+        $selectedSemester = $requestedSemester !== null && $requestedSemester !== ''
+            ? ($requestedSemester === 'summer' ? 'summer' : (is_numeric($requestedSemester) ? (int) $requestedSemester : 1))
+            : $defaultSemester;
+
+        // Base query for the selected academic period
+        $query = ($request->filled('school_year') || $request->filled('semester'))
+            ? Classes::forAcademicPeriod($selectedSchoolYear, $selectedSemester)
+            : Classes::currentAcademicPeriod();
+
+        $classes = $query
+            ->with(['Subject', 'subjects', 'Faculty', 'Room', 'Schedule.room'])
+            ->withCount('ClassStudents')
+            ->get();
+
+        // Get all options needed for filtering and class creation
+        $allRooms = Room::query()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'class_code', 'capacity', 'type', 'building']);
+
+        $allFaculty = Faculty::query()
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->get(['id', 'first_name', 'last_name', 'department']);
+
+        $allCourses = Course::query()
+            ->where('is_active', true)
+            ->orderBy('code')
+            ->get(['id', 'code', 'title', 'curriculum_year']);
+
+        $shsTracks = ShsTrack::query()
+            ->orderBy('track_name')
+            ->get(['id', 'track_name']);
+
+        $shsStrands = ShsStrand::query()
+            ->with('track:id,track_name')
+            ->orderBy('strand_name')
+            ->get(['id', 'strand_name', 'track_id']);
+
+        // Process schedule data with normalized year levels and curriculum hour targets
+        $scheduleData = $classes->map(
+            fn (Classes $class): array => $this->formatClassForPlanner($class, $curriculumPlacement, $conflictService)
+        );
+
+        // Get available year levels from the processed data
+        $availableYearLevels = $scheduleData->pluck('year_levels')
+            ->flatten()
+            ->unique()
+            ->filter()
+            ->sort(function ($a, $b): int {
+                $isYearA = str_contains($a, 'Year');
+                $isYearB = str_contains($b, 'Year');
+                if ($isYearA && ! $isYearB) {
+                    return -1;
+                }
+                if (! $isYearA && $isYearB) {
+                    return 1;
+                }
+
+                return strnatcmp($a, $b);
+            })
+            ->values()
+            ->toArray();
+
+        // Get available sections from the processed data (or standard A-D)
+        $availableSections = $scheduleData->pluck('section')
+            ->merge(['A', 'B', 'C', 'D'])
+            ->unique()
+            ->filter()
+            ->sort()
+            ->values()
+            ->toArray();
+
+        $unscheduledCount = $scheduleData->filter(fn (array $item): bool => (bool) ($item['is_unscheduled'] ?? false))->count();
+        $incompleteCount = $scheduleData->filter(
+            fn (array $item): bool => ! ($item['is_unscheduled'] ?? false) && ! ($item['is_complete'] ?? true)
+        )->count();
+        $draftSchedulesCount = $classes->flatMap(fn (Classes $c) => $c->Schedule)
+            ->filter(fn (Schedule $s): bool => ($s->status ?? 'published') === 'draft')
+            ->count();
+
+        $schedulingPolicy = $generalSettingsService->getSchedulingConfig();
+        $conflicts = $conflictService->detectConflictsForClasses($classes, policy: $schedulingPolicy);
+        $utilization = $conflictService->computeUtilizationSummary($classes, $allRooms, $conflicts);
+
+        // Get statistics
+        $stats = [
+            'total_classes' => $classes->count(),
+            'total_students' => $classes->sum('class_students_count'),
+            'unscheduled_classes_count' => $unscheduledCount,
+            'incomplete_classes_count' => $incompleteCount,
+            'draft_schedules_count' => $draftSchedulesCount,
+            'classes_by_year_level' => $scheduleData->groupBy('grade_level')
+                ->map(fn ($group): int => $group->count())
+                ->toArray(),
+            'classes_by_course' => $classes->groupBy('formatted_course_codes')
+                ->map(fn ($group): int => $group->count())
+                ->toArray(),
+            'schedule_conflicts' => $conflicts,
+            'utilization' => $utilization,
+        ];
+
+        $availableSchoolYears = collect($generalSettingsService->getAvailableSchoolYears())
+            ->values()
+            ->push($selectedSchoolYear)
+            ->unique()
+            ->values()
+            ->all();
+
+        $semesterLabel = match ((string) $selectedSemester) {
+            '1' => '1st Semester',
+            '2' => '2nd Semester',
+            'summer' => 'Summer Term',
+            default => "Semester {$selectedSemester}",
+        };
+
+        return Inertia::render($component, [
+            'user' => [
+                'name' => $user->name,
+                'email' => $user->email,
+                'avatar' => $user->avatar_url ?? null,
+                'role' => $user->role?->getLabel() ?? 'Administrator',
+            ],
+            'schedule_data' => $scheduleData,
+            'stats' => $stats,
+            'term_context' => [
+                'school_year' => $selectedSchoolYear,
+                'semester' => (string) $selectedSemester,
+                'semester_label' => $semesterLabel,
+                'available_school_years' => $availableSchoolYears,
+                'available_semesters' => [
+                    ['value' => '1', 'label' => '1st Semester'],
+                    ['value' => '2', 'label' => '2nd Semester'],
+                    ['value' => 'summer', 'label' => 'Summer'],
+                ],
+            ],
+            'filters' => [
+                'available_courses' => $allCourses->map(fn ($course): array => [
+                    'id' => $course->id,
+                    'code' => $course->code,
+                    'title' => $course->title,
+                ])->values(),
+                'available_year_levels' => $availableYearLevels,
+                'available_sections' => $availableSections,
+                'available_rooms' => $allRooms->map(fn ($room): array => [
+                    'id' => $room->id,
+                    'name' => $room->name,
+                    'class_code' => $room->class_code,
+                    'capacity' => $room->capacity ?? 40,
+                    'type' => $room->type ?? 'lecture',
+                    'building' => $room->building,
+                ])->values(),
+                'available_faculty' => $allFaculty->map(fn ($faculty): array => [
+                    'id' => $faculty->id,
+                    'name' => $faculty->first_name.' '.$faculty->last_name,
+                    'department' => $faculty->department,
+                ])->values(),
+                'current_filters' => [
+                    'course' => $request->input('course'),
+                    'year_level' => $request->input('year_level'),
+                    'section' => $request->input('section'),
+                ],
+            ],
+            'creation_options' => [
+                'rooms' => $allRooms->map(fn ($room): array => [
+                    'id' => $room->id,
+                    'name' => $room->name,
+                    'class_code' => $room->class_code,
+                    'capacity' => $room->capacity ?? 40,
+                    'type' => $room->type ?? 'lecture',
+                    'building' => $room->building,
+                ])->values(),
+                'faculty' => $allFaculty->map(fn ($faculty): array => [
+                    'id' => $faculty->id,
+                    'name' => $faculty->first_name.' '.$faculty->last_name,
+                    'department' => $faculty->department,
+                ])->values(),
+                'courses' => $allCourses->map(fn ($course): array => [
+                    'id' => $course->id,
+                    'code' => $course->code,
+                    'title' => $course->title,
+                    'curriculum_year' => $course->curriculum_year,
+                ])->values(),
+                'shs_tracks' => $shsTracks->map(fn ($track): array => [
+                    'id' => $track->id,
+                    'track_name' => $track->track_name,
+                ])->values(),
+                'shs_strands' => $shsStrands->map(fn ($strand): array => [
+                    'id' => $strand->id,
+                    'strand_name' => $strand->strand_name,
+                    'track_id' => $strand->track_id,
+                    'track_name' => $strand->track?->track_name,
+                ])->values(),
+                'sections' => ['A', 'B', 'C', 'D'],
+                'delivery_modes' => ScheduleDelivery::options(),
+                'scheduling_policy' => $schedulingPolicy,
+                'semesters' => [
+                    ['value' => '1', 'label' => '1st Semester'],
+                    ['value' => '2', 'label' => '2nd Semester'],
+                    ['value' => 'summer', 'label' => 'Summer'],
+                ],
+            ],
+            'scheduling_policy' => $schedulingPolicy,
+            'defaults' => [
+                'semester' => (string) $selectedSemester,
+                'school_year' => $selectedSchoolYear,
+            ],
+        ]);
+    }
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Collection<int, Room>
+     */
+    private function activeRooms(): \Illuminate\Database\Eloquent\Collection
+    {
+        return Room::query()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'class_code', 'capacity', 'type', 'building']);
     }
 
     /**

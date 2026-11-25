@@ -3,13 +3,16 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Monitor } from "lucide-react";
 import { useState } from "react";
 import { isOnlineDeliveryMode, isSynchronousOnlineMode, type DeliveryMode } from "../classes/lib/class-defaults";
 import { scheduleMinutes, scheduledHours } from "./scheduling-readiness";
 import type { ClassScheduleData, RoomOption, ScheduleEntry } from "./scheduling-types";
 
-const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const BASE_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const ALL_DAYS = [...BASE_DAYS, "Sunday"];
+
 const apiTime = (time: string) => {
     const minutes = scheduleMinutes(time);
     return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
@@ -22,12 +25,18 @@ export type SessionValues = {
     end_time: string;
     room_id: number | null;
     component_type: "lecture" | "lab";
+    apply_to_pattern_group?: boolean;
 };
 
 export default function SchedulingSessionDialog({
     classItem,
     session,
     rooms,
+    allowSunday = false,
+    initialDay,
+    initialStartTime,
+    initialEndTime,
+    initialRoomId,
     onClose,
     onSave,
     onDelete,
@@ -35,15 +44,24 @@ export default function SchedulingSessionDialog({
     classItem: ClassScheduleData;
     session?: ScheduleEntry;
     rooms: RoomOption[];
+    allowSunday?: boolean;
+    initialDay?: string;
+    initialStartTime?: string;
+    initialEndTime?: string;
+    initialRoomId?: number | null;
     onClose: () => void;
     onSave: (values: SessionValues) => Promise<void>;
     onDelete: () => Promise<void>;
 }) {
-    const [selectedDays, setSelectedDays] = useState(session ? [session.day_of_week] : ["Monday"]);
-    const [start, setStart] = useState(session ? apiTime(session.start_time) : "08:00");
-    const [end, setEnd] = useState(session ? apiTime(session.end_time) : "09:00");
-    const [room, setRoom] = useState<number | null>(session ? (session.room_id ?? null) : (classItem.room_id ?? null));
+    const days = allowSunday || session?.day_of_week === "Sunday" ? ALL_DAYS : BASE_DAYS;
+    const [selectedDays, setSelectedDays] = useState(session ? [session.day_of_week] : [initialDay ?? "Monday"]);
+    const [start, setStart] = useState(session ? apiTime(session.start_time) : (initialStartTime ?? "08:00"));
+    const [end, setEnd] = useState(session ? apiTime(session.end_time) : (initialEndTime ?? "09:00"));
+    const [room, setRoom] = useState<number | null>(
+        session ? (session.room_id ?? null) : (initialRoomId !== undefined ? initialRoomId : (classItem.room_id ?? null)),
+    );
     const [component, setComponent] = useState<"lecture" | "lab">(session?.component_type === "lab" ? "lab" : "lecture");
+    const [applyToPatternGroup, setApplyToPatternGroup] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
     const [confirmDelete, setConfirmDelete] = useState(false);
@@ -51,6 +69,10 @@ export default function SchedulingSessionDialog({
     const online = isOnlineDeliveryMode(deliveryMode);
     const synchronousOnline = isSynchronousOnlineMode(deliveryMode);
     const valid = selectedDays.length > 0 && start && end && end > start;
+
+    const patternSiblingsCount = session?.pattern_group_id
+        ? classItem.schedules.filter((entry) => entry.pattern_group_id === session.pattern_group_id).length
+        : 0;
 
     const perform = async (action: () => Promise<void>) => {
         setBusy(true);
@@ -82,7 +104,7 @@ export default function SchedulingSessionDialog({
                     </DialogDescription>
                 </DialogHeader>
                 <form
-                    className="space-y-6"
+                    className="space-y-5"
                     onSubmit={(event) => {
                         event.preventDefault();
                         if (valid && !busy)
@@ -94,6 +116,7 @@ export default function SchedulingSessionDialog({
                                     end_time: end,
                                     room_id: online ? null : room,
                                     component_type: component,
+                                    apply_to_pattern_group: session ? applyToPatternGroup : undefined,
                                 }),
                             );
                     }}
@@ -101,11 +124,12 @@ export default function SchedulingSessionDialog({
                     <fieldset disabled={busy} className="space-y-4">
                         <fieldset className="space-y-2">
                             <legend className="mb-2 text-sm font-medium">{session ? "Day" : "Meeting days"}</legend>
-                            <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                            <div className={days.length === 7 ? "grid grid-cols-4 gap-2 sm:grid-cols-7" : "grid grid-cols-3 gap-2 sm:grid-cols-6"}>
                                 {days.map((day) => (
                                     <Button
                                         key={day}
                                         type="button"
+                                        size="sm"
                                         variant={selectedDays.includes(day) ? "default" : "outline"}
                                         aria-pressed={selectedDays.includes(day)}
                                         aria-label={day}
@@ -159,10 +183,10 @@ export default function SchedulingSessionDialog({
                                     <SelectItem value="online_synchronous">Online (Synchronous)</SelectItem>
                                 </SelectContent>
                             </Select>
-                            <p className="text-muted-foreground text-sm">Other meetings can use a different type.</p>
+                            <p className="text-muted-foreground text-xs">Other meetings in this class can use a different type.</p>
                         </div>
                         {online ? (
-                            <p className="bg-muted/40 flex items-center gap-2 rounded-lg border p-4 text-sm">
+                            <p className="bg-muted/40 flex items-center gap-2 rounded-lg border p-3.5 text-sm">
                                 <Monitor className="size-4 shrink-0" aria-hidden="true" />
                                 {synchronousOnline
                                     ? "Online (Synchronous) · No room reserved; checked for faculty & cohort time conflicts"
@@ -183,6 +207,7 @@ export default function SchedulingSessionDialog({
                                         {rooms.map((item) => (
                                             <SelectItem key={item.id} value={String(item.id)}>
                                                 {item.name}
+                                                {item.capacity ? ` (Cap ${item.capacity})` : ""}
                                             </SelectItem>
                                         ))}
                                     </SelectContent>
@@ -203,8 +228,25 @@ export default function SchedulingSessionDialog({
                                 </Select>
                             </div>
                         )}
+                        {session && patternSiblingsCount > 1 && (
+                            <div className="bg-muted/30 flex items-center justify-between gap-4 rounded-lg border p-3">
+                                <div className="space-y-0.5">
+                                    <Label htmlFor="apply-pattern-group" className="text-sm font-medium">
+                                        Apply time change to all {patternSiblingsCount} linked days
+                                    </Label>
+                                    <p className="text-muted-foreground text-xs">
+                                        Updates start &amp; end time across every session in this recurring pattern.
+                                    </p>
+                                </div>
+                                <Switch
+                                    id="apply-pattern-group"
+                                    checked={applyToPatternGroup}
+                                    onCheckedChange={setApplyToPatternGroup}
+                                />
+                            </div>
+                        )}
                     </fieldset>
-                    <p className="text-muted-foreground text-sm">
+                    <p className="text-muted-foreground text-xs tabular-nums">
                         {Number(scheduledHours(classItem.schedules).toFixed(2))} of {classItem.required_hours ?? 3} weekly hours scheduled. Times
                         repeat each week.
                     </p>

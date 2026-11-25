@@ -72,7 +72,7 @@ function administratorInertiaPageCatalog(): array
         ['administrators.roles.index', 'administrators/roles/index'],
         ['administrators.rooms.index', 'administrators/rooms/index'],
         ['administrators.rooms.create', 'administrators/rooms/edit'],
-        ['administrators.scheduling-analytics.index', 'administrators/scheduling-analytics'],
+        ['administrators.scheduling-analytics.index', 'administrators/schedule-canvas'],
         ['administrators.settings.index', 'profile'],
         ['administrators.settings.newsletter.index', 'administrators/system-management/newsletter'],
         ['administrators.students.index', 'administrators/students/index'],

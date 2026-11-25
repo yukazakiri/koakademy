@@ -9,6 +9,7 @@ export type SchedulingPolicy = {
     check_student_cohort_conflicts: boolean;
     check_synchronous_online_conflicts: boolean;
     check_asynchronous_online_conflicts: boolean;
+    allow_sunday_scheduling: boolean;
 };
 
 export function isOnlineDeliveryMode(mode?: string | null): boolean {

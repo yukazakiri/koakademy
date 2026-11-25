@@ -246,6 +246,95 @@ final readonly class SchedulingService
     }
 
     /**
+     * Atomically update multiple schedule blocks (e.g. room/time swaps or multi-session shifts).
+     *
+     * @param  list<array<string, mixed>>  $operations
+     * @return Collection<int, Schedule>
+     */
+    public function batchUpdateScheduleBlocks(array $operations, ?User $actor = null): Collection
+    {
+        $scheduleIds = collect($operations)
+            ->pluck('schedule_id')
+            ->filter(fn (mixed $id): bool => is_numeric($id))
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($scheduleIds->isEmpty()) {
+            return collect();
+        }
+
+        $schedulesById = Schedule::query()
+            ->with(['class', 'room'])
+            ->whereIn('id', $scheduleIds)
+            ->get()
+            ->keyBy('id');
+
+        /** @var array<int, Classes> $affectedClasses */
+        $affectedClasses = [];
+        /** @var array<int, array<int, array<string, mixed>>> $oldSnapshots */
+        $oldSnapshots = [];
+
+        foreach ($schedulesById as $schedule) {
+            $class = $schedule->class?->fresh();
+            if ($class instanceof Classes && ! isset($affectedClasses[$class->id])) {
+                $affectedClasses[$class->id] = $class;
+                $oldSnapshots[$class->id] = $this->notificationService->snapshot($class);
+            }
+        }
+
+        $updated = DB::transaction(function () use ($operations, $schedulesById): Collection {
+            $results = collect();
+
+            foreach ($operations as $operation) {
+                $scheduleId = (int) ($operation['schedule_id'] ?? 0);
+                $schedule = $schedulesById->get($scheduleId);
+
+                if (! $schedule instanceof Schedule) {
+                    continue;
+                }
+
+                $normalized = ScheduleDelivery::normalizeBlock($operation, $schedule->delivery_mode);
+                $updateData = [
+                    'delivery_mode' => $normalized['delivery_mode'],
+                    'day_of_week' => (string) ($normalized['day_of_week'] ?? $schedule->day_of_week),
+                    'start_time' => $this->normalizeTimeString((string) ($normalized['start_time'] ?? $schedule->start_time?->format('H:i'))),
+                    'end_time' => $this->normalizeTimeString((string) ($normalized['end_time'] ?? $schedule->end_time?->format('H:i'))),
+                ];
+
+                if (array_key_exists('room_id', $normalized)) {
+                    $updateData['room_id'] = $normalized['room_id'] !== null && $normalized['room_id'] !== ''
+                        ? (int) $normalized['room_id']
+                        : null;
+                }
+
+                if (array_key_exists('component_type', $normalized) && is_string($normalized['component_type'])) {
+                    $updateData['component_type'] = $normalized['component_type'];
+                }
+
+                if (array_key_exists('status', $normalized) && is_string($normalized['status'])) {
+                    $updateData['status'] = $normalized['status'];
+                }
+
+                $schedule->update($updateData);
+                $schedule->refresh();
+                $schedule->load('room');
+                $results->push($schedule);
+            }
+
+            return $results;
+        });
+
+        foreach ($affectedClasses as $classId => $class) {
+            $class->unsetRelation('schedules');
+            $class->unsetRelation('Schedule');
+            $this->notificationService->notifyIfChanged($class, $oldSnapshots[$classId] ?? [], $actor);
+        }
+
+        return $updated;
+    }
+
+    /**
      * Place one or more schedule blocks (e.g. MWF / TTh / Single) onto a class.
      *
      * @param  list<string>  $days

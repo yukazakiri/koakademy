@@ -314,6 +314,15 @@ export const ADMIN_ROUTES: AdminRoute[] = [
         allowedRoles: [...SYSTEM_ADMIN_ROLES, ...ACADEMIC_ADMIN_ROLES, UserRole.Registrar, UserRole.AssistantRegistrar],
     },
     {
+        id: "admin-schedule-board",
+        title: "Schedule Board",
+        icon: <IconCalendarEvent className="size-4" />,
+        link: "/administrators/schedule-board",
+        section: "academic",
+        requiredPermission: ["ViewAny:Classes", "View:Timetable"],
+        allowedRoles: [...SYSTEM_ADMIN_ROLES, ...ACADEMIC_ADMIN_ROLES, UserRole.Registrar, UserRole.AssistantRegistrar],
+    },
+    {
         id: "admin-rooms",
         title: "Rooms",
         icon: <IconDoor className="size-4" />,

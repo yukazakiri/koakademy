@@ -84,6 +84,7 @@ final class AdministratorSettingsController extends Controller
             'scheduling.check_student_cohort_conflicts' => ['sometimes', 'boolean'],
             'scheduling.check_synchronous_online_conflicts' => ['sometimes', 'boolean'],
             'scheduling.check_asynchronous_online_conflicts' => ['sometimes', 'boolean'],
+            'scheduling.allow_sunday_scheduling' => ['sometimes', 'boolean'],
         ]);
 
         $schedulingAttributes = is_array($validated['scheduling'] ?? null) ? $validated['scheduling'] : null;

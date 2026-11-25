@@ -27,8 +27,14 @@ final class UpdateScheduleRequest extends FormRequest
      */
     public function rules(): array
     {
+        $schedule = $this->route('schedule');
+        $allowedDays = ScheduleDelivery::allowedDays();
+        if ($schedule instanceof Schedule && $schedule->day_of_week === 'Sunday' && ! in_array('Sunday', $allowedDays, true)) {
+            $allowedDays[] = 'Sunday';
+        }
+
         return [
-            'day_of_week' => ['required', 'string', 'in:Monday,Tuesday,Wednesday,Thursday,Friday,Saturday'],
+            'day_of_week' => ['required', 'string', Rule::in($allowedDays)],
             'start_time' => ['required', 'date_format:H:i'],
             'end_time' => ['required', 'date_format:H:i', 'after:start_time'],
             'delivery_mode' => ['sometimes', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
@@ -46,9 +52,13 @@ final class UpdateScheduleRequest extends FormRequest
      */
     public function messages(): array
     {
+        $allowsSunday = ScheduleDelivery::allowsSunday();
+
         return [
             'end_time.after' => 'The end time must be after the start time.',
-            'day_of_week.in' => 'The day must be a valid weekday (Monday through Saturday).',
+            'day_of_week.in' => $allowsSunday
+                ? 'The day must be a valid day of the week (Monday through Sunday).'
+                : 'Sunday scheduling is disabled. Enable Sunday scheduling in Scheduling Rules to schedule on Sunday.',
         ];
     }
 

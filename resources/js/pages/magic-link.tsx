@@ -45,19 +45,12 @@ export default function MagicLinkPage() {
         return () => clearInterval(timer);
     }, [cooldown]);
 
-    useEffect(() => {
-        if (errors && Object.keys(errors).length) {
-            Object.values(errors).forEach((m) => toast.error(m));
-        }
-    }, [errors]);
-
     const submit = (e: FormEvent) => {
         e.preventDefault();
         post("/magic-link/send", {
             onSuccess: () => {
                 setLinkSent(true);
                 setCooldown(60);
-                toast.success("Secure sign-in link dispatched. Check your inbox!");
             },
             onError: (formErrors) => {
                 Object.values(formErrors).forEach((err) => toast.error(err));
@@ -138,21 +131,22 @@ export default function MagicLinkPage() {
                 <form onSubmit={submit}>
                     <FieldGroup className="gap-5">
                         <Field>
-                            <FieldLabel htmlFor="email" className="text-sm font-medium text-foreground">
+                            <FieldLabel htmlFor="email" className="text-xs font-semibold text-foreground">
                                 Email address
                             </FieldLabel>
                             <InputGroup
                                 className={cn(
-                                    "h-10 rounded-lg border-input bg-background/80 shadow-xs transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20",
+                                    "h-11 rounded-xl border-border/80 bg-background/60 shadow-2xs transition-all duration-200 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20",
                                     errors?.email && "border-destructive focus-within:ring-destructive/20"
                                 )}
                             >
-                                <InputGroupAddon align="inline-start" className="text-muted-foreground pl-3">
+                                <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
                                     <Mail className="size-4" />
                                 </InputGroupAddon>
                                 <InputGroupInput
                                     id="email"
                                     type="email"
+                                    autoComplete="email"
                                     placeholder="name@school.edu"
                                     required
                                     autoFocus
@@ -183,7 +177,7 @@ export default function MagicLinkPage() {
 
                         <Button
                             type="submit"
-                            className="h-10 w-full rounded-lg bg-primary font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:ring-ring disabled:opacity-50 text-sm mt-1"
+                            className="h-11 w-full rounded-xl bg-primary font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:ring-ring disabled:opacity-50 text-sm mt-1"
                             disabled={processing}
                         >
                             {processing ? (

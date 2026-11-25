@@ -70,6 +70,8 @@ it('persists enabled social providers and exposes them to auth pages', function 
     expect($socialNetwork['google_enabled'])->toBeTrue()
         ->and($socialNetwork['google_client_id'])->toBe('google-client-id');
 
+    auth()->logout();
+
     $this->get(portalUrlForAdministrators('/login'))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page

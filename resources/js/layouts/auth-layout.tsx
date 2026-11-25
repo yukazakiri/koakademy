@@ -1,5 +1,5 @@
 import { Head, Link, usePage } from "@inertiajs/react";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { ArrowLeft, BookOpen } from "lucide-react";
 import { useState, type ComponentProps, type ReactNode } from "react";
 
@@ -39,25 +39,35 @@ const TILE_POSITIONS = [
 ];
 
 function AnimatedGridTiles() {
+    const prefersReducedMotion = useReducedMotion();
+
     return (
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-            {TILE_POSITIONS.map((pos, idx) => (
-                <motion.div
-                    key={idx}
-                    className="absolute size-9 rounded-md border border-primary/20 bg-primary/10 backdrop-blur-xs"
-                    style={{ top: pos.top, left: pos.left }}
-                    animate={{
-                        opacity: [0.15, 0.7, 0.15],
-                        scale: [1, 1.05, 1],
-                    }}
-                    transition={{
-                        duration: 4.5,
-                        repeat: Infinity,
-                        ease: "easeInOut",
-                        delay: pos.delay,
-                    }}
-                />
-            ))}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+            {TILE_POSITIONS.map((pos, idx) =>
+                prefersReducedMotion ? (
+                    <div
+                        key={idx}
+                        className="absolute size-9 rounded-md border border-primary/20 bg-primary/10 opacity-30 backdrop-blur-xs"
+                        style={{ top: pos.top, left: pos.left }}
+                    />
+                ) : (
+                    <motion.div
+                        key={idx}
+                        className="absolute size-9 rounded-md border border-primary/20 bg-primary/10 backdrop-blur-xs"
+                        style={{ top: pos.top, left: pos.left }}
+                        animate={{
+                            opacity: [0.15, 0.7, 0.15],
+                            scale: [1, 1.05, 1],
+                        }}
+                        transition={{
+                            duration: 4.5,
+                            repeat: Infinity,
+                            ease: "easeInOut",
+                            delay: pos.delay,
+                        }}
+                    />
+                ),
+            )}
         </div>
     );
 }

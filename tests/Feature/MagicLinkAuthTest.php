@@ -80,8 +80,17 @@ it('authenticates a user with a valid signed magic link and enforces single-use 
         ]
     );
 
-    // First visit: successfully logs in and consumes the single-use token
-    $firstResponse = $this->get($signedUrl);
+    // First GET visit: renders confirmation page WITHOUT consuming the token (scanner-safe)
+    $previewResponse = $this->get($signedUrl);
+    $previewResponse->assertOk();
+    $this->assertGuest();
+    expect(Cache::has("magic_link:{$user->id}:{$token}"))->toBeTrue();
+
+    $consumeUrl = $previewResponse->inertiaProps('consumeUrl');
+    expect($consumeUrl)->toBeString()->toContain('/magic-link/verify/');
+
+    // POST confirmation: successfully logs in and consumes the single-use token
+    $firstResponse = $this->post($consumeUrl);
 
     $firstResponse->assertRedirect();
     $this->assertAuthenticatedAs($user);
@@ -91,11 +100,14 @@ it('authenticates a user with a valid signed magic link and enforces single-use 
     Auth::logout();
     $this->assertGuest();
 
-    // Second visit: token already consumed, replay rejected
-    $replayResponse = $this->get($signedUrl);
+    // Second GET and POST visits: token already consumed, replay rejected
+    $replayGet = $this->get($signedUrl);
+    $replayGet->assertRedirect(route('login'));
+    $replayGet->assertSessionHasErrors('email');
 
-    $replayResponse->assertRedirect(route('login'));
-    $replayResponse->assertSessionHasErrors('email');
+    $replayPost = $this->post($consumeUrl);
+    $replayPost->assertRedirect(route('login'));
+    $replayPost->assertSessionHasErrors('email');
     $this->assertGuest();
 });
 

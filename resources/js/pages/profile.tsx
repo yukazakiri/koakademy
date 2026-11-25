@@ -216,6 +216,7 @@ export default function ProfilePage() {
         faculty,
         student,
         sessions,
+        security_activity = [],
         endpoints,
         connected_accounts = { providers: {}, accounts: [] },
         calendar_feed,
@@ -387,7 +388,21 @@ export default function ProfilePage() {
             is_current_device: boolean;
             last_active: string;
             user_agent: string;
+            browser?: string;
+            platform?: string;
+            is_desktop?: boolean;
         }>;
+        security_activity?: Array<{
+            id: number;
+            event: string;
+            label: string;
+            outcome: string;
+            browser: string;
+            platform: string;
+            occurred_at: string;
+            occurred_at_iso: string | null;
+        }>;
+        newly_generated_recovery_codes?: string[] | null;
         feature_flags?: {
             experimental?: string[];
             experimental_available?: string[];
@@ -1462,7 +1477,7 @@ export default function ProfilePage() {
                                         paths={paths}
                                         developerModeEnabled={developerModeEnabled}
                                     />
-                                    <BrowserSessions sessions={sessions} paths={paths} />
+                                    <BrowserSessions sessions={sessions} securityActivity={security_activity} paths={paths} />
                                 </div>
                             </TabsContent>
 

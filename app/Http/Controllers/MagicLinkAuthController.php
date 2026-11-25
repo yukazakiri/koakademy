@@ -67,14 +67,61 @@ final class MagicLinkAuthController extends Controller
     }
 
     /**
-     * Verify the signed magic login link and authenticate the user.
+     * Validate the signed magic link without consuming it (protects against
+     * corporate/university email link scanners pre-fetching GET URLs), then
+     * render a confirmation page that submits a POST to complete sign-in.
      */
-    public function verify(Request $request, User $user): RedirectResponse
+    public function verify(Request $request, User $user): Response|RedirectResponse
     {
         if (! $request->hasValidSignature()) {
             return redirect()->route('login')->withErrors([
                 'email' => 'This sign-in link is invalid or has expired. Please request a new one.',
             ]);
+        }
+
+        if ($user->suspended_at !== null) {
+            abort(403, 'Account access is unavailable. Please contact an administrator.');
+        }
+
+        $token = (string) $request->query('token');
+        $cacheKey = "magic_link:{$user->id}:{$token}";
+
+        if (! Cache::has($cacheKey)) {
+            return redirect()->route('login')->withErrors([
+                'email' => 'This sign-in link has already been used or has expired. Please request a new one.',
+            ]);
+        }
+
+        $remember = $request->boolean('remember');
+        $consumeUrl = URL::temporarySignedRoute(
+            'magic-link.consume',
+            now()->addMinutes(5),
+            [
+                'user' => $user->id,
+                'token' => $token,
+                'remember' => $remember ? 1 : 0,
+            ]
+        );
+
+        return Inertia::render('magic-link-confirm', [
+            'email' => $this->maskEmail($user->email),
+            'consumeUrl' => $consumeUrl,
+        ]);
+    }
+
+    /**
+     * Atomically consume the single-use magic link token on POST and authenticate the user.
+     */
+    public function consume(Request $request, User $user): RedirectResponse
+    {
+        if (! $request->hasValidSignature()) {
+            return redirect()->route('login')->withErrors([
+                'email' => 'This sign-in link is invalid or has expired. Please request a new one.',
+            ]);
+        }
+
+        if ($user->suspended_at !== null) {
+            abort(403, 'Account access is unavailable. Please contact an administrator.');
         }
 
         $token = (string) $request->query('token');
@@ -102,12 +149,18 @@ final class MagicLinkAuthController extends Controller
             return redirect()->route('two-factor.login');
         }
 
-        $destination = match (true) {
-            $user->isAdministrative() => '/administrators',
-            $user->role?->isStudent() => '/student/dashboard',
-            default => '/faculty/dashboard',
-        };
+        return redirect()->intended($user->homeUrl())->with('status', 'Welcome back! You have been securely signed in.');
+    }
 
-        return redirect()->intended($destination)->with('status', 'Welcome back! You have been securely signed in.');
+    private function maskEmail(string $email): string
+    {
+        if (! str_contains($email, '@')) {
+            return $email;
+        }
+
+        [$local, $domain] = explode('@', $email, 2);
+        $visible = mb_substr($local, 0, min(2, mb_strlen($local)));
+
+        return $visible.'•••@'.$domain;
     }
 }

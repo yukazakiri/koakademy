@@ -91,7 +91,7 @@ final class TwoFactorChallengeController extends Controller
             return $this->failedAttempt($request, $challenge, 'recovery_code', 'The provided recovery code was invalid.');
         }
 
-        $code = $request->code;
+        $code = preg_replace('/[\s-]+/', '', (string) $request->code) ?? '';
 
         if (blank($code)) {
             return back()->withErrors(['code' => 'The authentication code is required.']);
@@ -121,23 +121,33 @@ final class TwoFactorChallengeController extends Controller
     public function sendEmailCode(Request $request)
     {
         if (! $request->session()->has('auth.2fa.id')) {
-            return redirect()->route('login');
+            return $request->expectsJson()
+                ? response()->json(['error' => 'No active two-factor session. Please sign in again.'], 403)
+                : redirect()->route('login');
         }
         $user = User::find($request->session()->get('auth.2fa.id'));
 
         if (! $user) {
-            return redirect()->route('login');
+            return $request->expectsJson()
+                ? response()->json(['error' => 'No active two-factor session. Please sign in again.'], 403)
+                : redirect()->route('login');
         }
 
         if (! $this->emailAuthentication->isEnabled($user)) {
-            return back()->withErrors(['code' => 'Email authentication is not enabled for this account.']);
+            return $request->expectsJson()
+                ? response()->json(['error' => 'Email authentication is not enabled for this account.'], 422)
+                : back()->withErrors(['code' => 'Email authentication is not enabled for this account.']);
         }
 
         if (! $this->emailAuthentication->sendCode($user)) {
-            return back()->withErrors(['code' => 'Please wait before requesting another email code.']);
+            return $request->expectsJson()
+                ? response()->json(['error' => 'Please wait before requesting another email code.'], 429)
+                : back()->withErrors(['code' => 'Please wait before requesting another email code.']);
         }
 
-        return back()->with('flash', ['success' => 'Code sent to your email.']);
+        return $request->expectsJson()
+            ? response()->json(['message' => 'Verification code sent to your email.'])
+            : back()->with('flash', ['success' => 'Code sent to your email.']);
     }
 
     public function passkeyOptions(Request $request, GenerateVerificationOptions $generate): JsonResponse

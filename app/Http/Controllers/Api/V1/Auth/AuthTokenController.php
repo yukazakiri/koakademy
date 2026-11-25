@@ -14,7 +14,9 @@ use App\Http\Requests\Api\V1\UpdateMobilePasswordRequest;
 use App\Http\Resources\Api\V1\UserResource;
 use App\Models\User;
 use App\Notifications\FilamentEmailAuthenticationCode;
+use App\Notifications\SecurityActivityNotification;
 use App\Services\Auth\LoginAttemptService;
+use App\Services\Auth\TwoFactorAttemptService;
 use App\Services\OnlineUserPresenceService;
 use App\Services\UserSecurityActivityService;
 use Illuminate\Auth\Events\PasswordReset;
@@ -32,11 +34,12 @@ final class AuthTokenController extends Controller
     public function __construct(
         private readonly SecurityAwareAppAuthentication $appAuthentication,
         private readonly LoginAttemptService $loginAttempts,
+        private readonly TwoFactorAttemptService $twoFactorAttempts,
     ) {}
 
     public function login(MobileLoginRequest $request): JsonResponse
     {
-        $email = mb_strtolower((string) $request->validated('email'));
+        $email = mb_strtolower(mb_trim((string) $request->validated('email')));
         $ip = (string) $request->ip();
 
         if ($this->loginAttempts->tooManyAttempts($email, $ip)) {
@@ -47,7 +50,7 @@ final class AuthTokenController extends Controller
             ], 429);
         }
 
-        $user = User::query()->where('email', $email)->first();
+        $user = User::query()->whereRaw('LOWER(email) = ?', [$email])->first();
 
         if (! $user instanceof User || ! Hash::check((string) $request->validated('password'), $user->password)) {
             $this->loginAttempts->recordFailure($email, $ip);
@@ -106,13 +109,24 @@ final class AuthTokenController extends Controller
 
     public function sendEmailChallenge(MobileChallengeRequest $request): JsonResponse
     {
-        $challenge = $this->challenge($request->validated('challenge_id'));
+        $challengeId = (string) $request->validated('challenge_id');
+        $challenge = $this->challenge($challengeId);
         $user = User::query()->find($challenge['user_id']);
 
         abort_unless($user instanceof User && $user->hasEmailAuthentication(), 404, 'Authentication challenge not found.');
 
+        $cooldownKey = self::CHALLENGE_PREFIX.'email-cooldown:'.$user->getKey();
+        if (Cache::has($cooldownKey)) {
+            return response()->json([
+                'error' => true,
+                'message' => 'Please wait before requesting another email verification code.',
+                'code' => 'CHALLENGE_EMAIL_COOLDOWN',
+            ], 429);
+        }
+
         $code = mb_str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-        Cache::put(self::CHALLENGE_PREFIX.$request->validated('challenge_id').':code', Hash::make($code), now()->addMinutes(4));
+        Cache::put(self::CHALLENGE_PREFIX.$challengeId.':code', Hash::make($code), now()->addMinutes(4));
+        Cache::put($cooldownKey, true, now()->addSeconds(30));
         $user->notify(new FilamentEmailAuthenticationCode($code, 4));
 
         return response()->json(['message' => 'An authentication code was sent to the account email address.']);
@@ -124,10 +138,27 @@ final class AuthTokenController extends Controller
         $challenge = $this->challenge($challengeId);
         $user = User::query()->find($challenge['user_id']);
         abort_unless($user instanceof User, 404, 'Authentication challenge not found.');
+        abort_if($user->suspended_at !== null, 403, 'Account access is unavailable.');
+
+        $attemptKey = (string) $user->getKey();
+
+        // Scope attempt limits to the account rather than the ephemeral challenge_id
+        // so creating new challenges after knowing the password cannot reset guesses.
+        if ($this->twoFactorAttempts->tooManyAttempts($attemptKey)) {
+            Cache::forget(self::CHALLENGE_PREFIX.$challengeId);
+            Cache::forget(self::CHALLENGE_PREFIX.$challengeId.':code');
+
+            return response()->json([
+                'error' => true,
+                'message' => 'Too many invalid authentication attempts. Please sign in again.',
+                'code' => 'CHALLENGE_LOCKED',
+            ], 429);
+        }
 
         $verified = false;
         $recoveryCode = $request->validated('recovery_code');
-        $code = $request->validated('code');
+        $rawCode = $request->validated('code');
+        $code = is_string($rawCode) ? (preg_replace('/[\s-]+/', '', $rawCode) ?? '') : null;
 
         if (is_string($recoveryCode) && $recoveryCode !== '') {
             $verified = $this->appAuthentication->verifyRecoveryCode($recoveryCode, $user);
@@ -144,15 +175,11 @@ final class AuthTokenController extends Controller
 
         if (! $verified) {
             app(UserSecurityActivityService::class)->record($user, 'mfa_failed', 'failure', guard: 'sanctum');
+            $this->twoFactorAttempts->recordFailure($attemptKey);
 
-            $attemptsKey = self::CHALLENGE_PREFIX.$challengeId.':attempts';
-            $attempts = ((int) Cache::get($attemptsKey, 0)) + 1;
-            $maxAttempts = max(1, (int) config('security.two_factor_max_attempts', 5));
-
-            if ($attempts >= $maxAttempts) {
+            if ($this->twoFactorAttempts->tooManyAttempts($attemptKey)) {
                 Cache::forget(self::CHALLENGE_PREFIX.$challengeId);
                 Cache::forget(self::CHALLENGE_PREFIX.$challengeId.':code');
-                Cache::forget($attemptsKey);
 
                 return response()->json([
                     'error' => true,
@@ -161,8 +188,6 @@ final class AuthTokenController extends Controller
                 ], 429);
             }
 
-            Cache::put($attemptsKey, $attempts, now()->addMinutes(5));
-
             return response()->json([
                 'error' => true,
                 'message' => 'The authentication code is invalid or expired.',
@@ -170,10 +195,10 @@ final class AuthTokenController extends Controller
             ], 422);
         }
 
+        $this->twoFactorAttempts->recordSuccess($attemptKey);
         app(UserSecurityActivityService::class)->record($user, 'mfa_passed', 'success', guard: 'sanctum');
         Cache::forget(self::CHALLENGE_PREFIX.$challengeId);
         Cache::forget(self::CHALLENGE_PREFIX.$challengeId.':code');
-        Cache::forget(self::CHALLENGE_PREFIX.$challengeId.':attempts');
 
         return $this->tokenResponse($user, (string) ($request->validated('device_name') ?? $challenge['device_name']));
     }
@@ -277,6 +302,13 @@ final class AuthTokenController extends Controller
         }
         $tokens->delete();
         $user->revokeMcpOAuthTokens();
+        app(UserSecurityActivityService::class)->record($user, 'password_changed', 'success', guard: 'sanctum');
+        $user->notify(new SecurityActivityNotification(
+            actionTitle: 'Password Changed',
+            actionSummary: 'Your account password was changed from the mobile app and other active sessions/tokens were signed out.',
+            ipAddress: $request->ip(),
+            userAgent: $request->userAgent(),
+        ));
 
         return response()->json(['message' => 'The password has been updated.']);
     }

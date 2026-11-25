@@ -118,15 +118,7 @@ final class PasskeyAuthController extends Controller
 
     private function getRedirectForUser(User $user): string
     {
-        if ($user->isAdministrative()) {
-            return '/administrators/dashboard';
-        }
-
-        if ($user->role?->isStudent()) {
-            return '/student/dashboard';
-        }
-
-        return '/faculty/dashboard';
+        return $user->homeUrl();
     }
 
     private function credentialFromRequest(Request $request): PublicKeyCredential

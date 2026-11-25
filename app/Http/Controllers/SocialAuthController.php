@@ -9,6 +9,7 @@ use App\Models\ConnectedAccount;
 use App\Models\User;
 use App\Services\SocialiteProviderService;
 use App\Services\StudentOrganizationAssignmentService;
+use App\Services\UserSecurityActivityService;
 use Exception;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -152,6 +153,7 @@ final class SocialAuthController extends Controller
             }
 
             $this->storeConnectedAccount($user, $provider, $socialUser);
+            app(UserSecurityActivityService::class)->record($user, 'social_account_connected', 'success', reason: $provider);
 
             if ($provider === 'google') {
                 $this->syncAvatar($user, $socialUser);
@@ -180,7 +182,10 @@ final class SocialAuthController extends Controller
             $query->whereKey($request->integer('account_id'));
         }
 
-        $query->delete();
+        $deleted = $query->delete();
+        if ($deleted > 0) {
+            app(UserSecurityActivityService::class)->record($user, 'social_account_disconnected', 'success', reason: $provider);
+        }
 
         return redirect('/profile')->with('status', ucfirst($provider).' disconnected.');
     }
@@ -274,15 +279,11 @@ final class SocialAuthController extends Controller
 
     private function redirectForUser(User $user): string
     {
-        if ($user->isAdministrative()) {
-            return '/administrators';
+        if ($user->role === UserRole::User) {
+            return '/dashboard';
         }
 
-        if ($user->role === UserRole::User || $user->role?->isStudent()) {
-            return $user->role?->isStudent() ? '/student/dashboard' : '/dashboard';
-        }
-
-        return '/faculty/dashboard';
+        return $user->homeUrl();
     }
 
     private function expiresAt(SocialiteUser $socialUser): ?\Illuminate\Support\Carbon

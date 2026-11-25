@@ -54,6 +54,12 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->encryptCookies(except: ['appearance']);
 
+        $middleware->redirectUsersTo(static function (Illuminate\Http\Request $request): string {
+            $user = $request->user();
+
+            return $user instanceof App\Models\User ? $user->homeUrl() : '/dashboard';
+        });
+
         $middleware->trustProxies(at: HostingSecurity::trustedProxies());
         $middleware->trustHosts(at: HostingSecurity::trustedHostPatterns());
 

@@ -54,7 +54,7 @@ final class AuthController extends Controller
         if ($validator->fails()) {
             return Inertia::render('login', [
                 'errors' => $validator->errors(),
-                'status' => 'Validation failed',
+                'demoMode' => $this->getDemoModeData(),
             ]);
         }
 
@@ -70,10 +70,16 @@ final class AuthController extends Controller
 
         $remember = $request->boolean('remember');
 
+        // Resolve stored email casing so case-sensitive databases (e.g. PostgreSQL)
+        // still authenticate mixed-case input consistently with normalized lockouts.
+        $matchedUser = User::query()
+            ->whereRaw('LOWER(email) = ?', [$email])
+            ->first();
+
         // Get only the credentials for authentication (email and password)
         // Exclude 'remember' as it's not a database column
         $credentials = [
-            'email' => $request->email,
+            'email' => $matchedUser?->email ?? $email,
             'password' => $request->password,
         ];
 
@@ -104,7 +110,7 @@ final class AuthController extends Controller
 
         return Inertia::render('login', [
             'errors' => ['email' => 'The provided credentials do not match our records.'],
-            'status' => 'Authentication failed',
+            'demoMode' => $this->getDemoModeData(),
         ]);
     }
 
@@ -163,6 +169,13 @@ final class AuthController extends Controller
         ]);
     }
 
+    public function cancelSocialSignup(Request $request): RedirectResponse
+    {
+        $request->session()->forget('socialite_signup');
+
+        return redirect()->route('signup');
+    }
+
     public function signup(Request $request)
     {
         $request->merge([
@@ -188,7 +201,7 @@ final class AuthController extends Controller
 
         return Inertia::render('login', [
             'errors' => ['email' => "Too many failed sign-in attempts. Please try again in {$minutes} minute(s)."],
-            'status' => 'Authentication failed',
+            'demoMode' => $this->getDemoModeData(),
         ]);
     }
 
@@ -230,7 +243,8 @@ final class AuthController extends Controller
         }
 
         // Verify OTP
-        if (! $this->signupOtps->verify($email, (string) $request->otp)) {
+        $otp = preg_replace('/[\s-]+/', '', (string) $request->otp) ?? '';
+        if (! $this->signupOtps->verify($email, $otp)) {
             return back()
                 ->withErrors(['otp' => $this->signupOtpError($email)])
                 ->withInput($request->except(['password', 'password_confirmation']));
@@ -308,7 +322,8 @@ final class AuthController extends Controller
         }
 
         // Verify OTP
-        if (! $this->signupOtps->verify($email, (string) $request->otp)) {
+        $otp = preg_replace('/[\s-]+/', '', (string) $request->otp) ?? '';
+        if (! $this->signupOtps->verify($email, $otp)) {
             return back()
                 ->withErrors(['otp' => $this->signupOtpError($email)])
                 ->withInput($request->except(['password', 'password_confirmation']));
@@ -383,15 +398,7 @@ final class AuthController extends Controller
      */
     private function getRedirectForUser(User $user): string
     {
-        if ($user->isAdministrative()) {
-            return '/administrators';
-        }
-
-        if ($user->role?->isStudent()) {
-            return '/student/dashboard';
-        }
-
-        return '/faculty/dashboard';
+        return $user->homeUrl();
     }
 
     /**

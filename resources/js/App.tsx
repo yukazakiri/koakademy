@@ -1,5 +1,6 @@
 import "@/echo"; // Initialize Laravel Echo for real-time
 import { ThemeProvider } from "@/hooks/use-theme";
+import { canAttemptPreloadRecovery, dispatchAppUpdateAvailable, hasActiveUserWork, PRELOAD_RECOVERY_STORAGE_KEY } from "@/lib/app-update";
 import { resolveInertiaPage, type InertiaPageModule, type InertiaPageModules } from "@/lib/inertia-page-resolver";
 import { createInertiaApp, router } from "@inertiajs/react";
 import { createRoot, hydrateRoot } from "react-dom/client";
@@ -10,6 +11,38 @@ declare global {
         appName?: string;
     }
 }
+
+window.addEventListener("vite:preloadError", (event) => {
+    event.preventDefault();
+
+    if (hasActiveUserWork()) {
+        dispatchAppUpdateAvailable({ source: "preload-error" });
+        return;
+    }
+
+    const now = Date.now();
+    let lastAttempt: number | null = null;
+
+    try {
+        const stored = window.sessionStorage.getItem(PRELOAD_RECOVERY_STORAGE_KEY);
+        lastAttempt = stored ? Number(stored) : null;
+    } catch {
+        lastAttempt = null;
+    }
+
+    if (canAttemptPreloadRecovery(now, lastAttempt)) {
+        try {
+            window.sessionStorage.setItem(PRELOAD_RECOVERY_STORAGE_KEY, String(now));
+        } catch {
+            // Continue with single recovery reload even when storage is unavailable.
+        }
+
+        window.location.reload();
+        return;
+    }
+
+    dispatchAppUpdateAvailable({ source: "preload-error" });
+});
 
 const appPages: InertiaPageModules = import.meta.glob<InertiaPageModule>("./pages/**/*.tsx");
 const modulePages: InertiaPageModules = {

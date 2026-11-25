@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Modules\ModuleAccessService;
 use App\Services\Ai\AiAgentAccess;
 use App\Services\AnalyticsSettingsService;
+use App\Services\AppBuildVersionService;
 use App\Services\FacultyClassShareService;
 use App\Services\GeneralSettingsService;
 use App\Services\ModuleAdminNavigationService;
@@ -25,14 +26,17 @@ use App\Services\SettingsShareService;
 use App\Services\SocialiteProviderService;
 use App\Services\StudentClassShareService;
 use App\Support\AdministratorSidebarCounts;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Middleware;
+use Inertia\Support\Header;
 use Laravel\Pennant\Feature;
 use Modules\Announcement\Services\AnnouncementDataService;
 use Override;
+use Symfony\Component\HttpFoundation\Response;
 
 final class HandleInertiaRequests extends Middleware
 {
@@ -45,6 +49,57 @@ final class HandleInertiaRequests extends Middleware
      */
     #[Override]
     protected $rootView = 'app';
+
+    /**
+     * Determine the current asset version.
+     */
+    #[Override]
+    public function version(Request $request): ?string
+    {
+        return app(AppBuildVersionService::class)->inertiaVersion();
+    }
+
+    /**
+     * Handle asset version changes gracefully when soft updates are enabled so
+     * active portal users are never forcibly reloaded mid-task.
+     */
+    #[Override]
+    public function onVersionChange(Request $request, Response $response): Response
+    {
+        $buildVersionService = app(AppBuildVersionService::class);
+        $clientVersion = $request->header(Header::VERSION);
+        $serverVersion = $buildVersionService->inertiaVersion();
+
+        if (
+            $buildVersionService->requiresHardReload(is_string($clientVersion) ? $clientVersion : null, $serverVersion)
+            || ! $response instanceof JsonResponse
+            || ! $response->isSuccessful()
+        ) {
+            return parent::onVersionChange($request, $response);
+        }
+
+        $payload = $response->getData(true);
+
+        if (! is_array($payload) || ! array_key_exists('component', $payload)) {
+            return parent::onVersionChange($request, $response);
+        }
+
+        // Keep the Inertia page version aligned with the client's running JS bundle
+        // so browser back/forward history remains consistent while signaling the
+        // new release via props.appBuild and response headers.
+        $payload['version'] = $clientVersion;
+        $payload['props'] = is_array($payload['props'] ?? null) ? $payload['props'] : [];
+        $payload['props']['appBuild'] = $buildVersionService->buildPayload();
+
+        $response->setData($payload);
+        $response->headers->set('X-App-Update-Available', 'true');
+
+        if (is_string($serverVersion) && $serverVersion !== '') {
+            $response->headers->set('X-App-Build-Id', $serverVersion);
+        }
+
+        return $response;
+    }
 
     /**
      * Define the props that are shared by default.
@@ -97,6 +152,7 @@ final class HandleInertiaRequests extends Middleware
                 'settings' => fn (): array => $settingsService->getSettings($user),
                 'socialAuthProviders' => $socialiteProviderService->enabledProviders(...),
                 'version' => config('app.version'),
+                'appBuild' => fn (): array => app(AppBuildVersionService::class)->buildPayload(),
                 'ziggy' => function () use ($request): array {
                     $ziggyManifestHash = is_file(config_path('ziggy.php')) ? (string) filemtime(config_path('ziggy.php')) : '';
                     $cacheKey = 'ziggy_routes_payload_'.md5(serialize([config('app.version'), $ziggyManifestHash]));

@@ -1157,6 +1157,7 @@ perform_update() {
         # The stack spec still references the same alias tag, so force the
         # service to re-resolve the image and roll out fresh tasks.
         docker service update --force --with-registry-auth "${STACK_NAME}_app"
+        docker service update --force --with-registry-auth "${STACK_NAME}_horizon" >/dev/null 2>&1 || true
         docker service update --force --with-registry-auth "${STACK_NAME}_scheduler" >/dev/null 2>&1 || true
     fi
     if [[ "$wait_ready" == true ]]; then

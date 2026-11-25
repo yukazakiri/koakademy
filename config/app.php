@@ -171,6 +171,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Zero-Interruption Application Updates
+    |--------------------------------------------------------------------------
+    |
+    | Control how active browser tabs respond when a new release is deployed.
+    | When soft_reload is enabled, Inertia asset version mismatches return
+    | normal 200 page payloads alongside update metadata so open sessions are
+    | not abruptly reloaded mid-task. Bump force_reload_version only when a
+    | breaking release requires every active tab to perform a hard refresh.
+    |
+    */
+
+    'updates' => [
+        'soft_reload' => (bool) env('INERTIA_SOFT_VERSION_UPDATES', true),
+        'force_reload_version' => (string) env('INERTIA_FORCE_RELOAD_VERSION', ''),
+        'poll_interval_seconds' => max(30, (int) env('APP_UPDATE_POLL_INTERVAL', 300)),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Maintenance Mode Driver
     |--------------------------------------------------------------------------
     |

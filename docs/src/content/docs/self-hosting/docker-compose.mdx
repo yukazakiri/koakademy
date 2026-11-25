@@ -20,7 +20,8 @@ graph TD
     Sched -->|Port 6379| Cache
 ```
 
-- **Application (`app`)**: Runs PHP 8.5 on FrankenPHP (Laravel Octane), Inertia SSR, and Supervisor Horizon queue workers on port `8000`.
+- **Application (`app`)**: Runs PHP 8.5 on FrankenPHP (Laravel Octane) and Inertia SSR on port `8000` with `HORIZON_IN_HTTP_CONTAINER=false`.
+- **Horizon (`horizon`)**: Dedicated queue worker container (`CONTAINER_MODE=horizon`, `stop_grace_period: 30m`) so long-running PDF and assessment exports drain cleanly across updates.
 - **Scheduler (`scheduler`)**: Runs Supercronic (`CONTAINER_MODE=scheduler`) to trigger `php artisan schedule:run` every minute.
 - **PostgreSQL (`postgres`)**: Relational database storage (PostgreSQL 18).
 - **Redis (`redis`)**: Cache, sessions, queue backplane, and real-time locking.
@@ -128,6 +129,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      HORIZON_IN_HTTP_CONTAINER: "false"
     ports:
       - "127.0.0.1:${APP_PORT:-8000}:8000"
     volumes:
@@ -145,6 +148,35 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+    stop_grace_period: 30s
+
+  horizon:
+    image: ghcr.io/yukazakiri/koakademy:latest-franken
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      CONTAINER_MODE: horizon
+      AUTO_MIGRATE: "false"
+      RUN_DOCKER_SCRIPTS: "false"
+      RUN_SCOUT_SETTINGS: "false"
+      RUN_OPTIMIZE: "false"
+    volumes:
+      - app-storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      gotenberg:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    stop_grace_period: 30m
 
   scheduler:
     image: ghcr.io/yukazakiri/koakademy:latest-franken
@@ -292,7 +324,7 @@ reaches an empty database:
 ```sh
 docker compose up -d postgres redis gotenberg
 docker compose run --rm --pull always app php artisan migrate --force --no-interaction
-docker compose up -d app scheduler
+docker compose up -d app horizon scheduler
 ```
 
 Monitor container startup and logs:

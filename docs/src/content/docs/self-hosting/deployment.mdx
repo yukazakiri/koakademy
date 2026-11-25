@@ -85,6 +85,16 @@ koakademy rollback
 
 Rollback changes application code only. It never runs `migrate:rollback` or restores a database automatically. If the deployed migration is incompatible with old code, restore the recorded database backup and previous image together during a maintenance window.
 
+## Zero-interruption updates
+
+KoAkademy coordinates infrastructure cutover and live browser sessions so portal users can finish grading, enrollment, and form entry without being abruptly kicked out on every release:
+
+1. **Start-first health-gated rollouts & decoupled Horizon**: The Swarm stack (`scripts/swarm-stack.yml`) and production Compose stack (`compose.production.yaml`) run Horizon in its own `horizon` service (`HORIZON_IN_HTTP_CONTAINER=false`, `stop_grace_period: 30m`) while the web `app` service uses `order: start-first`, `failure_action: rollback`, `stop_grace_period: 30s`, and shared cache-backed maintenance state (`APP_MAINTENANCE_DRIVER=cache`, `APP_MAINTENANCE_STORE=redis`).
+2. **Retained Vite build assets**: On HTTP container startup (`RETAIN_PREVIOUS_BUILD_ASSETS=true`), hashed files from `/app/public/build/assets` are copied additively into `/app/storage/app/build-assets` and symlinked back while keeping each container's `/app/public/build/manifest.json` local. Open browser tabs and overlapping replicas during `start-first` rollouts continue resolving previous JS/CSS chunks for `BUILD_ASSETS_RETENTION_DAYS` (default `7` days) without 404 errors.
+3. **Soft Inertia version updates**: Instead of immediately forcing a `409 Conflict` full-page reload on the next click (`INERTIA_SOFT_VERSION_UPDATES=true`), the server returns the normal Inertia page response alongside updated `appBuild` metadata. Active tabs display a non-blocking *"Update ready"* notification and seamlessly transition to the new build on the next clean cross-page navigation once no forms are dirty or dialogs are open.
+4. **Breaking-release escape hatch**: If a deployment introduces a breaking frontend/API contract that requires every open tab to hard-reload immediately, increment `INERTIA_FORCE_RELOAD_VERSION` (for example, `INERTIA_FORCE_RELOAD_VERSION=2`).
+5. **Expand-and-contract database migrations**: Because `php artisan migrate --force` runs before the new `app` replicas roll out (or under a blocking lock via `php artisan app:migrate-locked` when `AUTO_MIGRATE=true` and `AUTO_MIGRATE_LOCK=true` are used for unattended PaaS auto-deploys), schema changes must remain backward-compatible with the currently running release (add nullable columns/tables in Release N, backfill asynchronously, and drop legacy columns only in Release N+1).
+
 ## The migration release step
 
 Migrations are a release step, not a container boot. `AUTO_MIGRATE=false` is
@@ -210,8 +220,8 @@ Never point both stacks at the same PostgreSQL database, Redis data, or storage 
 `compose.production.yaml` remains for operators who own their own edge proxy. It binds the application to `127.0.0.1:8000`, so the proxy must preserve `Host`, `X-Forwarded-For`, `X-Forwarded-Host`, and `X-Forwarded-Proto`. Use an exact stable image tag, protected `.env`, external S3-compatible storage, explicit migrations, and an application restart after configuration changes.
 
 ```sh
-docker compose --env-file .env -f compose.production.yaml pull app scheduler
+docker compose --env-file .env -f compose.production.yaml pull app horizon scheduler
 docker compose --env-file .env -f compose.production.yaml run --rm app php artisan migrate --force --no-interaction
-docker compose --env-file .env -f compose.production.yaml up -d app scheduler
+docker compose --env-file .env -f compose.production.yaml up -d app horizon scheduler
 curl --fail --silent --show-error http://127.0.0.1:8000/up
 ```

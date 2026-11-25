@@ -68,11 +68,22 @@ const yamlManifests = [
 ];
 
 for (const manifest of yamlManifests) {
-    test(`${manifest} is valid YAML and includes app and scheduler services`, () => {
+    test(`${manifest} is valid YAML and includes app, horizon, and scheduler services`, () => {
         const content = readFileSync(new URL(manifest, root), "utf8");
         assert.doesNotThrow(() => validateYamlNoDuplicateKeys(content));
         assert.match(content, /^  app:\s*$/m, `${manifest} must define an app service`);
+        assert.match(content, /^  horizon:\s*$/m, `${manifest} must define a dedicated horizon service`);
         assert.match(content, /^  scheduler:\s*$/m, `${manifest} must define a scheduler service`);
+        assert.match(
+            content,
+            /HORIZON_IN_HTTP_CONTAINER:\s*"?false"?/,
+            `${manifest} app service must disable in-container Horizon`,
+        );
+        assert.match(
+            content,
+            /CONTAINER_MODE:\s*"?horizon"?/,
+            `${manifest} horizon service must set CONTAINER_MODE=horizon`,
+        );
         assert.match(
             content,
             /CONTAINER_MODE:\s*"?scheduler"?/,

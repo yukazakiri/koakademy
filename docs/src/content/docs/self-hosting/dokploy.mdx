@@ -5,11 +5,24 @@ description: Deploy and operate KoAkademy using Dokploy's open-source PaaS on yo
 
 [Dokploy](https://dokploy.com/) is an open-source, self-hosted Platform-as-a-Service (PaaS) alternative to Vercel/Heroku/Coolify that runs on top of Docker and Traefik.
 
+## Choosing Your Dokploy Update Source
+
+Dokploy operators typically deploy KoAkademy in one of two ways—both support zero-interruption updates when configured properly:
+
+| Deployment Source | Best Dokploy Service Type | How Updates Trigger | Recommended Migration Strategy |
+| :--- | :--- | :--- | :--- |
+| **Pre-built Registry Image** (Docker Hub or GHCR) | **Method 1: Compose → Stack (Swarm)** | Registry update notifications / tag bump + **Redeploy** (or registry webhook) | One-off release migration (`AUTO_MIGRATE="false"`), or `AUTO_MIGRATE="true"` with `AUTO_MIGRATE_LOCK="true"` for webhook redeploys |
+| **GitHub Repository** (`Auto Deploy` on push to `master`) | **Method 2: Application Services** (`docker/Dockerfile.franken` + Swarm `start-first`) | Automatic build & rollout on every push to `master` | `AUTO_MIGRATE="true"` + `AUTO_MIGRATE_LOCK="true"` on the web `app` service (`AUTO_MIGRATE="false"` on `horizon` and `scheduler`) |
+
+:::note[Why GitHub Auto Deploy Uses Application Services]
+Standard Dokploy **Docker Compose** ignores `deploy.update_config.order: start-first` (causing brief `502`s), while Dokploy **Stack** mode expects a pre-built registry `image:` rather than a local GitHub `build:`. If you deploy directly from GitHub with **Auto Deploy** enabled, use Dokploy **Application** services (Method 2) with **Swarm Settings → `order: start-first`** so builds finish before traffic shifts and zero `502`s occur on pushes to `master`.
+:::
+
 ## Deployment Strategies
 
 You can deploy KoAkademy in Dokploy using either:
-1. **Zero-Downtime Docker Compose Stack (Recommended)**: Deploys decoupled services (`app` for HTTP, `horizon` for background queues, `scheduler` for cron) with health-gated `start-first` updates, automated rollbacks, and tuned resource caps.
-2. **Individual Services**: Deploys Dokploy managed databases (PostgreSQL & Redis) alongside standalone Application services.
+1. **Zero-Downtime Docker Stack (Recommended for Docker Hub / GHCR Images)**: Deploys decoupled services (`app` for HTTP, `horizon` for background queues, `scheduler` for cron) with health-gated `start-first` updates, automated rollbacks, and tuned resource caps.
+2. **Standalone Application Services (Recommended for GitHub Auto Deploy & Managed Databases)**: Deploys Dokploy managed databases (PostgreSQL & Redis) alongside standalone Application services built from GitHub or pulled from Docker Hub/GHCR with Swarm `start-first` enabled.
 
 ---
 
@@ -24,13 +37,18 @@ To achieve seamless, zero-downtime updates:
 - **Container Healthcheck**: The internal `healthcheck` script probes `/health` (and supervisor processes).
 - **VIP Routing Gate**: Dokploy and Traefik keep routing user traffic to the old container until the new container reports `healthy` over the configured monitoring period.
 - **Automated Rollback**: If the new container fails its health checks during the monitor period, the update rolls back immediately without dropping traffic.
-- **Decoupled Workers**: The web container runs with `HORIZON_IN_HTTP_CONTAINER="false"`, while Horizon and the scheduler run as dedicated services so queuing is not duplicated during start-first web container rollovers.
+- **Decoupled Workers**: The web container runs with `HORIZON_IN_HTTP_CONTAINER="false"`, while Horizon and the scheduler run as dedicated services so queuing is not duplicated or interrupted during start-first web container rollovers.
+- **Retained Vite Assets & Soft Browser Updates**: On startup (`RETAIN_PREVIOUS_BUILD_ASSETS="true"`), each new `app` container copies its hashed `/app/public/build/assets/*` files additively into the shared `app-storage` volume (`/app/storage/app/build-assets`) while keeping `manifest.json` container-local. Combined with `INERTIA_SOFT_VERSION_UPDATES="true"`, active portal tabs never hit chunk `404`s during overlapping rollouts and receive a non-blocking *"Update ready"* prompt instead of an abrupt `409` hard reload mid-form.
+
+:::caution[Use Docker Stack (Swarm) Mode in Dokploy]
+Standard Docker Compose (`docker compose up -d`) ignores `deploy.update_config.order: start-first` and replaces containers `stop-first`, causing brief `502` errors during redeploys. When creating the Compose service in Dokploy, set **Compose Type** to **Stack** (Docker Swarm) so `start-first`, health-gated VIP routing, and automatic rollbacks are enforced.
+:::
 
 ### Step 1: Create a Project in Dokploy
 
 1. Navigate to your Dokploy dashboard.
 2. Click **Create Project** and name it `koakademy`.
-3. Inside the project, click **Create Service** and select **Compose**.
+3. Inside the project, click **Create Service**, select **Compose**, and choose **Stack** as the Compose Type.
 
 ### Step 2: Configure Compose Stack
 
@@ -267,6 +285,11 @@ ASSESSMENT_EXPORT_EVENT_PROCESSES="1"
 ASSESSMENT_EXPORT_WORKER_MEMORY="512"
 
 # Production Hardening
+APP_MAINTENANCE_DRIVER="cache"
+APP_MAINTENANCE_STORE="redis"
+RETAIN_PREVIOUS_BUILD_ASSETS="true"
+BUILD_ASSETS_RETENTION_DAYS="7"
+INERTIA_SOFT_VERSION_UPDATES="true"
 TELESCOPE_ENABLED="false"
 PULSE_ENABLED="false"
 NIGHTWATCH_ENABLED="false"
@@ -294,9 +317,11 @@ Dokploy's environment editor sometimes persists strings with surrounding quotati
 
 ## Zero-Downtime Redeployment & Upgrade Runbook
 
-When pushing new code or pulling a new release image (such as `ghcr.io/yukazakiri/koakademy:edge-frankenphp` or a tagged release `ghcr.io/yukazakiri/koakademy:v1.30.0-franken`):
+### Pre-Built Image Updates (Docker Hub / GHCR)
 
-1. **Run the migrations as a release step**: run the migration once, in a
+When you receive an update notification or pull a new release image (such as `ghcr.io/yukazakiri/koakademy:v1.30.0-franken`, `ghcr.io/yukazakiri/koakademy:latest-franken`, or the matching Docker Hub tag):
+
+1. **Run the migrations as a release step** (when `AUTO_MIGRATE="false"`): run the migration once, in a
    one-off container against the same database, before the rollout starts.
    Migrations are not part of the container boot, so the application never
    serves traffic against a schema it does not expect.
@@ -312,23 +337,34 @@ When pushing new code or pulling a new release image (such as `ghcr.io/yukazakir
    ```sh
    docker compose -p <dokploy-app-name> --env-file .env -f docker-compose.yml run --rm --pull always app php artisan migrate --force --no-interaction
    ```
-2. **Trigger Redeploy in Dokploy**: Click **Redeploy** in the Dokploy Compose service.
+
+   *(If you trigger hands-off redeploys from a registry webhook without running the one-off command, set `AUTO_MIGRATE="true"` and `AUTO_MIGRATE_LOCK="true"` on the `app` service only; `horizon` and `scheduler` stay `AUTO_MIGRATE="false"`.)*
+2. **Trigger Redeploy in Dokploy**: Click **Redeploy** in the Dokploy Stack service.
 3. **Start-First Rollout**:
    - Docker Swarm starts the new `app` replica first.
-   - The new replica warms caches, boots FrankenPHP and Inertia SSR.
+   - The new replica syncs its hashed Vite assets additively into `/app/storage/app/build-assets`, warms caches, and boots FrankenPHP + Inertia SSR.
    - Swarm waits up to 60 seconds (`start_period`) for the health check endpoint `/up` to return HTTP `200`.
-4. **Route Traffic**:
-   - Once healthy, Traefik routes incoming connections to the new container.
-   - The previous container is stopped gracefully (`stop_grace_period: 30s`).
+4. **Route Traffic Without Interrupting Open Tabs**:
+   - Once healthy, Traefik routes incoming connections to the new container and drains the previous container (`stop_grace_period: 30s`).
+   - Open portal tabs keep resolving their previous JS/CSS chunks from `/app/storage/app/build-assets`, show a non-blocking *"Update ready"* toast instead of forcing a `409` reload mid-form, and upgrade cleanly on the next cross-page navigation once no forms are dirty.
 5. **Independent Worker Updates**:
    - The `horizon` and `scheduler` services update in parallel without causing web request downtime.
    - Horizon workers finish active jobs before terminating (`stop_grace_period: 30m`).
 
+### GitHub Source Updates (`Auto Deploy` on Push to `master`)
+
+When Dokploy builds directly from GitHub on every push to `master`:
+
+1. **Zero-downtime build phase**: Dokploy builds `docker/Dockerfile.franken` first without stopping the running `app` container.
+2. **Locked automatic migrations before `/up` turns healthy**: Because no operator runs a manual release command on a Git push, set `AUTO_MIGRATE="true"` and `AUTO_MIGRATE_LOCK="true"` on the web `app` service (and `AUTO_MIGRATE="false"` on `horizon` and `scheduler`). On container boot, `docker/start-container` runs `php artisan app:migrate-locked`, which acquires a blocking database advisory lock (PostgreSQL `pg_advisory_lock` / MySQL `GET_LOCK` / Redis lock) before running migrations—so concurrent replicas wait safely instead of racing, and FrankenPHP only binds port `8000` once the schema is current.
+3. **Expand-and-contract discipline**: Because the previous container keeps serving active traffic until the new container passes `/up`, commits pushed to `master` must keep schema changes backward-compatible with the currently running release (add nullable columns/tables first; drop or rename legacy columns in a subsequent push).
+4. **Multiple pushes during working hours**: Because `RETAIN_PREVIOUS_BUILD_ASSETS="true"` retains hashed chunks for 7 days and `INERTIA_SOFT_VERSION_UPDATES="true"` avoids abrupt `409` reloads, even repeated pushes to `master` during the day will not wipe unsaved portal forms.
+
 ---
 
-## Method 2: Standalone Application with Dokploy Managed Databases
+## Method 2: Standalone Application (GitHub Auto Deploy or Managed Databases)
 
-If you prefer using Dokploy's UI-managed databases with automated backups:
+Use standalone Dokploy **Application** services if you deploy directly from a **GitHub repository** (with **Auto Deploy** on push to `master`) or prefer Dokploy's UI-managed databases:
 
 1. **Create PostgreSQL**:
    - Go to **Databases** → **Create PostgreSQL**.
@@ -337,12 +373,24 @@ If you prefer using Dokploy's UI-managed databases with automated backups:
    - Go to **Databases** → **Create Redis**.
 3. **Deploy Gotenberg**:
    - Create an **Application** service with image `gotenberg/gotenberg:8`. Expose port `3000` to internal network.
-4. **Deploy KoAkademy**:
-   - Create an **Application** service with Docker image `ghcr.io/yukazakiri/koakademy:latest-franken`.
+4. **Deploy the Web Application (`app`)**:
+   - Create an **Application** service using either:
+     - **Provider → GitHub** (branch `master`, Build Type **Dockerfile**, Dockerfile path `docker/Dockerfile.franken`, **Auto Deploy** enabled), **or**
+     - **Provider → Docker** with image `ghcr.io/yukazakiri/koakademy:latest-franken` (or Docker Hub equivalent).
    - Set internal container port to `8000`.
    - Mount persistent volume: Host `/var/lib/dokploy/volumes/koakademy-storage` -> Container `/app/storage`.
    - Set healthcheck path to `/up`.
-   - Connect the environment variables pointing to the Dokploy PostgreSQL and Redis internal hosts.
+   - In **Advanced → Swarm Settings**, set **Update Config** to `order: start-first` and `failure_action: rollback`, set `stop_grace_period` to `30s`, and keep the `/up` healthcheck active.
+   - Connect the environment variables pointing to PostgreSQL and Redis, and set:
+     - `HORIZON_IN_HTTP_CONTAINER="false"`
+     - `APP_MAINTENANCE_DRIVER="cache"` and `APP_MAINTENANCE_STORE="redis"`
+     - `RETAIN_PREVIOUS_BUILD_ASSETS="true"` and `INERTIA_SOFT_VERSION_UPDATES="true"`
+     - For **GitHub Auto Deploy**: `AUTO_MIGRATE="true"` and `AUTO_MIGRATE_LOCK="true"`
+5. **Deploy Dedicated `horizon` and `scheduler` Applications**:
+   - Create two additional **Application** services pointing at the same GitHub repo / image, sharing the same `/var/lib/dokploy/volumes/koakademy-storage` -> `/app/storage` volume and database/Redis env vars:
+     - **`horizon`**: `CONTAINER_MODE="horizon"`, `AUTO_MIGRATE="false"`, `RUN_OPTIMIZE="false"`, `RUN_SCOUT_SETTINGS="false"`, `stop_grace_period: 30m`.
+     - **`scheduler`**: `CONTAINER_MODE="scheduler"`, `AUTO_MIGRATE="false"`, `RUN_OPTIMIZE="false"`, `RUN_SCOUT_SETTINGS="false"`, `stop_grace_period: 30s`.
+   - Because all services share `/app/storage`, retained Vite build assets and soft browser updates work automatically on single-node Dokploy. (If scaling across multiple Swarm nodes, configure external S3/R2 storage and `ASSET_URL`.)
 
 ---
 

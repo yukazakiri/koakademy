@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { index as batchEnrollmentRoute } from "@/actions/App/Http/Controllers/AdministratorBatchEnrollmentController";
+import { generateBulkAssessments as generateBulkAssessmentsRoute } from "@/actions/App/Http/Controllers/AdministratorEnrollmentManagementController";
 import { index as waitlistsIndexRoute } from "@/actions/App/Http/Controllers/AdministratorEnrollmentWaitlistController";
 import { index as holdsIndexRoute } from "@/actions/App/Http/Controllers/AdministratorStudentHoldController";
 import { bulkAction as enrollmentBulkActionRoute } from "@/routes/administrators/enrollments";
@@ -673,7 +674,7 @@ export default function AdministratorEnrollmentsIndex({
     const handleGenerateBulkReports = async () => {
         setIsBulkReportGenerating(true);
         try {
-            await axios.post(route("administrators.enrollments.reports.bulk-assessments", undefined, false), bulkReportFilters);
+            await axios.post(generateBulkAssessmentsRoute.url(), bulkReportFilters);
             toast.success("Bulk assessment PDF generation queued. You will be notified when ready.");
             setBulkReportOpen(false);
         } catch {

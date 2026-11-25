@@ -16,8 +16,8 @@ return new class extends Migration
 
         Schema::create('student_holds', function (Blueprint $table): void {
             $table->id();
-            $table->unsignedBigInteger('school_id')->nullable()->index();
-            $table->unsignedBigInteger('student_id')->index();
+            $table->unsignedBigInteger('school_id')->nullable();
+            $table->unsignedBigInteger('student_id');
             $table->string('office', 40)->default('registrar');
             $table->string('hold_type', 60)->default('general');
             $table->string('severity', 20)->default('blocking');

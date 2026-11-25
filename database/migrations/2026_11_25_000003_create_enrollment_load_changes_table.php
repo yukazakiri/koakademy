@@ -18,7 +18,7 @@ return new class extends Migration
             $table->id();
             $table->unsignedBigInteger('school_id')->nullable()->index();
             $table->string('reference_number', 40)->unique();
-            $table->unsignedBigInteger('student_enrollment_id')->index();
+            $table->unsignedBigInteger('student_enrollment_id');
             $table->unsignedBigInteger('student_id')->index();
             $table->string('change_type', 20); // add | drop | swap
             $table->string('status', 20)->default('pending'); // pending | approved | rejected

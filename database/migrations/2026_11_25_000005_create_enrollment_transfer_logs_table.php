@@ -17,7 +17,7 @@ return new class extends Migration
         Schema::create('enrollment_transfer_logs', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('school_id')->nullable()->index();
-            $table->unsignedBigInteger('student_enrollment_id')->index();
+            $table->unsignedBigInteger('student_enrollment_id');
             $table->unsignedBigInteger('student_id')->index();
             $table->string('transfer_type', 30); // section_transfer | program_shift
             $table->unsignedBigInteger('from_course_id')->nullable();

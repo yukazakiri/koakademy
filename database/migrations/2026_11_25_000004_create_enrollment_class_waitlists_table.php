@@ -20,7 +20,7 @@ return new class extends Migration
             $table->unsignedBigInteger('student_enrollment_id')->index();
             $table->unsignedBigInteger('student_id')->index();
             $table->unsignedBigInteger('subject_enrollment_id')->index();
-            $table->unsignedBigInteger('subject_id')->index();
+            $table->unsignedBigInteger('subject_id');
             $table->unsignedBigInteger('preferred_class_id')->nullable()->index();
             $table->string('school_year', 32);
             $table->unsignedTinyInteger('semester');

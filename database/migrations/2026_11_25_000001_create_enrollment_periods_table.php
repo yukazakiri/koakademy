@@ -16,7 +16,7 @@ return new class extends Migration
 
         Schema::create('enrollment_periods', function (Blueprint $table): void {
             $table->id();
-            $table->unsignedBigInteger('school_id')->nullable()->index();
+            $table->unsignedBigInteger('school_id')->nullable();
             $table->string('school_year', 32);
             $table->unsignedTinyInteger('semester');
             $table->timestamp('regular_starts_at')->nullable();

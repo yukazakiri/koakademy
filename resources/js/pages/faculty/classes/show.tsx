@@ -54,6 +54,14 @@ interface ClassDetailProps {
     rooms?: { id: number; name: string }[];
     online_resources_module_enabled?: boolean;
     online_resources?: OnlineResourceCategoryPayload[];
+    online_resources_hub?: {
+        url: string;
+        qr_svg_url: string;
+        qr_png_url: string;
+        sheet_pdf_url: string;
+    } | null;
+    online_resources_hub_settings?: Record<string, unknown> | null;
+    online_resources_header_meta?: Record<string, unknown> | null;
     copyable_classes?: CopyableClassOptionPayload[];
 }
 
@@ -71,6 +79,9 @@ export default function ClassDetail({
     rooms = [],
     online_resources_module_enabled = true,
     online_resources = [],
+    online_resources_hub = null,
+    online_resources_hub_settings = null,
+    online_resources_header_meta = null,
     copyable_classes = [],
 }: ClassDetailProps) {
     const tabs = useMemo<ClassroomTab[]>(
@@ -193,6 +204,9 @@ export default function ClassDetail({
                             categories={online_resources}
                             copyableClasses={copyable_classes}
                             enableOnlineResources={classData.settings.enable_online_resources ?? true}
+                            hub={online_resources_hub}
+                            hubSettings={online_resources_hub_settings}
+                            headerMeta={online_resources_header_meta}
                             onOpenSettings={() => setIsSettingsOpen(true)}
                         />
                     </TabsContent>

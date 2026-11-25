@@ -1,7 +1,6 @@
 import { Link, router, useForm } from "@inertiajs/react";
 import axios from "axios";
 import {
-    ArrowLeft,
     CheckCircle2,
     Eye,
     EyeOff,
@@ -225,7 +224,50 @@ export function LoginForm({ className, demoMode, errors, status, ...props }: Log
     };
 
     return (
-        <div className={cn("flex flex-col gap-6", className)} {...props}>
+        <div className={cn("flex flex-col gap-5", className)} {...props}>
+            {/* Segmented Mode Switcher: Password vs Magic Link */}
+            <div
+                role="tablist"
+                aria-label="Sign-in method"
+                className="grid grid-cols-2 rounded-xl border border-border/80 bg-muted/40 p-1"
+            >
+                <button
+                    type="button"
+                    role="tab"
+                    aria-selected={loginMode === "password"}
+                    disabled={processing || loggingInWithPasskey}
+                    onClick={() => {
+                        setLoginMode("password");
+                        setMagicLinkSent(false);
+                    }}
+                    className={cn(
+                        "flex h-9 items-center justify-center gap-1.5 rounded-lg text-xs font-semibold transition-all",
+                        loginMode === "password"
+                            ? "bg-background text-foreground shadow-xs"
+                            : "text-muted-foreground hover:text-foreground",
+                    )}
+                >
+                    <Lock className="size-3.5" />
+                    <span>Password</span>
+                </button>
+                <button
+                    type="button"
+                    role="tab"
+                    aria-selected={loginMode === "magic-link"}
+                    disabled={processing || loggingInWithPasskey}
+                    onClick={() => setLoginMode("magic-link")}
+                    className={cn(
+                        "flex h-9 items-center justify-center gap-1.5 rounded-lg text-xs font-semibold transition-all",
+                        loginMode === "magic-link"
+                            ? "bg-background text-foreground shadow-xs"
+                            : "text-muted-foreground hover:text-foreground",
+                    )}
+                >
+                    <Sparkles className="size-3.5" />
+                    <span>Magic Link</span>
+                </button>
+            </div>
+
             <form onSubmit={submit}>
                 <FieldGroup className="gap-4">
                     {(errors?.code || errors?.error) && (
@@ -389,21 +431,6 @@ export function LoginForm({ className, demoMode, errors, status, ...props }: Log
                         </Button>
                     ) : null}
 
-                    {loginMode === "magic-link" && (
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            className="h-8 text-xs text-muted-foreground hover:text-foreground transition-colors gap-1.5"
-                            onClick={() => {
-                                setLoginMode("password");
-                                setMagicLinkSent(false);
-                            }}
-                        >
-                            <ArrowLeft className="size-3" />
-                            <span>Sign in with password instead</span>
-                        </Button>
-                    )}
-
                     {/* Demo mode section */}
                     {demoMode?.enabled && demoMode.accounts.length > 0 && (
                         <div className="rounded-xl border border-border bg-card/60 p-3 space-y-2 mt-1">
@@ -443,49 +470,34 @@ export function LoginForm({ className, demoMode, errors, status, ...props }: Log
                     {/* Social auth */}
                     <SocialAuthButtons />
 
-                    {/* Passwordless Options (Magic link + Passkey) */}
-                    {loginMode === "password" && (
-                        <div className="space-y-3">
-                            <div className="flex items-center gap-3 my-1 text-xs text-muted-foreground">
+                    {/* Passkey sign-in option */}
+                    {passkeyAvailable && (
+                        <div className="space-y-2.5">
+                            <div className="my-1 flex items-center gap-3 text-xs text-muted-foreground">
                                 <span className="h-px flex-1 bg-border" />
-                                <span>Or passwordless</span>
+                                <span>Or use a passkey</span>
                                 <span className="h-px flex-1 bg-border" />
                             </div>
 
-                            <div className={cn("grid gap-2", passkeyAvailable ? "grid-cols-2" : "grid-cols-1")}>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    className="h-11 w-full rounded-xl border-border/80 bg-background/60 text-foreground hover:bg-accent hover:text-accent-foreground hover:border-primary/40 transition-colors text-xs sm:text-sm font-medium gap-2"
-                                    onClick={() => setLoginMode("magic-link")}
-                                    disabled={processing || loggingInWithPasskey}
-                                >
-                                    <Sparkles className="size-4 shrink-0 text-primary" />
-                                    <span className="truncate">Magic link</span>
-                                </Button>
-
-                                {passkeyAvailable && (
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        className="h-11 w-full rounded-xl border-border/80 bg-background/60 text-foreground hover:bg-accent hover:text-accent-foreground hover:border-primary/40 transition-colors text-xs sm:text-sm font-medium gap-2"
-                                        onClick={handlePasskeyLogin}
-                                        disabled={processing || loggingInWithPasskey}
-                                    >
-                                        {loggingInWithPasskey ? (
-                                            <>
-                                                <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
-                                                <span className="truncate">Verifying...</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Fingerprint className="size-4 shrink-0 text-primary" />
-                                                <span className="truncate">Passkey</span>
-                                            </>
-                                        )}
-                                    </Button>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className="h-11 w-full rounded-xl border-border/80 bg-background/60 text-foreground hover:bg-accent hover:text-accent-foreground hover:border-primary/40 transition-colors text-sm font-medium gap-2"
+                                onClick={handlePasskeyLogin}
+                                disabled={processing || loggingInWithPasskey}
+                            >
+                                {loggingInWithPasskey ? (
+                                    <>
+                                        <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
+                                        <span>Authenticating with passkey...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Fingerprint className="size-4 shrink-0 text-primary" />
+                                        <span>Sign in with Passkey / Biometrics</span>
+                                    </>
                                 )}
-                            </div>
+                            </Button>
                         </div>
                     )}
 

@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemSeparator, ItemTitle } from "@/components/ui/item";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { router, usePage } from "@inertiajs/react";
@@ -25,7 +26,7 @@ import { Copy, Download, Eye, EyeOff, Key, Loader2, Mail, QrCode, ShieldCheck, S
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-type PasswordConfirmedAction = "disable_app" | "pause_2fa" | "disable_email" | "regenerate_codes" | null;
+type PasswordConfirmedAction = "disable_app" | "pause_2fa" | "disable_email" | "regenerate_codes" | "delete_passkey" | null;
 
 interface PasskeyItem {
     id: number;
@@ -337,6 +338,23 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                     onFinish: () => setConfirmProcessing(false),
                 },
             );
+            return;
+        }
+
+        if (confirmAction === "delete_passkey" && passkeyIdPendingDelete !== null) {
+            const id = passkeyIdPendingDelete;
+            router.delete(`${paths.passkeys}/${id}`, {
+                data: { password: confirmPassword },
+                preserveScroll: true,
+                onSuccess: () => {
+                    closeDialog();
+                    setPasskeyIdPendingDelete(null);
+                    toast.success("Passkey deleted.");
+                    fetchPasskeys();
+                },
+                onError,
+                onFinish: () => setConfirmProcessing(false),
+            });
         }
     };
 
@@ -453,21 +471,7 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
 
     const handleDeletePasskey = (id: number) => {
         setPasskeyIdPendingDelete(id);
-    };
-
-    const confirmDeletePasskey = () => {
-        if (passkeyIdPendingDelete === null) return;
-        const id = passkeyIdPendingDelete;
-        setPasskeyIdPendingDelete(null);
-        router.delete(`${paths.passkeys}/${id}`, {
-            onSuccess: () => {
-                toast.success("Passkey deleted.");
-                fetchPasskeys();
-            },
-            onError: () => {
-                toast.error("Failed to delete passkey.");
-            },
-        });
+        openPasswordConfirm("delete_passkey");
     };
 
     const handleAddApiKey = async (e: React.FormEvent) => {
@@ -1030,20 +1034,29 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                                     </div>
                                     <div className="space-y-3">
                                         <Label>Key Type & Abilities</Label>
-                                        <div className="space-y-2">
-                                            <label className="flex items-start gap-2">
-                                                <input
-                                                    type="radio"
-                                                    name="abilities"
-                                                    checked={
-                                                        apiKeyForm.abilities.includes("read") &&
-                                                        !apiKeyForm.abilities.includes("write") &&
-                                                        !apiKeyForm.abilities.includes("mcp:read") &&
-                                                        !apiKeyForm.abilities.includes("*")
-                                                    }
-                                                    onChange={() => setApiKeyForm({ ...apiKeyForm, abilities: ["read"] })}
-                                                    className="mt-1"
-                                                />
+                                        <RadioGroup
+                                            value={
+                                                apiKeyForm.abilities.includes("mcp:write")
+                                                    ? "mcp_write"
+                                                    : apiKeyForm.abilities.includes("mcp:read")
+                                                      ? "mcp_read"
+                                                      : apiKeyForm.abilities.includes("write")
+                                                        ? "api_write"
+                                                        : "api_read"
+                                            }
+                                            onValueChange={(value) => {
+                                                const abilitiesMap: Record<string, string[]> = {
+                                                    api_read: ["read"],
+                                                    api_write: ["read", "write"],
+                                                    mcp_read: ["mcp:read"],
+                                                    mcp_write: ["mcp:read", "mcp:write"],
+                                                };
+                                                setApiKeyForm({ ...apiKeyForm, abilities: abilitiesMap[value] ?? ["read"] });
+                                            }}
+                                            className="space-y-2"
+                                        >
+                                            <label htmlFor="ability-api-read" className="flex cursor-pointer items-start gap-2.5">
+                                                <RadioGroupItem id="ability-api-read" value="api_read" className="mt-1" />
                                                 <div>
                                                     <span className="text-sm font-medium">Standard API — Read Only</span>
                                                     <p className="text-muted-foreground text-xs">
@@ -1056,18 +1069,8 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                                                     </p>
                                                 </div>
                                             </label>
-                                            <label className="flex items-start gap-2">
-                                                <input
-                                                    type="radio"
-                                                    name="abilities"
-                                                    checked={
-                                                        apiKeyForm.abilities.includes("write") &&
-                                                        !apiKeyForm.abilities.includes("mcp:write") &&
-                                                        !apiKeyForm.abilities.includes("*")
-                                                    }
-                                                    onChange={() => setApiKeyForm({ ...apiKeyForm, abilities: ["read", "write"] })}
-                                                    className="mt-1"
-                                                />
+                                            <label htmlFor="ability-api-write" className="flex cursor-pointer items-start gap-2.5">
+                                                <RadioGroupItem id="ability-api-write" value="api_write" className="mt-1" />
                                                 <div>
                                                     <span className="text-sm font-medium">Standard API — Read & Write</span>
                                                     <p className="text-muted-foreground text-xs">
@@ -1082,29 +1085,23 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                                             </label>
 
                                             <div className="pt-2">
-                                                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                                <span className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
                                                     Model Context Protocol (MCP) for AI Agents
                                                 </span>
                                             </div>
-                                            <label className="flex items-start gap-2 rounded-lg border border-blue-500/20 bg-blue-500/5 p-2.5">
-                                                <input
-                                                    type="radio"
-                                                    name="abilities"
-                                                    checked={
-                                                        apiKeyForm.abilities.includes("mcp:read") &&
-                                                        !apiKeyForm.abilities.includes("mcp:write")
-                                                    }
-                                                    onChange={() => setApiKeyForm({ ...apiKeyForm, abilities: ["mcp:read"] })}
-                                                    className="mt-1"
-                                                />
+                                            <label
+                                                htmlFor="ability-mcp-read"
+                                                className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-blue-500/20 bg-blue-500/5 p-2.5"
+                                            >
+                                                <RadioGroupItem id="ability-mcp-read" value="mcp_read" className="mt-1" />
                                                 <div>
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-sm font-medium">MCP — Read Only</span>
-                                                        <Badge variant="outline" className="border-blue-500/30 text-blue-600 text-[10px]">
+                                                        <Badge variant="outline" className="border-blue-500/30 text-[10px] text-blue-600">
                                                             Agent Read
                                                         </Badge>
                                                     </div>
-                                                    <p className="text-muted-foreground text-xs mt-0.5">
+                                                    <p className="text-muted-foreground mt-0.5 text-xs">
                                                         {isStudent
                                                             ? "Allows connected AI agents (OpenCode, Claude, etc.) to query your student profile, enrollments, enrolled subjects, grades, and schedule."
                                                             : "Allows connected AI agents (OpenCode, Claude, etc.) to query student directory, schedules, enrollment status, and academic offerings using your account permissions."}
@@ -1112,30 +1109,25 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                                                 </div>
                                             </label>
                                             {!isStudent && (
-                                                <label className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-2.5">
-                                                    <input
-                                                        type="radio"
-                                                        name="abilities"
-                                                        checked={
-                                                            apiKeyForm.abilities.includes("mcp:write")
-                                                        }
-                                                        onChange={() => setApiKeyForm({ ...apiKeyForm, abilities: ["mcp:read", "mcp:write"] })}
-                                                        className="mt-1"
-                                                    />
+                                                <label
+                                                    htmlFor="ability-mcp-write"
+                                                    className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-amber-500/20 bg-amber-500/5 p-2.5"
+                                                >
+                                                    <RadioGroupItem id="ability-mcp-write" value="mcp_write" className="mt-1" />
                                                     <div>
                                                         <div className="flex items-center gap-2">
                                                             <span className="text-sm font-medium">MCP — Read & Write</span>
-                                                            <Badge variant="outline" className="border-amber-500/30 text-amber-600 text-[10px]">
+                                                            <Badge variant="outline" className="border-amber-500/30 text-[10px] text-amber-600">
                                                                 Agent Mutation
                                                             </Badge>
                                                         </div>
-                                                        <p className="text-muted-foreground text-xs mt-0.5">
+                                                        <p className="text-muted-foreground mt-0.5 text-xs">
                                                             Allows read tools plus permitted data modifications (such as subject enrollments, grading, and verifying enrollment requirements). Requires explicit idempotency keys and your domain permissions.
                                                         </p>
                                                     </div>
                                                 </label>
                                             )}
-                                        </div>
+                                        </RadioGroup>
                                         <p className="text-muted-foreground text-xs italic">
                                             All keys operate within the authorized school context and are strictly bounded by your account permissions.
                                         </p>
@@ -1174,6 +1166,7 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                 onOpenChange={(open) => {
                     if (!open) {
                         setConfirmAction(null);
+                        setPasskeyIdPendingDelete(null);
                         setConfirmPassword("");
                         setConfirmPasswordError(null);
                     }
@@ -1187,6 +1180,7 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                                 {confirmAction === "pause_2fa" && "Pause two-factor login protection?"}
                                 {confirmAction === "disable_email" && "Disable email verification codes?"}
                                 {confirmAction === "regenerate_codes" && "Regenerate recovery codes?"}
+                                {confirmAction === "delete_passkey" && "Delete passkey?"}
                             </DialogTitle>
                             <DialogDescription>
                                 {confirmAction === "disable_app" &&
@@ -1197,6 +1191,8 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                                     "Confirm your current password to turn off email one-time verification codes."}
                                 {confirmAction === "regenerate_codes" &&
                                     "Confirm your current password to generate a new set of recovery codes. Any previously saved codes will stop working."}
+                                {confirmAction === "delete_passkey" &&
+                                    "Confirm your current password to delete this passkey. It will no longer be able to sign in to your account."}
                             </DialogDescription>
                         </DialogHeader>
                         <div className="my-4 space-y-2">
@@ -1220,7 +1216,10 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                             <Button
                                 type="button"
                                 variant="outline"
-                                onClick={() => setConfirmAction(null)}
+                                onClick={() => {
+                                    setConfirmAction(null);
+                                    setPasskeyIdPendingDelete(null);
+                                }}
                                 disabled={confirmProcessing}
                             >
                                 Cancel
@@ -1230,32 +1229,12 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                                 variant={confirmAction === "regenerate_codes" ? "default" : "destructive"}
                                 disabled={confirmProcessing || !confirmPassword}
                             >
-                                {confirmProcessing ? "Confirming..." : "Confirm"}
+                                {confirmProcessing ? "Confirming..." : confirmAction === "delete_passkey" ? "Delete Passkey" : "Confirm"}
                             </Button>
                         </DialogFooter>
                     </form>
                 </DialogContent>
             </Dialog>
-
-            <AlertDialog open={passkeyIdPendingDelete !== null} onOpenChange={(open) => !open && setPasskeyIdPendingDelete(null)}>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Delete passkey?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            This passkey will no longer be able to sign in to your account. You can register a new passkey at any time.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                            onClick={confirmDeletePasskey}
-                        >
-                            Delete Passkey
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
 
             <AlertDialog open={apiKeyIdPendingDelete !== null} onOpenChange={(open) => !open && setApiKeyIdPendingDelete(null)}>
                 <AlertDialogContent>

@@ -1,4 +1,4 @@
-import { Link, useForm, usePage } from "@inertiajs/react";
+import { Link, router, useForm, usePage } from "@inertiajs/react";
 import axios from "axios";
 import { ArrowLeft, ArrowRight, BadgeCheck, Check, Eye, EyeOff, GraduationCap, Loader2, Lock, Mail, ShieldAlert, User } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
@@ -336,6 +336,18 @@ export function SignupStepper({
                                         </p>
                                         <p className="truncate text-muted-foreground">{socialiteSignup.email}</p>
                                     </div>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 shrink-0 px-2 text-xs text-muted-foreground hover:text-foreground"
+                                        onClick={() => {
+                                            clearPersistedState();
+                                            router.post("/signup/cancel-social");
+                                        }}
+                                    >
+                                        Switch
+                                    </Button>
                                 </div>
                             )}
 

@@ -15,6 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { index as batchEnrollmentRoute } from "@/actions/App/Http/Controllers/AdministratorBatchEnrollmentController";
 import { index as holdsIndexRoute } from "@/actions/App/Http/Controllers/AdministratorStudentHoldController";
 import { bulkAction as enrollmentBulkActionRoute } from "@/routes/administrators/enrollments";
 import { store as storeTransitionRoute } from "@/routes/administrators/enrollments/transitions";
@@ -35,6 +36,7 @@ import {
     Filter,
     GraduationCap,
     KanbanSquare,
+    Layers,
     ListFilter,
     Lock,
     MoreHorizontal,
@@ -840,6 +842,12 @@ export default function AdministratorEnrollmentsIndex({
                                         Bulk export assessments (PDF)
                                     </DropdownMenuItem>
                                     <DropdownMenuItem asChild>
+                                        <Link href={batchEnrollmentRoute.url()} className="flex items-center">
+                                            <Layers className="mr-2 size-4" />
+                                            Batch / Block enrollment
+                                        </Link>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem asChild>
                                         <Link href={holdsIndexRoute.url()} className="flex items-center">
                                             <ShieldAlert className="mr-2 size-4" />
                                             Holds &amp; clearances
@@ -870,6 +878,14 @@ export default function AdministratorEnrollmentsIndex({
                                     </DropdownMenuItem>
                                 </DropdownMenuContent>
                             </DropdownMenu>
+
+                            <Link
+                                href={batchEnrollmentRoute.url()}
+                                className={buttonVariants({ variant: "outline", size: "sm", className: "h-8 gap-1.5" })}
+                            >
+                                <Layers className="size-3.5" aria-hidden="true" />
+                                <span className="hidden md:inline">Batch enroll</span>
+                            </Link>
 
                             <Link
                                 href={route("administrators.enrollments.create")}

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\AdministratorApplicantBulkActionController;
 use App\Http\Controllers\AdministratorAuditLogController;
+use App\Http\Controllers\AdministratorBatchEnrollmentController;
 use App\Http\Controllers\AdministratorClassManagementController;
 use App\Http\Controllers\AdministratorCourseSchedulePdfController;
 use App\Http\Controllers\AdministratorCurriculumImportController;
@@ -117,6 +118,9 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/registrar/documents/preview', [AdministratorRegistrarDocumentController::class, 'preview'])->name('registrar.documents.preview');
         Route::get('/registrar/documents/pdf', [AdministratorRegistrarDocumentController::class, 'pdf'])->name('registrar.documents.pdf');
         Route::get('/enrollments/create', [AdministratorEnrollmentManagementController::class, 'create'])->name('enrollments.create');
+        Route::get('/enrollments/batch', [AdministratorBatchEnrollmentController::class, 'index'])->name('enrollments.batch.index');
+        Route::get('/enrollments/batch/preview', [AdministratorBatchEnrollmentController::class, 'preview'])->name('enrollments.batch.preview');
+        Route::post('/enrollments/batch', [AdministratorBatchEnrollmentController::class, 'store'])->name('enrollments.batch.store');
         Route::post('/enrollments', [AdministratorEnrollmentManagementController::class, 'store'])->name('enrollments.store');
         Route::post('/enrollments/bulk-action', [AdministratorEnrollmentManagementController::class, 'bulkAction'])->name('enrollments.bulk-action');
         Route::post('/enrollments/discounts', [AdministratorEnrollmentDiscountController::class, 'store'])->name('enrollments.discounts.store');

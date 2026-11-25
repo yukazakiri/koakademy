@@ -476,3 +476,36 @@ it('fetches link metadata for class instructors and blocks other faculty from th
         ])
         ->assertForbidden();
 });
+
+it('serves direct single-link QR downloads and clears broken link reports for class instructors', function (): void {
+    $scenario = createOnlineResourceClassScenario();
+
+    $category = OnlineResourceCategory::factory()->forClassOwner($scenario['class'])->create([
+        'name' => 'Lab Links',
+    ]);
+    $link = OnlineResourceLink::factory()->forCategory($category)->create([
+        'title' => 'Lab Starter Repo',
+        'url' => 'https://github.com/example/lab-1',
+        'broken_report_count' => 1,
+        'last_reported_broken_at' => now(),
+    ]);
+
+    actingAs($scenario['facultyUser'])
+        ->get(route('faculty.classes.resources.links.qr.svg', ['class' => $scenario['class']->id, 'link' => $link->id]))
+        ->assertSuccessful();
+
+    actingAs($scenario['facultyUser'])
+        ->get(route('faculty.classes.resources.links.qr.png', ['class' => $scenario['class']->id, 'link' => $link->id]))
+        ->assertSuccessful()
+        ->assertHeader('Content-Type', 'image/png');
+
+    actingAs($scenario['otherFacultyUser'])
+        ->post(route('faculty.classes.resources.links.clear-broken-report', ['class' => $scenario['class']->id, 'link' => $link->id]))
+        ->assertForbidden();
+
+    actingAs($scenario['facultyUser'])
+        ->post(route('faculty.classes.resources.links.clear-broken-report', ['class' => $scenario['class']->id, 'link' => $link->id]))
+        ->assertRedirect();
+
+    expect($link->fresh()->broken_report_count)->toBe(0);
+});

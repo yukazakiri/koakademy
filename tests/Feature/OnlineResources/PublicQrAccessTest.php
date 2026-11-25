@@ -171,3 +171,49 @@ it('serves the human-readable school directory and category slug deep links', fu
     get(route('online-resources.directory', ['schoolCode' => 'koa', 'categorySlug' => 'staff-only']))
         ->assertNotFound();
 });
+
+it('resolves role-aware portal URLs on the public hub and allows reporting broken public links', function (): void {
+    $category = OnlineResourceCategory::factory()->forSchoolOwner($this->school)->create([
+        'name' => 'Campus Portals',
+        'visibility' => OnlineResourceVisibility::Public,
+    ]);
+    $link = OnlineResourceLink::factory()->forCategory($category)->create([
+        'title' => 'Broken Form',
+        'url' => 'https://forms.example.edu/old',
+    ]);
+
+    $admin = User::factory()->create([
+        'role' => UserRole::Admin,
+        'school_id' => $this->school->id,
+    ]);
+
+    $student = User::factory()->create([
+        'role' => UserRole::Student,
+        'school_id' => $this->school->id,
+    ]);
+
+    actingAs($admin)
+        ->get(route('online-resources.qr.resolve', ['shortCode' => $category->short_code]))
+        ->assertSuccessful()
+        ->assertInertia(fn ($page) => $page
+            ->component('OnlineResources/Public/Hub')
+            ->where('portalUrl', '/administrators/online-resources')
+        );
+
+    actingAs($student)
+        ->get(route('online-resources.qr.resolve', ['shortCode' => $category->short_code]))
+        ->assertSuccessful()
+        ->assertInertia(fn ($page) => $page
+            ->component('OnlineResources/Public/Hub')
+            ->where('portalUrl', '/student/resources')
+        );
+
+    $this->postJson(route('online-resources.qr.report-broken', ['shortCode' => $link->short_code]))
+        ->assertSuccessful()
+        ->assertExactJson([
+            'reported' => true,
+            'broken_report_count' => 1,
+        ]);
+
+    expect($link->fresh()->broken_report_count)->toBe(1);
+});

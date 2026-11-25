@@ -86,18 +86,19 @@ it('does not flag an update when the client version matches the server version',
         ->assertJsonPath('props.appBuild.buildId', $serverVersion);
 });
 
-it('always includes appBuild metadata on partial Inertia reloads', function (): void {
+it('injects appBuild metadata on version-mismatched partial Inertia reloads without forcing 409', function (): void {
     config([
         'app.updates.soft_reload' => true,
         'app.updates.force_reload_version' => '',
     ]);
 
     $serverVersion = (string) app(AppBuildVersionService::class)->inertiaVersion();
+    $clientVersion = 'previous-release-asset-hash';
 
     $response = $this->get(route('login'), [
         'Accept' => 'text/html, application/xhtml+xml',
         'X-Inertia' => 'true',
-        'X-Inertia-Version' => $serverVersion,
+        'X-Inertia-Version' => $clientVersion,
         'X-Inertia-Partial-Component' => 'login',
         'X-Inertia-Partial-Data' => 'status',
         'X-Requested-With' => 'XMLHttpRequest',
@@ -105,6 +106,9 @@ it('always includes appBuild metadata on partial Inertia reloads', function (): 
 
     $response
         ->assertSuccessful()
+        ->assertHeader('X-App-Update-Available', 'true')
+        ->assertHeader('X-App-Build-Id', $serverVersion)
+        ->assertJsonPath('version', $clientVersion)
         ->assertJsonPath('props.appBuild.buildId', $serverVersion);
 });
 

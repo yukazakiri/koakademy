@@ -152,7 +152,7 @@ final class HandleInertiaRequests extends Middleware
                 'settings' => fn (): array => $settingsService->getSettings($user),
                 'socialAuthProviders' => $socialiteProviderService->enabledProviders(...),
                 'version' => config('app.version'),
-                'appBuild' => Inertia::always(fn (): array => app(AppBuildVersionService::class)->buildPayload()),
+                'appBuild' => fn (): array => app(AppBuildVersionService::class)->buildPayload(),
                 'ziggy' => function () use ($request): array {
                     $ziggyManifestHash = is_file(config_path('ziggy.php')) ? (string) filemtime(config_path('ziggy.php')) : '';
                     $cacheKey = 'ziggy_routes_payload_'.md5(serialize([config('app.version'), $ziggyManifestHash]));

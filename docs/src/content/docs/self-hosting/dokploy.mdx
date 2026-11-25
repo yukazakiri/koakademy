@@ -24,13 +24,18 @@ To achieve seamless, zero-downtime updates:
 - **Container Healthcheck**: The internal `healthcheck` script probes `/health` (and supervisor processes).
 - **VIP Routing Gate**: Dokploy and Traefik keep routing user traffic to the old container until the new container reports `healthy` over the configured monitoring period.
 - **Automated Rollback**: If the new container fails its health checks during the monitor period, the update rolls back immediately without dropping traffic.
-- **Decoupled Workers**: The web container runs with `HORIZON_IN_HTTP_CONTAINER="false"`, while Horizon and the scheduler run as dedicated services so queuing is not duplicated during start-first web container rollovers.
+- **Decoupled Workers**: The web container runs with `HORIZON_IN_HTTP_CONTAINER="false"`, while Horizon and the scheduler run as dedicated services so queuing is not duplicated or interrupted during start-first web container rollovers.
+- **Retained Vite Assets & Soft Browser Updates**: On startup (`RETAIN_PREVIOUS_BUILD_ASSETS="true"`), each new `app` container copies its hashed `/app/public/build/assets/*` files additively into the shared `app-storage` volume (`/app/storage/app/build-assets`) while keeping `manifest.json` container-local. Combined with `INERTIA_SOFT_VERSION_UPDATES="true"`, active portal tabs never hit chunk `404`s during overlapping rollouts and receive a non-blocking *"Update ready"* prompt instead of an abrupt `409` hard reload mid-form.
+
+:::caution[Use Docker Stack (Swarm) Mode in Dokploy]
+Standard Docker Compose (`docker compose up -d`) ignores `deploy.update_config.order: start-first` and replaces containers `stop-first`, causing brief `502` errors during redeploys. When creating the Compose service in Dokploy, set **Compose Type** to **Stack** (Docker Swarm) so `start-first`, health-gated VIP routing, and automatic rollbacks are enforced.
+:::
 
 ### Step 1: Create a Project in Dokploy
 
 1. Navigate to your Dokploy dashboard.
 2. Click **Create Project** and name it `koakademy`.
-3. Inside the project, click **Create Service** and select **Compose**.
+3. Inside the project, click **Create Service**, select **Compose**, and choose **Stack** as the Compose Type.
 
 ### Step 2: Configure Compose Stack
 
@@ -267,6 +272,11 @@ ASSESSMENT_EXPORT_EVENT_PROCESSES="1"
 ASSESSMENT_EXPORT_WORKER_MEMORY="512"
 
 # Production Hardening
+APP_MAINTENANCE_DRIVER="cache"
+APP_MAINTENANCE_STORE="redis"
+RETAIN_PREVIOUS_BUILD_ASSETS="true"
+BUILD_ASSETS_RETENTION_DAYS="7"
+INERTIA_SOFT_VERSION_UPDATES="true"
 TELESCOPE_ENABLED="false"
 PULSE_ENABLED="false"
 NIGHTWATCH_ENABLED="false"
@@ -343,6 +353,10 @@ If you prefer using Dokploy's UI-managed databases with automated backups:
    - Mount persistent volume: Host `/var/lib/dokploy/volumes/koakademy-storage` -> Container `/app/storage`.
    - Set healthcheck path to `/up`.
    - Connect the environment variables pointing to the Dokploy PostgreSQL and Redis internal hosts.
+   - For zero-interruption updates on standalone Application services:
+     - In **Advanced → Swarm Settings**, set **Update Config** to `order: start-first`, `failure_action: rollback`, and configure a healthcheck on `/up`.
+     - Set `HORIZON_IN_HTTP_CONTAINER="false"` on the web Application and create separate Application services sharing the same `/app/storage` mount for `horizon` (`CONTAINER_MODE=horizon`, `stop_grace_period: 30m`) and `scheduler` (`CONTAINER_MODE=scheduler`).
+     - Because all replicas share `/app/storage`, `RETAIN_PREVIOUS_BUILD_ASSETS="true"` and `INERTIA_SOFT_VERSION_UPDATES="true"` work automatically without extra volume setup. (If scaling across multiple Swarm nodes, configure external S3/R2 storage and `ASSET_URL`.)
 
 ---
 

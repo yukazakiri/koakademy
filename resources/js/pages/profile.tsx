@@ -387,7 +387,11 @@ export default function ProfilePage() {
             is_current_device: boolean;
             last_active: string;
             user_agent: string;
+            browser?: string;
+            platform?: string;
+            is_desktop?: boolean;
         }>;
+        newly_generated_recovery_codes?: string[] | null;
         feature_flags?: {
             experimental?: string[];
             experimental_available?: string[];

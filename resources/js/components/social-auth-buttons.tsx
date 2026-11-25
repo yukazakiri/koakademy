@@ -33,16 +33,13 @@ export function SocialAuthButtons() {
 
     return (
         <div className="grid gap-3">
-            <div className="relative my-1">
-                <div className="absolute inset-0 flex items-center">
-                    <span className="w-full border-t border-border" />
-                </div>
-                <div className="relative flex justify-center text-xs">
-                    <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
-                </div>
+            <div className="my-1 flex items-center gap-3 text-xs text-muted-foreground">
+                <span className="h-px flex-1 bg-border" />
+                <span>Or continue with</span>
+                <span className="h-px flex-1 bg-border" />
             </div>
 
-            <div className={cn("grid gap-3", isMultiColumn ? "grid-cols-2" : "grid-cols-1")}>
+            <div className={cn("grid gap-2.5", isMultiColumn ? "grid-cols-2" : "grid-cols-1")}>
                 {socialAuthProviders.map((provider, index) => {
                     const Icon = providerIcons[provider.key] ?? Link2;
                     // If odd number of providers > 1, make the last one span full width
@@ -54,7 +51,7 @@ export function SocialAuthButtons() {
                             type="button"
                             variant="outline"
                             className={cn(
-                                "h-10 w-full rounded-lg border border-border bg-card/60 font-medium text-sm text-foreground transition-colors hover:border-primary/40 hover:bg-accent hover:text-accent-foreground shadow-xs",
+                                "h-11 w-full rounded-xl border border-border/80 bg-background/60 font-medium text-sm text-foreground transition-colors hover:border-primary/40 hover:bg-accent hover:text-accent-foreground shadow-2xs",
                                 isLastOdd && "col-span-2"
                             )}
                             onClick={() => {

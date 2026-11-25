@@ -3,6 +3,7 @@ import { ArrowLeft, Check, Eye, EyeOff, Loader2, Lock, Mail, ShieldCheck } from 
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
+import { evaluatePasswordPolicy, PasswordRequirements, type PasswordPolicy } from "@/components/auth/password-requirements";
 import { AuthLayout, type AuthLayoutProps } from "@/layouts/auth-layout";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -15,7 +16,10 @@ interface ResetPasswordProps {
 }
 
 export default function ResetPasswordPage({ token, email }: ResetPasswordProps) {
-    const { props: pageProps } = usePage<{ announcements?: AuthLayoutProps["announcements"] }>();
+    const { props: pageProps } = usePage<{
+        announcements?: AuthLayoutProps["announcements"];
+        passwordPolicy?: Partial<PasswordPolicy>;
+    }>();
 
     const { data, setData, post, processing, errors } = useForm({
         token,
@@ -33,7 +37,9 @@ export default function ResetPasswordPage({ token, email }: ResetPasswordProps) 
         }
     }, [errors]);
 
-    const passwordsMatch = data.password && data.password_confirmation && data.password === data.password_confirmation;
+    const policyCheck = evaluatePasswordPolicy(data.password, pageProps.passwordPolicy);
+    const passwordsMatch = Boolean(data.password && data.password_confirmation && data.password === data.password_confirmation);
+    const minLength = pageProps.passwordPolicy?.minLength ?? 8;
 
     const submit = (e: FormEvent) => {
         e.preventDefault();
@@ -48,7 +54,7 @@ export default function ResetPasswordPage({ token, email }: ResetPasswordProps) 
             badge="Security Verification"
             icon={<ShieldCheck className="size-6 text-primary" />}
             title="Create new password"
-            description="Choose a strong, secure password with at least 8 characters to protect your account."
+            description={`Choose a strong, secure password with at least ${minLength} characters to protect your account.`}
             announcements={pageProps.announcements}
             showBackToLogin={true}
             maxWidth="sm"
@@ -93,7 +99,8 @@ export default function ResetPasswordPage({ token, email }: ResetPasswordProps) 
                             <InputGroupInput
                                 id="password"
                                 type={showPassword ? "text" : "password"}
-                                placeholder="Enter new password"
+                                autoComplete="new-password"
+                                placeholder={`At least ${minLength} characters`}
                                 required
                                 autoFocus
                                 value={data.password}
@@ -112,6 +119,7 @@ export default function ResetPasswordPage({ token, email }: ResetPasswordProps) 
                                 </InputGroupButton>
                             </InputGroupAddon>
                         </InputGroup>
+                        <PasswordRequirements password={data.password} policy={pageProps.passwordPolicy} />
                         {errors.password && <FieldError errors={[{ message: errors.password }]} />}
                     </Field>
 
@@ -133,6 +141,7 @@ export default function ResetPasswordPage({ token, email }: ResetPasswordProps) 
                             <InputGroupInput
                                 id="password_confirmation"
                                 type={showConfirmPassword ? "text" : "password"}
+                                autoComplete="new-password"
                                 placeholder="Confirm your new password"
                                 required
                                 value={data.password_confirmation}
@@ -163,7 +172,7 @@ export default function ResetPasswordPage({ token, email }: ResetPasswordProps) 
                     <Button
                         type="submit"
                         className="h-11 w-full rounded-xl font-semibold shadow-md transition-all duration-200"
-                        disabled={processing}
+                        disabled={processing || !policyCheck.allMet || !passwordsMatch}
                     >
                         {processing ? (
                             <>

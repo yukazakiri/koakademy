@@ -1,14 +1,16 @@
-import { Link, useForm } from "@inertiajs/react";
+import { Link, useForm, usePage } from "@inertiajs/react";
 import axios from "axios";
-import { ArrowLeft, ArrowRight, BadgeCheck, Check, Eye, EyeOff, GraduationCap, KeyRound, Loader2, Lock, Mail, ShieldAlert, User } from "lucide-react";
+import { ArrowLeft, ArrowRight, BadgeCheck, Check, Eye, EyeOff, GraduationCap, Loader2, Lock, Mail, ShieldAlert, User } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
+import { evaluatePasswordPolicy, PasswordRequirements, type PasswordPolicy } from "@/components/auth/password-requirements";
 import { IconTile } from "@/components/reui/icon-tile";
 import { SocialAuthButtons } from "@/components/social-auth-buttons";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot } from "@/components/ui/input-otp";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
@@ -30,8 +32,6 @@ interface PersistedState {
     identifierField?: "lrn" | "student_id";
     name: string;
     email: string;
-    password: string;
-    password_confirmation: string;
     faculty_id_number: string;
     student_id: string;
     lrn: string;
@@ -48,8 +48,16 @@ interface SocialiteSignup {
 
 function loadPersistedState(): PersistedState | null {
     try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        return raw ? JSON.parse(raw) : null;
+        // Clear any legacy localStorage entry that may have stored plaintext passwords.
+        if (typeof localStorage !== "undefined" && localStorage.getItem(STORAGE_KEY)) {
+            localStorage.removeItem(STORAGE_KEY);
+        }
+        const raw = sessionStorage.getItem(STORAGE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as Partial<PersistedState> & { password?: unknown; password_confirmation?: unknown };
+        delete parsed.password;
+        delete parsed.password_confirmation;
+        return parsed as PersistedState;
     } catch {
         return null;
     }
@@ -57,7 +65,7 @@ function loadPersistedState(): PersistedState | null {
 
 function persistState(state: PersistedState): void {
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch {
         return;
     }
@@ -65,6 +73,7 @@ function persistState(state: PersistedState): void {
 
 function clearPersistedState(): void {
     try {
+        sessionStorage.removeItem(STORAGE_KEY);
         localStorage.removeItem(STORAGE_KEY);
     } catch {
         return;
@@ -78,10 +87,13 @@ export function SignupStepper({
 }: React.ComponentProps<"div"> & {
     socialiteSignup?: SocialiteSignup | null;
 }) {
+    const { passwordPolicy } = usePage<{ passwordPolicy?: Partial<PasswordPolicy> }>().props;
     const saved = useRef(socialiteSignup?.email ? null : loadPersistedState());
 
     const [currentStep, setCurrentStep] = useState(saved.current?.currentStep ?? 0);
     const [isCheckingEmail, setIsCheckingEmail] = useState(false);
+    const [isSendingOtp, setIsSendingOtp] = useState(false);
+    const [otpCooldown, setOtpCooldown] = useState(0);
     const [emailLookupResult, setEmailLookupResult] = useState<EmailLookupResult | null>(null);
     const [userType, setUserType] = useState<UserType>(saved.current?.userType ?? null);
     const initialIdentifierField: "lrn" | "student_id" = saved.current?.identifierField ?? (saved.current?.lrn ? "lrn" : "student_id");
@@ -95,8 +107,8 @@ export function SignupStepper({
     const { data, setData, post, processing, errors } = useForm({
         name: saved.current?.name ?? socialiteSignup?.name ?? "",
         email: saved.current?.email ?? socialiteSignup?.email ?? "",
-        password: saved.current?.password ?? "",
-        password_confirmation: saved.current?.password_confirmation ?? "",
+        password: "",
+        password_confirmation: "",
         faculty_id_number: saved.current?.faculty_id_number ?? "",
         student_id: saved.current?.student_id ?? "",
         lrn: saved.current?.lrn ?? "",
@@ -109,23 +121,42 @@ export function SignupStepper({
 
     const isRestored = useRef(saved.current !== null);
 
+    useEffect(() => {
+        if (otpCooldown <= 0) return;
+        const timer = setInterval(() => {
+            setOtpCooldown((prev) => prev - 1);
+        }, 1000);
+        return () => clearInterval(timer);
+    }, [otpCooldown]);
+
     const persistFormState = useCallback(() => {
+        // Never persist passwords or OTPs to browser storage.
         persistState({
-            currentStep,
+            currentStep: currentStep === 3 ? 2 : currentStep,
             userType,
             studentType,
             identifierField,
             name: data.name,
             email: data.email,
-            password: data.password,
-            password_confirmation: data.password_confirmation,
             faculty_id_number: data.faculty_id_number,
             student_id: data.student_id,
             lrn: data.lrn,
             user_type: data.user_type,
             student_type: data.student_type,
         });
-    }, [currentStep, userType, studentType, identifierField, data]);
+    }, [
+        currentStep,
+        userType,
+        studentType,
+        identifierField,
+        data.name,
+        data.email,
+        data.faculty_id_number,
+        data.student_id,
+        data.lrn,
+        data.user_type,
+        data.student_type,
+    ]);
 
     useEffect(() => {
         persistFormState();
@@ -153,23 +184,8 @@ export function SignupStepper({
     };
 
     const passwordsMatch = data.password === data.password_confirmation && data.password_confirmation !== "";
-
-    const getPasswordStrength = (password: string) => {
-        if (!password) return { strength: 0, label: "" };
-        let strength = 0;
-        if (password.length >= 8) strength += 1;
-        if (/[A-Z]/.test(password)) strength += 1;
-        if (/[a-z]/.test(password)) strength += 1;
-        if (/[0-9]/.test(password)) strength += 1;
-        if (/[^A-Za-z0-9]/.test(password)) strength += 1;
-
-        if (strength <= 2) return { strength, label: "Weak", color: "bg-destructive" };
-        if (strength <= 3) return { strength, label: "Medium", color: "bg-warning" };
-        if (strength <= 4) return { strength, label: "Strong", color: "bg-success" };
-        return { strength, label: "Very Strong", color: "bg-success" };
-    };
-
-    const passwordStrength = getPasswordStrength(data.password);
+    const policyEvaluation = evaluatePasswordPolicy(data.password, passwordPolicy);
+    const minPasswordLength = passwordPolicy?.minLength ?? 8;
 
     const getSteps = () => {
         if (userType === "student") {
@@ -191,6 +207,8 @@ export function SignupStepper({
     const steps = getSteps();
 
     const sendOtp = async () => {
+        if (isSendingOtp) return;
+        setIsSendingOtp(true);
         try {
             await axios.post("/signup/send-otp", {
                 email: data.email,
@@ -200,6 +218,7 @@ export function SignupStepper({
                 lrn: data.lrn,
                 faculty_id_number: data.faculty_id_number,
             });
+            setOtpCooldown(60);
             toast.success("Verification code sent to your email.");
             setCurrentStep(steps.length - 1);
         } catch (error: unknown) {
@@ -209,6 +228,8 @@ export function SignupStepper({
                 (err.response?.data?.errors && Object.values(err.response.data.errors)[0]?.[0]) ||
                 "Failed to send verification code. Please try again.";
             toast.error(errorMessage);
+        } finally {
+            setIsSendingOtp(false);
         }
     };
 
@@ -263,14 +284,10 @@ export function SignupStepper({
                 clearPersistedState();
                 toast.success("Account created successfully!");
             },
-            onError: (formErrors) => {
-                const first = Object.values(formErrors)[0];
-                if (first) toast.error(first);
-            },
         });
     };
 
-    const canProceedFromDetails = data.name.trim().length > 0 && data.password.length >= 8 && passwordsMatch;
+    const canProceedFromDetails = data.name.trim().length > 0 && policyEvaluation.allMet && passwordsMatch;
 
     return (
         <div className={cn("space-y-6", className)} {...props}>
@@ -300,7 +317,27 @@ export function SignupStepper({
                     {/* Step 0: Email Verification */}
                     {currentStep === 0 && (
                         <div className="space-y-5">
-                            <SocialAuthButtons />
+                            {socialiteSignup?.email && (
+                                <div className="flex items-center gap-3 rounded-xl border border-primary/25 bg-primary/5 p-3.5 text-xs">
+                                    {socialiteSignup.avatar_url ? (
+                                        <img
+                                            src={socialiteSignup.avatar_url}
+                                            alt=""
+                                            className="size-8 shrink-0 rounded-full border border-border object-cover"
+                                        />
+                                    ) : (
+                                        <IconTile variant="soft" size="sm" className="shrink-0 rounded-lg">
+                                            <User className="size-4" />
+                                        </IconTile>
+                                    )}
+                                    <div className="min-w-0 flex-1">
+                                        <p className="font-semibold text-foreground">
+                                            Completing signup with {socialiteSignup.provider ? socialiteSignup.provider.charAt(0).toUpperCase() + socialiteSignup.provider.slice(1) : "Social Account"}
+                                        </p>
+                                        <p className="truncate text-muted-foreground">{socialiteSignup.email}</p>
+                                    </div>
+                                </div>
+                            )}
 
                             <Field>
                                 <FieldLabel htmlFor="email" className="text-foreground text-xs font-semibold">
@@ -318,6 +355,7 @@ export function SignupStepper({
                                     <InputGroupInput
                                         id="email"
                                         type="email"
+                                        autoComplete="email"
                                         placeholder="name@school.edu"
                                         required
                                         autoFocus
@@ -390,6 +428,8 @@ export function SignupStepper({
                                     </div>
                                 </div>
                             )}
+
+                            {!socialiteSignup?.email && <SocialAuthButtons />}
                         </div>
                     )}
 
@@ -407,6 +447,7 @@ export function SignupStepper({
                                     <InputGroupInput
                                         id="name"
                                         type="text"
+                                        autoComplete="name"
                                         required
                                         autoFocus
                                         value={data.name}
@@ -420,7 +461,7 @@ export function SignupStepper({
 
                             <Field>
                                 <FieldLabel htmlFor="email_display" className="text-foreground text-xs font-semibold">
-                                    Verified Email
+                                    Matched Roster Email
                                 </FieldLabel>
                                 <InputGroup className="border-border/80 bg-muted/40 h-11 rounded-xl opacity-90">
                                     <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
@@ -447,10 +488,11 @@ export function SignupStepper({
                                     <InputGroupInput
                                         id="password"
                                         type={showPassword ? "text" : "password"}
+                                        autoComplete="new-password"
                                         required
                                         value={data.password}
                                         onChange={(e) => setData("password", e.target.value)}
-                                        placeholder="At least 8 characters"
+                                        placeholder={`At least ${minPasswordLength} characters`}
                                         className="text-sm font-normal"
                                     />
                                     <InputGroupAddon align="inline-end" className="pr-1.5">
@@ -464,24 +506,7 @@ export function SignupStepper({
                                         </InputGroupButton>
                                     </InputGroupAddon>
                                 </InputGroup>
-                                {data.password && (
-                                    <div className="mt-1 space-y-1">
-                                        <div className="flex h-1.5 gap-1">
-                                            {[1, 2, 3, 4, 5].map((lvl) => (
-                                                <div
-                                                    key={lvl}
-                                                    className={cn(
-                                                        "h-full flex-1 rounded-full transition-colors",
-                                                        lvl <= passwordStrength.strength ? passwordStrength.color : "bg-muted",
-                                                    )}
-                                                />
-                                            ))}
-                                        </div>
-                                        <p className="text-muted-foreground text-[11px]">
-                                            Strength: <span className="text-foreground font-semibold">{passwordStrength.label}</span>
-                                        </p>
-                                    </div>
-                                )}
+                                <PasswordRequirements password={data.password} policy={passwordPolicy} />
                                 {errors.password && <FieldError errors={[{ message: errors.password }]} />}
                             </Field>
 
@@ -501,6 +526,7 @@ export function SignupStepper({
                                     <InputGroupInput
                                         id="password_confirmation"
                                         type={showConfirmPassword ? "text" : "password"}
+                                        autoComplete="new-password"
                                         required
                                         value={data.password_confirmation}
                                         onChange={(e) => setData("password_confirmation", e.target.value)}
@@ -664,22 +690,38 @@ export function SignupStepper({
                                 <FieldLabel htmlFor="otp" className="text-foreground text-xs font-semibold">
                                     6-Digit Verification Code
                                 </FieldLabel>
-                                <InputGroup className="border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-12 rounded-xl focus-within:ring-2">
-                                    <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
-                                        <KeyRound className="size-4" />
-                                    </InputGroupAddon>
-                                    <InputGroupInput
+                                <div className="flex justify-center pt-1">
+                                    <InputOTP
                                         id="otp"
-                                        placeholder="123456"
                                         maxLength={6}
+                                        inputMode="numeric"
+                                        autoComplete="one-time-code"
+                                        autoFocus
                                         value={data.otp}
-                                        onChange={(e) => setData("otp", e.target.value.toUpperCase())}
-                                        className="text-center font-mono text-lg tracking-widest uppercase"
-                                    />
-                                </InputGroup>
+                                        onChange={(value) => setData("otp", value.replace(/\D/g, "").slice(0, 6))}
+                                    >
+                                        <InputOTPGroup>
+                                            <InputOTPSlot index={0} className="h-12 w-11 text-base font-mono font-semibold" />
+                                            <InputOTPSlot index={1} className="h-12 w-11 text-base font-mono font-semibold" />
+                                            <InputOTPSlot index={2} className="h-12 w-11 text-base font-mono font-semibold" />
+                                        </InputOTPGroup>
+                                        <InputOTPSeparator />
+                                        <InputOTPGroup>
+                                            <InputOTPSlot index={3} className="h-12 w-11 text-base font-mono font-semibold" />
+                                            <InputOTPSlot index={4} className="h-12 w-11 text-base font-mono font-semibold" />
+                                            <InputOTPSlot index={5} className="h-12 w-11 text-base font-mono font-semibold" />
+                                        </InputOTPGroup>
+                                    </InputOTP>
+                                </div>
+                                {errors.otp && <FieldError errors={[{ message: errors.otp }]} />}
                                 <div className="flex justify-end pt-1">
-                                    <button type="button" onClick={sendOtp} className="text-primary text-xs font-medium hover:underline">
-                                        Resend Code
+                                    <button
+                                        type="button"
+                                        onClick={sendOtp}
+                                        disabled={isSendingOtp || otpCooldown > 0}
+                                        className="text-primary text-xs font-medium hover:underline disabled:opacity-50 disabled:no-underline"
+                                    >
+                                        {isSendingOtp ? "Sending..." : otpCooldown > 0 ? `Resend code (${otpCooldown}s)` : "Resend Code"}
                                     </button>
                                 </div>
                             </Field>
@@ -709,12 +751,20 @@ export function SignupStepper({
                                     type="button"
                                     onClick={sendOtp}
                                     disabled={
-                                        userType === "student" &&
-                                        (!data.student_type || !(usesExternalIdentifier ? data.lrn.trim() : data.student_id.trim()))
+                                        isSendingOtp ||
+                                        (userType === "student" &&
+                                            (!data.student_type || !(usesExternalIdentifier ? data.lrn.trim() : data.student_id.trim())))
                                     }
                                     className="h-11 flex-1 rounded-xl font-semibold shadow-md"
                                 >
-                                    <span>Send Verification Code</span>
+                                    {isSendingOtp ? (
+                                        <>
+                                            <Loader2 className="mr-2 size-4 animate-spin" />
+                                            <span>Sending Code...</span>
+                                        </>
+                                    ) : (
+                                        <span>Send Verification Code</span>
+                                    )}
                                 </Button>
                             ) : (
                                 <Button

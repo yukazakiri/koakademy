@@ -61,6 +61,7 @@ export default function ForgotPasswordPage() {
                             <InputGroupInput
                                 id="email"
                                 type="email"
+                                autoComplete="email"
                                 placeholder="name@school.edu"
                                 required
                                 autoFocus

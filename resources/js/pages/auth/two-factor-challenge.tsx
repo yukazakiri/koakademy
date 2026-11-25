@@ -18,6 +18,7 @@ import { IconTile } from "@/components/reui/icon-tile";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot } from "@/components/ui/input-otp";
 
 type VerificationMethod = "select" | "passkey" | "authenticator" | "email" | "recovery";
 
@@ -47,18 +48,14 @@ export default function TwoFactorChallengePage() {
         announcements?: AuthLayoutProps["announcements"];
     }>().props;
 
-    const [browserSupportsPasskeys, setBrowserSupportsPasskeys] = useState(false);
+    const [browserSupportsPasskeys] = useState<boolean>(() => supportsWebAuthn());
     const passkeyAvailable = has_passkeys && browserSupportsPasskeys;
-
-    useEffect(() => {
-        setBrowserSupportsPasskeys(supportsWebAuthn());
-    }, []);
 
     const availableMethods: Exclude<VerificationMethod, "select">[] = [];
     if (passkeyAvailable) availableMethods.push("passkey");
     if (has_app_auth) availableMethods.push("authenticator");
     if (has_email_auth) availableMethods.push("email");
-    availableMethods.push("recovery");
+    if (has_app_auth) availableMethods.push("recovery");
 
     const getInitialMethod = (): VerificationMethod => {
         if (availableMethods.length === 1) {
@@ -74,12 +71,22 @@ export default function TwoFactorChallengePage() {
     const [passkeyVerifying, setPasskeyVerifying] = useState(false);
     const [passkeyAutoPrompted, setPasskeyAutoPrompted] = useState(false);
     const [emailCodeSent, setEmailCodeSent] = useState(false);
+    const [sendingEmailCode, setSendingEmailCode] = useState(false);
+    const [emailCooldown, setEmailCooldown] = useState(0);
     const passkeyTriggeredRef = useRef(false);
 
     const form = useForm({
         code: "",
         recovery_code: "",
     });
+
+    useEffect(() => {
+        if (emailCooldown <= 0) return;
+        const timer = setInterval(() => {
+            setEmailCooldown((prev) => prev - 1);
+        }, 1000);
+        return () => clearInterval(timer);
+    }, [emailCooldown]);
 
     useEffect(() => {
         if (activeMethod === "passkey" && !passkeyAutoPrompted && !passkeyTriggeredRef.current) {
@@ -137,13 +144,17 @@ export default function TwoFactorChallengePage() {
             toast.success("Authentication successful");
             window.location.href = redirectUrl;
         } catch (error: unknown) {
-            const err = error as { name?: string; response?: { data?: { message?: string } } };
+            const err = error as { name?: string; response?: { status?: number; data?: { error?: string; message?: string } } };
+            const serverMessage = err.response?.data?.error ?? err.response?.data?.message;
             if (err.name === "NotAllowedError") {
                 if (!isAutoPrompt) {
                     toast.error("Passkey verification cancelled.");
                 }
-            } else if (err.response?.data?.message) {
-                toast.error(err.response.data.message);
+            } else if (serverMessage) {
+                toast.error(serverMessage);
+                if (err.response?.status === 429 || err.response?.status === 403) {
+                    window.location.href = "/login";
+                }
             } else {
                 toast.error("Passkey verification failed.");
             }
@@ -158,12 +169,22 @@ export default function TwoFactorChallengePage() {
     };
 
     const handleSendEmailCode = async () => {
+        if (sendingEmailCode || emailCooldown > 0) return;
+        setSendingEmailCode(true);
         try {
-            await axios.post("/two-factor-challenge/send-email");
+            const response = await axios.post("/two-factor-challenge/send-email", {}, { headers: { Accept: "application/json" } });
             setEmailCodeSent(true);
-            toast.success("Verification code sent to your email.");
-        } catch {
-            toast.error("Failed to send verification code. Please try again.");
+            setEmailCooldown(60);
+            toast.success(response.data?.message ?? "Verification code sent to your email.");
+        } catch (error: unknown) {
+            const err = error as { response?: { status?: number; data?: { error?: string; message?: string } } };
+            const message = err.response?.data?.error ?? err.response?.data?.message ?? "Failed to send verification code. Please try again.";
+            toast.error(message);
+            if (err.response?.status === 403) {
+                window.location.href = "/login";
+            }
+        } finally {
+            setSendingEmailCode(false);
         }
     };
 
@@ -313,30 +334,36 @@ export default function TwoFactorChallengePage() {
                     <FieldLabel htmlFor="code" className="text-xs font-semibold text-foreground">
                         Authenticator Code
                     </FieldLabel>
-                    <InputGroup className="h-12 rounded-xl border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
-                        <InputGroupAddon align="inline-start" className="pl-3 text-muted-foreground/70">
-                            <Smartphone className="size-4" />
-                        </InputGroupAddon>
-                        <InputGroupInput
+                    <div className="flex justify-center pt-1">
+                        <InputOTP
                             id="code"
-                            type="text"
+                            maxLength={6}
                             inputMode="numeric"
                             autoFocus
                             autoComplete="one-time-code"
                             value={form.data.code}
-                            onChange={(e) => form.setData("code", e.target.value)}
-                            placeholder="123456"
-                            maxLength={8}
-                            className="font-mono text-base tracking-widest text-center"
-                        />
-                    </InputGroup>
+                            onChange={(value) => form.setData("code", value.replace(/\D/g, "").slice(0, 6))}
+                        >
+                            <InputOTPGroup>
+                                <InputOTPSlot index={0} className="h-12 w-11 text-base font-mono font-semibold" />
+                                <InputOTPSlot index={1} className="h-12 w-11 text-base font-mono font-semibold" />
+                                <InputOTPSlot index={2} className="h-12 w-11 text-base font-mono font-semibold" />
+                            </InputOTPGroup>
+                            <InputOTPSeparator />
+                            <InputOTPGroup>
+                                <InputOTPSlot index={3} className="h-12 w-11 text-base font-mono font-semibold" />
+                                <InputOTPSlot index={4} className="h-12 w-11 text-base font-mono font-semibold" />
+                                <InputOTPSlot index={5} className="h-12 w-11 text-base font-mono font-semibold" />
+                            </InputOTPGroup>
+                        </InputOTP>
+                    </div>
                     {form.errors.code && <FieldError errors={[{ message: form.errors.code }]} />}
                 </Field>
 
                 <Button
                     type="submit"
                     className="h-11 w-full rounded-xl font-semibold shadow-md"
-                    disabled={form.processing || !form.data.code}
+                    disabled={form.processing || form.data.code.length < 6}
                 >
                     {form.processing ? (
                         <>
@@ -386,38 +413,55 @@ export default function TwoFactorChallengePage() {
                                 variant="outline"
                                 className="h-11 w-full rounded-xl gap-2 font-medium"
                                 onClick={handleSendEmailCode}
+                                disabled={sendingEmailCode}
                             >
-                                <Mail className="size-4 text-primary" />
-                                <span>Send Verification Code to Email</span>
+                                {sendingEmailCode ? (
+                                    <>
+                                        <Loader2 className="size-4 animate-spin text-primary" />
+                                        <span>Sending code...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Mail className="size-4 text-primary" />
+                                        <span>Send Verification Code to Email</span>
+                                    </>
+                                )}
                             </Button>
                         </div>
                     ) : (
                         <div className="space-y-2">
-                            <InputGroup className="h-12 rounded-xl border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
-                                <InputGroupAddon align="inline-start" className="pl-3 text-muted-foreground/70">
-                                    <Mail className="size-4" />
-                                </InputGroupAddon>
-                                <InputGroupInput
+                            <div className="flex justify-center pt-1">
+                                <InputOTP
                                     id="code"
-                                    type="text"
+                                    maxLength={6}
                                     inputMode="numeric"
                                     autoFocus
                                     autoComplete="one-time-code"
                                     value={form.data.code}
-                                    onChange={(e) => form.setData("code", e.target.value)}
-                                    placeholder="123456"
-                                    maxLength={8}
-                                    className="font-mono text-base tracking-widest text-center"
-                                />
-                            </InputGroup>
+                                    onChange={(value) => form.setData("code", value.replace(/\D/g, "").slice(0, 6))}
+                                >
+                                    <InputOTPGroup>
+                                        <InputOTPSlot index={0} className="h-12 w-11 text-base font-mono font-semibold" />
+                                        <InputOTPSlot index={1} className="h-12 w-11 text-base font-mono font-semibold" />
+                                        <InputOTPSlot index={2} className="h-12 w-11 text-base font-mono font-semibold" />
+                                    </InputOTPGroup>
+                                    <InputOTPSeparator />
+                                    <InputOTPGroup>
+                                        <InputOTPSlot index={3} className="h-12 w-11 text-base font-mono font-semibold" />
+                                        <InputOTPSlot index={4} className="h-12 w-11 text-base font-mono font-semibold" />
+                                        <InputOTPSlot index={5} className="h-12 w-11 text-base font-mono font-semibold" />
+                                    </InputOTPGroup>
+                                </InputOTP>
+                            </div>
                             {form.errors.code && <FieldError errors={[{ message: form.errors.code }]} />}
                             <div className="flex justify-end">
                                 <button
                                     type="button"
                                     onClick={handleSendEmailCode}
-                                    className="text-xs font-medium text-primary hover:underline"
+                                    disabled={sendingEmailCode || emailCooldown > 0}
+                                    className="text-xs font-medium text-primary hover:underline disabled:opacity-50 disabled:no-underline"
                                 >
-                                    Resend code
+                                    {sendingEmailCode ? "Sending..." : emailCooldown > 0 ? `Resend code (${emailCooldown}s)` : "Resend code"}
                                 </button>
                             </div>
                         </div>
@@ -428,7 +472,7 @@ export default function TwoFactorChallengePage() {
                     <Button
                         type="submit"
                         className="h-11 w-full rounded-xl font-semibold shadow-md"
-                        disabled={form.processing || !form.data.code}
+                        disabled={form.processing || form.data.code.length < 6}
                     >
                         {form.processing ? (
                             <>
@@ -559,6 +603,7 @@ export default function TwoFactorChallengePage() {
                         onClick={() => switchMethod("select")}
                         className="text-primary hover:text-primary/80 flex items-center justify-center"
                         title="Back to method selection"
+                        aria-label="Back to method selection"
                     >
                         <ArrowLeft className="size-6" />
                     </button>

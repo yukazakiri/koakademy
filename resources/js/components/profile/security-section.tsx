@@ -1,3 +1,4 @@
+import { evaluatePasswordPolicy, PasswordRequirements, type PasswordPolicy } from "@/components/auth/password-requirements";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
     AlertDialog,
@@ -18,11 +19,29 @@ import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, 
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
-import { router } from "@inertiajs/react";
+import { router, usePage } from "@inertiajs/react";
 import axios from "axios";
-import { Key, Mail, QrCode, ShieldCheck, ShieldOff, Smartphone, Trash2 } from "lucide-react";
+import { Copy, Download, Eye, EyeOff, Key, Loader2, Mail, QrCode, ShieldCheck, ShieldOff, Smartphone, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+
+type PasswordConfirmedAction = "disable_app" | "pause_2fa" | "disable_email" | "regenerate_codes" | null;
+
+interface PasskeyItem {
+    id: number;
+    name: string;
+    created_at: string;
+    last_used_at?: string | null;
+}
+
+interface ApiTokenItem {
+    id: number;
+    name: string;
+    abilities?: string[];
+    created_at: string;
+    last_used_at?: string | null;
+    expires_at?: string | null;
+}
 
 interface SecuritySectionProps {
     isFaculty: boolean;
@@ -31,6 +50,7 @@ interface SecuritySectionProps {
         security_two_factor_enabled: boolean;
         two_factor_enabled: boolean;
         email_two_factor_enabled: boolean;
+        recovery_codes_count?: number;
         recovery_codes?: string[];
     };
     paths: {
@@ -49,10 +69,16 @@ interface SecuritySectionProps {
 }
 
 export function SecuritySection({ isFaculty, isStudent, user, paths, developerModeEnabled = false }: SecuritySectionProps) {
-    const [passkeys, setPasskeys] = useState<any[]>([]);
-    const [addingPasskey, setAddingPasskey] = useState(false);
+    const pageProps = usePage<{
+        passwordPolicy?: Partial<PasswordPolicy>;
+        newly_generated_recovery_codes?: string[] | null;
+    }>().props;
+
+    const [passkeys, setPasskeys] = useState<PasskeyItem[]>([]);
+    const [passkeyFormOpen, setPasskeyFormOpen] = useState(false);
+    const [passkeySubmitting, setPasskeySubmitting] = useState(false);
     const [passkeyForm, setPasskeyForm] = useState({ name: "" });
-    const [apiTokens, setApiTokens] = useState<any[]>([]);
+    const [apiTokens, setApiTokens] = useState<ApiTokenItem[]>([]);
     const [addingApiKey, setAddingApiKey] = useState(false);
     const [newlyCreatedToken, setNewlyCreatedToken] = useState<string | null>(null);
     const [apiKeyForm, setApiKeyForm] = useState({
@@ -65,18 +91,32 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
         password: "",
         password_confirmation: "",
     });
+    const [passwordErrors, setPasswordErrors] = useState<Record<string, string>>({});
+    const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+    const [showNewPassword, setShowNewPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [passwordProcessing, setPasswordProcessing] = useState(false);
     const [twoFactorEnabling, setTwoFactorEnabling] = useState(false);
     const [twoFactorData, setTwoFactorData] = useState<{ secret: string; qr_code: string } | null>(null);
-    const [twoFactorForm, setTwoFactorForm] = useState({ code: "", secret: "" });
+    const [twoFactorForm, setTwoFactorForm] = useState({ code: "" });
+    const [twoFactorError, setTwoFactorError] = useState<string | null>(null);
     const [twoFactorProcessing, setTwoFactorProcessing] = useState(false);
-    const [showRecoveryCodes, setShowRecoveryCodes] = useState(false);
+    const [visibleRecoveryCodes, setVisibleRecoveryCodes] = useState<string[] | null>(
+        pageProps.newly_generated_recovery_codes ?? null,
+    );
     const [securityTwoFactorProcessing, setSecurityTwoFactorProcessing] = useState(false);
-    const [disableTwoFactorOpen, setDisableTwoFactorOpen] = useState(false);
-    const [disableTwoFactorPassword, setDisableTwoFactorPassword] = useState("");
-    const [disableTwoFactorProcessing, setDisableTwoFactorProcessing] = useState(false);
+    const [confirmAction, setConfirmAction] = useState<PasswordConfirmedAction>(null);
+    const [confirmPassword, setConfirmPassword] = useState("");
+    const [confirmPasswordError, setConfirmPasswordError] = useState<string | null>(null);
+    const [confirmProcessing, setConfirmProcessing] = useState(false);
     const [passkeyIdPendingDelete, setPasskeyIdPendingDelete] = useState<number | null>(null);
     const [apiKeyIdPendingDelete, setApiKeyIdPendingDelete] = useState<number | null>(null);
+
+    useEffect(() => {
+        if (Array.isArray(pageProps.newly_generated_recovery_codes) && pageProps.newly_generated_recovery_codes.length > 0) {
+            setVisibleRecoveryCodes(pageProps.newly_generated_recovery_codes);
+        }
+    }, [pageProps.newly_generated_recovery_codes]);
 
     useEffect(() => {
         fetchPasskeys();
@@ -107,17 +147,24 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
             });
     };
 
+    const newPasswordCheck = evaluatePasswordPolicy(passwordForm.password, pageProps.passwordPolicy);
+
     const handlePasswordSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         setPasswordProcessing(true);
+        setPasswordErrors({});
         router.put(paths.password_update, passwordForm, {
+            preserveScroll: true,
             onSuccess: () => {
                 toast.success("Password changed successfully");
                 setPasswordForm({ current_password: "", password: "", password_confirmation: "" });
+                setPasswordErrors({});
                 setPasswordProcessing(false);
             },
-            onError: () => {
-                toast.error("Failed to change password. Please check your inputs.");
+            onError: (errors) => {
+                setPasswordErrors(errors);
+                const first = Object.values(errors)[0];
+                toast.error(first || "Failed to change password. Please check your inputs.");
                 setPasswordProcessing(false);
             },
         });
@@ -125,13 +172,13 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
 
     const handleEnableTwoFactor = () => {
         setTwoFactorEnabling(true);
+        setTwoFactorError(null);
         axios
-            .post(paths.two_factor_enable)
-            .then((response: any) => {
+            .post<{ secret: string; qr_code: string }>(paths.two_factor_enable)
+            .then((response) => {
                 setTwoFactorData(response.data);
-                setTwoFactorForm((prev) => ({ ...prev, secret: response.data.secret }));
             })
-            .catch((error: any) => {
+            .catch(() => {
                 toast.error("Failed to start two-factor authentication setup.");
                 setTwoFactorEnabling(false);
             });
@@ -140,94 +187,184 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
     const handleConfirmTwoFactor = (e: React.FormEvent) => {
         e.preventDefault();
         setTwoFactorProcessing(true);
+        setTwoFactorError(null);
         router.post(
             paths.two_factor_confirm,
-            { code: twoFactorForm.code, secret: twoFactorForm.secret },
+            { code: twoFactorForm.code },
             {
+                preserveScroll: true,
                 onSuccess: () => {
                     setTwoFactorEnabling(false);
                     setTwoFactorData(null);
-                    setTwoFactorForm({ code: "", secret: "" });
-                    setShowRecoveryCodes(true);
+                    setTwoFactorForm({ code: "" });
                     toast.success("Two-factor authentication enabled successfully!");
                     setTwoFactorProcessing(false);
                 },
-                onError: () => {
-                    toast.error("Invalid authentication code.");
+                onError: (errors) => {
+                    const msg = errors.code ?? "Invalid authentication code.";
+                    setTwoFactorError(msg);
+                    toast.error(msg);
                     setTwoFactorProcessing(false);
                 },
             },
         );
     };
 
-    const handleDisableTwoFactor = () => {
-        setDisableTwoFactorPassword("");
-        setDisableTwoFactorOpen(true);
-    };
-
-    const submitDisableTwoFactor = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!disableTwoFactorPassword) return;
-
-        setDisableTwoFactorProcessing(true);
-        router.delete(paths.two_factor_disable, {
-            data: { password: disableTwoFactorPassword },
-            onSuccess: () => {
-                setDisableTwoFactorOpen(false);
-                setDisableTwoFactorPassword("");
-                toast.success("Two-factor authentication disabled.");
-            },
-            onError: () => toast.error("Incorrect password or failed to disable."),
-            onFinish: () => setDisableTwoFactorProcessing(false),
-        });
-    };
-
-    const handleRegenerateRecoveryCodes = () => {
-        router.post(
-            paths.two_factor_recovery_codes,
-            {},
-            {
-                onSuccess: () => {
-                    setShowRecoveryCodes(true);
-                    toast.success("Recovery codes regenerated.");
-                },
-            },
-        );
+    const openPasswordConfirm = (action: Exclude<PasswordConfirmedAction, null>) => {
+        setConfirmPassword("");
+        setConfirmPasswordError(null);
+        setConfirmAction(action);
     };
 
     const handleToggleEmailAuth = (checked: boolean) => {
+        if (!checked) {
+            openPasswordConfirm("disable_email");
+            return;
+        }
         router.post(
             paths.email_auth_toggle,
-            { enabled: checked },
+            { enabled: true },
             {
                 preserveScroll: true,
-                onSuccess: () => toast.success(checked ? "Email authentication enabled." : "Email authentication disabled."),
+                onSuccess: () => toast.success("Email authentication enabled."),
+                onError: (errors) => toast.error(Object.values(errors)[0] || "Failed to update email authentication."),
             },
         );
     };
 
     const handleToggleSecurityTwoFactor = (checked: boolean) => {
+        if (!checked) {
+            openPasswordConfirm("pause_2fa");
+            return;
+        }
         setSecurityTwoFactorProcessing(true);
         router.post(
             paths.security_two_factor_toggle,
-            { enabled: checked },
+            { enabled: true },
             {
                 preserveScroll: true,
                 onSuccess: () => {
-                    toast.success(checked ? "2FA login protection is on." : "2FA login protection is paused.");
+                    toast.success("2FA login protection is on.");
                     setSecurityTwoFactorProcessing(false);
                 },
-                onError: () => {
-                    toast.error("Failed to update 2FA login protection.");
+                onError: (errors) => {
+                    toast.error(Object.values(errors)[0] || "Failed to update 2FA login protection.");
                     setSecurityTwoFactorProcessing(false);
                 },
             },
         );
     };
 
+    const submitPasswordConfirmedAction = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!confirmAction || !confirmPassword) return;
+
+        setConfirmProcessing(true);
+        setConfirmPasswordError(null);
+
+        const onError = (errors: Record<string, string>) => {
+            const msg = errors.password ?? Object.values(errors)[0] ?? "Incorrect password.";
+            setConfirmPasswordError(msg);
+            toast.error(msg);
+        };
+
+        const closeDialog = () => {
+            setConfirmAction(null);
+            setConfirmPassword("");
+            setConfirmPasswordError(null);
+        };
+
+        if (confirmAction === "disable_app") {
+            router.delete(paths.two_factor_disable, {
+                data: { password: confirmPassword },
+                preserveScroll: true,
+                onSuccess: () => {
+                    closeDialog();
+                    setVisibleRecoveryCodes(null);
+                    toast.success("Authenticator app removed.");
+                },
+                onError,
+                onFinish: () => setConfirmProcessing(false),
+            });
+            return;
+        }
+
+        if (confirmAction === "pause_2fa") {
+            router.post(
+                paths.security_two_factor_toggle,
+                { enabled: false, password: confirmPassword },
+                {
+                    preserveScroll: true,
+                    onSuccess: () => {
+                        closeDialog();
+                        toast.success("2FA login protection is paused.");
+                    },
+                    onError,
+                    onFinish: () => setConfirmProcessing(false),
+                },
+            );
+            return;
+        }
+
+        if (confirmAction === "disable_email") {
+            router.post(
+                paths.email_auth_toggle,
+                { enabled: false, password: confirmPassword },
+                {
+                    preserveScroll: true,
+                    onSuccess: () => {
+                        closeDialog();
+                        toast.success("Email authentication disabled.");
+                    },
+                    onError,
+                    onFinish: () => setConfirmProcessing(false),
+                },
+            );
+            return;
+        }
+
+        if (confirmAction === "regenerate_codes") {
+            router.post(
+                paths.two_factor_recovery_codes,
+                { password: confirmPassword },
+                {
+                    preserveScroll: true,
+                    onSuccess: () => {
+                        closeDialog();
+                        toast.success("Recovery codes regenerated.");
+                    },
+                    onError,
+                    onFinish: () => setConfirmProcessing(false),
+                },
+            );
+        }
+    };
+
+    const copyRecoveryCodes = async () => {
+        if (!visibleRecoveryCodes) return;
+        try {
+            await navigator.clipboard.writeText(visibleRecoveryCodes.join("\n"));
+            toast.success("Recovery codes copied to clipboard.");
+        } catch {
+            toast.error("Failed to copy recovery codes.");
+        }
+    };
+
+    const downloadRecoveryCodes = () => {
+        if (!visibleRecoveryCodes) return;
+        const blob = new Blob([visibleRecoveryCodes.join("\n") + "\n"], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "recovery-codes.txt";
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
     const handleAddPasskey = async (e: React.FormEvent) => {
         e.preventDefault();
-        setAddingPasskey(true);
+        if (passkeySubmitting) return;
+        setPasskeySubmitting(true);
 
         try {
             const optionsResponse = await axios.post(paths.passkeys_options);
@@ -243,7 +380,7 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                     ...options.user,
                     id: userId,
                 },
-                excludeCredentials: options.excludeCredentials?.map((cred: any) => ({
+                excludeCredentials: options.excludeCredentials?.map((cred: { id: string; type: PublicKeyCredentialType }) => ({
                     ...cred,
                     id: Uint8Array.from(atob(cred.id.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0)),
                 })),
@@ -272,8 +409,7 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                 .replace(/\//g, "_")
                 .replace(/=+$/, "");
 
-            const response = credential.response as AuthenticatorAttestationResponse;
-            // @ts-ignore
+            const response = credential.response as AuthenticatorAttestationResponse & { getTransports?: () => string[] };
             const transports = response.getTransports ? response.getTransports() : [];
 
             const passkeyData = {
@@ -294,22 +430,24 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                     name: passkeyForm.name,
                 },
                 {
+                    preserveScroll: true,
                     onSuccess: () => {
                         toast.success("Passkey added successfully!");
                         setPasskeyForm({ name: "" });
-                        setAddingPasskey(false);
+                        setPasskeyFormOpen(false);
+                        setPasskeySubmitting(false);
                         fetchPasskeys();
                     },
-                    onError: () => {
-                        toast.error("Failed to register passkey.");
-                        setAddingPasskey(false);
+                    onError: (errors) => {
+                        toast.error(Object.values(errors)[0] || "Failed to register passkey.");
+                        setPasskeySubmitting(false);
                     },
                 },
             );
         } catch (error) {
             console.error(error);
             toast.error("Failed to add passkey. Please try again.");
-            setAddingPasskey(false);
+            setPasskeySubmitting(false);
         }
     };
 
@@ -348,12 +486,12 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                 setApiKeyForm({ name: "", abilities: ["read"], expires_at: "" });
                 fetchApiTokens();
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Failed to create API key", error);
-            if (error.response?.data?.errors) {
-                const errors = error.response.data.errors;
-                Object.values(errors).forEach((msgs: any) => {
-                    msgs.forEach((msg: string) => toast.error(msg));
+            const axiosErr = error as { response?: { data?: { errors?: Record<string, string[]> } } };
+            if (axiosErr.response?.data?.errors) {
+                Object.values(axiosErr.response.data.errors).forEach((msgs) => {
+                    msgs.forEach((msg) => toast.error(msg));
                 });
             } else {
                 toast.error("Failed to create API key.");
@@ -402,35 +540,91 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                     <form onSubmit={handlePasswordSubmit} className="space-y-4">
                         <div className="space-y-2">
                             <Label htmlFor="current_password">Current Password</Label>
-                            <Input
-                                id="current_password"
-                                type="password"
-                                value={passwordForm.current_password}
-                                onChange={(e) => setPasswordForm({ ...passwordForm, current_password: e.target.value })}
-                                required
-                            />
+                            <div className="relative">
+                                <Input
+                                    id="current_password"
+                                    type={showCurrentPassword ? "text" : "password"}
+                                    autoComplete="current-password"
+                                    value={passwordForm.current_password}
+                                    onChange={(e) => setPasswordForm({ ...passwordForm, current_password: e.target.value })}
+                                    className="pr-10"
+                                    required
+                                />
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="text-muted-foreground hover:text-foreground absolute top-0 right-0 h-full px-3"
+                                    onClick={() => setShowCurrentPassword((v) => !v)}
+                                    aria-label={showCurrentPassword ? "Hide current password" : "Show current password"}
+                                >
+                                    {showCurrentPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                                </Button>
+                            </div>
+                            {passwordErrors.current_password && <p className="text-destructive text-xs">{passwordErrors.current_password}</p>}
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="password">New Password</Label>
-                            <Input
-                                id="password"
-                                type="password"
-                                value={passwordForm.password}
-                                onChange={(e) => setPasswordForm({ ...passwordForm, password: e.target.value })}
-                                required
-                            />
+                            <div className="relative">
+                                <Input
+                                    id="password"
+                                    type={showNewPassword ? "text" : "password"}
+                                    autoComplete="new-password"
+                                    value={passwordForm.password}
+                                    onChange={(e) => setPasswordForm({ ...passwordForm, password: e.target.value })}
+                                    className="pr-10"
+                                    required
+                                />
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="text-muted-foreground hover:text-foreground absolute top-0 right-0 h-full px-3"
+                                    onClick={() => setShowNewPassword((v) => !v)}
+                                    aria-label={showNewPassword ? "Hide new password" : "Show new password"}
+                                >
+                                    {showNewPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                                </Button>
+                            </div>
+                            <PasswordRequirements password={passwordForm.password} policy={pageProps.passwordPolicy} />
+                            {passwordErrors.password && <p className="text-destructive text-xs">{passwordErrors.password}</p>}
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="password_confirmation">Confirm Password</Label>
-                            <Input
-                                id="password_confirmation"
-                                type="password"
-                                value={passwordForm.password_confirmation}
-                                onChange={(e) => setPasswordForm({ ...passwordForm, password_confirmation: e.target.value })}
-                                required
-                            />
+                            <div className="relative">
+                                <Input
+                                    id="password_confirmation"
+                                    type={showConfirmPassword ? "text" : "password"}
+                                    autoComplete="new-password"
+                                    value={passwordForm.password_confirmation}
+                                    onChange={(e) => setPasswordForm({ ...passwordForm, password_confirmation: e.target.value })}
+                                    className="pr-10"
+                                    required
+                                />
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="text-muted-foreground hover:text-foreground absolute top-0 right-0 h-full px-3"
+                                    onClick={() => setShowConfirmPassword((v) => !v)}
+                                    aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                                >
+                                    {showConfirmPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                                </Button>
+                            </div>
+                            {passwordErrors.password_confirmation && (
+                                <p className="text-destructive text-xs">{passwordErrors.password_confirmation}</p>
+                            )}
                         </div>
-                        <Button type="submit" disabled={passwordProcessing}>
+                        <Button
+                            type="submit"
+                            disabled={
+                                passwordProcessing ||
+                                !passwordForm.current_password ||
+                                !newPasswordCheck.allMet ||
+                                passwordForm.password !== passwordForm.password_confirmation
+                            }
+                        >
                             {passwordProcessing ? "Updating..." : "Update Password"}
                         </Button>
                     </form>
@@ -537,26 +731,49 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                     <Separator />
                     {user.two_factor_enabled ? (
                         <>
-                            <div className="flex flex-wrap gap-3">
-                                <Button variant="outline" onClick={handleRegenerateRecoveryCodes}>
-                                    Regenerate Recovery Codes
-                                </Button>
-                                <Button variant="destructive" onClick={handleDisableTwoFactor}>
-                                    Remove Authenticator App
-                                </Button>
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                <p className="text-muted-foreground text-xs">
+                                    {typeof user.recovery_codes_count === "number"
+                                        ? `${user.recovery_codes_count} unused recovery code${user.recovery_codes_count === 1 ? "" : "s"} remaining.`
+                                        : "Recovery codes are stored securely."}
+                                </p>
+                                <div className="flex flex-wrap gap-2">
+                                    <Button variant="outline" onClick={() => openPasswordConfirm("regenerate_codes")}>
+                                        Regenerate Recovery Codes
+                                    </Button>
+                                    <Button variant="destructive" onClick={() => openPasswordConfirm("disable_app")}>
+                                        Remove Authenticator App
+                                    </Button>
+                                </div>
                             </div>
-                            {showRecoveryCodes && user.recovery_codes && (
-                                <div className="bg-muted mt-4 rounded-lg p-4">
-                                    <p className="mb-2 text-sm font-medium">Recovery Codes</p>
-                                    <p className="text-muted-foreground mb-3 text-xs">
-                                        Store these codes in a secure place. They can be used to access your account if you lose your authentication
-                                        device.
+                            {visibleRecoveryCodes && visibleRecoveryCodes.length > 0 && (
+                                <div className="border-primary/30 bg-primary/5 mt-4 space-y-3 rounded-lg border p-4">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <p className="text-sm font-medium">Save Your Recovery Codes</p>
+                                        <div className="flex gap-1.5">
+                                            <Button type="button" size="sm" variant="outline" onClick={copyRecoveryCodes}>
+                                                <Copy className="mr-1.5 size-3.5" />
+                                                Copy
+                                            </Button>
+                                            <Button type="button" size="sm" variant="outline" onClick={downloadRecoveryCodes}>
+                                                <Download className="mr-1.5 size-3.5" />
+                                                Download
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    <p className="text-muted-foreground text-xs">
+                                        Store these codes in a secure place now. For your security, they will not be shown again after you leave this page.
                                     </p>
-                                    <div className="grid grid-cols-2 gap-2 font-mono text-sm">
-                                        {user.recovery_codes.map((code, index) => (
-                                            <div key={index}>{code}</div>
+                                    <div className="bg-background/80 grid grid-cols-2 gap-2 rounded-md border p-3 font-mono text-xs sm:text-sm">
+                                        {visibleRecoveryCodes.map((code, index) => (
+                                            <div key={index} className="select-all">
+                                                {code}
+                                            </div>
                                         ))}
                                     </div>
+                                    <Button type="button" size="sm" variant="ghost" onClick={() => setVisibleRecoveryCodes(null)}>
+                                        I have saved these codes
+                                    </Button>
                                 </div>
                             )}
                         </>
@@ -596,15 +813,21 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                                         <form onSubmit={handleConfirmTwoFactor} className="flex gap-2">
                                             <Input
                                                 value={twoFactorForm.code}
-                                                onChange={(e) => setTwoFactorForm({ ...twoFactorForm, code: e.target.value })}
-                                                placeholder="XXX XXX"
+                                                onChange={(e) => {
+                                                    setTwoFactorForm({ code: e.target.value });
+                                                    if (twoFactorError) setTwoFactorError(null);
+                                                }}
+                                                inputMode="numeric"
+                                                autoComplete="one-time-code"
+                                                placeholder="123 456"
                                                 className="font-mono"
                                                 required
                                             />
                                             <Button type="submit" disabled={twoFactorProcessing}>
-                                                Confirm
+                                                {twoFactorProcessing ? "Confirming..." : "Confirm"}
                                             </Button>
                                         </form>
+                                        {twoFactorError && <p className="text-destructive text-xs">{twoFactorError}</p>}
                                     </div>
                                     <Button variant="ghost" size="sm" onClick={() => setTwoFactorEnabling(false)}>
                                         Cancel
@@ -631,7 +854,7 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                     <div className="space-y-4">
                         {passkeys.length > 0 ? (
                             <div className="space-y-2">
-                                {passkeys.map((passkey: any) => (
+                                {passkeys.map((passkey) => (
                                     <div key={passkey.id} className="flex items-center justify-between rounded-md border p-3">
                                         <div className="flex items-center gap-3">
                                             <Key className="text-muted-foreground h-5 w-5" />
@@ -646,9 +869,10 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                                             variant="ghost"
                                             size="icon"
                                             onClick={() => handleDeletePasskey(passkey.id)}
+                                            aria-label={`Delete passkey ${passkey.name}`}
                                             className="text-destructive hover:text-destructive/90"
                                         >
-                                            <Trash2 className="h-4 w-4" />
+                                            <Trash2 className="size-4" />
                                         </Button>
                                     </div>
                                 ))}
@@ -658,8 +882,8 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                         )}
                     </div>
 
-                    {!addingPasskey ? (
-                        <Button onClick={() => setAddingPasskey(true)}>Add Passkey</Button>
+                    {!passkeyFormOpen ? (
+                        <Button onClick={() => setPasskeyFormOpen(true)}>Add Passkey</Button>
                     ) : (
                         <div className="bg-muted/50 space-y-4 rounded-md border p-4">
                             <form onSubmit={handleAddPasskey} className="space-y-4">
@@ -670,17 +894,28 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                                         value={passkeyForm.name}
                                         onChange={(e) => setPasskeyForm({ name: e.target.value })}
                                         placeholder="e.g. MacBook Pro Touch ID"
+                                        disabled={passkeySubmitting}
                                         required
                                         autoFocus
                                     />
                                 </div>
                                 <div className="flex gap-2">
-                                    <Button type="submit">Create Passkey</Button>
+                                    <Button type="submit" disabled={passkeySubmitting || !passkeyForm.name.trim()}>
+                                        {passkeySubmitting ? (
+                                            <>
+                                                <Loader2 className="mr-2 size-4 animate-spin" />
+                                                Waiting for device...
+                                            </>
+                                        ) : (
+                                            "Create Passkey"
+                                        )}
+                                    </Button>
                                     <Button
                                         type="button"
                                         variant="ghost"
+                                        disabled={passkeySubmitting}
                                         onClick={() => {
-                                            setAddingPasskey(false);
+                                            setPasskeyFormOpen(false);
                                             setPasskeyForm({ name: "" });
                                         }}
                                     >
@@ -722,7 +957,7 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                         <div className="space-y-4">
                             {apiTokens.length > 0 ? (
                                 <div className="space-y-2">
-                                    {apiTokens.map((token: any) => (
+                                    {apiTokens.map((token) => (
                                         <div key={token.id} className="flex items-center justify-between rounded-md border p-3">
                                             <div className="flex items-center gap-3">
                                                 <Key className="text-muted-foreground h-5 w-5" />
@@ -764,9 +999,10 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                                                 variant="ghost"
                                                 size="icon"
                                                 onClick={() => handleDeleteApiKey(token.id)}
+                                                aria-label={`Revoke API key ${token.name}`}
                                                 className="text-destructive hover:text-destructive/90"
                                             >
-                                                <Trash2 className="h-4 w-4" />
+                                                <Trash2 className="size-4" />
                                             </Button>
                                         </div>
                                     ))}
@@ -934,44 +1170,67 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
             )}
 
             <Dialog
-                open={disableTwoFactorOpen}
+                open={confirmAction !== null}
                 onOpenChange={(open) => {
-                    setDisableTwoFactorOpen(open);
-                    if (!open) setDisableTwoFactorPassword("");
+                    if (!open) {
+                        setConfirmAction(null);
+                        setConfirmPassword("");
+                        setConfirmPasswordError(null);
+                    }
                 }}
             >
                 <DialogContent className="sm:max-w-md">
-                    <form onSubmit={submitDisableTwoFactor}>
+                    <form onSubmit={submitPasswordConfirmedAction}>
                         <DialogHeader>
-                            <DialogTitle>Disable two-factor authentication?</DialogTitle>
+                            <DialogTitle>
+                                {confirmAction === "disable_app" && "Remove authenticator app?"}
+                                {confirmAction === "pause_2fa" && "Pause two-factor login protection?"}
+                                {confirmAction === "disable_email" && "Disable email verification codes?"}
+                                {confirmAction === "regenerate_codes" && "Regenerate recovery codes?"}
+                            </DialogTitle>
                             <DialogDescription>
-                                Confirm your current password to remove authenticator app two-factor protection from your account.
+                                {confirmAction === "disable_app" &&
+                                    "Confirm your current password to remove authenticator app two-factor protection from your account."}
+                                {confirmAction === "pause_2fa" &&
+                                    "Confirm your current password to pause two-factor login challenges. Your saved methods will stay configured."}
+                                {confirmAction === "disable_email" &&
+                                    "Confirm your current password to turn off email one-time verification codes."}
+                                {confirmAction === "regenerate_codes" &&
+                                    "Confirm your current password to generate a new set of recovery codes. Any previously saved codes will stop working."}
                             </DialogDescription>
                         </DialogHeader>
                         <div className="my-4 space-y-2">
-                            <Label htmlFor="disable-2fa-password">Current Password</Label>
+                            <Label htmlFor="confirm-security-password">Current Password</Label>
                             <Input
-                                id="disable-2fa-password"
+                                id="confirm-security-password"
                                 type="password"
                                 autoComplete="current-password"
-                                value={disableTwoFactorPassword}
-                                onChange={(e) => setDisableTwoFactorPassword(e.target.value)}
+                                value={confirmPassword}
+                                onChange={(e) => {
+                                    setConfirmPassword(e.target.value);
+                                    if (confirmPasswordError) setConfirmPasswordError(null);
+                                }}
                                 placeholder="Enter your current password"
                                 required
                                 autoFocus
                             />
+                            {confirmPasswordError && <p className="text-destructive text-xs">{confirmPasswordError}</p>}
                         </div>
                         <DialogFooter>
                             <Button
                                 type="button"
                                 variant="outline"
-                                onClick={() => setDisableTwoFactorOpen(false)}
-                                disabled={disableTwoFactorProcessing}
+                                onClick={() => setConfirmAction(null)}
+                                disabled={confirmProcessing}
                             >
                                 Cancel
                             </Button>
-                            <Button type="submit" variant="destructive" disabled={disableTwoFactorProcessing || !disableTwoFactorPassword}>
-                                {disableTwoFactorProcessing ? "Disabling..." : "Disable 2FA"}
+                            <Button
+                                type="submit"
+                                variant={confirmAction === "regenerate_codes" ? "default" : "destructive"}
+                                disabled={confirmProcessing || !confirmPassword}
+                            >
+                                {confirmProcessing ? "Confirming..." : "Confirm"}
                             </Button>
                         </DialogFooter>
                     </form>

@@ -18,7 +18,6 @@ interface FacultyVerifyProps {
 
 export default function FacultyVerifyPage({ email = "", errors = {}, status, warning }: FacultyVerifyProps) {
     const { data, setData, post, processing } = useForm({
-        email: email,
         faculty_id_number: "",
     });
 
@@ -66,9 +65,8 @@ export default function FacultyVerifyPage({ email = "", errors = {}, status, war
                             <InputGroupInput
                                 id="email"
                                 type="email"
-                                required
-                                value={data.email}
-                                onChange={(e) => setData("email", e.target.value)}
+                                value={email}
+                                readOnly
                                 disabled
                                 className="text-sm font-normal text-muted-foreground"
                             />

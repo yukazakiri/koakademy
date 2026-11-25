@@ -66,6 +66,7 @@ import React, { useState } from "react";
 import { toast } from "sonner";
 import { route } from "ziggy-js";
 import { EnrollmentLoadChangeDialog } from "./enrollment-load-change-dialog";
+import { EnrollmentTransferDialog } from "./enrollment-transfer-dialog";
 
 // Define types based on Controller output
 interface Branding {
@@ -294,6 +295,7 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
     const [activeTab, setActiveTab] = useState("classes");
     const [showUndoDialog, setShowUndoDialog] = useState(false);
     const [showLoadChangeDialog, setShowLoadChangeDialog] = useState(false);
+    const [showTransferDialog, setShowTransferDialog] = useState(false);
     const [showScheduleChangesDialog, setShowScheduleChangesDialog] = useState(false);
     const [selectedDeletions, setSelectedDeletions] = useState<number[]>([]);
     const [restoringSubjects, setRestoringSubjects] = useState(false);
@@ -799,6 +801,15 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                 onChanged={() => router.reload()}
             />
 
+            <EnrollmentTransferDialog
+                open={showTransferDialog}
+                onOpenChange={setShowTransferDialog}
+                enrollmentId={enrollment.id}
+                studentName={enrollment.student.full_name}
+                currency={currency}
+                onTransferred={() => router.reload()}
+            />
+
             <div className="space-y-6 pb-20">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="flex items-start gap-3 sm:gap-4">
@@ -842,6 +853,15 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                         >
                             <ArrowLeftRight className="mr-2 size-4" />
                             Add / Drop / Swap
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setShowTransferDialog(true)}
+                            className="rounded-full shadow-sm transition-[transform,box-shadow] duration-200 active:scale-[0.98]"
+                        >
+                            <School className="mr-2 size-4" />
+                            Shift / Transfer
                         </Button>
                         <Link
                             href={route("administrators.enrollments.edit", enrollment.id)}

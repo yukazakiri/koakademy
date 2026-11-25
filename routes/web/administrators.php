@@ -15,6 +15,7 @@ use App\Http\Controllers\AdministratorEnrollmentLoadChangeController;
 use App\Http\Controllers\AdministratorEnrollmentManagementController;
 use App\Http\Controllers\AdministratorEnrollmentPeriodController;
 use App\Http\Controllers\AdministratorEnrollmentPolicyController;
+use App\Http\Controllers\AdministratorEnrollmentTransferController;
 use App\Http\Controllers\AdministratorEnrollmentWaitlistController;
 use App\Http\Controllers\AdministratorFacultyCustomFieldController;
 use App\Http\Controllers\AdministratorFacultyImportController;
@@ -230,6 +231,18 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/enrollments/{enrollment}/load-changes/{loadChange}/slip', [AdministratorEnrollmentLoadChangeController::class, 'slip'])
             ->whereNumber(['enrollment', 'loadChange'])
             ->name('enrollments.load-changes.slip');
+        Route::get('/enrollments/{enrollment}/transfers', [AdministratorEnrollmentTransferController::class, 'index'])
+            ->whereNumber('enrollment')
+            ->name('enrollments.transfers.index');
+        Route::post('/enrollments/{enrollment}/transfers/preview', [AdministratorEnrollmentTransferController::class, 'preview'])
+            ->whereNumber('enrollment')
+            ->name('enrollments.transfers.preview');
+        Route::post('/enrollments/{enrollment}/transfers/section', [AdministratorEnrollmentTransferController::class, 'transferSection'])
+            ->whereNumber('enrollment')
+            ->name('enrollments.transfers.section');
+        Route::post('/enrollments/{enrollment}/transfers/program', [AdministratorEnrollmentTransferController::class, 'shiftProgram'])
+            ->whereNumber('enrollment')
+            ->name('enrollments.transfers.program');
 
         // Enrollment Reports
         Route::post('/enrollments/reports/bulk-assessments', [AdministratorEnrollmentManagementController::class, 'generateBulkAssessments'])->name('enrollments.reports.bulk-assessments');

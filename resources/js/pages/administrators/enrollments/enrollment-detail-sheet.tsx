@@ -78,6 +78,7 @@ import { toast } from "sonner";
 import { route } from "ziggy-js";
 import type { EnrollmentRow, EnrollmentTransitionOption } from "./columns";
 import { EnrollmentLoadChangeDialog } from "./enrollment-load-change-dialog";
+import { EnrollmentTransferDialog } from "./enrollment-transfer-dialog";
 import { formatMoney, formatShortDate, getInitials, resolveStatusMeta, tuitionSettlementPercent } from "./enrollment-utils";
 import type { EnrollmentDetailSummary, EnrollmentPipeline } from "./types";
 
@@ -151,6 +152,7 @@ export function EnrollmentDetailSheet({
     const [overrideHoldId, setOverrideHoldId] = useState<number | null>(null);
     const [overrideHoldReason, setOverrideHoldReason] = useState("");
     const [loadChangeOpen, setLoadChangeOpen] = useState(false);
+    const [transferOpen, setTransferOpen] = useState(false);
 
     // Inline Cashier Verification form state
     const [invoiceNumber, setInvoiceNumber] = useState("");
@@ -1149,16 +1151,27 @@ export function EnrollmentDetailSheet({
                                         </div>
                                         <div className="flex items-center gap-1.5">
                                             {!isTrashed && !statusMeta.isCancelled && (
-                                                <Button
-                                                    type="button"
-                                                    variant="outline"
-                                                    size="xs"
-                                                    className="h-7 gap-1 text-xs"
-                                                    onClick={() => setLoadChangeOpen(true)}
-                                                >
-                                                    <ArrowLeftRight className="size-3" />
-                                                    Add / Drop
-                                                </Button>
+                                                <>
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        size="xs"
+                                                        className="h-7 gap-1 text-xs"
+                                                        onClick={() => setLoadChangeOpen(true)}
+                                                    >
+                                                        <ArrowLeftRight className="size-3" />
+                                                        Add / Drop
+                                                    </Button>
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="xs"
+                                                        className="h-7 text-xs"
+                                                        onClick={() => setTransferOpen(true)}
+                                                    >
+                                                        Shift / Transfer
+                                                    </Button>
+                                                </>
                                             )}
                                             {detail.missing_classes_count > 0 && (
                                                 <Badge variant="warning-light" radius="full" size="sm" className="gap-1">
@@ -1611,6 +1624,18 @@ export function EnrollmentDetailSheet({
                 studentName={studentName}
                 currency={currency}
                 onChanged={() => {
+                    void loadSummary();
+                    onMutationSuccess?.();
+                }}
+            />
+
+            <EnrollmentTransferDialog
+                open={transferOpen}
+                onOpenChange={setTransferOpen}
+                enrollmentId={enrollmentId}
+                studentName={studentName}
+                currency={currency}
+                onTransferred={() => {
                     void loadSummary();
                     onMutationSuccess?.();
                 }}

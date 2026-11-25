@@ -214,6 +214,33 @@ export interface EnrollmentWorkspacePreferences {
     completedPreviewLimit: number;
 }
 
+export interface StudentHoldItem {
+    id: number;
+    student_id: number;
+    student_name: string | null;
+    student_number: string | number | null;
+    course_code: string | null;
+    office: string;
+    office_label: string;
+    hold_type: string;
+    severity: "blocking" | "warning";
+    title: string;
+    reason: string;
+    blocks_enrollment: boolean;
+    blocks_add_drop: boolean;
+    blocks_grade_release: boolean;
+    status: "active" | "released" | "overridden";
+    placed_by: string;
+    placed_at: string | null;
+    released_by: string | null;
+    released_at: string | null;
+    release_notes: string | null;
+    overridden_by: string | null;
+    overridden_at: string | null;
+    override_reason: string | null;
+    expires_at: string | null;
+}
+
 export interface EnrollmentIndexPermissions {
     can_verify_head: boolean;
     can_verify_cashier: boolean;
@@ -317,6 +344,8 @@ export interface EnrollmentDetailSummary {
         verified_at: string | null;
         waived_at: string | null;
     }>;
+    holds?: StudentHoldItem[];
+    hold_offices?: Array<{ value: string; label: string }>;
     resources_count: number;
     timeline: Array<{
         id: string;

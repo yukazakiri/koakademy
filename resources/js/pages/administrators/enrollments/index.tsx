@@ -15,6 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { index as holdsIndexRoute } from "@/actions/App/Http/Controllers/AdministratorStudentHoldController";
 import { bulkAction as enrollmentBulkActionRoute } from "@/routes/administrators/enrollments";
 import { store as storeTransitionRoute } from "@/routes/administrators/enrollments/transitions";
 import { Head, Link, router, usePage } from "@inertiajs/react";
@@ -40,6 +41,7 @@ import {
     RotateCcw,
     Search,
     Settings2,
+    ShieldAlert,
     SlidersHorizontal,
     Table2,
     UserPlus,
@@ -837,8 +839,14 @@ export default function AdministratorEnrollmentsIndex({
                                         <Download className="mr-2 size-4" />
                                         Bulk export assessments (PDF)
                                     </DropdownMenuItem>
+                                    <DropdownMenuItem asChild>
+                                        <Link href={holdsIndexRoute.url()} className="flex items-center">
+                                            <ShieldAlert className="mr-2 size-4" />
+                                            Holds &amp; clearances
+                                        </Link>
+                                    </DropdownMenuItem>
                                     <DropdownMenuSeparator />
-                                    <DropdownMenuItem onClick={() => setConfigSheetOpen(true)}>
+                                    <DropdownMenuItem onClick={() => openConfigSheet("workspace")}>
                                         <SlidersHorizontal className="mr-2 size-4" />
                                         Workspace &amp; pipeline config
                                     </DropdownMenuItem>

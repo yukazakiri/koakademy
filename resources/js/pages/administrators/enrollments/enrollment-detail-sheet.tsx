@@ -1,3 +1,9 @@
+import {
+    index as holdsIndexRoute,
+    override as overrideHoldRoute,
+    release as releaseHoldRoute,
+    store as storeHoldRoute,
+} from "@/actions/App/Http/Controllers/AdministratorStudentHoldController";
 import { Alert, AlertDescription, AlertTitle } from "@/components/reui/alert";
 import { Badge } from "@/components/reui/badge";
 import { Frame, FrameDescription, FrameHeader, FramePanel, FrameTitle } from "@/components/reui/frame";
@@ -54,12 +60,16 @@ import {
     Mail,
     Pencil,
     Phone,
+    Plus,
     Receipt,
     RotateCcw,
     Send,
+    ShieldAlert,
     ShieldCheck,
+    ShieldOff,
     Trash2,
     Undo2,
+    Unlock,
     UserRound,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -129,6 +139,15 @@ export function EnrollmentDetailSheet({
     const [acknowledgePayments, setAcknowledgePayments] = useState(false);
     const [reopenOpen, setReopenOpen] = useState(false);
     const [reopenReason, setReopenReason] = useState("");
+
+    // Inline Student Holds state
+    const [placeHoldOpen, setPlaceHoldOpen] = useState(false);
+    const [holdOffice, setHoldOffice] = useState("registrar");
+    const [holdSeverity, setHoldSeverity] = useState<"blocking" | "warning">("blocking");
+    const [holdTitle, setHoldTitle] = useState("");
+    const [holdReason, setHoldReason] = useState("");
+    const [overrideHoldId, setOverrideHoldId] = useState<number | null>(null);
+    const [overrideHoldReason, setOverrideHoldReason] = useState("");
 
     // Inline Cashier Verification form state
     const [invoiceNumber, setInvoiceNumber] = useState("");
@@ -1225,6 +1244,254 @@ export function EnrollmentDetailSheet({
                                                 </div>
                                             );
                                         })}
+                                    </FramePanel>
+                                </Frame>
+                            )}
+
+                            {/* 4b. Cross-Office Student Holds & Clearances */}
+                            {detail.student.id && (
+                                <Frame spacing="sm">
+                                    <FrameHeader className="flex-row items-center justify-between gap-2">
+                                        <div className="flex items-center gap-2">
+                                            <IconTile
+                                                variant="soft"
+                                                size="xs"
+                                                className={
+                                                    (detail.holds ?? []).some((h) => h.status === "active")
+                                                        ? "text-destructive"
+                                                        : "text-emerald-600 dark:text-emerald-400"
+                                                }
+                                            >
+                                                <ShieldAlert />
+                                            </IconTile>
+                                            <div>
+                                                <FrameTitle className="text-xs font-semibold tracking-wide uppercase">
+                                                    Holds &amp; clearances ({(detail.holds ?? []).filter((h) => h.status === "active").length} active)
+                                                </FrameTitle>
+                                                <FrameDescription className="text-xs">
+                                                    Cross-office holds blocking enrollment or add/drop
+                                                </FrameDescription>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <Link
+                                                href={holdsIndexRoute.url()}
+                                                className={buttonVariants({ variant: "ghost", size: "xs", className: "h-7 text-xs" })}
+                                            >
+                                                All holds
+                                            </Link>
+                                            <Button
+                                                type="button"
+                                                size="xs"
+                                                variant="outline"
+                                                className="h-7 gap-1 text-xs"
+                                                onClick={() => setPlaceHoldOpen((prev) => !prev)}
+                                            >
+                                                <Plus className="size-3" />
+                                                Place hold
+                                            </Button>
+                                        </div>
+                                    </FrameHeader>
+                                    <FramePanel className="space-y-2.5 p-3">
+                                        {placeHoldOpen && (
+                                            <div className="bg-muted/40 space-y-2 rounded-lg border p-3">
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <Select value={holdOffice} onValueChange={setHoldOffice}>
+                                                        <SelectTrigger className="h-7 text-xs">
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {(detail.hold_offices ?? [{ value: "registrar", label: "Registrar Office" }]).map(
+                                                                (o) => (
+                                                                    <SelectItem key={o.value} value={o.value}>
+                                                                        {o.label}
+                                                                    </SelectItem>
+                                                                ),
+                                                            )}
+                                                        </SelectContent>
+                                                    </Select>
+                                                    <Select
+                                                        value={holdSeverity}
+                                                        onValueChange={(v) => setHoldSeverity(v as "blocking" | "warning")}
+                                                    >
+                                                        <SelectTrigger className="h-7 text-xs">
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value="blocking">Blocking</SelectItem>
+                                                            <SelectItem value="warning">Warning</SelectItem>
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+                                                <Input
+                                                    value={holdTitle}
+                                                    onChange={(e) => setHoldTitle(e.target.value)}
+                                                    placeholder="Hold title (e.g. Overdue library book)"
+                                                    className="h-7 text-xs"
+                                                />
+                                                <Input
+                                                    value={holdReason}
+                                                    onChange={(e) => setHoldReason(e.target.value)}
+                                                    placeholder="Reason & clearance requirement"
+                                                    className="h-7 text-xs"
+                                                />
+                                                <div className="flex justify-end gap-1.5">
+                                                    <Button type="button" size="xs" variant="ghost" onClick={() => setPlaceHoldOpen(false)}>
+                                                        Cancel
+                                                    </Button>
+                                                    <Button
+                                                        type="button"
+                                                        size="xs"
+                                                        disabled={busyAction !== null || !holdTitle.trim() || !holdReason.trim()}
+                                                        onClick={async () => {
+                                                            if (!detail.student.id) return;
+                                                            setBusyAction("hold:place");
+                                                            try {
+                                                                await axios.post(storeHoldRoute.url(), {
+                                                                    student_id: detail.student.id,
+                                                                    office: holdOffice,
+                                                                    severity: holdSeverity,
+                                                                    title: holdTitle.trim(),
+                                                                    reason: holdReason.trim(),
+                                                                    blocks_enrollment: true,
+                                                                    blocks_add_drop: true,
+                                                                });
+                                                                toast.success("Hold placed on student.");
+                                                                setHoldTitle("");
+                                                                setHoldReason("");
+                                                                setPlaceHoldOpen(false);
+                                                                await loadSummary();
+                                                                onMutationSuccess?.();
+                                                            } catch {
+                                                                toast.error("Failed to place hold.");
+                                                            } finally {
+                                                                setBusyAction(null);
+                                                            }
+                                                        }}
+                                                    >
+                                                        {busyAction === "hold:place" && <Loader2 className="mr-1 size-3 animate-spin" />}
+                                                        Save hold
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {(detail.holds ?? []).length === 0 ? (
+                                            <p className="text-muted-foreground text-xs">No active or recent holds on this student.</p>
+                                        ) : (
+                                            <div className="divide-y">
+                                                {(detail.holds ?? []).map((hold) => (
+                                                    <div key={hold.id} className="space-y-1.5 py-2 first:pt-0 last:pb-0">
+                                                        <div className="flex items-start justify-between gap-2">
+                                                            <div className="min-w-0">
+                                                                <div className="flex flex-wrap items-center gap-1.5">
+                                                                    <span className="text-xs font-semibold">{hold.title}</span>
+                                                                    <Badge variant="outline" size="xs" radius="full">
+                                                                        {hold.office_label}
+                                                                    </Badge>
+                                                                    <Badge
+                                                                        variant={
+                                                                            hold.status === "released"
+                                                                                ? "success-light"
+                                                                                : hold.status === "overridden"
+                                                                                  ? "info-light"
+                                                                                  : hold.severity === "blocking"
+                                                                                    ? "destructive-light"
+                                                                                    : "warning-light"
+                                                                        }
+                                                                        size="xs"
+                                                                        radius="full"
+                                                                        className="capitalize"
+                                                                    >
+                                                                        {hold.status === "active" ? hold.severity : hold.status}
+                                                                    </Badge>
+                                                                </div>
+                                                                <p className="text-muted-foreground mt-0.5 text-[11px]">{hold.reason}</p>
+                                                                {hold.override_reason && (
+                                                                    <p className="text-[11px] text-blue-600 dark:text-blue-400">
+                                                                        Override ({hold.overridden_by}): {hold.override_reason}
+                                                                    </p>
+                                                                )}
+                                                            </div>
+                                                            {hold.status === "active" && (
+                                                                <div className="flex shrink-0 items-center gap-1">
+                                                                    <Button
+                                                                        type="button"
+                                                                        size="xs"
+                                                                        variant="outline"
+                                                                        className="h-6 gap-1 px-2 text-[11px]"
+                                                                        disabled={busyAction !== null}
+                                                                        onClick={async () => {
+                                                                            setBusyAction(`hold:release:${hold.id}`);
+                                                                            try {
+                                                                                await axios.post(releaseHoldRoute.url(hold.id), {});
+                                                                                toast.success("Hold released.");
+                                                                                await loadSummary();
+                                                                                onMutationSuccess?.();
+                                                                            } catch {
+                                                                                toast.error("Failed to release hold.");
+                                                                            } finally {
+                                                                                setBusyAction(null);
+                                                                            }
+                                                                        }}
+                                                                    >
+                                                                        <Unlock className="size-3" />
+                                                                        Release
+                                                                    </Button>
+                                                                    <Button
+                                                                        type="button"
+                                                                        size="xs"
+                                                                        variant="ghost"
+                                                                        className="text-muted-foreground h-6 gap-1 px-1.5 text-[11px]"
+                                                                        onClick={() => {
+                                                                            setOverrideHoldId(hold.id);
+                                                                            setOverrideHoldReason("");
+                                                                        }}
+                                                                    >
+                                                                        <ShieldOff className="size-3" />
+                                                                        Override
+                                                                    </Button>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        {overrideHoldId === hold.id && (
+                                                            <div className="flex items-center gap-1.5 pt-1">
+                                                                <Input
+                                                                    value={overrideHoldReason}
+                                                                    onChange={(e) => setOverrideHoldReason(e.target.value)}
+                                                                    placeholder="Audit reason for override..."
+                                                                    className="h-7 flex-1 text-xs"
+                                                                />
+                                                                <Button
+                                                                    type="button"
+                                                                    size="xs"
+                                                                    variant="destructive"
+                                                                    disabled={busyAction !== null || overrideHoldReason.trim().length < 5}
+                                                                    onClick={async () => {
+                                                                        setBusyAction(`hold:override:${hold.id}`);
+                                                                        try {
+                                                                            await axios.post(overrideHoldRoute.url(hold.id), {
+                                                                                override_reason: overrideHoldReason.trim(),
+                                                                            });
+                                                                            toast.success("Hold overridden with audit log.");
+                                                                            setOverrideHoldId(null);
+                                                                            await loadSummary();
+                                                                            onMutationSuccess?.();
+                                                                        } catch {
+                                                                            toast.error("Failed to override hold.");
+                                                                        } finally {
+                                                                            setBusyAction(null);
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    Confirm
+                                                                </Button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
                                     </FramePanel>
                                 </Frame>
                             )}

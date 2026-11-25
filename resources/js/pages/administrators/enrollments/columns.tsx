@@ -60,6 +60,9 @@ export type EnrollmentRow = {
     } | null;
     allowed_transitions?: EnrollmentTransitionOption[];
     can_advance?: boolean;
+    active_holds_count?: number;
+    blocking_holds_count?: number;
+    hold_offices?: string[];
     created_at: string | null;
     deleted_at?: string | null;
     is_trashed?: boolean;

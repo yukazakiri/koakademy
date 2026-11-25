@@ -248,9 +248,21 @@ export function EnrollmentKanbanBoard({
                             <AvatarFallback className="bg-muted text-[10px] font-semibold">{getInitials(row.student_name)}</AvatarFallback>
                         </Avatar>
                         <div className="min-w-0 flex-1">
-                            <p className="text-foreground group-hover/card:text-primary truncate text-[13px] font-semibold transition-colors">
-                                {row.student_name ?? "Unknown Student"}
-                            </p>
+                            <div className="flex items-center gap-1.5">
+                                <p className="text-foreground group-hover/card:text-primary truncate text-[13px] font-semibold transition-colors">
+                                    {row.student_name ?? "Unknown Student"}
+                                </p>
+                                {(row.active_holds_count ?? 0) > 0 && (
+                                    <Badge
+                                        variant={(row.blocking_holds_count ?? 0) > 0 ? "destructive-light" : "warning-light"}
+                                        size="xs"
+                                        radius="full"
+                                        className="shrink-0"
+                                    >
+                                        {(row.blocking_holds_count ?? 0) > 0 ? `${row.blocking_holds_count} Hold` : `${row.active_holds_count} Warn`}
+                                    </Badge>
+                                )}
+                            </div>
                             <p className="text-muted-foreground truncate font-mono text-[11px]">ID {row.student_number ?? row.student_id ?? "—"}</p>
                         </div>
                     </button>

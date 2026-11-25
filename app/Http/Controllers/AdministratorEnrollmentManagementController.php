@@ -56,6 +56,7 @@ use App\Services\GeneralSettingsService;
 use App\Services\PdfGenerationService;
 use App\Services\QueueAssessmentExportService;
 use App\Services\StudentDirectoryQuery;
+use App\Services\StudentHoldService;
 use App\Services\TenantContext;
 use App\Services\TuitionAdjustmentRecalculationService;
 use App\Settings\SiteSettings;
@@ -101,6 +102,7 @@ final class AdministratorEnrollmentManagementController extends Controller
         private readonly ApplicantDirectoryService $applicantDirectory,
         private readonly ApplicantCancellationService $applicantCancellation,
         private readonly EnrollmentPeriodService $enrollmentPeriodService,
+        private readonly StudentHoldService $studentHoldService,
     ) {}
 
     public function index(GeneralSettingsService $settingsService): Response|RedirectResponse
@@ -393,47 +395,67 @@ final class AdministratorEnrollmentManagementController extends Controller
                 ->withCount('subjectsEnrolled');
         };
 
-        $enrollments = fn () => $buildFilteredQuery(true)
-            ->when($sort === 'student_name', function ($query) use ($direction) {
-                $query->orderBy(
-                    Student::select('last_name')
-                        ->whereColumn('students.id', 'student_enrollment.student_id')
-                        ->limit(1),
-                    $direction
-                );
-            }, function ($query) use ($sort, $direction) {
-                if ($sort === 'tuition') {
+        $enrollments = function () use ($buildFilteredQuery, $sort, $direction, $perPage, $user) {
+            $paginator = $buildFilteredQuery(true)
+                ->when($sort === 'student_name', function ($query) use ($direction) {
                     $query->orderBy(
-                        StudentTuition::select('overall_tuition')
-                            ->whereColumn('student_tuition.enrollment_id', 'student_enrollment.id')
+                        Student::select('last_name')
+                            ->whereColumn('students.id', 'student_enrollment.student_id')
                             ->limit(1),
                         $direction
                     );
-                } elseif ($sort === 'created_at') {
-                    $query->orderBy('student_enrollment.created_at', $direction)
-                        ->orderBy('student_enrollment.id', $direction);
-                } else {
-                    $query->orderByDesc('student_enrollment.created_at')
-                        ->orderByDesc('student_enrollment.id');
-                }
-            })
-            ->paginate($perPage, ['*'], 'page', (int) request('page', 1))
-            ->withQueryString()
-            ->through(fn (StudentEnrollment $enrollment): array => $this->serializeEnrollmentRow($enrollment, $user));
+                }, function ($query) use ($sort, $direction) {
+                    if ($sort === 'tuition') {
+                        $query->orderBy(
+                            StudentTuition::select('overall_tuition')
+                                ->whereColumn('student_tuition.enrollment_id', 'student_enrollment.id')
+                                ->limit(1),
+                            $direction
+                        );
+                    } elseif ($sort === 'created_at') {
+                        $query->orderBy('student_enrollment.created_at', $direction)
+                            ->orderBy('student_enrollment.id', $direction);
+                    } else {
+                        $query->orderByDesc('student_enrollment.created_at')
+                            ->orderByDesc('student_enrollment.id');
+                    }
+                })
+                ->paginate($perPage, ['*'], 'page', (int) request('page', 1))
+                ->withQueryString();
 
-        $boardEnrollments = fn (): array => $buildFilteredQuery(false)
-            ->whereNull('student_enrollment.deleted_at')
-            ->where(function ($outcomes): void {
-                $outcomes->whereNull('student_enrollment.terminal_outcome')
-                    ->orWhereNotIn('student_enrollment.terminal_outcome', StudentDirectoryQuery::ABANDONED_TERMINAL_OUTCOMES);
-            })
-            ->orderByDesc('student_enrollment.created_at')
-            ->orderByDesc('student_enrollment.id')
-            ->limit(150)
-            ->get()
-            ->map(fn (StudentEnrollment $enrollment): array => $this->serializeEnrollmentRow($enrollment, $user))
-            ->values()
-            ->all();
+            $pageHoldSummaries = $this->studentHoldService->summariesForStudents(
+                $paginator->getCollection()->pluck('student_id')->filter()->map(fn ($id): int => (int) $id)->values()->all(),
+            );
+            $paginator->setCollection(
+                $paginator->getCollection()->map(
+                    fn (StudentEnrollment $enrollment): array => $this->serializeEnrollmentRow($enrollment, $user, $pageHoldSummaries[(int) $enrollment->student_id] ?? null),
+                ),
+            );
+
+            return $paginator;
+        };
+
+        $boardEnrollments = function () use ($buildFilteredQuery, $user): array {
+            $rows = $buildFilteredQuery(false)
+                ->whereNull('student_enrollment.deleted_at')
+                ->where(function ($outcomes): void {
+                    $outcomes->whereNull('student_enrollment.terminal_outcome')
+                        ->orWhereNotIn('student_enrollment.terminal_outcome', StudentDirectoryQuery::ABANDONED_TERMINAL_OUTCOMES);
+                })
+                ->orderByDesc('student_enrollment.created_at')
+                ->orderByDesc('student_enrollment.id')
+                ->limit(150)
+                ->get();
+
+            $boardHoldSummaries = $this->studentHoldService->summariesForStudents(
+                $rows->pluck('student_id')->filter()->map(fn ($id): int => (int) $id)->values()->all(),
+            );
+
+            return $rows
+                ->map(fn (StudentEnrollment $enrollment): array => $this->serializeEnrollmentRow($enrollment, $user, $boardHoldSummaries[(int) $enrollment->student_id] ?? null))
+                ->values()
+                ->all();
+        };
 
         $scheme = request()->getScheme();
         $adminHost = (string) config('app.admin_host');
@@ -974,6 +996,14 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'verified_at' => $requirement->verified_at?->toISOString(),
                 'waived_at' => $requirement->waived_at?->toISOString(),
             ])->values()->all(),
+            'holds' => $record->student_id
+                ? $this->studentHoldService
+                    ->allHoldsForStudent((int) $record->student_id)
+                    ->map(fn ($hold): array => $this->studentHoldService->serializeHold($hold))
+                    ->values()
+                    ->all()
+                : [],
+            'hold_offices' => $this->studentHoldService->officeOptions(),
             'resources_count' => $record->resources->count(),
             'timeline' => $sortedTimeline,
         ]);
@@ -2129,6 +2159,12 @@ final class AdministratorEnrollmentManagementController extends Controller
                     $validated['additional_fees'] ?? [],
                     $periodStatus,
                 );
+                $this->studentHoldService->assertNoBlockingEnrollmentHolds(
+                    student: $student,
+                    actor: Auth::user() instanceof User ? Auth::user() : null,
+                    overrideHolds: (bool) ($validated['override_holds'] ?? false),
+                    overrideReason: isset($validated['override_holds_reason']) ? (string) $validated['override_holds_reason'] : null,
+                );
 
                 // Check for existing enrollment in the same period
                 $existingEnrollment = StudentEnrollment::query()
@@ -2565,6 +2601,11 @@ final class AdministratorEnrollmentManagementController extends Controller
             'academic_year' => $student->academic_year,
             'formatted_academic_year' => $student->formatted_academic_year,
             'miscellaneous_fee' => $feeConfiguration['miscellaneous_fee_override'] ?? $student->Course?->getMiscellaneousFee() ?? EnrollmentFeeCalculator::Defaults['miscellaneous_fee_fallback'],
+            'active_holds' => $this->studentHoldService
+                ->activeHoldsForStudent((int) $student->id)
+                ->map(fn ($hold): array => $this->studentHoldService->serializeHold($hold))
+                ->values()
+                ->all(),
         ]);
     }
 
@@ -3210,9 +3251,10 @@ final class AdministratorEnrollmentManagementController extends Controller
     }
 
     /**
+     * @param  array{active_count: int, blocking_count: int, offices: list<string>}|null  $holdSummary
      * @return array<string, mixed>
      */
-    private function serializeEnrollmentRow(StudentEnrollment $enrollment, User $user): array
+    private function serializeEnrollmentRow(StudentEnrollment $enrollment, User $user, ?array $holdSummary = null): array
     {
         $isCancelled = $enrollment->terminal_outcome === EnrollmentCancellationService::OUTCOME;
         $isPolicyRuntime = $enrollment->workflow_runtime === StudentEnrollment::WorkflowRuntimePolicyV1 && $enrollment->policySnapshot !== null;
@@ -3280,6 +3322,9 @@ final class AdministratorEnrollmentManagementController extends Controller
             'next_step' => $nextStep,
             'allowed_transitions' => $allowedTransitions,
             'can_advance' => $canAdvance,
+            'active_holds_count' => (int) ($holdSummary['active_count'] ?? 0),
+            'blocking_holds_count' => (int) ($holdSummary['blocking_count'] ?? 0),
+            'hold_offices' => $holdSummary['offices'] ?? [],
             'created_at' => $enrollment->created_at?->toDateTimeString(),
             'deleted_at' => $enrollment->deleted_at?->toDateTimeString(),
             'is_trashed' => $enrollment->trashed(),

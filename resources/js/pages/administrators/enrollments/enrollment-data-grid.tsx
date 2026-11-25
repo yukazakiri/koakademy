@@ -165,6 +165,18 @@ export function EnrollmentDataGrid({
                                             Deleted
                                         </Badge>
                                     )}
+                                    {(enrollment.active_holds_count ?? 0) > 0 && (
+                                        <Badge
+                                            variant={(enrollment.blocking_holds_count ?? 0) > 0 ? "destructive-light" : "warning-light"}
+                                            size="xs"
+                                            radius="full"
+                                            title={`Active hold(s): ${(enrollment.hold_offices ?? []).join(", ")}`}
+                                        >
+                                            {(enrollment.blocking_holds_count ?? 0) > 0
+                                                ? `${enrollment.blocking_holds_count} Hold${enrollment.blocking_holds_count === 1 ? "" : "s"}`
+                                                : `${enrollment.active_holds_count} Notice`}
+                                        </Badge>
+                                    )}
                                 </div>
                                 <p className="text-muted-foreground truncate text-xs tabular-nums">
                                     <span className="font-mono">ID {displayId ?? "—"}</span>

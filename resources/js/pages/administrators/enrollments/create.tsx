@@ -210,7 +210,7 @@ interface BillingConfiguration {
     course_laboratory_rate_per_unit?: number;
 }
 
-import type { EnrollmentPeriodSummary } from "./types";
+import type { EnrollmentPeriodSummary, StudentHoldItem } from "./types";
 
 interface CreateEnrollmentProps {
     billingConfiguration: BillingConfiguration;
@@ -294,6 +294,9 @@ export default function AdministratorEnrollmentCreate({
 
     const isEdit = Boolean(enrollment);
     const [overrideWindow, setOverrideWindow] = useState(false);
+    const [studentHolds, setStudentHolds] = useState<StudentHoldItem[]>([]);
+    const [overrideHolds, setOverrideHolds] = useState(false);
+    const [overrideHoldsReason, setOverrideHoldsReason] = useState("");
     const [billingConfiguration, setBillingConfiguration] = useState(initialBillingConfiguration);
     const [billingLoading, setBillingLoading] = useState(false);
     const [billingError, setBillingError] = useState(false);
@@ -402,6 +405,9 @@ export default function AdministratorEnrollmentCreate({
                 setBillingConfiguration(details.billing_configuration);
                 setMiscellaneousFee(Number(details.miscellaneous_fee) || 0);
                 setDownpayment(Number(details.billing_configuration.default_downpayment) || 0);
+                setStudentHolds(Array.isArray(details.active_holds) ? details.active_holds : []);
+                setOverrideHolds(false);
+                setOverrideHoldsReason("");
             })
             .catch((error) => {
                 if (error.name !== "AbortError") {
@@ -796,6 +802,8 @@ export default function AdministratorEnrollmentCreate({
             additional_fees: fees,
             force_overload: forceOverload || selectedFullSections.some(({ section }) => confirmedOverloadClassIds.includes(section.id)),
             override_window: overrideWindow,
+            override_holds: overrideHolds,
+            override_holds_reason: overrideHolds ? overrideHoldsReason.trim() : null,
             ...(isEdit && { notify_student: notifyStudent, change_reason: changeReason }),
         };
 
@@ -991,6 +999,51 @@ export default function AdministratorEnrollmentCreate({
                                         <Switch checked={overrideWindow} onCheckedChange={setOverrideWindow} />
                                         Admin override
                                     </label>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Active Student Holds Warning & Audited Override */}
+                        {!isEdit && studentHolds.length > 0 && (
+                            <div className="border-destructive/40 bg-destructive/5 space-y-3 rounded-lg border px-4 py-3">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="flex items-start gap-2.5 text-sm">
+                                        <AlertTriangle className="text-destructive mt-0.5 h-4 w-4 shrink-0" />
+                                        <div>
+                                            <p className="text-destructive font-semibold">
+                                                Active Student Holds ({studentHolds.length})
+                                            </p>
+                                            <ul className="mt-1 space-y-1 text-xs">
+                                                {studentHolds.map((hold) => (
+                                                    <li key={hold.id}>
+                                                        <span className="font-semibold">[{hold.office_label}]</span> {hold.title} —{" "}
+                                                        <span className="text-muted-foreground">{hold.reason}</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    </div>
+                                    {studentHolds.some((h) => h.severity === "blocking" && h.blocks_enrollment) && (
+                                        <label className="bg-background/80 flex shrink-0 cursor-pointer items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium">
+                                            <Switch checked={overrideHolds} onCheckedChange={setOverrideHolds} />
+                                            Audited override
+                                        </label>
+                                    )}
+                                </div>
+                                {overrideHolds && (
+                                    <div className="space-y-1">
+                                        <Label htmlFor="override-holds-reason" className="text-xs font-medium">
+                                            Override audit justification (required)
+                                        </Label>
+                                        <Textarea
+                                            id="override-holds-reason"
+                                            rows={2}
+                                            value={overrideHoldsReason}
+                                            onChange={(e) => setOverrideHoldsReason(e.target.value)}
+                                            placeholder="Enter promissory note reference or authorized clearance waiver..."
+                                            className="bg-background text-xs"
+                                        />
+                                    </div>
                                 )}
                             </div>
                         )}

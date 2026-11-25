@@ -26,6 +26,7 @@ use App\Http\Controllers\AdministratorRegistrarInsightsController;
 use App\Http\Controllers\AdministratorRolesController;
 use App\Http\Controllers\AdministratorSchedulingAnalyticsController;
 use App\Http\Controllers\AdministratorStudentDocumentController;
+use App\Http\Controllers\AdministratorStudentHoldController;
 use App\Http\Controllers\AdministratorStudentManagementController;
 use App\Http\Controllers\AdministratorTuitionAdjustmentController;
 use App\Http\Controllers\AdministratorTuitionUpdateRequestController;
@@ -119,6 +120,17 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/enrollments/discounts', [AdministratorEnrollmentDiscountController::class, 'store'])->name('enrollments.discounts.store');
         Route::get('/enrollments/period', [AdministratorEnrollmentPeriodController::class, 'show'])->name('enrollments.period.show');
         Route::put('/enrollments/period', [AdministratorEnrollmentPeriodController::class, 'upsert'])->name('enrollments.period.upsert');
+        Route::get('/enrollments/holds', [AdministratorStudentHoldController::class, 'index'])->name('enrollments.holds.index');
+        Route::post('/enrollments/holds', [AdministratorStudentHoldController::class, 'store'])->name('enrollments.holds.store');
+        Route::get('/enrollments/holds/students/{student}', [AdministratorStudentHoldController::class, 'forStudent'])
+            ->whereNumber('student')
+            ->name('enrollments.holds.student');
+        Route::post('/enrollments/holds/{hold}/release', [AdministratorStudentHoldController::class, 'release'])
+            ->whereNumber('hold')
+            ->name('enrollments.holds.release');
+        Route::post('/enrollments/holds/{hold}/override', [AdministratorStudentHoldController::class, 'override'])
+            ->whereNumber('hold')
+            ->name('enrollments.holds.override');
 
         // Enrollment Form Data API endpoints
         Route::get('/enrollments/api/students', [AdministratorEnrollmentManagementController::class, 'searchStudents'])->name('enrollments.api.students');

@@ -81,6 +81,8 @@ for variable_name in DB_CONNECTION DB_HOST DB_PORT DB_DATABASE DB_USERNAME DB_PA
     PULSE_RUN_MIGRATIONS PULSE_AUTO_CREATE_DATABASE PULSE_PURGE_ON_START \
     TELESCOPE_ENABLED NIGHTWATCH_ENABLED LARAOWL_ENABLED LARALYZE_ENABLED \
     HORIZON_IN_HTTP_CONTAINER LOG_LEVEL \
+    RETAIN_PREVIOUS_BUILD_ASSETS BUILD_ASSETS_RETENTION_DAYS \
+    INERTIA_SOFT_VERSION_UPDATES INERTIA_FORCE_RELOAD_VERSION APP_UPDATE_POLL_INTERVAL \
     INERTIA_SSR_ENABLED INERTIA_SSR_RUNTIME INERTIA_SSR_URL \
     INERTIA_SSR_ENSURE_RUNTIME_EXISTS INERTIA_SSR_ENSURE_BUNDLE_EXISTS \
     INERTIA_SSR_THROW_ON_ERROR; do
@@ -649,6 +651,7 @@ fix_storage_permissions() {
         storage/app/public \
         storage/app/private \
         storage/app/private/library \
+        storage/app/build-assets \
         storage/logs \
         bootstrap/cache
 
@@ -715,6 +718,74 @@ ensure_storage_link() {
     fi
 
     php artisan storage:link
+}
+
+sync_shared_build_assets() {
+    if ! is_truthy "${RETAIN_PREVIOUS_BUILD_ASSETS:-true}"; then
+        echo "Previous build asset retention disabled, skipping shared build assets sync."
+        return 0
+    fi
+
+    image_assets_dir="${APP_BUILD_ASSETS_DIR:-public/build/assets}"
+    shared_assets_dir="${SHARED_BUILD_ASSETS_DIR:-storage/app/build-assets}"
+    retention_days="$(strip_optional_quotes "${BUILD_ASSETS_RETENTION_DAYS:-7}")"
+
+    if [ -L "${image_assets_dir}" ]; then
+        echo "Shared build assets symlink already in place, skipping."
+        return 0
+    fi
+
+    if [ ! -d "${image_assets_dir}" ]; then
+        echo "No built Vite assets directory found at ${image_assets_dir}, skipping."
+        return 0
+    fi
+
+    echo "Syncing built frontend assets additively into ${shared_assets_dir}..."
+    mkdir -p "${shared_assets_dir}"
+    shared_assets_abs="$(cd "${shared_assets_dir}" && pwd)"
+
+    asset_tmp_suffix=".tmp.$$"
+    (
+        cd "${image_assets_dir}"
+        find . -type d | while IFS= read -r rel_dir; do
+            [ "${rel_dir}" = "." ] && continue
+            mkdir -p "${shared_assets_abs}/${rel_dir#./}"
+        done
+        find . -type f | while IFS= read -r rel_file; do
+            clean_rel="${rel_file#./}"
+            target_path="${shared_assets_abs}/${clean_rel}"
+            tmp_path="${target_path}${asset_tmp_suffix}"
+            mkdir -p "$(dirname "${target_path}")"
+            cp -p "${clean_rel}" "${tmp_path}"
+            mv -f "${tmp_path}" "${target_path}"
+            touch "${target_path}" 2>/dev/null || true
+        done
+    )
+
+    if [ "$(id -u)" = "0" ]; then
+        web_user="${USER:-laravel}"
+        web_group="${USER:-laravel}"
+        chown -R "${web_user}:${web_group}" "${shared_assets_abs}" 2>/dev/null || true
+    fi
+
+    chmod -R a+rX "${shared_assets_abs}" 2>/dev/null || true
+
+    # Replace the container-local assets directory with a symlink to the shared
+    # additive pool while keeping public/build/manifest.json container-local.
+    rm -rf "${image_assets_dir}"
+    ln -s "${shared_assets_abs}" "${image_assets_dir}"
+
+    case "${retention_days}" in
+        ''|*[!0-9]*)
+            retention_days=7
+            ;;
+    esac
+
+    if [ "${retention_days}" -gt 0 ]; then
+        find "${shared_assets_abs}" -type f -mtime +"${retention_days}" -delete 2>/dev/null || true
+    fi
+
+    echo "Shared build assets ready (retaining previous release chunks for ${retention_days} days)."
 }
 
 ensure_passport_keys() {
@@ -926,6 +997,7 @@ run_primary_startup_tasks() {
     log_section "Running primary container startup tasks"
 
     ensure_storage_link
+    sync_shared_build_assets
     ensure_passport_keys
     ensure_vendor_view_dirs
     prepare_pulse_storage

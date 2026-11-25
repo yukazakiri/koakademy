@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\AppBuildVersionController;
 use App\Http\Controllers\AppManifestController;
 use App\Http\Controllers\DigitalIdCardController;
 use App\Http\Controllers\FinancialDocumentVerificationController;
@@ -317,6 +318,9 @@ if ($isLocalPortalHost || $isSingleDomainDeployment || empty($portalHosts)) {
 require __DIR__.'/web/setup.php';
 
 Route::get('/app.webmanifest', AppManifestController::class)->name('app.manifest');
+Route::get('/build-version', AppBuildVersionController::class)
+    ->middleware('throttle:60,1')
+    ->name('app.build-version');
 
 // Public ID Card Verification (accessible without authentication)
 Route::get('/id-card/verify/{token}', [DigitalIdCardController::class, 'verify'])

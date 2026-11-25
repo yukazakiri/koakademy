@@ -2,6 +2,7 @@ import { ActiveJobsNotification } from "@/components/active-jobs-notification";
 import { AdminMobileBottomNav } from "@/components/administrators/admin-mobile-bottom-nav";
 import { AnalyticsScripts } from "@/components/analytics-scripts";
 import { AnnouncementBanner } from "@/components/announcement-banner";
+import { AppUpdateWatcher } from "@/components/app-update-watcher";
 import { DemoModeBanner } from "@/components/demo-mode-banner";
 import { FacultyBottomNav } from "@/components/faculty/faculty-bottom-nav";
 import { SeoHead } from "@/components/seo-head";
@@ -46,6 +47,7 @@ export default function AppRootLayout({ children }: { children: React.ReactNode 
             {!hideMobileNavigation && user && isStudentPortalRole(user.role) ? <StudentBottomNav /> : null}
             {!hideMobileNavigation && user && isAdministratorPortalRole(user.role) ? <AdminMobileBottomNav /> : null}
             {user ? <ActiveJobsNotification /> : null}
+            <AppUpdateWatcher />
             <Toaster position="top-right" richColors />
         </OnlinePresenceProvider>
     );

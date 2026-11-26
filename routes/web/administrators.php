@@ -31,6 +31,7 @@ use App\Http\Controllers\AdministratorRegistrarInsightsController;
 use App\Http\Controllers\AdministratorRolesController;
 use App\Http\Controllers\AdministratorSchedulingAnalyticsController;
 use App\Http\Controllers\AdministratorStudentDocumentController;
+use App\Http\Controllers\AdministratorStudentDuplicateController;
 use App\Http\Controllers\AdministratorStudentHoldController;
 use App\Http\Controllers\AdministratorStudentManagementController;
 use App\Http\Controllers\AdministratorTuitionAdjustmentController;
@@ -359,6 +360,9 @@ Route::middleware(['auth', 'administrators.only'])
         Route::delete('/students/bulk', [AdministratorStudentManagementController::class, 'bulkDestroy'])->name('students.bulk-destroy');
         Route::delete('/students/bulk/force', [AdministratorStudentManagementController::class, 'bulkForceDestroy'])->name('students.bulk-force-destroy');
         Route::get('/students/documents', [AdministratorStudentDocumentController::class, 'listAll'])->name('students.documents.list');
+        Route::get('/students/duplicates', [AdministratorStudentDuplicateController::class, 'index'])->name('students.duplicates.index');
+        Route::post('/students/duplicates/preview', [AdministratorStudentDuplicateController::class, 'preview'])->name('students.duplicates.preview');
+        Route::post('/students/duplicates/merge', [AdministratorStudentDuplicateController::class, 'merge'])->name('students.duplicates.merge');
         Route::get('/students/field-values', [AdministratorStudentManagementController::class, 'fieldValues'])->name('students.field-values');
         Route::get('/students/education-school-options', [AdministratorStudentManagementController::class, 'educationSchoolOptions'])->name('students.education-school-options');
         Route::patch('/students/{student}/quick-update', [AdministratorStudentManagementController::class, 'quickUpdate'])->name('students.quick-update')->withTrashed();
@@ -510,6 +514,7 @@ Route::middleware(['auth', 'administrators.only'])
 
         // Audit Logs
         Route::get('/audit-logs', [AdministratorAuditLogController::class, 'index'])->name('audit-logs.index');
+        Route::get('/audit-logs/export', [AdministratorAuditLogController::class, 'export'])->name('audit-logs.export');
 
         // User Management
         Route::get('/users', [AdministratorUserManagementController::class, 'index'])->name('users.index');

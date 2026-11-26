@@ -1,7 +1,7 @@
 import AdminLayout from "@/components/administrators/admin-layout";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -9,11 +9,27 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Head, router } from "@inertiajs/react";
-import { Activity, Eye, Filter, Minus, Plus, RefreshCw, Search, ShieldCheck, Sparkles, Target, Trash2 } from "lucide-react";
+import { Head, Link, router } from "@inertiajs/react";
+import {
+    Activity,
+    Download,
+    ExternalLink,
+    Eye,
+    Filter,
+    Minus,
+    Plus,
+    RefreshCw,
+    Search,
+    ShieldCheck,
+    Sparkles,
+    Target,
+    Trash2,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useDebouncedCallback } from "use-debounce";
+
+declare const route: (name: string, params?: Record<string, unknown> | string | number) => string;
 
 interface AuditLogEntry {
     id: number;
@@ -21,7 +37,9 @@ interface AuditLogEntry {
     event: string | null;
     log_name: string | null;
     subject_type: string | null;
-    subject_id: number | null;
+    subject_id: number | string | null;
+    subject_url: string | null;
+    ip_address?: string | null;
     properties: Record<string, any> | null;
     causer: {
         id: number;
@@ -63,8 +81,11 @@ interface AuditLogIndexProps {
         event: string | null;
         log_name: string | null;
         subject_type: string | null;
+        subject_id: string | null;
         causer_id: string | null;
         range: string | null;
+        from: string | null;
+        to: string | null;
     };
     options: {
         events: string[];
@@ -84,23 +105,46 @@ interface DiffEntry {
 
 export default function AdministratorAuditLogsIndex({ user, logs, filters, options, analytics }: AuditLogIndexProps) {
     const [search, setSearch] = useState(filters.search ?? "");
+    const [subjectId, setSubjectId] = useState(filters.subject_id ?? "");
     const [selectedLog, setSelectedLog] = useState<AuditLogEntry | null>(null);
 
     const handleSearch = useDebouncedCallback((term: string) => {
-        router.get(route("administrators.audit-logs.index"), { ...filters, search: term }, { preserveState: true, replace: true });
+        router.get(route("administrators.audit-logs.index"), { ...filters, search: term || null }, { preserveState: true, replace: true });
     }, 300);
 
-    const handleFilterChange = (key: string, value: string) => {
-        router.get(
-            route("administrators.audit-logs.index"),
-            { ...filters, [key]: value === "all" ? null : value },
-            { preserveState: true, replace: true },
-        );
+    const handleSubjectIdSearch = useDebouncedCallback((term: string) => {
+        router.get(route("administrators.audit-logs.index"), { ...filters, subject_id: term.trim() || null }, { preserveState: true, replace: true });
+    }, 300);
+
+    const handleFilterChange = (key: string, value: string | null) => {
+        const normalized = !value || value === "all" ? null : value;
+        const nextFilters: Record<string, string | null> = { ...filters, [key]: normalized };
+        if (key === "range" && normalized !== null) {
+            nextFilters.from = null;
+            nextFilters.to = null;
+        }
+        router.get(route("administrators.audit-logs.index"), nextFilters, { preserveState: true, replace: true });
     };
 
     const clearFilters = () => {
-        router.get(route("administrators.audit-logs.index"), { search: filters.search }, { preserveState: true, replace: true });
+        setSearch("");
+        setSubjectId("");
+        router.get(route("administrators.audit-logs.index"), {}, { preserveState: true, replace: true });
     };
+
+    const exportCsvUrl = useMemo(() => {
+        const params = new URLSearchParams();
+        for (const [key, value] of Object.entries(filters)) {
+            if (value !== null && value !== undefined && value !== "" && value !== "all") {
+                params.set(key, String(value));
+            }
+        }
+        if (filters.range === "all") {
+            params.set("range", "all");
+        }
+        const query = params.toString();
+        return query ? `/administrators/audit-logs/export?${query}` : "/administrators/audit-logs/export";
+    }, [filters]);
 
     const activeFilterCount = useMemo(() => {
         return Object.keys(filters).filter((key) => key !== "search" && filters[key as keyof typeof filters]).length;
@@ -157,9 +201,14 @@ export default function AdministratorAuditLogsIndex({ user, logs, filters, optio
                         <h2 className="text-3xl font-bold tracking-tight">Audit Logs</h2>
                         <p className="text-muted-foreground">Track sensitive actions, system changes, and operational events.</p>
                     </div>
-                    <Button variant="outline" className="gap-2" onClick={() => router.reload({ only: ["logs", "analytics"] })}>
-                        <RefreshCw className="h-4 w-4" /> Refresh
-                    </Button>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <a href={exportCsvUrl} className={buttonVariants({ variant: "outline", className: "gap-2" })}>
+                            <Download className="h-4 w-4" /> Export CSV
+                        </a>
+                        <Button variant="outline" className="gap-2" onClick={() => router.reload({ only: ["logs", "analytics"] })}>
+                            <RefreshCw className="h-4 w-4" /> Refresh
+                        </Button>
+                    </div>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-4">
@@ -295,19 +344,50 @@ export default function AdministratorAuditLogsIndex({ user, logs, filters, optio
                             </Button>
                         </div>
 
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-                            <div className="relative flex-1">
-                                <Search className="text-muted-foreground absolute top-2.5 left-3 h-4 w-4" />
-                                <Input
-                                    placeholder="Search description, log name, subject..."
-                                    value={search}
-                                    onChange={(event) => {
-                                        setSearch(event.target.value);
-                                        handleSearch(event.target.value);
-                                    }}
-                                    className="pl-9"
-                                />
+                        <div className="flex flex-col gap-3">
+                            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+                                <div className="relative flex-1">
+                                    <Search className="text-muted-foreground absolute top-2.5 left-3 h-4 w-4" />
+                                    <Input
+                                        placeholder="Search description, log name, subject..."
+                                        value={search}
+                                        onChange={(event) => {
+                                            setSearch(event.target.value);
+                                            handleSearch(event.target.value);
+                                        }}
+                                        className="pl-9"
+                                    />
+                                </div>
+                                <div className="w-full lg:w-[150px]">
+                                    <Input
+                                        placeholder="Subject ID"
+                                        value={subjectId}
+                                        onChange={(event) => {
+                                            setSubjectId(event.target.value);
+                                            handleSubjectIdSearch(event.target.value);
+                                        }}
+                                        aria-label="Filter by Subject ID"
+                                    />
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Input
+                                        type="date"
+                                        value={filters.from ?? ""}
+                                        onChange={(event) => handleFilterChange("from", event.target.value || null)}
+                                        className="w-[155px]"
+                                        aria-label="From date"
+                                    />
+                                    <span className="text-muted-foreground text-xs">to</span>
+                                    <Input
+                                        type="date"
+                                        value={filters.to ?? ""}
+                                        onChange={(event) => handleFilterChange("to", event.target.value || null)}
+                                        className="w-[155px]"
+                                        aria-label="To date"
+                                    />
+                                </div>
                             </div>
+
                             <div className="flex flex-wrap gap-2">
                                 <Select value={filters.event ?? "all"} onValueChange={(value) => handleFilterChange("event", value)}>
                                     <SelectTrigger className="w-[150px]">
@@ -397,7 +477,7 @@ export default function AdministratorAuditLogsIndex({ user, logs, filters, optio
                                 <TableBody>
                                     {logs.data.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={5} className="text-muted-foreground h-24 text-center">
+                                            <TableCell colSpan={6} className="text-muted-foreground h-24 text-center">
                                                 No audit events found for the selected filters.
                                             </TableCell>
                                         </TableRow>
@@ -426,8 +506,20 @@ export default function AdministratorAuditLogsIndex({ user, logs, filters, optio
                                                 </TableCell>
                                                 <TableCell>
                                                     <div className="flex flex-col text-sm">
-                                                        <span className="font-medium">{log.subject_type ?? "-"}</span>
-                                                        <span className="text-muted-foreground text-xs">ID: {log.subject_id ?? "-"}</span>
+                                                        {log.subject_url ? (
+                                                            <Link
+                                                                href={log.subject_url}
+                                                                className="text-primary inline-flex items-center gap-1 font-medium hover:underline"
+                                                            >
+                                                                {log.subject_type ?? "Record"} #{log.subject_id}
+                                                                <ExternalLink className="h-3 w-3" />
+                                                            </Link>
+                                                        ) : (
+                                                            <>
+                                                                <span className="font-medium">{log.subject_type ?? "-"}</span>
+                                                                <span className="text-muted-foreground text-xs">ID: {log.subject_id ?? "-"}</span>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 </TableCell>
                                                 <TableCell>
@@ -558,10 +650,20 @@ export default function AdministratorAuditLogsIndex({ user, logs, filters, optio
                             <p className="text-foreground font-semibold">Metadata</p>
                             <div className="mt-2 space-y-1">
                                 <p>
-                                    Subject: {selectedLog?.subject_type ?? "-"} #{selectedLog?.subject_id ?? "-"}
+                                    Subject:{" "}
+                                    {selectedLog?.subject_url ? (
+                                        <Link href={selectedLog.subject_url} className="text-primary font-medium hover:underline">
+                                            {selectedLog.subject_type ?? "-"} #{selectedLog.subject_id ?? "-"}
+                                        </Link>
+                                    ) : (
+                                        <>
+                                            {selectedLog?.subject_type ?? "-"} #{selectedLog?.subject_id ?? "-"}
+                                        </>
+                                    )}
                                 </p>
                                 <p>Actor: {selectedLog?.causer?.name ?? "System"}</p>
                                 <p>Actor Email: {selectedLog?.causer?.email ?? "-"}</p>
+                                {selectedLog?.ip_address && <p>IP Address: {selectedLog.ip_address}</p>}
                             </div>
                         </div>
                     </div>

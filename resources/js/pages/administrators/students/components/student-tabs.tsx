@@ -16,6 +16,7 @@ import {
     ExternalLink,
     FileText,
     GraduationCap,
+    History,
     Printer,
     ShieldCheck,
 } from "lucide-react";
@@ -51,7 +52,7 @@ export function StudentTabs({ student, options, onAdjustTuition, selectedTab, on
 
     return (
         <Tabs value={selectedTab} onValueChange={onTabChange} className="w-full">
-            <TabsList className="grid h-auto w-full grid-cols-2 lg:grid-cols-7">
+            <TabsList className="grid h-auto w-full grid-cols-2 lg:grid-cols-8">
                 <TabsTrigger value="academic">Academic</TabsTrigger>
                 <TabsTrigger value="parents">Parents</TabsTrigger>
                 <TabsTrigger value="school">School</TabsTrigger>
@@ -59,6 +60,7 @@ export function StudentTabs({ student, options, onAdjustTuition, selectedTab, on
                 <TabsTrigger value="documents">Documents</TabsTrigger>
                 <TabsTrigger value="tuition">Tuition</TabsTrigger>
                 <TabsTrigger value="clearance">Clearance</TabsTrigger>
+                <TabsTrigger value="audit">Audit Trail</TabsTrigger>
             </TabsList>
 
             <div className="mt-4">
@@ -570,6 +572,72 @@ export function StudentTabs({ student, options, onAdjustTuition, selectedTab, on
                 </TabsContent>
                 <TabsContent value="clearance">
                     <GradeReleaseSection student={student} />
+                </TabsContent>
+                <TabsContent value="audit">
+                    <Card>
+                        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="space-y-1">
+                                <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                                    <History className="h-4 w-4" />
+                                    Student Audit Trail
+                                </CardTitle>
+                                <CardDescription>
+                                    Inspect profile updates, status changes, ID reassignments, and administrative actions recorded for{" "}
+                                    <span className="text-foreground font-medium">{student.name}</span>.
+                                </CardDescription>
+                            </div>
+                            <Link
+                                href={`/administrators/audit-logs?subject_type=${encodeURIComponent("App\\Models\\Student")}&subject_id=${student.id}&range=all`}
+                                className={buttonVariants({ variant: "outline", size: "sm", className: "gap-2" })}
+                            >
+                                Open Full Audit Log
+                                <ExternalLink className="h-3.5 w-3.5" />
+                            </Link>
+                        </CardHeader>
+                        <Separator />
+                        <CardContent className="space-y-4 p-6">
+                            {(student.grade_release_periods ?? []).some((period) => (period.events ?? []).length > 0) ? (
+                                <div className="space-y-2">
+                                    <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+                                        Recent Grade Release &amp; Clearance Activity
+                                    </p>
+                                    <div className="divide-y rounded-lg border">
+                                        {(student.grade_release_periods ?? [])
+                                            .flatMap((period) =>
+                                                (period.events ?? []).map((event) => ({
+                                                    ...event,
+                                                    periodLabel: `${period.school_year} · Sem ${period.semester}`,
+                                                })),
+                                            )
+                                            .slice(0, 6)
+                                            .map((event) => (
+                                                <div key={event.id} className="flex flex-col justify-between gap-1 px-4 py-3 text-sm sm:flex-row sm:items-center">
+                                                    <div>
+                                                        <span className="font-medium capitalize">{event.event.replace(/_/g, " ")}</span>
+                                                        <span className="text-muted-foreground ml-2 text-xs">({event.periodLabel})</span>
+                                                        {event.reason && <p className="text-muted-foreground text-xs">{event.reason}</p>}
+                                                    </div>
+                                                    <div className="text-muted-foreground text-xs">
+                                                        {event.actor ?? "System"}
+                                                        {event.at ? ` · ${event.at}` : ""}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="bg-muted/30 flex flex-col items-start justify-between gap-3 rounded-lg border border-dashed p-4 sm:flex-row sm:items-center">
+                                    <div className="space-y-1">
+                                        <p className="text-sm font-medium">Complete change history lives in the central Audit Log</p>
+                                        <p className="text-muted-foreground text-xs">
+                                            Filter by Subject Type <code className="font-mono">Student</code> and Subject ID{" "}
+                                            <code className="font-mono">#{student.id}</code> to review every logged change and export CSV evidence.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
                 </TabsContent>
             </div>
         </Tabs>

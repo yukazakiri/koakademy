@@ -6,6 +6,7 @@ use App\Http\Controllers\ActionCenterController;
 use App\Http\Controllers\ApiKeyController;
 use App\Http\Controllers\ClassesController;
 use App\Http\Controllers\DigitalIdCardController;
+use App\Http\Controllers\FacultyAtRiskController;
 use App\Http\Controllers\FacultyClassController;
 use App\Http\Controllers\FacultyClassShsStudentController;
 use App\Http\Controllers\FacultyClassStudentSearchController;
@@ -106,10 +107,18 @@ Route::middleware(['auth', 'faculty.verified', 'faculty.only', 'ensure.feature']
             $currentSemester = $settingsService->getCurrentSemester();
             $currentSchoolYear = $settingsService->getCurrentSchoolYearString();
 
+            $today = now()->toDateString();
+
             $classes = $faculty->classes()
                 ->currentAcademicPeriod()
                 ->with(['subject', 'SubjectByCodeFallback', 'ShsSubject', 'Room', 'schedules.room'])
-                ->withCount('class_enrollments')
+                ->withCount([
+                    'class_enrollments',
+                    'attendanceSessions as sessions_count',
+                    'attendanceSessions as today_sessions_count' => function ($query) use ($today): void {
+                        $query->whereDate('session_date', $today);
+                    },
+                ])
                 ->orderBy('subject_code')
                 ->orderBy('section')
                 ->get()
@@ -139,7 +148,9 @@ Route::middleware(['auth', 'faculty.verified', 'faculty.only', 'ensure.feature']
                         'subject_title' => $primarySubject?->title ?? 'N/A',
                         'section' => $class->section ?? 'N/A',
                         'classification' => $class->classification ?? 'college',
-                        'students_count' => $class->class_enrollments_count ?? 0,
+                        'students_count' => (int) ($class->class_enrollments_count ?? 0),
+                        'sessions_count' => (int) ($class->sessions_count ?? 0),
+                        'today_logged' => (int) ($class->today_sessions_count ?? 0) > 0,
                         'room' => $class->Room?->name ?? 'TBA',
                         'schedule_summary' => $scheduleSummary,
                         'manage_attendance_url' => sprintf('/faculty/classes/%s?tab=attendance', $class->id),
@@ -184,7 +195,21 @@ Route::middleware(['auth', 'faculty.verified', 'faculty.only', 'ensure.feature']
             $classes = $faculty->classes()
                 ->currentAcademicPeriod()
                 ->with(['subject', 'SubjectByCodeFallback', 'ShsSubject', 'Room', 'schedules.room'])
-                ->withCount('class_enrollments')
+                ->withCount([
+                    'class_enrollments',
+                    'class_enrollments as graded_count' => function ($query): void {
+                        $query->where(function ($sub): void {
+                            $sub->whereNotNull('total_average')
+                                ->orWhereNotNull('grade_symbol')
+                                ->orWhereNotNull('prelim_grade')
+                                ->orWhereNotNull('midterm_grade')
+                                ->orWhereNotNull('finals_grade');
+                        });
+                    },
+                    'class_enrollments as finalized_count' => function ($query): void {
+                        $query->where('is_grades_finalized', true);
+                    },
+                ])
                 ->orderBy('subject_code')
                 ->orderBy('section')
                 ->get()
@@ -208,13 +233,18 @@ Route::middleware(['auth', 'faculty.verified', 'faculty.only', 'ensure.feature']
                         ->values()
                         ->all();
 
+                    $totalStudents = (int) ($class->class_enrollments_count ?? 0);
+
                     return [
                         'id' => $class->id,
                         'subject_code' => $primarySubject?->code ?? $class->subject_code ?? 'N/A',
                         'subject_title' => $primarySubject?->title ?? 'N/A',
                         'section' => $class->section ?? 'N/A',
                         'classification' => $class->classification ?? 'college',
-                        'students_count' => $class->class_enrollments_count ?? 0,
+                        'students_count' => $totalStudents,
+                        'total_students' => $totalStudents,
+                        'graded_count' => (int) ($class->graded_count ?? 0),
+                        'finalized_count' => (int) ($class->finalized_count ?? 0),
                         'room' => $class->Room?->name ?? 'TBA',
                         'schedule_summary' => $scheduleSummary,
                         'manage_grades_url' => sprintf('/faculty/classes/%s?tab=grades', $class->id),
@@ -301,12 +331,7 @@ Route::middleware(['auth', 'faculty.verified', 'faculty.only', 'ensure.feature']
         };
 
         // Faculty Toolkit
-        Route::get('/at-risk-alerts', fn () => $renderToolkitPage(
-            'At-Risk Alerts',
-            'Monitor students who may need extra support before small issues become larger academic problems.',
-            ['Early warning signals', 'Actionable outreach', 'Student support notes'],
-            'rose',
-        ))->name('at-risk-alerts');
+        Route::get('/at-risk-alerts', [FacultyAtRiskController::class, 'index'])->name('at-risk-alerts');
 
         Route::get('/assessments', fn () => $renderToolkitPage(
             'Assessments',

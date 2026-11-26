@@ -32,6 +32,7 @@ import {
     CalendarCheck,
     CheckCircle,
     Filter,
+    GitMerge,
     GraduationCap,
     HelpCircle,
     Layers,
@@ -718,7 +719,17 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
                         </p>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <AdminLink
+                            href="/administrators/students/duplicates"
+                            className={buttonVariants({
+                                variant: "outline",
+                                className: "h-9 w-full gap-2 text-xs font-medium shadow-xs sm:w-auto sm:text-sm",
+                            })}
+                        >
+                            <GitMerge className="size-4" aria-hidden="true" />
+                            Duplicate Scanner
+                        </AdminLink>
                         <AdminLink
                             href={route("administrators.students.create")}
                             className={buttonVariants({ className: "h-9 w-full gap-2 text-xs font-semibold shadow-xs sm:w-auto sm:text-sm" })}

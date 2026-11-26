@@ -117,16 +117,31 @@ final class FacultyClassController extends Controller
                     'name' => $displayName,
                     'email' => $student?->email,
                     'status' => $enrollment->status ? 'Active' : 'Inactive',
+                    'is_grades_finalized' => (bool) $enrollment->is_grades_finalized,
                     'grades' => [
                         'prelim' => $enrollment->prelim_grade,
                         'midterm' => $enrollment->midterm_grade,
                         'final' => $enrollment->finals_grade,
                         'average' => $enrollment->total_average,
+                        'symbol' => $enrollment->grade_symbol,
+                        'components' => $enrollment->grading_components ?? [],
                     ],
                 ];
             })
             ->values()
             ->all();
+
+        $totalEnrollmentsCount = $class->class_enrollments->count();
+        $finalizedEnrollmentsCount = $class->class_enrollments
+            ->filter(fn ($enrollment): bool => (bool) $enrollment->is_grades_finalized)
+            ->count();
+
+        $gradesFinalized = [
+            'total' => $totalEnrollmentsCount,
+            'finalized' => $finalizedEnrollmentsCount,
+            'all_finalized' => $totalEnrollmentsCount > 0 && $finalizedEnrollmentsCount === $totalEnrollmentsCount,
+            'any_finalized' => $finalizedEnrollmentsCount > 0,
+        ];
 
         $classData = [
             'id' => $class->id,
@@ -328,6 +343,7 @@ final class FacultyClassController extends Controller
             'posts' => $classPosts,
             'auto_average' => true,
             'grading_policy' => $gradingSystem->getConfig(),
+            'gradesFinalized' => $gradesFinalized,
             'attendance' => $attendance,
             'rooms' => $rooms,
             'online_resources_module_enabled' => $onlineResourcesModuleEnabled,
@@ -380,17 +396,24 @@ final class FacultyClassController extends Controller
                         ? ($student?->lrn ?? 'N/A')
                         : ($student?->student_id !== null ? (string) $student->student_id : 'N/A'),
                     'name' => $displayName,
+                    'is_grades_finalized' => (bool) $enrollment->is_grades_finalized,
                     'grades' => [
                         'prelim' => $enrollment->prelim_grade,
                         'midterm' => $enrollment->midterm_grade,
                         'final' => $enrollment->finals_grade,
                         'average' => $enrollment->total_average,
+                        'symbol' => $enrollment->grade_symbol,
                         'components' => $enrollment->grading_components ?? [],
                     ],
                 ];
             })
             ->values()
             ->all();
+
+        $totalEnrollmentsCount = $class->class_enrollments->count();
+        $finalizedEnrollmentsCount = $class->class_enrollments
+            ->filter(fn ($enrollment): bool => (bool) $enrollment->is_grades_finalized)
+            ->count();
 
         // Prepare Attendance Data
         $attendance = $this->buildAttendancePayload($class);
@@ -411,6 +434,12 @@ final class FacultyClassController extends Controller
             'schedule' => $schedule,
             'auto_average' => (bool) config('class_grading.auto_calculate_average', true),
             'grading_policy' => $gradingSystem->getConfig(),
+            'gradesFinalized' => [
+                'total' => $totalEnrollmentsCount,
+                'finalized' => $finalizedEnrollmentsCount,
+                'all_finalized' => $totalEnrollmentsCount > 0 && $finalizedEnrollmentsCount === $totalEnrollmentsCount,
+                'any_finalized' => $finalizedEnrollmentsCount > 0,
+            ],
         ]);
     }
 
@@ -1490,7 +1519,7 @@ final class FacultyClassController extends Controller
         );
 
         // Send Notification to Target Faculty's portal User account (falling back to Faculty if none exists)
-        $targetRecipient = \App\Models\User::query()
+        $targetRecipient = User::query()
             ->whereRaw('LOWER(email) = ?', [mb_strtolower(mb_trim((string) $targetClass->faculty->email))])
             ->first() ?? $targetClass->faculty;
 
@@ -1560,7 +1589,7 @@ final class FacultyClassController extends Controller
         ]);
 
         // 3. Notify Source Faculty's portal User account
-        $sourceRecipient = \App\Models\User::query()
+        $sourceRecipient = User::query()
             ->whereRaw('LOWER(email) = ?', [mb_strtolower(mb_trim((string) $class->faculty->email))])
             ->first() ?? $class->faculty;
 

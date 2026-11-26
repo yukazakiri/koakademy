@@ -186,6 +186,10 @@ final readonly class SettingsShareService
             return $permissions;
         }
 
+        if ($user->roles->isNotEmpty()) {
+            return $permissions;
+        }
+
         $userRoleValue = $user->role instanceof \App\Enums\UserRole
             ? $user->role->value
             : $user->role;

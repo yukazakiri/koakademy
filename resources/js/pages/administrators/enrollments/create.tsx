@@ -65,6 +65,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { EnrollmentPeriodSummary } from "./types";
 import { AssessmentDiffRail } from "./workbench/assessment-diff-rail";
 import { GuardBanners } from "./workbench/guard-banners";
+import { QuickCreateStudentDrawer } from "./workbench/quick-create-student-drawer";
 import { ScheduleMatrixPanel } from "./workbench/schedule-matrix-panel";
 import { SubjectLoadRow } from "./workbench/subject-load-row";
 import { SubjectPickerPanel } from "./workbench/subject-picker-panel";
@@ -107,6 +108,7 @@ export default function AdministratorEnrollmentCreate(
         number | null
     >(null);
     const [unsavedDialogOpen, setUnsavedDialogOpen] = useState(false);
+    const [quickCreateOpen, setQuickCreateOpen] = useState(false);
 
     // Support direct ?student_id=<id> and ?from_enrollment=<id> ("Re-enroll Next Term") deep links
     const preselectedStudentRef = useRef(false);
@@ -480,13 +482,25 @@ export default function AdministratorEnrollmentCreate(
                                                     </FrameDescription>
                                                 </div>
                                             </div>
-                                            <Badge
-                                                variant="secondary"
-                                                size="xs"
-                                                className="tabular-nums"
-                                            >
-                                                {draft.studentOptions.length} shown
-                                            </Badge>
+                                            <div className="flex items-center gap-2">
+                                                <Badge
+                                                    variant="secondary"
+                                                    size="xs"
+                                                    className="tabular-nums"
+                                                >
+                                                    {draft.studentOptions.length} shown
+                                                </Badge>
+                                                <Button
+                                                    type="button"
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => setQuickCreateOpen(true)}
+                                                    className="h-7 gap-1.5 px-2.5 text-xs active:scale-[0.97]"
+                                                >
+                                                    <Plus className="size-3.5" />
+                                                    Quick-Create Student
+                                                </Button>
+                                            </div>
                                         </FrameHeader>
 
                                         <FramePanel className="min-w-0 p-0">
@@ -537,7 +551,7 @@ export default function AdministratorEnrollmentCreate(
                                                         <span>Loading students…</span>
                                                     </div>
                                                 ) : draft.studentOptions.length === 0 ? (
-                                                    <div className="flex flex-col items-center justify-center gap-1 px-4 py-8 text-center">
+                                                    <div className="flex flex-col items-center justify-center gap-2 px-4 py-8 text-center">
                                                         <p className="text-xs font-medium text-foreground">
                                                             No matching students found
                                                         </p>
@@ -546,6 +560,16 @@ export default function AdministratorEnrollmentCreate(
                                                                 ? `No student records matched "${draft.studentSearch}".`
                                                                 : "Type a student name or ID number to search."}
                                                         </p>
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            variant="outline"
+                                                            onClick={() => setQuickCreateOpen(true)}
+                                                            className="mt-1 h-8 gap-1.5 text-xs"
+                                                        >
+                                                            <Plus className="size-3.5" />
+                                                            Quick-Create Walk-In Student
+                                                        </Button>
                                                     </div>
                                                 ) : (
                                                     draft.studentOptions.map(
@@ -2009,6 +2033,17 @@ export default function AdministratorEnrollmentCreate(
                 unsavedDialogOpen={unsavedDialogOpen}
                 onUnsavedDialogOpenChange={setUnsavedDialogOpen}
                 onConfirmLeave={handleConfirmLeave}
+            />
+
+            {/* Precision Ledger: Zero-Context-Switch Walk-In Student Quick-Create Drawer */}
+            <QuickCreateStudentDrawer
+                open={quickCreateOpen}
+                onOpenChange={setQuickCreateOpen}
+                initialSearch={draft.studentSearch}
+                courses={props.courses ?? []}
+                onStudentCreated={(createdStudent) => {
+                    void draft.handleSelectStudent(createdStudent);
+                }}
             />
         </AdminLayout>
     );

@@ -1,5 +1,5 @@
-import { useForm } from "@inertiajs/react";
-import { AlertCircle, BadgeCheck, CheckCircle2, Loader2, Mail, UserCheck } from "lucide-react";
+import { router, useForm } from "@inertiajs/react";
+import { AlertCircle, BadgeCheck, CheckCircle2, Loader2, LogOut, Mail, UserCheck } from "lucide-react";
 import type { FormEvent } from "react";
 
 import { AuthLayout } from "@/layouts/auth-layout";
@@ -124,6 +124,19 @@ export default function FacultyVerifyPage({ email = "", errors = {}, status, war
 
                     <div className="rounded-xl border border-border/60 bg-muted/30 p-3 text-center text-xs text-muted-foreground">
                         Need assistance? Please contact your institution&apos;s IT Helpdesk or visit the Registrar&apos;s Office.
+                    </div>
+
+                    <div className="flex justify-center pt-1">
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => router.post("/logout")}
+                            className="text-muted-foreground hover:text-foreground gap-1.5 text-xs"
+                        >
+                            <LogOut className="size-3.5" />
+                            Sign out &amp; switch account
+                        </Button>
                     </div>
                 </FieldGroup>
             </form>

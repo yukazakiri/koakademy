@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use App\Models\GeneralSetting;
 use App\Settings\SiteSettings;
 use Illuminate\Support\Facades\Storage;
 use Throwable;
@@ -16,7 +15,7 @@ final readonly class SchoolBrandingService
     /** @return array{name: string, address: string, logo: string, logo_embedded: string, tagline: string, email: string, phone: string} */
     public function resolve(): array
     {
-        $settings = GeneralSetting::query()->first();
+        $settings = app(GeneralSettingsService::class)->getGlobalSettingsModel();
         $storedLogo = $settings?->school_portal_logo ?: $this->siteSettings->getLogo();
         $logo = $this->resolveLogo($storedLogo);
 

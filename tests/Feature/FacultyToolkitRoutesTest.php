@@ -9,6 +9,7 @@ use App\Features\Toggles\FacultyInbox;
 use App\Features\Toggles\FacultyInsights;
 use App\Features\Toggles\FacultyOfficeHours;
 use App\Features\Toggles\FacultyRequestsApprovals;
+use App\Models\Faculty;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Pennant\Feature;
@@ -26,6 +27,16 @@ it('serves faculty toolkit sidebar pages', function (string $path, string $title
     ]);
 
     actingAs($user);
+
+    if ($feature === FacultyAtRiskAlerts::class) {
+        Faculty::factory()->create(['email' => $user->email, 'faculty_id_number' => $user->faculty_id_number]);
+
+        get($path)->assertOk()->assertInertia(fn (Assert $page): Assert => $page
+            ->component('faculty/at-risk-alerts/index')
+        );
+
+        return;
+    }
 
     get($path)
         ->assertOk()

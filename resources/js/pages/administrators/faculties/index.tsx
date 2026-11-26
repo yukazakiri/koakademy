@@ -121,6 +121,7 @@ export default function AdministratorFacultiesIndex({ user, filament, stats, seg
     const [activeFilters, setActiveFilters] = useState<Filter[]>([]);
     const [selectedRows, setSelectedRows] = useState<FacultyRow[]>([]);
     const [bulkStatus, setBulkStatus] = useState("active");
+    const [isProvisioningPortals, setIsProvisioningPortals] = useState(false);
     const [viewMode, setViewMode] = useState<"table" | "grid">("table");
     const [deleteModal, setDeleteModal] = useState<{ open: boolean; id: string; name: string }>({
         open: false,
@@ -302,6 +303,31 @@ export default function AdministratorFacultiesIndex({ user, filament, stats, seg
                 onSuccess: () => {
                     toast.success(`Updated status for ${selectedRows.length} faculty`);
                     setSelectedRows([]);
+                },
+            },
+        );
+    };
+
+    const applyBulkProvisionPortals = () => {
+        if (selectedRows.length === 0 || isProvisioningPortals) return;
+
+        setIsProvisioningPortals(true);
+        router.post(
+            "/administrators/faculties/bulk/portal-accounts",
+            {
+                faculty_ids: selectedRows.map((row) => row.id),
+                send_activation_email: true,
+            },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setSelectedRows([]);
+                },
+                onError: () => {
+                    toast.error("Failed to provision portal accounts for selected faculty.");
+                },
+                onFinish: () => {
+                    setIsProvisioningPortals(false);
                 },
             },
         );
@@ -855,6 +881,17 @@ export default function AdministratorFacultiesIndex({ user, filament, stats, seg
 
                                 <Button size="sm" className="h-8 text-xs" onClick={applyBulkStatus}>
                                     Apply Status
+                                </Button>
+
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    className="h-8 text-xs"
+                                    disabled={isProvisioningPortals}
+                                    onClick={applyBulkProvisionPortals}
+                                >
+                                    <KeyRound className="mr-1 h-3.5 w-3.5" />
+                                    {isProvisioningPortals ? "Provisioning..." : "Provision Portal"}
                                 </Button>
 
                                 <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => exportToCSV(selectedRows)}>

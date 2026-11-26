@@ -12,8 +12,10 @@ use App\Models\Event;
 use App\Models\Faculty;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Modules\Announcement\Services\AnnouncementDataService;
 use Spatie\Activitylog\Models\Activity;
+use Throwable;
 
 final class FacultyPortalData
 {
@@ -43,13 +45,26 @@ final class FacultyPortalData
             return $defaults;
         }
 
-        $faculty = Faculty::where('email', $user->email)->first();
+        $hasValidRecordUuid = filled($user->record_id) && \Illuminate\Support\Str::isUuid((string) $user->record_id);
+        $facultyQuery = Faculty::query()
+            ->where(function ($query) use ($user, $hasValidRecordUuid): void {
+                if ($hasValidRecordUuid) {
+                    $query->where('id', (string) $user->record_id);
+                }
+                $query->orWhereRaw('LOWER(email) = ?', [mb_strtolower(mb_trim((string) $user->email))]);
+            });
+
+        if ($hasValidRecordUuid) {
+            $facultyQuery->orderByRaw('CASE WHEN id = ? THEN 0 ELSE 1 END', [(string) $user->record_id]);
+        }
+
+        $faculty = $facultyQuery->first();
 
         if (! $faculty) {
             return $defaults;
         }
 
-        $classesQuery = $faculty->classes()
+        $classes = $faculty->classes()
             ->currentAcademicPeriod()
             ->with([
                 'subject',
@@ -58,23 +73,24 @@ final class FacultyPortalData
                 'Room',
                 'schedules.room',
             ])
-            ->withCount('class_enrollments');
+            ->withCount('class_enrollments')
+            ->get();
 
-        $activeClassesCount = $classesQuery->clone()->count();
+        $activeClassesCount = $classes->count();
 
-        $facultyClassIds = $classesQuery->clone()->pluck('id');
+        $facultyClassIds = $classes->pluck('id');
 
-        $totalStudentsCount = ClassEnrollment::whereIn(
-            'class_id',
-            $facultyClassIds
-        )
-            ->distinct('student_id')
-            ->count();
+        $totalStudentsCount = $facultyClassIds->isNotEmpty()
+            ? ClassEnrollment::whereIn(
+                'class_id',
+                $facultyClassIds
+            )
+                ->distinct('student_id')
+                ->count()
+            : 0;
 
-        $upcomingClasses = $classesQuery
-            ->clone()
-            ->limit(5)
-            ->get()
+        $upcomingClasses = $classes
+            ->take(5)
             ->map(function ($class): array {
                 $firstSubject = $class->subjects->first();
 
@@ -97,9 +113,7 @@ final class FacultyPortalData
             ->values()
             ->all();
 
-        $weeklyEntriesByDay = $classesQuery
-            ->clone()
-            ->get()
+        $weeklyEntriesByDay = $classes
             ->flatMap(function ($class) {
                 $firstSubject = $class->subjects->first();
 
@@ -148,34 +162,68 @@ final class FacultyPortalData
             'entries' => $weeklyEntriesByDay->get($currentDayName, collect())->values()->all(),
         ];
 
+        $totalWeeklyMinutes = $weeklyEntriesByDay
+            ->flatten(1)
+            ->sum(function (array $entry): int {
+                $start = $entry['start_time_24h'] ?? null;
+                $end = $entry['end_time_24h'] ?? null;
+                if (! is_string($start) || ! is_string($end) || $start === '' || $end === '') {
+                    return 0;
+                }
+
+                try {
+                    $diff = Carbon::createFromFormat('H:i', $start)->diffInMinutes(Carbon::createFromFormat('H:i', $end), false);
+
+                    return $diff > 0 ? (int) $diff : 0;
+                } catch (Throwable) {
+                    return 0;
+                }
+            });
+
+        $totalWeeklyHours = round($totalWeeklyMinutes / 60, 1);
+        $formattedWeeklyHours = fmod($totalWeeklyHours, 1.0) === 0.0
+            ? (string) (int) $totalWeeklyHours
+            : number_format($totalWeeklyHours, 1);
+
+        $pendingActionItems = $facultyClassIds->isNotEmpty()
+            ? ClassPost::query()
+                ->whereIn('class_id', $facultyClassIds)
+                ->where(fn ($q) => $q->whereNull('status')->orWhere('status', '!=', 'done'))
+                ->count()
+            : 0;
+
+        $attendanceSessionsCount = $facultyClassIds->isNotEmpty()
+            ? ClassAttendanceSession::query()->whereIn('class_id', $facultyClassIds)->count()
+            : 0;
+
         $stats = [
             [
                 'label' => 'Active Classes',
                 'value' => $activeClassesCount,
                 'icon' => 'book',
-                'trend' => '+2',
-                'trendDirection' => 'up',
+                'trend' => $activeClassesCount > 0 ? 'Current term' : 'No classes',
+                'trendDirection' => 'neutral',
             ],
             [
                 'label' => 'Total Students',
                 'value' => $totalStudentsCount,
                 'icon' => 'users',
-                'trend' => '+5%',
-                'trendDirection' => 'up',
-            ],
-            [
-                'label' => 'Total Hours',
-                'value' => '24',
-                'icon' => 'clock',
-                'trend' => '0%',
+                'trend' => $activeClassesCount > 0 ? 'Across '.$activeClassesCount.' classes' : '0 enrolled',
                 'trendDirection' => 'neutral',
             ],
             [
-                'label' => 'Performance',
-                'value' => '98%',
+                'label' => 'Weekly Hours',
+                'value' => $formattedWeeklyHours.'h',
+                'icon' => 'clock',
+                'trend' => $todaySchedule['entries'] !== [] ? count($todaySchedule['entries']).' today' : 'None today',
+                'trendDirection' => 'neutral',
+            ],
+            [
+                'label' => 'Open Action Items',
+                'value' => $pendingActionItems,
                 'icon' => 'activity',
-                'trend' => '+1%',
-                'trendDirection' => 'up',
+                'trend' => $attendanceSessionsCount.' attendance logs',
+                'trendDirection' => $pendingActionItems > 0 ? 'up' : 'neutral',
             ],
         ];
 
@@ -185,7 +233,7 @@ final class FacultyPortalData
         $announcements = app(AnnouncementDataService::class)->getDashboardItems();
 
         // Get attendance chart data for the dashboard
-        $attendanceChart = self::getAttendanceChartData($classesQuery->clone()->get());
+        $attendanceChart = self::getAttendanceChartData($classes);
 
         // Get calendar events for the dashboard widget
         $calendarEvents = self::getCalendarEvents();
@@ -193,6 +241,9 @@ final class FacultyPortalData
         return [
             'stats' => $stats,
             'upcoming_classes' => $upcomingClasses,
+            'total_active_classes' => $activeClassesCount,
+            'total_students' => $totalStudentsCount,
+            'pending_action_items' => $pendingActionItems,
             'recent_activity' => $recentActivity,
             'announcements' => $announcements,
             'weekly_schedule' => $weeklySchedule,
@@ -210,8 +261,20 @@ final class FacultyPortalData
      */
     private static function getRecentActivities($facultyClassIds): array
     {
+        if ($facultyClassIds->isEmpty()) {
+            return [];
+        }
+
         // Query activities related to faculty's classes
         $activities = Activity::query()
+            ->with([
+                'subject' => static function (MorphTo $morphTo): void {
+                    $morphTo->morphWith([
+                        ClassPost::class => ['class'],
+                        ClassEnrollment::class => ['student', 'class'],
+                    ]);
+                },
+            ])
             ->whereIn('log_name', ['classes', 'class_posts', 'class_enrollments'])
             ->where(function ($query) use ($facultyClassIds): void {
                 // Activities on Classes owned by this faculty
@@ -470,6 +533,13 @@ final class FacultyPortalData
     private static function getAttendanceChartData($classes): array
     {
         $classIds = $classes->pluck('id');
+
+        if ($classIds->isEmpty()) {
+            return [
+                'chart_data' => [],
+                'classes' => [],
+            ];
+        }
 
         // Get attendance sessions for the last 3 months (to support all time range filters)
         $threeMonthsAgo = Carbon::now()->subMonths(3)->startOfDay();

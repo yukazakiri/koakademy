@@ -256,6 +256,7 @@ export interface EnrollmentWorkbenchPageProps {
         availableAcademicYears: Record<string, string>;
     };
     discounts: DiscountOption[];
+    courses?: Array<{ id: number; code: string; title: string }>;
     prefill?: {
         source_enrollment_id: number;
         student_id: number;

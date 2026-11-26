@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Ai;
 
 use App\Models\GeneralSetting;
+use App\Services\GeneralSettingsService;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -97,7 +98,7 @@ final class AiSettingsService
      */
     public function get(): array
     {
-        $stored = GeneralSetting::query()->first()?->ai_settings;
+        $stored = app(GeneralSettingsService::class)->getGlobalSettingsModel()?->ai_settings;
 
         return $this->normalize(is_array($stored) ? $stored : []);
     }

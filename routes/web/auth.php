@@ -6,6 +6,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\FacultyVerificationController;
 use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\SignupEmailLookupController;
+use App\Http\Controllers\SignupIdentifierRecoveryController;
 use App\Http\Controllers\SignupOtpController;
 use App\Http\Controllers\SocialAuthController;
 use Illuminate\Support\Facades\Auth;
@@ -79,6 +80,7 @@ Route::middleware('guest')->group(function (): void {
     Route::post('/signup/cancel-social', [AuthController::class, 'cancelSocialSignup'])->name('signup.cancel-social');
     Route::post('/signup/email-lookup', SignupEmailLookupController::class)->middleware('throttle:signup-email-lookup')->name('signup.email-lookup');
     Route::post('/signup/send-otp', [SignupOtpController::class, 'store'])->middleware('throttle:signup-send-otp')->name('signup.send-otp');
+    Route::post('/signup/recover-identifier', SignupIdentifierRecoveryController::class)->middleware('throttle:signup-send-otp')->name('signup.recover-identifier');
 
     // Password reset
     Route::get('/forgot-password', [PasswordResetController::class, 'create'])->name('password.request');

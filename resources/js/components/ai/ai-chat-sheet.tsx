@@ -25,6 +25,7 @@ import {
     SheetTitle,
     SheetTrigger,
 } from "@/components/ui/sheet";
+import { isAdministratorPortalRole } from "@/lib/portal-role";
 import { cn } from "@/lib/utils";
 import type { FeatureFlags } from "@/types/feature-flags";
 import { usePage } from "@inertiajs/react";
@@ -214,16 +215,20 @@ export function AiChatSheet({
         }
     }, [messages, isLoading, lastError]);
 
-    // Fetch available model options when sheet is opened.
+    const pageProps = page.props as { auth?: { user?: { role?: string } }; user?: { role?: string } };
+    const pageAuthUser = pageProps.auth?.user ?? pageProps.user;
+    const isAdministrator = isAdministratorPortalRole(pageAuthUser?.role);
+
+    // Fetch available model options when sheet is opened (admin-only endpoint).
     // Priority: saved preference > server global default > Default badge > primary > first.
     React.useEffect(() => {
-        if (effectiveOpen && availableModels.length === 0) {
+        if (effectiveOpen && isAdministrator && availableModels.length === 0) {
             fetch(analyticsSummary.url(), {
                 headers: { "X-Requested-With": "XMLHttpRequest" },
             })
-                .then((res) => res.json())
+                .then((res) => (res.ok ? res.json() : null))
                 .then((data) => {
-                    if (Array.isArray(data.models) && data.models.length > 0) {
+                    if (data && Array.isArray(data.models) && data.models.length > 0) {
                         const mapped: ModelOption[] = data.models.map((m: Record<string, unknown>) => ({
                             id: String(m.id || ""),
                             name: String(m.name || m.id || ""),
@@ -251,7 +256,7 @@ export function AiChatSheet({
                 })
                 .catch(() => {});
         }
-    }, [effectiveOpen, availableModels.length, selectedModel]);
+    }, [effectiveOpen, isAdministrator, availableModels.length, selectedModel]);
 
     const activeModelName = React.useMemo(() => {
         const found = availableModels.find((m) => m.id === selectedModel);
@@ -584,7 +589,7 @@ export function AiChatSheet({
                                                 </div>
                                             </PopoverContent>
                                         </Popover>
-                                    ) : (
+                                    ) : isAdministrator ? (
                                         <a
                                             href="/administrators/system-management/ai"
                                             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[11px] font-medium hover:bg-amber-500/15 transition-colors"
@@ -592,6 +597,11 @@ export function AiChatSheet({
                                             <Cpu className="size-3 text-amber-500" />
                                             <span>Configure API Key &rarr;</span>
                                         </a>
+                                    ) : (
+                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border/60 bg-muted/40 text-muted-foreground text-[11px] font-medium">
+                                            <Cpu className="size-3" />
+                                            <span>Campus AI Ready</span>
+                                        </span>
                                     )}
                                 </div>
 

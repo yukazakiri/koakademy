@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Features\Toggles\StudentInformationUpdates;
-use App\Models\GeneralSetting;
 use App\Models\Student;
+use App\Models\StudentEnrollment;
 use App\Models\User;
 use App\Services\DigitalIdCardService;
 use App\Services\GeneralSettingsService;
 use App\Services\GradeReleaseService;
+use App\Services\StudentHoldService;
 use App\Services\StudentProfileCompletionService;
 use DateTimeInterface;
 use Illuminate\Http\Request;
@@ -26,19 +27,27 @@ final class StudentDashboardController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        // Get the student record linked to this user
-        $student = Student::where('email', $user->email)
-            ->orWhere('user_id', $user->id)
+        // Prefer direct user_id binding, falling back ONLY to unclaimed student records matching email
+        $student = Student::query()
+            ->with(['Course', 'shsStrand', 'DocumentLocation'])
+            ->where(function ($query) use ($user): void {
+                $query->where('user_id', $user->id)
+                    ->orWhere(function ($unclaimed) use ($user): void {
+                        $unclaimed->whereNull('user_id')
+                            ->whereRaw('LOWER(email) = ?', [mb_strtolower(mb_trim((string) $user->email))]);
+                    });
+            })
+            ->orderByRaw('CASE WHEN user_id = ? THEN 0 ELSE 1 END', [$user->id])
             ->first();
 
         $generalSettingsService = app(GeneralSettingsService::class);
-        $settings = GeneralSetting::query()->first();
+        $settings = $generalSettingsService->getGlobalSettingsModel();
 
         // Default data structure
         $studentData = [
             'student_id' => $student?->student_id ?? 'N/A',
             'student_name' => $student?->full_name ?? $user->name,
-            'course' => $student?->Course?->name ?? null,
+            'course' => $student?->Course?->title ?? $student?->Course?->name ?? $student?->shsStrand?->name ?? null,
             'academic_year' => $student?->academic_year ?? 1,
             'semester' => $settings?->semester ?? 1,
             'school_year' => $generalSettingsService->getCurrentSchoolYearString(),
@@ -48,6 +57,9 @@ final class StudentDashboardController extends Controller
             'tuition_balance' => 0,
             'clearance_status' => null,
             'grade_clearance_required' => app(GradeReleaseService::class)->requiresClearance(),
+            'active_holds' => [],
+            'enrollment_journey' => null,
+            'document_summary' => null,
         ];
 
         if ($student) {
@@ -103,6 +115,61 @@ final class StudentDashboardController extends Controller
             $studentData['clearance_status'] = $settings !== null
                 ? $gradeReleases->isClearedForPeriod($student, $settings->getSchoolYearString(), (int) $settings->semester)
                 : null;
+
+            // Surface active administrative holds so students can resolve blockers proactively
+            $studentData['active_holds'] = app(StudentHoldService::class)
+                ->activeHoldsForStudent((int) $student->id)
+                ->map(fn ($hold): array => [
+                    'id' => $hold->id,
+                    'office' => $hold->office,
+                    'title' => $hold->title ?? ucfirst(str_replace('_', ' ', (string) $hold->office)).' Hold',
+                    'reason' => $hold->reason,
+                    'severity' => $hold->severity ?? 'blocking',
+                    'blocks_enrollment' => (bool) ($hold->blocks_enrollment ?? true),
+                    'placed_at' => $hold->placed_at?->toDateString(),
+                ])
+                ->values()
+                ->all();
+
+            // Surface latest enrollment pipeline status & document completeness for the student journey tracker
+            $latestEnrollment = StudentEnrollment::query()
+                ->where('student_id', $student->id)
+                ->latest('created_at')
+                ->first();
+
+            $docLocation = $student->DocumentLocation;
+            $trackedDocFields = [
+                'birth_certificate' => 'Birth Certificate',
+                'form_138' => 'Form 138 / Report Card',
+                'good_moral_cert' => 'Good Moral Certificate',
+                'picture_1x1' => '1x1 ID Photo',
+            ];
+            $uploadedDocs = 0;
+            $missingDocs = [];
+            foreach ($trackedDocFields as $field => $label) {
+                $val = $docLocation?->getAttribute($field);
+                if (is_string($val) && mb_trim($val) !== '') {
+                    $uploadedDocs++;
+                } else {
+                    $missingDocs[] = $label;
+                }
+            }
+
+            $studentData['document_summary'] = [
+                'uploaded' => $uploadedDocs,
+                'total' => count($trackedDocFields),
+                'missing' => $missingDocs,
+            ];
+
+            $studentData['enrollment_journey'] = [
+                'student_status' => is_object($student->status) ? $student->status->value : (string) ($student->status ?? 'enrolled'),
+                'latest_status' => $latestEnrollment?->status,
+                'school_year' => $latestEnrollment?->school_year ?? $studentData['school_year'],
+                'semester' => $latestEnrollment?->semester ?? $studentData['semester'],
+                'has_current_enrollment' => $latestEnrollment !== null
+                    && $latestEnrollment->school_year === $studentData['school_year']
+                    && (int) $latestEnrollment->semester === (int) $studentData['semester'],
+            ];
         }
 
         $studentData['announcements'] = app(AnnouncementDataService::class)->getDashboardItems();
@@ -158,44 +225,54 @@ final class StudentDashboardController extends Controller
      */
     private function formatSchedule(mixed $class): string
     {
-        // Try to get schedule from relationship first
-        if (method_exists($class, 'Schedule') && $class->Schedule()->exists()) {
-            $schedules = $class->Schedule;
+        // Reuse eager-loaded schedules relationship first to avoid per-class N+1 queries
+        $schedules = null;
 
-            if ($schedules->isNotEmpty()) {
-                // Group by time to combine days (e.g. Mon/Wed 10:00-11:30)
-                $groups = $schedules->groupBy(function ($sched): string {
-                    $start = $sched->start_time instanceof DateTimeInterface ? $sched->start_time->format('H:i') : mb_substr((string) $sched->start_time, 0, 5);
-                    $end = $sched->end_time instanceof DateTimeInterface ? $sched->end_time->format('H:i') : mb_substr((string) $sched->end_time, 0, 5);
-
-                    return "$start-$end";
-                });
-
-                $parts = [];
-                foreach ($groups as $scheds) {
-                    // Collect unique days
-                    $days = $scheds->pluck('day_of_week')
-                        ->map(
-                            // Standardize to 3 letters: Mon, Tue, Wed
-
-                            fn ($day): string => ucfirst(mb_strtolower(mb_substr((string) $day, 0, 3))))
-                        ->unique()
-                        // Sort days: Mon=1, Tue=2, etc. for nice display order
-                        ->sortBy(fn ($day): string => date('N', strtotime((string) $day)))
-                        ->values()
-                        ->all();
-
-                    $dayStr = implode('/', $days);
-
-                    $first = $scheds->first();
-                    $startTime = $first->start_time instanceof DateTimeInterface ? $first->start_time->format('g:i A') : date('g:i A', strtotime((string) $first->start_time));
-                    $endTime = $first->end_time instanceof DateTimeInterface ? $first->end_time->format('g:i A') : date('g:i A', strtotime((string) $first->end_time));
-
-                    $parts[] = "$dayStr $startTime - $endTime";
-                }
-
-                return implode(', ', $parts);
+        if (is_object($class) && method_exists($class, 'relationLoaded')) {
+            if ($class->relationLoaded('schedules')) {
+                $schedules = $class->schedules;
+            } elseif ($class->relationLoaded('Schedule')) {
+                $schedules = $class->Schedule;
+            } elseif (method_exists($class, 'schedules')) {
+                $schedules = $class->schedules;
+            } elseif (method_exists($class, 'Schedule')) {
+                $schedules = $class->Schedule;
             }
+        }
+
+        if ($schedules !== null && $schedules->isNotEmpty()) {
+            // Group by time to combine days (e.g. Mon/Wed 10:00-11:30)
+            $groups = $schedules->groupBy(function ($sched): string {
+                $start = $sched->start_time instanceof DateTimeInterface ? $sched->start_time->format('H:i') : mb_substr((string) $sched->start_time, 0, 5);
+                $end = $sched->end_time instanceof DateTimeInterface ? $sched->end_time->format('H:i') : mb_substr((string) $sched->end_time, 0, 5);
+
+                return "$start-$end";
+            });
+
+            $parts = [];
+            foreach ($groups as $scheds) {
+                // Collect unique days
+                $days = $scheds->pluck('day_of_week')
+                    ->map(
+                        // Standardize to 3 letters: Mon, Tue, Wed
+
+                        fn ($day): string => ucfirst(mb_strtolower(mb_substr((string) $day, 0, 3))))
+                    ->unique()
+                    // Sort days: Mon=1, Tue=2, etc. for nice display order
+                    ->sortBy(fn ($day): string => date('N', strtotime((string) $day)))
+                    ->values()
+                    ->all();
+
+                $dayStr = implode('/', $days);
+
+                $first = $scheds->first();
+                $startTime = $first->start_time instanceof DateTimeInterface ? $first->start_time->format('g:i A') : date('g:i A', strtotime((string) $first->start_time));
+                $endTime = $first->end_time instanceof DateTimeInterface ? $first->end_time->format('g:i A') : date('g:i A', strtotime((string) $first->end_time));
+
+                $parts[] = "$dayStr $startTime - $endTime";
+            }
+
+            return implode(', ', $parts);
         }
 
         // Legacy Fallback

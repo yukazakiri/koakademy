@@ -16,7 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { studentDirectoryReturnUrl } from "@/lib/student-directory-return";
 import { index as studentsIndex } from "@/routes/administrators/students";
 import { Head, Link, router, useForm, usePage } from "@inertiajs/react";
-import { ClipboardList, FileText, Trash2 } from "lucide-react";
+import { ClipboardList, FileText, History, Trash2 } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -312,6 +312,13 @@ export default function AdministratorStudentShow({ user, student, options }: Stu
                             Current Enrollment
                         </Link>
 
+                        <Link
+                            href={`/administrators/audit-logs?subject_type=${encodeURIComponent("App\\Models\\Student")}&subject_id=${student.id}&range=all`}
+                            className={buttonVariants({ variant: "outline", className: "gap-2" })}
+                        >
+                            <History className="h-4 w-4" />
+                            Audit Trail
+                        </Link>
                         <Link
                             href={route("administrators.students.documents.index", student.id)}
                             className={buttonVariants({ variant: "secondary", className: "gap-2" })}

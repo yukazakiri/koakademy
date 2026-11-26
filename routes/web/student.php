@@ -7,6 +7,7 @@ use App\Http\Controllers\DigitalIdCardController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\StatementOfAccountIssuanceController;
 use App\Http\Controllers\StudentDashboardController;
+use App\Http\Controllers\StudentDocumentController;
 use App\Http\Controllers\StudentGlobalSearchController;
 use App\Http\Controllers\StudentGlobalSearchResultsController;
 use App\Http\Controllers\StudentTuitionUpdateRequestController;
@@ -101,4 +102,11 @@ Route::middleware(['auth', 'student.only', 'ensure.feature'])->prefix('student')
     Route::get('/id-card', [DigitalIdCardController::class, 'show'])->name('id-card.show');
     Route::post('/id-card/refresh', [DigitalIdCardController::class, 'refresh'])->name('id-card.refresh');
     Route::get('/id-card/view', [DigitalIdCardController::class, 'index'])->name('id-card.index');
+
+    // Self-Service Registrar Document Vault
+    Route::get('/documents', [StudentDocumentController::class, 'index'])->name('documents.index');
+    Route::post('/documents', [StudentDocumentController::class, 'store'])
+        ->middleware('throttle:20,1')
+        ->name('documents.store');
+    Route::get('/documents/{documentType}/download', [StudentDocumentController::class, 'download'])->name('documents.download');
 });

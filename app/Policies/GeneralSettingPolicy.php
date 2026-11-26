@@ -241,13 +241,13 @@ final class GeneralSettingPolicy
             return true;
         }
 
-        $permissions = $user->getAllPermissions()->pluck('name');
+        $permissions = $user->getAllPermissionNames();
         $updatePermission = SystemManagementPermissions::updatePermission($section);
-        if ($permissions->contains(SystemManagementPermissions::viewPermission($section))) {
+        if (in_array(SystemManagementPermissions::viewPermission($section), $permissions, true)) {
             return true;
         }
 
-        return $updatePermission !== null && $permissions->contains($updatePermission);
+        return $updatePermission !== null && in_array($updatePermission, $permissions, true);
     }
 
     private function canUpdateSection(User $user, string $section): bool
@@ -262,7 +262,7 @@ final class GeneralSettingPolicy
             return true;
         }
 
-        return $user->getAllPermissions()->pluck('name')->contains($updatePermission);
+        return in_array($updatePermission, $user->getAllPermissionNames(), true);
     }
 
     private function hasFullSystemManagementAccess(User $user): bool

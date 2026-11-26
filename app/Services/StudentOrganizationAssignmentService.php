@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\StudentStatus;
 use App\Enums\StudentType;
 use App\Models\Student;
 use App\Models\User;
@@ -23,11 +24,46 @@ final class StudentOrganizationAssignmentService
         return Student::withoutSchoolScope()
             ->whereRaw('LOWER(email) = ?', [$this->normalizeEmail($email)])
             ->whereIn('student_type', array_column(StudentType::cases(), 'value'))
+            ->whereIn('status', StudentStatus::registerableValues())
             ->whereNotNull('school_id')
             ->whereHas('school', fn ($query) => $query->where('is_active', true))
             ->with(['Course' => fn ($query) => $query->withoutSchoolScope()])
             ->orderBy('id')
             ->get();
+    }
+
+    /**
+     * Detect unambiguous student_type and expected identifier field for a set of lookup candidates.
+     * Deliberately excludes internal database primary keys from unauthenticated responses.
+     *
+     * @param  Collection<int, Student>  $students
+     * @return array{student_type: string|null, identifier_type: 'student_id'|'lrn'}
+     */
+    public function signupHints(Collection $students): array
+    {
+        $student = $students->first();
+        if (! $student instanceof Student) {
+            return [
+                'student_type' => null,
+                'identifier_type' => 'student_id',
+            ];
+        }
+
+        $config = app(StudentConfigurationService::class);
+        $expectedFields = $students
+            ->map(function (Student $candidate) use ($config): string {
+                $usesExternal = $config->usesExternal($candidate->student_type->value, $candidate->school_id)
+                    && (string) $candidate->student_id === (string) $candidate->lrn;
+
+                return $usesExternal ? 'lrn' : 'student_id';
+            })
+            ->unique()
+            ->values();
+
+        return [
+            'student_type' => $student->student_type->value,
+            'identifier_type' => $expectedFields->count() === 1 && $expectedFields->first() === 'lrn' ? 'lrn' : 'student_id',
+        ];
     }
 
     /**
@@ -48,6 +84,7 @@ final class StudentOrganizationAssignmentService
         $query = Student::withoutSchoolScope()
             ->whereRaw('LOWER(email) = ?', [$this->normalizeEmail($email)])
             ->where('student_type', $studentType->value)
+            ->whereIn('status', StudentStatus::registerableValues())
             ->where(function ($query) use ($identifier): void {
                 $query->where('student_id', $identifier)->orWhere('lrn', $identifier);
             })

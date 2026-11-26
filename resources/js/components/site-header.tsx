@@ -27,7 +27,7 @@ import { normalizePortalRole } from "@/lib/portal-role";
 import { User } from "@/types/user";
 import { Link, router, usePage } from "@inertiajs/react";
 import { IconSearch } from "@tabler/icons-react";
-import { ChevronDown, LogOut, Sparkles, UserRound } from "lucide-react";
+import { Bell, ChevronDown, LogOut, Sparkles, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AiChatSheet } from "@/components/ai";
 
@@ -36,8 +36,9 @@ interface SiteHeaderProps {
 }
 
 export function SiteHeader({ user }: SiteHeaderProps) {
-    const { props, url } = usePage<{ settings: SemesterSelectorProps }>();
-    const { settings } = props;
+    const { props, url } = usePage<{ settings?: SemesterSelectorProps; notifications?: { unread_count?: number } }>();
+    const { settings, notifications } = props;
+    const unreadNotifications = notifications?.unread_count ?? 0;
     const [shortcutHint, setShortcutHint] = useState("Ctrl K");
     const [showLogoutDialog, setShowLogoutDialog] = useState(false);
     const isMobile = useIsMobile();
@@ -59,32 +60,30 @@ export function SiteHeader({ user }: SiteHeaderProps) {
     const headerTitle = (() => {
         const path = url.split("?")[0];
 
-        if (path.includes("/classes/") && isStudent) {
-            return "Class Detail";
-        }
-
-        if (path.includes("/classes")) {
-            return isStudent ? "My Academics" : "Classes";
-        }
-
-        if (path.includes("/tuition")) {
-            return "Tuition & Fees";
-        }
-
-        if (path.includes("/schedule")) {
-            return "Class Schedule";
-        }
-
-        if (path.includes("/announcements")) {
-            return "Announcements";
-        }
-
-        if (path.includes("/resources")) {
-            return "Online Resources";
-        }
+        if (path.includes("/classes/") && isStudent) return "Class Detail";
+        if (path.includes("/classes/")) return "Class Workspace";
+        if (path.includes("/classes")) return isStudent ? "My Academics" : "My Classes";
+        if (path.includes("/tuition")) return "Tuition & Fees";
+        if (path.includes("/schedule")) return "Class Schedule";
+        if (path.includes("/announcements")) return "Announcements";
+        if (path.includes("/resources")) return "Online Resources";
+        if (path.includes("/action-center")) return "Action Center";
+        if (path.includes("/attendance")) return "Attendance";
+        if (path.includes("/grades")) return "Grades";
+        if (path.includes("/forms")) return "Forms";
+        if (path.includes("/notifications")) return "Notifications";
+        if (path.includes("/profile")) return "Account & Profile";
+        if (path.includes("/help")) return "Help & Support";
+        if (path.includes("/id-card")) return "Digital ID";
 
         return "Dashboard";
     })();
+
+    const searchPlaceholder = isStudent
+        ? "Search classes, schedule, or tuition…"
+        : isFaculty
+          ? "Search classes, students, or tasks…"
+          : "Search classes and students…";
 
     const defaultAgent = isStudent
         ? "student_advisor"
@@ -102,14 +101,41 @@ export function SiteHeader({ user }: SiteHeaderProps) {
                 <button
                     type="button"
                     onClick={() => triggerGlobalCommandPalette()}
-                    className="border-border/60 bg-card/70 text-muted-foreground hover:bg-accent hover:text-accent-foreground ml-2 hidden h-9 w-full max-w-sm items-center gap-2 rounded-lg border px-3 text-left text-sm shadow-sm transition-colors md:flex"
+                    className="border-border/60 bg-card/70 text-muted-foreground hover:bg-accent hover:text-accent-foreground ml-2 hidden h-9 w-full max-w-sm items-center gap-2 rounded-lg border px-3 text-left text-sm shadow-sm transition-colors active:scale-[0.99] md:flex"
                 >
                     <IconSearch className="h-4 w-4" />
-                    <span className="flex-1 truncate">Search classes and students…</span>
-                    <span className="text-muted-foreground text-xs">{shortcutHint}</span>
+                    <span className="flex-1 truncate">{searchPlaceholder}</span>
+                    <span className="text-muted-foreground font-mono text-xs">{shortcutHint}</span>
                 </button>
 
-                <div className="ml-auto flex min-w-0 items-center gap-2">
+                <div className="ml-auto flex min-w-0 items-center gap-1.5 sm:gap-2">
+                    <button
+                        type="button"
+                        onClick={() => triggerGlobalCommandPalette()}
+                        aria-label="Open search"
+                        className="border-border/60 bg-card/70 text-muted-foreground hover:bg-accent hover:text-accent-foreground inline-flex h-9 w-9 items-center justify-center rounded-lg border shadow-xs transition-colors active:scale-95 md:hidden"
+                    >
+                        <IconSearch className="h-4 w-4" />
+                    </button>
+                    {isMobile && (
+                        <Link
+                            href="/notifications"
+                            aria-label="Notifications"
+                            className="border-border/60 bg-card/70 text-muted-foreground hover:bg-accent hover:text-accent-foreground relative inline-flex h-9 w-9 items-center justify-center rounded-lg border shadow-xs transition-colors active:scale-95"
+                        >
+                            <Bell className="size-4" />
+                            {unreadNotifications > 0 && (
+                                <span className="bg-destructive text-destructive-foreground absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 font-mono text-[10px] font-semibold">
+                                    {unreadNotifications > 9 ? "9+" : unreadNotifications}
+                                </span>
+                            )}
+                        </Link>
+                    )}
+                    {settings && (
+                        <div className="hidden xl:block">
+                            <SemesterSelector {...settings} />
+                        </div>
+                    )}
                     <AiChatSheet
                         defaultAgent={defaultAgent}
                         trigger={

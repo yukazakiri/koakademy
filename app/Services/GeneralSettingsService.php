@@ -128,45 +128,13 @@ final class GeneralSettingsService
 
     private ?GeneralSetting $generalSetting = null;
 
+    private bool $generalSettingLoaded = false;
+
     private ?UserSetting $userSetting = null;
 
     private bool $userSettingLoaded = false;
 
-    public function __construct()
-    {
-        try {
-            // Cache only the ID, not the whole model
-            $globalSettingsId = Cache::rememberForever(
-                'general_settings_id',
-                fn () => optional(GeneralSetting::query()->first())->id
-            );
-
-            $cachedSetting = $globalSettingsId ? GeneralSetting::query()->find($globalSettingsId) : null;
-
-            if ($cachedSetting !== null) {
-                $this->generalSetting = $cachedSetting;
-
-                return;
-            }
-
-            $freshSetting = GeneralSetting::query()->first();
-
-            if ($freshSetting !== null) {
-                Cache::forever('general_settings_id', $freshSetting->id);
-            } else {
-                Cache::forget('general_settings_id');
-            }
-
-            $this->generalSetting = $freshSetting;
-        } catch (Exception $exception) {
-            Log::error('Failed to initialize GeneralSettingsService', [
-                'error' => $exception->getMessage(),
-                'trace' => $exception->getTraceAsString(),
-            ]);
-
-            throw $exception;
-        }
-    }
+    public function __construct() {}
 
     /**
      * Flush the memoized global setting instance.
@@ -174,7 +142,9 @@ final class GeneralSettingsService
     public static function flushGlobalSetting(): void
     {
         if (app()->resolved(self::class)) {
-            app(self::class)->generalSetting = null;
+            $service = app(self::class);
+            $service->generalSetting = null;
+            $service->generalSettingLoaded = false;
         }
     }
 
@@ -556,16 +526,63 @@ final class GeneralSettingsService
      */
     public function getGlobalSettingsModel(): ?GeneralSetting
     {
-        if ($this->generalSetting === null) {
-            $this->generalSetting = GeneralSetting::query()->first();
+        if ($this->generalSettingLoaded) {
+            return $this->generalSetting;
         }
 
-        return $this->generalSetting;
+        try {
+            $loadedDuringCacheFill = null;
+            $globalSettingsId = Cache::rememberForever(
+                'general_settings_id',
+                function () use (&$loadedDuringCacheFill) {
+                    $loadedDuringCacheFill = GeneralSetting::query()->first();
+
+                    return $loadedDuringCacheFill?->id;
+                }
+            );
+
+            if ($loadedDuringCacheFill instanceof GeneralSetting) {
+                $this->generalSetting = $loadedDuringCacheFill;
+                $this->generalSettingLoaded = true;
+
+                return $this->generalSetting;
+            }
+
+            $cachedSetting = $globalSettingsId ? GeneralSetting::query()->find($globalSettingsId) : null;
+
+            if ($cachedSetting !== null) {
+                $this->generalSetting = $cachedSetting;
+                $this->generalSettingLoaded = true;
+
+                return $this->generalSetting;
+            }
+
+            $freshSetting = GeneralSetting::query()->first();
+
+            if ($freshSetting !== null) {
+                Cache::forever('general_settings_id', $freshSetting->id);
+            } else {
+                Cache::forget('general_settings_id');
+            }
+
+            $this->generalSetting = $freshSetting;
+            $this->generalSettingLoaded = true;
+
+            return $this->generalSetting;
+        } catch (Exception $exception) {
+            Log::error('Failed to load global settings in GeneralSettingsService', [
+                'error' => $exception->getMessage(),
+                'trace' => $exception->getTraceAsString(),
+            ]);
+
+            throw $exception;
+        }
     }
 
     public function replaceGlobalSettings(?GeneralSetting $generalSetting): void
     {
         $this->generalSetting = $generalSetting;
+        $this->generalSettingLoaded = true;
     }
 
     /**

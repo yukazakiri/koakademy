@@ -16,11 +16,13 @@ use App\Models\ClassEnrollment;
 use App\Models\Classes;
 use App\Models\Course;
 use App\Models\Department;
+use App\Models\DocumentLocation;
 use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\Subject;
 use App\Models\User;
+use App\Notifications\ApplicantSubmissionReceiptNotification;
 use App\Services\CurriculumCapabilityResolver;
 use App\Services\EnrollmentPipelineService;
 use App\Services\EnrollmentService;
@@ -382,10 +384,10 @@ final class EnrollmentRegistrationController extends Controller
 
             $studentPersonalInfoId = null;
             $studentPersonalInfoAttributes = $this->onlyExistingColumns('students_personal_info', [
-                'birthplace' => $payload['personal_info']['birthplace'] ?? null,
-                'civil_status' => $payload['personal_info']['civil_status'] ?? null,
-                'citizenship' => $payload['personal_info']['citizenship'] ?? null,
-                'religion' => $payload['personal_info']['religion'] ?? null,
+                'birthplace' => $payload['personal_info']['birthplace'] ?? ($payload['birthplace'] ?? null),
+                'civil_status' => $payload['personal_info']['civil_status'] ?? ($payload['civil_status'] ?? null),
+                'citizenship' => $payload['personal_info']['citizenship'] ?? ($payload['citizenship'] ?? null),
+                'religion' => $payload['personal_info']['religion'] ?? ($payload['religion'] ?? null),
                 'weight' => $payload['personal_info']['weight'] ?? null,
                 'height' => $payload['personal_info']['height'] ?? null,
                 'current_adress' => $payload['personal_info']['current_address'] ?? null,
@@ -468,6 +470,8 @@ final class EnrollmentRegistrationController extends Controller
                 'scholarship_type' => null, // Explicitly not a scholar yet
             ]);
 
+            $this->syncApplicantDocumentsToLocation($student, $uploadedDocuments);
+
             if (Feature::active(\App\Features\DynamicEnrollmentPolicies::class) || $this->shouldAutoCreateStudentEnrollment()) {
                 $this->createApplicantEnrollmentRecords(
                     student: $student,
@@ -492,6 +496,23 @@ final class EnrollmentRegistrationController extends Controller
             default => 'Semester '.$semester,
         };
 
+        if (filled($student->email)) {
+            try {
+                $student->notify(new ApplicantSubmissionReceiptNotification(
+                    applicantId: (string) $student->student_id,
+                    applicantName: mb_trim(sprintf('%s %s', (string) $student->first_name, (string) $student->last_name)),
+                    programName: $course->title ?: $course->code,
+                    schoolYear: $schoolYear,
+                    semesterLabel: $semesterLabel,
+                ));
+            } catch (Throwable $exception) {
+                Log::warning('Failed to send applicant submission receipt notification.', [
+                    'student_id' => $student->id,
+                    'error' => $exception->getMessage(),
+                ]);
+            }
+        }
+
         return redirect()->route('enrollment.create')->with('flash', [
             'success' => sprintf(
                 'Registration submitted for %s %s (Applicant ID: %s).',
@@ -515,6 +536,161 @@ final class EnrollmentRegistrationController extends Controller
                 default => 'Year '.$academicYear,
             } : null,
             'continuing' => false,
+        ]);
+    }
+
+    /**
+     * Render the public applicant status tracker page.
+     */
+    public function statusPage(Request $request): Response
+    {
+        $schoolName = app(\App\Services\TenantContext::class)->getCurrentSchool()?->name
+            ?? School::query()->active()->orderBy('id')->value('name')
+            ?? School::query()->orderBy('id')->value('name')
+            ?? app(SiteSettings::class)->getOrganizationName();
+
+        return Inertia::render('enrollment/status', [
+            'school_name' => $schoolName,
+            'prefill' => [
+                'email' => $request->string('email')->trim()->toString(),
+                'reference_id' => $request->string('reference_id')->trim()->toString(),
+            ],
+        ]);
+    }
+
+    /**
+     * Verify an applicant's email + Reference/Applicant ID and return a safe enrollment timeline.
+     */
+    public function checkStatus(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'email', 'max:255'],
+            'reference_id' => ['required', 'string', 'max:64'],
+        ]);
+
+        $normalizedEmail = Str::lower(mb_trim((string) $validated['email']));
+        $referenceId = mb_trim((string) $validated['reference_id']);
+
+        $student = Student::withoutSchoolScope()
+            ->with([
+                'Course' => fn ($query) => $query->withoutSchoolScope()->with('department'),
+                'DocumentLocation',
+            ])
+            ->whereRaw('LOWER(email) = ?', [$normalizedEmail])
+            ->where('student_id', $referenceId)
+            ->first();
+
+        if (! $student instanceof Student) {
+            return response()->json([
+                'found' => false,
+                'message' => 'We could not find an application matching that email address and Reference / Applicant ID.',
+            ], 404);
+        }
+
+        $latestEnrollment = StudentEnrollment::withoutSchoolScope()
+            ->where('student_id', $student->id)
+            ->latest('created_at')
+            ->first();
+
+        $studentStatusValue = $student->status instanceof StudentStatus
+            ? $student->status->value
+            : (string) ($student->status ?? StudentStatus::Applicant->value);
+
+        $enrollmentStatus = $latestEnrollment?->status
+            ? mb_strtolower((string) $latestEnrollment->status)
+            : null;
+
+        $isCancelledOrRejected = in_array($studentStatusValue, [
+            StudentStatus::Rejected->value,
+            StudentStatus::Withdrawn->value,
+            StudentStatus::Dropped->value,
+        ], true) || in_array($enrollmentStatus, ['cancelled', 'rejected', 'dropped'], true);
+
+        $isEnrolled = $studentStatusValue === StudentStatus::Enrolled->value
+            || in_array($enrollmentStatus, ['enrolled', 'completed', 'officially_enrolled'], true);
+
+        $isApprovedStage = ! $isCancelledOrRejected && (
+            $isEnrolled
+            || $latestEnrollment !== null
+            || in_array($studentStatusValue, StudentStatus::registerableValues(), true)
+        );
+
+        $timeline = [
+            [
+                'key' => 'submitted',
+                'label' => 'Submitted',
+                'description' => 'Your online enrollment application was received.',
+                'state' => 'completed',
+            ],
+            [
+                'key' => 'under_review',
+                'label' => 'Under Review',
+                'description' => 'Admissions and registrar staff are reviewing your submission.',
+                'state' => $isCancelledOrRejected
+                    ? 'halted'
+                    : ($isApprovedStage ? 'completed' : 'current'),
+            ],
+            [
+                'key' => 'approved_requirements',
+                'label' => 'Approved / Requirements',
+                'description' => 'Submit required documents and complete registrar & billing verification.',
+                'state' => $isCancelledOrRejected
+                    ? 'upcoming'
+                    : ($isEnrolled ? 'completed' : ($isApprovedStage ? 'current' : 'upcoming')),
+            ],
+            [
+                'key' => 'enrolled',
+                'label' => 'Enrolled',
+                'description' => 'Officially enrolled with access to your Student Portal.',
+                'state' => $isEnrolled ? 'completed' : 'upcoming',
+            ],
+        ];
+
+        $statusLabel = match (true) {
+            $isCancelledOrRejected => 'Application Closed / Cancelled',
+            $isEnrolled => 'Enrolled',
+            $isApprovedStage => 'Approved / Requirements Verification',
+            default => 'Under Review',
+        };
+
+        $hasPortalAccount = $student->user_id !== null
+            || User::query()->whereRaw('LOWER(email) = ?', [$normalizedEmail])->exists();
+
+        $canActivatePortal = ! $isCancelledOrRejected && $isApprovedStage;
+
+        $docLocation = $student->DocumentLocation;
+        $trackedDocs = ['birth_certificate', 'form_138', 'good_moral_cert', 'picture_1x1'];
+        $docsUploaded = 0;
+        foreach ($trackedDocs as $field) {
+            $val = $docLocation?->getAttribute($field);
+            if (is_string($val) && mb_trim($val) !== '') {
+                $docsUploaded++;
+            }
+        }
+
+        return response()->json([
+            'found' => true,
+            'application' => [
+                'reference_id' => (string) $student->student_id,
+                'applicant_name' => mb_trim(sprintf('%s %s', (string) $student->first_name, (string) $student->last_name)),
+                'email' => (string) $student->email,
+                'program' => $student->Course?->title ?? $student->Course?->code,
+                'program_code' => $student->Course?->code,
+                'department' => $student->Course?->department?->name ?? $student->Course?->department?->code,
+                'submitted_at' => $student->created_at?->format('F j, Y'),
+                'school_year' => $latestEnrollment?->school_year,
+                'semester' => $latestEnrollment?->semester,
+                'status' => $studentStatusValue,
+                'status_label' => $statusLabel,
+                'is_cancelled' => $isCancelledOrRejected,
+                'documents_on_file' => $docsUploaded,
+                'documents_total' => count($trackedDocs),
+                'timeline' => $timeline,
+                'can_activate_portal' => $canActivatePortal,
+                'has_portal_account' => $hasPortalAccount,
+                'signup_url' => $canActivatePortal ? url('/signup?email='.urlencode((string) $student->email)) : null,
+                'login_url' => url('/login'),
+            ],
         ]);
     }
 
@@ -1269,6 +1445,85 @@ final class EnrollmentRegistrationController extends Controller
     }
 
     /**
+     * Sync uploaded applicant documents into the student's DocumentLocation record
+     * so converted students immediately reflect uploaded registrar files.
+     *
+     * @param  array<int, array<string, mixed>>  $uploadedDocuments
+     */
+    private function syncApplicantDocumentsToLocation(Student $student, array $uploadedDocuments): void
+    {
+        if ($uploadedDocuments === []) {
+            return;
+        }
+
+        $typeMap = [
+            'birth_certificate' => 'birth_certificate',
+            'psa_birth_certificate' => 'birth_certificate',
+            'nso_birth_certificate' => 'birth_certificate',
+            'form_138' => 'form_138',
+            'report_card' => 'form_138',
+            'high_school_report_card' => 'form_138',
+            'form_137' => 'form_137',
+            'high_school_diploma' => 'form_137',
+            'good_moral' => 'good_moral_cert',
+            'good_moral_cert' => 'good_moral_cert',
+            'good_moral_certificate' => 'good_moral_cert',
+            'certificate_of_good_moral' => 'good_moral_cert',
+            'transfer_credentials' => 'transfer_credentials',
+            'honorable_dismissal' => 'transfer_credentials',
+            'transcript_records' => 'transcript_records',
+            'transcript_of_records' => 'transcript_records',
+            'photo' => 'picture_1x1',
+            'profile_photo' => 'picture_1x1',
+            'picture_1x1' => 'picture_1x1',
+            '1x1_photo' => 'picture_1x1',
+            '2x2_photo' => 'picture_1x1',
+            'id_photo' => 'picture_1x1',
+        ];
+
+        $mappedAttributes = [];
+        foreach ($uploadedDocuments as $document) {
+            if (! is_array($document)) {
+                continue;
+            }
+
+            $rawType = mb_strtolower(mb_trim((string) ($document['type'] ?? '')));
+            $path = $document['path'] ?? null;
+
+            if ($rawType === '' || ! is_string($path) || mb_trim($path) === '') {
+                continue;
+            }
+
+            $column = $typeMap[$rawType] ?? null;
+            if ($column !== null && ! isset($mappedAttributes[$column])) {
+                $mappedAttributes[$column] = $path;
+            }
+        }
+
+        if ($mappedAttributes === []) {
+            return;
+        }
+
+        $student->loadMissing('DocumentLocation');
+        if (! $student->DocumentLocation) {
+            $docLocation = DocumentLocation::create($mappedAttributes);
+            $student->forceFill(['document_location_id' => $docLocation->id])->save();
+        } else {
+            $updates = [];
+            foreach ($mappedAttributes as $column => $path) {
+                $existing = $student->DocumentLocation->getAttribute($column);
+                if (! is_string($existing) || mb_trim($existing) === '') {
+                    $updates[$column] = $path;
+                }
+            }
+
+            if ($updates !== []) {
+                $student->DocumentLocation->update($updates);
+            }
+        }
+    }
+
+    /**
      * Process and store uploaded documents.
      *
      * @return array<int, array{type: string, path: string, original_name: string, size: int, mime_type: string, uploaded_at: string}>
@@ -1277,13 +1532,9 @@ final class EnrollmentRegistrationController extends Controller
     {
         $uploadedDocuments = [];
 
-        if (! $request->hasFile('documents')) {
-            return $uploadedDocuments;
-        }
-
         $documents = $request->file('documents');
 
-        if (! is_array($documents)) {
+        if (! is_array($documents) || $documents === []) {
             return $uploadedDocuments;
         }
 
@@ -1306,7 +1557,8 @@ final class EnrollmentRegistrationController extends Controller
                 continue;
             }
 
-            $type = is_string($documentData['type'] ?? null) ? $documentData['type'] : 'unknown';
+            $rawType = $request->input("documents.{$index}.type") ?? ($documentData['type'] ?? null);
+            $type = is_string($rawType) && mb_trim($rawType) !== '' ? mb_trim($rawType) : 'unknown';
             $originalName = $file->getClientOriginalName();
             $extension = $file->getClientOriginalExtension();
 

@@ -79,7 +79,7 @@ const sanitizeTablerIconsRolldown = {
     },
 };
 
-export default defineConfig({
+export default defineConfig(({ isSsrBuild }) => ({
     plugins: [
         {
             name: "sanitize-tabler-icons",
@@ -155,8 +155,44 @@ export default defineConfig({
     build: {
         cssCodeSplit: true,
         chunkSizeWarningLimit: 1000,
+        ...(!isSsrBuild
+            ? {
+                  rolldownOptions: {
+                      output: {
+                          codeSplitting: {
+                              groups: [
+                                  {
+                                      name: "vendor-react",
+                                      test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/,
+                                  },
+                                  {
+                                      name: "vendor-inertia",
+                                      test: /[\\/]node_modules[\\/]@inertiajs[\\/]/,
+                                  },
+                                  {
+                                      name: "vendor-charts",
+                                      test: /[\\/]node_modules[\\/](recharts|@visx|d3-[^\\/]+)[\\/]/,
+                                  },
+                                  {
+                                      name: "vendor-editor",
+                                      test: /[\\/]node_modules[\\/](@tiptap|prosemirror-[^\\/]+)[\\/]/,
+                                  },
+                                  {
+                                      name: "vendor-flow",
+                                      test: /[\\/]node_modules[\\/](@xyflow|reactflow|@dagrejs)[\\/]/,
+                                  },
+                                  {
+                                      name: "vendor-radix",
+                                      test: /[\\/]node_modules[\\/](@radix-ui|radix-ui)[\\/]/,
+                                  },
+                              ],
+                          },
+                      },
+                  },
+              }
+            : {}),
     },
     ssr: {
         noExternal: [/@visx\/.*/],
     },
-});
+}));

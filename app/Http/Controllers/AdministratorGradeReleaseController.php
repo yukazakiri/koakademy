@@ -31,7 +31,7 @@ final class AdministratorGradeReleaseController extends Controller
             $locked->update(['more_configs' => $config]);
         });
 
-        app(\App\Services\GeneralSettingsService::class)->replaceGlobalSettings(null);
+        \App\Services\GeneralSettingsService::flushGlobalSetting();
 
         return back()->with('success', 'Grade-release clearance requirement updated.');
     }

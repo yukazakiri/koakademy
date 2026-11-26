@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Enums\UserRole;
 use App\Models\Faculty;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -20,22 +21,43 @@ use Illuminate\Validation\ValidationException;
 final class FacultySignupService
 {
     /**
-     * Find the faculty record for an email, or null when the roster has no match.
+     * Find all faculty records for an email across active organizations (or unscoped legacy rows).
+     *
+     * @return Collection<int, Faculty>
      */
-    public function findByEmail(string $email): ?Faculty
+    public function candidatesForEmail(string $email): Collection
     {
         return Faculty::withoutSchoolScope()
             ->whereRaw('LOWER(email) = ?', [mb_strtolower(mb_trim($email))])
-            ->first();
+            ->where(function ($query): void {
+                $query->whereNull('school_id')
+                    ->orWhereHas('school', fn ($schoolQuery) => $schoolQuery->where('is_active', true));
+            })
+            ->orderBy('created_at')
+            ->get();
+    }
+
+    /**
+     * Find the best faculty record for an email, preferring registerable rows across active schools.
+     */
+    public function findByEmail(string $email): ?Faculty
+    {
+        $candidates = $this->candidatesForEmail($email);
+
+        if ($candidates->isEmpty()) {
+            return null;
+        }
+
+        return $candidates->first(fn (Faculty $faculty): bool => $faculty->isRegisterable())
+            ?? $candidates->first();
     }
 
     /**
      * Resolve the faculty record that matches the registering email.
      *
-     * The email is unique across the roster, so at most one record can match. When a
-     * faculty ID number is supplied it has to corroborate that record rather than
-     * select a different one. A record the school stood down does not entitle its
-     * holder to an account, so it never resolves.
+     * Faculty emails are unique per school, so multiple organizations can share an email.
+     * When more than one active faculty record exists for an email, a faculty ID number
+     * is required to disambiguate the exact institutional record.
      *
      * @throws ValidationException
      */
@@ -47,23 +69,45 @@ final class FacultySignupService
         $normalizedEmail = mb_strtolower(mb_trim($email));
 
         $query = Faculty::withoutSchoolScope()
-            ->whereRaw('LOWER(email) = ?', [$normalizedEmail]);
+            ->whereRaw('LOWER(email) = ?', [$normalizedEmail])
+            ->where(function ($schoolScope): void {
+                $schoolScope->whereNull('school_id')
+                    ->orWhereHas('school', fn ($schoolQuery) => $schoolQuery->where('is_active', true));
+            });
 
         if (filled($facultyIdNumber)) {
-            $query->where('faculty_id_number', $facultyIdNumber);
+            $query->whereRaw('LOWER(faculty_id_number) = ?', [mb_strtolower(mb_trim((string) $facultyIdNumber))]);
         }
 
         if ($lockForUpdate) {
             $query->lockForUpdate();
         }
 
-        $faculty = $query->first();
+        $matches = $query->limit(10)->get()
+            ->filter(fn (Faculty $faculty): bool => $faculty->isRegisterable())
+            ->values();
 
-        if (! $faculty instanceof Faculty || ! $faculty->isRegisterable()) {
+        if ($matches->isEmpty()) {
             throw ValidationException::withMessages([
                 filled($facultyIdNumber) ? 'faculty_id_number' : 'email' => [filled($facultyIdNumber)
                     ? 'The faculty ID number does not match our records for this email address.'
                     : 'No active faculty record matches this email. Please contact the registrar.'],
+            ]);
+        }
+
+        if ($matches->count() > 1) {
+            throw ValidationException::withMessages([
+                'faculty_id_number' => [filled($facultyIdNumber)
+                    ? 'This faculty email and ID match more than one organization. Please contact your school administrator.'
+                    : 'This email matches faculty records in multiple organizations. Enter your Faculty ID Number to continue.'],
+            ]);
+        }
+
+        $faculty = $matches->firstOrFail();
+
+        if (User::query()->where('record_id', (string) $faculty->id)->exists()) {
+            throw ValidationException::withMessages([
+                'email' => ['This faculty record is already linked to a portal account. Please sign in instead.'],
             ]);
         }
 

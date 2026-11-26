@@ -32,6 +32,7 @@ import {
     CalendarCheck,
     CheckCircle,
     Filter,
+    GitMerge,
     GraduationCap,
     HelpCircle,
     Layers,
@@ -54,6 +55,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { createColumns, Student } from "./columns";
+import { StudentInspectorDrawer } from "./components/student-inspector-drawer";
 import { DataTable } from "./data-table";
 
 declare let route: (name: string, params?: Record<string, unknown> | string | number) => string;
@@ -165,6 +167,9 @@ type QuickCohort = "all" | "enrolled" | "applicant" | "graduated" | "trashed";
 
 export default function AdministratorStudentsIndex({ user, students, stats, filters, options }: StudentsIndexProps) {
     const studentRows = students?.data ?? [];
+    const [inspectedStudentId, setInspectedStudentId] = useState<number | null>(null);
+    const inspectedIndex = inspectedStudentId !== null ? studentRows.findIndex((row) => row.id === inspectedStudentId) : -1;
+    const inspectedStudent = inspectedIndex >= 0 ? studentRows[inspectedIndex] : null;
     const [search, setSearch] = useState(filters.search || "");
     const searchInputRef = useRef<HTMLInputElement>(null);
     const searchInputFocusedRef = useRef(false);
@@ -565,15 +570,18 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
             setConfirmForceText("");
         };
         const onRestore = (e: Event) => setRestoreTarget((e as CustomEvent<Student>).detail);
+        const onInspect = (e: Event) => setInspectedStudentId((e as CustomEvent<Student>).detail.id);
 
         window.addEventListener("students:soft-delete", onSoft as EventListener);
         window.addEventListener("students:force-delete", onForce as EventListener);
         window.addEventListener("students:restore", onRestore as EventListener);
+        window.addEventListener("students:inspect", onInspect as EventListener);
 
         return () => {
             window.removeEventListener("students:soft-delete", onSoft as EventListener);
             window.removeEventListener("students:force-delete", onForce as EventListener);
             window.removeEventListener("students:restore", onRestore as EventListener);
+            window.removeEventListener("students:inspect", onInspect as EventListener);
         };
     }, []);
 
@@ -711,7 +719,17 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
                         </p>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <AdminLink
+                            href="/administrators/students/duplicates"
+                            className={buttonVariants({
+                                variant: "outline",
+                                className: "h-9 w-full gap-2 text-xs font-medium shadow-xs sm:w-auto sm:text-sm",
+                            })}
+                        >
+                            <GitMerge className="size-4" aria-hidden="true" />
+                            Duplicate Scanner
+                        </AdminLink>
                         <AdminLink
                             href={route("administrators.students.create")}
                             className={buttonVariants({ className: "h-9 w-full gap-2 text-xs font-semibold shadow-xs sm:w-auto sm:text-sm" })}
@@ -1094,6 +1112,25 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+            {/* Cohort Command Deck: Non-Destructive Slide-Over Enrollee Inspector */}
+            <StudentInspectorDrawer
+                student={inspectedStudent}
+                open={inspectedStudent !== null}
+                onOpenChange={(open) => {
+                    if (!open) setInspectedStudentId(null);
+                }}
+                statusOptions={options.statuses}
+                hasPrev={inspectedIndex > 0}
+                hasNext={inspectedIndex >= 0 && inspectedIndex < studentRows.length - 1}
+                onPrev={() => {
+                    if (inspectedIndex > 0) setInspectedStudentId(studentRows[inspectedIndex - 1].id);
+                }}
+                onNext={() => {
+                    if (inspectedIndex >= 0 && inspectedIndex < studentRows.length - 1) {
+                        setInspectedStudentId(studentRows[inspectedIndex + 1].id);
+                    }
+                }}
+            />
         </AdminLayout>
     );
 }

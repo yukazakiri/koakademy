@@ -13,10 +13,28 @@ use App\Models\StudentEnrollment;
 use App\Models\StudentTransaction;
 use App\Models\StudentTuition;
 use App\Models\Transaction;
+use Illuminate\Http\Request;
 
 final class EnrollmentBillingService
 {
+    private const string REQUEST_CACHE_KEY = '_enrollment_billing_verified_paid';
+
+    private static ?int $registeredDispatcherId = null;
+
+    /** @var array<string, float> */
+    private array $localVerifiedPaidCache = [];
+
     public function __construct(private readonly EnrollmentFeeCalculator $feeCalculator = new EnrollmentFeeCalculator, private readonly EnrollmentFeePolicy $feePolicy = new EnrollmentFeePolicy) {}
+
+    public static function flushCache(): void
+    {
+        if (app()->bound('request')) {
+            $request = app('request');
+            if ($request instanceof Request) {
+                $request->attributes->remove(self::REQUEST_CACHE_KEY);
+            }
+        }
+    }
 
     public function toSummaryArray(StudentTuition $tuition, float $additionalFeesTotal = 0.0): array
     {
@@ -89,6 +107,129 @@ final class EnrollmentBillingService
 
     public function verifiedPaid(StudentTuition $tuition): float
     {
+        $cacheKey = $this->verifiedPaidCacheKey($tuition);
+
+        if ($cacheKey !== null) {
+            $cached = $this->getMemoizedVerifiedPaid($cacheKey);
+            if ($cached !== null) {
+                return $cached;
+            }
+        }
+
+        $verifiedPaid = $this->computeVerifiedPaid($tuition);
+
+        if ($cacheKey !== null) {
+            $this->rememberVerifiedPaid($cacheKey, $verifiedPaid);
+        }
+
+        return $verifiedPaid;
+    }
+
+    public function signedBalance(StudentTuition $tuition, ?float $totalPaid = null): float
+    {
+        return round((float) $tuition->overall_tuition - ($totalPaid ?? $this->totalPaid($tuition)), 2);
+    }
+
+    /** @return array{signed_balance: float, balance_due: float, credit: float} */
+    public function accountPosition(StudentTuition $tuition, ?float $totalPaid = null): array
+    {
+        $signed = $this->signedBalance($tuition, $totalPaid);
+
+        return [
+            'signed_balance' => $signed,
+            'balance_due' => max(0, $signed),
+            'credit' => max(0, -$signed),
+        ];
+    }
+
+    public function balanceDue(StudentTuition $tuition, ?float $totalPaid = null): float
+    {
+        return $this->accountPosition($tuition, $totalPaid)['balance_due'];
+    }
+
+    public function paymentStatus(StudentTuition $tuition, ?float $totalPaid = null): string
+    {
+        $paid = $totalPaid ?? $this->totalPaid($tuition);
+        $balanceDue = $this->balanceDue($tuition, $paid);
+
+        if ($balanceDue <= 0.0) {
+            return 'Paid';
+        }
+
+        return $paid > 0.0 ? 'Downpayment' : 'Pending';
+    }
+
+    public function syncTuitionBalance(StudentTuition $tuition, ?float $requiredDownpayment = null): StudentTuition
+    {
+        $this->forgetMemoizedPaid($tuition);
+
+        $totalPaid = $this->totalPaid($tuition);
+
+        $tuition->forceFill([
+            'total_balance' => $this->balanceDue($tuition, $totalPaid),
+            'status' => $this->paymentStatus($tuition, $totalPaid),
+        ]);
+
+        if ($requiredDownpayment !== null) {
+            $tuition->downpayment = $requiredDownpayment;
+        }
+
+        if ($tuition->isDirty()) {
+            $tuition->save();
+        }
+
+        $refreshed = $tuition->refresh();
+        $this->forgetMemoizedPaid($refreshed);
+
+        return $refreshed;
+    }
+
+    public function recalculateEnrollmentTuition(StudentEnrollment $enrollment): ?StudentTuition
+    {
+        $existingTuition = StudentTuition::query()
+            ->where('enrollment_id', $enrollment->id)
+            ->first();
+
+        if (! $existingTuition instanceof StudentTuition) {
+            return null;
+        }
+
+        $enrollment->loadMissing(['subjectsEnrolled.subject.course', 'additionalFees', 'course']);
+        $configuration = $this->feePolicy->forEnrollment($enrollment);
+        $totalLecture = 0.0;
+        $totalLaboratory = 0.0;
+        $totalModularFee = 0.0;
+        foreach ($enrollment->subjectsEnrolled as $subjectEnrollment) {
+            if ($subjectEnrollment->exclude_from_tuition || ! $subjectEnrollment->subject) {
+                continue;
+            }
+            $fees = $this->feeCalculator->subject($subjectEnrollment->subject->toArray(), $configuration, (bool) $subjectEnrollment->is_modular, $subjectEnrollment->toArray());
+            $totalLecture += $fees['lecture_fee'];
+            $totalLaboratory += $fees['laboratory_fee'];
+            $totalModularFee += $fees['modular_fee'];
+        }
+
+        $discount = (int) $existingTuition->discount;
+        $discounted = (new EnrollmentDiscountCalculation)->calculate($totalLecture, $totalLaboratory, $discount, (string) ($configuration['discount_scope'] ?? 'lecture_only'));
+        $discountedLecture = $discounted['lecture'];
+        $totalLaboratory = $discounted['laboratory'];
+        $totalTuition = $discountedLecture + $totalLaboratory + $totalModularFee;
+        $miscellaneous = (float) $existingTuition->total_miscelaneous_fees;
+        $additionalFeesTotal = (float) $enrollment->additionalFees->sum('amount');
+        $overallTotal = $totalTuition + $miscellaneous + $additionalFeesTotal;
+
+        $existingTuition->forceFill([
+            'total_tuition' => $totalTuition,
+            'total_lectures' => $discountedLecture,
+            'total_laboratory' => $totalLaboratory,
+            'overall_tuition' => $overallTotal,
+        ])->save();
+
+        return $this->syncTuitionBalance($existingTuition, (float) $existingTuition->downpayment);
+    }
+
+    private function computeVerifiedPaid(StudentTuition $tuition): float
+    {
         $hasAllocations = PaymentAllocation::query()
             ->where('student_tuition_id', $tuition->id)
             ->where('target_type', 'assessment')
@@ -160,104 +301,6 @@ final class EnrollmentBillingService
             ->sum(fn (Transaction $transaction): float => $this->tuitionPaymentFromSettlements($transaction, $tuition));
 
         return $transactionPaid;
-    }
-
-    public function signedBalance(StudentTuition $tuition, ?float $totalPaid = null): float
-    {
-        return round((float) $tuition->overall_tuition - ($totalPaid ?? $this->totalPaid($tuition)), 2);
-    }
-
-    /** @return array{signed_balance: float, balance_due: float, credit: float} */
-    public function accountPosition(StudentTuition $tuition, ?float $totalPaid = null): array
-    {
-        $signed = $this->signedBalance($tuition, $totalPaid);
-
-        return [
-            'signed_balance' => $signed,
-            'balance_due' => max(0, $signed),
-            'credit' => max(0, -$signed),
-        ];
-    }
-
-    public function balanceDue(StudentTuition $tuition, ?float $totalPaid = null): float
-    {
-        return $this->accountPosition($tuition, $totalPaid)['balance_due'];
-    }
-
-    public function paymentStatus(StudentTuition $tuition, ?float $totalPaid = null): string
-    {
-        $paid = $totalPaid ?? $this->totalPaid($tuition);
-        $balanceDue = $this->balanceDue($tuition, $paid);
-
-        if ($balanceDue <= 0.0) {
-            return 'Paid';
-        }
-
-        return $paid > 0.0 ? 'Downpayment' : 'Pending';
-    }
-
-    public function syncTuitionBalance(StudentTuition $tuition, ?float $requiredDownpayment = null): StudentTuition
-    {
-        $totalPaid = $this->totalPaid($tuition);
-
-        $tuition->forceFill([
-            'total_balance' => $this->balanceDue($tuition, $totalPaid),
-            'status' => $this->paymentStatus($tuition, $totalPaid),
-        ]);
-
-        if ($requiredDownpayment !== null) {
-            $tuition->downpayment = $requiredDownpayment;
-        }
-
-        if ($tuition->isDirty()) {
-            $tuition->save();
-        }
-
-        return $tuition->refresh();
-    }
-
-    public function recalculateEnrollmentTuition(StudentEnrollment $enrollment): ?StudentTuition
-    {
-        $existingTuition = StudentTuition::query()
-            ->where('enrollment_id', $enrollment->id)
-            ->first();
-
-        if (! $existingTuition instanceof StudentTuition) {
-            return null;
-        }
-
-        $enrollment->loadMissing(['subjectsEnrolled.subject.course', 'additionalFees', 'course']);
-        $configuration = $this->feePolicy->forEnrollment($enrollment);
-        $totalLecture = 0.0;
-        $totalLaboratory = 0.0;
-        $totalModularFee = 0.0;
-        foreach ($enrollment->subjectsEnrolled as $subjectEnrollment) {
-            if ($subjectEnrollment->exclude_from_tuition || ! $subjectEnrollment->subject) {
-                continue;
-            }
-            $fees = $this->feeCalculator->subject($subjectEnrollment->subject->toArray(), $configuration, (bool) $subjectEnrollment->is_modular, $subjectEnrollment->toArray());
-            $totalLecture += $fees['lecture_fee'];
-            $totalLaboratory += $fees['laboratory_fee'];
-            $totalModularFee += $fees['modular_fee'];
-        }
-
-        $discount = (int) $existingTuition->discount;
-        $discounted = (new EnrollmentDiscountCalculation)->calculate($totalLecture, $totalLaboratory, $discount, (string) ($configuration['discount_scope'] ?? 'lecture_only'));
-        $discountedLecture = $discounted['lecture'];
-        $totalLaboratory = $discounted['laboratory'];
-        $totalTuition = $discountedLecture + $totalLaboratory + $totalModularFee;
-        $miscellaneous = (float) $existingTuition->total_miscelaneous_fees;
-        $additionalFeesTotal = (float) $enrollment->additionalFees->sum('amount');
-        $overallTotal = $totalTuition + $miscellaneous + $additionalFeesTotal;
-
-        $existingTuition->forceFill([
-            'total_tuition' => $totalTuition,
-            'total_lectures' => $discountedLecture,
-            'total_laboratory' => $totalLaboratory,
-            'overall_tuition' => $overallTotal,
-        ])->save();
-
-        return $this->syncTuitionBalance($existingTuition, (float) $existingTuition->downpayment);
     }
 
     /**
@@ -350,5 +393,129 @@ final class EnrollmentBillingService
         }
 
         return $normalized;
+    }
+
+    private function verifiedPaidCacheKey(StudentTuition $tuition): ?string
+    {
+        $id = $tuition->getKey();
+        if ($id === null) {
+            return null;
+        }
+
+        $updatedAt = $tuition->getRawOriginal('updated_at');
+
+        return implode('|', [
+            (string) $id,
+            (string) ($updatedAt ?? ''),
+            (string) ($tuition->enrollment_id ?? ''),
+            (string) ($tuition->student_id ?? ''),
+            (string) ($tuition->school_year ?? ''),
+            (string) ($tuition->semester ?? ''),
+        ]);
+    }
+
+    private function getMemoizedVerifiedPaid(string $cacheKey): ?float
+    {
+        if (app()->bound('request')) {
+            $request = app('request');
+            if ($request instanceof Request) {
+                $cache = $request->attributes->get(self::REQUEST_CACHE_KEY);
+                if (is_array($cache) && array_key_exists($cacheKey, $cache)) {
+                    return (float) $cache[$cacheKey];
+                }
+
+                return null;
+            }
+        }
+
+        return array_key_exists($cacheKey, $this->localVerifiedPaidCache)
+            ? $this->localVerifiedPaidCache[$cacheKey]
+            : null;
+    }
+
+    private function rememberVerifiedPaid(string $cacheKey, float $amount): void
+    {
+        $this->ensureCacheInvalidationListenersRegistered();
+
+        if (app()->bound('request')) {
+            $request = app('request');
+            if ($request instanceof Request) {
+                $cache = $request->attributes->get(self::REQUEST_CACHE_KEY);
+                $cache = is_array($cache) ? $cache : [];
+                $cache[$cacheKey] = $amount;
+                $request->attributes->set(self::REQUEST_CACHE_KEY, $cache);
+
+                return;
+            }
+        }
+
+        $this->localVerifiedPaidCache[$cacheKey] = $amount;
+    }
+
+    private function forgetMemoizedPaid(StudentTuition $tuition): void
+    {
+        $idPrefix = $tuition->getKey() !== null ? $tuition->getKey().'|' : null;
+
+        if ($idPrefix === null) {
+            self::flushCache();
+            $this->localVerifiedPaidCache = [];
+
+            return;
+        }
+
+        if (app()->bound('request')) {
+            $request = app('request');
+            if ($request instanceof Request) {
+                $cache = $request->attributes->get(self::REQUEST_CACHE_KEY);
+                if (is_array($cache)) {
+                    foreach (array_keys($cache) as $key) {
+                        if (str_starts_with((string) $key, $idPrefix)) {
+                            unset($cache[$key]);
+                        }
+                    }
+                    $request->attributes->set(self::REQUEST_CACHE_KEY, $cache);
+                }
+            }
+        }
+
+        foreach (array_keys($this->localVerifiedPaidCache) as $key) {
+            if (str_starts_with($key, $idPrefix)) {
+                unset($this->localVerifiedPaidCache[$key]);
+            }
+        }
+    }
+
+    private function ensureCacheInvalidationListenersRegistered(): void
+    {
+        $dispatcher = StudentTuition::getEventDispatcher();
+
+        if ($dispatcher === null) {
+            return;
+        }
+
+        $dispatcherId = spl_object_id($dispatcher);
+
+        if (self::$registeredDispatcherId === $dispatcherId) {
+            return;
+        }
+
+        self::$registeredDispatcherId = $dispatcherId;
+
+        $flush = static function (): void {
+            self::flushCache();
+        };
+
+        foreach ([PaymentAllocation::class, StudentTransaction::class, Transaction::class, StudentTuition::class] as $modelClass) {
+            $modelClass::saved($flush);
+            $modelClass::deleted($flush);
+
+            if (method_exists($modelClass, 'restored')) {
+                $modelClass::restored($flush);
+            }
+
+            if (method_exists($modelClass, 'forceDeleted')) {
+                $modelClass::forceDeleted($flush);
+            }
+        }
     }
 }

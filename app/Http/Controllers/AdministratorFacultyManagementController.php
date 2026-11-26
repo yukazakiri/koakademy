@@ -18,9 +18,11 @@ use App\Models\Faculty;
 use App\Models\FacultyDeadline;
 use App\Models\User;
 use App\Notifications\AdminFacultyNoticeNotification;
+use App\Notifications\PortalAccountWelcomeNotification;
 use App\Services\ClassAssignmentService;
 use App\Services\IdentifierGenerator;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -34,6 +36,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use Throwable;
 
 final class AdministratorFacultyManagementController extends Controller
 {
@@ -449,7 +452,17 @@ final class AdministratorFacultyManagementController extends Controller
     public function managePortalAccount(ManageFacultyPortalAccountRequest $request, Faculty $faculty): RedirectResponse
     {
         $data = $request->validated();
-        $portalUser = User::query()->where('email', $faculty->email)->first();
+        $normalizedEmail = mb_strtolower(mb_trim((string) $faculty->email));
+
+        if ($normalizedEmail === '') {
+            throw ValidationException::withMessages([
+                'mode' => 'Add an email address to this faculty record before provisioning a portal account.',
+            ]);
+        }
+
+        $portalUser = User::query()
+            ->whereRaw('LOWER(email) = ?', [$normalizedEmail])
+            ->first();
 
         if (! $portalUser && $data['mode'] === 'repair') {
             throw ValidationException::withMessages([
@@ -457,32 +470,70 @@ final class AdministratorFacultyManagementController extends Controller
             ]);
         }
 
-        if (! $portalUser) {
-            $portalUser = User::create([
-                'name' => $faculty->full_name,
-                'email' => $faculty->email,
-                'password' => Hash::make(Str::random(32)),
-                'role' => $data['role'],
-                'school_id' => $faculty->school_id,
-                'department_id' => $faculty->department_id,
-                'department' => $faculty->department,
-                'faculty_id_number' => $faculty->faculty_id_number,
-                'record_id' => $faculty->id,
-            ]);
-        } else {
-            $portalUser->forceFill([
-                'name' => $portalUser->name ?: $faculty->full_name,
-                'role' => $data['role'],
-                'school_id' => $portalUser->school_id ?: $faculty->school_id,
-                'department_id' => $portalUser->department_id ?: $faculty->department_id,
-                'department' => $portalUser->department_profile ?: $faculty->department,
-                'faculty_id_number' => $faculty->faculty_id_number,
-                'record_id' => $faculty->id,
-            ])->save();
+        if ($portalUser instanceof User) {
+            if ($portalUser->canAccessAdminPortal() || $portalUser->role?->isStudent()) {
+                throw ValidationException::withMessages([
+                    'mode' => 'This email already belongs to an administrative or student account and cannot be overwritten.',
+                ]);
+            }
+
+            if (filled($portalUser->record_id) && (string) $portalUser->record_id !== (string) $faculty->id) {
+                throw ValidationException::withMessages([
+                    'mode' => 'This portal account is already linked to a different faculty record.',
+                ]);
+            }
         }
 
+        $targetRole = UserRole::from((string) $data['role']);
+
+        DB::transaction(function () use (&$portalUser, $faculty, $normalizedEmail, $targetRole): void {
+            if (! $portalUser) {
+                $portalUser = User::create([
+                    'name' => $faculty->full_name,
+                    'email' => $normalizedEmail,
+                    'email_verified_at' => now(),
+                    'password' => Hash::make(Str::random(32)),
+                    'role' => $targetRole->value,
+                    'school_id' => $faculty->school_id,
+                    'department_id' => $faculty->department_id,
+                    'department' => $faculty->department,
+                    'faculty_id_number' => $faculty->faculty_id_number,
+                    'record_id' => $faculty->id,
+                ]);
+                if ($portalUser->email_verified_at === null) {
+                    $portalUser->forceFill(['email_verified_at' => now()])->save();
+                }
+            } else {
+                $portalUser->forceFill([
+                    'name' => $portalUser->name ?: $faculty->full_name,
+                    'email_verified_at' => $portalUser->email_verified_at ?? now(),
+                    'school_id' => $portalUser->school_id ?: $faculty->school_id,
+                    'department_id' => $portalUser->department_id ?: $faculty->department_id,
+                    'department' => $portalUser->department_profile ?: $faculty->department,
+                    'faculty_id_number' => $faculty->faculty_id_number,
+                    'record_id' => $faculty->id,
+                ])->save();
+            }
+
+            app(\App\Services\UserSystemRoleService::class)->assign($portalUser, $targetRole);
+
+            if ($faculty->school_id !== null) {
+                $portalUser->addToOrganization($faculty->school_id, [
+                    'role' => $targetRole->value,
+                    'is_primary' => true,
+                    'is_active' => true,
+                ]);
+            }
+        });
+
         if ((bool) ($data['send_reset_link'] ?? false)) {
-            Password::broker()->sendResetLink(['email' => $portalUser->email]);
+            $token = Password::broker()->createToken($portalUser);
+            $portalUser->notify(new PortalAccountWelcomeNotification(
+                token: $token,
+                identifier: filled($faculty->faculty_id_number) ? (string) $faculty->faculty_id_number : null,
+                identifierLabel: 'Faculty ID',
+                portalLabel: 'Faculty Portal',
+            ));
         }
 
         return redirect()
@@ -490,6 +541,172 @@ final class AdministratorFacultyManagementController extends Controller
             ->with('flash', [
                 'type' => 'success',
                 'message' => 'Faculty portal account is ready.',
+            ]);
+    }
+
+    /**
+     * Bulk provision portal accounts for selected faculty profiles.
+     */
+    public function bulkProvisionPortalAccounts(Request $request): RedirectResponse|JsonResponse
+    {
+        $allowedRoles = [
+            UserRole::Professor->value,
+            UserRole::AssociateProfessor->value,
+            UserRole::AssistantProfessor->value,
+            UserRole::Instructor->value,
+            UserRole::PartTimeFaculty->value,
+        ];
+
+        $validated = $request->validate([
+            'faculty_ids' => ['required', 'array', 'min:1', 'max:200'],
+            'faculty_ids.*' => ['required', 'string', 'exists:faculty,id'],
+            'send_activation_email' => ['nullable', 'boolean'],
+            'role' => ['nullable', 'string', Rule::in($allowedRoles)],
+        ]);
+
+        $sendActivationEmail = (bool) ($validated['send_activation_email'] ?? true);
+        $targetRole = UserRole::from((string) ($validated['role'] ?? UserRole::Instructor->value));
+
+        $faculties = Faculty::query()
+            ->whereIn('id', $validated['faculty_ids'])
+            ->get();
+
+        $provisioned = 0;
+        $alreadyLinked = 0;
+        $skipped = 0;
+
+        foreach ($faculties as $faculty) {
+            $normalizedEmail = mb_strtolower(mb_trim((string) $faculty->email));
+
+            if ($normalizedEmail === '') {
+                $skipped++;
+
+                continue;
+            }
+
+            $existingUser = User::query()
+                ->whereRaw('LOWER(email) = ?', [$normalizedEmail])
+                ->first();
+
+            if ($existingUser instanceof User) {
+                // Refuse to overwrite Admin/Staff, Student, or another faculty member's account.
+                if ($existingUser->canAccessAdminPortal() || $existingUser->role?->isStudent()) {
+                    $skipped++;
+
+                    continue;
+                }
+
+                if (filled($existingUser->record_id) && (string) $existingUser->record_id !== (string) $faculty->id) {
+                    $skipped++;
+
+                    continue;
+                }
+
+                $isAlreadyProperlyLinked = (string) $existingUser->record_id === (string) $faculty->id
+                    && $existingUser->role?->isFaculty() === true
+                    && $existingUser->faculty_id_number === $faculty->faculty_id_number;
+
+                if ($isAlreadyProperlyLinked) {
+                    $alreadyLinked++;
+
+                    continue;
+                }
+            }
+
+            try {
+                $portalUser = null;
+
+                DB::transaction(function () use (&$portalUser, $existingUser, $faculty, $normalizedEmail, $targetRole): void {
+                    if (! $existingUser instanceof User) {
+                        $portalUser = User::create([
+                            'name' => $faculty->full_name,
+                            'email' => $normalizedEmail,
+                            'email_verified_at' => now(),
+                            'password' => Hash::make(Str::random(32)),
+                            'role' => $targetRole->value,
+                            'school_id' => $faculty->school_id,
+                            'department_id' => $faculty->department_id,
+                            'department' => $faculty->department,
+                            'faculty_id_number' => $faculty->faculty_id_number,
+                            'record_id' => $faculty->id,
+                        ]);
+
+                        if ($portalUser->email_verified_at === null) {
+                            $portalUser->forceFill(['email_verified_at' => now()])->save();
+                        }
+                    } else {
+                        $portalUser = $existingUser;
+                        $portalUser->forceFill([
+                            'name' => $portalUser->name ?: $faculty->full_name,
+                            'email_verified_at' => $portalUser->email_verified_at ?? now(),
+                            'school_id' => $portalUser->school_id ?: $faculty->school_id,
+                            'department_id' => $portalUser->department_id ?: $faculty->department_id,
+                            'department' => $portalUser->department_profile ?: $faculty->department,
+                            'faculty_id_number' => $faculty->faculty_id_number,
+                            'record_id' => $faculty->id,
+                        ])->save();
+                    }
+
+                    app(\App\Services\UserSystemRoleService::class)->assign($portalUser, $targetRole);
+
+                    if ($faculty->school_id !== null) {
+                        $portalUser->addToOrganization($faculty->school_id, [
+                            'role' => $targetRole->value,
+                            'is_primary' => true,
+                            'is_active' => true,
+                        ]);
+                    }
+                });
+
+                if ($sendActivationEmail && $portalUser instanceof User) {
+                    $token = Password::broker()->createToken($portalUser);
+                    $portalUser->notify(new PortalAccountWelcomeNotification(
+                        token: $token,
+                        identifier: filled($faculty->faculty_id_number) ? (string) $faculty->faculty_id_number : null,
+                        identifierLabel: 'Faculty ID',
+                        portalLabel: 'Faculty Portal',
+                    ));
+                }
+
+                $provisioned++;
+            } catch (Throwable) {
+                $skipped++;
+            }
+        }
+
+        $parts = [
+            sprintf('Provisioned %d faculty portal account%s', $provisioned, $provisioned === 1 ? '' : 's'),
+        ];
+
+        if ($alreadyLinked > 0) {
+            $parts[] = sprintf('%d already linked', $alreadyLinked);
+        }
+
+        if ($skipped > 0) {
+            $parts[] = sprintf('%d skipped', $skipped);
+        }
+
+        $message = implode(' · ', $parts).'.';
+
+        if ($request->wantsJson() && ! $request->header('X-Inertia')) {
+            return response()->json([
+                'provisioned' => $provisioned,
+                'already_linked' => $alreadyLinked,
+                'skipped' => $skipped,
+                'message' => $message,
+            ]);
+        }
+
+        return redirect()
+            ->back()
+            ->with('flash', [
+                'type' => $provisioned > 0 ? 'success' : ($alreadyLinked > 0 ? 'info' : 'error'),
+                'message' => $message,
+            ])
+            ->with('bulk_portal_summary', [
+                'provisioned' => $provisioned,
+                'already_linked' => $alreadyLinked,
+                'skipped' => $skipped,
             ]);
     }
 
@@ -592,12 +809,15 @@ final class AdministratorFacultyManagementController extends Controller
 
     private function wherePortalLinked(Builder $query): Builder
     {
-        return $query->whereExists(function ($subQuery): void {
+        $castType = in_array($query->getConnection()->getDriverName(), ['mysql', 'mariadb'], true) ? 'CHAR' : 'TEXT';
+
+        return $query->whereExists(function ($subQuery) use ($castType): void {
             $subQuery->selectRaw('1')
                 ->from('users')
-                ->whereColumn('users.email', 'faculty.email')
-                ->where(function ($nested): void {
-                    $nested->whereColumn('users.record_id', DB::raw('cast(faculty.id as varchar)'))
+                ->whereNull('users.deleted_at')
+                ->whereRaw('LOWER(users.email) = LOWER(faculty.email)')
+                ->where(function ($nested) use ($castType): void {
+                    $nested->whereColumn('users.record_id', DB::raw("CAST(faculty.id AS {$castType})"))
                         ->orWhereColumn('users.faculty_id_number', 'faculty.faculty_id_number');
                 });
         });
@@ -605,12 +825,15 @@ final class AdministratorFacultyManagementController extends Controller
 
     private function wherePortalNotLinked(Builder $query): Builder
     {
-        return $query->whereNotExists(function ($subQuery): void {
+        $castType = in_array($query->getConnection()->getDriverName(), ['mysql', 'mariadb'], true) ? 'CHAR' : 'TEXT';
+
+        return $query->whereNotExists(function ($subQuery) use ($castType): void {
             $subQuery->selectRaw('1')
                 ->from('users')
-                ->whereColumn('users.email', 'faculty.email')
-                ->where(function ($nested): void {
-                    $nested->whereColumn('users.record_id', DB::raw('cast(faculty.id as varchar)'))
+                ->whereNull('users.deleted_at')
+                ->whereRaw('LOWER(users.email) = LOWER(faculty.email)')
+                ->where(function ($nested) use ($castType): void {
+                    $nested->whereColumn('users.record_id', DB::raw("CAST(faculty.id AS {$castType})"))
                         ->orWhereColumn('users.faculty_id_number', 'faculty.faculty_id_number');
                 });
         });

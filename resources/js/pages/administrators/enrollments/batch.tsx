@@ -353,7 +353,7 @@ export default function AdministratorBatchEnrollmentPage({ user, courses, settin
                                         value={sourceYearLevel}
                                         onValueChange={(v) => {
                                             setSourceYearLevel(v);
-                                            const next = Math.min(4, Number(v) + (Number(targetSemester) === 1 ? 1 : 0));
+                                            const next = Math.min(5, Number(v) + (Number(targetSemester) === 1 ? 1 : 0));
                                             setTargetYearLevel(String(next));
                                         }}
                                     >
@@ -397,6 +397,7 @@ export default function AdministratorBatchEnrollmentPage({ user, courses, settin
                                         <SelectContent>
                                             <SelectItem value="1">1st Semester</SelectItem>
                                             <SelectItem value="2">2nd Semester</SelectItem>
+                                            <SelectItem value="3">Summer / Term 3</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </div>

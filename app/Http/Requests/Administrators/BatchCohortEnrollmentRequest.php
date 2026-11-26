@@ -24,7 +24,7 @@ final class BatchCohortEnrollmentRequest extends FormRequest
         return [
             'course_id' => ['required', 'integer', 'exists:courses,id'],
             'target_year_level' => ['required', 'integer', 'min:1', 'max:5'],
-            'target_semester' => ['required', 'integer', 'in:1,2'],
+            'target_semester' => ['required', 'integer', 'in:1,2,3'],
             'school_year' => ['nullable', 'string', 'max:32'],
             'student_ids' => ['required', 'array', 'min:1', 'max:200'],
             'student_ids.*' => ['required', 'integer', 'exists:students,id'],

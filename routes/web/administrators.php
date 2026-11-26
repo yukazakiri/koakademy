@@ -31,6 +31,7 @@ use App\Http\Controllers\AdministratorRegistrarInsightsController;
 use App\Http\Controllers\AdministratorRolesController;
 use App\Http\Controllers\AdministratorSchedulingAnalyticsController;
 use App\Http\Controllers\AdministratorStudentDocumentController;
+use App\Http\Controllers\AdministratorStudentDuplicateController;
 use App\Http\Controllers\AdministratorStudentHoldController;
 use App\Http\Controllers\AdministratorStudentManagementController;
 use App\Http\Controllers\AdministratorTuitionAdjustmentController;
@@ -351,12 +352,17 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/students/create', [AdministratorStudentManagementController::class, 'create'])->name('students.create');
         Route::get('/students/generate-id', [AdministratorStudentManagementController::class, 'generateId'])->name('students.generate-id');
         Route::post('/students', [AdministratorStudentManagementController::class, 'store'])->name('students.store');
+        Route::post('/students/quick-create', [AdministratorStudentManagementController::class, 'quickStore'])->name('students.quick-create');
         Route::patch('/students/bulk/update-status', [AdministratorStudentManagementController::class, 'bulkUpdateStatus'])->name('students.bulk-update-status');
         Route::post('/students/bulk/manage-clearance', [AdministratorStudentManagementController::class, 'bulkManageClearance'])->name('students.bulk-manage-clearance');
         Route::post('/students/bulk/email', [AdministratorStudentManagementController::class, 'bulkSendEmail'])->name('students.bulk-email');
+        Route::post('/students/bulk/portal-accounts', [AdministratorStudentManagementController::class, 'bulkProvisionPortalAccounts'])->name('students.bulk-portal-accounts');
         Route::delete('/students/bulk', [AdministratorStudentManagementController::class, 'bulkDestroy'])->name('students.bulk-destroy');
         Route::delete('/students/bulk/force', [AdministratorStudentManagementController::class, 'bulkForceDestroy'])->name('students.bulk-force-destroy');
         Route::get('/students/documents', [AdministratorStudentDocumentController::class, 'listAll'])->name('students.documents.list');
+        Route::get('/students/duplicates', [AdministratorStudentDuplicateController::class, 'index'])->name('students.duplicates.index');
+        Route::post('/students/duplicates/preview', [AdministratorStudentDuplicateController::class, 'preview'])->name('students.duplicates.preview');
+        Route::post('/students/duplicates/merge', [AdministratorStudentDuplicateController::class, 'merge'])->name('students.duplicates.merge');
         Route::get('/students/field-values', [AdministratorStudentManagementController::class, 'fieldValues'])->name('students.field-values');
         Route::get('/students/education-school-options', [AdministratorStudentManagementController::class, 'educationSchoolOptions'])->name('students.education-school-options');
         Route::patch('/students/{student}/quick-update', [AdministratorStudentManagementController::class, 'quickUpdate'])->name('students.quick-update')->withTrashed();
@@ -381,6 +387,7 @@ Route::middleware(['auth', 'administrators.only'])
 
         // Student Actions
         Route::post('/students/{student}/link-account', [AdministratorStudentManagementController::class, 'linkAccount'])->name('students.link-account');
+        Route::post('/students/{student}/portal-account', [AdministratorStudentManagementController::class, 'managePortalAccount'])->name('students.portal-account');
         Route::patch('/students/{student}/update-id', [AdministratorStudentManagementController::class, 'updateStudentId'])->name('students.update-id');
         Route::post('/students/{student}/undo-id-change', [AdministratorStudentManagementController::class, 'undoStudentIdChange'])->name('students.undo-id-change');
         Route::patch('/students/{student}/change-course', [AdministratorStudentManagementController::class, 'changeCourse'])->name('students.change-course');
@@ -476,6 +483,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/faculties/imports/{facultyBulkImport}/confirm', [AdministratorFacultyImportController::class, 'confirm'])->middleware('throttle:20,1')->name('faculties.imports.confirm');
         Route::post('/faculties', [AdministratorFacultyManagementController::class, 'store'])->name('faculties.store');
         Route::patch('/faculties/bulk/status', [AdministratorFacultyManagementController::class, 'bulkUpdateStatus'])->name('faculties.bulk.status');
+        Route::post('/faculties/bulk/portal-accounts', [AdministratorFacultyManagementController::class, 'bulkProvisionPortalAccounts'])->name('faculties.bulk.portal-accounts');
         Route::get('/faculties/{faculty}', [AdministratorFacultyManagementController::class, 'show'])->name('faculties.show');
         Route::get('/faculties/{faculty}/edit', [AdministratorFacultyManagementController::class, 'edit'])->name('faculties.edit');
         Route::put('/faculties/{faculty}', [AdministratorFacultyManagementController::class, 'update'])->name('faculties.update');
@@ -506,6 +514,7 @@ Route::middleware(['auth', 'administrators.only'])
 
         // Audit Logs
         Route::get('/audit-logs', [AdministratorAuditLogController::class, 'index'])->name('audit-logs.index');
+        Route::get('/audit-logs/export', [AdministratorAuditLogController::class, 'export'])->name('audit-logs.export');
 
         // User Management
         Route::get('/users', [AdministratorUserManagementController::class, 'index'])->name('users.index');

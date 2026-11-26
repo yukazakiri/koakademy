@@ -133,11 +133,11 @@ export function ThemeProvider({
             const newRoot = document.querySelector("::view-transition-new(root)") as HTMLElement;
 
             if (oldRoot) {
-                oldRoot.style.background = `hsl(${oldBgColor})`;
+                oldRoot.style.background = oldBgColor;
                 oldRoot.style.animation = "none";
             }
             if (newRoot) {
-                newRoot.style.background = `hsl(${newBgColor})`;
+                newRoot.style.background = newBgColor;
             }
 
             document.documentElement.animate(

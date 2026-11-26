@@ -691,7 +691,8 @@ final class ProfileController extends Controller
             $filename = 'avatar-'.$user->id.'-'.time().'.'.$file->getClientOriginalExtension();
             $path = "avatars/{$filename}";
             Storage::put($path, $file->getContent(), 'public');
-            $avatarUrl = env('R2_URL').'/'.$path;
+            $r2BaseUrl = mb_rtrim((string) config('filesystems.disks.r2.url', ''), '/');
+            $avatarUrl = $r2BaseUrl !== '' ? $r2BaseUrl.'/'.$path : Storage::url($path);
         }
 
         $attributes = [
@@ -714,17 +715,29 @@ final class ProfileController extends Controller
         $previousEmail = (string) $user->email;
         $user->update($attributes);
 
-        // If email changed, also update faculty record if exists and alert the previous address.
+        // If email changed, synchronize ONLY the authenticated user's own linked Faculty or Student record.
         if ($user->wasChanged('email')) {
-            Faculty::where('email', $previousEmail)->update([
-                'email' => $validated['email'],
-            ]);
+            if ($user->isFaculty()) {
+                $facultyQuery = Faculty::withoutSchoolScope();
+                if (filled($user->record_id) && Str::isUuid((string) $user->record_id)) {
+                    $facultyQuery->where('id', (string) $user->record_id);
+                } else {
+                    $facultyQuery->whereRaw('LOWER(email) = ?', [mb_strtolower(mb_trim($previousEmail))]);
+                    if ($user->school_id !== null) {
+                        $facultyQuery->where('school_id', $user->school_id);
+                    }
+                }
+                $facultyQuery->update(['email' => $validated['email']]);
+            }
+
+            if ($user->role?->isStudent()) {
+                Student::withoutSchoolScope()
+                    ->where('user_id', $user->id)
+                    ->update(['email' => $validated['email']]);
+            }
 
             $this->notifyEmailChanged($user, $previousEmail, (string) $validated['email'], $request);
         }
-
-        // Get updated faculty information if exists
-        Faculty::where('email', $user->email)->first();
 
         return back()->with('flash', [
             'success' => 'Profile updated successfully!',
@@ -898,8 +911,10 @@ final class ProfileController extends Controller
 
             $validated = $validator->validated();
 
-            Faculty::create([
+            $createdFaculty = Faculty::create([
                 'id' => (string) Str::uuid(),
+                'school_id' => $user->school_id,
+                'faculty_id_number' => $user->faculty_id_number,
                 'first_name' => $validated['first_name'],
                 'middle_name' => $validated['middle_name'] ?? null,
                 'last_name' => $validated['last_name'],
@@ -917,6 +932,10 @@ final class ProfileController extends Controller
                 'age' => $validated['age'] ?? null,
                 'status' => 'active',
             ]);
+
+            $user->forceFill([
+                'record_id' => $createdFaculty->id,
+            ])->save();
 
             return back()->with('flash', [
                 'success' => 'Faculty information created successfully!',

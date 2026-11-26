@@ -27,10 +27,17 @@ final class StudentClassesController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        // Get the student record linked to this user
-        $student = Student::where('email', $user->email)
-            ->orWhere('user_id', $user->id)
-            ->with(['Course'])
+        // Prefer direct user_id binding, falling back ONLY to unclaimed student records matching email
+        $student = Student::query()
+            ->with(['Course', 'shsStrand'])
+            ->where(function ($query) use ($user): void {
+                $query->where('user_id', $user->id)
+                    ->orWhere(function ($unclaimed) use ($user): void {
+                        $unclaimed->whereNull('user_id')
+                            ->whereRaw('LOWER(email) = ?', [mb_strtolower(mb_trim((string) $user->email))]);
+                    });
+            })
+            ->orderByRaw('CASE WHEN user_id = ? THEN 0 ELSE 1 END', [$user->id])
             ->first();
 
         $userData = [
@@ -56,11 +63,26 @@ final class StudentClassesController extends Controller
             ]);
         }
 
-        // --- 1. Fetch Curriculum (Subjects for the student's course) ---
-        $curriculumSubjects = Subject::where('course_id', $student->course_id)
-            ->orderBy('academic_year')
-            ->orderBy('semester')
-            ->get();
+        // --- 1. Fetch Curriculum (Subjects for the student's course or SHS strand) ---
+        $isShs = $student->student_type === \App\Enums\StudentType::SeniorHighSchool && $student->shs_strand_id !== null;
+        $curriculumSubjects = $isShs
+            ? \App\Models\StrandSubject::query()
+                ->where('strand_id', $student->shs_strand_id)
+                ->orderBy('grade_year')
+                ->orderBy('semester')
+                ->get()
+                ->map(fn (\App\Models\StrandSubject $strandSubject): object => (object) [
+                    'id' => $strandSubject->id,
+                    'academic_year' => (int) ($strandSubject->grade_year ?? 11),
+                    'semester' => (int) ($strandSubject->semester ?? 1),
+                    'code' => $strandSubject->code,
+                    'title' => $strandSubject->title,
+                    'units' => 1,
+                ])
+            : Subject::where('course_id', $student->course_id)
+                ->orderBy('academic_year')
+                ->orderBy('semester')
+                ->get();
 
         // --- 2. Fetch Student's History (All Subject Enrollments) ---
         $enrollments = SubjectEnrollment::where('student_id', $student->id)
@@ -122,6 +144,7 @@ final class StudentClassesController extends Controller
 
             $data = [
                 'enrollment_id' => $enrollment->id,
+                'class_id' => $enrollment->class?->id,
                 'grade' => $grade,
                 'status' => $status,
                 'remarks' => $published['remarks'] ?? null,
@@ -132,9 +155,11 @@ final class StudentClassesController extends Controller
                 'units' => $subjectUnits,
             ];
 
+            $mapKey = $isShs ? mb_strtolower(mb_trim((string) $subjectCode)) : $subjectId;
+
             // Logic to keep the "best" status in the map (e.g., if failed then passed, show passed)
-            if (! isset($enrollmentMap[$subjectId]) || $status === 'completed') {
-                $enrollmentMap[$subjectId] = $data;
+            if ($mapKey !== null && $mapKey !== '' && (! isset($enrollmentMap[$mapKey]) || $status === 'completed')) {
+                $enrollmentMap[$mapKey] = $data;
             }
         }
 
@@ -155,7 +180,8 @@ final class StudentClassesController extends Controller
                 $curriculum[$year][$sem] = [];
             }
 
-            $enrolledData = $enrollmentMap[$subject->id] ?? null;
+            $lookupKey = $isShs ? mb_strtolower(mb_trim((string) $subject->code)) : $subject->id;
+            $enrolledData = $enrollmentMap[$lookupKey] ?? null;
             $status = $enrolledData['status'] ?? 'pending';
 
             // Check if currently taking (if school year/sem matches current)
@@ -170,6 +196,7 @@ final class StudentClassesController extends Controller
 
             $curriculum[$year][$sem][] = [
                 'id' => $subject->id,
+                'class_id' => $enrolledData['class_id'] ?? null,
                 'enrollment_id' => $enrolledData['enrollment_id'] ?? null,
                 'is_enrolled' => $isEnrolled,
                 'code' => $subject->code,
@@ -217,11 +244,6 @@ final class StudentClassesController extends Controller
                 $schedule = sprintf('%s %s', $dayAbbreviations, $timeFormat);
             }
 
-            // Load schedules relationship if not already loaded
-            if (! $class->relationLoaded('schedules')) {
-                $class->load('schedules');
-            }
-
             $currentClasses[] = [
                 'id' => $class->id,
                 'subject_code' => $class->subject_code ?? 'N/A',
@@ -260,7 +282,7 @@ final class StudentClassesController extends Controller
             'user' => $userData,
             'student_name' => $student->full_name ?? $user->name,
             'student_number' => (string) ($student->student_id ?: $student->id),
-            'course_name' => $student->Course?->title ?? 'N/A',
+            'course_name' => $student->Course?->title ?? $student->shsStrand?->name ?? 'N/A',
             'school' => $school,
             'progress' => [
                 'earned' => $earnedUnits,

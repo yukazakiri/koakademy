@@ -693,6 +693,8 @@ final class Student extends Model implements RecordsActivity
                 'class.subjectByCodeFallback',
                 'class.shsSubject',
                 'class.faculty',
+                'class.schedules',
+                'class.room',
             ])
             ->get();
     }

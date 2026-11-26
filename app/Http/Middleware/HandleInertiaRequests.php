@@ -50,6 +50,8 @@ final class HandleInertiaRequests extends Middleware
     #[Override]
     protected $rootView = 'app';
 
+    private static ?bool $hasSchoolsLevelColumn = null;
+
     /**
      * Determine the current asset version.
      */
@@ -175,7 +177,7 @@ final class HandleInertiaRequests extends Middleware
                         'features' => $onboardingService->getOnboardingFeatures($user),
                         'dismissEndpoint' => route('onboarding.dismiss'),
                     ], 'admin-shell', true)
-                    : [
+                    : fn (): array => [
                         'forceOnLogin' => (bool) config('onboarding.force_on_login'),
                         'features' => $onboardingService->getOnboardingFeatures($user),
                         'dismissEndpoint' => route('onboarding.dismiss'),
@@ -210,7 +212,9 @@ final class HandleInertiaRequests extends Middleware
                 'adminSidebarCounts' => $isAdministratorPortal
                     ? Inertia::defer(fn (): ?array => $administratorSidebarCounts->resolve($request), 'admin-shell', true)
                     : fn (): ?array => $administratorSidebarCounts->resolve($request),
-                'moduleAdminRoutes' => fn (): array => $user instanceof User ? $moduleAdminNavigationService->getRoutes() : [],
+                'moduleAdminRoutes' => fn (): array => $user instanceof User && $user->canAccessAdminPortal()
+                    ? $moduleAdminNavigationService->getRoutes()
+                    : [],
                 // Desk entries for the sidebar and command palette. Resolved by the registry
                 // so the front end never has to restate which roles may open which desk.
                 // Deferred with the rest of the admin shell: the sidebar renders before it
@@ -297,7 +301,7 @@ final class HandleInertiaRequests extends Middleware
             return null;
         }
 
-        if (! Schema::hasTable('schools') || ! Schema::hasColumn('schools', 'school_level')) {
+        if (! $this->hasSchoolsLevelColumn()) {
             return null;
         }
 
@@ -325,6 +329,21 @@ final class HandleInertiaRequests extends Middleware
             'school_level_options' => SchoolLevel::optionsForFrontend(),
             'update_endpoint' => route('administrators.system-management.school-level.update'),
         ];
+    }
+
+    private function hasSchoolsLevelColumn(): bool
+    {
+        if (self::$hasSchoolsLevelColumn === true) {
+            return true;
+        }
+
+        if (Schema::hasTable('schools') && Schema::hasColumn('schools', 'school_level')) {
+            self::$hasSchoolsLevelColumn = true;
+
+            return true;
+        }
+
+        return false;
     }
 
     private function resolveAnnouncementLocation(Request $request): string

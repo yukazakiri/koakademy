@@ -267,6 +267,7 @@ export function ActiveJobsNotification() {
     const inFlightRef = React.useRef(false);
     const hasActiveRef = React.useRef(false);
     const realtimeConnectedRef = React.useRef(false);
+    const forbiddenRef = React.useRef(false);
 
     const retryJob = React.useCallback(async (job: ActiveJob) => {
         completedJobs.delete(job.id);
@@ -360,7 +361,7 @@ export function ActiveJobsNotification() {
     );
 
     const fetchAndUpdateJobs = React.useCallback(async () => {
-        if (!mountedRef.current || inFlightRef.current) return;
+        if (!mountedRef.current || inFlightRef.current || forbiddenRef.current) return;
         inFlightRef.current = true;
         try {
             const response = await axios.get<ActiveJobsResponse>(activeJobsIndex.url());
@@ -374,6 +375,11 @@ export function ActiveJobsNotification() {
                 }
             }
         } catch (error) {
+            const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+            if (status === 401 || status === 403) {
+                forbiddenRef.current = true;
+                return;
+            }
             console.error("Error fetching active jobs:", error);
         } finally {
             inFlightRef.current = false;
@@ -416,22 +422,33 @@ export function ActiveJobsNotification() {
 
     React.useEffect(() => {
         mountedRef.current = true;
+        forbiddenRef.current = false;
         const clearPending = () => {
             if (timeoutRef.current) clearTimeout(timeoutRef.current);
             timeoutRef.current = null;
         };
         const schedule = (delay: number) => {
             clearPending();
-            if (mountedRef.current) timeoutRef.current = setTimeout(tick, delay);
+            if (mountedRef.current && !forbiddenRef.current) timeoutRef.current = setTimeout(tick, delay);
         };
         const tick = async () => {
-            if (!mountedRef.current || document.visibilityState === "hidden") return;
+            if (!mountedRef.current || forbiddenRef.current || document.visibilityState === "hidden") return;
             await fetchAndUpdateJobs();
-            if (!realtimeConnectedRef.current) {
+            if (!realtimeConnectedRef.current && !forbiddenRef.current) {
                 schedule(hasActiveRef.current ? ACTIVE_POLL_INTERVAL : IDLE_POLL_INTERVAL);
             }
         };
-        const refresh = () => (document.visibilityState === "visible" ? schedule(0) : clearPending());
+        const refresh = () => {
+            if (forbiddenRef.current) {
+                clearPending();
+                return;
+            }
+            if (document.visibilityState === "visible") {
+                schedule(0);
+            } else {
+                clearPending();
+            }
+        };
         document.addEventListener("visibilitychange", refresh);
         window.addEventListener(ACTIVE_JOBS_REFRESH_EVENT, refresh);
         schedule(0);
@@ -441,7 +458,7 @@ export function ActiveJobsNotification() {
             document.removeEventListener("visibilitychange", refresh);
             window.removeEventListener(ACTIVE_JOBS_REFRESH_EVENT, refresh);
         };
-    }, [fetchAndUpdateJobs]);
+    }, [fetchAndUpdateJobs, user?.id]);
 
     return null;
 }

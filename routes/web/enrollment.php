@@ -15,6 +15,13 @@ use Inertia\Inertia;
 Route::get('/enrollment', [EnrollmentRegistrationController::class, 'create'])
     ->name('enrollment.create');
 
+Route::get('/enrollment/status', [EnrollmentRegistrationController::class, 'statusPage'])
+    ->name('enrollment.status');
+
+Route::post('/enrollment/status', [EnrollmentRegistrationController::class, 'checkStatus'])
+    ->middleware('throttle:public-enrollment-lookup')
+    ->name('enrollment.status.check');
+
 Route::post('/enrollment', [EnrollmentRegistrationController::class, 'store'])
     ->middleware('throttle:public-enrollment-submit')
     ->name('enrollment.store');

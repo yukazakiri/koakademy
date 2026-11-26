@@ -100,4 +100,23 @@ final readonly class EnrollmentRequirementService
 
         return $requirement->refresh();
     }
+
+    public function reset(EnrollmentRequirement $requirement, User $actor, string $reason): EnrollmentRequirement
+    {
+        $reason = mb_trim($reason);
+        if ($reason === '') {
+            throw new EnrollmentTransitionException('A reason is required to reset an enrollment requirement.');
+        }
+
+        $requirement->forceFill([
+            'status' => EnrollmentRequirement::Pending,
+            'verified_by' => null,
+            'verified_at' => null,
+            'waived_by' => null,
+            'waived_at' => null,
+            'waiver_reason' => null,
+        ])->save();
+
+        return $requirement->refresh();
+    }
 }

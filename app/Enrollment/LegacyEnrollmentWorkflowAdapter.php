@@ -883,8 +883,8 @@ final readonly class LegacyEnrollmentWorkflowAdapter
             if ($studentEnrollment->studentTuition) {
                 $studentEnrollment->studentTuition->update([
                     'status' => 'Downpayment',
-                    'semester' => $generalSettings?->semester,
-                    'school_year' => $generalSettings?->getSchoolYearString(),
+                    'semester' => $studentEnrollment->semester ?? $generalSettings?->semester,
+                    'school_year' => $studentEnrollment->school_year ?: $generalSettings?->getSchoolYearString(),
                     'academic_year' => $studentEnrollment->academic_year,
                 ]);
             } else {

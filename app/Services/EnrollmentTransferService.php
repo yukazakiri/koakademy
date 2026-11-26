@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enrollment\EnrollmentCancellationService;
 use App\Enrollment\EnrollmentFeeCalculator;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
 use App\Models\Course;
+use App\Models\EnrollmentClassWaitlist;
 use App\Models\EnrollmentTransferLog;
 use App\Models\StudentEnrollment;
 use App\Models\StudentTuition;
@@ -110,7 +112,7 @@ final readonly class EnrollmentTransferService
             ->where('school_year', $enrollment->school_year)
             ->where('semester', $enrollment->semester)
             ->whereRaw('LOWER(TRIM(section)) = LOWER(?)', [$cleanTarget])
-            ->withCount('class_enrollments')
+            ->withCount(['class_enrollments' => fn ($query) => $query->where('status', true)])
             ->get();
 
         $movable = [];
@@ -177,6 +179,10 @@ final readonly class EnrollmentTransferService
         User $actor,
         bool $forceOverload = false,
     ): EnrollmentTransferLog {
+        if (in_array($enrollment->terminal_outcome, [EnrollmentCancellationService::OUTCOME, 'rejected'], true) || $enrollment->trashed()) {
+            throw new RuntimeException('Cannot transfer sections on a cancelled, rejected, or trashed enrollment.');
+        }
+
         $preview = $this->previewSectionTransfer($enrollment, $targetSection, $forceOverload);
         if ($preview['movable_count'] === 0) {
             throw new RuntimeException(
@@ -195,8 +201,12 @@ final readonly class EnrollmentTransferService
             ->keys()
             ->first();
 
-        return DB::transaction(function () use ($enrollment, $preview, $fromSection, $targetSection, $reason, $actor): EnrollmentTransferLog {
+        return DB::transaction(function () use ($enrollment, $preview, $fromSection, $targetSection, $reason, $actor, $forceOverload): EnrollmentTransferLog {
             $reassigned = 0;
+            $targetClassIds = collect($preview['movable'])->pluck('to_class_id')->filter()->map(fn ($id): int => (int) $id)->unique()->values();
+            $lockedClasses = $targetClassIds->isNotEmpty()
+                ? Classes::query()->whereIn('id', $targetClassIds)->lockForUpdate()->get()->keyBy('id')
+                : collect();
 
             foreach ($preview['movable'] as $move) {
                 $se = SubjectEnrollment::query()->find($move['subject_enrollment_id']);
@@ -206,6 +216,18 @@ final readonly class EnrollmentTransferService
 
                 $oldClassId = $se->class_id;
                 $newClassId = (int) $move['to_class_id'];
+                $targetClass = $lockedClasses->get($newClassId);
+
+                if ($targetClass instanceof Classes && $targetClass->maximum_slots > 0 && $oldClassId !== $newClassId) {
+                    $activeSeats = ClassEnrollment::query()
+                        ->where('class_id', $newClassId)
+                        ->where('student_id', '!=', $enrollment->student_id)
+                        ->where('status', true)
+                        ->count();
+                    if (! $forceOverload && $activeSeats >= $targetClass->maximum_slots) {
+                        throw new RuntimeException("Section {$targetClass->section} filled up before transfer completed.");
+                    }
+                }
 
                 if ($oldClassId && $oldClassId !== $newClassId) {
                     ClassEnrollment::query()
@@ -228,6 +250,17 @@ final readonly class EnrollmentTransferService
                     'class_id' => $newClassId,
                     'section' => (string) $move['to_section'],
                 ])->saveQuietly();
+
+                EnrollmentClassWaitlist::query()
+                    ->where('student_enrollment_id', $enrollment->id)
+                    ->where('subject_enrollment_id', $se->id)
+                    ->where('status', EnrollmentClassWaitlist::StatusWaiting)
+                    ->update([
+                        'status' => EnrollmentClassWaitlist::StatusPromoted,
+                        'promoted_class_id' => $newClassId,
+                        'promoted_by' => $actor->id,
+                        'promoted_at' => now(),
+                    ]);
 
                 $reassigned++;
             }
@@ -378,7 +411,12 @@ final readonly class EnrollmentTransferService
         ?string $targetSection = null,
         bool $reconcileCurriculum = true,
         bool $forceOverload = false,
+        bool $confirmGradeLoss = false,
     ): EnrollmentTransferLog {
+        if (in_array($enrollment->terminal_outcome, [EnrollmentCancellationService::OUTCOME, 'rejected'], true) || $enrollment->trashed()) {
+            throw new RuntimeException('Cannot shift programs on a cancelled, rejected, or trashed enrollment.');
+        }
+
         $preview = $this->previewProgramShift($enrollment, $targetCourseId, $targetYearLevel);
         $targetCourse = Course::query()->findOrFail($targetCourseId);
         $yearLevel = (int) $preview['target_year_level'];
@@ -391,12 +429,36 @@ final readonly class EnrollmentTransferService
             $targetSection,
             $reconcileCurriculum,
             $forceOverload,
+            $confirmGradeLoss,
             $reason,
             $actor,
         ): EnrollmentTransferLog {
             $enrollment->load(['student', 'subjectsEnrolled', 'studentTuition']);
             $fromCourseId = $enrollment->course_id;
             $previousTotal = (float) ($enrollment->studentTuition?->overall_tuition ?? 0);
+
+            if ($reconcileCurriculum && ! $confirmGradeLoss) {
+                foreach ($preview['dropped_subjects'] as $dropped) {
+                    $se = SubjectEnrollment::query()->find($dropped['subject_enrollment_id']);
+                    if (! $se instanceof SubjectEnrollment) {
+                        continue;
+                    }
+                    $hasGrade = $se->grade !== null
+                        || ($se->class_id !== null && ClassEnrollment::query()
+                            ->where('student_id', $enrollment->student_id)
+                            ->where('class_id', $se->class_id)
+                            ->where(function ($query): void {
+                                $query->whereNotNull('prelim_grade')
+                                    ->orWhereNotNull('midterm_grade')
+                                    ->orWhereNotNull('finals_grade')
+                                    ->orWhereNotNull('total_average');
+                            })
+                            ->exists());
+                    if ($hasGrade) {
+                        throw new RuntimeException('Cannot drop graded subjects during a program shift without explicit grade-loss confirmation.');
+                    }
+                }
+            }
 
             // Update enrollment & student course
             $enrollment->forceFill([
@@ -456,7 +518,8 @@ final readonly class EnrollmentTransferService
                 $termClasses = Classes::query()
                     ->where('school_year', $enrollment->school_year)
                     ->where('semester', $enrollment->semester)
-                    ->withCount('class_enrollments')
+                    ->withCount(['class_enrollments' => fn ($query) => $query->where('status', true)])
+                    ->lockForUpdate()
                     ->get();
 
                 foreach ($preview['added_subjects'] as $added) {
@@ -472,6 +535,7 @@ final readonly class EnrollmentTransferService
                     $enrollment->subjectsEnrolled()->create([
                         'subject_id' => $tgtSubject->id,
                         'class_id' => $matchedClass?->id,
+                        'section' => $matchedClass?->section,
                         'student_id' => $enrollment->student_id,
                         'academic_year' => $yearLevel,
                         'school_year' => $enrollment->school_year,

@@ -72,18 +72,19 @@ final class AdministratorRegistrarDocumentController extends Controller
     }
 
     /**
-     * @return array{template: string, variant: string, student_id: int, purpose: string|null}
+     * @return array{template: string, variant: string, student_id: int, enrollment_id?: int|null, purpose: string|null}
      */
     private function validateRequest(Request $request): array
     {
         Gate::authorize('viewAny', StudentEnrollment::class);
         Gate::authorize('exportDetailed', StudentEnrollment::class);
 
-        /** @var array{template: string, variant?: string, student_id: int, purpose: string|null} $validated */
+        /** @var array{template: string, variant?: string, student_id: int, enrollment_id?: int|null, purpose: string|null} $validated */
         $validated = $request->validate([
             'template' => ['required', 'string', 'in:certificate_of_enrollment,registration_form,grade_report'],
             'variant' => ['nullable', 'string', 'max:64'],
             'student_id' => ['required', 'integer', 'exists:students,id'],
+            'enrollment_id' => ['nullable', 'integer', 'exists:student_enrollment,id'],
             'purpose' => ['nullable', 'string', 'max:160'],
         ]);
 
@@ -135,24 +136,54 @@ final class AdministratorRegistrarDocumentController extends Controller
         $schoolYear = $settingsService->getCurrentSchoolYearString();
         $semester = $settingsService->getCurrentSemester();
         $semesterLabel = $settingsService->getAvailableSemesters()[$semester] ?? "Semester {$semester}";
-        $enrollmentQuery = StudentEnrollment::query()
-            ->withTrashed()
-            ->where('student_id', $student->id)
-            ->whereIn('school_year', $settingsService->getCurrentSchoolYearVariants())
-            ->where('semester', $semester);
+        $enrollmentId = isset($validated['enrollment_id']) ? (int) $validated['enrollment_id'] : null;
 
-        if ($validated['template'] === 'certificate_of_enrollment') {
-            $enrollmentQuery->where('status', data_get($enrollmentPipelineService->getCompletionStep(), 'status'));
+        if ($enrollmentId !== null) {
+            $enrollment = StudentEnrollment::query()
+                ->withTrashed()
+                ->whereKey($enrollmentId)
+                ->where('student_id', $student->id)
+                ->with([
+                    'course.department',
+                    'subjectsEnrolled.subject',
+                    'subjectsEnrolled.class.schedules.room',
+                ])
+                ->first();
+
+            if ($enrollment instanceof StudentEnrollment) {
+                $schoolYear = (string) ($enrollment->school_year ?: $schoolYear);
+                $semester = (int) ($enrollment->semester ?: $semester);
+                $semesterLabel = $settingsService->getAvailableSemesters()[$semester] ?? "Semester {$semester}";
+            }
+
+            if ($validated['template'] === 'certificate_of_enrollment' && $enrollment !== null) {
+                $completionStatus = data_get($enrollmentPipelineService->getCompletionStep(), 'status');
+                $isCompleted = $enrollment->terminal_outcome === 'completed'
+                    || ($completionStatus !== null && $enrollment->status === $completionStatus);
+                if (! $isCompleted || $enrollment->terminal_outcome === 'cancelled') {
+                    $enrollment = null;
+                }
+            }
+        } else {
+            $enrollmentQuery = StudentEnrollment::query()
+                ->withTrashed()
+                ->where('student_id', $student->id)
+                ->whereIn('school_year', $settingsService->getCurrentSchoolYearVariants())
+                ->where('semester', $semester);
+
+            if ($validated['template'] === 'certificate_of_enrollment') {
+                $enrollmentQuery->where('status', data_get($enrollmentPipelineService->getCompletionStep(), 'status'));
+            }
+
+            $enrollment = $enrollmentQuery
+                ->with([
+                    'course.department',
+                    'subjectsEnrolled.subject',
+                    'subjectsEnrolled.class.schedules.room',
+                ])
+                ->latest('id')
+                ->first();
         }
-
-        $enrollment = $enrollmentQuery
-            ->with([
-                'course.department',
-                'subjectsEnrolled.subject',
-                'subjectsEnrolled.class.schedules.room',
-            ])
-            ->latest('id')
-            ->first();
 
         if ($validated['template'] === 'certificate_of_enrollment' && $enrollment === null) {
             throw ValidationException::withMessages([

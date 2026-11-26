@@ -31,21 +31,22 @@ $registerAdminRoutes = function () use ($adminHost): void {
     })->name('admin.system-management.brand.appearance');
 
     // Assessment download route - accessible from admin domain
-    Route::get('assessment/download/{record}', function ($record) {
+    Route::get('assessment/download/{record}', function (Illuminate\Http\Request $request, $record) {
         abort_unless(Auth::check(), 401);
 
-        // Find the active student enrollment record (excluding soft-deleted)
-        $student = StudentEnrollment::where('id', $record)->firstOrFail();
+        $student = StudentEnrollment::withTrashed()->where('id', $record)->firstOrFail();
 
         $user = Auth::user();
         abort_unless($user && ($user->can('View:StudentEnrollment') || $user->can('view', $student)), 403);
 
-        // Get the assessment resource
-        $resource = $student
-            ->resources()
-            ->where('type', 'assessment')
-            ->latest('id')
-            ->first();
+        $resourceId = $request->integer('resource');
+        $resource = $resourceId > 0
+            ? $student->resources()->whereKey($resourceId)->first()
+            : $student
+                ->resources()
+                ->where('type', 'assessment')
+                ->latest('id')
+                ->first();
 
         if (! $resource) {
             abort(404, 'Assessment file not found');

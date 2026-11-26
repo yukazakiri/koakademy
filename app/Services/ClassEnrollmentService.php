@@ -31,11 +31,21 @@ final class ClassEnrollmentService
     public function enrollOnceWhileLocked(int $studentId, int $classId, array $attributes = []): ClassEnrollment
     {
         $existing = ClassEnrollment::query()
+            ->withTrashed()
             ->where('student_id', $studentId)
             ->where('class_id', $classId)
             ->first();
 
         if ($existing instanceof ClassEnrollment) {
+            if ($existing->trashed()) {
+                $existing->restore();
+            }
+
+            $desiredStatus = $attributes['status'] ?? null;
+            if ($desiredStatus !== null && (bool) $existing->status !== (bool) $desiredStatus) {
+                $existing->forceFill(['status' => (bool) $desiredStatus])->save();
+            }
+
             return $existing;
         }
 

@@ -177,8 +177,14 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/enrollments/applicants/{student}/cancel/revert', [AdministratorEnrollmentManagementController::class, 'revertApplicantCancellation'])
             ->whereNumber('student')
             ->name('enrollments.applicants.cancel.revert');
-        Route::get('/enrollments/{enrollment}', [AdministratorEnrollmentManagementController::class, 'show'])->whereNumber('enrollment')->name('enrollments.show');
+        Route::get('/enrollments/{enrollment}', [AdministratorEnrollmentManagementController::class, 'show'])->whereNumber('enrollment')->withTrashed()->name('enrollments.show');
         Route::get('/enrollments/{enrollment}/summary', [AdministratorEnrollmentManagementController::class, 'summary'])->whereNumber('enrollment')->name('enrollments.summary');
+        Route::patch('/enrollments/{enrollment}/remarks', [AdministratorEnrollmentManagementController::class, 'updateRemarks'])
+            ->whereNumber('enrollment')
+            ->name('enrollments.remarks.update');
+        Route::patch('/enrollments/{enrollment}/subjects/{subjectEnrollment}/section', [AdministratorEnrollmentManagementController::class, 'swapSubjectSection'])
+            ->whereNumber(['enrollment', 'subjectEnrollment'])
+            ->name('enrollments.subjects.section.update');
 
         // Enrollment Actions
         Route::post('/enrollments/{enrollment}/verify-head-dept', [AdministratorEnrollmentManagementController::class, 'verifyHeadDept'])->whereNumber('enrollment')->name('enrollments.verify-head-dept');
@@ -195,12 +201,16 @@ Route::middleware(['auth', 'administrators.only'])
             ->whereNumber(['enrollment', 'requirement'])
             ->scopeBindings()
             ->name('enrollments.requirements.review');
+        Route::get('/enrollments/{enrollment}/requirements/{requirement}/document', [AdministratorEnrollmentManagementController::class, 'requirementDocument'])
+            ->whereNumber(['enrollment', 'requirement'])
+            ->scopeBindings()
+            ->name('enrollments.requirements.document');
         Route::post('/enrollments/{enrollment}/enroll-class', [AdministratorEnrollmentManagementController::class, 'enrollInClass'])->whereNumber('enrollment')->name('enrollments.enroll-class');
         Route::post('/enrollments/{enrollment}/retry-enrollment', [AdministratorEnrollmentManagementController::class, 'retryEnrollment'])->whereNumber('enrollment')->name('enrollments.retry-enrollment');
-        Route::post('/enrollments/{enrollment}/resend-assessment', [AdministratorEnrollmentManagementController::class, 'resendAssessment'])->whereNumber('enrollment')->name('enrollments.resend-assessment');
+        Route::post('/enrollments/{enrollment}/resend-assessment', [AdministratorEnrollmentManagementController::class, 'resendAssessment'])->whereNumber('enrollment')->middleware('throttle:6,1')->name('enrollments.resend-assessment');
         Route::post('/enrollments/{enrollment}/create-assessment-pdf', [AdministratorEnrollmentManagementController::class, 'createAssessmentPdf'])->whereNumber('enrollment')->name('enrollments.create-assessment-pdf');
         Route::get('/enrollments/{enrollment}/class-schedule-changes/preview', [AdministratorEnrollmentManagementController::class, 'classScheduleChangesPreview'])->whereNumber('enrollment')->name('enrollments.class-schedule-changes.preview');
-        Route::post('/enrollments/{enrollment}/class-schedule-changes/notify', [AdministratorEnrollmentManagementController::class, 'notifyClassScheduleChanges'])->whereNumber('enrollment')->name('enrollments.class-schedule-changes.notify');
+        Route::post('/enrollments/{enrollment}/class-schedule-changes/notify', [AdministratorEnrollmentManagementController::class, 'notifyClassScheduleChanges'])->whereNumber('enrollment')->middleware('throttle:6,1')->name('enrollments.class-schedule-changes.notify');
         Route::get('/enrollments/{enrollment}/assessment-preview-data', [AdministratorEnrollmentManagementController::class, 'assessmentPreviewData'])->whereNumber('enrollment')->name('enrollments.assessment-preview-data');
         Route::get('/enrollments/{enrollment}/assessment-preview', [AdministratorEnrollmentManagementController::class, 'assessmentPreview'])->whereNumber('enrollment')->name('enrollments.assessment-preview');
         Route::get('/enrollments/{enrollment}/edit', [AdministratorEnrollmentManagementController::class, 'edit'])->whereNumber('enrollment')->name('enrollments.edit');

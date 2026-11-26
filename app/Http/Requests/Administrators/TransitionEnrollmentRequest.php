@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Administrators;
 
+use App\Enrollment\EnrollmentTransitionEngine;
 use App\Models\StudentEnrollment;
+use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 
 final class TransitionEnrollmentRequest extends FormRequest
@@ -12,8 +14,29 @@ final class TransitionEnrollmentRequest extends FormRequest
     public function authorize(): bool
     {
         $enrollment = $this->route('enrollment');
+        $user = $this->user();
 
-        return $enrollment instanceof StudentEnrollment && $this->user()?->can('update', $enrollment) === true;
+        if (! $enrollment instanceof StudentEnrollment || ! $user instanceof User) {
+            return false;
+        }
+
+        if ($user->can('update', $enrollment) || $user->hasRole('super_admin')) {
+            return true;
+        }
+
+        $available = app(EnrollmentTransitionEngine::class)->availableTransitions($enrollment, $user);
+        if ($available === []) {
+            return false;
+        }
+
+        $requestedKey = $this->input('transition_key');
+        if (is_string($requestedKey) && $requestedKey !== '') {
+            return collect($available)->contains(
+                static fn (array $transition): bool => ($transition['key'] ?? null) === $requestedKey,
+            );
+        }
+
+        return true;
     }
 
     /** @return array<string, mixed> */

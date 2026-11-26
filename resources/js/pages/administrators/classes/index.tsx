@@ -24,16 +24,19 @@ import type { User } from "@/types/user";
 import { Head, Link, router, useRemember } from "@inertiajs/react";
 import type { RowSelectionState } from "@tanstack/react-table";
 import {
+    AlertTriangle,
     BookOpen,
     Calendar,
     CalendarDays,
     CalendarIcon,
+    Columns3,
     GitCompare,
     GraduationCap,
     Layers,
     LayoutGrid,
     List,
     MapPin,
+    PanelRight,
     Pencil,
     Plus,
     Trash2,
@@ -42,16 +45,15 @@ import {
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import { ClassRow, getColumns, type ClassCapabilities } from "./columns";
+import { ClassRow, type ClassCapabilities } from "./columns";
 import { ClassCard } from "./components/class-card";
 import { ClassCompareDialog } from "./components/class-compare-dialog";
 import { semesterLabel } from "./components/class-list-details";
 import { ClassListToolbar, type ClassWorkspaceFilters } from "./components/class-list-toolbar";
 import type { ClassActionHandlers } from "./components/class-row-actions";
-import { ClassSelectionToolbar } from "./components/class-selection-toolbar";
 import { DeleteClassDialog } from "./components/delete-class-dialog";
 import { EditClassDialog } from "./components/edit-class-dialog";
-import { DataTable, type PaginationMeta } from "./data-table";
+import { type PaginationMeta } from "./data-table";
 import { DataTablePagination } from "./data-table-pagination";
 import {
     deliveryModeLabel,
@@ -61,6 +63,12 @@ import {
     type DeliveryMode,
     type DeliverySummary,
 } from "./lib/class-defaults";
+import { fetchClassWorkspace } from "./workspace/api";
+import { DualModeClassStudio } from "./workspace/dual-mode-studio";
+import { ExpandableClassLedger } from "./workspace/expandable-ledger";
+import { MultiClassBulkDock } from "./workspace/multi-class-bulk-dock";
+import { SectionRebalancerStudio } from "./workspace/section-studio";
+import type { ClassWorkspacePayload, RoomOption } from "./workspace/types";
 
 type SelectOption = { value: string; label: string };
 
@@ -171,7 +179,7 @@ export type ClassOptions = {
     day_of_week: SelectOption[];
     courses: EntityOption[];
     faculties: EntityOption[];
-    rooms: EntityOption[];
+    rooms: RoomOption[];
     shs_tracks: EntityOption[];
 };
 
@@ -352,26 +360,153 @@ export default function AdministratorClassesIndex({
     const [isUpdating, setIsUpdating] = React.useState(false);
 
     const [isSelectedClassLoading, setIsSelectedClassLoading] = React.useState(false);
-    const [viewMode, setViewMode] = useRemember<"grid" | "list">("list", "administrators.classes.index:viewMode");
+    const [rawViewMode, setViewMode] = useRemember<"ledger" | "grid" | "studio" | "list">("ledger", "administrators.classes.index:viewMode");
+    const viewMode: "ledger" | "grid" | "studio" = rawViewMode === "list" ? "ledger" : rawViewMode;
+    const [density, setDensity] = useRemember<"compact" | "comfortable">("compact", "administrators.classes.index:density");
+    const [expandedClassIds, setExpandedClassIds] = React.useState<number[]>([]);
+    const [activeStudioClassId, setActiveStudioClassId] = React.useState<number | null>(null);
+    const [studioMode, setStudioMode] = React.useState<"enroll" | "schedule">("enroll");
+    const [sectionStudioAnchorId, setSectionStudioAnchorId] = React.useState<number | null>(null);
+    const [workspaceCache, setWorkspaceCache] = React.useState<Record<number, ClassWorkspacePayload>>({});
+    const [loadingWorkspaceIds, setLoadingWorkspaceIds] = React.useState<Record<number, boolean>>({});
+    const [isDockViewport, setIsDockViewport] = React.useState<boolean>(() => (typeof window !== "undefined" ? window.innerWidth >= 1536 : false));
+    const enrollSearchInputRef = React.useRef<HTMLInputElement>(null);
     const [sortOption, setSortOption] = React.useState(`${filters?.sort ?? "created_at"}:${filters?.direction ?? "desc"}`);
     const [activeFilters, setActiveFilters] = React.useState<FilterType[]>(() => createActiveFilters(filters));
 
-    // Keyboard shortcut to focus search input: '/' or 'Cmd+K' / 'Ctrl+K'
+    React.useEffect(() => {
+        if (typeof window === "undefined") return;
+        const mq = window.matchMedia("(min-width: 1536px)");
+        const update = () => setIsDockViewport(mq.matches);
+        update();
+        mq.addEventListener("change", update);
+        return () => mq.removeEventListener("change", update);
+    }, []);
+
+    const loadWorkspace = React.useCallback(
+        async (classId: number, force = false) => {
+            if (!force && workspaceCache[classId]) {
+                return;
+            }
+            setLoadingWorkspaceIds((prev) => ({ ...prev, [classId]: true }));
+            try {
+                const payload = await fetchClassWorkspace(classId);
+                setWorkspaceCache((prev) => ({ ...prev, [classId]: payload }));
+            } catch (error) {
+                toast.error(error instanceof Error ? error.message : "Failed to load class workspace.");
+            } finally {
+                setLoadingWorkspaceIds((prev) => ({ ...prev, [classId]: false }));
+            }
+        },
+        [workspaceCache],
+    );
+
+    const refreshWorkspace = React.useCallback(async (classId: number) => {
+        setLoadingWorkspaceIds((prev) => ({ ...prev, [classId]: true }));
+        try {
+            const payload = await fetchClassWorkspace(classId);
+            setWorkspaceCache((prev) => ({ ...prev, [classId]: payload }));
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Failed to refresh class workspace.");
+        } finally {
+            setLoadingWorkspaceIds((prev) => ({ ...prev, [classId]: false }));
+        }
+    }, []);
+
+    const refreshIndex = React.useCallback(() => {
+        router.reload({ only: ["classes"] });
+    }, []);
+
+    const handleToggleExpand = React.useCallback(
+        (classId: number) => {
+            setExpandedClassIds((prev) => {
+                if (prev.includes(classId)) {
+                    return prev.filter((id) => id !== classId);
+                }
+                void loadWorkspace(classId);
+                return [...prev, classId];
+            });
+        },
+        [loadWorkspace],
+    );
+
+    const handleOpenStudio = React.useCallback(
+        (classId: number, mode: "enroll" | "schedule") => {
+            setActiveStudioClassId(classId);
+            setStudioMode(mode);
+            void loadWorkspace(classId);
+            if (mode === "enroll") {
+                setTimeout(() => enrollSearchInputRef.current?.focus(), 60);
+            }
+        },
+        [loadWorkspace],
+    );
+
+    const handleOpenSectionStudio = React.useCallback((classId: number) => {
+        setSectionStudioAnchorId(classId);
+        setViewMode("studio");
+    }, [setViewMode]);
+
+    // Keyboard shortcuts: '/' or Cmd+K search, E quick-enroll, S schedule studio, J/K step classes, Esc collapse studio
     React.useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
-            if (
-                (event.key === "/" || ((event.metaKey || event.ctrlKey) && event.key === "k")) &&
-                document.activeElement?.tagName !== "INPUT" &&
-                document.activeElement?.tagName !== "TEXTAREA"
-            ) {
+            const target = event.target as HTMLElement | null;
+            const isTyping =
+                target?.tagName === "INPUT" ||
+                target?.tagName === "TEXTAREA" ||
+                target?.tagName === "SELECT" ||
+                Boolean(target?.isContentEditable);
+
+            if ((event.key === "/" || ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k")) && !isTyping) {
                 event.preventDefault();
                 searchInputRef.current?.focus();
+                return;
+            }
+
+            if (isTyping || event.metaKey || event.ctrlKey || event.altKey) {
+                return;
+            }
+
+            const key = event.key.toLowerCase();
+            if (key === "escape" && activeStudioClassId !== null) {
+                setActiveStudioClassId(null);
+                return;
+            }
+
+            if (classList.length === 0) return;
+
+            if (key === "e") {
+                event.preventDefault();
+                const targetId = activeStudioClassId ?? classList[0].id;
+                if (viewMode !== "ledger") setViewMode("ledger");
+                handleOpenStudio(targetId, "enroll");
+            } else if (key === "s") {
+                event.preventDefault();
+                const targetId = activeStudioClassId ?? classList[0].id;
+                if (viewMode !== "ledger") setViewMode("ledger");
+                handleOpenStudio(targetId, "schedule");
+            } else if (key === "j" || key === "k") {
+                event.preventDefault();
+                const currentIdx = activeStudioClassId !== null ? classList.findIndex((c) => c.id === activeStudioClassId) : -1;
+                const nextIdx =
+                    key === "j"
+                        ? currentIdx < 0
+                            ? 0
+                            : Math.min(classList.length - 1, currentIdx + 1)
+                        : currentIdx <= 0
+                          ? 0
+                          : currentIdx - 1;
+                const nextClass = classList[nextIdx];
+                if (nextClass) {
+                    setActiveStudioClassId(nextClass.id);
+                    void loadWorkspace(nextClass.id);
+                }
             }
         };
 
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, []);
+    }, [activeStudioClassId, classList, handleOpenStudio, loadWorkspace, setViewMode, viewMode]);
 
     const cancelPendingSearch = () => {
         if (debouncedSearchRef.current) {
@@ -525,16 +660,6 @@ export default function AdministratorClassesIndex({
     const handleSortChange = (value: string) => {
         setSortOption(value);
         navigateWithParams(buildFilterParams(search, activeFilters, value, { page: 1 }));
-    };
-
-    /**
-     * A column header was clicked. The column ids are the sort keys the server
-     * understands, so the table and the sort control ask for the same thing.
-     */
-    const handleColumnSortChange = (sort: string, direction: "asc" | "desc") => {
-        const nextSortOption = sort ? `${sort}:${direction}` : "created_at:desc";
-        setSortOption(nextSortOption);
-        navigateWithParams(buildFilterParams(search, activeFilters, nextSortOption, { page: 1 }));
     };
 
     const handlePageChange = (page: number, perPage: number) => {
@@ -744,7 +869,13 @@ export default function AdministratorClassesIndex({
     const classActions: ClassActionHandlers = {
         onManage: openManage,
         onEdit: openEdit,
-        onSchedule: openSchedule,
+        onSchedule: (classId) => {
+            if (viewMode === "ledger") {
+                handleOpenStudio(classId, "schedule");
+            } else {
+                openSchedule(classId);
+            }
+        },
         onDelete: confirmDelete,
         onRestore: performRestore,
         onForceDelete: performForceDelete,
@@ -755,7 +886,26 @@ export default function AdministratorClassesIndex({
         },
         capabilities,
     };
-    const columns = getColumns(classActions);
+
+    const activeStudioClass = React.useMemo(
+        () => (activeStudioClassId !== null ? (classList.find((c) => c.id === activeStudioClassId) ?? null) : null),
+        [activeStudioClassId, classList],
+    );
+
+    const pageConflictCount = React.useMemo(
+        () => classList.filter((c) => c.schedule_health?.has_conflict || c.schedule_health?.is_room_overcrowded).length,
+        [classList],
+    );
+
+    const pageIncompleteHoursCount = React.useMemo(
+        () => classList.filter((c) => c.schedule_health && !c.schedule_health.is_complete && c.schedule_health.status !== "unscheduled").length,
+        [classList],
+    );
+
+    const pageWaitlistedTotal = React.useMemo(
+        () => classList.reduce((acc, c) => acc + (c.waitlist_count ?? 0), 0),
+        [classList],
+    );
 
     const hasListFilters =
         search.trim() !== "" ||
@@ -796,37 +946,42 @@ export default function AdministratorClassesIndex({
             <Head title="Administrators • Classes" />
 
             <div className="flex min-w-0 flex-col gap-6 pb-12">
-                {/* Visual Top Header Banner */}
-                <header className="bg-card relative overflow-hidden rounded-2xl border p-6 shadow-xs sm:p-7">
-                    <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="min-w-0 space-y-1">
-                            <div className="flex items-center gap-2">
-                                <span className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Academic Operations</span>
-                                <span className="text-muted-foreground/60 text-xs">/</span>
-                                <span className="text-muted-foreground text-xs font-medium">Class Management</span>
+                {/* Compact Unified Command Header & Proportional Capacity + Triage Ribbon */}
+                <header className="bg-card relative overflow-hidden rounded-2xl border p-4 shadow-xs sm:px-6 sm:py-5">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex min-w-0 items-center gap-3">
+                            <div className="bg-primary/10 text-primary flex size-10 shrink-0 items-center justify-center rounded-xl">
+                                <BookOpen className="size-5" />
                             </div>
-
-                            <div className="flex items-center gap-3 pt-1">
-                                <div className="bg-primary/10 text-primary flex size-10 shrink-0 items-center justify-center rounded-xl">
-                                    <BookOpen className="size-5" />
+                            <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <h1 className="text-foreground text-xl font-bold tracking-tight sm:text-2xl">Class Offerings &amp; Rosters</h1>
+                                    <Badge
+                                        variant="outline"
+                                        className="border-border/80 bg-muted/40 text-foreground gap-1.5 rounded-lg px-2.5 py-0.5 text-xs font-semibold"
+                                    >
+                                        <Calendar className="text-primary size-3" />
+                                        {defaults.school_year || "Current Year"} · {semesterLabel(defaults.semester)}
+                                    </Badge>
                                 </div>
-                                <div className="min-w-0">
-                                    <h1 className="text-foreground text-2xl font-bold tracking-tight sm:text-3xl">Classes</h1>
-                                    <p className="text-muted-foreground text-xs text-pretty sm:text-sm">
-                                        Organize class offerings, faculty teaching assignments, room allocations, and weekly timetables.
-                                    </p>
-                                </div>
+                                <p className="text-muted-foreground text-xs">
+                                    Manage enrollees, inline grades, Lec/Lab room schedules, conflict fixes, and parallel sections in one workspace.
+                                </p>
                             </div>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
-                            <Badge
-                                variant="outline"
-                                className="border-border/80 bg-muted/40 text-foreground gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold backdrop-blur"
-                            >
-                                <Calendar className="text-primary size-3.5" />
-                                {defaults.school_year || "Current Year"} · {semesterLabel(defaults.semester)}
-                            </Badge>
+                        <div className="flex shrink-0 flex-wrap items-center gap-2">
+                            <div className="text-muted-foreground bg-muted/40 hidden items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] 2xl:flex">
+                                <kbd className="bg-background rounded border px-1 font-mono text-[10px] font-semibold">J</kbd>
+                                <kbd className="bg-background rounded border px-1 font-mono text-[10px] font-semibold">K</kbd>
+                                <span>step</span>
+                                <span className="opacity-40">·</span>
+                                <kbd className="bg-background rounded border px-1 font-mono text-[10px] font-semibold">E</kbd>
+                                <span>enroll</span>
+                                <span className="opacity-40">·</span>
+                                <kbd className="bg-background rounded border px-1 font-mono text-[10px] font-semibold">S</kbd>
+                                <span>schedule</span>
+                            </div>
 
                             <Link
                                 href={schedulePlanner.url()}
@@ -850,121 +1005,171 @@ export default function AdministratorClassesIndex({
                             ) : null}
                         </div>
                     </div>
-                </header>
 
-                {/* KPI & Attention Queue Visualizer Strip */}
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    {/* Total Classes */}
-                    <div className="bg-card space-y-2 rounded-2xl border p-4 shadow-2xs">
-                        <div className="text-muted-foreground flex items-center justify-between text-xs font-medium">
-                            <span>Total Offerings</span>
-                            <BookOpen className="text-primary size-4" />
-                        </div>
-                        <div className="flex items-baseline justify-between gap-2">
-                            <span className="text-foreground text-2xl font-bold tracking-tight tabular-nums">{classMeta.total.toLocaleString()}</span>
-                            <div className="flex items-center gap-1.5">
-                                <Badge variant="secondary" className="text-[11px] font-medium">
+                    {/* Proportional Capacity & Triage Ribbon */}
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-3.5">
+                        <div className="flex flex-wrap items-center gap-3">
+                            <div className="flex items-baseline gap-1.5 text-xs">
+                                <span className="text-foreground text-sm font-bold tabular-nums">{classMeta.total.toLocaleString()}</span>
+                                <span className="text-muted-foreground">offerings</span>
+                                <Badge variant="secondary" className="ml-1 text-[10px] font-medium">
                                     {classMeta.classification_counts.college} College
                                 </Badge>
-                                <Badge variant="outline" className="text-[11px] font-medium">
+                                <Badge variant="outline" className="text-[10px] font-medium">
                                     {classMeta.classification_counts.shs} SHS
                                 </Badge>
                             </div>
+
+                            <div className="hidden h-4 w-px bg-border sm:block" />
+
+                            <div className="flex items-center gap-2 text-xs">
+                                <div className="bg-muted h-1.5 w-24 overflow-hidden rounded-full">
+                                    <div
+                                        className="bg-primary h-full rounded-full transition-all duration-300"
+                                        style={{
+                                            width: `${classMeta.total_capacity > 0 ? Math.min((classMeta.total_students / classMeta.total_capacity) * 100, 100) : 0}%`,
+                                        }}
+                                    />
+                                </div>
+                                <span className="text-foreground font-semibold tabular-nums">{classMeta.total_students.toLocaleString()}</span>
+                                <span className="text-muted-foreground tabular-nums">/ {classMeta.total_capacity.toLocaleString()} seats</span>
+                                {classMeta.total_capacity > 0 ? (
+                                    <Badge variant="outline" className="px-1.5 py-0 text-[10px] tabular-nums">
+                                        {Math.round((classMeta.total_students / classMeta.total_capacity) * 100)}%
+                                    </Badge>
+                                ) : null}
+                            </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-muted-foreground mr-1 text-[11px] font-semibold tracking-wider uppercase">Triage</span>
+
+                            <button
+                                type="button"
+                                onClick={() => handleWorkspaceFilterChange({ ...filters, needs_faculty: filters.needs_faculty ? null : true })}
+                                className={cn(
+                                    "inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                                    filters.needs_faculty
+                                        ? "border-amber-500/60 bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                                        : "bg-background hover:bg-muted/60 text-foreground",
+                                )}
+                            >
+                                <UserCheck className={cn("size-3", classMeta.queues.unassigned_faculty > 0 ? "text-amber-500" : "text-muted-foreground")} />
+                                Needs Faculty
+                                <span className="font-mono text-[11px] font-bold tabular-nums">{classMeta.queues.unassigned_faculty}</span>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => handleWorkspaceFilterChange({ ...filters, needs_schedule: filters.needs_schedule ? null : true })}
+                                className={cn(
+                                    "inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                                    filters.needs_schedule
+                                        ? "border-indigo-500/60 bg-indigo-500/15 text-indigo-700 dark:text-indigo-300"
+                                        : "bg-background hover:bg-muted/60 text-foreground",
+                                )}
+                            >
+                                <CalendarDays className={cn("size-3", classMeta.queues.no_schedule > 0 ? "text-indigo-500" : "text-muted-foreground")} />
+                                No Schedule
+                                <span className="font-mono text-[11px] font-bold tabular-nums">{classMeta.queues.no_schedule}</span>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => handleWorkspaceFilterChange({ ...filters, over_capacity: filters.over_capacity ? null : true })}
+                                className={cn(
+                                    "inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                                    filters.over_capacity
+                                        ? "border-rose-500/60 bg-rose-500/15 text-rose-700 dark:text-rose-300"
+                                        : "bg-background hover:bg-muted/60 text-foreground",
+                                )}
+                            >
+                                <Users className={cn("size-3", classMeta.queues.over_capacity > 0 ? "text-rose-500" : "text-muted-foreground")} />
+                                Over Cap
+                                <span className="font-mono text-[11px] font-bold tabular-nums">{classMeta.queues.over_capacity}</span>
+                            </button>
+
+                            {pageConflictCount > 0 ? (
+                                <Badge variant="outline" className="gap-1 rounded-full border-rose-500/40 bg-rose-500/10 px-2.5 py-1 text-xs font-medium text-rose-700 dark:text-rose-300">
+                                    <AlertTriangle className="size-3" />
+                                    Conflicts <span className="font-mono font-bold">{pageConflictCount}</span>
+                                </Badge>
+                            ) : null}
+
+                            {pageIncompleteHoursCount > 0 ? (
+                                <Badge variant="outline" className="gap-1 rounded-full border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-300">
+                                    Incomplete Hrs <span className="font-mono font-bold">{pageIncompleteHoursCount}</span>
+                                </Badge>
+                            ) : null}
+
+                            {pageWaitlistedTotal > 0 ? (
+                                <Badge variant="outline" className="gap-1 rounded-full border-indigo-500/40 bg-indigo-500/10 px-2.5 py-1 text-xs font-medium text-indigo-700 dark:text-indigo-300">
+                                    Waitlisted <span className="font-mono font-bold">{pageWaitlistedTotal}</span>
+                                </Badge>
+                            ) : null}
                         </div>
                     </div>
-
-                    {/* Total Enrollment */}
-                    <div className="bg-card space-y-2 rounded-2xl border p-4 shadow-2xs">
-                        <div className="text-muted-foreground flex items-center justify-between text-xs font-medium">
-                            <span>Enrollment & Capacity</span>
-                            <Users className="text-primary size-4" />
-                        </div>
-                        <div className="flex items-baseline justify-between gap-2">
-                            <span className="text-foreground text-2xl font-bold tracking-tight tabular-nums">
-                                {classMeta.total_students.toLocaleString()}
-                            </span>
-                            <span className="text-muted-foreground text-xs tabular-nums">of {classMeta.total_capacity.toLocaleString()} seats</span>
-                        </div>
-                        <div className="bg-muted/60 h-1.5 w-full overflow-hidden rounded-full">
-                            <div
-                                className="bg-primary h-full rounded-full transition-all duration-300"
-                                style={{
-                                    width: `${classMeta.total_capacity > 0 ? Math.min((classMeta.total_students / classMeta.total_capacity) * 100, 100) : 0}%`,
-                                }}
-                            />
-                        </div>
-                    </div>
-
-                    {/* Operational Queues: Needs Faculty */}
-                    <button
-                        type="button"
-                        onClick={() => handleWorkspaceFilterChange({ ...filters, needs_faculty: filters.needs_faculty ? null : true })}
-                        className={cn(
-                            "flex cursor-pointer flex-col justify-between rounded-2xl border p-4 text-left shadow-2xs transition-all outline-none",
-                            filters.needs_faculty
-                                ? "border-amber-500/50 bg-amber-500/10 ring-1 ring-amber-500/30"
-                                : "bg-card hover:border-border/80 hover:bg-muted/30",
-                        )}
-                    >
-                        <div className="text-muted-foreground flex items-center justify-between text-xs font-medium">
-                            <span>Unassigned Faculty</span>
-                            <UserCheck
-                                className={cn("size-4", classMeta.queues.unassigned_faculty > 0 ? "text-amber-500" : "text-muted-foreground")}
-                            />
-                        </div>
-                        <div className="flex items-baseline justify-between gap-2 pt-1">
-                            <span className="text-foreground text-2xl font-bold tracking-tight tabular-nums">
-                                {classMeta.queues.unassigned_faculty.toLocaleString()}
-                            </span>
-                            <Badge variant={classMeta.queues.unassigned_faculty > 0 ? "outline" : "secondary"} className="text-[11px]">
-                                {classMeta.queues.unassigned_faculty > 0 ? "Needs assignment" : "All staffed"}
-                            </Badge>
-                        </div>
-                    </button>
-
-                    {/* Operational Queues: Needs Schedule */}
-                    <button
-                        type="button"
-                        onClick={() => handleWorkspaceFilterChange({ ...filters, needs_schedule: filters.needs_schedule ? null : true })}
-                        className={cn(
-                            "flex cursor-pointer flex-col justify-between rounded-2xl border p-4 text-left shadow-2xs transition-all outline-none",
-                            filters.needs_schedule
-                                ? "border-indigo-500/50 bg-indigo-500/10 ring-1 ring-indigo-500/30"
-                                : "bg-card hover:border-border/80 hover:bg-muted/30",
-                        )}
-                    >
-                        <div className="text-muted-foreground flex items-center justify-between text-xs font-medium">
-                            <span>Unscheduled Sessions</span>
-                            <CalendarDays className={cn("size-4", classMeta.queues.no_schedule > 0 ? "text-indigo-500" : "text-muted-foreground")} />
-                        </div>
-                        <div className="flex items-baseline justify-between gap-2 pt-1">
-                            <span className="text-foreground text-2xl font-bold tracking-tight tabular-nums">
-                                {classMeta.queues.no_schedule.toLocaleString()}
-                            </span>
-                            <Badge variant={classMeta.queues.no_schedule > 0 ? "outline" : "secondary"} className="text-[11px]">
-                                {classMeta.queues.no_schedule > 0 ? "To schedule" : "All scheduled"}
-                            </Badge>
-                        </div>
-                    </button>
-                </div>
+                </header>
 
                 <section className="bg-card min-w-0 overflow-hidden rounded-2xl border shadow-xs" aria-labelledby="class-sections-heading">
-                    <div className="flex flex-col gap-4 border-b p-4 sm:p-6 lg:flex-row lg:items-center lg:justify-between">
-                        <div className="space-y-1">
+                    <div className="flex flex-col gap-3 border-b p-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex flex-wrap items-center gap-3">
                             <h2 id="class-sections-heading" className="text-base font-semibold">
                                 {filters.trashed === "only" ? "Archived classes" : "Class sections"}
                                 <span className="text-muted-foreground ml-2 font-normal tabular-nums">{classMeta.total.toLocaleString()}</span>
                             </h2>
-                            <p className="text-muted-foreground text-sm">
-                                {classMeta.total_students.toLocaleString()} enrollments · {classMeta.total_capacity.toLocaleString()} total places
-                            </p>
+
+                            {viewMode === "ledger" ? (
+                                <div className="flex items-center gap-0.5 rounded-lg border p-0.5 text-xs" role="group" aria-label="Row density">
+                                    <button
+                                        type="button"
+                                        onClick={() => setDensity("compact")}
+                                        className={cn(
+                                            "cursor-pointer rounded-md px-2 py-1 font-medium transition-colors",
+                                            density === "compact" ? "bg-secondary text-secondary-foreground" : "text-muted-foreground hover:text-foreground",
+                                        )}
+                                    >
+                                        Compact
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setDensity("comfortable")}
+                                        className={cn(
+                                            "cursor-pointer rounded-md px-2 py-1 font-medium transition-colors",
+                                            density === "comfortable" ? "bg-secondary text-secondary-foreground" : "text-muted-foreground hover:text-foreground",
+                                        )}
+                                    >
+                                        Comfortable
+                                    </button>
+                                </div>
+                            ) : null}
                         </div>
-                        <div className="flex flex-wrap items-center gap-3">
-                            <Button type="button" variant="ghost" className="h-9 gap-2 px-3 text-sm" onClick={() => openCompare()}>
-                                <GitCompare className="size-4" aria-hidden="true" /> Compare students
+
+                        <div className="flex flex-wrap items-center gap-2.5">
+                            <Button type="button" variant="ghost" className="h-9 gap-1.5 px-2.5 text-xs font-medium" onClick={() => openCompare()}>
+                                <GitCompare className="size-3.5" aria-hidden="true" /> Compare
                             </Button>
+
+                            {viewMode === "ledger" && classList.length > 0 ? (
+                                <Button
+                                    type="button"
+                                    variant={activeStudioClassId !== null ? "secondary" : "outline"}
+                                    className="h-9 gap-1.5 px-3 text-xs font-medium"
+                                    onClick={() => {
+                                        if (activeStudioClassId !== null) {
+                                            setActiveStudioClassId(null);
+                                        } else {
+                                            handleOpenStudio(classList[0].id, studioMode);
+                                        }
+                                    }}
+                                >
+                                    <PanelRight className="size-3.5" aria-hidden="true" />
+                                    {activeStudioClassId !== null ? "Hide Studio" : "Class Studio"}
+                                </Button>
+                            ) : null}
+
                             <Select value={sortOption} onValueChange={handleSortChange}>
-                                <SelectTrigger className="h-9 w-40" aria-label="Sort classes">
+                                <SelectTrigger className="h-9 w-40 text-xs" aria-label="Sort classes">
                                     <SelectValue placeholder="Sort classes" />
                                 </SelectTrigger>
                                 <SelectContent align="end">
@@ -980,28 +1185,48 @@ export default function AdministratorClassesIndex({
                                     <SelectItem value="period:desc">Latest term</SelectItem>
                                 </SelectContent>
                             </Select>
-                            <div className="flex items-center gap-1 rounded-lg border p-1" role="group" aria-label="Class display">
+
+                            <div className="flex items-center gap-0.5 rounded-lg border p-1" role="group" aria-label="Class display">
                                 <Button
                                     type="button"
-                                    variant={viewMode === "list" ? "secondary" : "ghost"}
-                                    size="icon"
-                                    className="size-8"
-                                    onClick={() => setViewMode("list")}
-                                    aria-label="Table view"
-                                    aria-pressed={viewMode === "list"}
+                                    variant={viewMode === "ledger" ? "secondary" : "ghost"}
+                                    size="sm"
+                                    className="h-7 gap-1.5 px-2.5 text-xs"
+                                    onClick={() => setViewMode("ledger")}
+                                    aria-label="Ledger view"
+                                    aria-pressed={viewMode === "ledger"}
                                 >
-                                    <List className="size-4" aria-hidden="true" />
+                                    <List className="size-3.5" aria-hidden="true" />
+                                    <span className="hidden sm:inline">Ledger</span>
                                 </Button>
                                 <Button
                                     type="button"
                                     variant={viewMode === "grid" ? "secondary" : "ghost"}
-                                    size="icon"
-                                    className="size-8"
+                                    size="sm"
+                                    className="h-7 gap-1.5 px-2.5 text-xs"
                                     onClick={() => setViewMode("grid")}
                                     aria-label="Card view"
                                     aria-pressed={viewMode === "grid"}
                                 >
-                                    <LayoutGrid className="size-4" aria-hidden="true" />
+                                    <LayoutGrid className="size-3.5" aria-hidden="true" />
+                                    <span className="hidden sm:inline">Cards</span>
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant={viewMode === "studio" ? "secondary" : "ghost"}
+                                    size="sm"
+                                    className="h-7 gap-1.5 px-2.5 text-xs"
+                                    onClick={() => {
+                                        if (sectionStudioAnchorId === null && classList.length > 0) {
+                                            setSectionStudioAnchorId(activeStudioClassId ?? classList[0].id);
+                                        }
+                                        setViewMode("studio");
+                                    }}
+                                    aria-label="Section Studio view"
+                                    aria-pressed={viewMode === "studio"}
+                                >
+                                    <Columns3 className="size-3.5" aria-hidden="true" />
+                                    <span className="hidden sm:inline">Section Studio</span>
                                 </Button>
                             </div>
                         </div>
@@ -1027,18 +1252,29 @@ export default function AdministratorClassesIndex({
                             Archived classes retain their schedules and enrollments. Restore a class to return it to the active list.
                         </p>
                     ) : null}
-                    <ClassSelectionToolbar
-                        selectedClasses={selectedClasses}
-                        onClear={() => setRowSelection({})}
-                        onCompare={() => {
-                            if (selectedClasses.length === 2) openCompare([selectedClasses[0].id, selectedClasses[1].id]);
-                        }}
-                        {...classActions}
-                    />
                     <div className="sr-only" role="status">
                         {isUpdating ? "Updating class list" : `${classMeta.total} classes found`}
                     </div>
-                    {viewMode === "grid" ? (
+
+                    {viewMode === "studio" ? (
+                        <div className="p-4 sm:p-6">
+                            {visibleClasses.length > 0 ? (
+                                <SectionRebalancerStudio
+                                    anchorClassId={sectionStudioAnchorId ?? activeStudioClassId ?? visibleClasses[0]?.id ?? null}
+                                    availableClasses={visibleClasses}
+                                    onChangeAnchorClass={(id) => setSectionStudioAnchorId(id)}
+                                    onOpenScheduleInLedger={(id) => {
+                                        setViewMode("ledger");
+                                        handleOpenStudio(id, "schedule");
+                                    }}
+                                    onMutated={refreshIndex}
+                                    canUpdate={capabilities.update}
+                                />
+                            ) : (
+                                emptyState
+                            )}
+                        </div>
+                    ) : viewMode === "grid" ? (
                         <div aria-busy={isUpdating}>
                             <div className={isUpdating ? "opacity-60" : undefined}>
                                 {visibleClasses.length > 0 ? (
@@ -1069,24 +1305,115 @@ export default function AdministratorClassesIndex({
                             />
                         </div>
                     ) : (
-                        <DataTable
-                            columns={columns}
-                            data={visibleClasses}
-                            pagination={classMeta}
-                            sort={filters.sort ?? "created_at"}
-                            direction={filters.direction === "asc" ? "asc" : "desc"}
-                            onSortChange={handleColumnSortChange}
-                            onPageChange={handlePageChange}
-                            isLoading={isUpdating}
-                            getRowId={(row) => String(row.id)}
-                            rowSelection={rowSelection}
-                            onRowSelectionChange={setRowSelection}
-                            emptyState={emptyState}
-                            onRowClick={(row) => router.visit(showClass.url(row.id))}
-                        />
+                        <div
+                            aria-busy={isUpdating}
+                            className={cn(
+                                "min-w-0",
+                                activeStudioClassId !== null && isDockViewport && "2xl:grid 2xl:grid-cols-[minmax(0,1fr)_420px] 2xl:items-start",
+                            )}
+                        >
+                            <div className={cn("min-w-0", isUpdating && "opacity-60")}>
+                                {visibleClasses.length > 0 ? (
+                                    <ExpandableClassLedger
+                                        classes={visibleClasses}
+                                        rowSelection={rowSelection}
+                                        onRowSelectionChange={setRowSelection}
+                                        expandedClassIds={expandedClassIds}
+                                        onToggleExpand={handleToggleExpand}
+                                        activeStudioClassId={activeStudioClassId}
+                                        studioMode={studioMode}
+                                        onOpenStudio={handleOpenStudio}
+                                        onOpenSectionStudio={handleOpenSectionStudio}
+                                        workspaceCache={workspaceCache}
+                                        loadingWorkspaceIds={loadingWorkspaceIds}
+                                        onRefreshWorkspace={refreshWorkspace}
+                                        onRefreshIndex={refreshIndex}
+                                        capabilities={capabilities}
+                                        density={density}
+                                        rowActions={classActions}
+                                    />
+                                ) : (
+                                    emptyState
+                                )}
+                                <DataTablePagination
+                                    page={classMeta.current_page}
+                                    lastPage={classMeta.last_page}
+                                    perPage={classMeta.per_page}
+                                    total={classMeta.total}
+                                    from={classMeta.from}
+                                    to={classMeta.to}
+                                    isLoading={isUpdating}
+                                    onPageChange={handlePageChange}
+                                />
+                            </div>
+
+                            {activeStudioClassId !== null && isDockViewport ? (
+                                <aside className="border-border bg-card sticky top-0 border-l">
+                                    <DualModeClassStudio
+                                        classRow={activeStudioClass}
+                                        workspace={workspaceCache[activeStudioClassId] ?? null}
+                                        loading={Boolean(loadingWorkspaceIds[activeStudioClassId])}
+                                        mode={studioMode}
+                                        onModeChange={setStudioMode}
+                                        onClose={() => setActiveStudioClassId(null)}
+                                        rooms={options.rooms}
+                                        selectedClassCount={selectedClasses.length}
+                                        canUpdate={capabilities.update}
+                                        enrollSearchInputRef={enrollSearchInputRef}
+                                        onWorkspaceMutated={refreshWorkspace}
+                                        onRefreshIndex={refreshIndex}
+                                    />
+                                </aside>
+                            ) : null}
+                        </div>
                     )}
                 </section>
             </div>
+
+            {/* Responsive Drawer for Dual-Mode Studio on <1536px viewports */}
+            {!isDockViewport ? (
+                <Sheet open={activeStudioClassId !== null} onOpenChange={(open) => !open && setActiveStudioClassId(null)}>
+                    <SheetContent side="right" className="w-full overflow-y-auto p-0 sm:max-w-[500px]">
+                        <SheetHeader className="sr-only">
+                            <SheetTitle>{activeStudioClass?.record_title ?? "Class Studio"}</SheetTitle>
+                            <SheetDescription>Manage class enrollees and schedule blocks</SheetDescription>
+                        </SheetHeader>
+                        {activeStudioClassId !== null ? (
+                            <DualModeClassStudio
+                                classRow={activeStudioClass}
+                                workspace={workspaceCache[activeStudioClassId] ?? null}
+                                loading={Boolean(loadingWorkspaceIds[activeStudioClassId])}
+                                mode={studioMode}
+                                onModeChange={setStudioMode}
+                                onClose={() => setActiveStudioClassId(null)}
+                                hideCollapseButton
+                                rooms={options.rooms}
+                                selectedClassCount={selectedClasses.length}
+                                canUpdate={capabilities.update}
+                                enrollSearchInputRef={enrollSearchInputRef}
+                                onWorkspaceMutated={refreshWorkspace}
+                                onRefreshIndex={refreshIndex}
+                            />
+                        ) : null}
+                    </SheetContent>
+                </Sheet>
+            ) : null}
+
+            {/* Floating Multi-Class Bulk Action Dock */}
+            <MultiClassBulkDock
+                selectedClasses={selectedClasses}
+                faculties={options.faculties}
+                canUpdate={capabilities.update}
+                onClear={() => setRowSelection({})}
+                onCompare={(ids) => openCompare(ids)}
+                onCompleted={() => {
+                    setRowSelection({});
+                    refreshIndex();
+                    if (activeStudioClassId !== null) {
+                        void refreshWorkspace(activeStudioClassId);
+                    }
+                }}
+            />
 
             <Dialog open={isCopyOpen} onOpenChange={setIsCopyOpen}>
                 <DialogContent>
@@ -1368,9 +1695,13 @@ export default function AdministratorClassesIndex({
                                                                         </div>
                                                                     </TableCell>
                                                                     <TableCell>
-                                                                        <span className="text-muted-foreground text-sm">
-                                                                            {enrollment.status ?? "—"}
-                                                                        </span>
+                                                                        <Badge variant="outline" className="capitalize">
+                                                                            {typeof enrollment.status === "boolean"
+                                                                                ? enrollment.status
+                                                                                    ? "enrolled"
+                                                                                    : "dropped"
+                                                                                : (enrollment.status ?? "enrolled")}
+                                                                        </Badge>
                                                                     </TableCell>
                                                                     <TableCell className="text-muted-foreground text-right text-sm">
                                                                         {enrollment.total_average ?? "—"}

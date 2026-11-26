@@ -7,6 +7,7 @@ import { ClassEnrollment, ClassFaculty, classProgramLabel, semesterLabel } from 
 import { ClassRowActions, type ClassActionHandlers } from "./components/class-row-actions";
 import { DataTableColumnHeader } from "./data-table-column-header";
 import { deliveryModeLabel, type DeliveryMode, type DeliverySummary } from "./lib/class-defaults";
+import type { ClassScheduleHealth, IndexScheduleBlock } from "./workspace/types";
 
 export type ClassRow = {
     id: number;
@@ -26,6 +27,11 @@ export type ClassRow = {
     shs_strand: string | null;
     faculty: string;
     room?: string | null;
+    room_capacity?: number | null;
+    schedules?: IndexScheduleBlock[];
+    schedule_health?: ClassScheduleHealth | null;
+    waitlist_count?: number;
+    schedule_revision?: string;
     students_count: number;
     maximum_slots: number;
     deleted_at: string | null;

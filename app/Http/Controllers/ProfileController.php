@@ -691,7 +691,7 @@ final class ProfileController extends Controller
             $filename = 'avatar-'.$user->id.'-'.time().'.'.$file->getClientOriginalExtension();
             $path = "avatars/{$filename}";
             Storage::put($path, $file->getContent(), 'public');
-            $r2BaseUrl = rtrim((string) config('filesystems.disks.r2.url', ''), '/');
+            $r2BaseUrl = mb_rtrim((string) config('filesystems.disks.r2.url', ''), '/');
             $avatarUrl = $r2BaseUrl !== '' ? $r2BaseUrl.'/'.$path : Storage::url($path);
         }
 

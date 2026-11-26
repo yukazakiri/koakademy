@@ -19,6 +19,20 @@ enum StudentStatus: string implements HasColor, HasLabel
     case Transferred = 'transferred';
     case Rejected = 'rejected';
 
+    /**
+     * Statuses allowed to claim a self-service student portal account.
+     *
+     * @return list<string>
+     */
+    public static function registerableValues(): array
+    {
+        return [
+            self::Enrolled->value,
+            self::OnLeave->value,
+            self::Graduated->value,
+        ];
+    }
+
     public function getLabel(): ?string
     {
         return match ($this) {
@@ -73,20 +87,6 @@ enum StudentStatus: string implements HasColor, HasLabel
             self::Enrolled, self::OnLeave => true,
             default => false,
         };
-    }
-
-    /**
-     * Statuses allowed to claim a self-service student portal account.
-     *
-     * @return list<string>
-     */
-    public static function registerableValues(): array
-    {
-        return [
-            self::Enrolled->value,
-            self::OnLeave->value,
-            self::Graduated->value,
-        ];
     }
 
     public function isRegisterable(): bool

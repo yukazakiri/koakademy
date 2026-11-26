@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Administrators;
 
+use App\Enums\UserRole;
 use App\Models\StudentHold;
 use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
@@ -14,8 +15,31 @@ final class StoreStudentHoldRequest extends FormRequest
     public function authorize(): bool
     {
         $user = $this->user();
+        if (! $user instanceof User) {
+            return false;
+        }
 
-        return $user instanceof User && $user->canAccessAdminPortal();
+        if ($user->can('Update:StudentEnrollment') || $user->hasRole('super_admin')) {
+            return true;
+        }
+
+        return in_array($user->role, [
+            UserRole::Developer,
+            UserRole::SuperAdmin,
+            UserRole::Admin,
+            UserRole::Registrar,
+            UserRole::AssistantRegistrar,
+            UserRole::Dean,
+            UserRole::AssociateDean,
+            UserRole::DepartmentHead,
+            UserRole::ProgramChair,
+            UserRole::Cashier,
+            UserRole::AccountingOfficer,
+            UserRole::BursarOfficer,
+            UserRole::Librarian,
+            UserRole::GuidanceCounselor,
+            UserRole::StudentAffairsOfficer,
+        ], true);
     }
 
     /**

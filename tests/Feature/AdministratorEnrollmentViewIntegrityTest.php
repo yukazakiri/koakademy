@@ -61,6 +61,14 @@ it('blocks non-enrollment portal roles from viewing or mutating enrollment view 
     $this->actingAs($guard)
         ->getJson(portalUrlForAdministrators("/administrators/enrollments/{$enrollment->id}/transfers"))
         ->assertForbidden();
+
+    $this->actingAs($guard)
+        ->getJson(portalUrlForAdministrators("/administrators/enrollments/holds/students/{$student->id}"))
+        ->assertForbidden();
+
+    $this->actingAs($guard)
+        ->post(portalUrlForAdministrators('/administrators/enrollments/waitlists/auto-assign'))
+        ->assertForbidden();
 });
 
 it('renders enriched show payload including fees, holds, waitlists, timeline, safe return_to, and trashed records', function (): void {

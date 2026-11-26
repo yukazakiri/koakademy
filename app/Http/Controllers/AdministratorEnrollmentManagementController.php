@@ -14,6 +14,7 @@ use App\Enrollment\EnrollmentPolicyResolver;
 use App\Enrollment\EnrollmentTransitionEngine;
 use App\Enrollment\EnrollmentWorkflowCoordinator;
 use App\Enums\ApplicantCancellationReason;
+use App\Enums\PaymentMethod;
 use App\Enums\ScholarshipType;
 use App\Enums\StudentStatus;
 use App\Enums\UserRole;
@@ -2231,6 +2232,26 @@ final class AdministratorEnrollmentManagementController extends Controller
                 ],
             ])
             ->all();
+        $allowedMethods = array_values(array_unique([
+            ...array_map(static fn (PaymentMethod $m): string => $m->value, PaymentMethod::cases()),
+            'cash',
+            'check',
+            'gcash',
+            'maya',
+            'bank_transfer',
+            'credit_card',
+            'debit_card',
+            'online',
+            'online_payment',
+            'card',
+            'Bank Transfer',
+            'Online',
+            'Card',
+            ...array_map(
+                static fn (mixed $m): string => (string) $m,
+                (array) data_get($enrollment->policySnapshot?->configuration, 'billing.allowed_payment_methods', []),
+            ),
+        ]));
         $validated = $request->validate([
             'invoicenumber' => [
                 $enrollment->workflow_runtime === StudentEnrollment::WorkflowRuntimePolicyV1 ? 'nullable' : 'required',
@@ -2242,7 +2263,7 @@ final class AdministratorEnrollmentManagementController extends Controller
             'settlements.tuition_fee' => ['nullable', 'numeric', 'min:0'],
             'settlements.miscelanous_fee' => ['nullable', 'numeric', 'min:0'],
             'settlements.others' => ['nullable', 'numeric', 'min:0'],
-            'payment_method' => ['required', 'string'],
+            'payment_method' => ['required', 'string', Rule::in($allowedMethods)],
             'reason' => ['nullable', 'string', 'max:2000'],
             'transition_key' => ['nullable', 'string', 'max:255'],
             ...$separateFeeTransactionKeys,

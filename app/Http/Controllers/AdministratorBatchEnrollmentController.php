@@ -71,7 +71,7 @@ final class AdministratorBatchEnrollmentController extends Controller
             'course_id' => ['required', 'integer', 'exists:courses,id'],
             'source_year_level' => ['required', 'integer', 'min:1', 'max:5'],
             'target_year_level' => ['required', 'integer', 'min:1', 'max:5'],
-            'target_semester' => ['required', 'integer', 'in:1,2'],
+            'target_semester' => ['required', 'integer', 'in:1,2,3'],
             'school_year' => ['nullable', 'string', 'max:32'],
         ]);
 

@@ -37,6 +37,15 @@ export type Student = {
     id: number;
     student_id: number | string | null;
     name: string;
+    email?: string | null;
+    phone?: string | null;
+    user_id?: number | null;
+    portal_account?: {
+        id: number;
+        email: string;
+        email_verified?: boolean;
+        suspended?: boolean;
+    } | null;
     avatar_url: string | null;
     course_id: number | null;
     department_id: number | null;
@@ -63,6 +72,7 @@ export type Student = {
 
 export interface ColumnActionHandlers {
     returnUrl?: string;
+    onInspect?: (student: Student) => void;
     onSoftDelete?: (student: Student) => void;
     onForceDelete?: (student: Student) => void;
     onRestore?: (student: Student) => void;
@@ -352,62 +362,86 @@ export function createColumns(handlers?: ColumnActionHandlers): ColumnDef<Studen
                     }
                 };
 
+                const triggerInspect = () => {
+                    if (handlers?.onInspect) {
+                        handlers.onInspect(student);
+                    } else {
+                        window.dispatchEvent(new CustomEvent("students:inspect", { detail: student }));
+                    }
+                };
+
                 return (
-                    <DropdownMenu>
-                        <DropdownMenuTrigger
-                            render={<Button variant="ghost" size="icon" className="size-8" />}
-                            aria-label={`Actions for ${student.name}`}
+                    <div className="flex items-center justify-end gap-1">
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-8"
+                            onClick={triggerInspect}
+                            title={`Quick inspect ${student.name}`}
+                            aria-label={`Quick inspect ${student.name}`}
                         >
-                            <MoreHorizontal className="size-4" />
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-48">
-                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                            {student.student_id && (
-                                <DropdownMenuItem onClick={() => navigator.clipboard.writeText(String(student.student_id))}>
-                                    <Copy className="mr-2 size-4" /> Copy ID
-                                </DropdownMenuItem>
-                            )}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                                render={
-                                    <AdminLink
-                                        href={showStudent.url(student.id, {
-                                            query: handlers?.returnUrl ? { return_to: handlers.returnUrl } : undefined,
-                                        })}
-                                    />
-                                }
+                            <Eye className="size-4" />
+                        </Button>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger
+                                render={<Button variant="ghost" size="icon" className="size-8" />}
+                                aria-label={`Actions for ${student.name}`}
                             >
-                                <Eye className="mr-2 size-4" /> View Details
-                            </DropdownMenuItem>
-                            <DropdownMenuItem render={<AdminLink href={route("administrators.students.edit", student.id)} />}>
-                                <UserCheck className="mr-2 size-4" /> Edit Profile
-                            </DropdownMenuItem>
-                            {student.filament?.view_url && (
-                                <>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                        render={<a href={student.filament.view_url} target="_blank" rel="noreferrer" />}
-                                        className="opacity-80"
-                                    >
-                                        <FileText className="mr-2 size-4" /> View in Filament
+                                <MoreHorizontal className="size-4" />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-48">
+                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                <DropdownMenuItem onClick={triggerInspect}>
+                                    <Eye className="mr-2 size-4" /> Quick Inspect Drawer
+                                </DropdownMenuItem>
+                                {student.student_id && (
+                                    <DropdownMenuItem onClick={() => navigator.clipboard.writeText(String(student.student_id))}>
+                                        <Copy className="mr-2 size-4" /> Copy ID
                                     </DropdownMenuItem>
-                                </>
-                            )}
-                            <DropdownMenuSeparator />
-                            {student.deleted_at ? (
-                                <DropdownMenuItem onClick={triggerRestore}>
-                                    <RotateCcw className="mr-2 size-4" /> Restore Student
+                                )}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                    render={
+                                        <AdminLink
+                                            href={showStudent.url(student.id, {
+                                                query: handlers?.returnUrl ? { return_to: handlers.returnUrl } : undefined,
+                                            })}
+                                        />
+                                    }
+                                >
+                                    <Eye className="mr-2 size-4" /> Full Profile
                                 </DropdownMenuItem>
-                            ) : (
-                                <DropdownMenuItem onClick={triggerSoftDelete} className="text-amber-600 focus:text-amber-600">
-                                    <Trash2 className="mr-2 size-4" /> Move to Trash
+                                <DropdownMenuItem render={<AdminLink href={route("administrators.students.edit", student.id)} />}>
+                                    <UserCheck className="mr-2 size-4" /> Edit Profile
                                 </DropdownMenuItem>
-                            )}
-                            <DropdownMenuItem onClick={triggerForceDelete} className="text-destructive focus:text-destructive">
-                                <Zap className="mr-2 size-4" /> Force Delete
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
+                                {student.filament?.view_url && (
+                                    <>
+                                        <DropdownMenuSeparator />
+                                        <DropdownMenuItem
+                                            render={<a href={student.filament.view_url} target="_blank" rel="noreferrer" />}
+                                            className="opacity-80"
+                                        >
+                                            <FileText className="mr-2 size-4" /> View in Filament
+                                        </DropdownMenuItem>
+                                    </>
+                                )}
+                                <DropdownMenuSeparator />
+                                {student.deleted_at ? (
+                                    <DropdownMenuItem onClick={triggerRestore}>
+                                        <RotateCcw className="mr-2 size-4" /> Restore Student
+                                    </DropdownMenuItem>
+                                ) : (
+                                    <DropdownMenuItem onClick={triggerSoftDelete} className="text-amber-600 focus:text-amber-600">
+                                        <Trash2 className="mr-2 size-4" /> Move to Trash
+                                    </DropdownMenuItem>
+                                )}
+                                <DropdownMenuItem onClick={triggerForceDelete} className="text-destructive focus:text-destructive">
+                                    <Zap className="mr-2 size-4" /> Force Delete
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    </div>
                 );
             },
         },

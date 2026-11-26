@@ -382,10 +382,10 @@ final class EnrollmentRegistrationController extends Controller
 
             $studentPersonalInfoId = null;
             $studentPersonalInfoAttributes = $this->onlyExistingColumns('students_personal_info', [
-                'birthplace' => $payload['personal_info']['birthplace'] ?? null,
-                'civil_status' => $payload['personal_info']['civil_status'] ?? null,
-                'citizenship' => $payload['personal_info']['citizenship'] ?? null,
-                'religion' => $payload['personal_info']['religion'] ?? null,
+                'birthplace' => $payload['personal_info']['birthplace'] ?? ($payload['birthplace'] ?? null),
+                'civil_status' => $payload['personal_info']['civil_status'] ?? ($payload['civil_status'] ?? null),
+                'citizenship' => $payload['personal_info']['citizenship'] ?? ($payload['citizenship'] ?? null),
+                'religion' => $payload['personal_info']['religion'] ?? ($payload['religion'] ?? null),
                 'weight' => $payload['personal_info']['weight'] ?? null,
                 'height' => $payload['personal_info']['height'] ?? null,
                 'current_adress' => $payload['personal_info']['current_address'] ?? null,

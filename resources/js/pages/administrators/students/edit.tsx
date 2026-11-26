@@ -2,6 +2,7 @@ import { generateId } from "@/actions/App/Http/Controllers/AdministratorStudentM
 import AdminLayout from "@/components/administrators/admin-layout";
 import { ConfiguredStudentField } from "@/components/administrators/configured-student-field";
 import { CustomStudentFields } from "@/components/administrators/custom-student-fields";
+import { StudentPortalAccountCard, type StudentPortalAccountSummary } from "./components/student-portal-account-card";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -246,6 +247,11 @@ interface CurrentClass {
 interface EditStudentProps {
     user: User;
     student: Student;
+    portal_account?: StudentPortalAccountSummary | null;
+    student_assets?: {
+        picture_1x1_url?: string | null;
+        signature_url?: string | null;
+    };
     options: {
         student_configuration: StudentConfiguration;
         identifier_policy: StudentIdentifierPolicy;
@@ -327,14 +333,17 @@ function nestedValue(source: Record<string, unknown> | null, path: string): stri
     return String(value);
 }
 
-export default function AdministratorStudentEdit({ user, student, options, current_enrollments = [], current_classes = [] }: EditStudentProps) {
+export default function AdministratorStudentEdit({ user, student, portal_account, student_assets, options, current_enrollments = [], current_classes = [] }: EditStudentProps) {
     const configuration = options.student_configuration;
     const identifier = options.identifier_policy;
     const [addSubjectOpen, setAddSubjectOpen] = useState(false);
     const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
     const [isGeneratingId, setIsGeneratingId] = useState(false);
+    const [photoFile, setPhotoFile] = useState<File | null>(null);
+    const [signatureFile, setSignatureFile] = useState<File | null>(null);
+    const [uploadingAssets, setUploadingAssets] = useState(false);
 
-    const { data, setData, put, processing, errors } = useForm<EditStudentForm>({
+    const { data, setData, put, processing, errors, isDirty } = useForm<EditStudentForm>({
         custom_fields: Object.fromEntries(
             Object.entries(student.profile_details?.custom_fields ?? {}).map(([key, value]) => [key, value == null ? "" : String(value)]),
         ),
@@ -559,8 +568,62 @@ export default function AdministratorStudentEdit({ user, student, options, curre
         }
     };
 
+    const hasUnsavedChanges = isDirty || photoFile !== null || signatureFile !== null;
+
+    useEffect(() => {
+        if (!hasUnsavedChanges || processing || uploadingAssets) return;
+        const onBeforeUnload = (event: BeforeUnloadEvent) => {
+            event.preventDefault();
+            event.returnValue = "";
+        };
+        window.addEventListener("beforeunload", onBeforeUnload);
+        return () => window.removeEventListener("beforeunload", onBeforeUnload);
+    }, [hasUnsavedChanges, processing, uploadingAssets]);
+
+    useEffect(() => {
+        const onKeyDown = (event: KeyboardEvent) => {
+            if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+                event.preventDefault();
+                const formEl = document.getElementById("precision-student-edit-form") as HTMLFormElement | null;
+                formEl?.requestSubmit();
+            }
+        };
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+    }, []);
+
     const submit = (event: React.FormEvent) => {
         event.preventDefault();
+
+        if (photoFile || signatureFile) {
+            setUploadingAssets(true);
+            router.post(
+                route("administrators.students.update", { student: student.id, stay: true }),
+                {
+                    ...data,
+                    _method: "put",
+                    ...(photoFile ? { picture_1x1: photoFile } : {}),
+                    ...(signatureFile ? { signature: signatureFile } : {}),
+                },
+                {
+                    forceFormData: true,
+                    preserveScroll: true,
+                    preserveState: true,
+                    onSuccess: () => {
+                        setPhotoFile(null);
+                        setSignatureFile(null);
+                        toast.success("Student and assets updated successfully");
+                    },
+                    onError: (formErrors) => {
+                        toast.error("Failed to update student", {
+                            description: Object.values(formErrors)[0] || "Please check the form for errors.",
+                        });
+                    },
+                    onFinish: () => setUploadingAssets(false),
+                },
+            );
+            return;
+        }
 
         put(route("administrators.students.update", { student: student.id, stay: true }), {
             preserveScroll: true,
@@ -616,40 +679,131 @@ export default function AdministratorStudentEdit({ user, student, options, curre
         <AdminLayout user={user} title="Edit Student">
             <Head title={`Edit Student - ${student.first_name} ${student.last_name}`} />
 
-            <form onSubmit={submit} className="mx-auto max-w-6xl space-y-6 pb-10">
-                <div className="flex flex-col gap-3 border-b pb-5 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                        <h1 className="text-2xl font-semibold tracking-tight">
-                            {data.first_name} {data.last_name}
-                        </h1>
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-                            <Badge variant="outline" className="font-mono">
-                                {data.student_id || "No student number"}
-                            </Badge>
-                            <Badge variant="secondary">
-                                {options.types.find((type) => type.value === data.student_type)?.label ?? data.student_type}
-                            </Badge>
-                            <Badge variant={data.status === "enrolled" ? "default" : "secondary"} className="capitalize">
-                                {data.status.replace("_", " ")}
-                            </Badge>
+            <form id="precision-student-edit-form" onSubmit={submit} className="mx-auto max-w-6xl space-y-6 pb-16">
+                {/* Precision Ledger Sticky Workbench Header & Section Jump Bar */}
+                <div className="bg-background/95 border-border/80 sticky top-14 z-20 -mx-2 rounded-xl border px-4 py-3 shadow-xs backdrop-blur-md sm:mx-0">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
+                                    {data.first_name} {data.last_name}
+                                </h1>
+                                {hasUnsavedChanges && (
+                                    <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 text-[11px]">
+                                        Unsaved changes
+                                    </Badge>
+                                )}
+                            </div>
+                            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm">
+                                <Badge variant="outline" className="font-mono tabular-nums">
+                                    {data.student_id || "No student number"}
+                                </Badge>
+                                <Badge variant="secondary">
+                                    {options.types.find((type) => type.value === data.student_type)?.label ?? data.student_type}
+                                </Badge>
+                                <Badge variant={data.status === "enrolled" ? "default" : "secondary"} className="capitalize">
+                                    {data.status.replace("_", " ")}
+                                </Badge>
+                            </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Link
+                                href={route("administrators.students.show", student.id)}
+                                className={buttonVariants({ variant: "outline", size: "sm", className: "gap-1.5" })}
+                            >
+                                <ArrowLeft className="h-3.5 w-3.5" />
+                                Profile
+                            </Link>
+                            <Button type="submit" size="sm" disabled={processing || uploadingAssets} className="gap-1.5 active:scale-[0.97]">
+                                {processing || uploadingAssets ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                                {processing || uploadingAssets ? "Saving..." : "Save (⌘S)"}
+                            </Button>
                         </div>
                     </div>
-                    <div className="flex gap-2">
-                        <Link
-                            href={route("administrators.students.show", student.id)}
-                            className={buttonVariants({ variant: "outline", className: "gap-2" })}
-                        >
-                            <ArrowLeft className="h-4 w-4" />
-                            Profile
-                        </Link>
-                        <Button type="submit" disabled={processing}>
-                            {processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                            {processing ? "Saving..." : "Save"}
-                        </Button>
+
+                    <div className="border-border/60 mt-3 flex flex-wrap items-center gap-1.5 border-t pt-2.5 text-xs">
+                        {[
+                            { id: "section-record", label: "Record" },
+                            { id: "section-account-assets", label: "Portal & Assets" },
+                            { id: "section-details", label: "Academic & Profile" },
+                        ].map((section) => (
+                            <a
+                                key={section.id}
+                                href={`#${section.id}`}
+                                className="text-muted-foreground hover:bg-muted hover:text-foreground rounded-md px-2.5 py-1 font-medium transition-colors"
+                            >
+                                {section.label}
+                            </a>
+                        ))}
+                        {Object.keys(errors).length > 0 && (
+                            <Badge variant="destructive" className="ml-auto font-mono text-[10px] tabular-nums">
+                                {Object.keys(errors).length} error{Object.keys(errors).length === 1 ? "" : "s"}
+                            </Badge>
+                        )}
                     </div>
                 </div>
 
-                <Card>
+                {/* Portal Account & ID Photo / Signature Parity Row */}
+                <div id="section-account-assets" className="grid gap-4 lg:grid-cols-2">
+                    <StudentPortalAccountCard
+                        studentId={student.id}
+                        studentEmail={student.email}
+                        portalAccount={portal_account}
+                    />
+
+                    <Card className="border-border/70 shadow-2xs">
+                        <CardHeader className="pb-3">
+                            <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+                                <UserIcon className="text-primary size-4" />
+                                ID Photo &amp; Signature
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="grid gap-4 sm:grid-cols-2">
+                            <div className="space-y-2">
+                                <Label htmlFor="edit-picture-1x1" className="text-xs font-medium">
+                                    1x1 ID Photo
+                                </Label>
+                                {student_assets?.picture_1x1_url && !photoFile && (
+                                    <img
+                                        src={student_assets.picture_1x1_url}
+                                        alt="Current student 1x1 photo"
+                                        className="border-border h-20 w-20 rounded-lg border object-cover"
+                                    />
+                                )}
+                                <Input
+                                    id="edit-picture-1x1"
+                                    type="file"
+                                    accept="image/jpeg,image/png,image/webp"
+                                    onChange={(event) => setPhotoFile(event.target.files?.[0] ?? null)}
+                                    className="h-9 text-xs"
+                                />
+                                {photoFile && <p className="text-primary truncate text-[11px]">Queued: {photoFile.name}</p>}
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="edit-signature" className="text-xs font-medium">
+                                    Student Signature
+                                </Label>
+                                {student_assets?.signature_url && !signatureFile && (
+                                    <img
+                                        src={student_assets.signature_url}
+                                        alt="Current student signature"
+                                        className="border-border bg-background h-20 w-full rounded-lg border object-contain p-1.5"
+                                    />
+                                )}
+                                <Input
+                                    id="edit-signature"
+                                    type="file"
+                                    accept="image/png,image/jpeg,image/webp"
+                                    onChange={(event) => setSignatureFile(event.target.files?.[0] ?? null)}
+                                    className="h-9 text-xs"
+                                />
+                                {signatureFile && <p className="text-primary truncate text-[11px]">Queued: {signatureFile.name}</p>}
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+
+                <Card id="section-record">
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-lg">
                             <UserIcon className="text-primary h-5 w-5" />
@@ -745,7 +899,7 @@ export default function AdministratorStudentEdit({ user, student, options, curre
                     </CardContent>
                 </Card>
 
-                <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+                <div id="section-details" className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
                     <div className="space-y-6">
                         <Card>
                             <CardHeader>

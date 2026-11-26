@@ -347,6 +347,35 @@ export function DataTable<TData extends Student, TValue>({
         );
     };
 
+    const handleBulkProvisionPortalAccounts = async () => {
+        if (!hasSelection || isSubmitting) {
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            const { default: axios } = await import("axios");
+            const response = await axios.post(
+                route("administrators.students.bulk-portal-accounts"),
+                { ids: selectedIds, send_reset_link: true },
+                { headers: { Accept: "application/json" } },
+            );
+            const provisioned = Number(response.data?.provisioned ?? 0);
+            const message = String(response.data?.message ?? "Completed portal account provisioning.");
+            if (provisioned > 0) {
+                toast.success(message);
+                resetSelection();
+                router.reload();
+            } else {
+                toast.warning(message);
+            }
+        } catch {
+            toast.error("Failed to provision student portal accounts.");
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     const handleBulkDelete = () => {
         if (!hasSelection || isSubmitting) {
             return;
@@ -516,6 +545,17 @@ export function DataTable<TData extends Student, TValue>({
                                 </DropdownMenuItem>
                             </DropdownMenuContent>
                         </DropdownMenu>
+
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1.5 text-xs"
+                            disabled={isSubmitting}
+                            onClick={handleBulkProvisionPortalAccounts}
+                        >
+                            <UserCheck className="size-3.5" />
+                            Provision Portal
+                        </Button>
 
                         <Button
                             variant="outline"

@@ -276,6 +276,12 @@ const personalSchema = z.object({
     gender: z.string().min(1, "Gender is required"),
 });
 
+const unicodeNameRegex = /^[\p{L}\s.'-]+$/u;
+const optionalPhoneSchema = z
+    .string()
+    .trim()
+    .refine((val) => val === "" || /^\+?\d[\d\s-]{6,19}$/.test(val), "Please enter a valid phone number");
+
 const contactsSchema = z
     .object({
         contacts: z.object({
@@ -285,35 +291,37 @@ const contactsSchema = z
             linkedin: z.string(),
             emergency_contact_name: z
                 .string()
+                .trim()
                 .min(1, "Emergency contact name is required")
-                .regex(/^[a-zA-Z\s.-]+$/, "Name must contain only letters"),
+                .regex(unicodeNameRegex, "Name must contain only letters, spaces, apostrophes, periods, or hyphens"),
             emergency_contact_phone: z
                 .string()
-                .min(1, "Emergency contact phone is required")
-                .regex(/^\d+$/, "Phone number must contain only numbers"),
+                .trim()
+                .min(7, "Emergency contact phone is required")
+                .regex(/^\+?\d[\d\s-]{6,19}$/, "Please enter a valid phone number"),
         }),
         parents: z.object({
-            father_contact: z.string().min(10, "Father contact number is required").regex(/^\d+$/, "Phone number must contain only numbers"),
-            mother_contact: z.string().min(10, "Mother contact number is required").regex(/^\d+$/, "Phone number must contain only numbers"),
+            father_contact: optionalPhoneSchema,
+            mother_contact: optionalPhoneSchema,
             guardian_name: z
                 .string()
-                .min(1, "Guardian name is required")
-                .regex(/^[a-zA-Z\s.-]+$/, "Name must contain only letters"),
+                .trim()
+                .refine((val) => val === "" || unicodeNameRegex.test(val), "Name must contain only letters, spaces, apostrophes, periods, or hyphens"),
             guardian_relationship: z
                 .string()
-                .min(1, "Guardian relationship is required")
-                .regex(/^[a-zA-Z\s.-]+$/, "Relationship must contain only letters"),
-            guardian_contact: z.string().min(1, "Guardian contact is required").regex(/^\d+$/, "Phone number must contain only numbers"),
+                .trim()
+                .refine((val) => val === "" || unicodeNameRegex.test(val), "Relationship must contain only letters"),
+            guardian_contact: optionalPhoneSchema,
         }),
         is_pwd: z.boolean(),
         pwd_type: z.string(),
         education: z.object({
-            elementary_school: z.string().min(1, "Elementary school is required"),
-            elementary_year_graduated: z.string().min(4, "Elementary graduation year is required"),
-            high_school: z.string().min(1, "High school is required"),
-            high_school_year_graduated: z.string().min(4, "High school graduation year is required"),
-            senior_high_school: z.string().min(1, "Senior high school is required"),
-            senior_high_year_graduated: z.string().min(4, "Senior high graduation year is required"),
+            elementary_school: z.string().optional().default(""),
+            elementary_year_graduated: z.string().optional().default(""),
+            high_school: z.string().optional().default(""),
+            high_school_year_graduated: z.string().optional().default(""),
+            senior_high_school: z.string().optional().default(""),
+            senior_high_year_graduated: z.string().optional().default(""),
             college_school: z.string().optional(),
             college_course: z.string().optional(),
             college_year_graduated: z.string().optional(),

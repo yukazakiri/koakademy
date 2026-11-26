@@ -351,9 +351,11 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/students/create', [AdministratorStudentManagementController::class, 'create'])->name('students.create');
         Route::get('/students/generate-id', [AdministratorStudentManagementController::class, 'generateId'])->name('students.generate-id');
         Route::post('/students', [AdministratorStudentManagementController::class, 'store'])->name('students.store');
+        Route::post('/students/quick-create', [AdministratorStudentManagementController::class, 'quickStore'])->name('students.quick-create');
         Route::patch('/students/bulk/update-status', [AdministratorStudentManagementController::class, 'bulkUpdateStatus'])->name('students.bulk-update-status');
         Route::post('/students/bulk/manage-clearance', [AdministratorStudentManagementController::class, 'bulkManageClearance'])->name('students.bulk-manage-clearance');
         Route::post('/students/bulk/email', [AdministratorStudentManagementController::class, 'bulkSendEmail'])->name('students.bulk-email');
+        Route::post('/students/bulk/portal-accounts', [AdministratorStudentManagementController::class, 'bulkProvisionPortalAccounts'])->name('students.bulk-portal-accounts');
         Route::delete('/students/bulk', [AdministratorStudentManagementController::class, 'bulkDestroy'])->name('students.bulk-destroy');
         Route::delete('/students/bulk/force', [AdministratorStudentManagementController::class, 'bulkForceDestroy'])->name('students.bulk-force-destroy');
         Route::get('/students/documents', [AdministratorStudentDocumentController::class, 'listAll'])->name('students.documents.list');
@@ -381,6 +383,7 @@ Route::middleware(['auth', 'administrators.only'])
 
         // Student Actions
         Route::post('/students/{student}/link-account', [AdministratorStudentManagementController::class, 'linkAccount'])->name('students.link-account');
+        Route::post('/students/{student}/portal-account', [AdministratorStudentManagementController::class, 'managePortalAccount'])->name('students.portal-account');
         Route::patch('/students/{student}/update-id', [AdministratorStudentManagementController::class, 'updateStudentId'])->name('students.update-id');
         Route::post('/students/{student}/undo-id-change', [AdministratorStudentManagementController::class, 'undoStudentIdChange'])->name('students.undo-id-change');
         Route::patch('/students/{student}/change-course', [AdministratorStudentManagementController::class, 'changeCourse'])->name('students.change-course');

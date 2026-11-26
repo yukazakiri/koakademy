@@ -3552,6 +3552,15 @@ final class AdministratorEnrollmentManagementController extends Controller
             'scheduling_policy' => $settingsService->getSchedulingConfig(),
             'enrollment_period' => $this->enrollmentPeriodService->describe($currentSchoolYear, $currentSemester),
             'discounts' => $this->discountOptions(),
+            'courses' => Course::query()
+                ->orderBy('code')
+                ->get(['id', 'code', 'title'])
+                ->map(fn (Course $course): array => [
+                    'id' => $course->id,
+                    'code' => $course->code,
+                    'title' => $course->title,
+                ])
+                ->values(),
             'flash' => session('flash'),
         ]);
     }

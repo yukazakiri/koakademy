@@ -782,6 +782,102 @@ export function useEnrollmentDraft(props: EnrollmentWorkbenchPageProps) {
         selectedStudent,
     ]);
 
+    const draftStorageKey = `koakademy_enrollment_draft_${props.user.email}_${schoolYear}`;
+
+    // Restore unsaved enrollment draft on create workbench mount (when no explicit prefill/student_id is active)
+    useEffect(() => {
+        if (isEdit || props.prefill || typeof window === "undefined") return;
+        const params = new URLSearchParams(window.location.search);
+        if (params.has("student_id") || params.has("from_enrollment")) return;
+        try {
+            const raw = window.localStorage.getItem(draftStorageKey);
+            if (!raw) return;
+            const saved = JSON.parse(raw) as {
+                selectedStudent?: StudentDetails | null;
+                semester?: string;
+                academicYear?: string;
+                subjectsEnrolled?: DraftSubjectEnrollment[];
+                discount?: string;
+                discountId?: number | null;
+                miscellaneousFee?: string;
+                downpayment?: string;
+                remarks?: string;
+                additionalFees?: DraftAdditionalFee[];
+            };
+            if (!saved || !saved.selectedStudent) return;
+            setSelectedStudent(saved.selectedStudent);
+            if (saved.semester) setSemester(saved.semester);
+            if (saved.academicYear) setAcademicYear(saved.academicYear);
+            if (Array.isArray(saved.subjectsEnrolled) && saved.subjectsEnrolled.length > 0) {
+                setSubjectsEnrolled(
+                    saved.subjectsEnrolled.map((sub) => ({
+                        ...sub,
+                        loading_sections: false,
+                        calculating_fees: false,
+                    })),
+                );
+            }
+            if (saved.discount !== undefined) setDiscount(saved.discount);
+            if (saved.discountId !== undefined) setDiscountId(saved.discountId);
+            if (saved.miscellaneousFee !== undefined) setMiscellaneousFee(saved.miscellaneousFee);
+            if (saved.downpayment !== undefined) setDownpayment(saved.downpayment);
+            if (saved.remarks !== undefined) setRemarks(saved.remarks);
+            if (Array.isArray(saved.additionalFees)) setAdditionalFees(saved.additionalFees);
+            toast.info(`Restored saved enrollment draft for ${saved.selectedStudent.full_name}`, {
+                action: {
+                    label: "Discard",
+                    onClick: () => {
+                        window.localStorage.removeItem(draftStorageKey);
+                        window.location.reload();
+                    },
+                },
+            });
+        } catch {
+            // Ignore malformed draft payload
+        }
+    }, [isEdit, props.prefill, draftStorageKey]);
+
+    // Persist draft changes to localStorage while creating an enrollment so reloads never wipe work
+    useEffect(() => {
+        if (isEdit || typeof window === "undefined") return;
+        if (!selectedStudent && subjectsEnrolled.length === 0) return;
+        const timer = window.setTimeout(() => {
+            try {
+                window.localStorage.setItem(
+                    draftStorageKey,
+                    JSON.stringify({
+                        selectedStudent,
+                        semester,
+                        academicYear,
+                        subjectsEnrolled,
+                        discount,
+                        discountId,
+                        miscellaneousFee,
+                        downpayment,
+                        remarks,
+                        additionalFees,
+                    }),
+                );
+            } catch {
+                // Ignore storage quota errors
+            }
+        }, 350);
+        return () => window.clearTimeout(timer);
+    }, [
+        isEdit,
+        draftStorageKey,
+        selectedStudent,
+        semester,
+        academicYear,
+        subjectsEnrolled,
+        discount,
+        discountId,
+        miscellaneousFee,
+        downpayment,
+        remarks,
+        additionalFees,
+    ]);
+
     // Warn on browser tab close / reload when draft has unsaved changes
     useEffect(() => {
         if (!diff.isDirty || submitting) return;
@@ -884,6 +980,11 @@ export function useEnrollmentDraft(props: EnrollmentWorkbenchPageProps) {
             const payload = buildPayload(forceOverload, allowGradeLoss);
 
             const options = {
+                onSuccess: () => {
+                    if (!isEdit && typeof window !== "undefined") {
+                        window.localStorage.removeItem(draftStorageKey);
+                    }
+                },
                 onFinish: () => {
                     setSubmitting(false);
                     setPendingOverloadConfirmation(null);
@@ -902,7 +1003,7 @@ export function useEnrollmentDraft(props: EnrollmentWorkbenchPageProps) {
                 router.post(storeEnrollmentAction.url(), payload, options);
             }
         },
-        [selectedStudent, confirmGradeLoss, buildPayload, isEdit, enrollment],
+        [selectedStudent, confirmGradeLoss, buildPayload, isEdit, enrollment, draftStorageKey],
     );
 
     const handleSubmit = useCallback(

@@ -55,6 +55,7 @@ final class StudentOrganizationAssignmentService
                 'external_identifier_label' => $presentation['external_identifier_enabled'] ? $presentation['external_identifier_label'] : null,
                 'accepts_external_identifier' => $presentation['external_identifier_enabled'],
                 'allow_identifier_recovery' => $presentation['allow_identifier_recovery'],
+                'require_password_on_social_signup' => $presentation['require_password_on_social_signup'],
                 'multiple_types' => false,
             ];
         }
@@ -97,6 +98,10 @@ final class StudentOrganizationAssignmentService
             fn (Student $candidate): bool => (bool) ($config->get($candidate->school_id)['signup']['allow_identifier_recovery'] ?? true),
         );
 
+        $requirePasswordOnSocial = $students->contains(
+            fn (Student $candidate): bool => (bool) ($config->get($candidate->school_id)['signup']['require_password_on_social_signup'] ?? false),
+        );
+
         return [
             'student_type' => $multipleTypes ? null : $student->student_type->value,
             'identifier_type' => $externalOnly ? 'lrn' : 'student_id',
@@ -109,6 +114,7 @@ final class StudentOrganizationAssignmentService
             'external_identifier_label' => $acceptsExternal ? $externalLabel : null,
             'accepts_external_identifier' => $acceptsExternal,
             'allow_identifier_recovery' => $allowRecovery,
+            'require_password_on_social_signup' => $requirePasswordOnSocial,
             'multiple_types' => $multipleTypes,
         ];
     }

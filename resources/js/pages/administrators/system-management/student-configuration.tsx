@@ -49,6 +49,7 @@ import {
     Plus,
     Save,
     Settings2,
+    Shield,
     Sparkles,
     Trash2,
     UserCheck,
@@ -73,6 +74,7 @@ const DEFAULT_SIGNUP_POLICY: SignupPolicyConfiguration = {
     allow_faculty_self_signup: true,
     allow_identifier_recovery: true,
     require_faculty_id: false,
+    require_password_on_social_signup: false,
     student_identifier_placeholder: null,
     student_identifier_help_text: null,
     faculty_identifier_placeholder: null,
@@ -1009,6 +1011,26 @@ export default function StudentConfigurationPage({
                                         checked={signupPolicy.require_faculty_id}
                                         disabled={disabled}
                                         onCheckedChange={(value) => signupSet("require_faculty_id", value)}
+                                    />
+                                </div>
+                                <div className="flex items-center justify-between gap-4 p-4">
+                                    <div className="flex items-start gap-3">
+                                        <IconTile variant="outline" size="sm">
+                                            <Shield className="size-4" />
+                                        </IconTile>
+                                        <div>
+                                            <p className="text-foreground text-sm font-medium">Require password on social sign-up</p>
+                                            <p className="text-muted-foreground text-xs">
+                                                When off, students and faculty activating via Google or other social logins can skip creating a
+                                                password and set one anytime from Profile → Security.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <Switch
+                                        aria-label="Require password on social sign-up"
+                                        checked={Boolean(signupPolicy.require_password_on_social_signup)}
+                                        disabled={disabled}
+                                        onCheckedChange={(value) => signupSet("require_password_on_social_signup", value)}
                                     />
                                 </div>
                             </div>

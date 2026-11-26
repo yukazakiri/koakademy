@@ -51,6 +51,7 @@ final class StudentConfigurationService
                 'allow_faculty_self_signup' => true,
                 'allow_identifier_recovery' => true,
                 'require_faculty_id' => false,
+                'require_password_on_social_signup' => false,
                 'student_identifier_placeholder' => null,
                 'student_identifier_help_text' => null,
                 'faculty_identifier_placeholder' => null,
@@ -520,6 +521,7 @@ final class StudentConfigurationService
             'allow_faculty_self_signup' => (bool) ($signup['allow_faculty_self_signup'] ?? true),
             'allow_identifier_recovery' => (bool) ($signup['allow_identifier_recovery'] ?? true),
             'require_faculty_id' => (bool) ($signup['require_faculty_id'] ?? false),
+            'require_password_on_social_signup' => (bool) ($signup['require_password_on_social_signup'] ?? false),
         ];
     }
 

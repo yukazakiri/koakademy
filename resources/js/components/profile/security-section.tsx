@@ -51,6 +51,7 @@ interface SecuritySectionProps {
         security_two_factor_enabled: boolean;
         two_factor_enabled: boolean;
         email_two_factor_enabled: boolean;
+        has_password?: boolean;
         recovery_codes_count?: number;
         recovery_codes?: string[];
     };
@@ -148,16 +149,27 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
             });
     };
 
+    const hasPassword = user.has_password ?? true;
     const newPasswordCheck = evaluatePasswordPolicy(passwordForm.password, pageProps.passwordPolicy);
 
     const handlePasswordSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         setPasswordProcessing(true);
         setPasswordErrors({});
-        router.put(paths.password_update, passwordForm, {
+        const payload = hasPassword
+            ? passwordForm
+            : {
+                  password: passwordForm.password,
+                  password_confirmation: passwordForm.password_confirmation,
+              };
+        router.put(paths.password_update, payload, {
             preserveScroll: true,
             onSuccess: () => {
-                toast.success("Password changed successfully");
+                toast.success(
+                    hasPassword
+                        ? "Password changed successfully"
+                        : "Password created! You can now sign in with your email and password too.",
+                );
                 setPasswordForm({ current_password: "", password: "", password_confirmation: "" });
                 setPasswordErrors({});
                 setPasswordProcessing(false);
@@ -165,7 +177,7 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
             onError: (errors) => {
                 setPasswordErrors(errors);
                 const first = Object.values(errors)[0];
-                toast.error(first || "Failed to change password. Please check your inputs.");
+                toast.error(first || "Failed to update password. Please check your inputs.");
                 setPasswordProcessing(false);
             },
         });
@@ -534,39 +546,48 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
         <div className="space-y-6">
             <Card>
                 <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <ShieldCheck className="h-5 w-5" />
-                        Password
+                    <CardTitle className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-2">
+                            <ShieldCheck className="h-5 w-5" />
+                            {hasPassword ? "Password" : "Set a Portal Password"}
+                        </span>
+                        {!hasPassword && <Badge variant="secondary">Social sign-in only</Badge>}
                     </CardTitle>
-                    <CardDescription>Update your password</CardDescription>
+                    <CardDescription>
+                        {hasPassword
+                            ? "Update your password"
+                            : "You activated your account with social sign-in. Create a password anytime if you also want to sign in with your email and password."}
+                    </CardDescription>
                 </CardHeader>
                 <CardContent>
                     <form onSubmit={handlePasswordSubmit} className="space-y-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="current_password">Current Password</Label>
-                            <div className="relative">
-                                <Input
-                                    id="current_password"
-                                    type={showCurrentPassword ? "text" : "password"}
-                                    autoComplete="current-password"
-                                    value={passwordForm.current_password}
-                                    onChange={(e) => setPasswordForm({ ...passwordForm, current_password: e.target.value })}
-                                    className="pr-10"
-                                    required
-                                />
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="text-muted-foreground hover:text-foreground absolute top-0 right-0 h-full px-3"
-                                    onClick={() => setShowCurrentPassword((v) => !v)}
-                                    aria-label={showCurrentPassword ? "Hide current password" : "Show current password"}
-                                >
-                                    {showCurrentPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                                </Button>
+                        {hasPassword && (
+                            <div className="space-y-2">
+                                <Label htmlFor="current_password">Current Password</Label>
+                                <div className="relative">
+                                    <Input
+                                        id="current_password"
+                                        type={showCurrentPassword ? "text" : "password"}
+                                        autoComplete="current-password"
+                                        value={passwordForm.current_password}
+                                        onChange={(e) => setPasswordForm({ ...passwordForm, current_password: e.target.value })}
+                                        className="pr-10"
+                                        required
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="text-muted-foreground hover:text-foreground absolute top-0 right-0 h-full px-3"
+                                        onClick={() => setShowCurrentPassword((v) => !v)}
+                                        aria-label={showCurrentPassword ? "Hide current password" : "Show current password"}
+                                    >
+                                        {showCurrentPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                                    </Button>
+                                </div>
+                                {passwordErrors.current_password && <p className="text-destructive text-xs">{passwordErrors.current_password}</p>}
                             </div>
-                            {passwordErrors.current_password && <p className="text-destructive text-xs">{passwordErrors.current_password}</p>}
-                        </div>
+                        )}
                         <div className="space-y-2">
                             <Label htmlFor="password">New Password</Label>
                             <div className="relative">
@@ -624,12 +645,18 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                             type="submit"
                             disabled={
                                 passwordProcessing ||
-                                !passwordForm.current_password ||
+                                (hasPassword && !passwordForm.current_password) ||
                                 !newPasswordCheck.allMet ||
                                 passwordForm.password !== passwordForm.password_confirmation
                             }
                         >
-                            {passwordProcessing ? "Updating..." : "Update Password"}
+                            {passwordProcessing
+                                ? hasPassword
+                                    ? "Updating..."
+                                    : "Creating..."
+                                : hasPassword
+                                  ? "Update Password"
+                                  : "Create Password"}
                         </Button>
                     </form>
                 </CardContent>

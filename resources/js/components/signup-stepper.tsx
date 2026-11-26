@@ -36,7 +36,7 @@ import type { SignupPresentationConfig } from "@/types/student-configuration";
 
 type UserType = "faculty" | "student" | null;
 
-interface LookupHints {
+export interface LookupHints {
     student_type?: string | null;
     identifier_type?: "student_id" | "lrn";
     identifier_label?: string | null;
@@ -46,6 +46,7 @@ interface LookupHints {
     external_identifier_label?: string | null;
     accepts_external_identifier?: boolean;
     allow_identifier_recovery?: boolean;
+    require_password_on_social_signup?: boolean;
     multiple_types?: boolean;
     requires_faculty_id?: boolean;
     has_faculty_id?: boolean;
@@ -54,11 +55,13 @@ interface LookupHints {
     faculty_id_help_text?: string | null;
 }
 
-interface EmailLookupResult {
+export interface EmailLookupResult {
     found: boolean;
     type?: "faculty" | "student";
     message?: string;
     account_exists?: boolean;
+    self_signup_disabled?: boolean;
+    inactive_faculty?: boolean;
     hints?: LookupHints;
 }
 
@@ -75,11 +78,13 @@ interface PersistedState {
     lookupHints?: LookupHints | null;
 }
 
-interface SocialiteSignup {
+export interface SocialiteSignup {
     name?: string | null;
     email?: string | null;
     avatar_url?: string | null;
     provider?: string | null;
+    email_verified?: boolean;
+    link_on_login?: boolean;
 }
 
 const FALLBACK_CONFIG: SignupPresentationConfig = {
@@ -99,6 +104,7 @@ const FALLBACK_CONFIG: SignupPresentationConfig = {
     allow_faculty_self_signup: true,
     allow_identifier_recovery: true,
     require_faculty_id: false,
+    require_password_on_social_signup: false,
 };
 
 function loadPersistedState(): PersistedState | null {
@@ -151,31 +157,51 @@ function clearPersistedState(): void {
 export function SignupStepper({
     className,
     socialiteSignup,
+    socialLookup,
     signupConfig,
     ...props
 }: React.ComponentProps<"div"> & {
     socialiteSignup?: SocialiteSignup | null;
+    socialLookup?: EmailLookupResult | null;
     signupConfig?: SignupPresentationConfig;
 }) {
     const config = signupConfig ?? FALLBACK_CONFIG;
     const { passwordPolicy } = usePage<{ passwordPolicy?: Partial<PasswordPolicy> }>().props;
+    const hasSocial = Boolean(socialiteSignup?.provider && socialiteSignup?.email);
+    const providerLabel = socialiteSignup?.provider
+        ? socialiteSignup.provider.charAt(0).toUpperCase() + socialiteSignup.provider.slice(1)
+        : "Social Account";
+    const initialSocialMatched = Boolean(
+        hasSocial && socialLookup?.found && (socialLookup.type === "student" || socialLookup.type === "faculty"),
+    );
+
     const queryEmail = useRef(
         typeof window !== "undefined" ? (new URLSearchParams(window.location.search).get("email")?.trim() ?? "") : "",
     );
     const hasQueryEmail = queryEmail.current.length > 0 && !socialiteSignup?.email;
-    const saved = useRef(socialiteSignup?.email || hasQueryEmail ? null : loadPersistedState());
+    const saved = useRef(hasSocial || hasQueryEmail ? null : loadPersistedState());
     const emailInputRef = useRef<HTMLInputElement | null>(null);
 
-    // Cap restored step at Step 1 (Credentials) because passwords are never persisted.
-    const [currentStep, setCurrentStep] = useState(hasQueryEmail ? 0 : Math.min(saved.current?.currentStep ?? 0, 1));
+    // Hydrate immediately when arriving from social OAuth so matched users never click Step 0 again.
+    const [currentStep, setCurrentStep] = useState(
+        initialSocialMatched ? 1 : hasQueryEmail ? 0 : Math.min(saved.current?.currentStep ?? 0, 1),
+    );
     const [isCheckingEmail, setIsCheckingEmail] = useState(false);
     const [isSendingOtp, setIsSendingOtp] = useState(false);
     const [otpCooldown, setOtpCooldown] = useState(0);
     const [isRecoveringIdentifier, setIsRecoveringIdentifier] = useState(false);
     const [identifierRecoveryCooldown, setIdentifierRecoveryCooldown] = useState(0);
-    const [emailLookupResult, setEmailLookupResult] = useState<EmailLookupResult | null>(null);
-    const [userType, setUserType] = useState<UserType>(saved.current?.userType ?? null);
-    const [lookupHints, setLookupHints] = useState<LookupHints | null>(saved.current?.lookupHints ?? null);
+    const [emailLookupResult, setEmailLookupResult] = useState<EmailLookupResult | null>(hasSocial ? (socialLookup ?? null) : null);
+    const [userType, setUserType] = useState<UserType>(
+        initialSocialMatched ? (socialLookup?.type ?? null) : (saved.current?.userType ?? null),
+    );
+    const [lookupHints, setLookupHints] = useState<LookupHints | null>(
+        initialSocialMatched ? (socialLookup?.hints ?? null) : (saved.current?.lookupHints ?? null),
+    );
+    const [showSocialMismatchResolver, setShowSocialMismatchResolver] = useState<boolean>(
+        Boolean(hasSocial && socialLookup && !socialLookup.found),
+    );
+    const [showOptionalSocialPassword, setShowOptionalSocialPassword] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [showOptionalFacultyId, setShowOptionalFacultyId] = useState(Boolean(saved.current?.faculty_id_number));
@@ -188,7 +214,9 @@ export function SignupStepper({
         faculty_id_number: saved.current?.faculty_id_number ?? "",
         identifier: saved.current?.identifier ?? "",
         otp: "",
-        user_type: saved.current?.user_type ?? ("" as "faculty" | "student" | ""),
+        user_type: initialSocialMatched
+            ? (socialLookup?.type ?? ("" as "faculty" | "student" | ""))
+            : (saved.current?.user_type ?? ("" as "faculty" | "student" | "")),
     });
 
     const isRestored = useRef(saved.current !== null);
@@ -238,10 +266,25 @@ export function SignupStepper({
 
     const validateEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
+    const isSocialEmailExactMatch = Boolean(
+        hasSocial && socialiteSignup?.email && data.email.trim().toLowerCase() === socialiteSignup.email.trim().toLowerCase(),
+    );
+    const canSkipOtp = Boolean(hasSocial && socialiteSignup?.email_verified && isSocialEmailExactMatch);
+    const isSocialFastActivation = Boolean(canSkipOtp && currentStep > 0 && userType !== null);
+
+    const requirePasswordOnSocialSignup = Boolean(
+        lookupHints?.require_password_on_social_signup ?? config.require_password_on_social_signup ?? false,
+    );
+    const isPasswordRequired = !hasSocial || requirePasswordOnSocialSignup;
+    const hasAnyPasswordInput = data.password.length > 0 || data.password_confirmation.length > 0;
+
     const passwordsMatch = data.password === data.password_confirmation && data.password_confirmation !== "";
     const policyEvaluation = evaluatePasswordPolicy(data.password, passwordPolicy);
     const minPasswordLength = passwordPolicy?.minLength ?? 8;
-    const canProceedFromDetails = data.name.trim().length > 0 && policyEvaluation.allMet && passwordsMatch;
+    const isPasswordSectionValid = isPasswordRequired
+        ? policyEvaluation.allMet && passwordsMatch
+        : !hasAnyPasswordInput || (policyEvaluation.allMet && passwordsMatch);
+    const canProceedFromDetails = data.name.trim().length > 0 && isPasswordSectionValid;
 
     const studentIdentifierLabel = lookupHints?.identifier_label || config.universal_identifier_label || "Student ID";
     const studentIdPrimaryLabel = lookupHints?.student_id_label || config.student_id_label || "Student ID";
@@ -258,12 +301,28 @@ export function SignupStepper({
     const requiresFacultyId = Boolean(lookupHints?.requires_faculty_id ?? config.require_faculty_id);
     const isFastTrackFaculty = userType === "faculty" && !requiresFacultyId;
 
+    const canSubmitSocialFastActivation =
+        !processing &&
+        canProceedFromDetails &&
+        (userType === "student" ? Boolean(data.identifier.trim()) : requiresFacultyId ? Boolean(data.faculty_id_number.trim()) : true);
+
     useEffect(() => {
         if (formErrors && Object.keys(formErrors).length > 0) {
             const firstErrorKey = Object.keys(formErrors)[0];
             const firstErrorMessage = formErrors[firstErrorKey];
             if (firstErrorMessage) {
                 toast.error(firstErrorMessage);
+            }
+            if (formErrors.password) {
+                setShowOptionalSocialPassword(true);
+            }
+            if (isSocialFastActivation) {
+                if (formErrors.email) {
+                    setCurrentStep(0);
+                } else if (formErrors.faculty_id_number && isFastTrackFaculty) {
+                    setShowOptionalFacultyId(true);
+                }
+                return;
             }
             if (formErrors.identifier || formErrors.student_id || formErrors.lrn) {
                 setCurrentStep(2);
@@ -280,7 +339,7 @@ export function SignupStepper({
                 setCurrentStep(1);
             }
         }
-    }, [errors, isFastTrackFaculty]);
+    }, [errors, isFastTrackFaculty, isSocialFastActivation]);
 
     const getSteps = () => {
         if (userType === "student") {
@@ -417,14 +476,33 @@ export function SignupStepper({
         setLookupHints(null);
         setUserType(null);
         setShowOptionalFacultyId(false);
+        setShowSocialMismatchResolver(false);
         setData((prev) => ({
             ...prev,
+            email: hasSocial ? "" : prev.email,
             user_type: "",
             identifier: "",
             faculty_id_number: "",
             otp: "",
         }));
         setTimeout(() => emailInputRef.current?.focus(), 60);
+    };
+
+    const handleUseSchoolEmailForSocial = () => {
+        setShowSocialMismatchResolver(false);
+        setEmailLookupResult(null);
+        setData("email", "");
+        setTimeout(() => emailInputRef.current?.focus(), 60);
+    };
+
+    const handleStartSocialLoginLink = () => {
+        clearPersistedState();
+        router.post("/signup/social-login-link");
+    };
+
+    const handleCancelSocial = (redirectTo: "signup" | "login" = "signup") => {
+        clearPersistedState();
+        router.post("/signup/cancel-social", { redirect: redirectTo });
     };
 
     const handleNext = () => {
@@ -437,72 +515,74 @@ export function SignupStepper({
 
     const submit = (e: FormEvent) => {
         e.preventDefault();
-        if (currentStep < steps.length - 1) {
+        if (!isSocialFastActivation && currentStep < steps.length - 1) {
             return;
         }
         post("/signup", {
             onSuccess: () => {
                 clearPersistedState();
-                toast.success("Account created successfully!");
+                toast.success(hasSocial ? `Account activated and linked with ${providerLabel}!` : "Account created successfully!");
             },
         });
     };
 
     return (
         <div className={cn("space-y-5", className)} {...props}>
-            {/* Guided Campus Canvas Progress Header */}
-            <div className="border-border/70 bg-card/75 rounded-2xl border p-3.5 shadow-2xs backdrop-blur-xs">
-                <div className="mb-3 flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground font-medium">
-                        Step <span className="text-foreground font-semibold">{currentStep + 1}</span> of {steps.length}
-                    </span>
-                    <span className="text-primary font-semibold">{steps[currentStep]?.label}</span>
+            {/* Guided Campus Canvas Progress Header (hidden in 1-screen social fast activation & social mismatch resolver) */}
+            {!isSocialFastActivation && !showSocialMismatchResolver && (
+                <div className="border-border/70 bg-card/75 rounded-2xl border p-3.5 shadow-2xs backdrop-blur-xs">
+                    <div className="mb-3 flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground font-medium">
+                            Step <span className="text-foreground font-semibold">{currentStep + 1}</span> of {steps.length}
+                        </span>
+                        <span className="text-primary font-semibold">{steps[currentStep]?.label}</span>
+                    </div>
+                    <ol
+                        className={cn("grid gap-2", steps.length === 3 ? "grid-cols-3" : "grid-cols-4")}
+                        aria-label="Account activation progress"
+                    >
+                        {steps.map((step, idx) => {
+                            const isCompleted = idx < currentStep;
+                            const isActive = idx === currentStep;
+                            return (
+                                <li key={step.id} className="space-y-1.5">
+                                    <div
+                                        className={cn(
+                                            "h-1.5 w-full rounded-full transition-all duration-300",
+                                            isCompleted ? "bg-primary" : isActive ? "bg-primary ring-primary/25 ring-2" : "bg-muted",
+                                        )}
+                                    />
+                                    <div className="flex items-center justify-center gap-1 text-[11px] sm:justify-start">
+                                        <span
+                                            className={cn(
+                                                "flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold transition-colors",
+                                                isCompleted
+                                                    ? "bg-primary text-primary-foreground"
+                                                    : isActive
+                                                      ? "border-primary/50 bg-primary/10 text-primary border"
+                                                      : "bg-muted text-muted-foreground",
+                                            )}
+                                        >
+                                            {isCompleted ? <Check className="size-2.5" /> : idx + 1}
+                                        </span>
+                                        <span
+                                            className={cn(
+                                                "hidden truncate sm:inline",
+                                                isActive ? "text-foreground font-semibold" : isCompleted ? "text-foreground/80" : "text-muted-foreground",
+                                            )}
+                                        >
+                                            {step.label}
+                                        </span>
+                                    </div>
+                                </li>
+                            );
+                        })}
+                    </ol>
                 </div>
-                <ol
-                    className={cn("grid gap-2", steps.length === 3 ? "grid-cols-3" : "grid-cols-4")}
-                    aria-label="Account activation progress"
-                >
-                    {steps.map((step, idx) => {
-                        const isCompleted = idx < currentStep;
-                        const isActive = idx === currentStep;
-                        return (
-                            <li key={step.id} className="space-y-1.5">
-                                <div
-                                    className={cn(
-                                        "h-1.5 w-full rounded-full transition-all duration-300",
-                                        isCompleted ? "bg-primary" : isActive ? "bg-primary ring-primary/25 ring-2" : "bg-muted",
-                                    )}
-                                />
-                                <div className="flex items-center justify-center gap-1 text-[11px] sm:justify-start">
-                                    <span
-                                        className={cn(
-                                            "flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold transition-colors",
-                                            isCompleted
-                                                ? "bg-primary text-primary-foreground"
-                                                : isActive
-                                                  ? "border-primary/50 bg-primary/10 text-primary border"
-                                                  : "bg-muted text-muted-foreground",
-                                        )}
-                                    >
-                                        {isCompleted ? <Check className="size-2.5" /> : idx + 1}
-                                    </span>
-                                    <span
-                                        className={cn(
-                                            "hidden truncate sm:inline",
-                                            isActive ? "text-foreground font-semibold" : isCompleted ? "text-foreground/80" : "text-muted-foreground",
-                                        )}
-                                    >
-                                        {step.label}
-                                    </span>
-                                </div>
-                            </li>
-                        );
-                    })}
-                </ol>
-            </div>
+            )}
 
-            {/* Persistent Matched Record Identity Pill (Steps 2-4) */}
-            {currentStep > 0 && userType && (
+            {/* Persistent Matched Record Identity Pill (Multi-Step Modes) */}
+            {!isSocialFastActivation && currentStep > 0 && userType && (
                 <div className="border-primary/20 bg-primary/5 flex items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-xs">
                     <div className="flex min-w-0 items-center gap-2.5">
                         <span className="bg-primary/15 text-primary flex size-7 shrink-0 items-center justify-center rounded-lg">
@@ -511,6 +591,9 @@ export function SignupStepper({
                         <div className="min-w-0">
                             <p className="text-foreground font-semibold">
                                 {userType === "student" ? "Student Record Matched" : "Faculty Record Matched"}
+                                {hasSocial && !isSocialEmailExactMatch && (
+                                    <span className="text-primary ml-1.5 font-medium">· Will link {providerLabel}</span>
+                                )}
                             </p>
                             <p className="text-muted-foreground truncate font-mono text-[11px]">{data.email}</p>
                         </div>
@@ -527,8 +610,576 @@ export function SignupStepper({
 
             <form onSubmit={submit}>
                 <FieldGroup className="gap-5">
+                    {/* Single-Screen Verified Social Fast Activation */}
+                    {isSocialFastActivation && userType && (
+                        <div className="space-y-4">
+                            <div className="border-primary/25 bg-primary/5 space-y-3 rounded-2xl border p-4 text-xs">
+                                <div className="flex items-center gap-3">
+                                    {socialiteSignup?.avatar_url ? (
+                                        <img
+                                            src={socialiteSignup.avatar_url}
+                                            alt=""
+                                            className="border-border size-10 shrink-0 rounded-full border object-cover"
+                                        />
+                                    ) : (
+                                        <IconTile variant="soft" size="sm" className="shrink-0 rounded-full">
+                                            {userType === "student" ? <GraduationCap className="size-4" /> : <UserCheck className="size-4" />}
+                                        </IconTile>
+                                    )}
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                            <p className="text-foreground font-semibold">
+                                                {userType === "student" ? "Student Record Matched" : "Faculty Record Matched"}
+                                            </p>
+                                            <span className="bg-primary/15 text-primary inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold">
+                                                <Check className="size-2.5" />
+                                                {providerLabel} verified
+                                            </span>
+                                        </div>
+                                        <p className="text-muted-foreground truncate font-mono text-[11px]">{data.email}</p>
+                                    </div>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-muted-foreground hover:text-foreground h-7 shrink-0 px-2 text-xs"
+                                        onClick={() => handleCancelSocial("login")}
+                                    >
+                                        Switch
+                                    </Button>
+                                </div>
+                                <p className="text-muted-foreground leading-relaxed">
+                                    Your email is already verified by {providerLabel} — no email code needed.{" "}
+                                    {userType === "student"
+                                        ? `Confirm your name and enter your ${studentIdentifierLabel} to enter your portal.`
+                                        : requiresFacultyId
+                                          ? `Confirm your name and enter your ${facultyIdLabel} to enter your portal.`
+                                          : "Confirm your name below to activate your account in one click."}
+                                </p>
+                            </div>
+
+                            <Field>
+                                <FieldLabel htmlFor="name" className="text-foreground text-xs font-semibold">
+                                    Full Legal Name
+                                </FieldLabel>
+                                <InputGroup className="border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2">
+                                    <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
+                                        <User className="size-4" />
+                                    </InputGroupAddon>
+                                    <InputGroupInput
+                                        id="name"
+                                        type="text"
+                                        autoComplete="name"
+                                        required
+                                        value={data.name}
+                                        onChange={(e) => setData("name", e.target.value)}
+                                        placeholder="e.g. Alex Morgan"
+                                        className="text-sm font-normal"
+                                    />
+                                </InputGroup>
+                                {errors.name && <FieldError errors={[{ message: errors.name }]} />}
+                            </Field>
+
+                            {userType === "student" && (
+                                <div className="space-y-3">
+                                    <Field>
+                                        <FieldLabel htmlFor="identifier" className="text-foreground text-xs font-semibold">
+                                            {studentIdentifierLabel}
+                                        </FieldLabel>
+                                        <InputGroup
+                                            className={cn(
+                                                "border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2",
+                                                identifierError && "border-destructive focus-within:ring-destructive/20",
+                                            )}
+                                        >
+                                            <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
+                                                <BadgeCheck className="size-4" />
+                                            </InputGroupAddon>
+                                            <InputGroupInput
+                                                id="identifier"
+                                                autoFocus
+                                                required
+                                                placeholder={studentIdentifierPlaceholder}
+                                                value={data.identifier}
+                                                onChange={(e) => setData("identifier", e.target.value)}
+                                                className="font-mono text-sm font-normal tabular-nums"
+                                            />
+                                        </InputGroup>
+                                        {identifierError && <FieldError errors={[{ message: identifierError }]} />}
+                                        <FieldDescription className="text-muted-foreground text-xs">{studentIdentifierHelpText}</FieldDescription>
+                                    </Field>
+
+                                    {allowIdentifierRecovery && (
+                                        <div className="border-border/70 bg-muted/25 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5 text-xs">
+                                            <span className="text-muted-foreground">Don&apos;t remember your ID?</span>
+                                            <button
+                                                type="button"
+                                                onClick={handleRecoverIdentifier}
+                                                disabled={isRecoveringIdentifier || identifierRecoveryCooldown > 0 || !validateEmail(data.email)}
+                                                className="text-primary font-medium underline-offset-4 hover:underline disabled:no-underline disabled:opacity-50"
+                                            >
+                                                {isRecoveringIdentifier
+                                                    ? "Sending..."
+                                                    : identifierRecoveryCooldown > 0
+                                                      ? `Email sent · retry in ${identifierRecoveryCooldown}s`
+                                                      : `Email my ${studentIdentifierLabel}`}
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {userType === "faculty" && requiresFacultyId && (
+                                <div className="space-y-3">
+                                    <Field>
+                                        <FieldLabel htmlFor="faculty_id_number" className="text-foreground text-xs font-semibold">
+                                            {facultyIdLabel} (Required)
+                                        </FieldLabel>
+                                        <InputGroup
+                                            className={cn(
+                                                "border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2",
+                                                errors.faculty_id_number && "border-destructive focus-within:ring-destructive/20",
+                                            )}
+                                        >
+                                            <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
+                                                <BadgeCheck className="size-4" />
+                                            </InputGroupAddon>
+                                            <InputGroupInput
+                                                id="faculty_id_number"
+                                                autoFocus
+                                                required
+                                                placeholder={facultyIdPlaceholder}
+                                                value={data.faculty_id_number}
+                                                onChange={(e) => setData("faculty_id_number", e.target.value)}
+                                                className="font-mono text-sm font-normal uppercase placeholder:normal-case"
+                                            />
+                                        </InputGroup>
+                                        {errors.faculty_id_number && <FieldError errors={[{ message: errors.faculty_id_number }]} />}
+                                        <FieldDescription className="text-muted-foreground text-xs">{facultyIdHelpText}</FieldDescription>
+                                    </Field>
+
+                                    {allowIdentifierRecovery && (
+                                        <div className="border-border/70 bg-muted/25 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5 text-xs">
+                                            <span className="text-muted-foreground">Don&apos;t remember your ID?</span>
+                                            <button
+                                                type="button"
+                                                onClick={handleRecoverIdentifier}
+                                                disabled={isRecoveringIdentifier || identifierRecoveryCooldown > 0 || !validateEmail(data.email)}
+                                                className="text-primary font-medium underline-offset-4 hover:underline disabled:no-underline disabled:opacity-50"
+                                            >
+                                                {isRecoveringIdentifier
+                                                    ? "Sending..."
+                                                    : identifierRecoveryCooldown > 0
+                                                      ? `Email sent · retry in ${identifierRecoveryCooldown}s`
+                                                      : `Email my ${facultyIdLabel}`}
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {userType === "faculty" && !requiresFacultyId && (
+                                <div className="border-border/70 bg-muted/20 rounded-xl border px-3.5 py-2.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowOptionalFacultyId((prev) => !prev)}
+                                        aria-expanded={showOptionalFacultyId}
+                                        className="text-muted-foreground hover:text-foreground flex w-full items-center justify-between gap-2 text-left text-xs font-medium transition-colors"
+                                    >
+                                        <span className="inline-flex items-center gap-1.5">
+                                            <BadgeCheck className="text-primary size-3.5 shrink-0" />
+                                            <span>Have a {facultyIdLabel}? Add it (optional)</span>
+                                        </span>
+                                        <ChevronDown
+                                            className={cn(
+                                                "size-3.5 shrink-0 transition-transform duration-200",
+                                                showOptionalFacultyId && "rotate-180",
+                                            )}
+                                        />
+                                    </button>
+
+                                    {showOptionalFacultyId && (
+                                        <div className="mt-3 space-y-2">
+                                            <Field>
+                                                <FieldLabel htmlFor="faculty_id_number" className="text-foreground text-xs font-semibold">
+                                                    {facultyIdLabel} (Optional)
+                                                </FieldLabel>
+                                                <InputGroup
+                                                    className={cn(
+                                                        "border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2",
+                                                        errors.faculty_id_number && "border-destructive focus-within:ring-destructive/20",
+                                                    )}
+                                                >
+                                                    <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
+                                                        <BadgeCheck className="size-4" />
+                                                    </InputGroupAddon>
+                                                    <InputGroupInput
+                                                        id="faculty_id_number"
+                                                        placeholder={facultyIdPlaceholder}
+                                                        value={data.faculty_id_number}
+                                                        onChange={(e) => setData("faculty_id_number", e.target.value)}
+                                                        className="font-mono text-sm font-normal uppercase placeholder:normal-case"
+                                                    />
+                                                </InputGroup>
+                                                {errors.faculty_id_number && <FieldError errors={[{ message: errors.faculty_id_number }]} />}
+                                                <FieldDescription className="text-muted-foreground text-xs">{facultyIdHelpText}</FieldDescription>
+                                            </Field>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Optional or Required Password Section for Social Activation */}
+                            {isPasswordRequired ? (
+                                <div className="space-y-4">
+                                    <Field>
+                                        <FieldLabel htmlFor="password" className="text-foreground text-xs font-semibold">
+                                            Create Your Portal Password
+                                        </FieldLabel>
+                                        <InputGroup className="border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2">
+                                            <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
+                                                <Lock className="size-4" />
+                                            </InputGroupAddon>
+                                            <InputGroupInput
+                                                id="password"
+                                                type={showPassword ? "text" : "password"}
+                                                autoComplete="new-password"
+                                                required
+                                                value={data.password}
+                                                onChange={(e) => setData("password", e.target.value)}
+                                                placeholder={`At least ${minPasswordLength} characters`}
+                                                className="text-sm font-normal"
+                                            />
+                                            <InputGroupAddon align="inline-end" className="pr-1.5">
+                                                <InputGroupButton
+                                                    size="icon-xs"
+                                                    onClick={() => setShowPassword(!showPassword)}
+                                                    aria-label={showPassword ? "Hide password" : "Show password"}
+                                                    className="text-muted-foreground hover:text-foreground"
+                                                >
+                                                    {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                                                </InputGroupButton>
+                                            </InputGroupAddon>
+                                        </InputGroup>
+                                        <PasswordRequirements password={data.password} policy={passwordPolicy} />
+                                        {errors.password && <FieldError errors={[{ message: errors.password }]} />}
+                                    </Field>
+
+                                    <Field>
+                                        <FieldLabel htmlFor="password_confirmation" className="text-foreground text-xs font-semibold">
+                                            Confirm Password
+                                        </FieldLabel>
+                                        <InputGroup
+                                            className={cn(
+                                                "border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2",
+                                                passwordsMatch && "border-success focus-within:ring-success/20",
+                                            )}
+                                        >
+                                            <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
+                                                <Lock className="size-4" />
+                                            </InputGroupAddon>
+                                            <InputGroupInput
+                                                id="password_confirmation"
+                                                type={showConfirmPassword ? "text" : "password"}
+                                                autoComplete="new-password"
+                                                required
+                                                value={data.password_confirmation}
+                                                onChange={(e) => setData("password_confirmation", e.target.value)}
+                                                placeholder="Repeat your password"
+                                                className="text-sm font-normal"
+                                            />
+                                            <InputGroupAddon align="inline-end" className="pr-1.5">
+                                                {passwordsMatch && (
+                                                    <span className="text-success mr-1 flex items-center">
+                                                        <Check className="size-4" />
+                                                    </span>
+                                                )}
+                                                <InputGroupButton
+                                                    size="icon-xs"
+                                                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                                    aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                                                    className="text-muted-foreground hover:text-foreground"
+                                                >
+                                                    {showConfirmPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                                                </InputGroupButton>
+                                            </InputGroupAddon>
+                                        </InputGroup>
+                                    </Field>
+                                </div>
+                            ) : (
+                                <div className="border-border/70 bg-muted/20 rounded-xl border px-3.5 py-2.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowOptionalSocialPassword((prev) => !prev)}
+                                        aria-expanded={showOptionalSocialPassword}
+                                        className="text-muted-foreground hover:text-foreground flex w-full items-center justify-between gap-2 text-left text-xs font-medium transition-colors"
+                                    >
+                                        <span className="inline-flex items-center gap-1.5">
+                                            <Lock className="text-primary size-3.5 shrink-0" />
+                                            <span>Also set a portal password now (optional)</span>
+                                        </span>
+                                        <ChevronDown
+                                            className={cn(
+                                                "size-3.5 shrink-0 transition-transform duration-200",
+                                                showOptionalSocialPassword && "rotate-180",
+                                            )}
+                                        />
+                                    </button>
+                                    {!showOptionalSocialPassword && (
+                                        <p className="text-muted-foreground mt-1 text-[11px]">
+                                            You can sign in with {providerLabel} right away and create a password anytime from Profile → Security.
+                                        </p>
+                                    )}
+                                    {showOptionalSocialPassword && (
+                                        <div className="mt-3 space-y-3">
+                                            <Field>
+                                                <FieldLabel htmlFor="password" className="text-foreground text-xs font-semibold">
+                                                    Portal Password (Optional)
+                                                </FieldLabel>
+                                                <InputGroup className="border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2">
+                                                    <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
+                                                        <Lock className="size-4" />
+                                                    </InputGroupAddon>
+                                                    <InputGroupInput
+                                                        id="password"
+                                                        type={showPassword ? "text" : "password"}
+                                                        autoComplete="new-password"
+                                                        value={data.password}
+                                                        onChange={(e) => setData("password", e.target.value)}
+                                                        placeholder={`At least ${minPasswordLength} characters`}
+                                                        className="text-sm font-normal"
+                                                    />
+                                                    <InputGroupAddon align="inline-end" className="pr-1.5">
+                                                        <InputGroupButton
+                                                            size="icon-xs"
+                                                            onClick={() => setShowPassword(!showPassword)}
+                                                            aria-label={showPassword ? "Hide password" : "Show password"}
+                                                            className="text-muted-foreground hover:text-foreground"
+                                                        >
+                                                            {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                                                        </InputGroupButton>
+                                                    </InputGroupAddon>
+                                                </InputGroup>
+                                                {data.password.length > 0 && <PasswordRequirements password={data.password} policy={passwordPolicy} />}
+                                                {errors.password && <FieldError errors={[{ message: errors.password }]} />}
+                                            </Field>
+
+                                            <Field>
+                                                <FieldLabel htmlFor="password_confirmation" className="text-foreground text-xs font-semibold">
+                                                    Confirm Password
+                                                </FieldLabel>
+                                                <InputGroup
+                                                    className={cn(
+                                                        "border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2",
+                                                        passwordsMatch && "border-success focus-within:ring-success/20",
+                                                    )}
+                                                >
+                                                    <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
+                                                        <Lock className="size-4" />
+                                                    </InputGroupAddon>
+                                                    <InputGroupInput
+                                                        id="password_confirmation"
+                                                        type={showConfirmPassword ? "text" : "password"}
+                                                        autoComplete="new-password"
+                                                        value={data.password_confirmation}
+                                                        onChange={(e) => setData("password_confirmation", e.target.value)}
+                                                        placeholder="Repeat your password"
+                                                        className="text-sm font-normal"
+                                                    />
+                                                    <InputGroupAddon align="inline-end" className="pr-1.5">
+                                                        {passwordsMatch && (
+                                                            <span className="text-success mr-1 flex items-center">
+                                                                <Check className="size-4" />
+                                                            </span>
+                                                        )}
+                                                        <InputGroupButton
+                                                            size="icon-xs"
+                                                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                                            aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                                                            className="text-muted-foreground hover:text-foreground"
+                                                        >
+                                                            {showConfirmPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                                                        </InputGroupButton>
+                                                    </InputGroupAddon>
+                                                </InputGroup>
+                                            </Field>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            <Button
+                                type="submit"
+                                disabled={!canSubmitSocialFastActivation}
+                                className="h-11 w-full rounded-xl font-semibold shadow-md"
+                            >
+                                {processing ? (
+                                    <>
+                                        <Loader2 className="mr-2 size-4 animate-spin" />
+                                        <span>Activating Account...</span>
+                                    </>
+                                ) : (
+                                    <span className="inline-flex items-center gap-2">
+                                        <span>Activate &amp; Continue with {providerLabel}</span>
+                                        <ArrowRight className="size-4" />
+                                    </span>
+                                )}
+                            </Button>
+
+                            <div className="flex items-center justify-center gap-3 text-xs">
+                                <button
+                                    type="button"
+                                    onClick={handleChangeEmail}
+                                    className="text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
+                                >
+                                    Use a different school email
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Guided Social Mismatch Resolver (Personal Gmail / New Applicant / Self-Signup Disabled) */}
+                    {!isSocialFastActivation && currentStep === 0 && showSocialMismatchResolver && hasSocial && (
+                        <div className="space-y-4">
+                            <div className="border-primary/25 bg-primary/5 flex items-center gap-3 rounded-2xl border p-4 text-xs">
+                                {socialiteSignup?.avatar_url ? (
+                                    <img
+                                        src={socialiteSignup.avatar_url}
+                                        alt=""
+                                        className="border-border size-10 shrink-0 rounded-full border object-cover"
+                                    />
+                                ) : (
+                                    <IconTile variant="soft" size="sm" className="shrink-0 rounded-full">
+                                        <User className="size-4" />
+                                    </IconTile>
+                                )}
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-foreground font-semibold">Signed in with {providerLabel}</p>
+                                    <p className="text-muted-foreground truncate font-mono text-[11px]">{socialiteSignup?.email}</p>
+                                </div>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-muted-foreground hover:text-foreground h-7 shrink-0 px-2 text-xs"
+                                    onClick={() => handleCancelSocial("login")}
+                                >
+                                    Switch
+                                </Button>
+                            </div>
+
+                            {socialLookup?.self_signup_disabled ? (
+                                <div className="border-border/80 bg-card/80 space-y-3 rounded-2xl border p-4 text-xs">
+                                    <div className="flex items-start gap-3">
+                                        <IconTile variant="soft" size="sm" className="text-primary shrink-0 rounded-lg">
+                                            <ShieldAlert className="size-4" />
+                                        </IconTile>
+                                        <div className="space-y-1">
+                                            <p className="text-foreground font-semibold">Administrator-Managed Activation</p>
+                                            <p className="text-muted-foreground leading-relaxed">
+                                                {socialLookup.message ||
+                                                    "Self-service account activation is currently disabled for your institution. Please contact your school administrator."}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="grid gap-2 sm:grid-cols-2">
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            onClick={handleStartSocialLoginLink}
+                                            className="h-9 gap-1.5 rounded-xl text-xs font-semibold"
+                                        >
+                                            <LogIn className="size-3.5" />
+                                            Sign In &amp; Link {providerLabel}
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => handleCancelSocial("login")}
+                                            className="h-9 gap-1.5 rounded-xl text-xs font-medium"
+                                        >
+                                            Back to Sign In
+                                        </Button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    <div className="space-y-1">
+                                        <p className="text-foreground text-sm font-semibold">
+                                            We didn&apos;t find this email on the school roster yet
+                                        </p>
+                                        <p className="text-muted-foreground text-xs leading-relaxed">
+                                            {socialLookup?.inactive_faculty
+                                                ? socialLookup.message
+                                                : `Your ${providerLabel} email may differ from your school-registered email, or you may not have enrolled yet. Choose how you'd like to continue:`}
+                                        </p>
+                                    </div>
+
+                                    <div className="space-y-2.5">
+                                        <button
+                                            type="button"
+                                            onClick={handleUseSchoolEmailForSocial}
+                                            className="border-primary/30 bg-primary/5 hover:border-primary/60 hover:bg-primary/10 flex w-full items-center gap-3 rounded-2xl border p-3.5 text-left transition-all"
+                                        >
+                                            <span className="bg-primary/15 text-primary flex size-9 shrink-0 items-center justify-center rounded-xl">
+                                                <Mail className="size-4" />
+                                            </span>
+                                            <div className="min-w-0 flex-1">
+                                                <p className="text-foreground text-xs font-semibold">
+                                                    I&apos;m enrolled or faculty — my school has a different email
+                                                </p>
+                                                <p className="text-muted-foreground mt-0.5 text-[11px] leading-snug">
+                                                    Verify your school email and we&apos;ll automatically link {providerLabel} to your new account.
+                                                </p>
+                                            </div>
+                                            <ArrowRight className="text-primary size-4 shrink-0" />
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={handleStartSocialLoginLink}
+                                            className="border-border/80 bg-card/75 hover:border-primary/40 hover:bg-muted/40 flex w-full items-center gap-3 rounded-2xl border p-3.5 text-left transition-all"
+                                        >
+                                            <span className="bg-muted text-foreground flex size-9 shrink-0 items-center justify-center rounded-xl">
+                                                <LogIn className="size-4" />
+                                            </span>
+                                            <div className="min-w-0 flex-1">
+                                                <p className="text-foreground text-xs font-semibold">
+                                                    I already have a portal account under another email
+                                                </p>
+                                                <p className="text-muted-foreground mt-0.5 text-[11px] leading-snug">
+                                                    Sign in with your portal password and connect {providerLabel} automatically.
+                                                </p>
+                                            </div>
+                                            <ArrowRight className="text-muted-foreground size-4 shrink-0" />
+                                        </button>
+
+                                        <Link
+                                            href="/enrollment"
+                                            className="border-border/80 bg-card/75 hover:border-primary/40 hover:bg-muted/40 flex w-full items-center gap-3 rounded-2xl border p-3.5 text-left transition-all"
+                                        >
+                                            <span className="bg-muted text-foreground flex size-9 shrink-0 items-center justify-center rounded-xl">
+                                                <ClipboardList className="size-4" />
+                                            </span>
+                                            <div className="min-w-0 flex-1">
+                                                <p className="text-foreground text-xs font-semibold">
+                                                    New student? Apply for Online Enrollment
+                                                </p>
+                                                <p className="text-muted-foreground mt-0.5 text-[11px] leading-snug">
+                                                    Submit an admission application first if you haven&apos;t registered with the school yet.
+                                                </p>
+                                            </div>
+                                            <ArrowRight className="text-muted-foreground size-4 shrink-0" />
+                                        </Link>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {/* Step 0: Email Verification */}
-                    {currentStep === 0 && (
+                    {!isSocialFastActivation && currentStep === 0 && !showSocialMismatchResolver && (
                         <div className="space-y-4">
                             {socialiteSignup?.email && (
                                 <div className="border-primary/25 bg-primary/5 flex items-center gap-3 rounded-xl border p-3.5 text-xs">
@@ -545,10 +1196,7 @@ export function SignupStepper({
                                     )}
                                     <div className="min-w-0 flex-1">
                                         <p className="text-foreground font-semibold">
-                                            Completing signup with{" "}
-                                            {socialiteSignup.provider
-                                                ? socialiteSignup.provider.charAt(0).toUpperCase() + socialiteSignup.provider.slice(1)
-                                                : "Social Account"}
+                                            Linking {providerLabel} once your school email is verified
                                         </p>
                                         <p className="text-muted-foreground truncate">{socialiteSignup.email}</p>
                                     </div>
@@ -557,12 +1205,9 @@ export function SignupStepper({
                                         variant="ghost"
                                         size="sm"
                                         className="text-muted-foreground hover:text-foreground h-7 shrink-0 px-2 text-xs"
-                                        onClick={() => {
-                                            clearPersistedState();
-                                            router.post("/signup/cancel-social");
-                                        }}
+                                        onClick={() => handleCancelSocial("signup")}
                                     >
-                                        Switch
+                                        Cancel
                                     </Button>
                                 </div>
                             )}
@@ -664,15 +1309,27 @@ export function SignupStepper({
                                         </div>
                                     </div>
                                     <div className="grid grid-cols-2 gap-2">
-                                        <Button
-                                            render={<Link href="/login" />}
-                                            nativeButton={false}
-                                            size="sm"
-                                            className="h-9 gap-1.5 rounded-xl text-xs font-semibold"
-                                        >
-                                            <LogIn className="size-3.5" />
-                                            Sign In
-                                        </Button>
+                                        {hasSocial ? (
+                                            <Button
+                                                type="button"
+                                                onClick={handleStartSocialLoginLink}
+                                                size="sm"
+                                                className="h-9 gap-1.5 rounded-xl text-xs font-semibold"
+                                            >
+                                                <LogIn className="size-3.5" />
+                                                Sign In &amp; Link {providerLabel}
+                                            </Button>
+                                        ) : (
+                                            <Button
+                                                render={<Link href="/login" />}
+                                                nativeButton={false}
+                                                size="sm"
+                                                className="h-9 gap-1.5 rounded-xl text-xs font-semibold"
+                                            >
+                                                <LogIn className="size-3.5" />
+                                                Sign In
+                                            </Button>
+                                        )}
                                         <Button
                                             render={<Link href="/forgot-password" />}
                                             nativeButton={false}
@@ -738,7 +1395,7 @@ export function SignupStepper({
                     )}
 
                     {/* Step 1: Personal Details & Password */}
-                    {currentStep === 1 && (
+                    {!isSocialFastActivation && currentStep === 1 && (
                         <div className="space-y-4">
                             <Field>
                                 <FieldLabel htmlFor="name" className="text-foreground text-xs font-semibold">
@@ -763,89 +1420,193 @@ export function SignupStepper({
                                 {errors.name && <FieldError errors={[{ message: errors.name }]} />}
                             </Field>
 
-                            <Field>
-                                <FieldLabel htmlFor="password" className="text-foreground text-xs font-semibold">
-                                    Create Your Portal Password
-                                </FieldLabel>
-                                <InputGroup className="border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2">
-                                    <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
-                                        <Lock className="size-4" />
-                                    </InputGroupAddon>
-                                    <InputGroupInput
-                                        id="password"
-                                        type={showPassword ? "text" : "password"}
-                                        autoComplete="new-password"
-                                        required
-                                        value={data.password}
-                                        onChange={(e) => setData("password", e.target.value)}
-                                        placeholder={`At least ${minPasswordLength} characters`}
-                                        className="text-sm font-normal"
-                                    />
-                                    <InputGroupAddon align="inline-end" className="pr-1.5">
-                                        <InputGroupButton
-                                            size="icon-xs"
-                                            onClick={() => setShowPassword(!showPassword)}
-                                            aria-label={showPassword ? "Hide password" : "Show password"}
-                                            className="text-muted-foreground hover:text-foreground"
-                                        >
-                                            {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                                        </InputGroupButton>
-                                    </InputGroupAddon>
-                                </InputGroup>
-                                <PasswordRequirements password={data.password} policy={passwordPolicy} />
-                                {errors.password && <FieldError errors={[{ message: errors.password }]} />}
-                            </Field>
+                            {isPasswordRequired ? (
+                                <>
+                                    <Field>
+                                        <FieldLabel htmlFor="password" className="text-foreground text-xs font-semibold">
+                                            Create Your Portal Password
+                                        </FieldLabel>
+                                        <InputGroup className="border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2">
+                                            <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
+                                                <Lock className="size-4" />
+                                            </InputGroupAddon>
+                                            <InputGroupInput
+                                                id="password"
+                                                type={showPassword ? "text" : "password"}
+                                                autoComplete="new-password"
+                                                required
+                                                value={data.password}
+                                                onChange={(e) => setData("password", e.target.value)}
+                                                placeholder={`At least ${minPasswordLength} characters`}
+                                                className="text-sm font-normal"
+                                            />
+                                            <InputGroupAddon align="inline-end" className="pr-1.5">
+                                                <InputGroupButton
+                                                    size="icon-xs"
+                                                    onClick={() => setShowPassword(!showPassword)}
+                                                    aria-label={showPassword ? "Hide password" : "Show password"}
+                                                    className="text-muted-foreground hover:text-foreground"
+                                                >
+                                                    {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                                                </InputGroupButton>
+                                            </InputGroupAddon>
+                                        </InputGroup>
+                                        <PasswordRequirements password={data.password} policy={passwordPolicy} />
+                                        {errors.password && <FieldError errors={[{ message: errors.password }]} />}
+                                    </Field>
 
-                            <Field>
-                                <FieldLabel htmlFor="password_confirmation" className="text-foreground text-xs font-semibold">
-                                    Confirm Password
-                                </FieldLabel>
-                                <InputGroup
-                                    className={cn(
-                                        "border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2",
-                                        passwordsMatch && "border-success focus-within:ring-success/20",
-                                    )}
-                                >
-                                    <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
-                                        <Lock className="size-4" />
-                                    </InputGroupAddon>
-                                    <InputGroupInput
-                                        id="password_confirmation"
-                                        type={showConfirmPassword ? "text" : "password"}
-                                        autoComplete="new-password"
-                                        required
-                                        value={data.password_confirmation}
-                                        onChange={(e) => setData("password_confirmation", e.target.value)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === "Enter" && canProceedFromDetails) {
-                                                e.preventDefault();
-                                                if (isFastTrackFaculty) {
-                                                    sendOtp();
-                                                } else {
-                                                    handleNext();
-                                                }
-                                            }
-                                        }}
-                                        placeholder="Repeat your password"
-                                        className="text-sm font-normal"
-                                    />
-                                    <InputGroupAddon align="inline-end" className="pr-1.5">
-                                        {passwordsMatch && (
-                                            <span className="text-success mr-1 flex items-center">
-                                                <Check className="size-4" />
-                                            </span>
-                                        )}
-                                        <InputGroupButton
-                                            size="icon-xs"
-                                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                                            aria-label={showConfirmPassword ? "Hide password" : "Show password"}
-                                            className="text-muted-foreground hover:text-foreground"
+                                    <Field>
+                                        <FieldLabel htmlFor="password_confirmation" className="text-foreground text-xs font-semibold">
+                                            Confirm Password
+                                        </FieldLabel>
+                                        <InputGroup
+                                            className={cn(
+                                                "border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2",
+                                                passwordsMatch && "border-success focus-within:ring-success/20",
+                                            )}
                                         >
-                                            {showConfirmPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                                        </InputGroupButton>
-                                    </InputGroupAddon>
-                                </InputGroup>
-                            </Field>
+                                            <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
+                                                <Lock className="size-4" />
+                                            </InputGroupAddon>
+                                            <InputGroupInput
+                                                id="password_confirmation"
+                                                type={showConfirmPassword ? "text" : "password"}
+                                                autoComplete="new-password"
+                                                required
+                                                value={data.password_confirmation}
+                                                onChange={(e) => setData("password_confirmation", e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === "Enter" && canProceedFromDetails) {
+                                                        e.preventDefault();
+                                                        if (isFastTrackFaculty) {
+                                                            sendOtp();
+                                                        } else {
+                                                            handleNext();
+                                                        }
+                                                    }
+                                                }}
+                                                placeholder="Repeat your password"
+                                                className="text-sm font-normal"
+                                            />
+                                            <InputGroupAddon align="inline-end" className="pr-1.5">
+                                                {passwordsMatch && (
+                                                    <span className="text-success mr-1 flex items-center">
+                                                        <Check className="size-4" />
+                                                    </span>
+                                                )}
+                                                <InputGroupButton
+                                                    size="icon-xs"
+                                                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                                    aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                                                    className="text-muted-foreground hover:text-foreground"
+                                                >
+                                                    {showConfirmPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                                                </InputGroupButton>
+                                            </InputGroupAddon>
+                                        </InputGroup>
+                                    </Field>
+                                </>
+                            ) : (
+                                <div className="border-border/70 bg-muted/20 rounded-xl border px-3.5 py-2.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowOptionalSocialPassword((prev) => !prev)}
+                                        aria-expanded={showOptionalSocialPassword}
+                                        className="text-muted-foreground hover:text-foreground flex w-full items-center justify-between gap-2 text-left text-xs font-medium transition-colors"
+                                    >
+                                        <span className="inline-flex items-center gap-1.5">
+                                            <Lock className="text-primary size-3.5 shrink-0" />
+                                            <span>Also set a portal password now (optional)</span>
+                                        </span>
+                                        <ChevronDown
+                                            className={cn(
+                                                "size-3.5 shrink-0 transition-transform duration-200",
+                                                showOptionalSocialPassword && "rotate-180",
+                                            )}
+                                        />
+                                    </button>
+                                    {!showOptionalSocialPassword && (
+                                        <p className="text-muted-foreground mt-1 text-[11px]">
+                                            You can sign in with {providerLabel} right away and create a password anytime from Profile → Security.
+                                        </p>
+                                    )}
+                                    {showOptionalSocialPassword && (
+                                        <div className="mt-3 space-y-3">
+                                            <Field>
+                                                <FieldLabel htmlFor="password" className="text-foreground text-xs font-semibold">
+                                                    Portal Password (Optional)
+                                                </FieldLabel>
+                                                <InputGroup className="border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2">
+                                                    <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
+                                                        <Lock className="size-4" />
+                                                    </InputGroupAddon>
+                                                    <InputGroupInput
+                                                        id="password"
+                                                        type={showPassword ? "text" : "password"}
+                                                        autoComplete="new-password"
+                                                        value={data.password}
+                                                        onChange={(e) => setData("password", e.target.value)}
+                                                        placeholder={`At least ${minPasswordLength} characters`}
+                                                        className="text-sm font-normal"
+                                                    />
+                                                    <InputGroupAddon align="inline-end" className="pr-1.5">
+                                                        <InputGroupButton
+                                                            size="icon-xs"
+                                                            onClick={() => setShowPassword(!showPassword)}
+                                                            aria-label={showPassword ? "Hide password" : "Show password"}
+                                                            className="text-muted-foreground hover:text-foreground"
+                                                        >
+                                                            {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                                                        </InputGroupButton>
+                                                    </InputGroupAddon>
+                                                </InputGroup>
+                                                {data.password.length > 0 && <PasswordRequirements password={data.password} policy={passwordPolicy} />}
+                                                {errors.password && <FieldError errors={[{ message: errors.password }]} />}
+                                            </Field>
+
+                                            <Field>
+                                                <FieldLabel htmlFor="password_confirmation" className="text-foreground text-xs font-semibold">
+                                                    Confirm Password
+                                                </FieldLabel>
+                                                <InputGroup
+                                                    className={cn(
+                                                        "border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2",
+                                                        passwordsMatch && "border-success focus-within:ring-success/20",
+                                                    )}
+                                                >
+                                                    <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
+                                                        <Lock className="size-4" />
+                                                    </InputGroupAddon>
+                                                    <InputGroupInput
+                                                        id="password_confirmation"
+                                                        type={showConfirmPassword ? "text" : "password"}
+                                                        autoComplete="new-password"
+                                                        value={data.password_confirmation}
+                                                        onChange={(e) => setData("password_confirmation", e.target.value)}
+                                                        placeholder="Repeat your password"
+                                                        className="text-sm font-normal"
+                                                    />
+                                                    <InputGroupAddon align="inline-end" className="pr-1.5">
+                                                        {passwordsMatch && (
+                                                            <span className="text-success mr-1 flex items-center">
+                                                                <Check className="size-4" />
+                                                            </span>
+                                                        )}
+                                                        <InputGroupButton
+                                                            size="icon-xs"
+                                                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                                            aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                                                            className="text-muted-foreground hover:text-foreground"
+                                                        >
+                                                            {showConfirmPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                                                        </InputGroupButton>
+                                                    </InputGroupAddon>
+                                                </InputGroup>
+                                            </Field>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             {isFastTrackFaculty && (
                                 <div className="border-border/70 bg-muted/20 rounded-xl border px-3.5 py-2.5">
@@ -907,7 +1668,7 @@ export function SignupStepper({
                     )}
 
                     {/* Step 2: Universal Student ID Verification (Zero manual dropdowns!) */}
-                    {currentStep === 2 && userType === "student" && (
+                    {!isSocialFastActivation && currentStep === 2 && userType === "student" && (
                         <div className="space-y-4">
                             <div className="border-primary/25 bg-primary/5 flex items-start gap-3 rounded-2xl border px-4 py-3 text-xs">
                                 <span className="bg-primary/15 text-primary mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-lg">
@@ -985,7 +1746,7 @@ export function SignupStepper({
                     )}
 
                     {/* Step 2: Faculty ID Verification (4-step strict mode) */}
-                    {currentStep === 2 && userType === "faculty" && !isFastTrackFaculty && (
+                    {!isSocialFastActivation && currentStep === 2 && userType === "faculty" && !isFastTrackFaculty && (
                         <div className="space-y-4">
                             <div className="border-primary/25 bg-primary/5 rounded-2xl border p-3.5 text-xs leading-relaxed">
                                 <p className="text-foreground font-semibold">
@@ -1054,7 +1815,7 @@ export function SignupStepper({
                     )}
 
                     {/* Step Last: OTP Code */}
-                    {currentStep === steps.length - 1 && (
+                    {!isSocialFastActivation && currentStep === steps.length - 1 && (
                         <div className="space-y-4">
                             <div className="border-primary/20 bg-primary/5 flex items-start gap-3 rounded-2xl border p-4 text-xs">
                                 <IconTile variant="soft" size="sm" className="text-primary shrink-0 rounded-lg">
@@ -1115,7 +1876,7 @@ export function SignupStepper({
                     )}
 
                     {/* Navigation Buttons */}
-                    {currentStep > 0 && (
+                    {!isSocialFastActivation && currentStep > 0 && (
                         <div className="flex items-center gap-3 pt-1">
                             <Button type="button" variant="outline" onClick={handlePrev} className="h-11 rounded-xl px-4 font-medium">
                                 <ArrowLeft className="mr-1.5 size-4" />

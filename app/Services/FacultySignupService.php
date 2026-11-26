@@ -69,12 +69,17 @@ final class FacultySignupService
             fn (Faculty $candidate): bool => (bool) ($config->get($candidate->school_id)['signup']['require_faculty_id'] ?? false),
         );
 
+        $requirePasswordOnSocial = $faculties->contains(
+            fn (Faculty $candidate): bool => (bool) ($config->get($candidate->school_id)['signup']['require_password_on_social_signup'] ?? false),
+        );
+
         return [
             'requires_faculty_id' => $faculties->count() > 1 || $policyRequiresFacultyId,
             'has_faculty_id' => $faculties->contains(fn (Faculty $candidate): bool => filled($candidate->faculty_id_number)),
             'faculty_id_label' => $presentation['faculty_id_label'],
             'faculty_id_placeholder' => $presentation['faculty_identifier_placeholder'],
             'faculty_id_help_text' => $presentation['faculty_identifier_help_text'],
+            'require_password_on_social_signup' => $requirePasswordOnSocial,
         ];
     }
 

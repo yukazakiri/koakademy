@@ -50,6 +50,7 @@ export interface SignupPolicyConfiguration {
     allow_faculty_self_signup: boolean;
     allow_identifier_recovery: boolean;
     require_faculty_id: boolean;
+    require_password_on_social_signup?: boolean;
     student_identifier_placeholder: string | null;
     student_identifier_help_text: string | null;
     faculty_identifier_placeholder: string | null;
@@ -73,6 +74,7 @@ export interface SignupPresentationConfig {
     allow_faculty_self_signup: boolean;
     allow_identifier_recovery: boolean;
     require_faculty_id: boolean;
+    require_password_on_social_signup?: boolean;
 }
 
 export interface StudentConfiguration {

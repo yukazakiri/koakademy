@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 use App\Enums\UserRole;
 use App\Models\ConnectedAccount;
+use App\Models\Faculty;
 use App\Models\GeneralSetting;
 use App\Models\School;
 use App\Models\Student;
 use App\Models\User;
+use App\Services\Auth\SignupOtpService;
+use App\Services\StudentConfigurationService;
+use Illuminate\Support\Facades\Hash;
 use Inertia\Testing\AssertableInertia;
 use Laravel\Socialite\Facades\Socialite;
 use Laravel\Socialite\Two\User as SocialiteUser;
@@ -345,4 +349,360 @@ it('shares connected google account details with the profile page', function ():
             ->where('connected_accounts.providers.google', true)
             ->where('connected_accounts.accounts.0.provider', 'google')
             ->where('connected_accounts.accounts.0.email', 'primary-google@example.com'));
+});
+
+it('sanitizes socialite signup props so oauth tokens are never exposed to the browser and expires stale sessions', function (): void {
+    enableSocialProvider();
+    fakeGoogleUser([
+        'id' => 'google-secret-check',
+        'email' => 'secret-check@example.com',
+        'name' => 'Secret Check',
+        'token' => 'super-secret-oauth-token',
+        'refreshToken' => 'super-secret-refresh-token',
+    ]);
+
+    $this->get(portalUrlForAdministrators('/auth/google/callback'))
+        ->assertRedirect('/signup');
+
+    $this->get(portalUrlForAdministrators('/signup'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->component('signup', false)
+            ->where('socialiteSignup.provider', 'google')
+            ->where('socialiteSignup.email', 'secret-check@example.com')
+            ->where('socialiteSignup.email_verified', true)
+            ->missing('socialiteSignup.token')
+            ->missing('socialiteSignup.secret')
+            ->missing('socialiteSignup.refresh_token'));
+
+    // Expire pending session beyond 15-minute TTL
+    $pending = session('socialite_signup');
+    $pending['created_at'] = now()->subMinutes(20)->toIso8601String();
+    session(['socialite_signup' => $pending]);
+
+    $this->get(portalUrlForAdministrators('/signup'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->component('signup', false)
+            ->where('socialiteSignup', null)
+            ->where('socialLookup', null));
+});
+
+it('lets a verified google student activate in one step without otp or password and later provision a password on profile', function (): void {
+    enableSocialProvider();
+    $school = School::factory()->create(['is_active' => true]);
+
+    $student = Student::factory()->create([
+        'institution_id' => $school->id,
+        'school_id' => $school->id,
+        'email' => 'fast.student@example.com',
+        'student_id' => 20260099,
+    ]);
+
+    fakeGoogleUser([
+        'id' => 'google-fast-student',
+        'name' => 'Fast Student',
+        'email' => 'fast.student@example.com',
+        'avatar' => 'https://lh3.googleusercontent.com/fast-student.jpg',
+    ]);
+
+    $this->get(portalUrlForAdministrators('/auth/google/callback'))
+        ->assertRedirect('/signup');
+
+    $this->get(portalUrlForAdministrators('/signup'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->component('signup', false)
+            ->where('socialiteSignup.email_verified', true)
+            ->where('socialLookup.found', true)
+            ->where('socialLookup.type', 'student')
+            ->where('socialLookup.hints.require_password_on_social_signup', false));
+
+    $this->post(portalUrlForAdministrators('/signup'), [
+        'name' => 'Fast Student',
+        'email' => 'fast.student@example.com',
+        'user_type' => 'student',
+        'identifier' => '20260099',
+    ])->assertRedirect('/student/dashboard');
+
+    $user = User::query()->where('email', 'fast.student@example.com')->firstOrFail();
+
+    expect($user->hasProvisionedPassword())->toBeFalse()
+        ->and($user->school_id)->toBe($school->id)
+        ->and($user->avatar_url)->toBe('https://lh3.googleusercontent.com/fast-student.jpg')
+        ->and($student->refresh()->user_id)->toBe($user->id);
+
+    $this->assertDatabaseHas('connected_accounts', [
+        'user_id' => $user->id,
+        'provider' => 'google',
+        'provider_id' => 'google-fast-student',
+    ]);
+
+    // Profile shows has_password = false and allows provisioning a password without current_password
+    $this->actingAs($user)
+        ->get(portalUrlForAdministrators('/student/profile'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->component('profile', false)
+            ->where('user.has_password', false));
+
+    $this->actingAs($user)
+        ->put(portalUrlForAdministrators('/student/profile/password'), [
+            'password' => 'NewStrongPass123!',
+            'password_confirmation' => 'NewStrongPass123!',
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    $user->refresh();
+    expect($user->hasProvisionedPassword())->toBeTrue()
+        ->and(Hash::check('NewStrongPass123!', $user->password))->toBeTrue();
+
+    // Subsequent password changes DO require current_password
+    $this->actingAs($user)
+        ->put(portalUrlForAdministrators('/student/profile/password'), [
+            'password' => 'AnotherStrongPass456!',
+            'password_confirmation' => 'AnotherStrongPass456!',
+        ])
+        ->assertSessionHasErrors('current_password');
+});
+
+it('enforces require_password_on_social_signup when configured in school settings', function (): void {
+    enableSocialProvider();
+    $school = School::factory()->create(['is_active' => true]);
+    $configService = app(StudentConfigurationService::class);
+    $config = $configService->get($school->id);
+    $config['signup']['require_password_on_social_signup'] = true;
+    $configService->update($config, $school->id);
+
+    Student::factory()->create([
+        'institution_id' => $school->id,
+        'school_id' => $school->id,
+        'email' => 'strict.social@example.com',
+        'student_id' => 20260111,
+    ]);
+
+    fakeGoogleUser([
+        'id' => 'google-strict-student',
+        'name' => 'Strict Student',
+        'email' => 'strict.social@example.com',
+    ]);
+
+    $this->get(portalUrlForAdministrators('/auth/google/callback'))
+        ->assertRedirect('/signup');
+
+    $this->get(portalUrlForAdministrators('/signup'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->component('signup', false)
+            ->where('socialLookup.hints.require_password_on_social_signup', true));
+
+    // Omitting password is rejected
+    $this->post(portalUrlForAdministrators('/signup'), [
+        'name' => 'Strict Student',
+        'email' => 'strict.social@example.com',
+        'user_type' => 'student',
+        'identifier' => '20260111',
+    ])->assertSessionHasErrors('password');
+
+    // Providing a valid password succeeds (still skipping OTP because Google verified the email)
+    $this->post(portalUrlForAdministrators('/signup'), [
+        'name' => 'Strict Student',
+        'email' => 'strict.social@example.com',
+        'user_type' => 'student',
+        'identifier' => '20260111',
+        'password' => 'StrongPass123!',
+        'password_confirmation' => 'StrongPass123!',
+    ])->assertRedirect('/student/dashboard');
+
+    $user = User::query()->where('email', 'strict.social@example.com')->firstOrFail();
+    expect($user->hasProvisionedPassword())->toBeTrue();
+});
+
+it('lets a verified google single-campus faculty member activate in one click without otp or password', function (): void {
+    enableSocialProvider();
+    $school = School::factory()->create(['is_active' => true]);
+
+    Faculty::factory()->create([
+        'school_id' => $school->id,
+        'email' => 'fast.faculty@example.com',
+        'status' => 'active',
+        'faculty_id_number' => 'FAC-2026-088',
+    ]);
+
+    fakeGoogleUser([
+        'id' => 'google-fast-faculty',
+        'name' => 'Fast Faculty',
+        'email' => 'fast.faculty@example.com',
+    ]);
+
+    $this->get(portalUrlForAdministrators('/auth/google/callback'))
+        ->assertRedirect('/signup');
+
+    $this->post(portalUrlForAdministrators('/signup'), [
+        'name' => 'Fast Faculty',
+        'email' => 'fast.faculty@example.com',
+        'user_type' => 'faculty',
+    ])->assertRedirect('/faculty/dashboard');
+
+    $user = User::query()->where('email', 'fast.faculty@example.com')->firstOrFail();
+
+    expect($user->hasProvisionedPassword())->toBeFalse()
+        ->and($user->school_id)->toBe($school->id);
+
+    $this->assertDatabaseHas('connected_accounts', [
+        'user_id' => $user->id,
+        'provider' => 'google',
+        'provider_id' => 'google-fast-faculty',
+    ]);
+});
+
+it('requires otp for cross-email social signup and links the personal google account once school email is verified', function (): void {
+    enableSocialProvider();
+    $school = School::factory()->create(['is_active' => true]);
+
+    Student::factory()->create([
+        'institution_id' => $school->id,
+        'school_id' => $school->id,
+        'email' => 'alex@school.edu',
+        'student_id' => 20260222,
+    ]);
+
+    fakeGoogleUser([
+        'id' => 'google-personal-gmail',
+        'name' => 'Alex Personal',
+        'email' => 'alex.personal@gmail.com',
+    ]);
+
+    $this->get(portalUrlForAdministrators('/auth/google/callback'))
+        ->assertRedirect('/signup');
+
+    $this->get(portalUrlForAdministrators('/signup'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->component('signup', false)
+            ->where('socialiteSignup.email', 'alex.personal@gmail.com')
+            ->where('socialLookup.found', false));
+
+    // Cannot skip OTP when registering with a different school email
+    $this->post(portalUrlForAdministrators('/signup'), [
+        'name' => 'Alex Personal',
+        'email' => 'alex@school.edu',
+        'user_type' => 'student',
+        'identifier' => '20260222',
+    ])->assertSessionHasErrors('otp');
+
+    // Once OTP proves ownership of alex@school.edu, personal Google account IS linked cleanly
+    $otp = '654321';
+    app(SignupOtpService::class)->issue('alex@school.edu', $otp);
+
+    $this->post(portalUrlForAdministrators('/signup'), [
+        'name' => 'Alex Personal',
+        'email' => 'alex@school.edu',
+        'user_type' => 'student',
+        'identifier' => '20260222',
+        'otp' => $otp,
+    ])->assertRedirect('/student/dashboard');
+
+    $user = User::query()->where('email', 'alex@school.edu')->firstOrFail();
+
+    expect($user->hasProvisionedPassword())->toBeFalse();
+    $this->assertDatabaseHas('connected_accounts', [
+        'user_id' => $user->id,
+        'provider' => 'google',
+        'provider_id' => 'google-personal-gmail',
+        'email' => 'alex.personal@gmail.com',
+    ]);
+});
+
+it('links a pending personal google account when the user signs into an existing portal account', function (): void {
+    enableSocialProvider();
+
+    $user = User::factory()->create([
+        'email' => 'existing.student@school.edu',
+        'password' => Hash::make('PortalSecret123!'),
+        'role' => UserRole::Student,
+    ]);
+
+    fakeGoogleUser([
+        'id' => 'google-link-on-login',
+        'name' => 'Personal Google',
+        'email' => 'personal.alias@gmail.com',
+    ]);
+
+    $this->get(portalUrlForAdministrators('/auth/google/callback'))
+        ->assertRedirect('/signup');
+
+    $this->post(portalUrlForAdministrators('/signup/social-login-link'))
+        ->assertRedirect('/login');
+
+    $this->get(portalUrlForAdministrators('/login'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->component('login', false)
+            ->where('pendingSocialLink.provider', 'google')
+            ->where('pendingSocialLink.email', 'personal.alias@gmail.com')
+            ->missing('pendingSocialLink.token'));
+
+    $this->post(portalUrlForAdministrators('/login'), [
+        'email' => 'existing.student@school.edu',
+        'password' => 'PortalSecret123!',
+    ])->assertRedirect('/student/dashboard');
+
+    $this->assertDatabaseHas('connected_accounts', [
+        'user_id' => $user->id,
+        'provider' => 'google',
+        'provider_id' => 'google-link-on-login',
+        'email' => 'personal.alias@gmail.com',
+    ]);
+});
+
+it('never bypasses email otp when the social provider email is not verified', function (): void {
+    enableSocialProvider();
+    $school = School::factory()->create(['is_active' => true]);
+
+    Student::factory()->create([
+        'institution_id' => $school->id,
+        'school_id' => $school->id,
+        'email' => 'unverified.social@example.com',
+        'student_id' => 20260333,
+    ]);
+
+    fakeGoogleUser([
+        'id' => 'google-unverified-signup',
+        'name' => 'Unverified Student',
+        'email' => 'unverified.social@example.com',
+        'user' => ['email_verified' => false],
+    ]);
+
+    $this->get(portalUrlForAdministrators('/auth/google/callback'))
+        ->assertRedirect('/signup');
+
+    $this->post(portalUrlForAdministrators('/signup'), [
+        'name' => 'Unverified Student',
+        'email' => 'unverified.social@example.com',
+        'user_type' => 'student',
+        'identifier' => '20260333',
+    ])->assertSessionHasErrors('otp');
+});
+
+it('persists require_password_on_social_signup from administrator system settings', function (): void {
+    $school = School::factory()->create(['is_active' => true]);
+    $admin = User::factory()->create([
+        'role' => UserRole::Developer,
+        'school_id' => $school->id,
+    ]);
+
+    $configService = app(StudentConfigurationService::class);
+    $payload = $configService->get($school->id);
+    $payload['signup']['require_password_on_social_signup'] = true;
+
+    $this->actingAs($admin)
+        ->put(portalUrlForAdministrators('/administrators/system-management/student-configuration'), $payload)
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    $configService->forget($school->id);
+    expect($configService->get($school->id)['signup']['require_password_on_social_signup'])->toBeTrue()
+        ->and($configService->signupPresentation($school->id)['require_password_on_social_signup'])->toBeTrue();
 });

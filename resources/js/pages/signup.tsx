@@ -1,7 +1,7 @@
 import { Link, usePage } from "@inertiajs/react";
 import { ArrowRight, BadgeCheck, BookOpenCheck, CheckCircle2, GraduationCap, KeyRound, MailCheck, Sparkles, UserCheck } from "lucide-react";
 
-import { SignupStepper } from "@/components/signup-stepper";
+import { SignupStepper, type EmailLookupResult, type SocialiteSignup } from "@/components/signup-stepper";
 import { AuthLayout, type AuthLayoutProps } from "@/layouts/auth-layout";
 import { resolveBranding, type Branding } from "@/lib/branding";
 import type { SignupPresentationConfig } from "@/types/student-configuration";
@@ -23,6 +23,7 @@ const DEFAULT_SIGNUP_CONFIG: SignupPresentationConfig = {
     allow_faculty_self_signup: true,
     allow_identifier_recovery: true,
     require_faculty_id: false,
+    require_password_on_social_signup: false,
 };
 
 function formatTrackSummary(labels: string[]): string {
@@ -183,15 +184,11 @@ function SignupOnboardingPanel({
 }
 
 export default function SignupPage() {
-    const { branding, announcements, socialiteSignup, signupConfig } = usePage<{
+    const { branding, announcements, socialiteSignup, socialLookup, signupConfig } = usePage<{
         branding?: Partial<Branding> | null;
         announcements?: AuthLayoutProps["announcements"];
-        socialiteSignup?: {
-            name?: string | null;
-            email?: string | null;
-            avatar_url?: string | null;
-            provider?: string | null;
-        } | null;
+        socialiteSignup?: SocialiteSignup | null;
+        socialLookup?: EmailLookupResult | null;
         signupConfig?: Partial<SignupPresentationConfig> | null;
     }>().props;
 
@@ -202,16 +199,40 @@ export default function SignupPage() {
         ...(signupConfig ?? {}),
     };
 
+    const providerLabel = socialiteSignup?.provider
+        ? socialiteSignup.provider.charAt(0).toUpperCase() + socialiteSignup.provider.slice(1)
+        : null;
+
+    const pageTitle = providerLabel ? (
+        socialLookup?.found ? (
+            <span>
+                Finish activating with <span className="text-primary">{providerLabel}</span>
+            </span>
+        ) : (
+            <span>
+                Connect your <span className="text-primary">{providerLabel}</span> account
+            </span>
+        )
+    ) : (
+        <span>
+            Activate <span className="text-primary">{appName}</span> Access
+        </span>
+    );
+
+    const pageDescription = providerLabel
+        ? socialLookup?.found
+            ? socialiteSignup?.email_verified
+                ? "We matched your roster record automatically. Confirm your details below for instant access."
+                : "We matched your roster record. Confirm your details and verify your email to finish activation."
+            : "We signed you in socially, but need to match your school record or existing account."
+        : "No admin-issued password? Verify your student or faculty record to create your own portal login.";
+
     return (
         <AuthLayout
-            metaTitle="Activate Account"
-            badge="Self-Service Account Activation"
-            title={
-                <span>
-                    Activate <span className="text-primary">{appName}</span> Access
-                </span>
-            }
-            description="No admin-issued password? Verify your student or faculty record to create your own portal login."
+            metaTitle={providerLabel ? `Activate with ${providerLabel}` : "Activate Account"}
+            badge={providerLabel ? `${providerLabel} Account Activation` : "Self-Service Account Activation"}
+            title={pageTitle}
+            description={pageDescription}
             announcements={announcements}
             showBackToLogin={true}
             maxWidth="md"
@@ -223,7 +244,11 @@ export default function SignupPage() {
                 />
             }
         >
-            <SignupStepper socialiteSignup={socialiteSignup} signupConfig={resolvedSignupConfig} />
+            <SignupStepper
+                socialiteSignup={socialiteSignup}
+                socialLookup={socialLookup}
+                signupConfig={resolvedSignupConfig}
+            />
         </AuthLayout>
     );
 }

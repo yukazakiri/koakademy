@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Filament\Auth\MultiFactor\SecurityAwareAppAuthentication;
 use App\Filament\Auth\MultiFactor\SecurityAwareEmailAuthentication;
 use App\Models\User;
+use App\Services\Auth\PendingSocialSignupService;
 use App\Services\Auth\TwoFactorAttemptService;
 use App\Services\UserSecurityActivityService;
 use App\Support\ConfiguresPasskeysForRequest;
@@ -332,9 +333,19 @@ final class TwoFactorChallengeController extends Controller
         $request->session()->forget('auth.2fa.remember');
         $request->session()->regenerate();
 
-        $defaultRedirect = $this->getRedirectForUser($user);
+        $pendingSocial = app(PendingSocialSignupService::class);
+        $linkedProvider = $pendingSocial->pendingLoginLinkPayload($request) !== null
+            ? $pendingSocial->linkToUser($request, $user, allowDifferentEmail: true)
+            : null;
 
-        return redirect()->intended($defaultRedirect);
+        $defaultRedirect = $this->getRedirectForUser($user);
+        $redirect = redirect()->intended($defaultRedirect);
+
+        if ($linkedProvider !== null) {
+            return $redirect->with('status', ucfirst($linkedProvider).' is now linked to your account.');
+        }
+
+        return $redirect;
     }
 
     private function getRedirectForUser(User $user): string

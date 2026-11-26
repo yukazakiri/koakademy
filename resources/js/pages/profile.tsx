@@ -277,6 +277,7 @@ export default function ProfilePage() {
             security_two_factor_enabled: boolean;
             two_factor_enabled: boolean;
             email_two_factor_enabled: boolean;
+            has_password?: boolean;
             recovery_codes?: string[];
         };
         faculty?: {

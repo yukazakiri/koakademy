@@ -3,11 +3,75 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { show } from "@/routes/administrators/classes";
 import { Link } from "@inertiajs/react";
-import { BookOpen, Building2, Calendar, GraduationCap, MapPin, Monitor, UserCheck } from "lucide-react";
+import { AlertTriangle, BookOpen, Building2, Calendar, Clock, GraduationCap, MapPin, Monitor, UserCheck, Users } from "lucide-react";
 import type { ClassRow } from "../columns";
 import { deliveryModeLabel, deliveryModeShortLabel, isOnlineDeliveryMode } from "../lib/class-defaults";
+import type { IndexScheduleBlock } from "../workspace/types";
 import { ClassEnrollment, classProgramLabel, semesterLabel } from "./class-list-details";
 import { ClassRowActions, type ClassActionHandlers } from "./class-row-actions";
+
+const DAY_ABBREV: Record<string, string> = {
+    Monday: "M",
+    Tuesday: "T",
+    Wednesday: "W",
+    Thursday: "Th",
+    Friday: "F",
+    Saturday: "S",
+    Sunday: "Su",
+};
+
+function formatCompactScheduleChips(schedules: IndexScheduleBlock[] | undefined) {
+    if (!schedules?.length) return [];
+
+    const grouped = new Map<
+        string,
+        {
+            key: string;
+            days: string[];
+            timeRange: string;
+            component: string;
+            hasConflict: boolean;
+            isOvercrowded: boolean;
+        }
+    >();
+
+    for (const block of schedules) {
+        const start = block.start_time ? block.start_time.slice(0, 5) : "--:--";
+        const end = block.end_time ? block.end_time.slice(0, 5) : "--:--";
+        const component = block.component_type === "lab" ? "Lab" : "Lec";
+        const key = `${start}-${end}|${component}`;
+        const dayCode = DAY_ABBREV[block.day_of_week] ?? block.day_of_week.slice(0, 2);
+
+        const existing = grouped.get(key);
+        if (existing) {
+            if (!existing.days.includes(dayCode)) {
+                existing.days.push(dayCode);
+            }
+            existing.hasConflict = existing.hasConflict || block.has_conflict;
+            existing.isOvercrowded = existing.isOvercrowded || block.is_overcrowded;
+        } else {
+            grouped.set(key, {
+                key,
+                days: [dayCode],
+                timeRange: `${start}–${end}`,
+                component,
+                hasConflict: block.has_conflict,
+                isOvercrowded: block.is_overcrowded,
+            });
+        }
+    }
+
+    return Array.from(grouped.values()).map((item) => ({
+        key: item.key,
+        label: `${item.days.join("")} ${item.timeRange} ${item.component}`,
+        hasConflict: item.hasConflict,
+        isOvercrowded: item.isOvercrowded,
+    }));
+}
+
+function formatHours(value: number): string {
+    return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
 
 export function ClassCard({
     classRow,
@@ -23,6 +87,12 @@ export function ClassCard({
     const delivery = classRow.delivery_summary ?? classRow.delivery_mode;
     const isOnline = isOnlineDeliveryMode(delivery);
     const isUnassignedFaculty = !classRow.faculty || classRow.faculty === "TBA";
+    const scheduleHealth = classRow.schedule_health ?? null;
+    const isRoomOvercrowded = Boolean(scheduleHealth?.is_room_overcrowded);
+    const hasConflict = Boolean(scheduleHealth?.has_conflict);
+    const waitlistCount = classRow.waitlist_count ?? 0;
+    const scheduleChips = formatCompactScheduleChips(classRow.schedules);
+    const showHoursBadge = scheduleHealth !== null && (scheduleHealth.required_hours > 0 || scheduleHealth.scheduled_hours > 0);
 
     return (
         <article
@@ -104,16 +174,50 @@ export function ClassCard({
                     </div>
 
                     {/* Room */}
-                    <div className="bg-muted/20 rounded-xl border p-2.5">
-                        <span className="text-muted-foreground flex items-center gap-1 font-medium">
-                            <MapPin className="text-primary size-3 shrink-0" />
-                            Location
+                    <div
+                        className={cn(
+                            "bg-muted/20 rounded-xl border p-2.5",
+                            isRoomOvercrowded && "border-rose-500/45 bg-rose-500/5",
+                        )}
+                        title={
+                            isRoomOvercrowded
+                                ? `Enrolled students (${classRow.students_count}) exceed room capacity (${classRow.room_capacity ?? "—"})`
+                                : undefined
+                        }
+                    >
+                        <span
+                            className={cn(
+                                "text-muted-foreground flex items-center justify-between gap-1 font-medium",
+                                isRoomOvercrowded && "text-rose-700 dark:text-rose-300",
+                            )}
+                        >
+                            <span className="flex items-center gap-1">
+                                <MapPin className={cn("size-3 shrink-0", isRoomOvercrowded ? "text-rose-500" : "text-primary")} />
+                                Location
+                            </span>
+                            {isRoomOvercrowded ? <AlertTriangle className="size-3 shrink-0 text-rose-500" /> : null}
                         </span>
                         <p className="text-foreground mt-1 truncate font-semibold">
                             {isOnline ? (
                                 <span className="font-medium text-indigo-600 dark:text-indigo-400">{deliveryModeShortLabel(delivery)}</span>
+                            ) : classRow.room ? (
+                                <span className="inline-flex items-baseline gap-1">
+                                    <span className="truncate">{classRow.room}</span>
+                                    {classRow.room_capacity ? (
+                                        <span
+                                            className={cn(
+                                                "shrink-0 text-[11px] font-medium tabular-nums",
+                                                isRoomOvercrowded
+                                                    ? "text-rose-600 dark:text-rose-400"
+                                                    : "text-muted-foreground",
+                                            )}
+                                        >
+                                            ({classRow.room_capacity} cap)
+                                        </span>
+                                    ) : null}
+                                </span>
                             ) : (
-                                classRow.room || <span className="text-muted-foreground font-normal">Unassigned</span>
+                                <span className="text-muted-foreground font-normal">Unassigned</span>
                             )}
                         </p>
                     </div>
@@ -127,6 +231,69 @@ export function ClassCard({
                         <p className="text-foreground mt-0.5 truncate font-semibold">
                             {classRow.school_year} · {semesterLabel(classRow.semester)}
                         </p>
+                    </div>
+
+                    {/* Schedule & Health Strip */}
+                    <div className="bg-muted/20 col-span-2 space-y-2 rounded-xl border p-2.5">
+                        <div className="flex flex-wrap items-center justify-between gap-1.5">
+                            <span className="text-muted-foreground flex items-center gap-1 font-medium">
+                                <Clock className="text-primary size-3 shrink-0" />
+                                Schedule &amp; Health
+                            </span>
+                            <div className="flex flex-wrap items-center gap-1">
+                                {showHoursBadge ? (
+                                    <Badge
+                                        variant="outline"
+                                        className={cn(
+                                            "h-4 px-1.5 font-mono text-[10px] font-semibold tabular-nums",
+                                            scheduleHealth.is_complete
+                                                ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                                                : "border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+                                        )}
+                                    >
+                                        {formatHours(scheduleHealth.scheduled_hours)}/{formatHours(scheduleHealth.required_hours)}h
+                                    </Badge>
+                                ) : null}
+                                {hasConflict ? (
+                                    <Badge
+                                        variant="outline"
+                                        title={scheduleHealth?.conflict_summary ?? "Schedule conflict detected"}
+                                        className="h-4 gap-0.5 border-rose-500/45 bg-rose-500/15 px-1.5 text-[10px] font-semibold text-rose-700 dark:text-rose-300"
+                                    >
+                                        <AlertTriangle className="size-2.5" />
+                                        Clash
+                                    </Badge>
+                                ) : null}
+                                {waitlistCount > 0 ? (
+                                    <Badge
+                                        variant="outline"
+                                        className="h-4 gap-0.5 border-violet-500/35 bg-violet-500/10 px-1.5 text-[10px] font-semibold text-violet-700 tabular-nums dark:text-violet-300"
+                                    >
+                                        <Users className="size-2.5" />+{waitlistCount} WL
+                                    </Badge>
+                                ) : null}
+                            </div>
+                        </div>
+
+                        {scheduleChips.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                                {scheduleChips.map((chip) => (
+                                    <span
+                                        key={chip.key}
+                                        className={cn(
+                                            "inline-flex items-center rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-medium",
+                                            chip.hasConflict || chip.isOvercrowded
+                                                ? "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300"
+                                                : "bg-background text-foreground border-border/80",
+                                        )}
+                                    >
+                                        {chip.label}
+                                    </span>
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="text-muted-foreground text-[11px]">Unscheduled</p>
+                        )}
                     </div>
                 </div>
 

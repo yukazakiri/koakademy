@@ -50,9 +50,15 @@ final readonly class SchedulingService
     }
 
     /** @param array<int, array<string, mixed>> $schedules */
-    public function replaceChecked(Classes $class, array $schedules, string $revision, ?User $actor): void
-    {
-        DB::transaction(function () use ($class, $schedules, $revision, $actor): void {
+    public function replaceChecked(
+        Classes $class,
+        array $schedules,
+        string $revision,
+        ?User $actor,
+        ?string $scheduleStatus = null,
+        bool $notifyEnrolled = true,
+    ): void {
+        DB::transaction(function () use ($class, $schedules, $revision, $actor, $scheduleStatus, $notifyEnrolled): void {
             $this->lockScheduleWrites();
             $locked = $class->newQuery()->whereKey($class->getKey())->lockForUpdate()->firstOrFail();
             if (! hash_equals($this->revision($locked), $revision)) {
@@ -68,7 +74,14 @@ final readonly class SchedulingService
                 }
             }
 
-            $this->syncClassSchedules($locked, $schedules, $actor, matchLegacy: false);
+            $this->syncClassSchedules(
+                $locked,
+                $schedules,
+                $actor,
+                matchLegacy: false,
+                scheduleStatus: $scheduleStatus,
+                notifyEnrolled: $notifyEnrolled,
+            );
         });
     }
 
@@ -85,8 +98,10 @@ final readonly class SchedulingService
         ?User $actor = null,
         ?array $oldSnapshot = null,
         bool $matchLegacy = true,
+        ?string $scheduleStatus = null,
+        bool $notifyEnrolled = true,
     ): Collection {
-        return DB::transaction(function () use ($class, $incomingSchedules, $matchLegacy, $oldSnapshot, $actor): Collection {
+        return DB::transaction(function () use ($class, $incomingSchedules, $matchLegacy, $oldSnapshot, $actor, $scheduleStatus, $notifyEnrolled): Collection {
             $class->newQuery()->whereKey($class->getKey())->lockForUpdate()->firstOrFail();
             $oldSnapshot ??= $this->notificationService->snapshot($class);
             $incomingSchedules = ScheduleDelivery::normalizeSchedules($incomingSchedules, $class, matchLegacy: $matchLegacy);
@@ -122,6 +137,10 @@ final readonly class SchedulingService
                 }
 
                 $scheduleData = ScheduleDelivery::normalizeBlock($scheduleData, $target?->delivery_mode ?? $class->delivery_mode);
+                $resolvedStatus = $scheduleStatus
+                    ?? (isset($scheduleData['status']) && is_string($scheduleData['status'])
+                        ? $scheduleData['status']
+                        : ($target?->status ?? 'published'));
                 $attributes = [
                     'day_of_week' => (string) $scheduleData['day_of_week'],
                     'start_time' => $this->normalizeTimeString((string) $scheduleData['start_time']),
@@ -134,9 +153,7 @@ final readonly class SchedulingService
                         ? $scheduleData['component_type']
                         : ($target?->component_type ?? 'lecture'),
                     'pattern_group_id' => $scheduleData['pattern_group_id'] ?? $target?->pattern_group_id,
-                    'status' => isset($scheduleData['status']) && is_string($scheduleData['status'])
-                        ? $scheduleData['status']
-                        : ($target?->status ?? 'published'),
+                    'status' => $resolvedStatus,
                 ];
 
                 if (array_key_exists('subject_id', $scheduleData)) {
@@ -168,9 +185,58 @@ final readonly class SchedulingService
             $class->unsetRelation('schedules');
             $class->unsetRelation('Schedule');
 
-            $this->notificationService->notifyIfChanged($class, $oldSnapshot, $actor);
+            $effectiveStatus = $scheduleStatus ?? 'published';
+            if ($notifyEnrolled && $effectiveStatus === 'published') {
+                $this->notificationService->notifyIfChanged($class, $oldSnapshot, $actor);
+            }
 
             return $result;
+        });
+    }
+
+    /**
+     * Promote all draft schedule blocks on a class to published and optionally notify enrolled students.
+     */
+    public function publishDraftSchedules(
+        Classes $class,
+        ?User $actor = null,
+        bool $notifyEnrolled = true,
+    ): int {
+        return DB::transaction(function () use ($class, $actor, $notifyEnrolled): int {
+            $locked = $class->newQuery()->whereKey($class->getKey())->lockForUpdate()->firstOrFail();
+
+            $existing = $locked->schedules()->with('room:id,name')->get();
+            $hasDrafts = $existing->contains(fn (Schedule $schedule): bool => ($schedule->status ?? 'published') === 'draft');
+
+            if (! $hasDrafts) {
+                return 0;
+            }
+
+            $oldPublishedSnapshot = $existing
+                ->filter(fn (Schedule $schedule): bool => ($schedule->status ?? 'published') === 'published')
+                ->map(fn (Schedule $schedule): array => [
+                    'day_of_week' => (string) $schedule->day_of_week,
+                    'start_time' => $schedule->start_time?->format('H:i') ?? '',
+                    'end_time' => $schedule->end_time?->format('H:i') ?? '',
+                    'room_id' => ! $schedule->isOnline() && $schedule->room_id !== null ? (int) $schedule->room_id : null,
+                    'room_name' => $schedule->isOnline() ? ScheduleDelivery::locationLabel($schedule->delivery_mode) : $schedule->room?->name,
+                    'delivery_mode' => $schedule->delivery_mode,
+                ])
+                ->values()
+                ->all();
+
+            $updatedCount = $locked->schedules()
+                ->where('status', 'draft')
+                ->update(['status' => 'published']);
+
+            $locked->unsetRelation('schedules');
+            $locked->unsetRelation('Schedule');
+
+            if ($notifyEnrolled && $updatedCount > 0) {
+                $this->notificationService->notifyIfChanged($locked, $oldPublishedSnapshot, $actor);
+            }
+
+            return $updatedCount;
         });
     }
 

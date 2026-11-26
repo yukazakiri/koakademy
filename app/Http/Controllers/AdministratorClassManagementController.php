@@ -26,6 +26,7 @@ use App\Models\User;
 use App\Services\ClassCurriculumPlacementService;
 use App\Services\ClassScheduleChangeNotificationService;
 use App\Services\GeneralSettingsService;
+use App\Services\Scheduling\ClassScheduleWorkspaceService;
 use App\Services\Scheduling\SchedulingService;
 use App\Support\Database\JsonArrayQuery;
 use App\Support\Database\SqlDialect;
@@ -75,6 +76,7 @@ final class AdministratorClassManagementController extends Controller
     public function index(
         Request $request,
         GeneralSettingsService $generalSettingsService,
+        ClassScheduleWorkspaceService $scheduleWorkspace,
     ): Response {
         $filters = [
             'search' => $this->nullableString($request->input('search')),
@@ -134,6 +136,7 @@ final class AdministratorClassManagementController extends Controller
             $direction,
             $perPage,
             $page,
+            $scheduleWorkspace,
         ): array {
             // The work queues and the rail counts are taken over the filtered
             // set without the rail's own filters, so a queue never hides its
@@ -149,12 +152,13 @@ final class AdministratorClassManagementController extends Controller
 
             $paginator = $classesQuery->paginate($perPage, ['*'], 'page', $page);
             $totals = $this->classListTotals($classesQuery);
+            $summaries = $scheduleWorkspace->summarizeForIndex($paginator->getCollection());
 
             $filamentClassIndexUrl = route('filament.admin.resources.classes.index');
 
             return [
                 'data' => $paginator->getCollection()
-                    ->map(function (Classes $class) use ($courseCodeById, $filamentClassIndexUrl): array {
+                    ->map(function (Classes $class) use ($courseCodeById, $filamentClassIndexUrl, $summaries): array {
                         $subject = $class->subjects->first();
 
                         if (! $subject) {
@@ -170,6 +174,7 @@ final class AdministratorClassManagementController extends Controller
 
                         $shsTrack = $class->shsTrack?->track_name;
                         $shsStrand = $class->shsStrand?->strand_name;
+                        $summary = $summaries[(int) $class->id] ?? null;
 
                         return [
                             'id' => $class->id,
@@ -188,6 +193,12 @@ final class AdministratorClassManagementController extends Controller
                             'shs_track' => $shsTrack,
                             'shs_strand' => $shsStrand,
                             'faculty' => $class->faculty?->full_name ?? 'TBA',
+                            'room' => $summary['room'] ?? $class->Room?->name,
+                            'room_capacity' => $summary['room_capacity'] ?? $class->Room?->capacity,
+                            'schedules' => $summary['schedules'] ?? [],
+                            'schedule_health' => $summary['schedule_health'] ?? null,
+                            'waitlist_count' => $summary['waitlist_count'] ?? 0,
+                            'schedule_revision' => $summary['schedule_revision'] ?? '',
                             'students_count' => (int) ($class->class_enrollments_count ?? 0),
                             'maximum_slots' => (int) ($class->maximum_slots ?? 0),
                             'deleted_at' => $class->deleted_at?->toIso8601String(),
@@ -283,10 +294,12 @@ final class AdministratorClassManagementController extends Controller
                 'rooms' => Room::query()
                     ->where('is_active', true)
                     ->orderBy('name')
-                    ->get(['id', 'name'])
+                    ->get(['id', 'name', 'capacity', 'type'])
                     ->map(fn (Room $room): array => [
                         'id' => $room->id,
                         'label' => $room->name,
+                        'capacity' => $room->capacity,
+                        'type' => $room->type,
                     ])->values(),
                 'shs_tracks' => ShsTrack::query()
                     ->orderBy('track_name')
@@ -534,6 +547,8 @@ final class AdministratorClassManagementController extends Controller
             $request->validated('schedules'),
             $request->validated('schedule_revision'),
             Auth::user() instanceof User ? Auth::user() : null,
+            $request->validated('schedule_status'),
+            $request->boolean('notify_enrolled', true),
         );
 
         return redirect()->route('administrators.classes.show', $class)->with('flash', [
@@ -1193,12 +1208,14 @@ final class AdministratorClassManagementController extends Controller
         $query = Classes::query()
             ->currentAcademicPeriod()
             ->with([
-                'Subject:id,code,title',
+                'Subject:id,code,title,lecture,laboratory,units',
                 'SubjectByCodeFallback:id,code,title',
                 'ShsSubject:id,code,title',
                 'subjects:id,code,title',
                 'faculty:id,first_name,last_name,middle_name',
-                'schedules:id,class_id,delivery_mode',
+                'Room:id,name,capacity',
+                'schedules:id,class_id,day_of_week,start_time,end_time,room_id,delivery_mode,component_type,status',
+                'schedules.room:id,name,capacity',
                 'shsTrack:id,track_name',
                 'shsStrand:id,strand_name',
             ])
@@ -1779,7 +1796,7 @@ final class AdministratorClassManagementController extends Controller
         $enrollments = $class->class_enrollments()
             ->with(['student:id,student_id,first_name,last_name,course_id,academic_year', 'student.course:id,code'])
             ->latest('created_at')
-            ->limit(30)
+            ->limit(250)
             ->get();
 
         $posts = $class->classPosts()
@@ -1839,6 +1856,7 @@ final class AdministratorClassManagementController extends Controller
             'maximum_slots' => (int) ($class->maximum_slots ?? 0),
             'students_count' => (int) ($class->class_enrollments_count ?? 0),
             'settings' => array_merge(Classes::getDefaultSettings(), (array) ($class->settings ?? [])),
+            'schedule_revision' => app(SchedulingService::class)->revisionFor($class->schedules),
             'schedules' => $class->schedules
                 ->sortBy([
                     fn ($schedule) => $schedule->day_of_week,
@@ -1866,7 +1884,11 @@ final class AdministratorClassManagementController extends Controller
                     'course' => $enrollment->student->course?->code,
                     'academic_year' => $enrollment->student->academic_year,
                 ] : null,
-                'status' => $enrollment->status,
+                'status' => $enrollment->resolvedEnrollmentStatus(),
+                'is_active' => (bool) $enrollment->status,
+                'is_grades_verified' => (bool) $enrollment->is_grades_verified,
+                'is_grades_finalized' => (bool) $enrollment->is_grades_finalized,
+                'is_grade_protected' => $enrollment->isGradeProtected(),
                 'prelim_grade' => $enrollment->prelim_grade,
                 'midterm_grade' => $enrollment->midterm_grade,
                 'finals_grade' => $enrollment->finals_grade,

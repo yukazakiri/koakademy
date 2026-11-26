@@ -8,8 +8,12 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { AlertTriangle, Clock, Loader2, Trash2 } from "lucide-react";
+import { AlertTriangle, Clock, Globe, Loader2, Trash2 } from "lucide-react";
 import { useMemo } from "react";
+import {
+    deliveryModeShortLabel,
+    isOnlineDeliveryMode,
+} from "../../classes/lib/class-defaults";
 import type {
     DraftSubjectEnrollment,
     SectionOption,
@@ -291,6 +295,13 @@ export function SubjectLoadRow({
                                 const hasSectionClash =
                                     sectionConflicts.length > 0;
 
+                                const sectionDelivery =
+                                    section.delivery_summary ??
+                                    section.delivery_mode;
+                                const showDeliveryBadge =
+                                    sectionDelivery === "mixed" ||
+                                    isOnlineDeliveryMode(sectionDelivery);
+
                                 return (
                                     <SelectItem
                                         key={section.id}
@@ -316,6 +327,17 @@ export function SubjectLoadRow({
                                                         ? "FULL"
                                                         : `${section.enrolled_count}/${section.max_slots}`}
                                                 </Badge>
+                                                {showDeliveryBadge && (
+                                                    <Badge
+                                                        variant="info-light"
+                                                        size="xs"
+                                                    >
+                                                        <Globe className="size-2.5" />
+                                                        {deliveryModeShortLabel(
+                                                            sectionDelivery,
+                                                        )}
+                                                    </Badge>
+                                                )}
                                                 {hasSectionClash && (
                                                     <Badge
                                                         variant="destructive-light"

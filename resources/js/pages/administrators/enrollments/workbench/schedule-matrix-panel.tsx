@@ -9,13 +9,27 @@ import {
 } from "@/components/reui/frame";
 import { IconTile } from "@/components/reui/icon-tile";
 import { cn } from "@/lib/utils";
-import { AlertTriangle, CalendarDays, MapPin } from "lucide-react";
+import { AlertTriangle, CalendarDays, Globe, MapPin } from "lucide-react";
 import { useMemo } from "react";
+import {
+    deliveryModeShortLabel,
+    type DeliveryMode,
+    type SchedulingPolicy,
+} from "../../classes/lib/class-defaults";
+import {
+    checksStudentScheduleConflicts,
+    effectiveScheduleDeliveryMode,
+    isOnlineDeliveryMode,
+    normalizeDay,
+    parseTimeToMinutes,
+    resolveSchedulingPolicy,
+} from "./schedule-conflicts";
 import type { DraftSubjectEnrollment, ScheduleConflict } from "./types";
 
 export interface ScheduleMatrixPanelProps {
     subjectsEnrolled: DraftSubjectEnrollment[];
     scheduleConflicts: ScheduleConflict[];
+    schedulingPolicy?: SchedulingPolicy;
     highlightedSubjectId?: number | null;
     onHoverSubject?: (subjectId: number | null) => void;
 }
@@ -27,6 +41,7 @@ const WEEK_DAYS = [
     { key: "Thursday", short: "Thu" },
     { key: "Friday", short: "Fri" },
     { key: "Saturday", short: "Sat" },
+    { key: "Sunday", short: "Sun" },
 ] as const;
 
 const START_HOUR = 7; // 7:00 AM
@@ -58,6 +73,8 @@ interface RawScheduleBlock {
     endMin: number;
     timeLabel: string;
     room: string | null;
+    deliveryMode: DeliveryMode;
+    checksConflicts: boolean;
     colorClass: string;
     hasConflict: boolean;
 }
@@ -65,38 +82,6 @@ interface RawScheduleBlock {
 interface PositionedScheduleBlock extends RawScheduleBlock {
     lane: number;
     laneCount: number;
-}
-
-function parseTimeToMinutes(timeStr: string): number {
-    if (!timeStr) return -1;
-    const clean = timeStr.trim().toUpperCase();
-    const match12 = clean.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
-    if (match12) {
-        let h = parseInt(match12[1], 10);
-        const m = parseInt(match12[2], 10);
-        if (match12[3] === "PM" && h < 12) h += 12;
-        if (match12[3] === "AM" && h === 12) h = 0;
-        return h * 60 + m;
-    }
-    const match24 = clean.match(/^(\d{1,2}):(\d{2})/);
-    if (match24) {
-        return parseInt(match24[1], 10) * 60 + parseInt(match24[2], 10);
-    }
-    return -1;
-}
-
-function normalizeDay(day: string): string {
-    const key = day.trim().toLowerCase().slice(0, 3);
-    const map: Record<string, string> = {
-        mon: "Monday",
-        tue: "Tuesday",
-        wed: "Wednesday",
-        thu: "Thursday",
-        fri: "Friday",
-        sat: "Saturday",
-        sun: "Sunday",
-    };
-    return map[key] ?? day.trim();
 }
 
 function formatHourAxis(hour24: number): string {
@@ -172,9 +157,15 @@ function layoutDayBlocks(blocks: RawScheduleBlock[]): PositionedScheduleBlock[] 
 export function ScheduleMatrixPanel({
     subjectsEnrolled,
     scheduleConflicts,
+    schedulingPolicy,
     highlightedSubjectId = null,
     onHoverSubject,
 }: ScheduleMatrixPanelProps) {
+    const resolvedPolicy = useMemo(
+        () => resolveSchedulingPolicy(schedulingPolicy),
+        [schedulingPolicy],
+    );
+
     const hours = useMemo(
         () =>
             Array.from(
@@ -185,94 +176,150 @@ export function ScheduleMatrixPanel({
     );
 
     const conflictLookup = useMemo(() => {
-        const set = new Set<string>();
+        const bySchedule = new Set<string>();
+        const byDayFallback = new Set<string>();
         for (const conflict of scheduleConflicts) {
             const day = normalizeDay(conflict.day);
-            set.add(`${conflict.subjectAId}:${day}`);
-            set.add(`${conflict.subjectBId}:${day}`);
+            if (typeof conflict.scheduleAIndex === "number") {
+                bySchedule.add(
+                    `${conflict.subjectAId}:${day}:${conflict.scheduleAIndex}`,
+                );
+            } else {
+                byDayFallback.add(`${conflict.subjectAId}:${day}`);
+            }
+
+            if (typeof conflict.scheduleBIndex === "number") {
+                bySchedule.add(
+                    `${conflict.subjectBId}:${day}:${conflict.scheduleBIndex}`,
+                );
+            } else {
+                byDayFallback.add(`${conflict.subjectBId}:${day}`);
+            }
         }
-        return set;
+        return { bySchedule, byDayFallback };
     }, [scheduleConflicts]);
 
-    const { blocksByDay, scheduledSubjectCount, unscheduledAssignedSubjects } =
-        useMemo(() => {
-            const rawByDay = new Map<string, RawScheduleBlock[]>();
-            for (const d of WEEK_DAYS) {
-                rawByDay.set(d.key, []);
-            }
+    const {
+        blocksByDay,
+        scheduledSubjectCount,
+        unscheduledAssignedSubjects,
+        hasSundayBlocks,
+        exemptOnlineBlockCount,
+    } = useMemo(() => {
+        const rawByDay = new Map<string, RawScheduleBlock[]>();
+        for (const d of WEEK_DAYS) {
+            rawByDay.set(d.key, []);
+        }
 
-            let scheduledSubjects = 0;
-            const tbaSubjects: { code: string; section: string }[] = [];
+        let scheduledSubjects = 0;
+        let exemptOnlineBlocks = 0;
+        const tbaSubjects: { code: string; section: string }[] = [];
 
-            subjectsEnrolled.forEach((subject, subjectIndex) => {
-                if (!subject.class_id) return;
-                const matchedSection = subject.sections?.find(
-                    (sec) => sec.id === subject.class_id,
+        subjectsEnrolled.forEach((subject, subjectIndex) => {
+            if (!subject.class_id) return;
+            const matchedSection = subject.sections?.find(
+                (sec) => sec.id === subject.class_id,
+            );
+            if (!matchedSection) return;
+
+            const colorClass =
+                SUBJECT_PALETTE[subjectIndex % SUBJECT_PALETTE.length];
+            let placedCount = 0;
+
+            (matchedSection.schedules ?? []).forEach((sched, schedIdx) => {
+                const normalizedDay = normalizeDay(sched.day);
+                const dayBucket = rawByDay.get(normalizedDay);
+                if (!dayBucket) return;
+
+                const startMin = parseTimeToMinutes(sched.start_time);
+                const endMin = parseTimeToMinutes(sched.end_time);
+                if (startMin < 0 || endMin <= startMin) return;
+
+                const clampedStart = Math.max(START_MINUTES, startMin);
+                const clampedEnd = Math.min(END_MINUTES, endMin);
+                if (clampedEnd <= clampedStart) return;
+
+                const deliveryMode = effectiveScheduleDeliveryMode(
+                    sched,
+                    matchedSection.delivery_mode,
                 );
-                if (!matchedSection) return;
-
-                const colorClass =
-                    SUBJECT_PALETTE[subjectIndex % SUBJECT_PALETTE.length];
-                let placedCount = 0;
-
-                (matchedSection.schedules ?? []).forEach((sched, schedIdx) => {
-                    const normalizedDay = normalizeDay(sched.day);
-                    const dayBucket = rawByDay.get(normalizedDay);
-                    if (!dayBucket) return;
-
-                    const startMin = parseTimeToMinutes(sched.start_time);
-                    const endMin = parseTimeToMinutes(sched.end_time);
-                    if (startMin < 0 || endMin <= startMin) return;
-
-                    const clampedStart = Math.max(START_MINUTES, startMin);
-                    const clampedEnd = Math.min(END_MINUTES, endMin);
-                    if (clampedEnd <= clampedStart) return;
-
-                    const hasConflict = conflictLookup.has(
-                        `${subject.subject_id}:${normalizedDay}`,
-                    );
-
-                    dayBucket.push({
-                        id: `${subject.subject_id}-${matchedSection.id}-${normalizedDay}-${schedIdx}`,
-                        subjectId: subject.subject_id,
-                        subjectCode: subject.subject_code,
-                        subjectTitle: subject.subject_title,
-                        sectionName: matchedSection.section,
-                        day: normalizedDay,
-                        startMin: clampedStart,
-                        endMin: clampedEnd,
-                        timeLabel: `${formatCompactTime(startMin)}–${formatCompactTime(endMin)}`,
-                        room: sched.room,
-                        colorClass,
-                        hasConflict,
-                    });
-                    placedCount += 1;
-                });
-
-                if (placedCount > 0) {
-                    scheduledSubjects += 1;
-                } else {
-                    tbaSubjects.push({
-                        code: subject.subject_code,
-                        section: matchedSection.section,
-                    });
+                const checksConflicts = checksStudentScheduleConflicts(
+                    deliveryMode,
+                    resolvedPolicy,
+                );
+                if (isOnlineDeliveryMode(deliveryMode) && !checksConflicts) {
+                    exemptOnlineBlocks += 1;
                 }
+
+                const hasConflict =
+                    checksConflicts &&
+                    (conflictLookup.bySchedule.has(
+                        `${subject.subject_id}:${normalizedDay}:${schedIdx}`,
+                    ) ||
+                        conflictLookup.byDayFallback.has(
+                            `${subject.subject_id}:${normalizedDay}`,
+                        ));
+
+                dayBucket.push({
+                    id: `${subject.subject_id}-${matchedSection.id}-${normalizedDay}-${schedIdx}`,
+                    subjectId: subject.subject_id,
+                    subjectCode: subject.subject_code,
+                    subjectTitle: subject.subject_title,
+                    sectionName: matchedSection.section,
+                    day: normalizedDay,
+                    startMin: clampedStart,
+                    endMin: clampedEnd,
+                    timeLabel: `${formatCompactTime(startMin)}–${formatCompactTime(endMin)}`,
+                    room: isOnlineDeliveryMode(deliveryMode)
+                        ? deliveryModeShortLabel(deliveryMode)
+                        : sched.room,
+                    deliveryMode,
+                    checksConflicts,
+                    colorClass,
+                    hasConflict,
+                });
+                placedCount += 1;
             });
 
-            const positionedMap = new Map<string, PositionedScheduleBlock[]>();
-            for (const d of WEEK_DAYS) {
-                positionedMap.set(
-                    d.key,
-                    layoutDayBlocks(rawByDay.get(d.key) ?? []),
-                );
+            if (placedCount > 0) {
+                scheduledSubjects += 1;
+            } else {
+                tbaSubjects.push({
+                    code: subject.subject_code,
+                    section: matchedSection.section,
+                });
             }
+        });
 
-            return {
-                blocksByDay: positionedMap,
-                scheduledSubjectCount: scheduledSubjects,
-                unscheduledAssignedSubjects: tbaSubjects,
-            };
-        }, [subjectsEnrolled, conflictLookup]);
+        const positionedMap = new Map<string, PositionedScheduleBlock[]>();
+        for (const d of WEEK_DAYS) {
+            positionedMap.set(
+                d.key,
+                layoutDayBlocks(rawByDay.get(d.key) ?? []),
+            );
+        }
+
+        return {
+            blocksByDay: positionedMap,
+            scheduledSubjectCount: scheduledSubjects,
+            unscheduledAssignedSubjects: tbaSubjects,
+            hasSundayBlocks: (rawByDay.get("Sunday")?.length ?? 0) > 0,
+            exemptOnlineBlockCount: exemptOnlineBlocks,
+        };
+    }, [subjectsEnrolled, conflictLookup, resolvedPolicy]);
+
+    const visibleDays = useMemo(
+        () =>
+            resolvedPolicy.allow_sunday_scheduling || hasSundayBlocks
+                ? WEEK_DAYS
+                : WEEK_DAYS.slice(0, 6),
+        [resolvedPolicy.allow_sunday_scheduling, hasSundayBlocks],
+    );
+
+    const gridColsClass =
+        visibleDays.length === 7
+            ? "grid-cols-[52px_repeat(7,minmax(0,1fr))]"
+            : "grid-cols-[52px_repeat(6,minmax(0,1fr))]";
 
     const hasAnyBlocks = scheduledSubjectCount > 0;
 
@@ -293,12 +340,18 @@ export function ScheduleMatrixPanel({
                         </FrameTitle>
                         <FrameDescription className="truncate text-xs tabular-nums">
                             {scheduledSubjectCount} of {subjectsEnrolled.length}{" "}
-                            subject(s) plotted · Mon–Sat, 7 AM–9 PM
+                            subject(s) plotted ·{" "}
+                            {visibleDays.length === 7 ? "Mon–Sun" : "Mon–Sat"},
+                            7 AM–9 PM
                         </FrameDescription>
                     </div>
                 </div>
 
-                {scheduleConflicts.length > 0 ? (
+                {!resolvedPolicy.check_student_cohort_conflicts ? (
+                    <Badge variant="secondary" size="sm">
+                        Conflict checks off
+                    </Badge>
+                ) : scheduleConflicts.length > 0 ? (
                     <Badge variant="destructive-light" size="sm">
                         <AlertTriangle className="size-3" />
                         {scheduleConflicts.length}{" "}
@@ -389,11 +442,16 @@ export function ScheduleMatrixPanel({
                         <div className="w-full overflow-x-auto">
                             <div className="min-w-[540px]">
                                 {/* Sticky day column header */}
-                                <div className="grid grid-cols-[52px_repeat(6,minmax(0,1fr))] border-b border-border/70 bg-muted/30">
+                                <div
+                                    className={cn(
+                                        "grid border-b border-border/70 bg-muted/30",
+                                        gridColsClass,
+                                    )}
+                                >
                                     <div className="px-2 py-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                                         Time
                                     </div>
-                                    {WEEK_DAYS.map((day) => {
+                                    {visibleDays.map((day) => {
                                         const count =
                                             blocksByDay.get(day.key)?.length ??
                                             0;
@@ -417,7 +475,7 @@ export function ScheduleMatrixPanel({
 
                                 {/* Timetable body */}
                                 <div
-                                    className="relative grid grid-cols-[52px_repeat(6,minmax(0,1fr))]"
+                                    className={cn("relative grid", gridColsClass)}
                                     style={{ height: TOTAL_GRID_HEIGHT_PX }}
                                 >
                                     {/* Time axis column */}
@@ -437,7 +495,7 @@ export function ScheduleMatrixPanel({
                                     </div>
 
                                     {/* Day columns */}
-                                    {WEEK_DAYS.map((day) => {
+                                    {visibleDays.map((day) => {
                                         const dayBlocks =
                                             blocksByDay.get(day.key) ?? [];
 
@@ -514,9 +572,12 @@ export function ScheduleMatrixPanel({
                                                                 left: `calc(${leftPct}% + 2px)`,
                                                                 width: `calc(${widthPct}% - 4px)`,
                                                             }}
-                                                            title={`${block.subjectCode} (${block.sectionName}) · ${block.subjectTitle}\n${block.day} ${block.timeLabel}${block.room ? ` · ${block.room}` : ""}${block.hasConflict ? "\n⚠ Schedule clash detected" : ""}`}
+                                                            title={`${block.subjectCode} (${block.sectionName}) · ${block.subjectTitle}\n${block.day} ${block.timeLabel}${block.room ? ` · ${block.room}` : ""}${!block.checksConflicts ? "\nExempt from conflict checks by scheduling policy" : ""}${block.hasConflict ? "\n⚠ Schedule clash detected" : ""}`}
                                                             className={cn(
                                                                 "absolute z-10 overflow-hidden rounded-md border px-1.5 py-1 text-left transition-all duration-150 cursor-default",
+                                                                !block.checksConflicts &&
+                                                                    !block.hasConflict &&
+                                                                    "border-dashed",
                                                                 block.hasConflict
                                                                     ? "border-destructive bg-destructive/12 text-foreground ring-1 ring-destructive/50 dark:bg-destructive/20"
                                                                     : block.colorClass,
@@ -536,9 +597,13 @@ export function ScheduleMatrixPanel({
                                                                         block.subjectCode
                                                                     }
                                                                 </span>
-                                                                {block.hasConflict && (
+                                                                {block.hasConflict ? (
                                                                     <AlertTriangle className="size-3 shrink-0 text-destructive" />
-                                                                )}
+                                                                ) : isOnlineDeliveryMode(
+                                                                      block.deliveryMode,
+                                                                  ) ? (
+                                                                    <Globe className="size-2.5 shrink-0 opacity-75" />
+                                                                ) : null}
                                                             </div>
 
                                                             {!isCompact && (
@@ -553,7 +618,13 @@ export function ScheduleMatrixPanel({
                                                                 <p className="mt-0.5 flex min-w-0 items-center gap-0.5 truncate text-[10px] leading-tight opacity-75">
                                                                     {block.room ? (
                                                                         <>
-                                                                            <MapPin className="size-2.5 shrink-0" />
+                                                                            {isOnlineDeliveryMode(
+                                                                                block.deliveryMode,
+                                                                            ) ? (
+                                                                                <Globe className="size-2.5 shrink-0" />
+                                                                            ) : (
+                                                                                <MapPin className="size-2.5 shrink-0" />
+                                                                            )}
                                                                             <span className="truncate">
                                                                                 {
                                                                                     block.room
@@ -578,6 +649,18 @@ export function ScheduleMatrixPanel({
                                 </div>
                             </div>
                         </div>
+
+                        {(!resolvedPolicy.check_student_cohort_conflicts ||
+                            exemptOnlineBlockCount > 0) && (
+                            <div className="flex flex-wrap items-center gap-1.5 border-t border-border/70 bg-muted/15 px-3 py-2 text-[11px] text-muted-foreground">
+                                <Globe className="size-3 shrink-0 text-muted-foreground" />
+                                <span>
+                                    {!resolvedPolicy.check_student_cohort_conflicts
+                                        ? "Student schedule conflict detection is disabled in institution scheduling policy."
+                                        : `Dashed online sessions (${exemptOnlineBlockCount}) are exempt from time-conflict detection under your scheduling policy.`}
+                                </span>
+                            </div>
+                        )}
 
                         {unscheduledAssignedSubjects.length > 0 && (
                             <div className="flex flex-wrap items-center gap-1.5 border-t border-border/70 bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">

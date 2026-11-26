@@ -13,6 +13,12 @@ import axios from "axios";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { StudentHoldItem } from "../types";
+import {
+    detectDraftScheduleConflicts,
+    findCandidateSectionConflicts,
+    resolveSchedulingPolicy,
+    schedulesOverlap,
+} from "./schedule-conflicts";
 import type {
     BillingConfiguration,
     DiscountOption,
@@ -24,73 +30,20 @@ import type {
     PendingOverloadConfirmation,
     ScheduleConflict,
     SectionOption,
-    SectionSchedule,
     StudentDetails,
     StudentOption,
     SubjectOption,
     WaitlistBadgeItem,
 } from "./types";
 
+export { schedulesOverlap };
+
 const CUSTOM_LEGACY_DISCOUNT_VALUE = "__legacy__";
-
-function parseTimeToMinutes(timeStr: string): number {
-    if (!timeStr) return -1;
-    const clean = timeStr.trim().toUpperCase();
-    const match12 = clean.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
-    if (match12) {
-        let h = parseInt(match12[1], 10);
-        const m = parseInt(match12[2], 10);
-        if (match12[3] === "PM" && h < 12) h += 12;
-        if (match12[3] === "AM" && h === 12) h = 0;
-        return h * 60 + m;
-    }
-    const match24 = clean.match(/^(\d{1,2}):(\d{2})/);
-    if (match24) {
-        return parseInt(match24[1], 10) * 60 + parseInt(match24[2], 10);
-    }
-    return -1;
-}
-
-function normalizeDay(day: string): string {
-    const key = day.trim().toLowerCase().slice(0, 3);
-    const map: Record<string, string> = {
-        mon: "Monday",
-        tue: "Tuesday",
-        wed: "Wednesday",
-        thu: "Thursday",
-        fri: "Friday",
-        sat: "Saturday",
-        sun: "Sunday",
-    };
-    return map[key] ?? day.trim();
-}
-
-function formatMinutes(minutes: number): string {
-    const h24 = Math.floor(minutes / 60);
-    const m = minutes % 60;
-    const period = h24 >= 12 ? "PM" : "AM";
-    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-    return `${h12}:${String(m).padStart(2, "0")} ${period}`;
-}
-
-export function schedulesOverlap(a: SectionSchedule, b: SectionSchedule): string | null {
-    if (normalizeDay(a.day) !== normalizeDay(b.day)) return null;
-    const startA = parseTimeToMinutes(a.start_time);
-    const endA = parseTimeToMinutes(a.end_time);
-    const startB = parseTimeToMinutes(b.start_time);
-    const endB = parseTimeToMinutes(b.end_time);
-    if (startA < 0 || endA <= startA || startB < 0 || endB <= startB) return null;
-    const overlapStart = Math.max(startA, startB);
-    const overlapEnd = Math.min(endA, endB);
-    if (overlapStart < overlapEnd) {
-        return `${normalizeDay(a.day).slice(0, 3)} ${formatMinutes(overlapStart)}–${formatMinutes(overlapEnd)}`;
-    }
-    return null;
-}
 
 export function useEnrollmentDraft(props: EnrollmentWorkbenchPageProps) {
     const {
         billingConfiguration,
+        scheduling_policy: rawSchedulingPolicy,
         enrollment_period: enrollmentPeriod,
         active_holds: initialActiveHolds = [],
         waitlists = [],
@@ -102,6 +55,11 @@ export function useEnrollmentDraft(props: EnrollmentWorkbenchPageProps) {
         enrollment,
         flash,
     } = props;
+
+    const schedulingPolicy = useMemo(
+        () => resolveSchedulingPolicy(rawSchedulingPolicy),
+        [rawSchedulingPolicy],
+    );
 
     const isEdit = Boolean(enrollment);
     const initialSubjects = useMemo<DraftSubjectEnrollment[]>(
@@ -642,39 +600,11 @@ export function useEnrollmentDraft(props: EnrollmentWorkbenchPageProps) {
         [discountName, discountPercentage],
     );
 
-    // Live schedule conflicts across all currently assigned sections
-    const scheduleConflicts = useMemo<ScheduleConflict[]>(() => {
-        const assigned = subjectsEnrolled
-            .map((sub) => {
-                const sec = sub.sections?.find((s) => s.id === sub.class_id);
-                return sec ? { sub, sec } : null;
-            })
-            .filter(Boolean) as { sub: DraftSubjectEnrollment; sec: SectionOption }[];
-
-        const found: ScheduleConflict[] = [];
-        for (let i = 0; i < assigned.length; i++) {
-            for (let j = i + 1; j < assigned.length; j++) {
-                const itemA = assigned[i];
-                const itemB = assigned[j];
-                for (const schedA of itemA.sec.schedules ?? []) {
-                    for (const schedB of itemB.sec.schedules ?? []) {
-                        const overlap = schedulesOverlap(schedA, schedB);
-                        if (overlap) {
-                            found.push({
-                                subjectAId: itemA.sub.subject_id,
-                                subjectACode: itemA.sub.subject_code,
-                                subjectBId: itemB.sub.subject_id,
-                                subjectBCode: itemB.sub.subject_code,
-                                day: normalizeDay(schedA.day),
-                                overlapWindow: overlap,
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        return found;
-    }, [subjectsEnrolled]);
+    // Live schedule conflicts across all currently assigned sections (policy-aware)
+    const scheduleConflicts = useMemo<ScheduleConflict[]>(
+        () => detectDraftScheduleConflicts(subjectsEnrolled, schedulingPolicy),
+        [subjectsEnrolled, schedulingPolicy],
+    );
 
     const conflictingSubjectIds = useMemo(() => {
         const ids = new Set<number>();
@@ -686,24 +616,14 @@ export function useEnrollmentDraft(props: EnrollmentWorkbenchPageProps) {
     }, [scheduleConflicts]);
 
     const checkSectionConflictsWithDraft = useCallback(
-        (subjectId: number, candidateSection: SectionOption): string[] => {
-            const warnings: string[] = [];
-            for (const other of subjectsEnrolled) {
-                if (other.subject_id === subjectId || !other.class_id) continue;
-                const otherSec = other.sections?.find((s) => s.id === other.class_id);
-                if (!otherSec) continue;
-                for (const schedA of candidateSection.schedules ?? []) {
-                    for (const schedB of otherSec.schedules ?? []) {
-                        const overlap = schedulesOverlap(schedA, schedB);
-                        if (overlap) {
-                            warnings.push(`${other.subject_code} (${overlap})`);
-                        }
-                    }
-                }
-            }
-            return Array.from(new Set(warnings));
-        },
-        [subjectsEnrolled],
+        (subjectId: number, candidateSection: SectionOption): string[] =>
+            findCandidateSectionConflicts(
+                subjectId,
+                candidateSection,
+                subjectsEnrolled,
+                schedulingPolicy,
+            ),
+        [subjectsEnrolled, schedulingPolicy],
     );
 
     // Live tuition & unit totals
@@ -1144,6 +1064,7 @@ export function useEnrollmentDraft(props: EnrollmentWorkbenchPageProps) {
         pendingGradeLossOpen,
         setPendingGradeLossOpen,
         waitlistBySubjectId,
+        schedulingPolicy,
         scheduleConflicts,
         conflictingSubjectIds,
         checkSectionConflictsWithDraft,

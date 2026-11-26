@@ -1273,8 +1273,16 @@ export default function AdministratorEnrollmentCreate(
                                                             : "s"}
                                                     </Badge>
                                                 )}
-                                                {draft.scheduleConflicts.length >
-                                                0 ? (
+                                                {!draft.schedulingPolicy
+                                                    .check_student_cohort_conflicts ? (
+                                                    <Badge
+                                                        variant="secondary"
+                                                        size="xs"
+                                                    >
+                                                        Checks off
+                                                    </Badge>
+                                                ) : draft.scheduleConflicts
+                                                      .length > 0 ? (
                                                     <Badge
                                                         variant="destructive-light"
                                                         size="xs"
@@ -1355,6 +1363,9 @@ export default function AdministratorEnrollmentCreate(
                                         subjectsEnrolled={draft.subjectsEnrolled}
                                         scheduleConflicts={
                                             draft.scheduleConflicts
+                                        }
+                                        schedulingPolicy={
+                                            draft.schedulingPolicy
                                         }
                                         highlightedSubjectId={
                                             highlightedSubjectId
@@ -1672,8 +1683,17 @@ export default function AdministratorEnrollmentCreate(
                                                             }{" "}
                                                             assigned
                                                         </span>
-                                                        {draft.scheduleConflicts
-                                                            .length > 0 ? (
+                                                        {!draft.schedulingPolicy
+                                                            .check_student_cohort_conflicts ? (
+                                                            <Badge
+                                                                variant="secondary"
+                                                                size="xs"
+                                                            >
+                                                                Checks off
+                                                            </Badge>
+                                                        ) : draft
+                                                              .scheduleConflicts
+                                                              .length > 0 ? (
                                                             <Badge
                                                                 variant="destructive-light"
                                                                 size="xs"
@@ -1841,7 +1861,12 @@ export default function AdministratorEnrollmentCreate(
                                         {draft.unitCap} u
                                     </span>
 
-                                    {draft.scheduleConflicts.length > 0 ? (
+                                    {!draft.schedulingPolicy
+                                        .check_student_cohort_conflicts ? (
+                                        <Badge variant="secondary" size="sm">
+                                            Checks off
+                                        </Badge>
+                                    ) : draft.scheduleConflicts.length > 0 ? (
                                         <Badge
                                             variant="destructive-light"
                                             size="sm"

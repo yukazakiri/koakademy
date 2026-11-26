@@ -64,6 +64,7 @@ use App\Services\StudentHoldService;
 use App\Services\TenantContext;
 use App\Services\TuitionAdjustmentRecalculationService;
 use App\Settings\SiteSettings;
+use App\Support\ScheduleDelivery;
 use Closure;
 use Exception;
 use FPDF;
@@ -1181,7 +1182,17 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'section' => $ce->class->section,
                 'faculty' => $ce->class->faculty->full_name ?? 'TBA',
                 'schedule' => $ce->class->schedules->map(fn ($s): string => $s->day_of_week.' '.$s->time_range)->implode(', ') ?: 'TBA',
-                'room' => $ce->class->schedules->map(fn ($s) => $s->room?->name)->filter()->unique()->implode(', ') ?: 'TBA',
+                'room' => $ce->class->schedules
+                    ->map(function ($s) use ($ce): ?string {
+                        $mode = ScheduleDelivery::canonicalize($s->delivery_mode ?? $ce->class->delivery_mode);
+
+                        return ScheduleDelivery::isOnline($mode)
+                            ? ScheduleDelivery::shortLabel($mode)
+                            : $s->room?->name;
+                    })
+                    ->filter()
+                    ->unique()
+                    ->implode(', ') ?: 'TBA',
                 'grades' => [
                     'prelim' => $ce->prelim_grade,
                     'midterm' => $ce->midterm_grade,
@@ -1972,6 +1983,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 ],
             ],
             'billingConfiguration' => $this->feePolicy->forEnrollment($enrollment),
+            'scheduling_policy' => $settingsService->getSchedulingConfig(),
             'enrollment' => [
                 'id' => $enrollment->id,
                 'semester' => $enrollment->semester,
@@ -2530,6 +2542,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 ],
             ],
             'billingConfiguration' => EnrollmentFeeCalculator::Defaults,
+            'scheduling_policy' => $settingsService->getSchedulingConfig(),
             'enrollment_period' => $this->enrollmentPeriodService->describe($currentSchoolYear, $currentSemester),
             'discounts' => $this->discountOptions(),
             'flash' => session('flash'),
@@ -2950,19 +2963,30 @@ final class AdministratorEnrollmentManagementController extends Controller
             ->withCount(['class_enrollments' => fn ($query) => $query->where('status', true)])
             ->get();
 
-        $sections = $classes->map(function ($class): array {
+        $schedulingPolicy = $settingsService->getSchedulingConfig();
+
+        $sections = $classes->map(function ($class) use ($schedulingPolicy): array {
             $enrolledCount = $class->class_enrollments_count;
             $maxSlots = $class->maximum_slots ?: 0;
             $availableSlots = $maxSlots > 0 ? $maxSlots - $enrolledCount : null;
+            $classDeliveryMode = ScheduleDelivery::canonicalize($class->delivery_mode);
+            $deliverySummary = $class->deliverySummary();
 
-            // Format schedule: "Mon 8:00 AM - 10:00 AM (Room 101)"
+            // Format schedule: "Mon 8:00 AM - 10:00 AM (Room 101)" or "Mon 8:00 AM - 10:00 AM · Online (Async)"
             $scheduleStr = $class->schedules
-                ->map(fn ($s): string => sprintf(
-                    '%s %s%s',
-                    mb_substr((string) $s->day_of_week, 0, 3), // Mon
-                    $s->time_range,                // 8:00 AM - 10:00 AM
-                    $s->room ? ' ('.$s->room->name.')' : ''
-                ))
+                ->map(function ($s) use ($classDeliveryMode): string {
+                    $mode = ScheduleDelivery::canonicalize($s->delivery_mode ?? $classDeliveryMode);
+                    $location = ScheduleDelivery::isOnline($mode)
+                        ? ' · '.ScheduleDelivery::shortLabel($mode)
+                        : ($s->room ? ' ('.$s->room->name.')' : '');
+
+                    return sprintf(
+                        '%s %s%s',
+                        mb_substr((string) $s->day_of_week, 0, 3), // Mon
+                        $s->time_range,                // 8:00 AM - 10:00 AM
+                        $location
+                    );
+                })
                 ->implode(', ');
 
             return [
@@ -2973,13 +2997,22 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'max_slots' => $maxSlots,
                 'available_slots' => $availableSlots,
                 'is_full' => $maxSlots > 0 && $enrolledCount >= $maxSlots,
+                'delivery_mode' => $classDeliveryMode,
+                'delivery_summary' => $deliverySummary,
                 'schedule' => $scheduleStr ?: 'TBA',
-                'schedules' => $class->schedules->map(fn ($s): array => [
-                    'day' => $s->day_of_week,
-                    'start_time' => $s->start_time instanceof \Carbon\Carbon ? $s->start_time->format('H:i') : $s->start_time,
-                    'end_time' => $s->end_time instanceof \Carbon\Carbon ? $s->end_time->format('H:i') : $s->end_time,
-                    'room' => $s->room?->name,
-                ]),
+                'schedules' => $class->schedules->map(function ($s) use ($classDeliveryMode, $schedulingPolicy): array {
+                    $mode = ScheduleDelivery::canonicalize($s->delivery_mode ?? $classDeliveryMode);
+
+                    return [
+                        'id' => $s->id,
+                        'day' => $s->day_of_week,
+                        'start_time' => $s->start_time instanceof \Carbon\Carbon ? $s->start_time->format('H:i') : $s->start_time,
+                        'end_time' => $s->end_time instanceof \Carbon\Carbon ? $s->end_time->format('H:i') : $s->end_time,
+                        'room' => ScheduleDelivery::isOnline($mode) ? ScheduleDelivery::shortLabel($mode) : $s->room?->name,
+                        'delivery_mode' => $mode,
+                        'checks_time_conflicts' => ScheduleDelivery::checksStudentCohortConflicts($mode, $schedulingPolicy),
+                    ];
+                })->values(),
                 'label' => 'Section '.$class->section
                     .($maxSlots > 0 ? " • {$enrolledCount}/{$maxSlots} slots" : ' • Unlimited')
                     .($class->Faculty ? ' • '.$class->Faculty->full_name : '')

@@ -395,6 +395,8 @@ it('rejects controller forceDestroy when student has financial records', functio
 
 it('rejects controller forceDestroy when enrollment has financial records', function (): void {
     $admin = User::factory()->create(['role' => UserRole::Admin->value]);
+    Permission::firstOrCreate(['name' => 'ForceDelete:StudentEnrollment', 'guard_name' => 'web']);
+    $admin->givePermissionTo('ForceDelete:StudentEnrollment');
     $course = Course::factory()->create();
     $student = Student::factory()->create();
     $enrollment = StudentEnrollment::create([

@@ -37,7 +37,7 @@ it('shares active onboarding features for a student', function (): void {
 
     $shared = app(HandleInertiaRequests::class)->share($request);
 
-    $featureKeys = collect($shared['onboarding']['features'] ?? [])
+    $featureKeys = collect(value($shared['onboarding'])['features'] ?? [])
         ->pluck('featureKey')
         ->toArray();
 
@@ -63,7 +63,7 @@ it('omits dismissed onboarding features', function (): void {
 
     $shared = app(HandleInertiaRequests::class)->share($request);
 
-    $featureKeys = collect($shared['onboarding']['features'] ?? [])
+    $featureKeys = collect(value($shared['onboarding'])['features'] ?? [])
         ->pluck('featureKey')
         ->toArray();
 

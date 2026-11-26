@@ -216,6 +216,7 @@ return [
         'administrators.students.bulk-email',
         'administrators.students.bulk-force-destroy',
         'administrators.students.bulk-manage-clearance',
+        'administrators.students.bulk-portal-accounts',
         'administrators.students.bulk-update-status',
         'administrators.students.change-course',
         'administrators.students.courses.subjects',

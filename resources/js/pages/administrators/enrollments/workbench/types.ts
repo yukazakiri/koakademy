@@ -1,4 +1,11 @@
+import type {
+    DeliveryMode,
+    DeliverySummary,
+    SchedulingPolicy,
+} from "../../classes/lib/class-defaults";
 import type { EnrollmentPeriodSummary, StudentHoldItem } from "../types";
+
+export type { DeliveryMode, DeliverySummary, SchedulingPolicy };
 
 export interface User {
     name: string;
@@ -88,10 +95,13 @@ export interface SubjectOption {
 }
 
 export interface SectionSchedule {
+    id?: number;
     day: string;
     start_time: string;
     end_time: string;
     room: string | null;
+    delivery_mode?: DeliveryMode | string | null;
+    checks_time_conflicts?: boolean;
 }
 
 export interface SectionOption {
@@ -102,6 +112,8 @@ export interface SectionOption {
     max_slots: number;
     available_slots: number | null;
     is_full: boolean;
+    delivery_mode?: DeliveryMode | string | null;
+    delivery_summary?: DeliverySummary | string | null;
     schedule: string;
     schedules: SectionSchedule[];
     label: string;
@@ -225,6 +237,7 @@ export interface EnrollmentEditRecord {
 
 export interface EnrollmentWorkbenchPageProps {
     billingConfiguration: BillingConfiguration;
+    scheduling_policy?: SchedulingPolicy;
     enrollment_period?: EnrollmentPeriodSummary;
     active_holds?: StudentHoldItem[];
     waitlists?: WaitlistBadgeItem[];
@@ -276,6 +289,8 @@ export interface ScheduleConflict {
     subjectBCode: string;
     day: string;
     overlapWindow: string;
+    scheduleAIndex?: number;
+    scheduleBIndex?: number;
 }
 
 export interface PendingOverloadSection {

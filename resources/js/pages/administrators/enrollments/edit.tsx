@@ -902,6 +902,9 @@ export default function AdministratorEnrollmentEdit(
                                         scheduleConflicts={
                                             draft.scheduleConflicts
                                         }
+                                        schedulingPolicy={
+                                            draft.schedulingPolicy
+                                        }
                                         highlightedSubjectId={
                                             highlightedSubjectId
                                         }

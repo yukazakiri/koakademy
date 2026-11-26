@@ -157,9 +157,17 @@ final class AdministratorRegistrarDocumentController extends Controller
             }
 
             if ($validated['template'] === 'certificate_of_enrollment' && $enrollment !== null) {
-                $completionStatus = data_get($enrollmentPipelineService->getCompletionStep(), 'status');
+                $completionStep = $enrollmentPipelineService->getCompletionStep();
+                $normalizedStatus = mb_strtolower(mb_trim((string) $enrollment->status));
+                $completionMatches = array_filter([
+                    mb_strtolower(mb_trim((string) ($completionStep['status'] ?? ''))),
+                    mb_strtolower(mb_trim((string) ($completionStep['label'] ?? ''))),
+                    'enrolled',
+                    'completed',
+                    'officially enrolled',
+                ]);
                 $isCompleted = $enrollment->terminal_outcome === 'completed'
-                    || ($completionStatus !== null && $enrollment->status === $completionStatus);
+                    || in_array($normalizedStatus, $completionMatches, true);
                 if (! $isCompleted || $enrollment->terminal_outcome === 'cancelled') {
                     $enrollment = null;
                 }

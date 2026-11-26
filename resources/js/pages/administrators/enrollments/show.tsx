@@ -818,7 +818,7 @@ export default function ShowEnrollment({
                     <TabsList className="inline-flex h-auto min-w-max gap-1 p-1">
                         <TabsTrigger
                             value="load"
-                            className="gap-1.5 px-3 py-1.5 text-xs"
+                            className="gap-1.5 px-2.5 py-1.5 text-xs"
                         >
                             <BookOpen className="size-3.5" />
                             <span>Load &amp; Schedule</span>
@@ -840,10 +840,10 @@ export default function ShowEnrollment({
 
                         <TabsTrigger
                             value="billing"
-                            className="gap-1.5 px-3 py-1.5 text-xs"
+                            className="gap-1.5 px-2.5 py-1.5 text-xs"
                         >
                             <CreditCard className="size-3.5" />
-                            <span>Billing &amp; Receipts</span>
+                            <span>Billing</span>
                             <Badge
                                 variant={
                                     balanceDue > 0
@@ -859,7 +859,7 @@ export default function ShowEnrollment({
 
                         <TabsTrigger
                             value="documents"
-                            className="gap-1.5 px-3 py-1.5 text-xs"
+                            className="gap-1.5 px-2.5 py-1.5 text-xs"
                         >
                             <FileText className="size-3.5" />
                             <span>Documents &amp; COR</span>
@@ -876,10 +876,10 @@ export default function ShowEnrollment({
 
                         <TabsTrigger
                             value="requirements_holds"
-                            className="gap-1.5 px-3 py-1.5 text-xs"
+                            className="gap-1.5 px-2.5 py-1.5 text-xs"
                         >
                             <ShieldCheck className="size-3.5" />
-                            <span>Holds &amp; Requirements</span>
+                            <span>Holds &amp; Reqs</span>
                             {(activeHoldsCount > 0 ||
                                 pendingRequirementsCount > 0) && (
                                 <Badge
@@ -899,10 +899,10 @@ export default function ShowEnrollment({
 
                         <TabsTrigger
                             value="timeline"
-                            className="gap-1.5 px-3 py-1.5 text-xs"
+                            className="gap-1.5 px-2.5 py-1.5 text-xs"
                         >
                             <History className="size-3.5" />
-                            <span>Audit Timeline</span>
+                            <span>Audit</span>
                             <Badge
                                 variant="secondary"
                                 size="xs"
@@ -993,7 +993,7 @@ export default function ShowEnrollment({
     return (
         <AdminLayout
             user={user as unknown as User}
-            title={`Enrollment #${enrollment.id} · ${enrollment.student.full_name}`}
+            title={`Enrollment #${enrollment.id}`}
         >
             <Head
                 title={`Enrollment #${enrollment.id} · ${enrollment.student.full_name}`}

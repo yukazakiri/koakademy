@@ -1539,15 +1539,22 @@ final class AdministratorEnrollmentManagementController extends Controller
                 ->all();
         } else {
             $completionStep = $this->enrollmentPipelineService->getCompletionStep();
+            $normalizedStatus = mb_strtolower(mb_trim((string) $enrollment->status));
+            $completionMatches = array_filter([
+                mb_strtolower(mb_trim((string) ($completionStep['status'] ?? ''))),
+                mb_strtolower(mb_trim((string) ($completionStep['label'] ?? ''))),
+                'enrolled',
+                'completed',
+                'officially enrolled',
+            ]);
             $isCompleted = $enrollment->terminal_outcome !== EnrollmentCancellationService::OUTCOME
-                && $completionStep !== null
-                && $enrollment->status === ($completionStep['status'] ?? null);
+                && ($enrollment->terminal_outcome === 'completed' || in_array($normalizedStatus, $completionMatches, true));
             $pipelineConfig = [
                 ...$this->enrollmentPipelineService->getConfiguration(),
                 'steps' => $this->enrollmentPipelineService->getSteps(),
                 'status_options' => $this->enrollmentPipelineService->getStatusOptions(),
                 'status_classes' => $this->enrollmentPipelineService->getStatusColorClasses(),
-                'next_step' => $this->enrollmentPipelineService->getNextStep($enrollment->status),
+                'next_step' => $isCompleted ? null : $this->enrollmentPipelineService->getNextStep($enrollment->status),
             ];
             $availableReopenSteps = [];
         }

@@ -1,7 +1,7 @@
 import type { NavItem, NavSubItem } from "@/components/nav-main";
 import { Badge } from "@/components/ui/badge";
 import { index as libraryIndex } from "@/routes/library";
-import { IconBooks, IconCalendar, IconDashboard, IconQrcode, IconReceipt, IconSchool, IconSpeakerphone, IconUsers } from "@tabler/icons-react";
+import { IconBooks, IconCalendar, IconDashboard, IconFileText, IconQrcode, IconReceipt, IconSchool, IconSpeakerphone, IconUsers } from "@tabler/icons-react";
 
 export interface StudentPortalClass {
     id: number;
@@ -104,6 +104,12 @@ export function getStudentPortalNavigation(
             url: isEnabled("schedule") ? "/student/schedule" : "#",
             disabled: !isEnabled("schedule"),
             disabledTooltip: "Class Schedule is not enabled for this account",
+        },
+        {
+            id: "documents",
+            title: "Documents",
+            icon: IconFileText,
+            url: "/student/documents",
         },
         {
             id: "announcements",

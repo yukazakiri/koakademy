@@ -479,6 +479,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/faculties/imports/{facultyBulkImport}/confirm', [AdministratorFacultyImportController::class, 'confirm'])->middleware('throttle:20,1')->name('faculties.imports.confirm');
         Route::post('/faculties', [AdministratorFacultyManagementController::class, 'store'])->name('faculties.store');
         Route::patch('/faculties/bulk/status', [AdministratorFacultyManagementController::class, 'bulkUpdateStatus'])->name('faculties.bulk.status');
+        Route::post('/faculties/bulk/portal-accounts', [AdministratorFacultyManagementController::class, 'bulkProvisionPortalAccounts'])->name('faculties.bulk.portal-accounts');
         Route::get('/faculties/{faculty}', [AdministratorFacultyManagementController::class, 'show'])->name('faculties.show');
         Route::get('/faculties/{faculty}/edit', [AdministratorFacultyManagementController::class, 'edit'])->name('faculties.edit');
         Route::put('/faculties/{faculty}', [AdministratorFacultyManagementController::class, 'update'])->name('faculties.update');

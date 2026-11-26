@@ -115,14 +115,20 @@ export function SignupStepper({
     socialiteSignup?: SocialiteSignup | null;
 }) {
     const { passwordPolicy } = usePage<{ passwordPolicy?: Partial<PasswordPolicy> }>().props;
-    const saved = useRef(socialiteSignup?.email ? null : loadPersistedState());
+    const queryEmail = useRef(
+        typeof window !== "undefined" ? (new URLSearchParams(window.location.search).get("email")?.trim() ?? "") : "",
+    );
+    const hasQueryEmail = queryEmail.current.length > 0 && !socialiteSignup?.email;
+    const saved = useRef(socialiteSignup?.email || hasQueryEmail ? null : loadPersistedState());
     const emailInputRef = useRef<HTMLInputElement | null>(null);
 
     // Cap restored step at Step 1 (Personal & Password) because passwords are never persisted.
-    const [currentStep, setCurrentStep] = useState(Math.min(saved.current?.currentStep ?? 0, 1));
+    const [currentStep, setCurrentStep] = useState(hasQueryEmail ? 0 : Math.min(saved.current?.currentStep ?? 0, 1));
     const [isCheckingEmail, setIsCheckingEmail] = useState(false);
     const [isSendingOtp, setIsSendingOtp] = useState(false);
     const [otpCooldown, setOtpCooldown] = useState(0);
+    const [isRecoveringIdentifier, setIsRecoveringIdentifier] = useState(false);
+    const [identifierRecoveryCooldown, setIdentifierRecoveryCooldown] = useState(0);
     const [emailLookupResult, setEmailLookupResult] = useState<EmailLookupResult | null>(null);
     const [userType, setUserType] = useState<UserType>(saved.current?.userType ?? null);
     const initialIdentifierField: "lrn" | "student_id" = saved.current?.identifierField ?? (saved.current?.lrn ? "lrn" : "student_id");
@@ -136,7 +142,7 @@ export function SignupStepper({
 
     const { data, setData, post, processing, errors } = useForm({
         name: saved.current?.name ?? socialiteSignup?.name ?? "",
-        email: saved.current?.email ?? socialiteSignup?.email ?? "",
+        email: socialiteSignup?.email ?? (hasQueryEmail ? queryEmail.current : (saved.current?.email ?? "")),
         password: "",
         password_confirmation: "",
         faculty_id_number: saved.current?.faculty_id_number ?? "",
@@ -158,6 +164,14 @@ export function SignupStepper({
         }, 1000);
         return () => clearInterval(timer);
     }, [otpCooldown]);
+
+    useEffect(() => {
+        if (identifierRecoveryCooldown <= 0) return;
+        const timer = setInterval(() => {
+            setIdentifierRecoveryCooldown((prev) => prev - 1);
+        }, 1000);
+        return () => clearInterval(timer);
+    }, [identifierRecoveryCooldown]);
 
     const persistFormState = useCallback(() => {
         // Never persist passwords or OTPs to browser storage.
@@ -292,6 +306,24 @@ export function SignupStepper({
             toast.error(errorMessage);
         } finally {
             setIsSendingOtp(false);
+        }
+    };
+
+    const handleRecoverIdentifier = async () => {
+        if (!validateEmail(data.email) || isRecoveringIdentifier || identifierRecoveryCooldown > 0) return;
+        setIsRecoveringIdentifier(true);
+        try {
+            const response = await axios.post("/signup/recover-identifier", { email: data.email });
+            setIdentifierRecoveryCooldown(60);
+            toast.success(
+                response.data?.message ||
+                    "If a matching student record exists, we have sent your Student Number / LRN to that email address.",
+            );
+        } catch (error: unknown) {
+            const err = error as { response?: { data?: { message?: string } } };
+            toast.error(err.response?.data?.message || "Could not send your identifier right now. Please try again shortly.");
+        } finally {
+            setIsRecoveringIdentifier(false);
         }
     };
 
@@ -930,6 +962,22 @@ export function SignupStepper({
                                     </FieldDescription>
                                 </Field>
                             )}
+
+                            <div className="flex items-center justify-between gap-2 rounded-xl border border-border/70 bg-muted/25 px-3.5 py-2.5 text-xs">
+                                <span className="text-muted-foreground">Don&apos;t remember your ID?</span>
+                                <button
+                                    type="button"
+                                    onClick={handleRecoverIdentifier}
+                                    disabled={isRecoveringIdentifier || identifierRecoveryCooldown > 0 || !validateEmail(data.email)}
+                                    className="text-primary font-medium underline-offset-4 hover:underline disabled:no-underline disabled:opacity-50"
+                                >
+                                    {isRecoveringIdentifier
+                                        ? "Sending..."
+                                        : identifierRecoveryCooldown > 0
+                                          ? `Email sent · retry in ${identifierRecoveryCooldown}s`
+                                          : "Forgot your Student Number / LRN? Email it to me"}
+                                </button>
+                            </div>
                         </div>
                     )}
 

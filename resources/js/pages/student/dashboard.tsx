@@ -253,6 +253,20 @@ const studentTourSteps: TourStep[] = [
     },
 ];
 
+function resolveHoldAction(hold: StudentHoldInfo): { href: string; label: string } {
+    const haystack = `${hold.office ?? ""} ${hold.title ?? ""} ${hold.reason ?? ""}`.toLowerCase();
+
+    if (/(finance|tuition|billing|cashier|accounting|bursar|balance|payment)/.test(haystack)) {
+        return { href: "/student/tuition", label: "Review Tuition & Billing" };
+    }
+
+    if (/(document|registrar|credential|transcript|form\s*138|birth|moral|requirement|photo)/.test(haystack)) {
+        return { href: "/student/documents", label: "Upload Documents" };
+    }
+
+    return { href: "/student/help", label: "Contact Support" };
+}
+
 function getSemesterLabel(semester: number): string {
     if (semester === 1) {
         return "1st Semester";
@@ -1234,31 +1248,46 @@ export default function StudentDashboard({ user, is_new_user, student_data, id_c
                 {/* Guided Campus Canvas: Holds, Enrollment Status & Required Documents */}
                 {((student_data.active_holds && student_data.active_holds.length > 0) || student_data.enrollment_journey || student_data.document_summary) && (
                     <section className="grid gap-3 lg:grid-cols-3">
-                        {student_data.active_holds && student_data.active_holds.length > 0 && (
-                            <Card className="border-destructive/35 bg-destructive/5 lg:col-span-3">
-                                <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
-                                    <div className="space-y-1.5">
-                                        <div className="flex items-center gap-2">
-                                            <Badge variant="destructive" className="text-[11px]">
-                                                {student_data.active_holds.length} Active Hold{student_data.active_holds.length === 1 ? "" : "s"}
-                                            </Badge>
-                                            <span className="text-foreground text-sm font-semibold">Action required to avoid enrollment or clearance blocks</span>
+                        {student_data.active_holds && student_data.active_holds.length > 0 && (() => {
+                            const primaryAction = resolveHoldAction(student_data.active_holds[0]);
+
+                            return (
+                                <Card className="border-destructive/35 bg-destructive/5 lg:col-span-3">
+                                    <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
+                                        <div className="space-y-1.5">
+                                            <div className="flex items-center gap-2">
+                                                <Badge variant="destructive" className="text-[11px]">
+                                                    {student_data.active_holds.length} Active Hold{student_data.active_holds.length === 1 ? "" : "s"}
+                                                </Badge>
+                                                <span className="text-foreground text-sm font-semibold">Action required to avoid enrollment or clearance blocks</span>
+                                            </div>
+                                            <ul className="text-muted-foreground space-y-1 text-xs">
+                                                {student_data.active_holds.map((hold) => {
+                                                    const holdAction = resolveHoldAction(hold);
+
+                                                    return (
+                                                        <li key={hold.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                                            <span>
+                                                                <span className="text-foreground font-medium">{hold.title}</span>
+                                                                {hold.reason ? ` — ${hold.reason}` : ""}
+                                                            </span>
+                                                            {student_data.active_holds && student_data.active_holds.length > 1 && (
+                                                                <Link href={holdAction.href} className="text-primary font-medium underline-offset-4 hover:underline">
+                                                                    {holdAction.label} →
+                                                                </Link>
+                                                            )}
+                                                        </li>
+                                                    );
+                                                })}
+                                            </ul>
                                         </div>
-                                        <ul className="text-muted-foreground space-y-1 text-xs">
-                                            {student_data.active_holds.map((hold) => (
-                                                <li key={hold.id}>
-                                                    <span className="text-foreground font-medium">{hold.title}</span>
-                                                    {hold.reason ? ` — ${hold.reason}` : ""}
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    </div>
-                                    <Button render={<Link href="/student/help" />} nativeButton={false} size="sm" variant="outline" className="shrink-0">
-                                        Contact Support
-                                    </Button>
-                                </CardContent>
-                            </Card>
-                        )}
+                                        <Button render={<Link href={primaryAction.href} />} nativeButton={false} size="sm" variant="outline" className="shrink-0">
+                                            {primaryAction.label}
+                                        </Button>
+                                    </CardContent>
+                                </Card>
+                            );
+                        })()}
 
                         {student_data.enrollment_journey && (
                             <Card className={`${dashboardCardClass} lg:col-span-2`}>
@@ -1301,6 +1330,9 @@ export default function StudentDashboard({ user, is_new_user, student_data, id_c
                                             <p className="text-xs text-emerald-600 dark:text-emerald-400">All core documents submitted</p>
                                         )}
                                     </div>
+                                    <Button render={<Link href="/student/documents" />} nativeButton={false} size="sm" variant="outline" className="shrink-0">
+                                        Upload Documents
+                                    </Button>
                                 </CardContent>
                             </Card>
                         )}

@@ -20,6 +20,10 @@ Dear {{ $studentName }},
 {{ $intro ?? 'Good news — your application has been reviewed and approved for the next step of the admission process.' }}
 
 <x-mail::panel>
+@if(!empty($studentId))
+**Applicant / Student Number:** `{{ $studentId }}`
+<br>
+@endif
 @if(!empty($program))
 **Program:** {{ $program }}
 <br>
@@ -28,7 +32,7 @@ Dear {{ $studentName }},
 **Department:** {{ $department }}
 <br>
 @endif
-**Next Step:** Personal visit to the Registrar's Office
+**Next Step:** Personal visit to the Registrar's Office & Student Portal Activation
 </x-mail::panel>
 
 Please come personally to the school and proceed to the **Registrar's Office** to submit your enrollment requirements and complete the verification of your records.
@@ -37,10 +41,10 @@ Please come personally to the school and proceed to the **Registrar's Office** t
 
 Kindly bring the original documents and photocopies required for your application, such as academic records, identification documents, certificates, and any additional requirements requested by the Registrar.
 
-Our Registrar staff will review your submitted documents, verify your information, and guide you through the remaining enrollment steps.
+Our Registrar staff will review your submitted documents, verify your information, and guide you through the remaining enrollment steps. Once your enrollment is active, use your Student Number above to activate your online student portal.
 
-<x-mail::button :url="config('app.url')">
-Visit Our Website
+<x-mail::button :url="$signupUrl ?? url('/signup')">
+Activate Your Student Portal
 </x-mail::button>
 
 If you have questions before visiting, please contact the Registrar's Office using the contact details below.

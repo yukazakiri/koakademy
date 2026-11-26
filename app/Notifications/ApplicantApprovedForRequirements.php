@@ -56,10 +56,22 @@ final class ApplicantApprovedForRequirements extends Notification implements Sho
             'sender_name' => $this->senderName,
         ];
 
+        $studentId = $notifiable instanceof Student && filled($notifiable->student_id)
+            ? (string) $notifiable->student_id
+            : null;
+        $studentEmail = $notifiable instanceof Student && filled($notifiable->email)
+            ? (string) $notifiable->email
+            : null;
+        $signupUrl = $studentEmail !== null
+            ? url('/signup?email='.urlencode($studentEmail))
+            : url('/signup');
+
         return (new MailMessage)
             ->subject($renderer->subject('applicant_approved_for_requirements', $tokens, $this->customTemplate))
             ->markdown('emails.enrollment.applicant-approved', [
                 'studentName' => $notifiable->full_name ?? $notifiable->first_name ?? 'Applicant',
+                'studentId' => $studentId,
+                'signupUrl' => $signupUrl,
                 'intro' => $renderer->intro('applicant_approved_for_requirements', $tokens, $this->customTemplate),
                 'program' => $course?->code,
                 'department' => $departmentCode,

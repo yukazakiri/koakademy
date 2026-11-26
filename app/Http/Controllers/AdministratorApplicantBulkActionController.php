@@ -8,6 +8,7 @@ use App\Enums\ApplicantCancellationReason;
 use App\Enums\ScholarshipType;
 use App\Enums\StudentStatus;
 use App\Http\Requests\Administrators\ApplicantBulkActionRequest;
+use App\Models\DocumentLocation;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\Subject;
@@ -15,6 +16,7 @@ use App\Models\User;
 use App\Notifications\ApplicantApprovedForRequirements;
 use App\Services\ApplicantCancellationService;
 use App\Services\EnrollmentPipelineService;
+use App\Services\EnrollmentService;
 use App\Services\GeneralSettingsService;
 use App\Services\StudentHoldService;
 use Illuminate\Http\JsonResponse;
@@ -142,9 +144,14 @@ final class AdministratorApplicantBulkActionController extends Controller
                         ->where('semester', $semester)
                         ->get();
 
+                    $subjectPayloads = [];
+
                     foreach ($curriculumSubjects as $subject) {
                         $lecRate = (float) ($student->Course?->lec_per_unit ?? 0);
                         $labRate = (float) ($student->Course?->lab_per_unit ?? 0);
+                        $lectureFee = round(((int) ($subject->lecture ?? 0)) * $lecRate, 2);
+                        $laboratoryFee = round(((int) ($subject->laboratory ?? 0)) * $labRate, 2);
+
                         $enrollment->subjectsEnrolled()->create([
                             'subject_id' => $subject->id,
                             'student_id' => $student->id,
@@ -153,12 +160,31 @@ final class AdministratorApplicantBulkActionController extends Controller
                             'semester' => $semester,
                             'enrolled_lecture_units' => (int) ($subject->lecture ?? 0),
                             'enrolled_laboratory_units' => (int) ($subject->laboratory ?? 0),
-                            'lecture_fee' => round(((int) ($subject->lecture ?? 0)) * $lecRate, 2),
-                            'laboratory_fee' => round(((int) ($subject->laboratory ?? 0)) * $labRate, 2),
+                            'lecture_fee' => $lectureFee,
+                            'laboratory_fee' => $laboratoryFee,
                             'is_modular' => false,
                             'exclude_from_tuition' => false,
                         ]);
+
+                        $subjectPayloads[] = [
+                            'subject_id' => $subject->id,
+                            'lecture_fee' => $lectureFee,
+                            'laboratory_fee' => $laboratoryFee,
+                            'is_modular' => false,
+                            'exclude_from_tuition' => false,
+                        ];
                     }
+
+                    if (! $enrollment->studentTuition()->exists()) {
+                        app(EnrollmentService::class)->createStudentTuition($enrollment, [
+                            'subjectsEnrolled' => $subjectPayloads,
+                            'discount' => 0,
+                            'downpayment' => 0,
+                            'additionalFees' => [],
+                        ]);
+                    }
+
+                    $this->syncApplicantDocumentsToLocation($student);
                 });
 
                 $processed++;
@@ -215,5 +241,84 @@ final class AdministratorApplicantBulkActionController extends Controller
                 ? $message
                 : ($errors[0] ?? 'No selected applicants were eligible for this bulk action.'),
         ]);
+    }
+
+    /**
+     * Sync uploaded applicant documents stored in contacts['documents'] into DocumentLocation if missing.
+     */
+    private function syncApplicantDocumentsToLocation(Student $student): void
+    {
+        $contacts = is_array($student->contacts) ? $student->contacts : [];
+        $documents = $contacts['documents'] ?? [];
+
+        if (! is_array($documents) || $documents === []) {
+            return;
+        }
+
+        $typeMap = [
+            'birth_certificate' => 'birth_certificate',
+            'psa_birth_certificate' => 'birth_certificate',
+            'nso_birth_certificate' => 'birth_certificate',
+            'form_138' => 'form_138',
+            'report_card' => 'form_138',
+            'high_school_report_card' => 'form_138',
+            'form_137' => 'form_137',
+            'high_school_diploma' => 'form_137',
+            'good_moral' => 'good_moral_cert',
+            'good_moral_cert' => 'good_moral_cert',
+            'good_moral_certificate' => 'good_moral_cert',
+            'certificate_of_good_moral' => 'good_moral_cert',
+            'transfer_credentials' => 'transfer_credentials',
+            'honorable_dismissal' => 'transfer_credentials',
+            'transcript_records' => 'transcript_records',
+            'transcript_of_records' => 'transcript_records',
+            'photo' => 'picture_1x1',
+            'profile_photo' => 'picture_1x1',
+            'picture_1x1' => 'picture_1x1',
+            '1x1_photo' => 'picture_1x1',
+            '2x2_photo' => 'picture_1x1',
+            'id_photo' => 'picture_1x1',
+        ];
+
+        $mappedAttributes = [];
+        foreach ($documents as $document) {
+            if (! is_array($document)) {
+                continue;
+            }
+
+            $rawType = mb_strtolower(mb_trim((string) ($document['type'] ?? '')));
+            $path = $document['path'] ?? null;
+
+            if ($rawType === '' || ! is_string($path) || mb_trim($path) === '') {
+                continue;
+            }
+
+            $column = $typeMap[$rawType] ?? null;
+            if ($column !== null && ! isset($mappedAttributes[$column])) {
+                $mappedAttributes[$column] = $path;
+            }
+        }
+
+        if ($mappedAttributes === []) {
+            return;
+        }
+
+        $student->loadMissing('DocumentLocation');
+        if (! $student->DocumentLocation) {
+            $docLocation = DocumentLocation::create($mappedAttributes);
+            $student->forceFill(['document_location_id' => $docLocation->id])->save();
+        } else {
+            $updates = [];
+            foreach ($mappedAttributes as $column => $path) {
+                $existing = $student->DocumentLocation->getAttribute($column);
+                if (! is_string($existing) || mb_trim($existing) === '') {
+                    $updates[$column] = $path;
+                }
+            }
+
+            if ($updates !== []) {
+                $student->DocumentLocation->update($updates);
+            }
+        }
     }
 }

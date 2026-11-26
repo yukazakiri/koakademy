@@ -1584,13 +1584,21 @@ export default function EnrollmentCreate({
                             </CardContent>
                         </Card>
 
-                        <p className="text-muted-foreground text-center text-xs">
-                            Already have a portal account?{" "}
-                            <a href="/login" className="text-primary hover:underline">
-                                Sign in
-                            </a>{" "}
-                            to re-enroll from your dashboard.
-                        </p>
+                        <div className="space-y-1.5 text-center text-xs text-muted-foreground">
+                            <p>
+                                Already applied?{" "}
+                                <a href="/enrollment/status" className="text-primary font-medium hover:underline">
+                                    Check application status
+                                </a>
+                            </p>
+                            <p>
+                                Already have a portal account?{" "}
+                                <a href="/login" className="text-primary hover:underline">
+                                    Sign in
+                                </a>{" "}
+                                to re-enroll from your dashboard.
+                            </p>
+                        </div>
                     </motion.div>
                 ) : (
                     /* =========== Matched / Continuing-student form =========== */

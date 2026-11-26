@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\DigitalIdCardService;
 use App\Services\GeneralSettingsService;
 use App\Services\GradeReleaseService;
+use App\Services\StudentConfigurationService;
 use App\Services\StudentHoldService;
 use App\Services\StudentProfileCompletionService;
 use DateTimeInterface;
@@ -138,26 +139,21 @@ final class StudentDashboardController extends Controller
                 ->first();
 
             $docLocation = $student->DocumentLocation;
-            $trackedDocFields = [
-                'birth_certificate' => 'Birth Certificate',
-                'form_138' => 'Form 138 / Report Card',
-                'good_moral_cert' => 'Good Moral Certificate',
-                'picture_1x1' => '1x1 ID Photo',
-            ];
+            $trackedDocs = app(StudentConfigurationService::class)->documentChecklist($student->school_id);
             $uploadedDocs = 0;
             $missingDocs = [];
-            foreach ($trackedDocFields as $field => $label) {
+            foreach ($trackedDocs as $field => $meta) {
                 $val = $docLocation?->getAttribute($field);
                 if (is_string($val) && mb_trim($val) !== '') {
                     $uploadedDocs++;
                 } else {
-                    $missingDocs[] = $label;
+                    $missingDocs[] = $meta['label'];
                 }
             }
 
             $studentData['document_summary'] = [
                 'uploaded' => $uploadedDocs,
-                'total' => count($trackedDocFields),
+                'total' => count($trackedDocs),
                 'missing' => $missingDocs,
             ];
 

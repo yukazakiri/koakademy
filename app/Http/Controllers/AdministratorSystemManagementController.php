@@ -639,6 +639,18 @@ final class AdministratorSystemManagementController extends Controller
                 $current['signup'],
                 $settings['signup'] ?? [],
             );
+            $mergedDocuments = $current['documents'];
+            foreach ($settings['documents'] ?? [] as $slotKey => $slotConfig) {
+                if (isset($mergedDocuments[$slotKey]) && is_array($slotConfig)) {
+                    $mergedDocuments[$slotKey] = array_replace($mergedDocuments[$slotKey], [
+                        'label' => $slotConfig['label'],
+                        'description' => (string) ($slotConfig['description'] ?? ''),
+                        'visible' => (bool) $slotConfig['visible'],
+                        'required' => (bool) $slotConfig['required'],
+                    ]);
+                }
+            }
+            $settings['documents'] = $mergedDocuments;
             $configuration->validateCustomFieldChanges($settings['custom_fields']);
             $configuration->validateIdentifierCompatibility($settings);
             $configuration->update($settings);

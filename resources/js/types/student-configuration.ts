@@ -1,7 +1,16 @@
 export type StudentCategory = "college" | "shs" | "tesda" | "dhrt";
 
+export type DocumentSlotKey = "birth_certificate" | "form_138" | "good_moral_cert" | "picture_1x1";
+
 export interface StudentFieldPolicy {
     label: string;
+    visible: boolean;
+    required: boolean;
+}
+
+export interface DocumentSlotPolicy {
+    label: string;
+    description: string;
     visible: boolean;
     required: boolean;
 }
@@ -73,6 +82,7 @@ export interface StudentConfiguration {
     defaults: { nationality: string | null; citizenship: string | null; gender: string | null };
     philippine_reporting: boolean;
     fields: Record<string, StudentFieldPolicy>;
+    documents?: Record<DocumentSlotKey, DocumentSlotPolicy>;
     custom_fields: CustomStudentField[];
     type_labels: Record<StudentCategory, string>;
     year_levels: Record<StudentCategory, Array<{ value: number; label: string }>>;

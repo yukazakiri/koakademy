@@ -32,6 +32,7 @@ final class UpdateStudentConfigurationRequest extends FormRequest
             'defaults.gender' => ['nullable', Rule::in(['male', 'female', 'other', 'prefer_not_to_say'])],
             'philippine_reporting' => ['required', 'boolean'],
             'fields' => ['required', 'array:'.implode(',', array_keys(StudentConfigurationService::fieldLabels()))],
+            'documents' => ['sometimes', 'array:'.implode(',', StudentConfigurationService::documentSlotKeys())],
             'custom_fields' => ['sometimes', 'array', 'max:30'],
             'custom_fields.*' => ['required', 'array:key,label,type,active,required,options'],
             'custom_fields.*.key' => ['required', 'string', 'max:64', 'distinct', 'regex:/\A[a-z][a-z0-9_]*\z/'],
@@ -72,6 +73,13 @@ final class UpdateStudentConfigurationRequest extends FormRequest
             $rules['fields.'.$field.'.visible'] = ['required', 'boolean'];
             $rules['fields.'.$field.'.required'] = ['required', 'boolean'];
         }
+        foreach (StudentConfigurationService::documentSlotKeys() as $slotKey) {
+            $rules['documents.'.$slotKey] = ['sometimes', 'array:label,description,visible,required', 'min:1'];
+            $rules['documents.'.$slotKey.'.label'] = ['required_with:documents.'.$slotKey, 'string', 'max:80'];
+            $rules['documents.'.$slotKey.'.description'] = ['nullable', 'string', 'max:250'];
+            $rules['documents.'.$slotKey.'.visible'] = ['required_with:documents.'.$slotKey, 'boolean'];
+            $rules['documents.'.$slotKey.'.required'] = ['required_with:documents.'.$slotKey, 'boolean'];
+        }
         foreach ($types as $type) {
             $rules['type_labels.'.$type] = ['required', 'string', 'max:80'];
             $rules['year_levels.'.$type] = ['required', 'array', 'min:1', 'max:20'];
@@ -95,6 +103,11 @@ final class UpdateStudentConfigurationRequest extends FormRequest
             foreach ($this->input('fields') as $key => $field) {
                 if ($field['required'] && ! $field['visible']) {
                     $validator->errors()->add('fields.'.$key.'.required', 'A hidden field cannot be required.');
+                }
+            }
+            foreach ($this->input('documents', []) as $key => $slot) {
+                if (is_array($slot) && ($slot['required'] ?? false) && ! ($slot['visible'] ?? true)) {
+                    $validator->errors()->add('documents.'.$key.'.required', 'A hidden document cannot be required.');
                 }
             }
             $existing = collect(app(StudentConfigurationService::class)->get()['custom_fields'])->keyBy('key');

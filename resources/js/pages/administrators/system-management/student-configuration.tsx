@@ -25,6 +25,8 @@ import { index as identifiersIndex } from "@/routes/administrators/system-manage
 import { update } from "@/routes/administrators/system-management/student-configuration";
 import type {
     CustomStudentField,
+    DocumentSlotKey,
+    DocumentSlotPolicy,
     ExternalIdentifierPreset,
     SignupPolicyConfiguration,
     StudentCategory,
@@ -38,6 +40,7 @@ import {
     BadgeCheck,
     BookOpen,
     Contact,
+    FileCheck2,
     Globe2,
     GraduationCap,
     Hash,
@@ -75,6 +78,70 @@ const DEFAULT_SIGNUP_POLICY: SignupPolicyConfiguration = {
     faculty_identifier_placeholder: null,
     faculty_identifier_help_text: null,
 };
+const DOCUMENT_SLOT_KEYS: DocumentSlotKey[] = ["birth_certificate", "form_138", "good_moral_cert", "picture_1x1"];
+const UNIVERSAL_DOCUMENTS: Record<DocumentSlotKey, DocumentSlotPolicy> = {
+    birth_certificate: {
+        label: "Birth Certificate / Identity Proof",
+        description: "Official birth certificate or government-issued identity document (clear scan or photo)",
+        visible: true,
+        required: false,
+    },
+    form_138: {
+        label: "Academic Transcript / Report Card",
+        description: "Latest official academic transcript or prior school report card",
+        visible: true,
+        required: false,
+    },
+    good_moral_cert: {
+        label: "Character / Transfer Reference",
+        description: "Certificate of good standing, conduct, or transfer reference from previous school",
+        visible: true,
+        required: false,
+    },
+    picture_1x1: {
+        label: "ID Photo",
+        description: "Recent clear plain-background identification photo",
+        visible: true,
+        required: false,
+    },
+};
+const PHILIPPINE_DOCUMENTS: Record<DocumentSlotKey, DocumentSlotPolicy> = {
+    birth_certificate: {
+        label: "Birth Certificate",
+        description: "PSA / NSO Birth Certificate (clear scan or photo)",
+        visible: true,
+        required: false,
+    },
+    form_138: {
+        label: "Form 138 / Report Card",
+        description: "Latest official high school or prior school report card",
+        visible: true,
+        required: false,
+    },
+    good_moral_cert: {
+        label: "Good Moral Certificate",
+        description: "Certificate of Good Moral Character from previous school",
+        visible: true,
+        required: false,
+    },
+    picture_1x1: {
+        label: "1x1 ID Photo",
+        description: "Recent clear 1x1 or 2x2 plain-background ID photo",
+        visible: true,
+        required: false,
+    },
+};
+function resolveDocumentPolicies(documents?: Partial<Record<DocumentSlotKey, Partial<DocumentSlotPolicy>>>): Record<DocumentSlotKey, DocumentSlotPolicy> {
+    return Object.fromEntries(
+        DOCUMENT_SLOT_KEYS.map((slotKey) => [
+            slotKey,
+            {
+                ...UNIVERSAL_DOCUMENTS[slotKey],
+                ...(documents?.[slotKey] ?? {}),
+            },
+        ]),
+    ) as Record<DocumentSlotKey, DocumentSlotPolicy>;
+}
 type SettingsSection = keyof typeof sectionLabels;
 type Confirmation = { title: string; description: string; action: string; apply: () => void };
 const fieldGroups = [
@@ -127,6 +194,7 @@ export default function StudentConfigurationPage({
 }) {
     const initialConfiguration: StudentConfiguration = {
         ...student_configuration,
+        documents: resolveDocumentPolicies(student_configuration.documents),
         external_identifier: {
             placeholder: null,
             allow_for_signup: true,
@@ -149,8 +217,28 @@ export default function StudentConfigurationPage({
         form.setData((previous) => ({ ...previous, preset: "custom", [key]: value }));
     const external = form.data.external_identifier;
     const signupPolicy = form.data.signup ?? DEFAULT_SIGNUP_POLICY;
+    const documents = resolveDocumentPolicies(form.data.documents);
     const customFields = form.data.custom_fields ?? [];
     const savedFields = student_configuration.custom_fields ?? [];
+    const updateDocument = (slotKey: DocumentSlotKey, changes: Partial<DocumentSlotPolicy>) =>
+        set("documents", {
+            ...documents,
+            [slotKey]: { ...documents[slotKey], ...changes },
+        });
+    const applyDocumentLabelPreset = (preset: Record<DocumentSlotKey, DocumentSlotPolicy>) =>
+        set(
+            "documents",
+            Object.fromEntries(
+                DOCUMENT_SLOT_KEYS.map((slotKey) => [
+                    slotKey,
+                    {
+                        ...documents[slotKey],
+                        label: preset[slotKey].label,
+                        description: preset[slotKey].description,
+                    },
+                ]),
+            ) as Record<DocumentSlotKey, DocumentSlotPolicy>,
+        );
     const updateCustom = (index: number, changes: Partial<CustomStudentField>) =>
         set(
             "custom_fields",
@@ -208,7 +296,8 @@ export default function StudentConfigurationPage({
                     setOpenTracks((previous) => Array.from(new Set([...previous, ...invalidTracks])));
                 }
 
-                if (first.startsWith("custom_fields") || first.startsWith("fields.")) setSection("information");
+                if (first.startsWith("custom_fields") || first.startsWith("fields.") || first.startsWith("documents.") || first === "documents")
+                    setSection("information");
                 else if (first.startsWith("external_identifier")) {
                     setSection("identifiers");
                     setDetailsOpen(true);
@@ -354,7 +443,12 @@ export default function StudentConfigurationPage({
                                                 description:
                                                     "This replaces this draft's settings with the selected starting profile. Custom fields and existing student records are kept. Nothing changes until you save.",
                                                 action: "Load preferences",
-                                                apply: () => form.setData({ ...structuredClone(preset), custom_fields: customFields }),
+                                                apply: () =>
+                                                    form.setData({
+                                                        ...structuredClone(preset),
+                                                        documents: resolveDocumentPolicies(structuredClone(preset.documents)),
+                                                        custom_fields: customFields,
+                                                    }),
                                             })
                                         }
                                     >
@@ -1006,7 +1100,7 @@ export default function StudentConfigurationPage({
                             </div>
                         </SettingsPanel>
                     </TabsContent>
-                    <TabsContent value="information">
+                    <TabsContent value="information" className="flex flex-col gap-6">
                         <SettingsPanel
                             title="Student profile fields"
                             description="Choose which standard information staff collects. Name, birthdate, and academic placement remain mandatory."
@@ -1083,6 +1177,114 @@ export default function StudentConfigurationPage({
                                                         </div>
                                                     );
                                                 })}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </SettingsPanel>
+                        <SettingsPanel
+                            title="Student document vault checklist"
+                            description="Customize the admission and registrar document slots shown in the student document vault and dashboard checklist. Hiding a slot removes it from student upload checklists without deleting stored files."
+                        >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                    <IconTile variant="soft" size="sm">
+                                        <FileCheck2 className="size-4" />
+                                    </IconTile>
+                                    <span className="text-muted-foreground text-xs">
+                                        {DOCUMENT_SLOT_KEYS.filter((slotKey) => documents[slotKey].visible).length} of {DOCUMENT_SLOT_KEYS.length}{" "}
+                                        slots visible to students
+                                    </span>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={disabled}
+                                        onClick={() => applyDocumentLabelPreset(UNIVERSAL_DOCUMENTS)}
+                                    >
+                                        Universal international labels
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={disabled}
+                                        onClick={() => applyDocumentLabelPreset(PHILIPPINE_DOCUMENTS)}
+                                    >
+                                        Philippine registrar labels
+                                    </Button>
+                                </div>
+                            </div>
+                            <div className="divide-border/40 border-border/50 bg-card flex flex-col divide-y rounded-xl border">
+                                {DOCUMENT_SLOT_KEYS.map((slotKey) => {
+                                    const slot = documents[slotKey];
+                                    return (
+                                        <div key={slotKey} className="flex flex-col gap-3 p-4">
+                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-foreground text-sm font-medium">{slot.label || slotKey}</span>
+                                                    <code className="text-muted-foreground font-mono text-[11px]">{slotKey}</code>
+                                                </div>
+                                                <div className="flex items-center gap-4">
+                                                    <Label className="flex items-center gap-2 text-xs">
+                                                        <Switch
+                                                            aria-label={`${slotKey} visible`}
+                                                            checked={slot.visible}
+                                                            disabled={disabled}
+                                                            onCheckedChange={(checked) =>
+                                                                updateDocument(slotKey, {
+                                                                    visible: checked === true,
+                                                                    required: checked === true && slot.required,
+                                                                })
+                                                            }
+                                                        />
+                                                        Visible
+                                                    </Label>
+                                                    <Label className="flex items-center gap-2 text-xs">
+                                                        <Checkbox
+                                                            aria-label={`${slotKey} required`}
+                                                            checked={slot.required}
+                                                            disabled={disabled || !slot.visible}
+                                                            onCheckedChange={(checked) =>
+                                                                updateDocument(slotKey, { required: checked === true })
+                                                            }
+                                                        />
+                                                        Required
+                                                    </Label>
+                                                </div>
+                                            </div>
+                                            <div className="grid gap-3 md:grid-cols-2">
+                                                <div className="flex flex-col gap-1.5">
+                                                    <Label htmlFor={`document-label-${slotKey}`} className="text-xs">
+                                                        Display label
+                                                    </Label>
+                                                    <Input
+                                                        id={`document-label-${slotKey}`}
+                                                        aria-label={`${slotKey} document label`}
+                                                        value={slot.label}
+                                                        maxLength={80}
+                                                        disabled={disabled}
+                                                        onChange={(event) => updateDocument(slotKey, { label: event.target.value })}
+                                                        className="h-8 text-sm"
+                                                    />
+                                                </div>
+                                                <div className="flex flex-col gap-1.5">
+                                                    <Label htmlFor={`document-description-${slotKey}`} className="text-xs">
+                                                        Student guidance description
+                                                    </Label>
+                                                    <Input
+                                                        id={`document-description-${slotKey}`}
+                                                        aria-label={`${slotKey} document description`}
+                                                        value={slot.description}
+                                                        maxLength={250}
+                                                        disabled={disabled}
+                                                        onChange={(event) => updateDocument(slotKey, { description: event.target.value })}
+                                                        className="h-8 text-sm"
+                                                    />
+                                                </div>
                                             </div>
                                         </div>
                                     );

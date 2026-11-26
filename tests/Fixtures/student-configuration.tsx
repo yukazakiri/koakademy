@@ -35,6 +35,32 @@ const neutral: Configuration = {
     fields: Object.fromEntries(
         Object.entries(fields).map(([key, label]) => [key, { label, visible: !["religion", "weight", "height"].includes(key), required: false }]),
     ),
+    documents: {
+        birth_certificate: {
+            label: "Birth Certificate / Identity Proof",
+            description: "Official birth certificate or government-issued identity document (clear scan or photo)",
+            visible: true,
+            required: false,
+        },
+        form_138: {
+            label: "Academic Transcript / Report Card",
+            description: "Latest official academic transcript or prior school report card",
+            visible: true,
+            required: false,
+        },
+        good_moral_cert: {
+            label: "Character / Transfer Reference",
+            description: "Certificate of good standing, conduct, or transfer reference from previous school",
+            visible: true,
+            required: false,
+        },
+        picture_1x1: {
+            label: "ID Photo",
+            description: "Recent clear plain-background identification photo",
+            visible: true,
+            required: false,
+        },
+    },
     external_identifier: {
         enabled: false,
         label: "External Identifier",
@@ -81,6 +107,32 @@ const institution: Configuration = {
     defaults: { nationality: "filipino", citizenship: "filipino", gender: "male" },
     philippine_reporting: true,
     fields: Object.fromEntries(Object.entries(fields).map(([key, label]) => [key, { label, visible: true, required: false }])),
+    documents: {
+        birth_certificate: {
+            label: "Birth Certificate",
+            description: "PSA / NSO Birth Certificate (clear scan or photo)",
+            visible: true,
+            required: false,
+        },
+        form_138: {
+            label: "Form 138 / Report Card",
+            description: "Latest official high school or prior school report card",
+            visible: true,
+            required: false,
+        },
+        good_moral_cert: {
+            label: "Good Moral Certificate",
+            description: "Certificate of Good Moral Character from previous school",
+            visible: true,
+            required: false,
+        },
+        picture_1x1: {
+            label: "1x1 ID Photo",
+            description: "Recent clear 1x1 or 2x2 plain-background ID photo",
+            visible: true,
+            required: false,
+        },
+    },
     external_identifier: {
         ...neutral.external_identifier,
         enabled: true,

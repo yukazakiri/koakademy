@@ -31,6 +31,7 @@ final class StudentConfigurationService
             'defaults' => ['nationality' => $legacy ? 'filipino' : '', 'citizenship' => $legacy ? 'filipino' : '', 'gender' => $legacy ? 'male' : ''],
             'philippine_reporting' => $legacy,
             'fields' => $fields,
+            'documents' => self::defaultDocuments($legacy),
             'custom_fields' => [],
             'external_identifier' => [
                 'enabled' => $legacy,
@@ -191,6 +192,76 @@ final class StudentConfigurationService
         return ['email' => 'Email', 'phone' => 'Phone', 'civil_status' => 'Civil Status', 'nationality' => 'Nationality', 'citizenship' => 'Citizenship', 'religion' => 'Religion', 'height' => 'Height', 'weight' => 'Weight', 'birthplace' => 'Birthplace', 'current_address' => 'Current Address', 'permanent_address' => 'Permanent Address'];
     }
 
+    /**
+     * @return list<string>
+     */
+    public static function documentSlotKeys(): array
+    {
+        return ['birth_certificate', 'form_138', 'good_moral_cert', 'picture_1x1'];
+    }
+
+    /**
+     * @return array<string, array{label: string, description: string, visible: bool, required: bool}>
+     */
+    public static function defaultDocuments(bool $legacy = false): array
+    {
+        if ($legacy) {
+            return [
+                'birth_certificate' => [
+                    'label' => 'Birth Certificate',
+                    'description' => 'PSA / NSO Birth Certificate (clear scan or photo)',
+                    'visible' => true,
+                    'required' => false,
+                ],
+                'form_138' => [
+                    'label' => 'Form 138 / Report Card',
+                    'description' => 'Latest official high school or prior school report card',
+                    'visible' => true,
+                    'required' => false,
+                ],
+                'good_moral_cert' => [
+                    'label' => 'Good Moral Certificate',
+                    'description' => 'Certificate of Good Moral Character from previous school',
+                    'visible' => true,
+                    'required' => false,
+                ],
+                'picture_1x1' => [
+                    'label' => '1x1 ID Photo',
+                    'description' => 'Recent clear 1x1 or 2x2 plain-background ID photo',
+                    'visible' => true,
+                    'required' => false,
+                ],
+            ];
+        }
+
+        return [
+            'birth_certificate' => [
+                'label' => 'Birth Certificate / Identity Proof',
+                'description' => 'Official birth certificate or government-issued identity document (clear scan or photo)',
+                'visible' => true,
+                'required' => false,
+            ],
+            'form_138' => [
+                'label' => 'Academic Transcript / Report Card',
+                'description' => 'Latest official academic transcript or prior school report card',
+                'visible' => true,
+                'required' => false,
+            ],
+            'good_moral_cert' => [
+                'label' => 'Character / Transfer Reference',
+                'description' => 'Certificate of good standing, conduct, or transfer reference from previous school',
+                'visible' => true,
+                'required' => false,
+            ],
+            'picture_1x1' => [
+                'label' => 'ID Photo',
+                'description' => 'Recent clear plain-background identification photo',
+                'visible' => true,
+                'required' => false,
+            ],
+        ];
+    }
+
     public static function reportingFields(): array
     {
         return ['region_of_origin', 'province_of_origin', 'city_of_origin', 'ethnicity', 'is_indigenous_person', 'indigenous_group', 'is_pwd', 'pwd_type', 'is_solo_parent', 'is_senior_citizen', 'is_magna_carta', 'is_underprivileged', 'is_first_generation', 'income_bracket_mode', 'use_same_parent_income', 'family_income_bracket', 'father_income_bracket', 'mother_income_bracket'];
@@ -274,8 +345,47 @@ final class StudentConfigurationService
             $defaults['signup'],
             is_array($configuration['signup'] ?? null) ? $configuration['signup'] : [],
         );
+        $storedDocuments = is_array($configuration['documents'] ?? null) ? $configuration['documents'] : [];
+        $mergedDocuments = [];
+        foreach (self::documentSlotKeys() as $slotKey) {
+            $defaultSlot = $defaults['documents'][$slotKey];
+            $storedSlot = is_array($storedDocuments[$slotKey] ?? null) ? $storedDocuments[$slotKey] : [];
+            $mergedDocuments[$slotKey] = array_replace($defaultSlot, $storedSlot);
+        }
+        $merged['documents'] = $mergedDocuments;
 
         return $this->resolved[$scope] = $merged;
+    }
+
+    /**
+     * Return configured student document vault slots for a school or installation.
+     *
+     * @return array<string, array{label: string, description: string, visible: bool, required: bool, accepted: string}>
+     */
+    public function documentChecklist(?int $schoolId = null, bool $onlyVisible = true): array
+    {
+        $documents = $this->get($schoolId)['documents'];
+        $accepted = self::documentSlotAcceptedFormats();
+        $checklist = [];
+
+        foreach (self::documentSlotKeys() as $slotKey) {
+            $slot = $documents[$slotKey];
+            $visible = (bool) ($slot['visible'] ?? true);
+
+            if ($onlyVisible && ! $visible) {
+                continue;
+            }
+
+            $checklist[$slotKey] = [
+                'label' => (string) $slot['label'],
+                'description' => (string) ($slot['description'] ?? ''),
+                'visible' => $visible,
+                'required' => (bool) ($slot['required'] ?? false),
+                'accepted' => $accepted[$slotKey] ?? 'PDF, JPG, PNG, or WebP up to 5 MB',
+            ];
+        }
+
+        return $checklist;
     }
 
     /**
@@ -655,5 +765,18 @@ final class StudentConfigurationService
         }
 
         return $data;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function documentSlotAcceptedFormats(): array
+    {
+        return [
+            'birth_certificate' => 'PDF, JPG, PNG, or WebP up to 5 MB',
+            'form_138' => 'PDF, JPG, PNG, or WebP up to 5 MB',
+            'good_moral_cert' => 'PDF, JPG, PNG, or WebP up to 5 MB',
+            'picture_1x1' => 'JPG, PNG, WebP, or PDF up to 5 MB',
+        ];
     }
 }

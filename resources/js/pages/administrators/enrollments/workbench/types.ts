@@ -237,7 +237,9 @@ export interface EnrollmentWorkbenchPageProps {
     settings: {
         currentSemester: number;
         currentSchoolYear: string;
-        availableSemesters: { value: number; label: string }[];
+        availableSemesters:
+            | Record<string, string>
+            | { value: number | string; label: string }[];
         availableAcademicYears: Record<string, string>;
     };
     discounts: DiscountOption[];
@@ -299,4 +301,29 @@ export interface DraftDiffSummary {
     unitsDelta: number;
     projectedBalanceAfterPaid: number;
     projectedOverpaymentCredit: number;
+}
+
+export function normalizeSemesterOptions(
+    availableSemesters:
+        | Record<string, string>
+        | { value: number | string; label: string }[]
+        | null
+        | undefined,
+): { value: string; label: string }[] {
+    if (Array.isArray(availableSemesters)) {
+        return availableSemesters.map((item) => ({
+            value: String(item.value),
+            label: item.label,
+        }));
+    }
+    if (availableSemesters && typeof availableSemesters === "object") {
+        return Object.entries(availableSemesters).map(([value, label]) => ({
+            value: String(value),
+            label: String(label),
+        }));
+    }
+    return [
+        { value: "1", label: "1st Semester" },
+        { value: "2", label: "2nd Semester" },
+    ];
 }

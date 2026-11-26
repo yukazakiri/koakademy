@@ -61,7 +61,7 @@ import { GuardBanners } from "./workbench/guard-banners";
 import { ScheduleMatrixPanel } from "./workbench/schedule-matrix-panel";
 import { SubjectLoadRow } from "./workbench/subject-load-row";
 import { SubjectPickerPanel } from "./workbench/subject-picker-panel";
-import type { EnrollmentWorkbenchPageProps } from "./workbench/types";
+import { normalizeSemesterOptions, type EnrollmentWorkbenchPageProps } from "./workbench/types";
 import { useEnrollmentDraft } from "./workbench/use-enrollment-draft";
 import { WorkbenchDialogs } from "./workbench/workbench-dialogs";
 
@@ -178,12 +178,17 @@ export default function AdministratorEnrollmentEdit(
         return () => window.removeEventListener("keydown", handleKeyDown);
     }, [draft.isTerminalLocked, pickerOpen]);
 
+    const semesterOptions = useMemo(
+        () => normalizeSemesterOptions(props.settings.availableSemesters),
+        [props.settings.availableSemesters],
+    );
+
     const semesterLabel = useMemo(() => {
-        const matched = props.settings.availableSemesters.find(
-            (item) => String(item.value) === draft.semester,
+        const matched = semesterOptions.find(
+            (item) => item.value === draft.semester,
         );
         return matched?.label ?? `Sem ${draft.semester}`;
-    }, [props.settings.availableSemesters, draft.semester]);
+    }, [semesterOptions, draft.semester]);
 
     const academicYearOptions = useMemo(() => {
         const entries = Object.entries(
@@ -522,13 +527,11 @@ export default function AdministratorEnrollmentEdit(
                                                     <SelectValue placeholder="Semester" />
                                                 </SelectTrigger>
                                                 <SelectContent>
-                                                    {props.settings.availableSemesters.map(
+                                                    {semesterOptions.map(
                                                         (sem) => (
                                                             <SelectItem
                                                                 key={sem.value}
-                                                                value={String(
-                                                                    sem.value,
-                                                                )}
+                                                                value={sem.value}
                                                             >
                                                                 {sem.label}
                                                             </SelectItem>

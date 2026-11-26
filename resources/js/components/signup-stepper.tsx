@@ -5,6 +5,7 @@ import {
     ArrowRight,
     BadgeCheck,
     Check,
+    ChevronDown,
     ClipboardList,
     Eye,
     EyeOff,
@@ -177,6 +178,7 @@ export function SignupStepper({
     const [lookupHints, setLookupHints] = useState<LookupHints | null>(saved.current?.lookupHints ?? null);
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+    const [showOptionalFacultyId, setShowOptionalFacultyId] = useState(Boolean(saved.current?.faculty_id_number));
 
     const { data, setData, post, processing, errors } = useForm({
         name: saved.current?.name ?? socialiteSignup?.name ?? "",
@@ -209,7 +211,7 @@ export function SignupStepper({
 
     const persistFormState = useCallback(() => {
         persistState({
-            currentStep: currentStep === 3 ? 2 : currentStep,
+            currentStep: Math.min(currentStep, 1),
             userType,
             name: data.name,
             email: data.email,
@@ -234,28 +236,12 @@ export function SignupStepper({
     const formErrors = errors as Record<string, string | undefined>;
     const identifierError = formErrors.identifier ?? formErrors.student_id ?? formErrors.lrn;
 
-    useEffect(() => {
-        if (formErrors && Object.keys(formErrors).length > 0) {
-            const firstErrorKey = Object.keys(formErrors)[0];
-            const firstErrorMessage = formErrors[firstErrorKey];
-            if (firstErrorMessage) {
-                toast.error(firstErrorMessage);
-            }
-            if (formErrors.identifier || formErrors.student_id || formErrors.lrn || formErrors.faculty_id_number) {
-                setCurrentStep(2);
-            } else if (formErrors.email) {
-                setCurrentStep(0);
-            } else if (formErrors.name || formErrors.password) {
-                setCurrentStep(1);
-            }
-        }
-    }, [errors]);
-
     const validateEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
     const passwordsMatch = data.password === data.password_confirmation && data.password_confirmation !== "";
     const policyEvaluation = evaluatePasswordPolicy(data.password, passwordPolicy);
     const minPasswordLength = passwordPolicy?.minLength ?? 8;
+    const canProceedFromDetails = data.name.trim().length > 0 && policyEvaluation.allMet && passwordsMatch;
 
     const studentIdentifierLabel = lookupHints?.identifier_label || config.universal_identifier_label || "Student ID";
     const studentIdPrimaryLabel = lookupHints?.student_id_label || config.student_id_label || "Student ID";
@@ -270,6 +256,31 @@ export function SignupStepper({
     const facultyIdPlaceholder = lookupHints?.faculty_id_placeholder || config.faculty_identifier_placeholder || "e.g. FAC-2026-001";
     const facultyIdHelpText = lookupHints?.faculty_id_help_text || config.faculty_identifier_help_text || "Enter the ID assigned by HR or your institution.";
     const requiresFacultyId = Boolean(lookupHints?.requires_faculty_id ?? config.require_faculty_id);
+    const isFastTrackFaculty = userType === "faculty" && !requiresFacultyId;
+
+    useEffect(() => {
+        if (formErrors && Object.keys(formErrors).length > 0) {
+            const firstErrorKey = Object.keys(formErrors)[0];
+            const firstErrorMessage = formErrors[firstErrorKey];
+            if (firstErrorMessage) {
+                toast.error(firstErrorMessage);
+            }
+            if (formErrors.identifier || formErrors.student_id || formErrors.lrn) {
+                setCurrentStep(2);
+            } else if (formErrors.faculty_id_number) {
+                if (isFastTrackFaculty) {
+                    setShowOptionalFacultyId(true);
+                    setCurrentStep(1);
+                } else {
+                    setCurrentStep(2);
+                }
+            } else if (formErrors.email) {
+                setCurrentStep(0);
+            } else if (formErrors.name || formErrors.password) {
+                setCurrentStep(1);
+            }
+        }
+    }, [errors, isFastTrackFaculty]);
 
     const getSteps = () => {
         if (userType === "student") {
@@ -277,6 +288,13 @@ export function SignupStepper({
                 { id: "email", label: "Find Record" },
                 { id: "details", label: "Credentials" },
                 { id: "verification", label: studentIdPrimaryLabel },
+                { id: "otp", label: "Email Code" },
+            ];
+        }
+        if (isFastTrackFaculty) {
+            return [
+                { id: "email", label: "Find Record" },
+                { id: "details", label: "Credentials" },
                 { id: "otp", label: "Email Code" },
             ];
         }
@@ -302,7 +320,9 @@ export function SignupStepper({
         !isSendingOtp &&
         (userType === "student"
             ? Boolean(data.identifier.trim())
-            : !requiresFacultyId || Boolean(data.faculty_id_number.trim()));
+            : isFastTrackFaculty
+              ? canProceedFromDetails
+              : Boolean(data.faculty_id_number.trim()));
 
     const sendOtp = async () => {
         if (!canSendOtp) return;
@@ -332,12 +352,17 @@ export function SignupStepper({
     const handleRecoverIdentifier = async () => {
         if (!validateEmail(data.email) || isRecoveringIdentifier || identifierRecoveryCooldown > 0) return;
         setIsRecoveringIdentifier(true);
+        const recoveryType = userType === "faculty" ? "faculty" : "student";
+        const fallbackLabel = recoveryType === "faculty" ? facultyIdLabel : studentIdentifierLabel;
         try {
-            const response = await axios.post("/signup/recover-identifier", { email: data.email });
+            const response = await axios.post("/signup/recover-identifier", {
+                email: data.email,
+                user_type: recoveryType,
+            });
             setIdentifierRecoveryCooldown(60);
             toast.success(
                 response.data?.message ||
-                    `If a matching student record exists, we have sent your ${studentIdentifierLabel} to that email address.`,
+                    `If a matching ${recoveryType} record exists, we have sent your ${fallbackLabel} to that email address.`,
             );
         } catch (error: unknown) {
             const err = error as { response?: { data?: { message?: string } } };
@@ -362,6 +387,7 @@ export function SignupStepper({
             if (result.found && (result.type === "faculty" || result.type === "student")) {
                 setUserType(result.type);
                 setLookupHints(result.hints ?? null);
+                setShowOptionalFacultyId(false);
                 setData((prev) => ({
                     ...prev,
                     faculty_id_number: "",
@@ -390,6 +416,7 @@ export function SignupStepper({
         setEmailLookupResult(null);
         setLookupHints(null);
         setUserType(null);
+        setShowOptionalFacultyId(false);
         setData((prev) => ({
             ...prev,
             user_type: "",
@@ -421,11 +448,9 @@ export function SignupStepper({
         });
     };
 
-    const canProceedFromDetails = data.name.trim().length > 0 && policyEvaluation.allMet && passwordsMatch;
-
     return (
         <div className={cn("space-y-5", className)} {...props}>
-            {/* Guided Campus Canvas 4-Step Progress Header */}
+            {/* Guided Campus Canvas Progress Header */}
             <div className="border-border/70 bg-card/75 rounded-2xl border p-3.5 shadow-2xs backdrop-blur-xs">
                 <div className="mb-3 flex items-center justify-between text-xs">
                     <span className="text-muted-foreground font-medium">
@@ -433,7 +458,10 @@ export function SignupStepper({
                     </span>
                     <span className="text-primary font-semibold">{steps[currentStep]?.label}</span>
                 </div>
-                <ol className="grid grid-cols-4 gap-2" aria-label="Account activation progress">
+                <ol
+                    className={cn("grid gap-2", steps.length === 3 ? "grid-cols-3" : "grid-cols-4")}
+                    aria-label="Account activation progress"
+                >
                     {steps.map((step, idx) => {
                         const isCompleted = idx < currentStep;
                         const isActive = idx === currentStep;
@@ -791,7 +819,11 @@ export function SignupStepper({
                                         onKeyDown={(e) => {
                                             if (e.key === "Enter" && canProceedFromDetails) {
                                                 e.preventDefault();
-                                                handleNext();
+                                                if (isFastTrackFaculty) {
+                                                    sendOtp();
+                                                } else {
+                                                    handleNext();
+                                                }
                                             }
                                         }}
                                         placeholder="Repeat your password"
@@ -814,6 +846,63 @@ export function SignupStepper({
                                     </InputGroupAddon>
                                 </InputGroup>
                             </Field>
+
+                            {isFastTrackFaculty && (
+                                <div className="border-border/70 bg-muted/20 rounded-xl border px-3.5 py-2.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowOptionalFacultyId((prev) => !prev)}
+                                        aria-expanded={showOptionalFacultyId}
+                                        className="text-muted-foreground hover:text-foreground flex w-full items-center justify-between gap-2 text-left text-xs font-medium transition-colors"
+                                    >
+                                        <span className="inline-flex items-center gap-1.5">
+                                            <BadgeCheck className="text-primary size-3.5 shrink-0" />
+                                            <span>Have a {facultyIdLabel}? Add it (optional)</span>
+                                        </span>
+                                        <ChevronDown
+                                            className={cn(
+                                                "size-3.5 shrink-0 transition-transform duration-200",
+                                                showOptionalFacultyId && "rotate-180",
+                                            )}
+                                        />
+                                    </button>
+
+                                    {showOptionalFacultyId && (
+                                        <div className="mt-3 space-y-2">
+                                            <Field>
+                                                <FieldLabel htmlFor="faculty_id_number" className="text-foreground text-xs font-semibold">
+                                                    {facultyIdLabel} (Optional)
+                                                </FieldLabel>
+                                                <InputGroup
+                                                    className={cn(
+                                                        "border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2",
+                                                        errors.faculty_id_number && "border-destructive focus-within:ring-destructive/20",
+                                                    )}
+                                                >
+                                                    <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
+                                                        <BadgeCheck className="size-4" />
+                                                    </InputGroupAddon>
+                                                    <InputGroupInput
+                                                        id="faculty_id_number"
+                                                        placeholder={facultyIdPlaceholder}
+                                                        value={data.faculty_id_number}
+                                                        onChange={(e) => setData("faculty_id_number", e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === "Enter" && canSendOtp) {
+                                                                e.preventDefault();
+                                                                sendOtp();
+                                                            }
+                                                        }}
+                                                        className="font-mono text-sm font-normal uppercase placeholder:normal-case"
+                                                    />
+                                                </InputGroup>
+                                                {errors.faculty_id_number && <FieldError errors={[{ message: errors.faculty_id_number }]} />}
+                                                <FieldDescription className="text-muted-foreground text-xs">{facultyIdHelpText}</FieldDescription>
+                                            </Field>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -895,8 +984,8 @@ export function SignupStepper({
                         </div>
                     )}
 
-                    {/* Step 2: Faculty ID Verification */}
-                    {currentStep === 2 && userType === "faculty" && (
+                    {/* Step 2: Faculty ID Verification (4-step strict mode) */}
+                    {currentStep === 2 && userType === "faculty" && !isFastTrackFaculty && (
                         <div className="space-y-4">
                             <div className="border-primary/25 bg-primary/5 rounded-2xl border p-3.5 text-xs leading-relaxed">
                                 <p className="text-foreground font-semibold">
@@ -943,6 +1032,24 @@ export function SignupStepper({
                                 {errors.faculty_id_number && <FieldError errors={[{ message: errors.faculty_id_number }]} />}
                                 <FieldDescription className="text-muted-foreground text-xs">{facultyIdHelpText}</FieldDescription>
                             </Field>
+
+                            {allowIdentifierRecovery && (
+                                <div className="border-border/70 bg-muted/25 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5 text-xs">
+                                    <span className="text-muted-foreground">Don&apos;t remember your ID?</span>
+                                    <button
+                                        type="button"
+                                        onClick={handleRecoverIdentifier}
+                                        disabled={isRecoveringIdentifier || identifierRecoveryCooldown > 0 || !validateEmail(data.email)}
+                                        className="text-primary font-medium underline-offset-4 hover:underline disabled:no-underline disabled:opacity-50"
+                                    >
+                                        {isRecoveringIdentifier
+                                            ? "Sending..."
+                                            : identifierRecoveryCooldown > 0
+                                              ? `Email sent · retry in ${identifierRecoveryCooldown}s`
+                                              : `Email my ${facultyIdLabel}`}
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     )}
 

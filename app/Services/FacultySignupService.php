@@ -53,11 +53,37 @@ final class FacultySignupService
     }
 
     /**
+     * Build dynamic, privacy-safe signup hints for matched faculty roster rows.
+     *
+     * @param  Collection<int, Faculty>  $faculties
+     * @return array<string, mixed>
+     */
+    public function signupHints(Collection $faculties): array
+    {
+        $config = app(StudentConfigurationService::class);
+        $first = $faculties->first();
+        $schoolId = $first instanceof Faculty ? $first->school_id : null;
+        $presentation = $config->signupPresentation($schoolId);
+
+        $policyRequiresFacultyId = $faculties->contains(
+            fn (Faculty $candidate): bool => (bool) ($config->get($candidate->school_id)['signup']['require_faculty_id'] ?? false),
+        );
+
+        return [
+            'requires_faculty_id' => $faculties->count() > 1 || $policyRequiresFacultyId,
+            'has_faculty_id' => $faculties->contains(fn (Faculty $candidate): bool => filled($candidate->faculty_id_number)),
+            'faculty_id_label' => $presentation['faculty_id_label'],
+            'faculty_id_placeholder' => $presentation['faculty_identifier_placeholder'],
+            'faculty_id_help_text' => $presentation['faculty_identifier_help_text'],
+        ];
+    }
+
+    /**
      * Resolve the faculty record that matches the registering email.
      *
      * Faculty emails are unique per school, so multiple organizations can share an email.
-     * When more than one active faculty record exists for an email, a faculty ID number
-     * is required to disambiguate the exact institutional record.
+     * When more than one active faculty record exists for an email, or the school requires
+     * faculty ID verification, a faculty ID number is required.
      *
      * @throws ValidationException
      */
@@ -95,6 +121,19 @@ final class FacultySignupService
             ]);
         }
 
+        $config = app(StudentConfigurationService::class);
+        $allowedMatches = $matches->filter(
+            fn (Faculty $faculty): bool => (bool) ($config->get($faculty->school_id)['signup']['allow_faculty_self_signup'] ?? true),
+        )->values();
+
+        if ($allowedMatches->isEmpty()) {
+            throw ValidationException::withMessages([
+                'email' => ['Self-service faculty account activation is currently disabled for your institution. Please contact your school administrator.'],
+            ]);
+        }
+
+        $matches = $allowedMatches;
+
         if ($matches->count() > 1) {
             throw ValidationException::withMessages([
                 'faculty_id_number' => [filled($facultyIdNumber)
@@ -104,6 +143,14 @@ final class FacultySignupService
         }
 
         $faculty = $matches->firstOrFail();
+
+        $requireFacultyId = (bool) ($config->get($faculty->school_id)['signup']['require_faculty_id'] ?? false);
+        if ($requireFacultyId && ! filled($facultyIdNumber)) {
+            $label = (string) ($config->signupPresentation($faculty->school_id)['faculty_id_label'] ?? 'Faculty ID');
+            throw ValidationException::withMessages([
+                'faculty_id_number' => ["Your institution requires your {$label} to complete activation."],
+            ]);
+        }
 
         if (User::query()->where('record_id', (string) $faculty->id)->exists()) {
             throw ValidationException::withMessages([

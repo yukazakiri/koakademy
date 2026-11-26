@@ -16,7 +16,7 @@ import {
     Mail,
     RefreshCw,
     ShieldAlert,
-    SlidersHorizontal,
+    Sparkles,
     User,
     UserCheck,
 } from "lucide-react";
@@ -30,40 +30,48 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot } from "@/components/ui/input-otp";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import type { SignupPresentationConfig } from "@/types/student-configuration";
 
 type UserType = "faculty" | "student" | null;
-type StudentType = "college" | "shs" | "tesda" | "dhrt" | null;
+
+interface LookupHints {
+    student_type?: string | null;
+    identifier_type?: "student_id" | "lrn";
+    identifier_label?: string | null;
+    identifier_placeholder?: string | null;
+    identifier_help_text?: string | null;
+    student_id_label?: string | null;
+    external_identifier_label?: string | null;
+    accepts_external_identifier?: boolean;
+    allow_identifier_recovery?: boolean;
+    multiple_types?: boolean;
+    requires_faculty_id?: boolean;
+    has_faculty_id?: boolean;
+    faculty_id_label?: string | null;
+    faculty_id_placeholder?: string | null;
+    faculty_id_help_text?: string | null;
+}
 
 interface EmailLookupResult {
     found: boolean;
     type?: "faculty" | "student";
     message?: string;
     account_exists?: boolean;
+    hints?: LookupHints;
 }
 
 const STORAGE_KEY = "signup_form_state";
 
-const STUDENT_TYPE_LABELS: Record<Exclude<StudentType, null>, string> = {
-    college: "College",
-    shs: "Senior High School",
-    tesda: "TESDA",
-    dhrt: "DHRT",
-};
-
 interface PersistedState {
     currentStep: number;
     userType: UserType;
-    studentType: StudentType;
-    identifierField?: "lrn" | "student_id";
     name: string;
     email: string;
     faculty_id_number: string;
-    student_id: string;
-    lrn: string;
+    identifier: string;
     user_type: "" | "faculty" | "student";
-    student_type: "" | "college" | "shs" | "tesda" | "dhrt";
+    lookupHints?: LookupHints | null;
 }
 
 interface SocialiteSignup {
@@ -73,18 +81,50 @@ interface SocialiteSignup {
     provider?: string | null;
 }
 
+const FALLBACK_CONFIG: SignupPresentationConfig = {
+    student_id_label: "Student ID",
+    faculty_id_label: "Faculty ID",
+    external_identifier_enabled: false,
+    external_identifier_label: "External Identifier",
+    external_identifier_help_text: null,
+    external_identifier_only: false,
+    universal_identifier_label: "Student ID",
+    student_identifier_placeholder: "e.g. 2026-0001",
+    student_identifier_help_text: "Found on your admission notice, registration slip, or campus ID card.",
+    faculty_identifier_placeholder: "e.g. FAC-2026-001",
+    faculty_identifier_help_text: "Enter the ID assigned by HR or your institution.",
+    enabled_track_labels: ["Students"],
+    allow_student_self_signup: true,
+    allow_faculty_self_signup: true,
+    allow_identifier_recovery: true,
+    require_faculty_id: false,
+};
+
 function loadPersistedState(): PersistedState | null {
     try {
-        // Clear any legacy localStorage entry that may have stored plaintext passwords.
         if (typeof localStorage !== "undefined" && localStorage.getItem(STORAGE_KEY)) {
             localStorage.removeItem(STORAGE_KEY);
         }
         const raw = sessionStorage.getItem(STORAGE_KEY);
         if (!raw) return null;
-        const parsed = JSON.parse(raw) as Partial<PersistedState> & { password?: unknown; password_confirmation?: unknown };
+        const parsed = JSON.parse(raw) as Partial<PersistedState> & {
+            password?: unknown;
+            password_confirmation?: unknown;
+            student_id?: string;
+            lrn?: string;
+        };
         delete parsed.password;
         delete parsed.password_confirmation;
-        return parsed as PersistedState;
+        return {
+            currentStep: parsed.currentStep ?? 0,
+            userType: parsed.userType ?? null,
+            name: parsed.name ?? "",
+            email: parsed.email ?? "",
+            faculty_id_number: parsed.faculty_id_number ?? "",
+            identifier: parsed.identifier ?? parsed.student_id ?? parsed.lrn ?? "",
+            user_type: parsed.user_type ?? "",
+            lookupHints: parsed.lookupHints ?? null,
+        };
     } catch {
         return null;
     }
@@ -110,10 +150,13 @@ function clearPersistedState(): void {
 export function SignupStepper({
     className,
     socialiteSignup,
+    signupConfig,
     ...props
 }: React.ComponentProps<"div"> & {
     socialiteSignup?: SocialiteSignup | null;
+    signupConfig?: SignupPresentationConfig;
 }) {
+    const config = signupConfig ?? FALLBACK_CONFIG;
     const { passwordPolicy } = usePage<{ passwordPolicy?: Partial<PasswordPolicy> }>().props;
     const queryEmail = useRef(
         typeof window !== "undefined" ? (new URLSearchParams(window.location.search).get("email")?.trim() ?? "") : "",
@@ -122,7 +165,7 @@ export function SignupStepper({
     const saved = useRef(socialiteSignup?.email || hasQueryEmail ? null : loadPersistedState());
     const emailInputRef = useRef<HTMLInputElement | null>(null);
 
-    // Cap restored step at Step 1 (Personal & Password) because passwords are never persisted.
+    // Cap restored step at Step 1 (Credentials) because passwords are never persisted.
     const [currentStep, setCurrentStep] = useState(hasQueryEmail ? 0 : Math.min(saved.current?.currentStep ?? 0, 1));
     const [isCheckingEmail, setIsCheckingEmail] = useState(false);
     const [isSendingOtp, setIsSendingOtp] = useState(false);
@@ -131,14 +174,9 @@ export function SignupStepper({
     const [identifierRecoveryCooldown, setIdentifierRecoveryCooldown] = useState(0);
     const [emailLookupResult, setEmailLookupResult] = useState<EmailLookupResult | null>(null);
     const [userType, setUserType] = useState<UserType>(saved.current?.userType ?? null);
-    const initialIdentifierField: "lrn" | "student_id" = saved.current?.identifierField ?? (saved.current?.lrn ? "lrn" : "student_id");
-    const [identifierField, setIdentifierField] = useState<"lrn" | "student_id">(initialIdentifierField);
-    const usesExternalIdentifier = identifierField === "lrn";
+    const [lookupHints, setLookupHints] = useState<LookupHints | null>(saved.current?.lookupHints ?? null);
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-    const [showManualStudentOverrides, setShowManualStudentOverrides] = useState(false);
-
-    const initialStudentType = (saved.current?.student_type || saved.current?.studentType || "") as "" | "college" | "shs" | "tesda" | "dhrt";
 
     const { data, setData, post, processing, errors } = useForm({
         name: saved.current?.name ?? socialiteSignup?.name ?? "",
@@ -146,14 +184,10 @@ export function SignupStepper({
         password: "",
         password_confirmation: "",
         faculty_id_number: saved.current?.faculty_id_number ?? "",
-        student_id: saved.current?.student_id ?? "",
-        lrn: saved.current?.lrn ?? "",
+        identifier: saved.current?.identifier ?? "",
         otp: "",
         user_type: saved.current?.user_type ?? ("" as "faculty" | "student" | ""),
-        student_type: initialStudentType,
     });
-
-    const studentType = (data.student_type || null) as StudentType;
 
     const isRestored = useRef(saved.current !== null);
 
@@ -174,33 +208,17 @@ export function SignupStepper({
     }, [identifierRecoveryCooldown]);
 
     const persistFormState = useCallback(() => {
-        // Never persist passwords or OTPs to browser storage.
         persistState({
             currentStep: currentStep === 3 ? 2 : currentStep,
             userType,
-            studentType,
-            identifierField,
             name: data.name,
             email: data.email,
             faculty_id_number: data.faculty_id_number,
-            student_id: data.student_id,
-            lrn: data.lrn,
+            identifier: data.identifier,
             user_type: data.user_type,
-            student_type: data.student_type,
+            lookupHints,
         });
-    }, [
-        currentStep,
-        userType,
-        studentType,
-        identifierField,
-        data.name,
-        data.email,
-        data.faculty_id_number,
-        data.student_id,
-        data.lrn,
-        data.user_type,
-        data.student_type,
-    ]);
+    }, [currentStep, userType, data.name, data.email, data.faculty_id_number, data.identifier, data.user_type, lookupHints]);
 
     useEffect(() => {
         persistFormState();
@@ -213,40 +231,52 @@ export function SignupStepper({
         isRestored.current = false;
     }, []);
 
+    const formErrors = errors as Record<string, string | undefined>;
+    const identifierError = formErrors.identifier ?? formErrors.student_id ?? formErrors.lrn;
+
     useEffect(() => {
-        if (errors && Object.keys(errors).length > 0) {
-            const firstErrorKey = Object.keys(errors)[0] as keyof typeof errors;
-            const firstErrorMessage = errors[firstErrorKey];
+        if (formErrors && Object.keys(formErrors).length > 0) {
+            const firstErrorKey = Object.keys(formErrors)[0];
+            const firstErrorMessage = formErrors[firstErrorKey];
             if (firstErrorMessage) {
                 toast.error(firstErrorMessage);
             }
-            if (errors.student_id || errors.lrn || errors.student_type || errors.faculty_id_number) {
+            if (formErrors.identifier || formErrors.student_id || formErrors.lrn || formErrors.faculty_id_number) {
                 setCurrentStep(2);
-                if (errors.student_type) {
-                    setShowManualStudentOverrides(true);
-                }
-            } else if (errors.email) {
+            } else if (formErrors.email) {
                 setCurrentStep(0);
-            } else if (errors.name || errors.password) {
+            } else if (formErrors.name || formErrors.password) {
                 setCurrentStep(1);
             }
         }
     }, [errors]);
 
-    const validateEmail = (email: string) => {
-        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-    };
+    const validateEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
     const passwordsMatch = data.password === data.password_confirmation && data.password_confirmation !== "";
     const policyEvaluation = evaluatePasswordPolicy(data.password, passwordPolicy);
     const minPasswordLength = passwordPolicy?.minLength ?? 8;
+
+    const studentIdentifierLabel = lookupHints?.identifier_label || config.universal_identifier_label || "Student ID";
+    const studentIdPrimaryLabel = lookupHints?.student_id_label || config.student_id_label || "Student ID";
+    const externalIdentifierLabel = lookupHints?.external_identifier_label ?? (config.external_identifier_enabled ? config.external_identifier_label : null);
+    const acceptsExternalIdentifier = lookupHints?.accepts_external_identifier ?? config.external_identifier_enabled;
+    const studentIdentifierPlaceholder = lookupHints?.identifier_placeholder || config.student_identifier_placeholder || "e.g. 2026-0001";
+    const studentIdentifierHelpText =
+        lookupHints?.identifier_help_text || config.student_identifier_help_text || "Found on your admission notice, registration slip, or campus ID card.";
+    const allowIdentifierRecovery = lookupHints?.allow_identifier_recovery ?? config.allow_identifier_recovery ?? true;
+
+    const facultyIdLabel = lookupHints?.faculty_id_label || config.faculty_id_label || "Faculty ID";
+    const facultyIdPlaceholder = lookupHints?.faculty_id_placeholder || config.faculty_identifier_placeholder || "e.g. FAC-2026-001";
+    const facultyIdHelpText = lookupHints?.faculty_id_help_text || config.faculty_identifier_help_text || "Enter the ID assigned by HR or your institution.";
+    const requiresFacultyId = Boolean(lookupHints?.requires_faculty_id ?? config.require_faculty_id);
 
     const getSteps = () => {
         if (userType === "student") {
             return [
                 { id: "email", label: "Find Record" },
                 { id: "details", label: "Credentials" },
-                { id: "verification", label: "Student ID" },
+                { id: "verification", label: studentIdPrimaryLabel },
                 { id: "otp", label: "Email Code" },
             ];
         }
@@ -254,7 +284,7 @@ export function SignupStepper({
             return [
                 { id: "email", label: "Find Record" },
                 { id: "details", label: "Credentials" },
-                { id: "verification", label: "Faculty ID" },
+                { id: "verification", label: facultyIdLabel },
                 { id: "otp", label: "Email Code" },
             ];
         }
@@ -268,19 +298,11 @@ export function SignupStepper({
 
     const steps = getSteps();
 
-    const [lookupHints, setLookupHints] = useState<{
-        student_type?: string | null;
-        identifier_type?: "student_id" | "lrn";
-        multiple_schools?: boolean;
-        requires_faculty_id?: boolean;
-        has_faculty_id?: boolean;
-    } | null>(null);
-
     const canSendOtp =
         !isSendingOtp &&
         (userType === "student"
-            ? Boolean(data.student_type && (usesExternalIdentifier ? data.lrn.trim() : data.student_id.trim()))
-            : !lookupHints?.requires_faculty_id || Boolean(data.faculty_id_number.trim()));
+            ? Boolean(data.identifier.trim())
+            : !requiresFacultyId || Boolean(data.faculty_id_number.trim()));
 
     const sendOtp = async () => {
         if (!canSendOtp) return;
@@ -289,10 +311,8 @@ export function SignupStepper({
             await axios.post("/signup/send-otp", {
                 email: data.email,
                 user_type: data.user_type,
-                student_type: data.student_type,
-                student_id: data.student_id,
-                lrn: data.lrn,
-                faculty_id_number: data.faculty_id_number,
+                identifier: data.identifier.trim(),
+                faculty_id_number: data.faculty_id_number.trim(),
             });
             setOtpCooldown(60);
             toast.success("Verification code sent to your email.");
@@ -317,7 +337,7 @@ export function SignupStepper({
             setIdentifierRecoveryCooldown(60);
             toast.success(
                 response.data?.message ||
-                    "If a matching student record exists, we have sent your Student Number / LRN to that email address.",
+                    `If a matching student record exists, we have sent your ${studentIdentifierLabel} to that email address.`,
             );
         } catch (error: unknown) {
             const err = error as { response?: { data?: { message?: string } } };
@@ -336,31 +356,17 @@ export function SignupStepper({
         setIsCheckingEmail(true);
         try {
             const response = await axios.post("/signup/email-lookup", { email: data.email, include_hints: true });
-            const result = response.data as EmailLookupResult & {
-                hints?: {
-                    student_type?: string | null;
-                    identifier_type?: "student_id" | "lrn";
-                    multiple_schools?: boolean;
-                    requires_faculty_id?: boolean;
-                    has_faculty_id?: boolean;
-                };
-            };
+            const result = response.data as EmailLookupResult;
             setEmailLookupResult(result);
 
             if (result.found && (result.type === "faculty" || result.type === "student")) {
                 setUserType(result.type);
                 setLookupHints(result.hints ?? null);
-                const detectedIdentifier = result.hints?.identifier_type === "lrn" ? "lrn" : "student_id";
-                const detectedStudentType = (result.hints?.student_type ?? "") as Exclude<StudentType, null> | "";
-                setIdentifierField(detectedIdentifier);
-                setShowManualStudentOverrides(!detectedStudentType);
                 setData((prev) => ({
                     ...prev,
                     faculty_id_number: "",
-                    student_id: "",
-                    lrn: "",
+                    identifier: "",
                     user_type: result.type!,
-                    student_type: result.type === "student" ? detectedStudentType : "",
                 }));
                 toast.success(result.type === "faculty" ? "Faculty record found!" : "Student record found!");
                 setCurrentStep(1);
@@ -384,13 +390,10 @@ export function SignupStepper({
         setEmailLookupResult(null);
         setLookupHints(null);
         setUserType(null);
-        setShowManualStudentOverrides(false);
         setData((prev) => ({
             ...prev,
             user_type: "",
-            student_type: "",
-            student_id: "",
-            lrn: "",
+            identifier: "",
             faculty_id_number: "",
             otp: "",
         }));
@@ -419,8 +422,6 @@ export function SignupStepper({
     };
 
     const canProceedFromDetails = data.name.trim().length > 0 && policyEvaluation.allMet && passwordsMatch;
-    const matchedStudentTypeLabel = data.student_type ? STUDENT_TYPE_LABELS[data.student_type] : null;
-    const isAutoMatchedStudent = Boolean(userType === "student" && lookupHints?.student_type && matchedStudentTypeLabel);
 
     return (
         <div className={cn("space-y-5", className)} {...props}>
@@ -444,14 +445,14 @@ export function SignupStepper({
                                         isCompleted ? "bg-primary" : isActive ? "bg-primary ring-primary/25 ring-2" : "bg-muted",
                                     )}
                                 />
-                                <div className="flex items-center gap-1 text-[11px]">
+                                <div className="flex items-center justify-center gap-1 text-[11px] sm:justify-start">
                                     <span
                                         className={cn(
                                             "flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold transition-colors",
                                             isCompleted
                                                 ? "bg-primary text-primary-foreground"
                                                 : isActive
-                                                  ? "border border-primary/50 bg-primary/10 text-primary"
+                                                  ? "border-primary/50 bg-primary/10 text-primary border"
                                                   : "bg-muted text-muted-foreground",
                                         )}
                                     >
@@ -459,8 +460,8 @@ export function SignupStepper({
                                     </span>
                                     <span
                                         className={cn(
-                                            "truncate",
-                                            isActive ? "font-semibold text-foreground" : isCompleted ? "text-foreground/80" : "text-muted-foreground",
+                                            "hidden truncate sm:inline",
+                                            isActive ? "text-foreground font-semibold" : isCompleted ? "text-foreground/80" : "text-muted-foreground",
                                         )}
                                     >
                                         {step.label}
@@ -474,22 +475,22 @@ export function SignupStepper({
 
             {/* Persistent Matched Record Identity Pill (Steps 2-4) */}
             {currentStep > 0 && userType && (
-                <div className="flex items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 px-3.5 py-2.5 text-xs">
+                <div className="border-primary/20 bg-primary/5 flex items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-xs">
                     <div className="flex min-w-0 items-center gap-2.5">
-                        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
+                        <span className="bg-primary/15 text-primary flex size-7 shrink-0 items-center justify-center rounded-lg">
                             {userType === "student" ? <GraduationCap className="size-4" /> : <UserCheck className="size-4" />}
                         </span>
                         <div className="min-w-0">
-                            <p className="font-semibold text-foreground">
+                            <p className="text-foreground font-semibold">
                                 {userType === "student" ? "Student Record Matched" : "Faculty Record Matched"}
                             </p>
-                            <p className="truncate font-mono text-[11px] text-muted-foreground">{data.email}</p>
+                            <p className="text-muted-foreground truncate font-mono text-[11px]">{data.email}</p>
                         </div>
                     </div>
                     <button
                         type="button"
                         onClick={handleChangeEmail}
-                        className="shrink-0 rounded-lg border border-border/70 bg-background/80 px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                        className="border-border/70 bg-background/80 text-muted-foreground hover:border-primary/40 hover:text-foreground shrink-0 rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-colors"
                     >
                         Change
                     </button>
@@ -502,12 +503,12 @@ export function SignupStepper({
                     {currentStep === 0 && (
                         <div className="space-y-4">
                             {socialiteSignup?.email && (
-                                <div className="flex items-center gap-3 rounded-xl border border-primary/25 bg-primary/5 p-3.5 text-xs">
+                                <div className="border-primary/25 bg-primary/5 flex items-center gap-3 rounded-xl border p-3.5 text-xs">
                                     {socialiteSignup.avatar_url ? (
                                         <img
                                             src={socialiteSignup.avatar_url}
                                             alt=""
-                                            className="size-8 shrink-0 rounded-full border border-border object-cover"
+                                            className="border-border size-8 shrink-0 rounded-full border object-cover"
                                         />
                                     ) : (
                                         <IconTile variant="soft" size="sm" className="shrink-0 rounded-lg">
@@ -515,19 +516,19 @@ export function SignupStepper({
                                         </IconTile>
                                     )}
                                     <div className="min-w-0 flex-1">
-                                        <p className="font-semibold text-foreground">
+                                        <p className="text-foreground font-semibold">
                                             Completing signup with{" "}
                                             {socialiteSignup.provider
                                                 ? socialiteSignup.provider.charAt(0).toUpperCase() + socialiteSignup.provider.slice(1)
                                                 : "Social Account"}
                                         </p>
-                                        <p className="truncate text-muted-foreground">{socialiteSignup.email}</p>
+                                        <p className="text-muted-foreground truncate">{socialiteSignup.email}</p>
                                     </div>
                                     <Button
                                         type="button"
                                         variant="ghost"
                                         size="sm"
-                                        className="h-7 shrink-0 px-2 text-xs text-muted-foreground hover:text-foreground"
+                                        className="text-muted-foreground hover:text-foreground h-7 shrink-0 px-2 text-xs"
                                         onClick={() => {
                                             clearPersistedState();
                                             router.post("/signup/cancel-social");
@@ -538,20 +539,22 @@ export function SignupStepper({
                                 </div>
                             )}
 
-                            {/* Compact Self-Activation Track Summary (especially helpful on mobile where right panel is hidden) */}
+                            {/* Compact Self-Activation Track Summary */}
                             <div className="grid grid-cols-2 gap-2 text-[11px]">
-                                <div className="flex items-center gap-2 rounded-xl border border-border/70 bg-card/60 px-3 py-2">
-                                    <GraduationCap className="size-3.5 shrink-0 text-primary" />
+                                <div className="border-border/70 bg-card/60 flex items-center gap-2 rounded-xl border px-3 py-2">
+                                    <GraduationCap className="text-primary size-3.5 shrink-0" />
                                     <div className="min-w-0">
-                                        <p className="font-semibold text-foreground">Students</p>
-                                        <p className="truncate text-muted-foreground">Email + ID / LRN</p>
+                                        <p className="text-foreground font-semibold">Students</p>
+                                        <p className="text-muted-foreground truncate">Email + {config.universal_identifier_label}</p>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-2 rounded-xl border border-border/70 bg-card/60 px-3 py-2">
-                                    <UserCheck className="size-3.5 shrink-0 text-primary" />
+                                <div className="border-border/70 bg-card/60 flex items-center gap-2 rounded-xl border px-3 py-2">
+                                    <UserCheck className="text-primary size-3.5 shrink-0" />
                                     <div className="min-w-0">
-                                        <p className="font-semibold text-foreground">Faculty</p>
-                                        <p className="truncate text-muted-foreground">School email</p>
+                                        <p className="text-foreground font-semibold">Faculty</p>
+                                        <p className="text-muted-foreground truncate">
+                                            {config.require_faculty_id ? `Email + ${config.faculty_id_label}` : "School email"}
+                                        </p>
                                     </div>
                                 </div>
                             </div>
@@ -593,7 +596,7 @@ export function SignupStepper({
                                 </InputGroup>
                                 {errors.email && <FieldError errors={[{ message: errors.email }]} />}
                                 <FieldDescription className="text-muted-foreground text-xs">
-                                    We&apos;ll automatically detect whether you&apos;re a student or faculty member and guide you through activation.
+                                    We&apos;ll automatically detect whether you&apos;re a student or faculty member and match your school roster.
                                 </FieldDescription>
                             </Field>
 
@@ -616,18 +619,19 @@ export function SignupStepper({
                                 )}
                             </Button>
 
-                            {/* Recovery State A: Account Already Exists (e.g., admin provisioned or prior signup) */}
+                            {/* Recovery State A: Account Already Exists */}
                             {emailLookupResult && !emailLookupResult.found && emailLookupResult.account_exists && (
-                                <div className="space-y-3 rounded-2xl border border-primary/30 bg-primary/5 p-4 text-xs shadow-2xs">
+                                <div className="border-primary/30 bg-primary/5 space-y-3 rounded-2xl border p-4 text-xs shadow-2xs">
                                     <div className="flex items-start gap-3">
-                                        <IconTile variant="soft" size="sm" className="shrink-0 rounded-lg text-primary">
+                                        <IconTile variant="soft" size="sm" className="text-primary shrink-0 rounded-lg">
                                             <KeyRound className="size-4" />
                                         </IconTile>
                                         <div className="space-y-1">
-                                            <p className="font-semibold text-foreground">Account Already Active</p>
-                                            <p className="leading-relaxed text-muted-foreground">
-                                                A portal account for <span className="font-medium text-foreground">{data.email}</span> already exists.
-                                                If your administrator provisioned it for you, use <span className="font-medium text-foreground">Reset Password</span> to set your login password.
+                                            <p className="text-foreground font-semibold">Account Already Active</p>
+                                            <p className="text-muted-foreground leading-relaxed">
+                                                A portal account for <span className="text-foreground font-medium">{data.email}</span> already exists.
+                                                If your administrator provisioned it for you, use{" "}
+                                                <span className="text-foreground font-medium">Reset Password</span> to set your login password.
                                             </p>
                                         </div>
                                     </div>
@@ -655,19 +659,19 @@ export function SignupStepper({
                                 </div>
                             )}
 
-                            {/* Recovery State B: Email Not Found / Inactive Record */}
+                            {/* Recovery State B: Email Not Found / Disabled / Inactive */}
                             {emailLookupResult && !emailLookupResult.found && !emailLookupResult.account_exists && (
-                                <div className="space-y-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-xs shadow-2xs">
+                                <div className="border-destructive/30 bg-destructive/5 space-y-3 rounded-2xl border p-4 text-xs shadow-2xs">
                                     <div className="flex items-start gap-3">
-                                        <IconTile variant="soft" size="sm" className="shrink-0 rounded-lg text-destructive">
+                                        <IconTile variant="soft" size="sm" className="text-destructive shrink-0 rounded-lg">
                                             <ShieldAlert className="size-4" />
                                         </IconTile>
                                         <div className="space-y-1">
-                                            <p className="font-semibold text-foreground">We Couldn&apos;t Find That Email on the Roster</p>
-                                            <p className="leading-relaxed text-muted-foreground">
+                                            <p className="text-foreground font-semibold">Unable to Continue Activation</p>
+                                            <p className="text-muted-foreground leading-relaxed">
                                                 {emailLookupResult.message || "This email is not yet linked to an active student or faculty record."}
                                             </p>
-                                            <p className="text-[11px] text-muted-foreground">
+                                            <p className="text-muted-foreground text-[11px]">
                                                 Tip: Check whether you gave a personal email or an institutional email during admissions or onboarding.
                                             </p>
                                         </div>
@@ -678,7 +682,7 @@ export function SignupStepper({
                                             nativeButton={false}
                                             variant="outline"
                                             size="sm"
-                                            className="h-8 gap-1.5 rounded-lg bg-background/80 text-xs font-medium"
+                                            className="bg-background/80 h-8 gap-1.5 rounded-lg text-xs font-medium"
                                         >
                                             <ClipboardList className="size-3.5" />
                                             New Student? Apply for Enrollment
@@ -692,7 +696,7 @@ export function SignupStepper({
                                                 emailInputRef.current?.focus();
                                                 emailInputRef.current?.select();
                                             }}
-                                            className="h-8 gap-1 rounded-lg px-2.5 text-xs text-muted-foreground hover:text-foreground"
+                                            className="text-muted-foreground hover:text-foreground h-8 gap-1 rounded-lg px-2.5 text-xs"
                                         >
                                             <RefreshCw className="size-3" />
                                             Try another email
@@ -724,7 +728,7 @@ export function SignupStepper({
                                         autoFocus
                                         value={data.name}
                                         onChange={(e) => setData("name", e.target.value)}
-                                        placeholder="e.g. Juan Dela Cruz"
+                                        placeholder="e.g. Alex Morgan"
                                         className="text-sm font-normal"
                                     />
                                 </InputGroup>
@@ -813,193 +817,103 @@ export function SignupStepper({
                         </div>
                     )}
 
-                    {/* Step 2: Student ID Verification (Student) */}
+                    {/* Step 2: Universal Student ID Verification (Zero manual dropdowns!) */}
                     {currentStep === 2 && userType === "student" && (
                         <div className="space-y-4">
-                            {isAutoMatchedStudent ? (
-                                <div className="flex items-center justify-between gap-3 rounded-2xl border border-primary/25 bg-primary/5 px-4 py-3 text-xs">
-                                    <div className="space-y-0.5">
-                                        <p className="font-semibold text-foreground">
-                                            Auto-detected: {matchedStudentTypeLabel} ·{" "}
-                                            {usesExternalIdentifier ? "LRN / External ID" : "Student Number"}
-                                        </p>
-                                        <p className="text-muted-foreground">
-                                            Enter your {usesExternalIdentifier ? "LRN" : "student number"} below to receive your 6-digit verification code.
-                                        </p>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowManualStudentOverrides((prev) => !prev)}
-                                        className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-border/70 bg-background/80 px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
-                                    >
-                                        <SlidersHorizontal className="size-3" />
-                                        {showManualStudentOverrides ? "Hide" : "Change"}
-                                    </button>
-                                </div>
-                            ) : (
-                                <div className="border-primary/25 bg-primary/5 text-foreground rounded-2xl border p-3.5 text-xs leading-relaxed">
-                                    <p className="text-muted-foreground">
-                                        Select your student type and enter the identifier issued by your school to verify your account.
+                            <div className="border-primary/25 bg-primary/5 flex items-start gap-3 rounded-2xl border px-4 py-3 text-xs">
+                                <span className="bg-primary/15 text-primary mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-lg">
+                                    <Sparkles className="size-3.5" />
+                                </span>
+                                <div className="space-y-0.5">
+                                    <p className="text-foreground font-semibold">Automatic record verification</p>
+                                    <p className="text-muted-foreground leading-relaxed">
+                                        {acceptsExternalIdentifier && externalIdentifierLabel ? (
+                                            <>
+                                                Enter your <span className="text-foreground font-medium">{studentIdPrimaryLabel}</span> or{" "}
+                                                <span className="text-foreground font-medium">{externalIdentifierLabel}</span> below — we&apos;ll
+                                                automatically match your student record and send your 6-digit code.
+                                            </>
+                                        ) : (
+                                            <>
+                                                Enter your <span className="text-foreground font-medium">{studentIdentifierLabel}</span> below —
+                                                we&apos;ll automatically verify your record and send your 6-digit code.
+                                            </>
+                                        )}
                                     </p>
                                 </div>
-                            )}
+                            </div>
 
-                            {(!isAutoMatchedStudent || showManualStudentOverrides) && (
-                                <div className="grid gap-3 sm:grid-cols-2">
-                                    <Field>
-                                        <FieldLabel htmlFor="student_type" className="text-foreground text-xs font-semibold">
-                                            Student Type
-                                        </FieldLabel>
-                                        <Select
-                                            value={data.student_type}
-                                            onValueChange={(value) => {
-                                                const category = value as Exclude<StudentType, null>;
-                                                setData((prev) => ({ ...prev, student_type: category }));
-                                            }}
-                                        >
-                                            <SelectTrigger id="student_type">
-                                                <SelectValue placeholder="Select student type" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="college">College</SelectItem>
-                                                <SelectItem value="shs">Senior High School</SelectItem>
-                                                <SelectItem value="tesda">TESDA</SelectItem>
-                                                <SelectItem value="dhrt">DHRT</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                        {errors.student_type && <FieldError errors={[{ message: errors.student_type }]} />}
-                                    </Field>
+                            <Field>
+                                <FieldLabel htmlFor="identifier" className="text-foreground text-xs font-semibold">
+                                    {studentIdentifierLabel}
+                                </FieldLabel>
+                                <InputGroup
+                                    className={cn(
+                                        "border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2",
+                                        identifierError && "border-destructive focus-within:ring-destructive/20",
+                                    )}
+                                >
+                                    <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
+                                        <BadgeCheck className="size-4" />
+                                    </InputGroupAddon>
+                                    <InputGroupInput
+                                        id="identifier"
+                                        autoFocus
+                                        placeholder={studentIdentifierPlaceholder}
+                                        value={data.identifier}
+                                        onChange={(e) => setData("identifier", e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter" && canSendOtp) {
+                                                e.preventDefault();
+                                                sendOtp();
+                                            }
+                                        }}
+                                        className="font-mono text-sm font-normal tabular-nums"
+                                    />
+                                </InputGroup>
+                                {identifierError && <FieldError errors={[{ message: identifierError }]} />}
+                                <FieldDescription className="text-muted-foreground text-xs">{studentIdentifierHelpText}</FieldDescription>
+                            </Field>
 
-                                    <Field>
-                                        <FieldLabel htmlFor="identifier_type" className="text-foreground text-xs font-semibold">
-                                            Identifier Type
-                                        </FieldLabel>
-                                        <Select
-                                            value={identifierField}
-                                            onValueChange={(value) => {
-                                                setIdentifierField(value as "student_id" | "lrn");
-                                                setData((prev) => ({ ...prev, student_id: "", lrn: "" }));
-                                            }}
-                                        >
-                                            <SelectTrigger id="identifier_type">
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="student_id">Student number</SelectItem>
-                                                <SelectItem value="lrn">LRN / External identifier</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </Field>
+                            {allowIdentifierRecovery && (
+                                <div className="border-border/70 bg-muted/25 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5 text-xs">
+                                    <span className="text-muted-foreground">Don&apos;t remember your ID?</span>
+                                    <button
+                                        type="button"
+                                        onClick={handleRecoverIdentifier}
+                                        disabled={isRecoveringIdentifier || identifierRecoveryCooldown > 0 || !validateEmail(data.email)}
+                                        className="text-primary font-medium underline-offset-4 hover:underline disabled:no-underline disabled:opacity-50"
+                                    >
+                                        {isRecoveringIdentifier
+                                            ? "Sending..."
+                                            : identifierRecoveryCooldown > 0
+                                              ? `Email sent · retry in ${identifierRecoveryCooldown}s`
+                                              : `Email my ${studentIdentifierLabel}`}
+                                    </button>
                                 </div>
                             )}
-
-                            {usesExternalIdentifier ? (
-                                <Field>
-                                    <FieldLabel htmlFor="lrn" className="text-foreground text-xs font-semibold">
-                                        LRN / External Identifier
-                                    </FieldLabel>
-                                    <InputGroup
-                                        className={cn(
-                                            "border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2",
-                                            errors.lrn && "border-destructive focus-within:ring-destructive/20",
-                                        )}
-                                    >
-                                        <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
-                                            <BadgeCheck className="size-4" />
-                                        </InputGroupAddon>
-                                        <InputGroupInput
-                                            id="lrn"
-                                            autoFocus
-                                            placeholder="123456789012"
-                                            value={data.lrn}
-                                            onChange={(e) => setData("lrn", e.target.value)}
-                                            onKeyDown={(e) => {
-                                                if (e.key === "Enter" && canSendOtp) {
-                                                    e.preventDefault();
-                                                    sendOtp();
-                                                }
-                                            }}
-                                            className="font-mono text-sm font-normal tabular-nums"
-                                        />
-                                    </InputGroup>
-                                    {errors.lrn && <FieldError errors={[{ message: errors.lrn }]} />}
-                                    <FieldDescription className="text-muted-foreground text-xs">
-                                        Found on your DepEd Form 138, registration slip, or official admission notice.
-                                    </FieldDescription>
-                                </Field>
-                            ) : (
-                                <Field>
-                                    <FieldLabel htmlFor="student_id" className="text-foreground text-xs font-semibold">
-                                        Student Number
-                                    </FieldLabel>
-                                    <InputGroup
-                                        className={cn(
-                                            "border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-primary/20 h-11 rounded-xl focus-within:ring-2",
-                                            errors.student_id && "border-destructive focus-within:ring-destructive/20",
-                                        )}
-                                    >
-                                        <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
-                                            <GraduationCap className="size-4" />
-                                        </InputGroupAddon>
-                                        <InputGroupInput
-                                            id="student_id"
-                                            autoFocus
-                                            placeholder="20260001"
-                                            value={data.student_id}
-                                            onChange={(e) => setData("student_id", e.target.value)}
-                                            onKeyDown={(e) => {
-                                                if (e.key === "Enter" && canSendOtp) {
-                                                    e.preventDefault();
-                                                    sendOtp();
-                                                }
-                                            }}
-                                            className="font-mono text-sm font-normal tabular-nums"
-                                        />
-                                    </InputGroup>
-                                    {errors.student_id && <FieldError errors={[{ message: errors.student_id }]} />}
-                                    <FieldDescription className="text-muted-foreground text-xs">
-                                        Found on your Certificate of Registration (COR), school ID, or registrar approval email.
-                                    </FieldDescription>
-                                </Field>
-                            )}
-
-                            <div className="flex items-center justify-between gap-2 rounded-xl border border-border/70 bg-muted/25 px-3.5 py-2.5 text-xs">
-                                <span className="text-muted-foreground">Don&apos;t remember your ID?</span>
-                                <button
-                                    type="button"
-                                    onClick={handleRecoverIdentifier}
-                                    disabled={isRecoveringIdentifier || identifierRecoveryCooldown > 0 || !validateEmail(data.email)}
-                                    className="text-primary font-medium underline-offset-4 hover:underline disabled:no-underline disabled:opacity-50"
-                                >
-                                    {isRecoveringIdentifier
-                                        ? "Sending..."
-                                        : identifierRecoveryCooldown > 0
-                                          ? `Email sent · retry in ${identifierRecoveryCooldown}s`
-                                          : "Forgot your Student Number / LRN? Email it to me"}
-                                </button>
-                            </div>
                         </div>
                     )}
 
-                    {/* Step 2: Faculty ID */}
+                    {/* Step 2: Faculty ID Verification */}
                     {currentStep === 2 && userType === "faculty" && (
                         <div className="space-y-4">
-                            <div className="rounded-2xl border border-primary/25 bg-primary/5 p-3.5 text-xs leading-relaxed">
-                                <p className="font-semibold text-foreground">
-                                    {lookupHints?.requires_faculty_id
-                                        ? "Multi-campus match — Faculty ID required"
-                                        : "Faculty record uniquely matched — Faculty ID is optional"}
+                            <div className="border-primary/25 bg-primary/5 rounded-2xl border p-3.5 text-xs leading-relaxed">
+                                <p className="text-foreground font-semibold">
+                                    {requiresFacultyId
+                                        ? `${facultyIdLabel} required to verify your record`
+                                        : `Faculty record uniquely matched — ${facultyIdLabel} is optional`}
                                 </p>
-                                <p className="mt-0.5 text-muted-foreground">
-                                    {lookupHints?.requires_faculty_id
-                                        ? "Your email appears in more than one school. Enter your institutional Faculty ID Number so we link the right roster."
-                                        : "You can send your email verification code right away, or enter your Faculty ID Number below if HR issued one."}
+                                <p className="text-muted-foreground mt-0.5">
+                                    {requiresFacultyId
+                                        ? `Enter your institutional ${facultyIdLabel} so we can confirm and link the right roster record.`
+                                        : `You can send your email verification code right away, or enter your ${facultyIdLabel} below if your school issued one.`}
                                 </p>
                             </div>
 
                             <Field>
                                 <FieldLabel htmlFor="faculty_id_number" className="text-foreground text-xs font-semibold">
-                                    Faculty ID Number {lookupHints?.requires_faculty_id ? "(Required)" : "(Optional)"}
+                                    {facultyIdLabel} {requiresFacultyId ? "(Required)" : "(Optional)"}
                                 </FieldLabel>
                                 <InputGroup
                                     className={cn(
@@ -1013,8 +927,8 @@ export function SignupStepper({
                                     <InputGroupInput
                                         id="faculty_id_number"
                                         autoFocus
-                                        placeholder="e.g. FAC-2025-001"
-                                        required={Boolean(lookupHints?.requires_faculty_id)}
+                                        placeholder={facultyIdPlaceholder}
+                                        required={requiresFacultyId}
                                         value={data.faculty_id_number}
                                         onChange={(e) => setData("faculty_id_number", e.target.value)}
                                         onKeyDown={(e) => {
@@ -1023,10 +937,11 @@ export function SignupStepper({
                                                 sendOtp();
                                             }
                                         }}
-                                        className="font-mono text-sm font-normal uppercase"
+                                        className="font-mono text-sm font-normal uppercase placeholder:normal-case"
                                     />
                                 </InputGroup>
                                 {errors.faculty_id_number && <FieldError errors={[{ message: errors.faculty_id_number }]} />}
+                                <FieldDescription className="text-muted-foreground text-xs">{facultyIdHelpText}</FieldDescription>
                             </Field>
                         </div>
                     )}
@@ -1035,7 +950,7 @@ export function SignupStepper({
                     {currentStep === steps.length - 1 && (
                         <div className="space-y-4">
                             <div className="border-primary/20 bg-primary/5 flex items-start gap-3 rounded-2xl border p-4 text-xs">
-                                <IconTile variant="soft" size="sm" className="shrink-0 rounded-lg text-primary">
+                                <IconTile variant="soft" size="sm" className="text-primary shrink-0 rounded-lg">
                                     <Mail className="size-4" />
                                 </IconTile>
                                 <div className="space-y-1">
@@ -1043,7 +958,7 @@ export function SignupStepper({
                                     <p className="text-muted-foreground">
                                         Enter the 6-digit code sent to <span className="text-foreground font-semibold">{data.email}</span>.
                                     </p>
-                                    <p className="text-[11px] text-muted-foreground">
+                                    <p className="text-muted-foreground text-[11px]">
                                         Don&apos;t see it? Check your spam or promotions folder — codes arrive within a minute.
                                     </p>
                                 </div>
@@ -1122,8 +1037,6 @@ export function SignupStepper({
                                             <Loader2 className="mr-2 size-4 animate-spin" />
                                             <span>Sending Code...</span>
                                         </>
-                                    ) : userType === "faculty" && !lookupHints?.requires_faculty_id && !data.faculty_id_number.trim() ? (
-                                        <span>Skip ID &amp; Send Code</span>
                                     ) : (
                                         <span>Send Verification Code</span>
                                     )}

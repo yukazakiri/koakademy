@@ -164,8 +164,12 @@ final class AuthController extends Controller
 
     public function showSignupForm(): Response
     {
+        $studentConfig = app(\App\Services\StudentConfigurationService::class);
+        $studentConfig->resolvePublicSchool();
+
         return Inertia::render('signup', [
             'socialiteSignup' => session('socialite_signup'),
+            'signupConfig' => $studentConfig->signupPresentation(),
         ]);
     }
 
@@ -217,19 +221,20 @@ final class AuthController extends Controller
     private function signupStudent(Request $request)
     {
         $studentType = $request->input('student_type');
-        $isShs = $studentType === 'shs';
 
         $validationRules = [
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255',
             'password' => ['required', 'confirmed', Password::defaults()],
             'user_type' => 'required|string|in:student',
-            'student_type' => ['required', 'string', \Illuminate\Validation\Rule::enum(StudentType::class)],
+            'student_type' => ['nullable', 'string', \Illuminate\Validation\Rule::enum(StudentType::class)],
             'record_id' => 'nullable|integer',
             'otp' => 'required|string',
         ];
 
-        $identifierField = $request->filled('student_id') ? 'student_id' : 'lrn';
+        $identifierField = $request->filled('identifier')
+            ? 'identifier'
+            : ($request->filled('student_id') ? 'student_id' : ($request->filled('lrn') ? 'lrn' : 'identifier'));
         $validationRules[$identifierField] = 'required|string|max:64';
 
         $validator = Validator::make($request->all(), $validationRules);
@@ -256,10 +261,8 @@ final class AuthController extends Controller
                 ->withInput($request->except(['password', 'password_confirmation']));
         }
 
-        // Determine the role based on student type
-        $role = $isShs ? UserRole::ShsStudent : UserRole::Student;
         try {
-            $user = DB::transaction(function () use ($request, $role, $studentType, $email, $identifierField): User {
+            $user = DB::transaction(function () use ($request, $studentType, $email, $identifierField): User {
                 if (User::whereRaw('LOWER(email) = ?', [$email])->lockForUpdate()->exists()) {
                     throw ValidationException::withMessages([
                         'email' => ['An account with this email already exists.'],
@@ -268,12 +271,17 @@ final class AuthController extends Controller
 
                 $student = $this->studentOrganizations->resolveForSignup(
                     email: $email,
-                    studentType: StudentType::from($studentType),
+                    studentType: filled($studentType) ? StudentType::from((string) $studentType) : null,
                     identifier: $request->string($identifierField)->toString(),
                     recordId: $request->input('record_id'),
                     lockForUpdate: true,
                     inputField: $identifierField,
                 );
+
+                // Always derive role from the matched authoritative student record.
+                $role = $student->student_type === StudentType::SeniorHighSchool
+                    ? UserRole::ShsStudent
+                    : UserRole::Student;
 
                 $spatieRole = Role::firstOrCreate(
                     ['name' => $role->value, 'guard_name' => 'web'],

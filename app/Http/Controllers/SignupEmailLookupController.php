@@ -59,18 +59,27 @@ final class SignupEmailLookupController extends Controller
             // Check if email exists in Faculty table
             $facultyCandidates = $this->facultySignups->candidatesForEmail($email);
             $registerableFaculties = $facultyCandidates->filter(fn ($candidate): bool => $candidate->isRegisterable())->values();
+            $studentConfig = app(\App\Services\StudentConfigurationService::class);
 
             if ($registerableFaculties->isNotEmpty()) {
+                $selfSignupAllowedFaculties = $registerableFaculties->filter(
+                    fn ($candidate): bool => (bool) ($studentConfig->get($candidate->school_id)['signup']['allow_faculty_self_signup'] ?? true),
+                )->values();
+
+                if ($selfSignupAllowedFaculties->isEmpty()) {
+                    return response()->json([
+                        'found' => false,
+                        'message' => 'Self-service faculty account activation is currently disabled for your institution. Please contact your school administrator.',
+                    ]);
+                }
+
                 $payload = [
                     'found' => true,
                     'type' => 'faculty',
                 ];
 
                 if ($includeHints) {
-                    $payload['hints'] = [
-                        'requires_faculty_id' => $registerableFaculties->count() > 1,
-                        'has_faculty_id' => $registerableFaculties->contains(fn ($candidate): bool => filled($candidate->faculty_id_number)),
-                    ];
+                    $payload['hints'] = $this->facultySignups->signupHints($selfSignupAllowedFaculties);
                 }
 
                 return response()->json($payload);
@@ -80,10 +89,14 @@ final class SignupEmailLookupController extends Controller
             $student = $students->first();
 
             if ($student) {
-                if ($students->pluck('student_type')->unique()->count() > 1) {
+                $selfSignupAllowedStudents = $students->filter(
+                    fn ($candidate): bool => (bool) ($studentConfig->get($candidate->school_id)['signup']['allow_student_self_signup'] ?? true),
+                )->values();
+
+                if ($selfSignupAllowedStudents->isEmpty()) {
                     return response()->json([
                         'found' => false,
-                        'message' => 'This email matches multiple student types. Please contact your school administrator.',
+                        'message' => 'Self-service student account activation is currently disabled for your institution. Please contact your school administrator.',
                     ]);
                 }
 
@@ -93,7 +106,7 @@ final class SignupEmailLookupController extends Controller
                 ];
 
                 if ($includeHints) {
-                    $payload['hints'] = $this->studentOrganizations->signupHints($students);
+                    $payload['hints'] = $this->studentOrganizations->signupHints($selfSignupAllowedStudents);
                 }
 
                 return response()->json($payload);

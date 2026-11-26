@@ -15,6 +15,57 @@ export interface CustomStudentField {
     options: string[];
 }
 
+export interface ExternalIdentifierConfiguration {
+    enabled: boolean;
+    label: string;
+    help_text: string | null;
+    placeholder?: string | null;
+    required: boolean;
+    student_types: StudentCategory[];
+    format: "text" | "digits" | "alphanumeric";
+    min_length: number;
+    max_length: number;
+    use_as_student_id: boolean;
+    allow_for_signup?: boolean;
+}
+
+export interface ExternalIdentifierPreset {
+    name: string;
+    region: string;
+    description: string;
+    config: ExternalIdentifierConfiguration;
+}
+
+export interface SignupPolicyConfiguration {
+    allow_student_self_signup: boolean;
+    allow_faculty_self_signup: boolean;
+    allow_identifier_recovery: boolean;
+    require_faculty_id: boolean;
+    student_identifier_placeholder: string | null;
+    student_identifier_help_text: string | null;
+    faculty_identifier_placeholder: string | null;
+    faculty_identifier_help_text: string | null;
+}
+
+export interface SignupPresentationConfig {
+    student_id_label: string;
+    faculty_id_label: string;
+    external_identifier_enabled: boolean;
+    external_identifier_label: string;
+    external_identifier_help_text: string | null;
+    external_identifier_only: boolean;
+    universal_identifier_label: string;
+    student_identifier_placeholder: string;
+    student_identifier_help_text: string;
+    faculty_identifier_placeholder: string;
+    faculty_identifier_help_text: string;
+    enabled_track_labels: string[];
+    allow_student_self_signup: boolean;
+    allow_faculty_self_signup: boolean;
+    allow_identifier_recovery: boolean;
+    require_faculty_id: boolean;
+}
+
 export interface StudentConfiguration {
     preset: "neutral" | "legacy_ph" | "custom";
     enabled_types: StudentCategory[];
@@ -25,17 +76,8 @@ export interface StudentConfiguration {
     custom_fields: CustomStudentField[];
     type_labels: Record<StudentCategory, string>;
     year_levels: Record<StudentCategory, Array<{ value: number; label: string }>>;
-    external_identifier: {
-        enabled: boolean;
-        label: string;
-        help_text: string | null;
-        required: boolean;
-        student_types: StudentCategory[];
-        format: "text" | "digits";
-        min_length: number;
-        max_length: number;
-        use_as_student_id: boolean;
-    };
+    external_identifier: ExternalIdentifierConfiguration;
+    signup?: SignupPolicyConfiguration;
 }
 
 export interface StudentIdentifierPolicy {

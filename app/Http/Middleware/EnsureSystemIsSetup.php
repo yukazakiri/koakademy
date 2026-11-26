@@ -10,11 +10,16 @@ use App\Models\School;
 use App\Models\User;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
 final class EnsureSystemIsSetup
 {
+    private const string CACHE_KEY = 'system_is_setup';
+
+    private const int CACHE_TTL_SECONDS = 300;
+
     /**
      * Handle an incoming request.
      *
@@ -31,6 +36,10 @@ final class EnsureSystemIsSetup
             return $next($request);
         }
 
+        if (Cache::get(self::CACHE_KEY) === true) {
+            return $next($request);
+        }
+
         try {
             $hasCoreData = $this->hasCoreSetupData();
             $setupCompleted = GeneralSetting::query()->where('is_setup', true)->exists();
@@ -41,10 +50,14 @@ final class EnsureSystemIsSetup
             }
 
             if ($setupCompleted || $hasCoreData) {
+                Cache::put(self::CACHE_KEY, true, self::CACHE_TTL_SECONDS);
+
                 return $next($request);
             }
 
             if (User::where('role', UserRole::SuperAdmin)->exists()) {
+                Cache::put(self::CACHE_KEY, true, self::CACHE_TTL_SECONDS);
+
                 return $next($request);
             }
         } catch (Throwable) {

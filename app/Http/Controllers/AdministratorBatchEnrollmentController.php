@@ -43,7 +43,7 @@ final class AdministratorBatchEnrollmentController extends Controller
                 'avatar' => $user->getFilamentAvatarUrl(),
                 'role' => $user->role?->getLabel() ?? 'Administrator',
             ],
-            'courses' => Course::query()
+            'courses' => fn () => Course::query()
                 ->orderBy('code')
                 ->get(['id', 'code', 'title'])
                 ->map(fn (Course $course): array => [
@@ -57,7 +57,7 @@ final class AdministratorBatchEnrollmentController extends Controller
                 'currentSchoolYear' => $currentSchoolYear,
                 'availableSemesters' => $this->settingsService->getAvailableSemesters(),
             ],
-            'enrollment_period' => $this->periodService->describe($currentSchoolYear, $currentSemester),
+            'enrollment_period' => fn (): array => $this->periodService->describe($currentSchoolYear, $currentSemester),
             'flash' => session('flash'),
         ]);
     }

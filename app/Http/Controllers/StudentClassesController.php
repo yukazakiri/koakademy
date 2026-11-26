@@ -244,11 +244,6 @@ final class StudentClassesController extends Controller
                 $schedule = sprintf('%s %s', $dayAbbreviations, $timeFormat);
             }
 
-            // Load schedules relationship if not already loaded
-            if (! $class->relationLoaded('schedules')) {
-                $class->load('schedules');
-            }
-
             $currentClasses[] = [
                 'id' => $class->id,
                 'subject_code' => $class->subject_code ?? 'N/A',

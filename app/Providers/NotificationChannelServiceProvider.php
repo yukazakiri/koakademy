@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
-use App\Models\GeneralSetting;
+use App\Services\GeneralSettingsService;
 use Exception;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -12,14 +12,16 @@ use Illuminate\Support\ServiceProvider;
 
 final class NotificationChannelServiceProvider extends ServiceProvider
 {
+    private static ?bool $hasGeneralSettingsTable = null;
+
     public function boot(): void
     {
         try {
-            if (! Schema::hasTable('general_settings')) {
+            if (! $this->hasGeneralSettingsTable()) {
                 return;
             }
 
-            $settings = GeneralSetting::query()->first();
+            $settings = app(GeneralSettingsService::class)->getGlobalSettingsModel();
 
             if (! $settings) {
                 return;
@@ -132,5 +134,20 @@ final class NotificationChannelServiceProvider extends ServiceProvider
                 }
             }
         }
+    }
+
+    private function hasGeneralSettingsTable(): bool
+    {
+        if (self::$hasGeneralSettingsTable === true) {
+            return true;
+        }
+
+        if (Schema::hasTable('general_settings')) {
+            self::$hasGeneralSettingsTable = true;
+
+            return true;
+        }
+
+        return false;
     }
 }

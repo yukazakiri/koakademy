@@ -6,6 +6,7 @@ namespace App\Services\Newsletter;
 
 use App\Enums\NewsletterProvider;
 use App\Models\GeneralSetting;
+use App\Services\GeneralSettingsService;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 
@@ -16,7 +17,7 @@ final class NewsletterSettingsService
     /** @return array<string, mixed> */
     public function get(): array
     {
-        $stored = GeneralSetting::query()->first()?->newsletter_settings;
+        $stored = app(GeneralSettingsService::class)->getGlobalSettingsModel()?->newsletter_settings;
 
         return $this->normalize(is_array($stored) ? $stored : []);
     }

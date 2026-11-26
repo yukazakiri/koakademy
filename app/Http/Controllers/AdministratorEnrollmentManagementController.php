@@ -3503,18 +3503,34 @@ final class AdministratorEnrollmentManagementController extends Controller
         $currentSemester = $settingsService->getCurrentSemester();
         $currentSchoolYear = $settingsService->getCurrentSchoolYearString();
 
-        $prefill = null;
-        $fromEnrollmentId = $request->integer('from_enrollment');
-        if ($fromEnrollmentId > 0) {
-            $source = StudentEnrollment::query()
-                ->with(['student.Course', 'studentTuition'])
-                ->find($fromEnrollmentId);
-            if ($source instanceof StudentEnrollment && $source->student instanceof Student) {
+        return Inertia::render('administrators/enrollments/create', [
+            'user' => [
+                'name' => $user->name,
+                'email' => $user->email,
+                'avatar' => $user->getFilamentAvatarUrl(),
+                'role' => $user->role?->getLabel() ?? 'Administrator',
+            ],
+            'can_manage_tuition_fees' => $this->canManageTuitionFees($user),
+            'prefill' => function () use ($request): ?array {
+                $fromEnrollmentId = $request->integer('from_enrollment');
+                if ($fromEnrollmentId <= 0) {
+                    return null;
+                }
+
+                $source = StudentEnrollment::query()
+                    ->with(['student.Course', 'studentTuition'])
+                    ->find($fromEnrollmentId);
+
+                if (! $source instanceof StudentEnrollment || ! $source->student instanceof Student) {
+                    return null;
+                }
+
                 $nextSemester = $source->semester === 1 ? 2 : 1;
                 $nextAcademicYear = $source->semester >= 2
                     ? min(5, max(1, (int) ($source->academic_year ?? 1) + 1))
                     : max(1, (int) ($source->academic_year ?? 1));
-                $prefill = [
+
+                return [
                     'source_enrollment_id' => $source->id,
                     'student_id' => $source->student->id,
                     'student_name' => $source->student->full_name,
@@ -3524,18 +3540,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                     'academic_year' => $nextAcademicYear,
                     'discount_id' => $source->studentTuition?->discount_id,
                 ];
-            }
-        }
-
-        return Inertia::render('administrators/enrollments/create', [
-            'user' => [
-                'name' => $user->name,
-                'email' => $user->email,
-                'avatar' => $user->getFilamentAvatarUrl(),
-                'role' => $user->role?->getLabel() ?? 'Administrator',
-            ],
-            'can_manage_tuition_fees' => $this->canManageTuitionFees($user),
-            'prefill' => $prefill,
+            },
             'settings' => [
                 'currentSemester' => $currentSemester,
                 'currentSchoolYear' => $currentSchoolYear,
@@ -3550,9 +3555,9 @@ final class AdministratorEnrollmentManagementController extends Controller
             ],
             'billingConfiguration' => EnrollmentFeeCalculator::Defaults,
             'scheduling_policy' => $settingsService->getSchedulingConfig(),
-            'enrollment_period' => $this->enrollmentPeriodService->describe($currentSchoolYear, $currentSemester),
-            'discounts' => $this->discountOptions(),
-            'courses' => Course::query()
+            'enrollment_period' => fn (): array => $this->enrollmentPeriodService->describe($currentSchoolYear, $currentSemester),
+            'discounts' => fn () => $this->discountOptions(),
+            'courses' => fn () => Course::query()
                 ->orderBy('code')
                 ->get(['id', 'code', 'title'])
                 ->map(fn (Course $course): array => [

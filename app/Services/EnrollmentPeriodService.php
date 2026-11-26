@@ -10,16 +10,18 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
 use RuntimeException;
 
-final readonly class EnrollmentPeriodService
+final class EnrollmentPeriodService
 {
+    private static ?bool $hasEnrollmentPeriodsTable = null;
+
     public function __construct(
-        private GeneralSettingsService $settingsService,
-        private TenantContext $tenantContext,
+        private readonly GeneralSettingsService $settingsService,
+        private readonly TenantContext $tenantContext,
     ) {}
 
     public function currentPeriod(?string $schoolYear = null, ?int $semester = null): ?EnrollmentPeriod
     {
-        if (! Schema::hasTable('enrollment_periods')) {
+        if (! $this->hasEnrollmentPeriodsTable()) {
             return null;
         }
 
@@ -309,5 +311,20 @@ final readonly class EnrollmentPeriodService
         }
 
         return $status;
+    }
+
+    private function hasEnrollmentPeriodsTable(): bool
+    {
+        if (self::$hasEnrollmentPeriodsTable === true) {
+            return true;
+        }
+
+        if (Schema::hasTable('enrollment_periods')) {
+            self::$hasEnrollmentPeriodsTable = true;
+
+            return true;
+        }
+
+        return false;
     }
 }

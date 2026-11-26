@@ -8,7 +8,7 @@ use App\Dashboards\Contracts\Dashboard;
 use App\Enums\UserRole;
 use App\Models\User;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
-use Spatie\Permission\Models\Role as SpatieRole;
+use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /**
@@ -83,6 +83,10 @@ final class DashboardRegistry
      */
     public function visibleFor(User $user): array
     {
+        if ($this->isSystemAdmin($user)) {
+            return $this->all();
+        }
+
         $permissions = $this->permissionsFor($user);
 
         return array_values(array_filter(
@@ -205,17 +209,26 @@ final class DashboardRegistry
     public function permissionsFor(User $user): array
     {
         try {
-            $direct = $user->getDirectPermissions()->pluck('name')->all();
+            $permissions = $user->getAllPermissionNames();
         } catch (Throwable) {
-            $direct = [];
+            $permissions = [];
         }
 
-        $byRole = SpatieRole::query()
-            ->where('name', $user->role?->value)
-            ->with('permissions')
-            ->first()?->permissions->pluck('name')->all() ?? [];
+        if ($permissions !== [] || $user->role === null || $user->roles->isNotEmpty()) {
+            return $permissions;
+        }
 
-        return array_values(array_unique(array_merge($direct, $byRole)));
+        try {
+            return DB::table('roles')
+                ->join('role_has_permissions', 'roles.id', '=', 'role_has_permissions.role_id')
+                ->join('permissions', 'permissions.id', '=', 'role_has_permissions.permission_id')
+                ->where('roles.name', $user->role->value)
+                ->distinct()
+                ->pluck('permissions.name')
+                ->all();
+        } catch (Throwable) {
+            return [];
+        }
     }
 
     /**

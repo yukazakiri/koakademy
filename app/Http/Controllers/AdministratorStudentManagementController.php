@@ -35,6 +35,7 @@ use App\Models\StudentTuition;
 use App\Models\Subject;
 use App\Models\SubjectEnrollment;
 use App\Models\User;
+use App\Notifications\PortalAccountWelcomeNotification;
 use App\Notifications\StatementOfAccountAdjustedNotification;
 use App\Services\BulkActivityLogger;
 use App\Services\CurriculumCapabilityResolver;
@@ -1060,8 +1061,8 @@ final class AdministratorStudentManagementController extends Controller
     public function create(CurriculumCapabilityResolver $capabilityResolver): Response
     {
         return Inertia::render('administrators/students/create', [
-            'user' => $this->getUserProps(),
-            'options' => $this->getFormOptions($capabilityResolver),
+            'user' => fn (): array => $this->getUserProps(),
+            'options' => fn (): array => $this->getFormOptions($capabilityResolver, null, false),
         ]);
     }
 
@@ -1322,41 +1323,66 @@ final class AdministratorStudentManagementController extends Controller
 
     public function edit(Student $student, CurriculumCapabilityResolver $capabilityResolver): Response
     {
-        $student->loadMissing([
-            'Course',
-            'shsStrand',
-            'DocumentLocation',
-            'user:id,name,email,email_verified_at,suspended_at',
-            'studentContactsInfo',
-            'studentParentInfo',
-            'studentEducationInfo',
-            'personalInfo',
-            'subjectEnrolledCurrent.subject',
-        ]);
+        $relationsLoaded = false;
+        $ensureStudentLoaded = function () use ($student, &$relationsLoaded): void {
+            if ($relationsLoaded) {
+                return;
+            }
 
-        $portalUser = $student->user;
-        if (! $portalUser && filled($student->email)) {
-            $portalUser = User::query()
-                ->whereRaw('LOWER(email) = ?', [mb_strtolower(mb_trim((string) $student->email))])
-                ->first(['id', 'name', 'email', 'email_verified_at', 'suspended_at']);
-        }
+            $student->loadMissing([
+                'Course',
+                'shsStrand',
+                'DocumentLocation',
+                'user:id,name,email,email_verified_at,suspended_at',
+                'studentContactsInfo',
+                'studentParentInfo',
+                'studentEducationInfo',
+                'personalInfo',
+                'subjectEnrolledCurrent.subject',
+            ]);
+
+            $relationsLoaded = true;
+        };
 
         return Inertia::render('administrators/students/edit', [
-            'user' => $this->getUserProps(),
-            'student' => $student,
-            'portal_account' => $portalUser ? [
-                'id' => $portalUser->id,
-                'name' => $portalUser->name,
-                'email' => $portalUser->email,
-                'is_linked' => (int) $student->user_id === (int) $portalUser->id,
-                'email_verified' => $portalUser->email_verified_at !== null,
-                'suspended' => $portalUser->suspended_at !== null,
-            ] : null,
-            'student_assets' => [
-                'picture_1x1_url' => $student->DocumentLocation?->toResolvedDocumentArray($student)['picture_1x1'] ?? null,
-                'signature_url' => $this->resolveStudentSignatureUrl($student),
-            ],
-            'current_enrollments' => $student->subjectEnrolledCurrent()->with(['subject', 'class'])->get()->map(function ($enrollment): ?array {
+            'user' => fn (): array => $this->getUserProps(),
+            'student' => function () use ($student, $ensureStudentLoaded): Student {
+                $ensureStudentLoaded();
+
+                return $student;
+            },
+            'portal_account' => function () use ($student, $ensureStudentLoaded): ?array {
+                $ensureStudentLoaded();
+
+                $portalUser = $student->user;
+                if (! $portalUser && filled($student->email)) {
+                    $portalUser = User::query()
+                        ->whereRaw('LOWER(email) = ?', [mb_strtolower(mb_trim((string) $student->email))])
+                        ->first(['id', 'name', 'email', 'email_verified_at', 'suspended_at']);
+                }
+
+                if (! $portalUser) {
+                    return null;
+                }
+
+                return [
+                    'id' => $portalUser->id,
+                    'name' => $portalUser->name,
+                    'email' => $portalUser->email,
+                    'is_linked' => (int) $student->user_id === (int) $portalUser->id,
+                    'email_verified' => $portalUser->email_verified_at !== null,
+                    'suspended' => $portalUser->suspended_at !== null,
+                ];
+            },
+            'student_assets' => function () use ($student, $ensureStudentLoaded): array {
+                $ensureStudentLoaded();
+
+                return [
+                    'picture_1x1_url' => $student->DocumentLocation?->toResolvedDocumentArray($student)['picture_1x1'] ?? null,
+                    'signature_url' => $this->resolveStudentSignatureUrl($student),
+                ];
+            },
+            'current_enrollments' => fn () => $student->subjectEnrolledCurrent()->with(['subject', 'class'])->get()->map(function ($enrollment): ?array {
                 // Handle null subject
                 if (! $enrollment->subject) {
                     return null;
@@ -1371,8 +1397,8 @@ final class AdministratorStudentManagementController extends Controller
                     ],
                 ];
             })->filter()->values(),
-            'current_classes' => $student->getCurrentClasses(),
-            'options' => $this->getFormOptions($capabilityResolver, $student),
+            'current_classes' => fn () => $student->getCurrentClasses(),
+            'options' => fn (): array => $this->getFormOptions($capabilityResolver, $student, true),
         ]);
     }
 
@@ -2098,7 +2124,13 @@ final class AdministratorStudentManagementController extends Controller
 
         $resetSent = false;
         if ((bool) ($validated['send_reset_link'] ?? false)) {
-            Password::broker()->sendResetLink(['email' => $portalUser->email]);
+            $token = Password::broker()->createToken($portalUser);
+            $portalUser->notify(new PortalAccountWelcomeNotification(
+                token: $token,
+                identifier: filled($student->student_id) ? (string) $student->student_id : null,
+                identifierLabel: 'Student Number',
+                portalLabel: 'Student Portal',
+            ));
             $resetSent = true;
         }
 
@@ -2365,49 +2397,6 @@ final class AdministratorStudentManagementController extends Controller
         }
 
         return back()->with($provisioned > 0 ? 'success' : 'error', $message);
-    }
-
-    /**
-     * Persist optional 1x1 ID photo and signature uploads submitted alongside Student create/edit forms.
-     */
-    private function persistStudentAssets(Request $request, Student $student): void
-    {
-        if ($request->hasFile('picture_1x1')) {
-            /** @var UploadedFile $photo */
-            $photo = $request->file('picture_1x1');
-            $privateDisk = (string) config('filesystems.private_disk', 'private');
-            $path = $photo->store("students/{$student->id}/documents", $privateDisk);
-
-            if (is_string($path) && $path !== '') {
-                $student->loadMissing('DocumentLocation');
-                if (! $student->DocumentLocation) {
-                    $docLocation = DocumentLocation::create(['picture_1x1' => $path]);
-                    $student->forceFill(['document_location_id' => $docLocation->id])->save();
-                } else {
-                    $oldPath = $student->DocumentLocation->picture_1x1;
-                    if (is_string($oldPath) && $oldPath !== '' && ! filter_var($oldPath, FILTER_VALIDATE_URL) && ! str_starts_with($oldPath, '/')) {
-                        foreach (['private', config('filesystems.default'), 'public'] as $disk) {
-                            if (is_string($disk) && Storage::disk($disk)->exists($oldPath)) {
-                                Storage::disk($disk)->delete($oldPath);
-                            }
-                        }
-                    }
-                    $student->DocumentLocation->update(['picture_1x1' => $path]);
-                }
-            }
-        }
-
-        if ($request->hasFile('signature')) {
-            /** @var UploadedFile $signature */
-            $signature = $request->file('signature');
-            $privateDisk = (string) config('filesystems.private_disk', 'private');
-            $newPath = $signature->store("students/{$student->id}/signatures", $privateDisk);
-
-            if (is_string($newPath) && $newPath !== '') {
-                $this->deleteStoredSignature($student->signature_path);
-                $student->forceFill(['signature_path' => $newPath])->save();
-            }
-        }
     }
 
     public function updateStudentId(Request $request, Student $student): RedirectResponse
@@ -3101,6 +3090,49 @@ final class AdministratorStudentManagementController extends Controller
     }
 
     /**
+     * Persist optional 1x1 ID photo and signature uploads submitted alongside Student create/edit forms.
+     */
+    private function persistStudentAssets(Request $request, Student $student): void
+    {
+        if ($request->hasFile('picture_1x1')) {
+            /** @var UploadedFile $photo */
+            $photo = $request->file('picture_1x1');
+            $privateDisk = (string) config('filesystems.private_disk', 'private');
+            $path = $photo->store("students/{$student->id}/documents", $privateDisk);
+
+            if (is_string($path) && $path !== '') {
+                $student->loadMissing('DocumentLocation');
+                if (! $student->DocumentLocation) {
+                    $docLocation = DocumentLocation::create(['picture_1x1' => $path]);
+                    $student->forceFill(['document_location_id' => $docLocation->id])->save();
+                } else {
+                    $oldPath = $student->DocumentLocation->picture_1x1;
+                    if (is_string($oldPath) && $oldPath !== '' && ! filter_var($oldPath, FILTER_VALIDATE_URL) && ! str_starts_with($oldPath, '/')) {
+                        foreach (['private', config('filesystems.default'), 'public'] as $disk) {
+                            if (is_string($disk) && Storage::disk($disk)->exists($oldPath)) {
+                                Storage::disk($disk)->delete($oldPath);
+                            }
+                        }
+                    }
+                    $student->DocumentLocation->update(['picture_1x1' => $path]);
+                }
+            }
+        }
+
+        if ($request->hasFile('signature')) {
+            /** @var UploadedFile $signature */
+            $signature = $request->file('signature');
+            $privateDisk = (string) config('filesystems.private_disk', 'private');
+            $newPath = $signature->store("students/{$student->id}/signatures", $privateDisk);
+
+            if (is_string($newPath) && $newPath !== '') {
+                $this->deleteStoredSignature($student->signature_path);
+                $student->forceFill(['signature_path' => $newPath])->save();
+            }
+        }
+    }
+
+    /**
      * Resolve the current-term enrollment for a student, prioritizing primary key matches
      * and non-trashed active enrollments to prevent collisions with public student numbers.
      */
@@ -3656,7 +3688,7 @@ final class AdministratorStudentManagementController extends Controller
             ->all();
     }
 
-    private function getFormOptions(CurriculumCapabilityResolver $capabilityResolver, ?Student $student = null): array
+    private function getFormOptions(CurriculumCapabilityResolver $capabilityResolver, ?Student $student = null, bool $includeSubjects = true): array
     {
         $configuration = app(\App\Services\StudentConfigurationService::class)->get($student?->school_id);
         $enabledTypes = $configuration['enabled_types'];
@@ -3731,7 +3763,18 @@ final class AdministratorStudentManagementController extends Controller
             'regions' => $this->getPhilippineRegions(),
             'income_modes' => $this->getIncomeModeOptions(),
             'default_income_mode' => (string) config('income_brackets.default_mode', 'annual'),
-            'subjects' => Subject::all(['id', 'code', 'title', 'units'])->map(fn ($s): array => ['value' => $s->id, 'label' => "{$s->code} - {$s->title} ({$s->units} units)"])->all(),
+            'subjects' => $includeSubjects
+                ? Subject::query()
+                    ->select(['id', 'code', 'title', 'units'])
+                    ->orderBy('code')
+                    ->toBase()
+                    ->get()
+                    ->map(fn (object $s): array => [
+                        'value' => (int) $s->id,
+                        'label' => "{$s->code} - {$s->title} ({$s->units} units)",
+                    ])
+                    ->all()
+                : [],
         ];
     }
 

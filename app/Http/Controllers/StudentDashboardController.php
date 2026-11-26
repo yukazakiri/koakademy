@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Features\Toggles\StudentInformationUpdates;
-use App\Models\GeneralSetting;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\User;
@@ -42,7 +41,7 @@ final class StudentDashboardController extends Controller
             ->first();
 
         $generalSettingsService = app(GeneralSettingsService::class);
-        $settings = GeneralSetting::query()->first();
+        $settings = $generalSettingsService->getGlobalSettingsModel();
 
         // Default data structure
         $studentData = [
@@ -226,44 +225,54 @@ final class StudentDashboardController extends Controller
      */
     private function formatSchedule(mixed $class): string
     {
-        // Try to get schedule from relationship first
-        if (method_exists($class, 'Schedule') && $class->Schedule()->exists()) {
-            $schedules = $class->Schedule;
+        // Reuse eager-loaded schedules relationship first to avoid per-class N+1 queries
+        $schedules = null;
 
-            if ($schedules->isNotEmpty()) {
-                // Group by time to combine days (e.g. Mon/Wed 10:00-11:30)
-                $groups = $schedules->groupBy(function ($sched): string {
-                    $start = $sched->start_time instanceof DateTimeInterface ? $sched->start_time->format('H:i') : mb_substr((string) $sched->start_time, 0, 5);
-                    $end = $sched->end_time instanceof DateTimeInterface ? $sched->end_time->format('H:i') : mb_substr((string) $sched->end_time, 0, 5);
-
-                    return "$start-$end";
-                });
-
-                $parts = [];
-                foreach ($groups as $scheds) {
-                    // Collect unique days
-                    $days = $scheds->pluck('day_of_week')
-                        ->map(
-                            // Standardize to 3 letters: Mon, Tue, Wed
-
-                            fn ($day): string => ucfirst(mb_strtolower(mb_substr((string) $day, 0, 3))))
-                        ->unique()
-                        // Sort days: Mon=1, Tue=2, etc. for nice display order
-                        ->sortBy(fn ($day): string => date('N', strtotime((string) $day)))
-                        ->values()
-                        ->all();
-
-                    $dayStr = implode('/', $days);
-
-                    $first = $scheds->first();
-                    $startTime = $first->start_time instanceof DateTimeInterface ? $first->start_time->format('g:i A') : date('g:i A', strtotime((string) $first->start_time));
-                    $endTime = $first->end_time instanceof DateTimeInterface ? $first->end_time->format('g:i A') : date('g:i A', strtotime((string) $first->end_time));
-
-                    $parts[] = "$dayStr $startTime - $endTime";
-                }
-
-                return implode(', ', $parts);
+        if (is_object($class) && method_exists($class, 'relationLoaded')) {
+            if ($class->relationLoaded('schedules')) {
+                $schedules = $class->schedules;
+            } elseif ($class->relationLoaded('Schedule')) {
+                $schedules = $class->Schedule;
+            } elseif (method_exists($class, 'schedules')) {
+                $schedules = $class->schedules;
+            } elseif (method_exists($class, 'Schedule')) {
+                $schedules = $class->Schedule;
             }
+        }
+
+        if ($schedules !== null && $schedules->isNotEmpty()) {
+            // Group by time to combine days (e.g. Mon/Wed 10:00-11:30)
+            $groups = $schedules->groupBy(function ($sched): string {
+                $start = $sched->start_time instanceof DateTimeInterface ? $sched->start_time->format('H:i') : mb_substr((string) $sched->start_time, 0, 5);
+                $end = $sched->end_time instanceof DateTimeInterface ? $sched->end_time->format('H:i') : mb_substr((string) $sched->end_time, 0, 5);
+
+                return "$start-$end";
+            });
+
+            $parts = [];
+            foreach ($groups as $scheds) {
+                // Collect unique days
+                $days = $scheds->pluck('day_of_week')
+                    ->map(
+                        // Standardize to 3 letters: Mon, Tue, Wed
+
+                        fn ($day): string => ucfirst(mb_strtolower(mb_substr((string) $day, 0, 3))))
+                    ->unique()
+                    // Sort days: Mon=1, Tue=2, etc. for nice display order
+                    ->sortBy(fn ($day): string => date('N', strtotime((string) $day)))
+                    ->values()
+                    ->all();
+
+                $dayStr = implode('/', $days);
+
+                $first = $scheds->first();
+                $startTime = $first->start_time instanceof DateTimeInterface ? $first->start_time->format('g:i A') : date('g:i A', strtotime((string) $first->start_time));
+                $endTime = $first->end_time instanceof DateTimeInterface ? $first->end_time->format('g:i A') : date('g:i A', strtotime((string) $first->end_time));
+
+                $parts[] = "$dayStr $startTime - $endTime";
+            }
+
+            return implode(', ', $parts);
         }
 
         // Legacy Fallback

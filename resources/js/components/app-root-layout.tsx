@@ -46,7 +46,7 @@ export default function AppRootLayout({ children }: { children: React.ReactNode 
             {!hideMobileNavigation && user && isFacultyPortalRole(user.role) ? <FacultyBottomNav /> : null}
             {!hideMobileNavigation && user && isStudentPortalRole(user.role) ? <StudentBottomNav /> : null}
             {!hideMobileNavigation && user && isAdministratorPortalRole(user.role) ? <AdminMobileBottomNav /> : null}
-            {user ? <ActiveJobsNotification /> : null}
+            {user && isAdministratorPortalRole(user.role) ? <ActiveJobsNotification /> : null}
             <AppUpdateWatcher />
             <Toaster position="top-right" richColors />
         </OnlinePresenceProvider>

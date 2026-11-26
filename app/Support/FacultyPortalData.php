@@ -12,8 +12,10 @@ use App\Models\Event;
 use App\Models\Faculty;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Modules\Announcement\Services\AnnouncementDataService;
 use Spatie\Activitylog\Models\Activity;
+use Throwable;
 
 final class FacultyPortalData
 {
@@ -62,7 +64,7 @@ final class FacultyPortalData
             return $defaults;
         }
 
-        $classesQuery = $faculty->classes()
+        $classes = $faculty->classes()
             ->currentAcademicPeriod()
             ->with([
                 'subject',
@@ -71,23 +73,24 @@ final class FacultyPortalData
                 'Room',
                 'schedules.room',
             ])
-            ->withCount('class_enrollments');
+            ->withCount('class_enrollments')
+            ->get();
 
-        $activeClassesCount = $classesQuery->clone()->count();
+        $activeClassesCount = $classes->count();
 
-        $facultyClassIds = $classesQuery->clone()->pluck('id');
+        $facultyClassIds = $classes->pluck('id');
 
-        $totalStudentsCount = ClassEnrollment::whereIn(
-            'class_id',
-            $facultyClassIds
-        )
-            ->distinct('student_id')
-            ->count();
+        $totalStudentsCount = $facultyClassIds->isNotEmpty()
+            ? ClassEnrollment::whereIn(
+                'class_id',
+                $facultyClassIds
+            )
+                ->distinct('student_id')
+                ->count()
+            : 0;
 
-        $upcomingClasses = $classesQuery
-            ->clone()
-            ->limit(5)
-            ->get()
+        $upcomingClasses = $classes
+            ->take(5)
             ->map(function ($class): array {
                 $firstSubject = $class->subjects->first();
 
@@ -110,9 +113,7 @@ final class FacultyPortalData
             ->values()
             ->all();
 
-        $weeklyEntriesByDay = $classesQuery
-            ->clone()
-            ->get()
+        $weeklyEntriesByDay = $classes
             ->flatMap(function ($class) {
                 $firstSubject = $class->subjects->first();
 
@@ -174,7 +175,7 @@ final class FacultyPortalData
                     $diff = Carbon::createFromFormat('H:i', $start)->diffInMinutes(Carbon::createFromFormat('H:i', $end), false);
 
                     return $diff > 0 ? (int) $diff : 0;
-                } catch (\Throwable) {
+                } catch (Throwable) {
                     return 0;
                 }
             });
@@ -232,7 +233,7 @@ final class FacultyPortalData
         $announcements = app(AnnouncementDataService::class)->getDashboardItems();
 
         // Get attendance chart data for the dashboard
-        $attendanceChart = self::getAttendanceChartData($classesQuery->clone()->get());
+        $attendanceChart = self::getAttendanceChartData($classes);
 
         // Get calendar events for the dashboard widget
         $calendarEvents = self::getCalendarEvents();
@@ -260,8 +261,20 @@ final class FacultyPortalData
      */
     private static function getRecentActivities($facultyClassIds): array
     {
+        if ($facultyClassIds->isEmpty()) {
+            return [];
+        }
+
         // Query activities related to faculty's classes
         $activities = Activity::query()
+            ->with([
+                'subject' => static function (MorphTo $morphTo): void {
+                    $morphTo->morphWith([
+                        ClassPost::class => ['class'],
+                        ClassEnrollment::class => ['student', 'class'],
+                    ]);
+                },
+            ])
             ->whereIn('log_name', ['classes', 'class_posts', 'class_enrollments'])
             ->where(function ($query) use ($facultyClassIds): void {
                 // Activities on Classes owned by this faculty
@@ -520,6 +533,13 @@ final class FacultyPortalData
     private static function getAttendanceChartData($classes): array
     {
         $classIds = $classes->pluck('id');
+
+        if ($classIds->isEmpty()) {
+            return [
+                'chart_data' => [],
+                'classes' => [],
+            ];
+        }
 
         // Get attendance sessions for the last 3 months (to support all time range filters)
         $threeMonthsAgo = Carbon::now()->subMonths(3)->startOfDay();

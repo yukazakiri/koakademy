@@ -228,6 +228,46 @@ final class StudentHoldService
     }
 
     /**
+     * Enforce blocking add/drop holds before modifying an active enrollment's subject load.
+     */
+    public function assertNoBlockingAddDropHolds(
+        Student $student,
+        ?User $actor = null,
+        bool $overrideHolds = false,
+        ?string $overrideReason = null,
+    ): void {
+        $blocking = $this->blockingAddDropHoldsForStudent((int) $student->id);
+        if ($blocking->isEmpty()) {
+            return;
+        }
+
+        if (! $overrideHolds) {
+            $summary = $blocking
+                ->map(fn (StudentHold $hold): string => sprintf('[%s] %s', $hold->officeLabel(), $hold->title))
+                ->implode('; ');
+
+            throw new RuntimeException(
+                sprintf('Student has %d active hold(s) blocking add/drop changes: %s. Resolve or provide an audited override reason to proceed.', $blocking->count(), $summary),
+            );
+        }
+
+        $cleanReason = mb_trim((string) $overrideReason);
+        if ($cleanReason === '') {
+            throw new RuntimeException('An audited override reason is required when bypassing active add/drop holds.');
+        }
+
+        if (! $actor instanceof User) {
+            throw new RuntimeException('An authenticated administrator is required to override student holds.');
+        }
+
+        DB::transaction(function () use ($blocking, $actor, $cleanReason): void {
+            foreach ($blocking as $hold) {
+                $this->overrideHold($hold, $actor, $cleanReason);
+            }
+        });
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function serializeHold(StudentHold $hold): array

@@ -44,6 +44,9 @@ final readonly class TuitionAdjustmentRecalculationService
                 'total_laboratory' => (float) $existingTuition->total_laboratory,
                 'total_miscelaneous_fees' => (float) $existingTuition->total_miscelaneous_fees,
                 'total_balance' => (float) $existingTuition->total_balance,
+                'discount' => (int) ($existingTuition->discount ?? 0),
+                'discount_id' => $existingTuition->discount_id,
+                'downpayment' => (float) ($existingTuition->downpayment ?? 0),
                 'assessment_adjustment' => $assessmentAdjustment,
                 'needs_finance_review' => $hasDiscrepancy,
             ];

@@ -15,6 +15,7 @@ use App\Enrollment\EnrollmentTransitionEngine;
 use App\Enrollment\EnrollmentWorkflowCoordinator;
 use App\Enums\ApplicantCancellationReason;
 use App\Enums\StudentStatus;
+use App\Enums\UserRole;
 use App\Exceptions\AssessmentExportLimitReached;
 use App\Exports\EnrollmentReportExport;
 use App\Features\DynamicEnrollmentPolicies;
@@ -25,10 +26,12 @@ use App\Http\Requests\Administrators\SaveEnrollmentRequest;
 use App\Jobs\GenerateAssessmentPdfJob;
 use App\Jobs\GenerateEnrollmentReportPreviewPdfJob;
 use App\Jobs\SendClassChangeNotificationJob;
+use App\Models\AdditionalFee;
 use App\Models\ApplicantCancellation;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
 use App\Models\Course;
+use App\Models\EnrollmentClassWaitlist;
 use App\Models\EnrollmentDiscount;
 use App\Models\EnrollmentPolicy;
 use App\Models\EnrollmentRequirement;
@@ -55,6 +58,7 @@ use App\Services\EnrollmentService;
 use App\Services\GeneralSettingsService;
 use App\Services\PdfGenerationService;
 use App\Services\QueueAssessmentExportService;
+use App\Services\StudentChecklistService;
 use App\Services\StudentDirectoryQuery;
 use App\Services\StudentHoldService;
 use App\Services\TenantContext;
@@ -1812,19 +1816,26 @@ final class AdministratorEnrollmentManagementController extends Controller
     /**
      * Show the form for creating a new enrollment.
      */
-    public function edit(StudentEnrollment $enrollment, GeneralSettingsService $settingsService): Response|RedirectResponse
-    {
+    public function edit(
+        StudentEnrollment $enrollment,
+        GeneralSettingsService $settingsService,
+        CurriculumCapabilityResolver $capabilityResolver
+    ): Response|RedirectResponse {
         $user = Auth::user();
 
         if (! $user instanceof User) {
             return redirect('/login');
         }
 
+        abort_unless($this->canManageEnrollment($user, 'update', $enrollment), 403);
+
         $enrollment->load([
             'student.Course',
             'subjectsEnrolled.subject.course',
+            'subjectsEnrolled.class',
             'studentTuition',
             'additionalFees',
+            'latestInvoice',
         ]);
 
         $currentSemester = $settingsService->getCurrentSemester();
@@ -1832,11 +1843,14 @@ final class AdministratorEnrollmentManagementController extends Controller
 
         $subjectsWithClasses = $this->subjectsWithClassesForEnrollment($enrollment);
 
-        // Resolve class_id from class_enrollments when subject_enrollment.class_id is null.
-        // This handles cases where the student was enrolled in classes (ClassEnrollment)
-        // but the subject_enrollment records weren't updated with the class_id.
+        // Resolve class_id from term-matched class_enrollments when subject_enrollment.class_id is null.
         $classEnrollments = ClassEnrollment::query()
             ->where('student_id', $enrollment->student_id)
+            ->where('status', true)
+            ->whereHas('class', function ($query) use ($enrollment): void {
+                $query->where('school_year', $enrollment->school_year)
+                    ->where('semester', $enrollment->semester);
+            })
             ->with('class')
             ->get();
 
@@ -1852,6 +1866,79 @@ final class AdministratorEnrollmentManagementController extends Controller
         }
 
         $tuition = $enrollment->studentTuition;
+        $additionalFeesTotal = (float) $enrollment->additionalFees->sum('amount');
+        $tuitionSummary = $tuition instanceof StudentTuition
+            ? $this->enrollmentBillingService->toSummaryArray($tuition, $additionalFeesTotal)
+            : null;
+        $latestInvoice = $enrollment->latestInvoice;
+        $studentCourse = $enrollment->student?->Course;
+
+        $activeHolds = $this->studentHoldService
+            ->activeHoldsForStudent((int) $enrollment->student_id)
+            ->map(fn ($hold): array => $this->studentHoldService->serializeHold($hold))
+            ->values()
+            ->all();
+
+        $enrollmentPeriod = $this->enrollmentPeriodService->describe(
+            (string) $enrollment->school_year,
+            (int) $enrollment->semester,
+        );
+
+        $waitlists = EnrollmentClassWaitlist::query()
+            ->where('student_enrollment_id', $enrollment->id)
+            ->where('status', 'waiting')
+            ->get()
+            ->map(fn (EnrollmentClassWaitlist $w): array => [
+                'id' => $w->id,
+                'subject_id' => $w->subject_id,
+                'subject_enrollment_id' => $w->subject_enrollment_id,
+                'preferred_class_id' => $w->preferred_class_id,
+                'position' => $w->position,
+                'status' => $w->status,
+                'notes' => $w->notes,
+            ])
+            ->values()
+            ->all();
+
+        $editHistory = Activity::query()
+            ->where('subject_type', StudentEnrollment::class)
+            ->where('subject_id', $enrollment->id)
+            ->with('causer')
+            ->latest('id')
+            ->limit(15)
+            ->get()
+            ->map(fn (Activity $activity): array => [
+                'id' => $activity->id,
+                'event' => $activity->event ?? 'updated',
+                'description' => (string) $activity->description,
+                'causer_name' => $activity->causer?->name ?? 'System',
+                'created_at' => $activity->created_at?->toIso8601String(),
+                'changes' => (function () use ($activity): array {
+                    $props = $activity->properties;
+                    if ($props instanceof Collection && $props->isNotEmpty()) {
+                        return $props->toArray();
+                    }
+                    if (is_array($props) && $props !== []) {
+                        return $props;
+                    }
+                    if (is_array($activity->attribute_changes)) {
+                        return $activity->attribute_changes;
+                    }
+
+                    return is_object($activity->attribute_changes) ? $activity->attribute_changes->toArray() : [];
+                })(),
+            ])
+            ->values()
+            ->all();
+
+        $isTerminalLocked = in_array(mb_strtolower((string) $enrollment->status), ['cancelled', 'rejected'], true)
+            || ($enrollment->terminal_outcome !== null
+                && ! in_array(mb_strtolower((string) $enrollment->terminal_outcome), ['enrolled', 'completed'], true));
+
+        $checklistAnalysis = $enrollment->student instanceof Student && $enrollment->student->course_id
+            ? app(StudentChecklistService::class)->analyze($enrollment->student)
+            : [];
+        $checklistBySubjectId = collect($checklistAnalysis['checklist'] ?? [])->keyBy('id');
 
         return Inertia::render('administrators/enrollments/edit', [
             'user' => [
@@ -1860,6 +1947,18 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'avatar' => $user->getFilamentAvatarUrl(),
                 'role' => $user->role?->getLabel() ?? 'Administrator',
             ],
+            'can_manage_tuition_fees' => $this->canManageTuitionFees($user),
+            'enrollment_period' => $enrollmentPeriod,
+            'active_holds' => $activeHolds,
+            'waitlists' => $waitlists,
+            'edit_history' => $editHistory,
+            'is_terminal_locked' => $isTerminalLocked,
+            'recommended_unit_cap' => 24,
+            'checklist_summary' => isset($checklistAnalysis['academic_summary']) ? [
+                'progress_percentage' => $checklistAnalysis['academic_summary']['progress_percentage'] ?? 0,
+                'failed_retakes_count' => $checklistAnalysis['academic_summary']['failed_subjects_count'] ?? 0,
+                'completed_subjects_count' => $checklistAnalysis['academic_summary']['completed_subjects_count'] ?? 0,
+            ] : null,
             'settings' => [
                 'currentSemester' => $currentSemester,
                 'currentSchoolYear' => $currentSchoolYear,
@@ -1869,6 +1968,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                     '2' => '2nd Year',
                     '3' => '3rd Year',
                     '4' => '4th Year',
+                    '5' => '5th Year',
                 ],
             ],
             'billingConfiguration' => $this->feePolicy->forEnrollment($enrollment),
@@ -1877,40 +1977,90 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'semester' => $enrollment->semester,
                 'academic_year' => $enrollment->academic_year,
                 'school_year' => $enrollment->school_year,
+                'status' => $enrollment->status,
+                'terminal_outcome' => $enrollment->terminal_outcome,
+                'remarks' => $enrollment->remarks,
                 'student' => [
                     'id' => $enrollment->student->id,
+                    'student_id' => $enrollment->student->student_id,
                     'full_name' => $enrollment->student->full_name,
                     'email' => $enrollment->student->email,
                     'course_id' => $enrollment->student->course_id,
-                    'course_code' => $enrollment->student->Course?->code,
+                    'course_code' => $studentCourse?->code,
+                    'course_name' => $studentCourse?->title,
+                    'curriculum_kind' => $studentCourse ? $capabilityResolver->kindForCourse($studentCourse) : null,
+                    'qualification_level' => $studentCourse?->qualification_level,
+                    'duration_hours' => $studentCourse?->duration_hours,
+                    'tesda_program_type' => $studentCourse?->tesda_program_type,
+                    'duration_years' => $studentCourse?->duration_years,
+                    'internship_hours' => $studentCourse?->internship_hours,
+                    'bundled_qualifications' => $studentCourse?->bundled_qualifications,
+                    'scholarship_type' => $enrollment->student->scholarship_type?->value,
+                    'scholarship_label' => $enrollment->student->scholarship_type?->getLabel(),
                     'academic_year' => $enrollment->student->academic_year,
                     'formatted_academic_year' => $enrollment->student->formatted_academic_year,
-                    'miscellaneous_fee' => $enrollment->student->Course?->getMiscellaneousFee() ?? 3500,
+                    'miscellaneous_fee' => $studentCourse?->getMiscellaneousFee() ?? 3500,
                 ],
-                'subjects' => $enrollment->subjectsEnrolled->map(fn ($subjectEnrollment): array => [
-                    'subject_id' => $subjectEnrollment->subject_id,
-                    'subject_code' => $subjectEnrollment->subject?->code ?? '',
-                    'subject_title' => $subjectEnrollment->subject?->title ?? '',
-                    'class_id' => $subjectEnrollment->class_id ?? $subjectClassMap[$subjectEnrollment->subject_id] ?? null,
-                    'is_modular' => (bool) $subjectEnrollment->is_modular,
-                    'exclude_from_tuition' => (bool) $subjectEnrollment->exclude_from_tuition,
-                    'lecture_units' => $subjectEnrollment->enrolled_lecture_units ?? ($subjectEnrollment->subject?->lecture ?? 0),
-                    'laboratory_units' => $subjectEnrollment->enrolled_laboratory_units ?? ($subjectEnrollment->subject?->laboratory ?? 0),
-                    'lecture_fee' => $subjectEnrollment->lecture_fee ?? 0,
-                    'laboratory_fee' => $subjectEnrollment->laboratory_fee ?? 0,
-                    'lec_per_unit' => $subjectEnrollment->subject?->course?->lec_per_unit ?? 0,
-                    'lab_per_unit' => $subjectEnrollment->subject?->course?->lab_per_unit ?? 0,
-                    'has_classes' => $subjectsWithClasses->contains($subjectEnrollment->subject?->code ?? ''),
-                ])->values(),
+                'subjects' => $enrollment->subjectsEnrolled->map(function ($subjectEnrollment) use ($subjectClassMap, $subjectsWithClasses, $checklistBySubjectId): array {
+                    $hasGrades = $subjectEnrollment->grade !== null
+                        || filled($subjectEnrollment->grade_symbol)
+                        || filled($subjectEnrollment->grade_outcome);
+                    $checkItem = $checklistBySubjectId->get($subjectEnrollment->subject_id);
+
+                    return [
+                        'id' => $subjectEnrollment->id,
+                        'subject_id' => $subjectEnrollment->subject_id,
+                        'subject_code' => $subjectEnrollment->subject?->code ?? '',
+                        'subject_title' => $subjectEnrollment->subject?->title ?? '',
+                        'class_id' => $subjectEnrollment->class_id ?? $subjectClassMap[$subjectEnrollment->subject_id] ?? null,
+                        'class_section' => $subjectEnrollment->class?->section ?? $subjectEnrollment->section,
+                        'is_modular' => (bool) $subjectEnrollment->is_modular,
+                        'exclude_from_tuition' => (bool) $subjectEnrollment->exclude_from_tuition,
+                        'lecture_units' => $subjectEnrollment->enrolled_lecture_units ?? ($subjectEnrollment->subject?->lecture ?? 0),
+                        'laboratory_units' => $subjectEnrollment->enrolled_laboratory_units ?? ($subjectEnrollment->subject?->laboratory ?? 0),
+                        'lecture_fee' => $subjectEnrollment->lecture_fee ?? 0,
+                        'laboratory_fee' => $subjectEnrollment->laboratory_fee ?? 0,
+                        'lec_per_unit' => $subjectEnrollment->subject?->course?->lec_per_unit ?? 0,
+                        'lab_per_unit' => $subjectEnrollment->subject?->course?->lab_per_unit ?? 0,
+                        'has_classes' => $subjectsWithClasses->contains($subjectEnrollment->subject?->code ?? ''),
+                        'has_grades' => $hasGrades,
+                        'grade_summary' => $hasGrades
+                            ? ($subjectEnrollment->grade_symbol ?? ($subjectEnrollment->grade !== null ? (string) $subjectEnrollment->grade : $subjectEnrollment->grade_outcome))
+                            : null,
+                        'prerequisite_satisfied' => is_array($checkItem) ? (bool) ($checkItem['prerequisite_satisfied'] ?? true) : true,
+                        'missing_prerequisite' => is_array($checkItem) ? ($checkItem['missing_prerequisite'] ?? null) : null,
+                        'already_passed' => is_array($checkItem) ? (bool) ($checkItem['is_completed'] ?? false) : false,
+                        'is_failed_retake' => is_array($checkItem) ? (($checkItem['status'] ?? null) === 'Failed') : false,
+                    ];
+                })->values(),
                 'tuition' => $tuition ? [
                     'discount' => $tuition->discount,
                     'discount_id' => $tuition->discount_id,
                     'downpayment' => $tuition->downpayment,
                     'miscellaneous_fee' => $tuition->total_miscelaneous_fees,
+                    'overall_tuition' => (float) $tuition->overall_tuition,
+                    'total_tuition' => (float) $tuition->total_tuition,
+                    'total_balance' => (float) ($tuitionSummary['balance_due'] ?? $tuition->total_balance),
+                    'total_paid' => (float) ($tuitionSummary['total_paid'] ?? 0),
+                    'balance_due' => (float) ($tuitionSummary['balance_due'] ?? $tuition->total_balance),
+                    'credit' => (float) ($tuitionSummary['credit'] ?? 0),
+                    'payment_status' => (string) ($tuitionSummary['status'] ?? $tuition->status ?? 'unpaid'),
+                    'active_revision_id' => $tuition->active_revision_id,
+                    'needs_finance_review' => (bool) $tuition->needs_finance_review,
+                    'assessment_adjustment' => (float) ($tuition->assessment_adjustment ?? 0),
+                ] : null,
+                'latest_invoice' => $latestInvoice ? [
+                    'id' => $latestInvoice->id,
+                    'document_number' => $latestInvoice->document_number,
+                    'status' => $latestInvoice->status,
+                    'issued_at' => $latestInvoice->issued_at?->toIso8601String(),
                 ] : null,
                 'additional_fees' => $enrollment->additionalFees->map(fn ($fee): array => [
+                    'id' => $fee->id,
                     'fee_name' => $fee->fee_name,
                     'amount' => $fee->amount,
+                    'is_separate_transaction' => (bool) $fee->is_separate_transaction,
+                    'transaction_number' => $fee->transaction_number,
                 ])->values(),
             ],
             'discounts' => $this->discountOptions(),
@@ -1920,7 +2070,29 @@ final class AdministratorEnrollmentManagementController extends Controller
 
     public function updateEnrollment(SaveEnrollmentRequest $request, StudentEnrollment $enrollment): RedirectResponse
     {
+        $actor = $request->user();
+        abort_unless($actor instanceof User && $this->canManageEnrollment($actor, 'update', $enrollment), 403);
+
         $validated = $request->validated();
+        $canManageTuitionFees = $this->canManageTuitionFees($actor);
+
+        if (! $canManageTuitionFees) {
+            $existingTuition = $enrollment->studentTuition;
+            $validated['discount'] = $existingTuition?->discount ?? 0;
+            $validated['discount_id'] = $existingTuition?->discount_id;
+            $validated['miscellaneous_fee'] = $existingTuition?->total_miscelaneous_fees
+                ?? $enrollment->course?->getMiscellaneousFee()
+                ?? 3500;
+            $validated['downpayment'] = $existingTuition?->downpayment ?? $enrollment->downpayment ?? 0;
+            $validated['additional_fees'] = $enrollment->additionalFees
+                ->map(fn (AdditionalFee $fee): array => [
+                    'id' => $fee->id,
+                    'fee_name' => $fee->fee_name,
+                    'amount' => (float) $fee->amount,
+                ])
+                ->values()
+                ->all();
+        }
 
         $validated = array_merge($validated, $this->resolveDiscountSelection($validated, $enrollment));
 
@@ -1928,35 +2100,168 @@ final class AdministratorEnrollmentManagementController extends Controller
             return back()->with('flash', ['error' => 'Student selection cannot be changed for this enrollment.']);
         }
 
-        try {
-            $this->ensureClassCapacityForSubjects(
-                $validated['subjects'],
-                (int) $validated['student_id'],
-                (bool) ($validated['force_overload'] ?? false)
-            );
+        $isTerminalLocked = in_array(mb_strtolower((string) $enrollment->status), ['cancelled', 'rejected'], true)
+            || ($enrollment->terminal_outcome !== null
+                && ! in_array(mb_strtolower((string) $enrollment->terminal_outcome), ['enrolled', 'completed'], true));
 
+        if ($isTerminalLocked) {
+            return back()->with('flash', ['error' => 'Cancelled or rejected enrollments cannot be edited directly. Restore or undo cancellation first.']);
+        }
+
+        if ((int) $validated['semester'] !== (int) $enrollment->semester) {
+            $duplicateInTargetSemester = StudentEnrollment::query()
+                ->where('student_id', $enrollment->student_id)
+                ->where('school_year', $enrollment->school_year)
+                ->where('semester', (int) $validated['semester'])
+                ->whereKeyNot($enrollment->id)
+                ->exists();
+
+            if ($duplicateInTargetSemester) {
+                return back()->withInput()->with('flash', ['error' => 'Student already has another enrollment for the selected semester.']);
+            }
+        }
+
+        try {
             /** @var array<int, array{subject_code: string, subject_title: string, old_class_id: int|null, new_class_id: int|null, old_section: string, new_section: string}> $classChanges */
             $classChanges = [];
+            /** @var array<int, string> $addedSubjectCodes */
+            $addedSubjectCodes = [];
+            /** @var array<int, string> $removedSubjectCodes */
+            $removedSubjectCodes = [];
+            $previousTuitionTotal = (float) ($enrollment->studentTuition?->overall_tuition ?? 0);
+            $newTuitionTotal = $previousTuitionTotal;
 
-            DB::transaction(function () use ($validated, $enrollment, &$classChanges): void {
+            DB::transaction(function () use (
+                $validated,
+                $enrollment,
+                $actor,
+                $canManageTuitionFees,
+                $previousTuitionTotal,
+                &$classChanges,
+                &$addedSubjectCodes,
+                &$removedSubjectCodes,
+                &$newTuitionTotal
+            ): void {
+                $this->ensureClassCapacityForSubjects(
+                    $validated['subjects'],
+                    (int) $validated['student_id'],
+                    (bool) ($validated['force_overload'] ?? false),
+                    $enrollment,
+                    $actor,
+                );
+
+                /** @var Collection<int|string, SubjectEnrollment> $existingSubjects */
+                $existingSubjects = $enrollment->subjectsEnrolled()->with(['subject', 'class'])->get()->keyBy('subject_id');
+
+                $incomingSubjectIdsPreview = collect($validated['subjects'])
+                    ->pluck('subject_id')
+                    ->map(fn (mixed $value): int => (int) $value)
+                    ->all();
+                $existingSubjectIdsPreview = $existingSubjects->keys()->map(fn (mixed $k): int => (int) $k)->all();
+                $subjectsWereAdded = array_diff($incomingSubjectIdsPreview, $existingSubjectIdsPreview) !== [];
+                $subjectsWereRemoved = array_diff($existingSubjectIdsPreview, $incomingSubjectIdsPreview) !== [];
+
+                if ($subjectsWereAdded || $subjectsWereRemoved) {
+                    $this->enrollmentPeriodService->assertAddDropAllowed(
+                        overrideWindow: (bool) ($validated['override_window'] ?? false),
+                        schoolYear: (string) $enrollment->school_year,
+                        semester: (int) $validated['semester'],
+                    );
+
+                    if ($enrollment->student instanceof Student) {
+                        $this->studentHoldService->assertNoBlockingAddDropHolds(
+                            student: $enrollment->student,
+                            actor: $actor,
+                            overrideHolds: (bool) ($validated['override_holds'] ?? false),
+                            overrideReason: isset($validated['override_holds_reason']) ? (string) $validated['override_holds_reason'] : null,
+                        );
+                    }
+                }
+
                 $enrollment->update([
                     'semester' => $validated['semester'],
                     'academic_year' => $validated['academic_year'],
                     'downpayment' => $validated['downpayment'] ?? 0,
+                    'remarks' => array_key_exists('remarks', $validated) ? $validated['remarks'] : $enrollment->remarks,
                 ]);
 
-                /** @var Collection<int, array{subject_id: int|string, class_id?: int|string|null, is_modular?: bool, exclude_from_tuition?: bool, lecture_fee: int|float|string, laboratory_fee: int|float|string, enrolled_lecture_units: int|string, enrolled_laboratory_units: int|string}> $incomingSubjects */
-                $incomingSubjects = collect($validated['subjects']);
-                /** @var Collection<int|string, SubjectEnrollment> $existingSubjects */
-                $existingSubjects = $enrollment->subjectsEnrolled()->get()->keyBy('subject_id');
+                $feeConfig = $this->feePolicy->forEnrollment($enrollment);
+
+                $normalizedSubjects = $this->resolveSubjectFeesForPersistence(
+                    $validated['subjects'],
+                    $feeConfig,
+                    $canManageTuitionFees,
+                );
+                if (! $canManageTuitionFees) {
+                    $normalizedSubjects = array_map(
+                        static function (array $subjectData) use ($existingSubjects): array {
+                            $existing = $existingSubjects->get((int) $subjectData['subject_id']);
+
+                            return [
+                                ...$subjectData,
+                                'exclude_from_tuition' => (bool) ($existing?->exclude_from_tuition ?? false),
+                            ];
+                        },
+                        $normalizedSubjects,
+                    );
+                }
+
+                /** @var Collection<int, array<string, mixed>> $incomingSubjects */
+                $incomingSubjects = collect($normalizedSubjects);
+
+                $incomingSubjectIds = $incomingSubjects
+                    ->pluck('subject_id')
+                    ->map(fn (mixed $value): int => (int) $value)
+                    ->all();
+
+                $removedSubjects = $existingSubjects->filter(
+                    fn (SubjectEnrollment $subject): bool => ! in_array((int) $subject->subject_id, $incomingSubjectIds, true)
+                );
+
+                $gradedRemovals = $removedSubjects->filter(
+                    fn (SubjectEnrollment $subject): bool => $subject->grade !== null
+                        || filled($subject->grade_symbol)
+                        || filled($subject->grade_outcome)
+                );
+
+                if ($gradedRemovals->isNotEmpty() && ! (bool) ($validated['confirm_grade_loss'] ?? false)) {
+                    $codes = $gradedRemovals
+                        ->map(fn (SubjectEnrollment $subject): string => (string) ($subject->subject?->code ?? "#{$subject->subject_id}"))
+                        ->implode(', ');
+
+                    throw new Exception("Cannot remove graded subject(s) [{$codes}] without explicit grade-loss confirmation.");
+                }
+
+                $classIdsToLoad = collect()
+                    ->merge($incomingSubjects->pluck('class_id')->filter())
+                    ->merge($existingSubjects->pluck('class_id')->filter())
+                    ->map(fn (mixed $id): int => (int) $id)
+                    ->unique()
+                    ->values();
+                $classesById = $classIdsToLoad->isNotEmpty()
+                    ? Classes::query()->whereIn('id', $classIdsToLoad)->get()->keyBy('id')
+                    : collect();
+
+                $addedSubjectModels = Subject::query()
+                    ->whereIn('id', array_values(array_diff($incomingSubjectIds, $existingSubjectIdsPreview)))
+                    ->get()
+                    ->keyBy('id');
 
                 foreach ($incomingSubjects as $subjectData) {
-                    $subjectId = $subjectData['subject_id'];
-                    $incomingClassId = isset($subjectData['class_id']) ? (int) $subjectData['class_id'] : null;
+                    $subjectId = (int) $subjectData['subject_id'];
+                    $incomingClassId = isset($subjectData['class_id']) && $subjectData['class_id'] !== '' ? (int) $subjectData['class_id'] : null;
+                    $incomingClass = $incomingClassId ? $classesById->get($incomingClassId) : null;
+                    $existingSubject = $existingSubjects->get($subjectId);
+
+                    $excludeFromTuition = $canManageTuitionFees
+                        ? (bool) ($subjectData['exclude_from_tuition'] ?? false)
+                        : (bool) ($existingSubject?->exclude_from_tuition ?? false);
+
                     $payload = [
                         'class_id' => $incomingClassId,
-                        'is_modular' => $subjectData['is_modular'] ?? false,
-                        'exclude_from_tuition' => $subjectData['exclude_from_tuition'] ?? false,
+                        'section' => $incomingClass instanceof Classes ? $incomingClass->section : null,
+                        'is_modular' => (bool) ($subjectData['is_modular'] ?? false),
+                        'exclude_from_tuition' => $excludeFromTuition,
                         'lecture_fee' => $subjectData['lecture_fee'],
                         'laboratory_fee' => $subjectData['laboratory_fee'],
                         'enrolled_lecture_units' => $subjectData['enrolled_lecture_units'],
@@ -1966,14 +2271,10 @@ final class AdministratorEnrollmentManagementController extends Controller
                         'semester' => $validated['semester'],
                     ];
 
-                    if ($existingSubjects->has($subjectId)) {
-                        $existingSubject = $existingSubjects->get($subjectId);
-                        if (! $existingSubject instanceof SubjectEnrollment) {
-                            continue;
-                        }
-                        $previousClassId = $existingSubject->class_id;
+                    if ($existingSubject instanceof SubjectEnrollment) {
+                        $previousClassId = $existingSubject->class_id ? (int) $existingSubject->class_id : null;
+                        $previousClass = $previousClassId ? $classesById->get($previousClassId) : null;
 
-                        // Track class change for notification
                         if ($previousClassId !== $incomingClassId) {
                             $subjectModel = $existingSubject->subject;
                             $classChanges[] = [
@@ -1981,12 +2282,18 @@ final class AdministratorEnrollmentManagementController extends Controller
                                 'subject_title' => $subjectModel?->title ?? '',
                                 'old_class_id' => $previousClassId,
                                 'new_class_id' => $incomingClassId,
-                                'old_section' => '',
-                                'new_section' => '',
+                                'old_section' => (string) ($previousClass instanceof Classes ? $previousClass->section : ($existingSubject->section ?? '')),
+                                'new_section' => (string) ($incomingClass instanceof Classes ? $incomingClass->section : ''),
                             ];
                         }
 
-                        $existingSubject->update($payload);
+                        // Save quietly when class_id changes so SubjectEnrollment's model hook does not double-mutate ClassEnrollment.
+                        $existingSubject->fill($payload);
+                        if ($previousClassId !== $incomingClassId) {
+                            $existingSubject->saveQuietly();
+                        } else {
+                            $existingSubject->save();
+                        }
 
                         if ($previousClassId && $previousClassId !== $incomingClassId) {
                             ClassEnrollment::query()
@@ -2009,12 +2316,37 @@ final class AdministratorEnrollmentManagementController extends Controller
 
                             $classEnrollment->status = true;
                             $classEnrollment->save();
+
+                            // Auto-promote any waiting waitlist entries for this subject now that a section is assigned.
+                            EnrollmentClassWaitlist::query()
+                                ->where('student_enrollment_id', $enrollment->id)
+                                ->where('subject_id', $subjectId)
+                                ->where('status', 'waiting')
+                                ->update([
+                                    'status' => 'promoted',
+                                    'promoted_by' => $actor->id,
+                                    'promoted_class_id' => $incomingClassId,
+                                    'promoted_at' => now(),
+                                ]);
                         }
                     } else {
                         $enrollment->subjectsEnrolled()->create(array_merge($payload, [
                             'subject_id' => $subjectId,
                             'student_id' => $enrollment->student_id,
                         ]));
+
+                        $addedModel = $addedSubjectModels->get($subjectId);
+                        if ($addedModel instanceof Subject) {
+                            $addedSubjectCodes[] = (string) $addedModel->code;
+                            $classChanges[] = [
+                                'subject_code' => (string) $addedModel->code,
+                                'subject_title' => (string) $addedModel->title,
+                                'old_class_id' => null,
+                                'new_class_id' => $incomingClassId,
+                                'old_section' => 'Not enrolled',
+                                'new_section' => (string) ($incomingClass instanceof Classes ? $incomingClass->section : 'Unassigned'),
+                            ];
+                        }
 
                         if ($incomingClassId) {
                             $classEnrollment = ClassEnrollment::query()
@@ -2034,15 +2366,19 @@ final class AdministratorEnrollmentManagementController extends Controller
                     }
                 }
 
-                // Delete subject enrollments that are no longer in the incoming list
-                // Note: We filter manually because Eloquent Collection's except() doesn't work correctly with keyBy()
-                $incomingSubjectIds = $incomingSubjects
-                    ->pluck('subject_id')
-                    ->map(fn (mixed $value, int|string $key): int => (int) $value)
-                    ->all();
-                $existingSubjects->filter(
-                    fn (SubjectEnrollment $subject): bool => ! in_array((int) $subject->subject_id, $incomingSubjectIds, true)
-                )->each(function (SubjectEnrollment $subject) use ($enrollment): void {
+                $removedSubjects->each(function (SubjectEnrollment $subject) use ($enrollment, &$removedSubjectCodes, &$classChanges): void {
+                    if ($subject->subject?->code) {
+                        $removedSubjectCodes[] = (string) $subject->subject->code;
+                        $classChanges[] = [
+                            'subject_code' => (string) $subject->subject->code,
+                            'subject_title' => (string) ($subject->subject->title ?? ''),
+                            'old_class_id' => $subject->class_id ? (int) $subject->class_id : null,
+                            'new_class_id' => null,
+                            'old_section' => (string) ($subject->class?->section ?? $subject->section ?? 'Unassigned'),
+                            'new_section' => 'Removed',
+                        ];
+                    }
+
                     if ($subject->class_id) {
                         ClassEnrollment::query()
                             ->where('student_id', $enrollment->student_id)
@@ -2050,20 +2386,24 @@ final class AdministratorEnrollmentManagementController extends Controller
                             ->delete();
                     }
 
-                    $subject->delete();
+                    EnrollmentClassWaitlist::query()
+                        ->where('student_enrollment_id', $enrollment->id)
+                        ->where('subject_id', $subject->subject_id)
+                        ->where('status', 'waiting')
+                        ->update(['status' => 'cancelled']);
+
+                    $subject->deleteQuietly();
                 });
 
-                $enrollment->additionalFees()->delete();
-                foreach ($validated['additional_fees'] ?? [] as $fee) {
-                    $enrollment->additionalFees()->create([
-                        'fee_name' => $fee['fee_name'],
-                        'amount' => $fee['amount'],
-                    ]);
-                }
+                // Reconcile additional fees non-destructively, protecting receipted / separate-transaction fees.
+                $reconciledFees = $this->reconcileAdditionalFees(
+                    $enrollment,
+                    $validated['additional_fees'] ?? [],
+                );
 
                 $this->updateEnrollmentTuition(
                     $enrollment,
-                    $validated['subjects'],
+                    $normalizedSubjects,
                     $validated['discount'],
                     $validated['discount_id'],
                     (float) ($validated['miscellaneous_fee']
@@ -2071,23 +2411,78 @@ final class AdministratorEnrollmentManagementController extends Controller
                         ?? $enrollment->course?->getMiscellaneousFee()
                         ?? 3500),
                     (float) ($validated['downpayment'] ?? 0),
-                    $validated['additional_fees'] ?? []
+                    $reconciledFees
                 );
+
+                $newTuitionTotal = (float) ($enrollment->studentTuition()->value('overall_tuition') ?? $previousTuitionTotal);
+
+                // Persist structured revision diff audit entry so change_reason and deltas are never lost.
+                $feeDelta = round($newTuitionTotal - $previousTuitionTotal, 2);
+                $summaryParts = [];
+                if ($addedSubjectCodes !== []) {
+                    $summaryParts[] = 'Added '.implode(', ', $addedSubjectCodes);
+                }
+                if ($removedSubjectCodes !== []) {
+                    $summaryParts[] = 'Removed '.implode(', ', $removedSubjectCodes);
+                }
+                if ($classChanges !== [] && $addedSubjectCodes === [] && $removedSubjectCodes === []) {
+                    $summaryParts[] = sprintf('Updated %d section assignment(s)', count($classChanges));
+                }
+                if (abs($feeDelta) >= 0.01) {
+                    $summaryParts[] = sprintf('Tuition delta %s%.2f', $feeDelta > 0 ? '+' : '', $feeDelta);
+                }
+                $changeReason = mb_trim((string) ($validated['change_reason'] ?? ''));
+                $description = $summaryParts !== []
+                    ? implode(' · ', $summaryParts)
+                    : 'Updated enrollment details';
+                if ($changeReason !== '') {
+                    $description .= " — {$changeReason}";
+                }
+
+                activity('enrollment')
+                    ->performedOn($enrollment)
+                    ->causedBy($actor)
+                    ->withProperties([
+                        'added_subjects' => $addedSubjectCodes,
+                        'removed_subjects' => $removedSubjectCodes,
+                        'section_changes' => $classChanges,
+                        'previous_total' => $previousTuitionTotal,
+                        'new_total' => $newTuitionTotal,
+                        'fee_delta' => $feeDelta,
+                        'change_reason' => $changeReason !== '' ? $changeReason : null,
+                        'notify_student' => (bool) ($validated['notify_student'] ?? false),
+                        'override_window' => (bool) ($validated['override_window'] ?? false),
+                        'override_holds' => (bool) ($validated['override_holds'] ?? false),
+                    ])
+                    ->event('enrollment_edited')
+                    ->log($description);
             });
 
-            // Dispatch class change notification if requested
-            $shouldNotify = $validated['notify_student'] ?? false;
-            if ($shouldNotify && $classChanges !== [] && $enrollment->student?->email) {
+            // Dispatch change notification whenever requested and subjects, sections, or tuition changed
+            $shouldNotify = (bool) ($validated['notify_student'] ?? false);
+            $tuitionChanged = abs($newTuitionTotal - $previousTuitionTotal) >= 0.01;
+            if ($shouldNotify && ($classChanges !== [] || $tuitionChanged) && $enrollment->student?->email) {
+                $notificationItems = $classChanges !== []
+                    ? $classChanges
+                    : [[
+                        'subject_code' => 'ASSESSMENT',
+                        'subject_title' => 'Tuition Assessment Updated',
+                        'old_class_id' => null,
+                        'new_class_id' => null,
+                        'old_section' => number_format($previousTuitionTotal, 2),
+                        'new_section' => number_format($newTuitionTotal, 2),
+                    ]];
+
                 SendClassChangeNotificationJob::dispatch(
                     $enrollment,
-                    $classChanges,
+                    $notificationItems,
                     $validated['change_reason'] ?? ''
                 );
 
                 Log::info('Class change notification job dispatched.', [
                     'enrollment_id' => $enrollment->id,
                     'student_email' => $enrollment->student->email,
-                    'changes_count' => count($classChanges),
+                    'changes_count' => count($notificationItems),
                 ]);
             }
 
@@ -2109,6 +2504,8 @@ final class AdministratorEnrollmentManagementController extends Controller
             return redirect('/login');
         }
 
+        abort_unless($this->canManageEnrollment($user, 'create'), 403);
+
         $currentSemester = $settingsService->getCurrentSemester();
         $currentSchoolYear = $settingsService->getCurrentSchoolYearString();
 
@@ -2119,6 +2516,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'avatar' => $user->getFilamentAvatarUrl(),
                 'role' => $user->role?->getLabel() ?? 'Administrator',
             ],
+            'can_manage_tuition_fees' => $this->canManageTuitionFees($user),
             'settings' => [
                 'currentSemester' => $currentSemester,
                 'currentSchoolYear' => $currentSchoolYear,
@@ -2128,6 +2526,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                     '2' => '2nd Year',
                     '3' => '3rd Year',
                     '4' => '4th Year',
+                    '5' => '5th Year',
                 ],
             ],
             'billingConfiguration' => EnrollmentFeeCalculator::Defaults,
@@ -2142,12 +2541,23 @@ final class AdministratorEnrollmentManagementController extends Controller
      */
     public function store(SaveEnrollmentRequest $request, GeneralSettingsService $settingsService): RedirectResponse
     {
+        $actor = $request->user();
+        abort_unless($actor instanceof User && $this->canManageEnrollment($actor, 'create'), 403);
+
         $validated = $request->validated();
+        $canManageTuitionFees = $this->canManageTuitionFees($actor);
+
+        if (! $canManageTuitionFees) {
+            $validated['discount'] = 0;
+            $validated['discount_id'] = null;
+            $validated['miscellaneous_fee'] = null;
+            $validated['additional_fees'] = [];
+        }
 
         $validated = array_merge($validated, $this->resolveDiscountSelection($validated));
 
         try {
-            $result = $this->withoutEnrollmentSearchSyncing(fn (): array => DB::transaction(function () use ($validated, $settingsService): array {
+            $result = $this->withoutEnrollmentSearchSyncing(fn (): array => DB::transaction(function () use ($validated, $settingsService, $actor, $canManageTuitionFees): array {
                 $student = Student::with('Course')->findOrFail($validated['student_id']);
                 $schoolYear = $settingsService->getCurrentSchoolYearString();
                 $periodStatus = $this->enrollmentPeriodService->assertEnrollmentAllowed(
@@ -2161,7 +2571,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 );
                 $this->studentHoldService->assertNoBlockingEnrollmentHolds(
                     student: $student,
-                    actor: Auth::user() instanceof User ? Auth::user() : null,
+                    actor: $actor,
                     overrideHolds: (bool) ($validated['override_holds'] ?? false),
                     overrideReason: isset($validated['override_holds_reason']) ? (string) $validated['override_holds_reason'] : null,
                 );
@@ -2177,15 +2587,34 @@ final class AdministratorEnrollmentManagementController extends Controller
                     throw new Exception('Student already has an enrollment for this semester.');
                 }
 
+                $forceOverload = (bool) ($validated['force_overload'] ?? false);
                 if (! Feature::active(DynamicEnrollmentPolicies::class)) {
                     $this->ensureClassCapacityForSubjects(
                         $validated['subjects'],
                         $student->id,
-                        (bool) ($validated['force_overload'] ?? false)
+                        $forceOverload,
+                        null,
+                        $actor,
                     );
                 }
 
-                $classAssignments = collect($validated['subjects'])
+                $feeConfig = array_merge(EnrollmentFeeCalculator::Defaults, [
+                    'course_lecture_rate_per_unit' => (float) ($student->Course?->lec_per_unit ?? 0),
+                    'course_laboratory_rate_per_unit' => (float) ($student->Course?->lab_per_unit ?? 0),
+                ]);
+                $normalizedSubjects = $this->resolveSubjectFeesForPersistence(
+                    $validated['subjects'],
+                    $feeConfig,
+                    $canManageTuitionFees,
+                );
+                if (! $canManageTuitionFees) {
+                    $normalizedSubjects = array_map(
+                        static fn (array $subject): array => [...$subject, 'exclude_from_tuition' => false],
+                        $normalizedSubjects,
+                    );
+                }
+
+                $classAssignments = collect($normalizedSubjects)
                     ->filter(fn (array $subject): bool => ! empty($subject['class_id']))
                     ->map(fn (array $subject): array => [
                         'subject_id' => (int) $subject['subject_id'],
@@ -2205,8 +2634,9 @@ final class AdministratorEnrollmentManagementController extends Controller
                         'academic_year' => $validated['academic_year'],
                         'school_year' => $schoolYear,
                         'downpayment' => $validated['downpayment'] ?? 0,
+                        'remarks' => $validated['remarks'] ?? null,
                     ],
-                    subjects: $validated['subjects'],
+                    subjects: $normalizedSubjects,
                     classAssignments: $classAssignments,
                     additionalFees: $validated['additional_fees'] ?? [],
                     billingOverrides: [
@@ -2217,16 +2647,26 @@ final class AdministratorEnrollmentManagementController extends Controller
                     ],
                     channel: 'administrator',
                     idempotencyKey: (string) Str::uuid(),
-                    actor: Auth::user() instanceof User ? Auth::user() : null,
+                    actor: $actor,
+                    facts: [
+                        'force_overload' => $forceOverload,
+                    ],
                 );
                 $enrollment = $this->workflowCoordinator->submit(
                     $submission,
-                    function (StudentEnrollment $legacyEnrollment) use ($validated, $student, $schoolYear, $miscellaneousFee): void {
-                        foreach ($validated['subjects'] as $subjectData) {
-                            $classId = isset($subjectData['class_id']) ? (int) $subjectData['class_id'] : null;
+                    function (StudentEnrollment $legacyEnrollment) use ($validated, $normalizedSubjects, $student, $schoolYear, $miscellaneousFee): void {
+                        $classIds = collect($normalizedSubjects)->pluck('class_id')->filter()->map(fn (mixed $id): int => (int) $id)->unique();
+                        $classesById = $classIds->isNotEmpty()
+                            ? Classes::query()->whereIn('id', $classIds)->get()->keyBy('id')
+                            : collect();
+
+                        foreach ($normalizedSubjects as $subjectData) {
+                            $classId = isset($subjectData['class_id']) && $subjectData['class_id'] !== '' ? (int) $subjectData['class_id'] : null;
+                            $classModel = $classId ? $classesById->get($classId) : null;
                             $legacyEnrollment->subjectsEnrolled()->create([
                                 ...$subjectData,
                                 'class_id' => $classId,
+                                'section' => $classModel instanceof Classes ? $classModel->section : null,
                                 'student_id' => $student->id,
                                 'academic_year' => $validated['academic_year'],
                                 'school_year' => $schoolYear,
@@ -2251,7 +2691,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                             ]);
                         }
                         $tuition = $this->enrollmentService->createStudentTuition($legacyEnrollment, [
-                            'subjectsEnrolled' => $validated['subjects'],
+                            'subjectsEnrolled' => $normalizedSubjects,
                             'discount' => $validated['discount'] ?? 0,
                             'discount_id' => $validated['discount_id'],
                             'miscellaneous_fee' => $miscellaneousFee,
@@ -2355,37 +2795,42 @@ final class AdministratorEnrollmentManagementController extends Controller
             return response()->json([]);
         }
 
-        $schoolYear = $settingsService->getCurrentSchoolYearString();
-        $semester = $settingsService->getCurrentSemester();
+        $schoolYear = filled($request->input('school_year'))
+            ? (string) $request->input('school_year')
+            : $settingsService->getCurrentSchoolYearString();
+        $semester = $request->filled('semester')
+            ? (int) $request->input('semester')
+            : $settingsService->getCurrentSemester();
 
-        // Get subjects with classes for the current period
+        // Get subjects with classes for the target period (batch-loaded, zero N+1)
         $classesWithSubjects = Classes::query()
-            ->where('school_year', $schoolYear)
-            ->where('semester', $semester)
+            ->forAcademicPeriod($schoolYear, $semester)
             ->get();
 
-        $subjectsWithClasses = collect();
-        foreach ($classesWithSubjects as $class) {
-            if (! empty($class->course_codes) && is_array($class->course_codes)) {
-                $courseCodesAsStrings = array_map(strval(...), $class->course_codes);
-                if (! in_array((string) $courseId, $courseCodesAsStrings)) {
-                    continue;
-                }
-            } else {
-                continue;
+        $matchingClasses = $classesWithSubjects->filter(function (Classes $class) use ($courseId): bool {
+            if (empty($class->course_codes) || ! is_array($class->course_codes)) {
+                return false;
             }
 
-            if (! empty($class->subject_ids) && is_array($class->subject_ids)) {
-                $subjects = Subject::query()->whereIn('id', $class->subject_ids)->get();
-                foreach ($subjects as $subject) {
-                    $subjectsWithClasses->push($subject->code);
-                }
-            }
+            return in_array((string) $courseId, array_map(strval(...), $class->course_codes), true);
+        });
 
+        $allClassSubjectIds = $matchingClasses
+            ->flatMap(fn (Classes $class): array => is_array($class->subject_ids) ? $class->subject_ids : [])
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        $subjectsWithClasses = $allClassSubjectIds->isNotEmpty()
+            ? Subject::query()->whereIn('id', $allClassSubjectIds)->pluck('code')
+            : collect();
+
+        foreach ($matchingClasses as $class) {
             if (! empty($class->subject_code)) {
                 $codes = array_map(trim(...), explode(',', (string) $class->subject_code));
                 foreach ($codes as $code) {
-                    if (! empty($code)) {
+                    if ($code !== '') {
                         $subjectsWithClasses->push($code);
                     }
                 }
@@ -2406,25 +2851,60 @@ final class AdministratorEnrollmentManagementController extends Controller
             });
         }
 
+        $targetAcademicYear = $request->filled('academic_year') ? (int) $request->input('academic_year') : null;
+        $checklistBySubjectId = collect();
+        if ($request->filled('student_id')) {
+            $studentForChecklist = Student::with('Course')->find((int) $request->input('student_id'));
+            if ($studentForChecklist instanceof Student && $studentForChecklist->course_id) {
+                $analysis = app(StudentChecklistService::class)->analyze($studentForChecklist);
+                $checklistBySubjectId = collect($analysis['checklist'] ?? [])->keyBy('id');
+                $targetAcademicYear ??= (int) ($studentForChecklist->academic_year ?? 1);
+            }
+        }
+
         $subjects = $subjectsQuery
             ->orderBy('academic_year')
             ->orderBy('semester')
             ->orderBy('code')
             ->limit(100)
             ->get()
-            ->map(fn (Subject $subject): array => [
-                'id' => $subject->id,
-                'code' => $subject->code,
-                'title' => $subject->title,
-                'lecture' => $subject->lecture,
-                'laboratory' => $subject->laboratory,
-                'lec_per_unit' => $subject->course?->lec_per_unit ?? 0,
-                'lab_per_unit' => $subject->course?->lab_per_unit ?? 0,
-                'has_classes' => $subjectsWithClasses->contains($subject->code),
-                'label' => ($subjectsWithClasses->contains($subject->code) ? '⭐ ' : '')
-                    .$subject->code.' - '.$subject->title
-                    .($subjectsWithClasses->contains($subject->code) ? '' : ' (⚠️ No Classes)'),
-            ]);
+            ->map(function (Subject $subject) use ($subjectsWithClasses, $checklistBySubjectId, $targetAcademicYear, $semester): array {
+                $checkItem = $checklistBySubjectId->get($subject->id);
+                $alreadyPassed = is_array($checkItem) ? (bool) ($checkItem['is_completed'] ?? false) : false;
+                $isFailedRetake = is_array($checkItem) ? (($checkItem['status'] ?? null) === 'Failed') : false;
+                $prereqSatisfied = is_array($checkItem) ? (bool) ($checkItem['prerequisite_satisfied'] ?? true) : true;
+                $missingPrereq = is_array($checkItem) ? ($checkItem['missing_prerequisite'] ?? null) : null;
+                $recommended = ! $alreadyPassed
+                    && $prereqSatisfied
+                    && (
+                        $isFailedRetake
+                        || ($targetAcademicYear !== null
+                            && (int) $subject->academic_year === $targetAcademicYear
+                            && (int) $subject->semester === $semester)
+                    );
+
+                return [
+                    'id' => $subject->id,
+                    'code' => $subject->code,
+                    'title' => $subject->title,
+                    'academic_year' => $subject->academic_year,
+                    'semester' => $subject->semester,
+                    'lecture' => $subject->lecture,
+                    'laboratory' => $subject->laboratory,
+                    'lec_per_unit' => $subject->course?->lec_per_unit ?? 0,
+                    'lab_per_unit' => $subject->course?->lab_per_unit ?? 0,
+                    'has_classes' => $subjectsWithClasses->contains($subject->code),
+                    'checklist_status' => is_array($checkItem) ? ($checkItem['status'] ?? null) : null,
+                    'already_passed' => $alreadyPassed,
+                    'is_failed_retake' => $isFailedRetake,
+                    'prerequisite_satisfied' => $prereqSatisfied,
+                    'missing_prerequisite' => $missingPrereq,
+                    'recommended' => $recommended,
+                    'label' => ($subjectsWithClasses->contains($subject->code) ? '⭐ ' : '')
+                        .$subject->code.' - '.$subject->title
+                        .($subjectsWithClasses->contains($subject->code) ? '' : ' (⚠️ No Classes)'),
+                ];
+            });
 
         return response()->json($subjects);
     }
@@ -2448,12 +2928,15 @@ final class AdministratorEnrollmentManagementController extends Controller
             return response()->json([]);
         }
 
-        $schoolYear = $settingsService->getCurrentSchoolYearString();
-        $semester = $settingsService->getCurrentSemester();
+        $schoolYear = filled($request->input('school_year'))
+            ? (string) $request->input('school_year')
+            : $settingsService->getCurrentSchoolYearString();
+        $semester = $request->filled('semester')
+            ? (int) $request->input('semester')
+            : $settingsService->getCurrentSemester();
 
         $classes = Classes::query()
-            ->where('school_year', $schoolYear)
-            ->where('semester', $semester)
+            ->forAcademicPeriod($schoolYear, $semester)
             ->where(function ($query) use ($subject): void {
                 $query->whereJsonContains('subject_ids', $subject->id)
                     ->orWhereJsonContains('subject_ids', (string) $subject->id)
@@ -2464,7 +2947,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                     ->orWhereJsonContains('course_codes', (string) $courseId);
             })
             ->with(['Faculty', 'schedules.room'])
-            ->withCount('class_enrollments')
+            ->withCount(['class_enrollments' => fn ($query) => $query->where('status', true)])
             ->get();
 
         $sections = $classes->map(function ($class): array {
@@ -2581,6 +3064,22 @@ final class AdministratorEnrollmentManagementController extends Controller
         }
 
         $feeConfiguration = $this->studentFeeConfiguration($student, $request, $resolver, $settingsService);
+        $targetSchoolYear = filled($request->input('school_year'))
+            ? (string) $request->input('school_year')
+            : $settingsService->getCurrentSchoolYearString();
+        $targetSemester = $request->filled('semester')
+            ? (int) $request->input('semester')
+            : $settingsService->getCurrentSemester();
+
+        $existingEnrollment = StudentEnrollment::query()
+            ->where('student_id', $student->id)
+            ->forAcademicPeriod($targetSchoolYear, $targetSemester)
+            ->whereNotIn('status', ['Cancelled', 'Rejected'])
+            ->first();
+
+        $checklistAnalysis = $student->course_id
+            ? app(StudentChecklistService::class)->analyze($student)
+            : [];
 
         return response()->json([
             'billing_configuration' => $feeConfiguration,
@@ -2598,9 +3097,23 @@ final class AdministratorEnrollmentManagementController extends Controller
             'duration_years' => $student->Course?->duration_years,
             'internship_hours' => $student->Course?->internship_hours,
             'bundled_qualifications' => $student->Course?->bundled_qualifications,
+            'scholarship_type' => $student->scholarship_type?->value,
+            'scholarship_label' => $student->scholarship_type?->getLabel(),
             'academic_year' => $student->academic_year,
             'formatted_academic_year' => $student->formatted_academic_year,
             'miscellaneous_fee' => $feeConfiguration['miscellaneous_fee_override'] ?? $student->Course?->getMiscellaneousFee() ?? EnrollmentFeeCalculator::Defaults['miscellaneous_fee_fallback'],
+            'recommended_unit_cap' => 24,
+            'existing_enrollment' => $existingEnrollment ? [
+                'id' => $existingEnrollment->id,
+                'status' => $existingEnrollment->status,
+                'school_year' => $existingEnrollment->school_year,
+                'semester' => $existingEnrollment->semester,
+            ] : null,
+            'checklist_summary' => isset($checklistAnalysis['academic_summary']) ? [
+                'progress_percentage' => $checklistAnalysis['academic_summary']['progress_percentage'] ?? 0,
+                'failed_retakes_count' => $checklistAnalysis['academic_summary']['failed_subjects_count'] ?? 0,
+                'completed_subjects_count' => $checklistAnalysis['academic_summary']['completed_subjects_count'] ?? 0,
+            ] : null,
             'active_holds' => $this->studentHoldService
                 ->activeHoldsForStudent((int) $student->id)
                 ->map(fn ($hold): array => $this->studentHoldService->serializeHold($hold))
@@ -4230,12 +4743,13 @@ final class AdministratorEnrollmentManagementController extends Controller
      *
      * @throws Exception
      */
-    private function ensureClassCapacityForSubjects(array $subjects, int $studentId, bool $forceOverload): void
-    {
-        if ($forceOverload) {
-            return;
-        }
-
+    private function ensureClassCapacityForSubjects(
+        array $subjects,
+        int $studentId,
+        bool $forceOverload,
+        ?StudentEnrollment $enrollment = null,
+        ?User $actor = null
+    ): void {
         $classIds = collect($subjects)
             ->pluck('class_id')
             ->filter()
@@ -4249,30 +4763,188 @@ final class AdministratorEnrollmentManagementController extends Controller
 
         $classes = Classes::query()
             ->whereIn('id', $classIds)
+            ->lockForUpdate()
             ->get()
             ->keyBy('id');
 
         foreach ($classIds as $classId) {
             $class = $classes->get($classId);
-            if (! $class instanceof Classes) {
-                continue;
-            }
-            if (! $class->maximum_slots) {
+            if (! $class instanceof Classes || ! $class->maximum_slots) {
                 continue;
             }
 
             $enrolledCount = ClassEnrollment::query()
                 ->where('class_id', $classId)
                 ->where('student_id', '!=', $studentId)
+                ->where('status', true)
                 ->count();
 
             if ($enrolledCount >= $class->maximum_slots) {
-                throw new Exception(sprintf(
-                    'Section %s is full. Confirm overload enrollment to force this student into the class.',
-                    (string) $class->section
-                ));
+                if (! $forceOverload) {
+                    throw new Exception(sprintf(
+                        'Section %s is full. Confirm overload enrollment to force this student into the class.',
+                        (string) $class->section
+                    ));
+                }
+
+                if ($enrollment instanceof StudentEnrollment) {
+                    activity('enrollment')
+                        ->performedOn($enrollment)
+                        ->causedBy($actor)
+                        ->withProperties([
+                            'class_id' => $class->id,
+                            'section' => $class->section,
+                            'enrolled_count' => $enrolledCount,
+                            'maximum_slots' => $class->maximum_slots,
+                        ])
+                        ->event('class_overload_approved')
+                        ->log("Approved class seat overload into Section {$class->section}.");
+                }
             }
         }
+    }
+
+    private function canManageEnrollment(User $user, string $ability, ?StudentEnrollment $enrollment = null): bool
+    {
+        if ($ability === 'update' && $enrollment instanceof StudentEnrollment) {
+            if ($user->can('update', $enrollment) || $user->can('Update:StudentEnrollment')) {
+                return true;
+            }
+        } elseif ($user->can('create', StudentEnrollment::class) || $user->can('Create:StudentEnrollment') || $user->can('Update:StudentEnrollment')) {
+            return true;
+        }
+
+        return in_array($user->role, [
+            UserRole::Developer,
+            UserRole::SuperAdmin,
+            UserRole::Admin,
+            UserRole::Registrar,
+            UserRole::AssistantRegistrar,
+            UserRole::Dean,
+            UserRole::AssociateDean,
+            UserRole::DepartmentHead,
+            UserRole::ProgramChair,
+            UserRole::Cashier,
+            UserRole::AccountingOfficer,
+            UserRole::BursarOfficer,
+        ], true);
+    }
+
+    private function canManageTuitionFees(User $user): bool
+    {
+        if ($user->can('manage_tuition_fees')) {
+            return true;
+        }
+
+        return in_array($user->role, [
+            UserRole::Developer,
+            UserRole::SuperAdmin,
+            UserRole::Admin,
+            UserRole::Registrar,
+            UserRole::AssistantRegistrar,
+            UserRole::Cashier,
+            UserRole::AccountingOfficer,
+            UserRole::BursarOfficer,
+        ], true);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $subjects
+     * @param  array<string, mixed>  $feeConfiguration
+     * @return array<int, array<string, mixed>>
+     */
+    private function resolveSubjectFeesForPersistence(array $subjects, array $feeConfiguration, bool $allowClientOverrides): array
+    {
+        $subjectModels = Subject::query()
+            ->with('course')
+            ->findMany(collect($subjects)->pluck('subject_id'))
+            ->keyBy('id');
+
+        return collect($subjects)->map(function (array $subjectData) use ($subjectModels, $feeConfiguration, $allowClientOverrides): array {
+            $subject = $subjectModels->get((int) $subjectData['subject_id']);
+            if (! $subject instanceof Subject) {
+                return [
+                    ...$subjectData,
+                    'lecture_fee' => (float) ($subjectData['lecture_fee'] ?? 0),
+                    'laboratory_fee' => (float) ($subjectData['laboratory_fee'] ?? 0),
+                ];
+            }
+
+            $courseConfig = [
+                ...$feeConfiguration,
+                'course_lecture_rate_per_unit' => $feeConfiguration['course_lecture_rate_per_unit'] ?? (float) ($subject->course?->lec_per_unit ?? 0),
+                'course_laboratory_rate_per_unit' => $feeConfiguration['course_laboratory_rate_per_unit'] ?? (float) ($subject->course?->lab_per_unit ?? 0),
+            ];
+            $assessedOverrides = $allowClientOverrides ? array_filter([
+                'lecture_fee' => array_key_exists('lecture_fee', $subjectData) && $subjectData['lecture_fee'] !== null ? $subjectData['lecture_fee'] : null,
+                'laboratory_fee' => array_key_exists('laboratory_fee', $subjectData) && $subjectData['laboratory_fee'] !== null ? $subjectData['laboratory_fee'] : null,
+            ], static fn (mixed $v): bool => $v !== null) : [];
+
+            $computed = $this->feeCalculator->subject(
+                $subject->toArray(),
+                $courseConfig,
+                (bool) ($subjectData['is_modular'] ?? false),
+                $assessedOverrides,
+            );
+
+            return [
+                ...$subjectData,
+                'lecture_fee' => $computed['lecture_fee'],
+                'laboratory_fee' => $computed['laboratory_fee'],
+            ];
+        })->values()->all();
+    }
+
+    /**
+     * Reconcile additional fees without destroying receipted / separate-transaction fees.
+     *
+     * @param  array<int, array{id?: int|string|null, fee_name: string, amount: int|float|string}>  $incomingFees
+     * @return array<int, array{id: int, fee_name: string, amount: float}>
+     */
+    private function reconcileAdditionalFees(StudentEnrollment $enrollment, array $incomingFees): array
+    {
+        $existingFees = $enrollment->additionalFees()->get()->keyBy('id');
+        $keptIds = [];
+
+        foreach ($incomingFees as $feeData) {
+            $feeId = isset($feeData['id']) && $feeData['id'] !== '' ? (int) $feeData['id'] : null;
+            $existing = $feeId ? $existingFees->get($feeId) : null;
+
+            if ($existing instanceof AdditionalFee) {
+                $isProtected = (bool) $existing->is_separate_transaction || filled($existing->transaction_number);
+                if (! $isProtected) {
+                    $existing->update([
+                        'fee_name' => (string) $feeData['fee_name'],
+                        'amount' => (float) $feeData['amount'],
+                    ]);
+                }
+                $keptIds[] = $existing->id;
+            } else {
+                $created = $enrollment->additionalFees()->create([
+                    'fee_name' => (string) $feeData['fee_name'],
+                    'amount' => (float) $feeData['amount'],
+                ]);
+                $keptIds[] = $created->id;
+            }
+        }
+
+        // Delete only un-receipted editable fees that were removed; always protect separate-transaction / receipted fees.
+        foreach ($existingFees as $existing) {
+            $isProtected = (bool) $existing->is_separate_transaction || filled($existing->transaction_number);
+            if (! $isProtected && ! in_array($existing->id, $keptIds, true)) {
+                $existing->delete();
+            }
+        }
+
+        return $enrollment->additionalFees()
+            ->get()
+            ->map(fn (AdditionalFee $fee): array => [
+                'id' => $fee->id,
+                'fee_name' => $fee->fee_name,
+                'amount' => (float) $fee->amount,
+            ])
+            ->values()
+            ->all();
     }
 
     private function syncCreatedEnrollmentToSearch(StudentEnrollment $enrollment): void

@@ -284,4 +284,30 @@ final readonly class EnrollmentPeriodService
     {
         return (bool) $this->describe($schoolYear, $semester, $now)['add_drop_open'];
     }
+
+    /**
+     * Enforce that add/drop load modifications are permitted unless explicitly overridden.
+     *
+     * @return array<string, mixed>
+     */
+    public function assertAddDropAllowed(
+        bool $overrideWindow = false,
+        ?string $schoolYear = null,
+        ?int $semester = null,
+        ?Carbon $now = null,
+    ): array {
+        $status = $this->describe($schoolYear, $semester, $now);
+
+        if ($status['enforce_windows'] && ! $status['add_drop_open'] && ! $overrideWindow) {
+            throw new RuntimeException(
+                sprintf(
+                    'Add/Drop period is closed for %s (Sem %d). Enable administrator window override to modify subjects.',
+                    (string) $status['school_year'],
+                    (int) $status['semester'],
+                ),
+            );
+        }
+
+        return $status;
+    }
 }

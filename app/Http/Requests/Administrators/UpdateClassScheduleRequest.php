@@ -36,6 +36,8 @@ final class UpdateClassScheduleRequest extends FormRequest
         return [
             'schedules' => ['present', 'array', new NonOverlappingScheduleBlocksRule],
             'schedule_revision' => ['required', 'string', 'regex:/\A[a-f0-9]{64}\z/'],
+            'schedule_status' => ['sometimes', 'nullable', 'string', Rule::in(['draft', 'published'])],
+            'notify_enrolled' => ['sometimes', 'boolean'],
             'schedules.*' => ['required', 'array'],
             'schedules.*.id' => [
                 'sometimes', 'integer', 'distinct',
@@ -46,6 +48,7 @@ final class UpdateClassScheduleRequest extends FormRequest
             'schedules.*.end_time' => ['required', 'date_format:H:i', 'after:schedules.*.start_time'],
             'schedules.*.delivery_mode' => ['required', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
             'schedules.*.room_id' => ['nullable', 'integer', 'exists:rooms,id'],
+            'schedules.*.component_type' => ['sometimes', 'nullable', 'string', Rule::in(['lecture', 'lab'])],
         ];
     }
 

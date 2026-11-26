@@ -6,6 +6,7 @@ use App\Http\Controllers\AdministratorApplicantBulkActionController;
 use App\Http\Controllers\AdministratorAuditLogController;
 use App\Http\Controllers\AdministratorBatchEnrollmentController;
 use App\Http\Controllers\AdministratorClassManagementController;
+use App\Http\Controllers\AdministratorClassWorkspaceController;
 use App\Http\Controllers\AdministratorCourseSchedulePdfController;
 use App\Http\Controllers\AdministratorCurriculumImportController;
 use App\Http\Controllers\AdministratorCurriculumManagementController;
@@ -402,6 +403,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/classes', [AdministratorClassManagementController::class, 'store'])->name('classes.store');
 
         // Static routes — must come before /classes/{class} to avoid route parameter conflicts
+        Route::post('/classes/bulk-action', [AdministratorClassWorkspaceController::class, 'bulkClassAction'])->name('classes.bulk-action');
         Route::get('/classes/compare', [AdministratorClassManagementController::class, 'compare'])->name('classes.compare');
         Route::get('/classes/options/subjects', [AdministratorClassManagementController::class, 'subjectOptions'])->name('classes.options.subjects');
         Route::get('/classes/options/shs-strands', [AdministratorClassManagementController::class, 'shsStrandOptions'])->name('classes.options.shs-strands');
@@ -415,6 +417,19 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/classes/{class}/copy', [AdministratorClassManagementController::class, 'copy'])->name('classes.copy');
         Route::post('/classes/{class}/restore', [AdministratorClassManagementController::class, 'restore'])->name('classes.restore');
         Route::delete('/classes/{class}/force', [AdministratorClassManagementController::class, 'forceDestroy'])->name('classes.force-destroy');
+
+        // Class workspace (inline roster ledger, scheduling studio, parallel sections & waitlist promotion)
+        Route::get('/classes/{class}/workspace', [AdministratorClassWorkspaceController::class, 'show'])->name('classes.workspace.show');
+        Route::get('/classes/{class}/students/search', [AdministratorClassWorkspaceController::class, 'searchStudents'])->name('classes.workspace.students.search');
+        Route::post('/classes/{class}/enrollments', [AdministratorClassWorkspaceController::class, 'enroll'])->name('classes.workspace.enrollments.store');
+        Route::post('/classes/{class}/enrollments/bulk-move', [AdministratorClassWorkspaceController::class, 'bulkMove'])->name('classes.workspace.enrollments.bulk-move');
+        Route::patch('/classes/{class}/enrollments/{enrollment}', [AdministratorClassWorkspaceController::class, 'updateEnrollment'])->name('classes.workspace.enrollments.update');
+        Route::delete('/classes/{class}/enrollments/{enrollment}', [AdministratorClassWorkspaceController::class, 'dropEnrollment'])->name('classes.workspace.enrollments.destroy');
+        Route::post('/classes/{class}/enrollments/{enrollmentId}/restore', [AdministratorClassWorkspaceController::class, 'restoreEnrollment'])->name('classes.workspace.enrollments.restore');
+        Route::post('/classes/{class}/schedule/impact', [AdministratorClassWorkspaceController::class, 'previewScheduleImpact'])->name('classes.workspace.schedule.impact');
+        Route::patch('/classes/{class}/schedule/workspace', [AdministratorClassWorkspaceController::class, 'updateScheduleWorkspace'])->name('classes.workspace.schedule.update');
+        Route::get('/classes/{class}/parallel-sections', [AdministratorClassWorkspaceController::class, 'parallelSections'])->name('classes.workspace.parallel-sections');
+        Route::post('/classes/{class}/waitlist/promote', [AdministratorClassWorkspaceController::class, 'promoteWaitlist'])->name('classes.workspace.waitlist.promote');
 
         Route::get('/classes/{class}', [AdministratorClassManagementController::class, 'show'])->name('classes.show')->withTrashed();
         Route::get('/classes/{class}/export-student-list', [AdministratorClassManagementController::class, 'exportStudentList'])->name('classes.export-student-list');

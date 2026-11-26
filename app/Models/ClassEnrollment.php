@@ -47,6 +47,32 @@ final class ClassEnrollment extends Model implements RecordsActivity
     use Searchable;
     use SoftDeletes;
 
+    public const string STATUS_ENROLLED = 'enrolled';
+
+    public const string STATUS_DROPPED = 'dropped';
+
+    public const string STATUS_WITHDRAWN = 'withdrawn';
+
+    public const string STATUS_INCOMPLETE = 'incomplete';
+
+    public const string STATUS_AUDIT = 'audit';
+
+    /** @var list<string> */
+    public const array ENROLLMENT_STATUSES = [
+        self::STATUS_ENROLLED,
+        self::STATUS_DROPPED,
+        self::STATUS_WITHDRAWN,
+        self::STATUS_INCOMPLETE,
+        self::STATUS_AUDIT,
+    ];
+
+    /** @var list<string> */
+    public const array ACTIVE_ENROLLMENT_STATUSES = [
+        self::STATUS_ENROLLED,
+        self::STATUS_INCOMPLETE,
+        self::STATUS_AUDIT,
+    ];
+
     #[Override]
     protected $table = 'class_enrollments';
 
@@ -56,6 +82,8 @@ final class ClassEnrollment extends Model implements RecordsActivity
         'student_id',
         'completion_date',
         'status',
+        'enrollment_status',
+        'status_reason',
         'remarks',
         'prelim_grade',
         'midterm_grade',
@@ -73,6 +101,32 @@ final class ClassEnrollment extends Model implements RecordsActivity
         'verification_notes',
         'school_id',
     ];
+
+    public static function statusBooleanFor(string $enrollmentStatus): bool
+    {
+        return in_array($enrollmentStatus, self::ACTIVE_ENROLLMENT_STATUSES, true);
+    }
+
+    public function resolvedEnrollmentStatus(): string
+    {
+        $status = $this->enrollment_status;
+
+        if (is_string($status) && in_array($status, self::ENROLLMENT_STATUSES, true)) {
+            return $status;
+        }
+
+        return $this->status ? self::STATUS_ENROLLED : self::STATUS_DROPPED;
+    }
+
+    public function isGradeProtected(): bool
+    {
+        return (bool) $this->is_grades_verified
+            || (bool) $this->is_grades_finalized
+            || $this->prelim_grade !== null
+            || $this->midterm_grade !== null
+            || $this->finals_grade !== null
+            || $this->total_average !== null;
+    }
 
     /**
      * Get the indexable data array for the model.
@@ -104,6 +158,8 @@ final class ClassEnrollment extends Model implements RecordsActivity
                 'finals_grade',
                 'is_grades_finalized',
                 'status',
+                'enrollment_status',
+                'status_reason',
             ])
             ->logOnlyDirty()
             ->setDescriptionForEvent(fn (string $eventName): string => "Enrollment was {$eventName}")

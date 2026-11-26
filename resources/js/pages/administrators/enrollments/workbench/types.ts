@@ -256,6 +256,16 @@ export interface EnrollmentWorkbenchPageProps {
         availableAcademicYears: Record<string, string>;
     };
     discounts: DiscountOption[];
+    prefill?: {
+        source_enrollment_id: number;
+        student_id: number;
+        student_name: string;
+        student_number: string | number | null;
+        course_code: string | null;
+        semester: number;
+        academic_year: number;
+        discount_id: number | null;
+    } | null;
     enrollment?: EnrollmentEditRecord;
     flash?: {
         success?: string;

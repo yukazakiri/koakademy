@@ -53,11 +53,19 @@ type GuidedPaymentWorkspaceProps = {
     inventoryItems: InventoryItem[];
     paymentMethods: PaymentMethodOption[];
     preference: PaymentWorkspacePreference;
+    prefillStudent?: {
+        id: number;
+        student_id: string | number | null;
+        full_name: string;
+        email: string | null;
+        course_code: string | null;
+        enrollment_id: number | null;
+    } | null;
 };
 
 const feeKey = (fee: FeeType | InventoryItem): fee is FeeType => "label" in fee;
 
-export function GuidedPaymentWorkspace({ currency, inventoryItems, paymentMethods, preference }: GuidedPaymentWorkspaceProps) {
+export function GuidedPaymentWorkspace({ currency, inventoryItems, paymentMethods, preference, prefillStudent }: GuidedPaymentWorkspaceProps) {
     const [studentOpen, setStudentOpen] = useState(false);
     const [studentSearch, setStudentSearch] = useState("");
     const [studentOptions, setStudentOptions] = useState<StudentOption[]>([]);
@@ -137,6 +145,17 @@ export function GuidedPaymentWorkspace({ currency, inventoryItems, paymentMethod
 
     useEffect(() => {
         if (prefilledStudentRef.current || selectedStudent || typeof window === "undefined") return;
+        if (prefillStudent && prefillStudent.id > 0) {
+            prefilledStudentRef.current = true;
+            void selectStudent({
+                id: prefillStudent.id,
+                full_name: prefillStudent.full_name,
+                email: prefillStudent.email ?? "",
+                course_code: prefillStudent.course_code ?? null,
+                formatted_academic_year: null,
+            });
+            return;
+        }
         const studentQuery = new URLSearchParams(window.location.search).get("student");
         if (!studentQuery || studentQuery.length < 2) return;
         prefilledStudentRef.current = true;

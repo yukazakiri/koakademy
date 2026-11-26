@@ -286,6 +286,22 @@ final readonly class EnrollmentWorkflowCoordinator
         );
     }
 
+    public function resetRequirement(
+        EnrollmentRequirement $requirement,
+        User $actor,
+        string $reason,
+        ?string $idempotencyKey = null,
+    ): EnrollmentRequirement {
+        return $this->mutateRequirement(
+            $requirement,
+            $actor,
+            'requirement_reset',
+            $idempotencyKey ?? (string) Str::uuid(),
+            fn (EnrollmentRequirement $locked): EnrollmentRequirement => $this->requirements->reset($locked, $actor, $reason),
+            $reason,
+        );
+    }
+
     private function undoLegacyCancellation(
         StudentEnrollment $enrollment,
         ?User $actor,

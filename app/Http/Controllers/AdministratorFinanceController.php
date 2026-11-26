@@ -331,7 +331,7 @@ final class AdministratorFinanceController extends Controller
         ]);
     }
 
-    public function create(GeneralSettingsService $settingsService): Response|RedirectResponse
+    public function create(Request $request, GeneralSettingsService $settingsService): Response|RedirectResponse
     {
         $this->authorizeFinanceAccess();
 
@@ -339,6 +339,23 @@ final class AdministratorFinanceController extends Controller
 
         if (! $user instanceof User) {
             return redirect('/login');
+        }
+
+        $prefillStudent = null;
+        $studentId = $request->integer('student_id');
+        $enrollmentId = $request->integer('enrollment_id');
+        if ($studentId > 0) {
+            $studentModel = Student::query()->with('Course:id,code,title')->find($studentId);
+            if ($studentModel instanceof Student) {
+                $prefillStudent = [
+                    'id' => $studentModel->id,
+                    'student_id' => $studentModel->student_id,
+                    'full_name' => $studentModel->full_name,
+                    'email' => $studentModel->email,
+                    'course_code' => $studentModel->Course?->code,
+                    'enrollment_id' => $enrollmentId > 0 ? $enrollmentId : null,
+                ];
+            }
         }
 
         $items = InventoryProduct::query()
@@ -360,6 +377,7 @@ final class AdministratorFinanceController extends Controller
                 'email' => $user->email,
                 'role' => $user->role?->getLabel() ?? 'Administrator',
             ],
+            'prefill_student' => $prefillStudent,
             'items' => $items,
             'fee_options' => FinancePaymentChargeCatalog::feeOptions(),
             'currency' => $settingsService->getCurrency(),

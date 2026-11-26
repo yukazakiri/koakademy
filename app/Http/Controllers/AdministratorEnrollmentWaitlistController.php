@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enums\UserRole;
 use App\Models\Classes;
 use App\Models\Course;
 use App\Models\EnrollmentClassWaitlist;
@@ -63,7 +64,7 @@ final class AdministratorEnrollmentWaitlistController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $actor = $request->user();
-        abort_unless($actor instanceof User, 403);
+        abort_unless($actor instanceof User && $this->canManageWaitlists($actor), 403);
 
         $validated = $request->validate([
             'subject_enrollment_id' => ['required', 'integer', 'exists:subject_enrollments,id'],
@@ -87,7 +88,7 @@ final class AdministratorEnrollmentWaitlistController extends Controller
     public function assign(Request $request, SubjectEnrollment $subjectEnrollment): RedirectResponse
     {
         $actor = $request->user();
-        abort_unless($actor instanceof User, 403);
+        abort_unless($actor instanceof User && $this->canManageWaitlists($actor), 403);
 
         $validated = $request->validate([
             'class_id' => ['required', 'integer', 'exists:classes,id'],
@@ -115,7 +116,7 @@ final class AdministratorEnrollmentWaitlistController extends Controller
     public function promote(Request $request, EnrollmentClassWaitlist $waitlist): RedirectResponse
     {
         $actor = $request->user();
-        abort_unless($actor instanceof User, 403);
+        abort_unless($actor instanceof User && $this->canManageWaitlists($actor), 403);
 
         $validated = $request->validate([
             'class_id' => ['nullable', 'integer', 'exists:classes,id'],
@@ -141,7 +142,7 @@ final class AdministratorEnrollmentWaitlistController extends Controller
     public function destroy(EnrollmentClassWaitlist $waitlist): RedirectResponse
     {
         $actor = Auth::user();
-        abort_unless($actor instanceof User, 403);
+        abort_unless($actor instanceof User && $this->canManageWaitlists($actor), 403);
 
         $this->waitlistService->cancelWaitlist($waitlist);
 
@@ -151,7 +152,7 @@ final class AdministratorEnrollmentWaitlistController extends Controller
     public function autoAssign(Request $request): RedirectResponse
     {
         $actor = $request->user();
-        abort_unless($actor instanceof User, 403);
+        abort_unless($actor instanceof User && $this->canManageWaitlists($actor), 403);
 
         $validated = $request->validate([
             'subject_enrollment_ids' => ['nullable', 'array'],
@@ -173,5 +174,27 @@ final class AdministratorEnrollmentWaitlistController extends Controller
                 $summary['skipped_count'] > 0 ? sprintf(', %d skipped (no classes offered)', $summary['skipped_count']) : '',
             ),
         ]);
+    }
+
+    private function canManageWaitlists(User $user): bool
+    {
+        if ($user->can('Update:StudentEnrollment') || $user->hasRole('super_admin')) {
+            return true;
+        }
+
+        return in_array($user->role, [
+            UserRole::Developer,
+            UserRole::SuperAdmin,
+            UserRole::Admin,
+            UserRole::Registrar,
+            UserRole::AssistantRegistrar,
+            UserRole::Dean,
+            UserRole::AssociateDean,
+            UserRole::DepartmentHead,
+            UserRole::ProgramChair,
+            UserRole::Cashier,
+            UserRole::AccountingOfficer,
+            UserRole::BursarOfficer,
+        ], true);
     }
 }

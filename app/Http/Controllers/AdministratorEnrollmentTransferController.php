@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enums\UserRole;
 use App\Models\StudentEnrollment;
 use App\Models\User;
 use App\Services\EnrollmentTransferService;
@@ -21,7 +22,7 @@ final class AdministratorEnrollmentTransferController extends Controller
     public function index(StudentEnrollment $enrollment): JsonResponse
     {
         $user = Auth::user();
-        abort_unless($user instanceof User, 403);
+        abort_unless($user instanceof User && $this->canManageTransfer($user, $enrollment), 403);
 
         return response()->json($this->transferService->options($enrollment));
     }
@@ -29,7 +30,7 @@ final class AdministratorEnrollmentTransferController extends Controller
     public function preview(Request $request, StudentEnrollment $enrollment): JsonResponse
     {
         $user = Auth::user();
-        abort_unless($user instanceof User, 403);
+        abort_unless($user instanceof User && $this->canManageTransfer($user, $enrollment), 403);
 
         $validated = $request->validate([
             'transfer_type' => ['required', 'string', 'in:section_transfer,program_shift'],
@@ -65,7 +66,7 @@ final class AdministratorEnrollmentTransferController extends Controller
     public function transferSection(Request $request, StudentEnrollment $enrollment): JsonResponse
     {
         $actor = $request->user();
-        abort_unless($actor instanceof User, 403);
+        abort_unless($actor instanceof User && $this->canManageTransfer($actor, $enrollment), 403);
 
         $validated = $request->validate([
             'target_section' => ['required', 'string', 'max:80'],
@@ -100,7 +101,7 @@ final class AdministratorEnrollmentTransferController extends Controller
     public function shiftProgram(Request $request, StudentEnrollment $enrollment): JsonResponse
     {
         $actor = $request->user();
-        abort_unless($actor instanceof User, 403);
+        abort_unless($actor instanceof User && $this->canManageTransfer($actor, $enrollment), 403);
 
         $validated = $request->validate([
             'target_course_id' => ['required', 'integer', 'exists:courses,id'],
@@ -108,6 +109,7 @@ final class AdministratorEnrollmentTransferController extends Controller
             'target_section' => ['nullable', 'string', 'max:80'],
             'reconcile_curriculum' => ['boolean'],
             'force_overload' => ['boolean'],
+            'confirm_grade_loss' => ['boolean'],
             'reason' => ['required', 'string', 'min:3', 'max:1000'],
         ]);
 
@@ -121,6 +123,7 @@ final class AdministratorEnrollmentTransferController extends Controller
                 targetSection: isset($validated['target_section']) ? (string) $validated['target_section'] : null,
                 reconcileCurriculum: (bool) ($validated['reconcile_curriculum'] ?? true),
                 forceOverload: (bool) ($validated['force_overload'] ?? false),
+                confirmGradeLoss: (bool) ($validated['confirm_grade_loss'] ?? false),
             );
             $log->load(['fromCourse:id,code,title', 'toCourse:id,code,title', 'performedBy:id,name']);
 
@@ -137,5 +140,27 @@ final class AdministratorEnrollmentTransferController extends Controller
         } catch (RuntimeException $exception) {
             return response()->json(['message' => $exception->getMessage()], 422);
         }
+    }
+
+    private function canManageTransfer(User $user, StudentEnrollment $enrollment): bool
+    {
+        if ($user->can('update', $enrollment) || $user->can('Update:StudentEnrollment')) {
+            return true;
+        }
+
+        return in_array($user->role, [
+            UserRole::Developer,
+            UserRole::SuperAdmin,
+            UserRole::Admin,
+            UserRole::Registrar,
+            UserRole::AssistantRegistrar,
+            UserRole::Dean,
+            UserRole::AssociateDean,
+            UserRole::DepartmentHead,
+            UserRole::ProgramChair,
+            UserRole::Cashier,
+            UserRole::AccountingOfficer,
+            UserRole::BursarOfficer,
+        ], true);
     }
 }

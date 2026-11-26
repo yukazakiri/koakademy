@@ -108,17 +108,40 @@ export default function AdministratorEnrollmentCreate(
     >(null);
     const [unsavedDialogOpen, setUnsavedDialogOpen] = useState(false);
 
-    // Support direct ?student_id=<id> deep links from Applicants / Students pages
+    // Support direct ?student_id=<id> and ?from_enrollment=<id> ("Re-enroll Next Term") deep links
     const preselectedStudentRef = useRef(false);
     const {
         isEdit,
         selectedStudent,
         handleSelectStudent,
+        setSemester,
+        setAcademicYear,
     } = draft;
     useEffect(() => {
         if (preselectedStudentRef.current || isEdit || selectedStudent) {
             return;
         }
+        const prefill = props.prefill;
+        if (prefill && prefill.student_id > 0) {
+            preselectedStudentRef.current = true;
+            setSemester(String(prefill.semester));
+            setAcademicYear(String(prefill.academic_year));
+            void Promise.resolve().then(() =>
+                handleSelectStudent({
+                    id: prefill.student_id,
+                    student_id: String(prefill.student_number ?? ""),
+                    full_name: prefill.student_name,
+                    email: "",
+                    course_id: null,
+                    course_code: prefill.course_code,
+                    academic_year: prefill.academic_year,
+                    formatted_academic_year: "",
+                    label: prefill.student_name,
+                }),
+            );
+            return;
+        }
+
         const rawId = new URLSearchParams(window.location.search).get(
             "student_id",
         );
@@ -140,7 +163,14 @@ export default function AdministratorEnrollmentCreate(
                 label: "",
             }),
         );
-    }, [isEdit, selectedStudent, handleSelectStudent]);
+    }, [
+        isEdit,
+        selectedStudent,
+        handleSelectStudent,
+        props.prefill,
+        setSemester,
+        setAcademicYear,
+    ]);
 
     const hasDuplicateEnrollment = Boolean(
         draft.selectedStudent?.existing_enrollment,

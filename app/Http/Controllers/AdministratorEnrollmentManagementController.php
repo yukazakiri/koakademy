@@ -14,6 +14,8 @@ use App\Enrollment\EnrollmentPolicyResolver;
 use App\Enrollment\EnrollmentTransitionEngine;
 use App\Enrollment\EnrollmentWorkflowCoordinator;
 use App\Enums\ApplicantCancellationReason;
+use App\Enums\PaymentMethod;
+use App\Enums\ScholarshipType;
 use App\Enums\StudentStatus;
 use App\Enums\UserRole;
 use App\Exceptions\AssessmentExportLimitReached;
@@ -33,12 +35,16 @@ use App\Models\Classes;
 use App\Models\Course;
 use App\Models\EnrollmentClassWaitlist;
 use App\Models\EnrollmentDiscount;
+use App\Models\EnrollmentLoadChange;
 use App\Models\EnrollmentPolicy;
 use App\Models\EnrollmentRequirement;
+use App\Models\EnrollmentTransferLog;
 use App\Models\GeneralSetting;
+use App\Models\PaymentAllocation;
 use App\Models\Resource;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
+use App\Models\StudentTransaction;
 use App\Models\StudentTuition;
 use App\Models\Subject;
 use App\Models\SubjectEnrollment;
@@ -52,6 +58,7 @@ use App\Services\AssessmentFormDataService;
 use App\Services\ClassScheduleChangeNotificationService;
 use App\Services\CurriculumCapabilityResolver;
 use App\Services\EnrollmentBillingService;
+use App\Services\EnrollmentLoadChangeService;
 use App\Services\EnrollmentPeriodService;
 use App\Services\EnrollmentPipelineService;
 use App\Services\EnrollmentService;
@@ -79,6 +86,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -1150,41 +1158,89 @@ final class AdministratorEnrollmentManagementController extends Controller
         return back()->with('flash', ['success' => $message]);
     }
 
-    public function show(StudentEnrollment $enrollment): Response
-    {
+    public function show(
+        Request $request,
+        StudentEnrollment $enrollment,
+        GeneralSettingsService $settingsService,
+        CurriculumCapabilityResolver $capabilityResolver,
+        StudentChecklistService $checklistService,
+        EnrollmentLoadChangeService $loadChangeService,
+    ): Response {
+        $user = Auth::user();
+        abort_unless($user instanceof User && $this->canViewEnrollment($user, $enrollment), 403);
+
         $enrollment->load([
-            'student.Course',
-            'student.studentTuition',
+            'student.Course.department',
+            'student.studentContactsInfo',
+            'student.personalInfo',
+            'course.department',
             'subjectsEnrolled.subject',
+            'subjectsEnrolled.class.schedules.room',
+            'subjectsEnrolled.class.Faculty',
             'studentTuition',
             'additionalFees',
             'resources',
             'requirements',
+            'policySnapshot',
+            'workflowEvents',
+            'latestInvoice',
+            'financialDocuments',
         ]);
 
-        // Fetch enrollment transactions directly (eager loading doesn't work well with dynamic constraints)
+        $schedulingPolicy = $settingsService->getSchedulingConfig();
+        $availableSemesters = $settingsService->getAvailableSemesters();
+        $semesterLabel = $availableSemesters[$enrollment->semester] ?? match ((int) $enrollment->semester) {
+            1 => '1st Semester',
+            2 => '2nd Semester',
+            3 => 'Summer',
+            default => "Semester {$enrollment->semester}",
+        };
+
         $enrollmentTransactions = $enrollment->enrollmentTransactions()->with('transaction')->get();
 
-        // Fetch Class Enrollments (Active)
-        $activeClassEnrollments = $enrollment->student->classEnrollments()
-            ->with(['class.subject', 'class.faculty', 'class.schedules.room'])
-            ->where('status', true)
-            ->whereHas('class', function ($query) use ($enrollment): void {
-                $query->where('school_year', $enrollment->school_year)
-                    ->where('semester', $enrollment->semester);
-            })
-            ->get()
-            ->map(fn ($ce): array => [
+        // Active Class Enrollments (eager-loaded with PascalCase Subject/Faculty to prevent N+1)
+        $rawActiveClassEnrollments = $enrollment->student
+            ? $enrollment->student->classEnrollments()
+                ->with(['class.Subject', 'class.Faculty', 'class.schedules.room'])
+                ->where('status', true)
+                ->whereHas('class', function ($query) use ($enrollment): void {
+                    $query->forAcademicPeriod((string) $enrollment->school_year, (int) $enrollment->semester);
+                })
+                ->get()
+            : collect();
+
+        $activeClassEnrollments = $rawActiveClassEnrollments->map(function ($ce) use ($schedulingPolicy): array {
+            $class = $ce->class;
+            $classDeliveryMode = ScheduleDelivery::canonicalize($class->delivery_mode);
+
+            $structuredSchedules = $class->schedules->map(function ($s) use ($classDeliveryMode, $schedulingPolicy): array {
+                $mode = ScheduleDelivery::canonicalize($s->delivery_mode ?? $classDeliveryMode);
+
+                return [
+                    'id' => $s->id,
+                    'day' => $s->day_of_week,
+                    'start_time' => $s->start_time instanceof \Carbon\Carbon ? $s->start_time->format('H:i') : (string) $s->start_time,
+                    'end_time' => $s->end_time instanceof \Carbon\Carbon ? $s->end_time->format('H:i') : (string) $s->end_time,
+                    'room' => ScheduleDelivery::isOnline($mode) ? ScheduleDelivery::shortLabel($mode) : $s->room?->name,
+                    'delivery_mode' => $mode,
+                    'checks_time_conflicts' => ScheduleDelivery::checksStudentCohortConflicts($mode, $schedulingPolicy),
+                ];
+            })->values()->all();
+
+            return [
                 'id' => $ce->id,
                 'class_id' => $ce->class_id,
-                'subject_code' => $ce->class->subject_code,
-                'subject_title' => $ce->class->subject_title,
-                'section' => $ce->class->section,
-                'faculty' => $ce->class->faculty->full_name ?? 'TBA',
-                'schedule' => $ce->class->schedules->map(fn ($s): string => $s->day_of_week.' '.$s->time_range)->implode(', ') ?: 'TBA',
-                'room' => $ce->class->schedules
-                    ->map(function ($s) use ($ce): ?string {
-                        $mode = ScheduleDelivery::canonicalize($s->delivery_mode ?? $ce->class->delivery_mode);
+                'class_url' => route('administrators.classes.show', $ce->class_id, false),
+                'subject_code' => $class->subject_code,
+                'subject_title' => $class->subject_title,
+                'section' => $class->section,
+                'faculty' => $class->Faculty?->full_name ?? 'TBA',
+                'delivery_mode' => $classDeliveryMode,
+                'schedule' => $class->schedules->map(fn ($s): string => $s->day_of_week.' '.$s->time_range)->implode(', ') ?: 'TBA',
+                'schedules' => $structuredSchedules,
+                'room' => $class->schedules
+                    ->map(function ($s) use ($classDeliveryMode): ?string {
+                        $mode = ScheduleDelivery::canonicalize($s->delivery_mode ?? $classDeliveryMode);
 
                         return ScheduleDelivery::isOnline($mode)
                             ? ScheduleDelivery::shortLabel($mode)
@@ -1200,104 +1256,581 @@ final class AdministratorEnrollmentManagementController extends Controller
                     'average' => $ce->total_average,
                 ],
                 'status' => $ce->status,
-            ]);
+            ];
+        })->values();
 
-        // Identify Missing Classes
+        // Academic Checklist / Advising context
+        $checklistBySubjectId = [];
+        $checklistSummary = null;
+        if ($enrollment->student instanceof Student) {
+            try {
+                $analysis = $checklistService->analyze($enrollment->student);
+                $summary = $analysis['academic_summary'] ?? null;
+                if (is_array($summary)) {
+                    $checklistSummary = [
+                        'progress_percentage' => (float) ($summary['progress_percentage'] ?? 0),
+                        'failed_retakes_count' => (int) ($summary['failed_subjects_count'] ?? 0),
+                        'completed_subjects_count' => (int) ($summary['completed_subjects_count'] ?? 0),
+                        'total_subjects_count' => (int) ($summary['total_subjects'] ?? 0),
+                    ];
+                }
+                foreach (($analysis['curriculum_by_year'] ?? []) as $yearGroup) {
+                    foreach (($yearGroup['semesters'] ?? []) as $semGroup) {
+                        foreach (($semGroup['subjects'] ?? []) as $item) {
+                            $sid = (int) ($item['id'] ?? $item['subject_id'] ?? 0);
+                            if ($sid > 0) {
+                                $checklistBySubjectId[$sid] = $item;
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable) {
+                // Non-fatal: continue without checklist enrichment if curriculum metadata is incomplete.
+            }
+        }
+
+        // Map active class enrollments by class_id and subject code for fast subject enrichment
+        $classEnrollmentsByClassId = $activeClassEnrollments->keyBy('class_id');
         $enrolledSubjectCodes = $activeClassEnrollments->pluck('subject_code')
             ->map(fn ($code): array => array_map(trim(...), explode(',', (string) $code)))
             ->flatten()
-            ->toArray();
-        $missingClasses = collect();
+            ->map(fn (string $code): string => mb_strtolower($code))
+            ->filter()
+            ->unique()
+            ->all();
 
-        foreach ($enrollment->subjectsEnrolled as $subjectEnrollment) {
+        // Batch-load candidate classes once for all missing subjects (eliminates N+1)
+        $unmatchedSubjectEnrollments = $enrollment->subjectsEnrolled->filter(function (SubjectEnrollment $se) use ($enrolledSubjectCodes): bool {
+            $subject = $se->subject;
+            if (! $subject instanceof Subject) {
+                return false;
+            }
+
+            return ! in_array(mb_strtolower(mb_trim((string) $subject->code)), $enrolledSubjectCodes, true);
+        });
+
+        $termCandidateClasses = $unmatchedSubjectEnrollments->isNotEmpty()
+            ? Classes::query()
+                ->forAcademicPeriod((string) $enrollment->school_year, (int) $enrollment->semester)
+                ->with(['Subject', 'Faculty', 'schedules.room'])
+                ->withCount(['class_enrollments' => fn ($query) => $query->where('status', true)])
+                ->get()
+            : collect();
+
+        $missingClasses = collect();
+        foreach ($unmatchedSubjectEnrollments as $subjectEnrollment) {
             $subject = $subjectEnrollment->subject;
-            if (! $subject) {
+            if (! $subject instanceof Subject) {
                 continue;
             }
 
-            if (! in_array($subject->code, $enrolledSubjectCodes)) {
-                $availableClasses = Classes::query()
-                    ->where('school_year', $enrollment->school_year)
-                    ->where('semester', $enrollment->semester)
-                    ->whereJsonContains('course_codes', $subject->course_id)
-                    ->where(function ($query) use ($subject): void {
-                        $query->whereJsonContains('subject_ids', $subject->id)
-                            ->orWhereRaw('LOWER(TRIM(subject_code)) = LOWER(TRIM(?))', [$subject->code])
-                            ->orWhereRaw('LOWER(subject_code) LIKE LOWER(?)', ['%'.$subject->code.'%']);
-                    })
-                    ->withCount('class_enrollments') // Load count
-                    ->get()
-                    ->map(fn ($class): array => [
-                        'class_id' => $class->id,
-                        'subject_code' => $subject->code,
-                        'subject_title' => $class->subject_title,
-                        'section' => $class->section,
-                        'faculty' => $class->faculty->full_name ?? 'TBA',
-                        'available_slots' => ($class->maximum_slots ?: 0) - ($class->class_enrollments_count ?? 0),
-                        'max_slots' => $class->maximum_slots ?: 0,
-                        'is_full' => ($class->maximum_slots ?: 0) > 0 && ($class->class_enrollments_count ?? 0) >= $class->maximum_slots,
-                    ]);
-
-                if ($availableClasses->isEmpty()) {
-                    $missingClasses->push([
-                        'subject_code' => $subject->code,
-                        'subject_title' => $subject->title,
-                        'enrollment_status' => 'No Class Offering',
-                        'class_id' => null,
-                    ]);
-                } else {
-                    foreach ($availableClasses as $ac) {
-                        $missingClasses->push($ac);
+            $subjectCodeLower = mb_strtolower(mb_trim((string) $subject->code));
+            $availableClasses = $termCandidateClasses
+                ->filter(function (Classes $class) use ($subject, $subjectCodeLower): bool {
+                    $courseCodes = is_array($class->course_codes) ? array_map(strval(...), $class->course_codes) : [];
+                    if ($subject->course_id !== null && $courseCodes !== [] && ! in_array((string) $subject->course_id, $courseCodes, true)) {
+                        return false;
                     }
+
+                    $subjectIds = is_array($class->subject_ids) ? array_map(intval(...), $class->subject_ids) : [];
+                    if (in_array((int) $subject->id, $subjectIds, true)) {
+                        return true;
+                    }
+
+                    $classCodeLower = mb_strtolower(mb_trim((string) $class->subject_code));
+
+                    return $classCodeLower === $subjectCodeLower || str_contains($classCodeLower, $subjectCodeLower);
+                })
+                ->map(fn (Classes $class): array => [
+                    'subject_enrollment_id' => $subjectEnrollment->id,
+                    'subject_id' => $subject->id,
+                    'class_id' => $class->id,
+                    'subject_code' => $subject->code,
+                    'subject_title' => $class->subject_title,
+                    'section' => $class->section,
+                    'faculty' => $class->Faculty?->full_name ?? 'TBA',
+                    'schedule' => $class->schedules->map(fn ($s): string => $s->day_of_week.' '.$s->time_range)->implode(', ') ?: 'TBA',
+                    'available_slots' => ($class->maximum_slots ?: 0) - ($class->class_enrollments_count ?? 0),
+                    'max_slots' => $class->maximum_slots ?: 0,
+                    'enrolled_count' => (int) ($class->class_enrollments_count ?? 0),
+                    'is_full' => ($class->maximum_slots ?: 0) > 0 && ($class->class_enrollments_count ?? 0) >= $class->maximum_slots,
+                ])
+                ->values();
+
+            if ($availableClasses->isEmpty()) {
+                $missingClasses->push([
+                    'subject_enrollment_id' => $subjectEnrollment->id,
+                    'subject_id' => $subject->id,
+                    'subject_code' => $subject->code,
+                    'subject_title' => $subject->title,
+                    'enrollment_status' => 'No Class Offering',
+                    'class_id' => null,
+                ]);
+            } else {
+                foreach ($availableClasses as $ac) {
+                    $missingClasses->push($ac);
                 }
             }
         }
 
+        // Waitlist entries for this enrollment
+        $waitlists = EnrollmentClassWaitlist::query()
+            ->with(['subject:id,code,title', 'preferredClass:id,section,subject_code'])
+            ->where('student_enrollment_id', $enrollment->id)
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(fn (EnrollmentClassWaitlist $wl): array => [
+                'id' => $wl->id,
+                'subject_id' => $wl->subject_id,
+                'subject_enrollment_id' => $wl->subject_enrollment_id,
+                'subject_code' => $wl->subject?->code,
+                'subject_title' => $wl->subject?->title,
+                'preferred_class_id' => $wl->preferred_class_id,
+                'preferred_section' => $wl->preferredClass?->section,
+                'status' => $wl->status,
+                'position' => $wl->position,
+                'notes' => $wl->notes,
+                'created_at' => $wl->created_at?->toISOString(),
+            ])
+            ->values()
+            ->all();
+
+        $waitlistBySubjectId = collect($waitlists)
+            ->where('status', EnrollmentClassWaitlist::StatusWaiting)
+            ->keyBy('subject_id');
+
+        // Build enriched subjects_enrolled array
+        $subjectsEnrolledPayload = $enrollment->subjectsEnrolled->map(function (SubjectEnrollment $se) use (
+            $classEnrollmentsByClassId,
+            $activeClassEnrollments,
+            $checklistBySubjectId,
+            $waitlistBySubjectId,
+            $schedulingPolicy
+        ): array {
+            $subject = $se->subject;
+            $matchedActive = $se->class_id ? $classEnrollmentsByClassId->get($se->class_id) : null;
+            if (! $matchedActive && $subject) {
+                $codeLower = mb_strtolower(mb_trim((string) $subject->code));
+                $matchedActive = $activeClassEnrollments->first(function (array $ce) use ($codeLower): bool {
+                    $codes = array_map(static fn (string $c): string => mb_strtolower(mb_trim($c)), explode(',', (string) ($ce['subject_code'] ?? '')));
+
+                    return in_array($codeLower, $codes, true);
+                });
+            }
+
+            $schedules = $matchedActive['schedules'] ?? [];
+            if ($schedules === [] && $se->class instanceof Classes) {
+                $classDeliveryMode = ScheduleDelivery::canonicalize($se->class->delivery_mode);
+                $schedules = $se->class->schedules->map(function ($s) use ($classDeliveryMode, $schedulingPolicy): array {
+                    $mode = ScheduleDelivery::canonicalize($s->delivery_mode ?? $classDeliveryMode);
+
+                    return [
+                        'id' => $s->id,
+                        'day' => $s->day_of_week,
+                        'start_time' => $s->start_time instanceof \Carbon\Carbon ? $s->start_time->format('H:i') : (string) $s->start_time,
+                        'end_time' => $s->end_time instanceof \Carbon\Carbon ? $s->end_time->format('H:i') : (string) $s->end_time,
+                        'room' => ScheduleDelivery::isOnline($mode) ? ScheduleDelivery::shortLabel($mode) : $s->room?->name,
+                        'delivery_mode' => $mode,
+                        'checks_time_conflicts' => ScheduleDelivery::checksStudentCohortConflicts($mode, $schedulingPolicy),
+                    ];
+                })->values()->all();
+            }
+
+            $checklistItem = $se->subject_id ? ($checklistBySubjectId[(int) $se->subject_id] ?? null) : null;
+            $checklistStatus = (string) ($checklistItem['status'] ?? '');
+            $waitlist = $se->subject_id ? $waitlistBySubjectId->get((int) $se->subject_id) : null;
+
+            $lecUnits = (int) ($se->enrolled_lecture_units ?? $subject?->lecture ?? 0);
+            $labUnits = (int) ($se->enrolled_laboratory_units ?? $subject?->laboratory ?? 0);
+            $resolvedClassId = $se->class_id ?? ($matchedActive['class_id'] ?? null);
+            $grades = $matchedActive['grades'] ?? null;
+            $hasGrades = $se->grade !== null
+                || ($grades !== null && (($grades['prelim'] ?? null) !== null || ($grades['midterm'] ?? null) !== null || ($grades['finals'] ?? null) !== null || ($grades['average'] ?? null) !== null));
+
+            return [
+                'id' => $se->id,
+                'subject_id' => $se->subject_id,
+                'class_id' => $resolvedClassId,
+                'class_url' => $resolvedClassId ? route('administrators.classes.show', $resolvedClassId, false) : null,
+                'subject_code' => $subject?->code ?? $se->external_subject_code ?? 'Unknown',
+                'subject_title' => $subject?->title ?? $se->external_subject_title ?? 'Unknown',
+                'units' => (float) ($subject?->units ?? ($lecUnits + $labUnits)),
+                'lecture_units' => $lecUnits,
+                'laboratory_units' => $labUnits,
+                'lecture_fee' => $se->lecture_fee !== null ? (float) $se->lecture_fee : null,
+                'lab_fee' => $se->laboratory_fee !== null ? (float) $se->laboratory_fee : null,
+                'is_modular' => (bool) $se->is_modular,
+                'exclude_from_tuition' => (bool) $se->exclude_from_tuition,
+                'section' => $se->section ?? ($matchedActive['section'] ?? $se->class?->section),
+                'faculty' => $matchedActive['faculty'] ?? ($se->class?->Faculty?->full_name ?? 'TBA'),
+                'schedule' => $matchedActive['schedule'] ?? ($se->class ? ($se->class->schedules->map(fn ($s): string => $s->day_of_week.' '.$s->time_range)->implode(', ') ?: 'TBA') : 'Unassigned'),
+                'room' => $matchedActive['room'] ?? 'TBA',
+                'schedules' => $schedules,
+                'grades' => $grades,
+                'grade' => $se->grade,
+                'has_grades' => $hasGrades,
+                'is_failed_retake' => $checklistStatus === 'failed',
+                'already_passed' => in_array($checklistStatus, ['passed', 'credited'], true),
+                'prerequisite_satisfied' => (bool) ($checklistItem['prerequisite_satisfied'] ?? true),
+                'missing_prerequisite' => $checklistItem['missing_prerequisite'] ?? null,
+                'recommended' => (bool) ($checklistItem['is_recommended'] ?? false),
+                'waitlist' => $waitlist,
+            ];
+        })->values();
+
+        // Tuition summary + finance lock/revision metadata
         $tuitionSummary = $enrollment->studentTuition
             ? $this->enrollmentBillingService->toSummaryArray(
                 $enrollment->studentTuition,
                 (float) $enrollment->additionalFees->sum('amount')
             )
             : null;
+        if ($tuitionSummary !== null && $enrollment->studentTuition instanceof StudentTuition) {
+            $discountRecord = $enrollment->studentTuition->discount_id
+                ? EnrollmentDiscount::query()->find($enrollment->studentTuition->discount_id)
+                : null;
+            $tuitionSummary = [
+                ...$tuitionSummary,
+                'active_revision_id' => $enrollment->studentTuition->active_revision_id,
+                'needs_finance_review' => (bool) $enrollment->studentTuition->needs_finance_review,
+                'credit' => (float) ($enrollment->studentTuition->credit ?? 0),
+                'assessment_adjustment' => (float) ($enrollment->studentTuition->assessment_adjustment ?? 0),
+                'discount_id' => $enrollment->studentTuition->discount_id,
+                'discount_name' => $discountRecord?->name,
+            ];
+        }
+
         $pendingScheduleChangeNotifications = $this->classScheduleChangeNotificationService
             ->pendingNotificationsForEnrollment($enrollment);
-        $workflow = $this->workflowView($enrollment, Auth::user());
+        $workflow = $this->workflowView($enrollment, $user);
+
+        // Policy-aware pipeline configuration & completion flags
+        $isPolicyRuntime = $enrollment->workflow_runtime === StudentEnrollment::WorkflowRuntimePolicyV1 && $enrollment->policySnapshot !== null;
+        if ($isPolicyRuntime) {
+            $projected = $this->enrollmentPipelineService->getConfigurationFor($enrollment);
+            $pipelineSteps = collect($projected['steps'] ?? [])->map(fn (array $step): array => [
+                ...$step,
+                'is_completion' => ($projected['completion_step_key'] ?? null) === ($step['key'] ?? null),
+            ])->values()->all();
+            $completionStepKey = $projected['completion_step_key'] ?? null;
+            $isCompleted = $enrollment->terminal_outcome === 'completed'
+                || ($completionStepKey !== null && $enrollment->current_step_key === $completionStepKey);
+            $pipelineConfig = [
+                ...$projected,
+                'steps' => $pipelineSteps,
+                'status_options' => $this->enrollmentPipelineService->getStatusOptions(),
+                'status_classes' => $this->enrollmentPipelineService->getStatusColorClasses(),
+                'next_step' => isset($workflow['allowed_transitions'][0]) ? [
+                    'key' => $workflow['allowed_transitions'][0]['to'],
+                    'status' => $workflow['allowed_transitions'][0]['to_status'],
+                    'label' => $workflow['allowed_transitions'][0]['label'],
+                    'action_type' => $workflow['allowed_transitions'][0]['action_type'] ?? null,
+                ] : null,
+            ];
+            $availableReopenSteps = collect($pipelineSteps)
+                ->filter(fn (array $step): bool => ! ($step['is_completion'] ?? false))
+                ->map(fn (array $step): array => [
+                    'key' => (string) ($step['key'] ?? ''),
+                    'label' => (string) ($step['label'] ?? $step['status'] ?? ''),
+                    'status' => (string) ($step['status'] ?? ''),
+                ])
+                ->filter(fn (array $s): bool => $s['key'] !== '')
+                ->values()
+                ->all();
+        } else {
+            $completionStep = $this->enrollmentPipelineService->getCompletionStep();
+            $normalizedStatus = mb_strtolower(mb_trim((string) $enrollment->status));
+            $completionMatches = array_filter([
+                mb_strtolower(mb_trim((string) ($completionStep['status'] ?? ''))),
+                mb_strtolower(mb_trim((string) ($completionStep['label'] ?? ''))),
+                'enrolled',
+                'completed',
+                'officially enrolled',
+            ]);
+            $isCompleted = $enrollment->terminal_outcome !== EnrollmentCancellationService::OUTCOME
+                && ($enrollment->terminal_outcome === 'completed' || in_array($normalizedStatus, $completionMatches, true));
+            $pipelineConfig = [
+                ...$this->enrollmentPipelineService->getConfiguration(),
+                'steps' => $this->enrollmentPipelineService->getSteps(),
+                'status_options' => $this->enrollmentPipelineService->getStatusOptions(),
+                'status_classes' => $this->enrollmentPipelineService->getStatusColorClasses(),
+                'next_step' => $isCompleted ? null : $this->enrollmentPipelineService->getNextStep($enrollment->status),
+            ];
+            $availableReopenSteps = [];
+        }
+
+        $isTerminalLocked = $this->isTerminalLocked($enrollment);
+        $canPrintAssessment = ! $isTerminalLocked && ! $enrollment->trashed();
+        $canResendAssessment = $isCompleted && ! $isTerminalLocked && ! $enrollment->trashed();
+
+        // Holds, Load Changes, Transfers & Unified Timeline + Edit History
+        $holds = $enrollment->student_id
+            ? $this->studentHoldService
+                ->allHoldsForStudent((int) $enrollment->student_id)
+                ->map(fn ($hold): array => $this->studentHoldService->serializeHold($hold))
+                ->values()
+                ->all()
+            : [];
+
+        $loadChanges = EnrollmentLoadChange::query()
+            ->with(['requestedBy:id,name', 'approvedBy:id,name', 'rejectedBy:id,name', 'addedClass:id,section,subject_code'])
+            ->where('student_enrollment_id', $enrollment->id)
+            ->orderByDesc('created_at')
+            ->limit(15)
+            ->get();
+
+        $loadChangesSerialized = $loadChanges->map(fn (EnrollmentLoadChange $item): array => [
+            ...$loadChangeService->serialize($item),
+            'slip_url' => route('administrators.enrollments.load-changes.slip', [
+                'enrollment' => $enrollment->id,
+                'loadChange' => $item->id,
+            ], false),
+        ])->values()->all();
+
+        $transfers = EnrollmentTransferLog::query()
+            ->with(['fromCourse:id,code,title', 'toCourse:id,code,title', 'performedBy:id,name'])
+            ->where('student_enrollment_id', $enrollment->id)
+            ->orderByDesc('created_at')
+            ->limit(10)
+            ->get()
+            ->map(fn (EnrollmentTransferLog $log): array => [
+                'id' => $log->id,
+                'transfer_type' => $log->transfer_type,
+                'from_course' => $log->fromCourse?->code,
+                'to_course' => $log->toCourse?->code,
+                'from_section' => $log->from_section,
+                'to_section' => $log->to_section,
+                'reassigned_classes_count' => $log->reassigned_classes_count,
+                'credited_subjects_count' => $log->credited_subjects_count,
+                'fee_delta' => (float) ($log->fee_delta ?? 0),
+                'reason' => $log->reason,
+                'performed_by' => $log->performedBy?->name ?? 'System',
+                'created_at' => $log->created_at?->toISOString(),
+            ])
+            ->values()
+            ->all();
+
+        $enrollmentActivities = Activity::query()
+            ->with('causer:id,name')
+            ->where('subject_type', StudentEnrollment::class)
+            ->where('subject_id', $enrollment->id)
+            ->orderByDesc('created_at')
+            ->limit(25)
+            ->get();
+
+        $editHistory = $enrollmentActivities->map(function (Activity $activity): array {
+            $props = $activity->properties?->toArray() ?? [];
+            if ($props === []) {
+                $props = $activity->attribute_changes?->toArray() ?? [];
+            }
+
+            return [
+                'id' => $activity->id,
+                'event' => (string) ($activity->event ?? 'updated'),
+                'description' => (string) ($activity->description ?? ''),
+                'causer_name' => $activity->causer?->name ?? 'System',
+                'created_at' => $activity->created_at?->toISOString(),
+                'changes' => $props,
+            ];
+        })->values()->all();
+
+        // Unified chronological timeline
+        $timeline = collect();
+        if ($enrollment->created_at !== null) {
+            $timeline->push([
+                'id' => 'created-'.$enrollment->id,
+                'type' => 'created',
+                'title' => 'Enrollment record created',
+                'description' => sprintf(
+                    '%s · %s (%s)',
+                    $enrollment->course?->code ?? $enrollment->student?->Course?->code ?? 'Program unassigned',
+                    $enrollment->school_year ?? 'Current term',
+                    $semesterLabel
+                ),
+                'actor' => null,
+                'timestamp' => $enrollment->created_at->toISOString(),
+                'date_label' => $enrollment->created_at->format('M j, Y · g:i A'),
+                'tone' => 'info',
+            ]);
+        }
+        foreach ($enrollment->workflowEvents as $event) {
+            $toLabel = $event->status ?: ($event->to_step_key ? Str::headline((string) $event->to_step_key) : 'Workflow updated');
+            $timeline->push([
+                'id' => 'wf-'.$event->id,
+                'type' => 'workflow',
+                'title' => $event->terminal_outcome === 'cancelled'
+                    ? 'Enrollment cancelled'
+                    : sprintf('Moved to %s', $toLabel),
+                'description' => $event->reason ?: ($event->from_step_key ? sprintf('Transitioned from %s', Str::headline((string) $event->from_step_key)) : 'Pipeline step recorded'),
+                'actor' => null,
+                'timestamp' => $event->created_at?->toISOString(),
+                'date_label' => $event->created_at?->format('M j, Y · g:i A') ?? '—',
+                'tone' => $event->terminal_outcome === 'cancelled' ? 'destructive' : 'success',
+            ]);
+        }
+        foreach ($enrollmentActivities as $activity) {
+            $timeline->push([
+                'id' => 'act-'.$activity->id,
+                'type' => 'audit',
+                'title' => Str::headline((string) ($activity->event ?? 'enrollment_updated')),
+                'description' => (string) ($activity->description ?? 'Enrollment updated'),
+                'actor' => $activity->causer?->name ?? 'System',
+                'timestamp' => $activity->created_at?->toISOString(),
+                'date_label' => $activity->created_at?->format('M j, Y · g:i A') ?? '—',
+                'tone' => str_contains((string) $activity->event, 'override') || str_contains((string) $activity->event, 'overload') ? 'warning' : 'info',
+            ]);
+        }
+        foreach ($loadChanges as $lc) {
+            $timeline->push([
+                'id' => 'col-'.$lc->id,
+                'type' => 'load_change',
+                'title' => sprintf('Change of Load %s (%s)', $lc->reference_number, Str::headline($lc->status)),
+                'description' => $lc->reason ?: sprintf('%s subject load adjustment', Str::headline($lc->change_type)),
+                'actor' => $lc->approvedBy?->name ?? $lc->requestedBy?->name ?? 'System',
+                'timestamp' => ($lc->approved_at ?? $lc->created_at)?->toISOString(),
+                'date_label' => ($lc->approved_at ?? $lc->created_at)?->format('M j, Y · g:i A') ?? '—',
+                'tone' => $lc->status === EnrollmentLoadChange::StatusRejected ? 'destructive' : ($lc->status === EnrollmentLoadChange::StatusPending ? 'warning' : 'success'),
+            ]);
+        }
+        foreach ($enrollmentTransactions as $studentTx) {
+            $tx = $studentTx->transaction;
+            if (! $tx) {
+                continue;
+            }
+            $txAmount = (float) ($studentTx->amount ?? $tx->raw_total_amount ?? $tx->total_amount ?? 0);
+            $timeline->push([
+                'id' => 'tx-'.$tx->id,
+                'type' => 'payment',
+                'title' => sprintf('Payment recorded (%s)', $tx->invoicenumber ?: $tx->transaction_number ?: '#'.$tx->id),
+                'description' => sprintf('Amount: %s · %s', number_format($txAmount, 2), $tx->description ?: ($tx->status ?? 'Settled')),
+                'actor' => null,
+                'timestamp' => $tx->created_at?->toISOString(),
+                'date_label' => $tx->created_at?->format('M j, Y · g:i A') ?? '—',
+                'tone' => 'success',
+            ]);
+        }
+        if ($enrollment->deleted_at !== null) {
+            $timeline->push([
+                'id' => 'deleted-'.$enrollment->id,
+                'type' => 'deleted',
+                'title' => 'Moved to trash',
+                'description' => 'Soft-deleted enrollment record (can be restored).',
+                'actor' => null,
+                'timestamp' => $enrollment->deleted_at->toISOString(),
+                'date_label' => $enrollment->deleted_at->format('M j, Y · g:i A'),
+                'tone' => 'destructive',
+            ]);
+        }
+
+        $sortedTimeline = $timeline
+            ->sortByDesc(fn (array $item): string => (string) ($item['timestamp'] ?? ''))
+            ->values()
+            ->take(30)
+            ->all();
+
+        // Queue navigation (same school year & semester) + sanitized return_to
+        $rawReturnTo = (string) $request->query('return_to', '');
+        $returnTo = ($rawReturnTo !== '' && str_starts_with($rawReturnTo, '/') && ! str_starts_with($rawReturnTo, '//'))
+            ? $rawReturnTo
+            : null;
+
+        $prevId = StudentEnrollment::query()
+            ->where('school_year', $enrollment->school_year)
+            ->where('semester', $enrollment->semester)
+            ->where('id', '>', $enrollment->id)
+            ->orderBy('id')
+            ->value('id');
+
+        $nextId = StudentEnrollment::query()
+            ->where('school_year', $enrollment->school_year)
+            ->where('semester', $enrollment->semester)
+            ->where('id', '<', $enrollment->id)
+            ->orderByDesc('id')
+            ->value('id');
+
+        // Resolve course metadata from the enrollment's own course (falling back to student's current course)
+        $course = $enrollment->course ?? $enrollment->student?->Course;
+        $curriculumKind = $course ? $capabilityResolver->kindForCourse($course) : null;
+
+        // Safe minimal user projection
+        $userSummary = [
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'avatar' => $user->getFilamentAvatarUrl(),
+            'role' => $user->role?->getLabel() ?? 'Administrator',
+        ];
+
+        $canManageEnrollment = $this->canManageEnrollment($user, 'update', $enrollment);
+        $canManageTuition = $this->canManageTuitionFees($user);
 
         return Inertia::render('administrators/enrollments/show', [
-            'user' => Auth::user(),
+            'user' => $userSummary,
             'enrollment' => [
                 'id' => $enrollment->id,
                 'student_id' => $enrollment->student_id,
+                'course_id' => $enrollment->course_id ?? $enrollment->student?->course_id,
+                'course_code' => $course?->code,
+                'course_title' => $course?->title,
+                'department' => $course?->department?->code,
+                'curriculum_kind' => $curriculumKind,
+                'qualification_level' => $course?->qualification_level,
+                'duration_hours' => $course?->duration_hours,
+                'tesda_program_type' => $course?->tesda_program_type,
                 'status' => $enrollment->status,
                 'workflow_runtime' => $enrollment->workflow_runtime,
                 'allows_no_receipt_transition' => $enrollment->allowsConfiguredNoReceiptTransition(),
-                'workflow' => $workflow,
+                'workflow' => [
+                    ...$workflow,
+                    'is_completed' => $isCompleted,
+                    'is_terminal_locked' => $isTerminalLocked,
+                    'can_print_assessment' => $canPrintAssessment,
+                    'can_resend_assessment' => $canResendAssessment,
+                    'available_reopen_steps' => $availableReopenSteps,
+                ],
+                'policy_snapshot_name' => data_get($enrollment->policySnapshot?->configuration, 'meta.name'),
+                'policy_snapshot_version' => $enrollment->policySnapshot?->version,
                 'school_year' => $enrollment->school_year,
                 'semester' => $enrollment->semester,
+                'semester_label' => $semesterLabel,
                 'academic_year' => $enrollment->academic_year,
-                'signature' => $enrollment->signature,
+                'remarks' => $enrollment->remarks,
+                'submission_channel' => $enrollment->submission_channel,
+                'created_at' => $enrollment->created_at?->toISOString(),
+                'updated_at' => $enrollment->updated_at?->toISOString(),
+                'deleted_at' => $enrollment->deleted_at?->toISOString(),
+                'is_trashed' => $enrollment->trashed(),
                 'student' => [
-                    'id' => $enrollment->student->id,
-                    'full_name' => $enrollment->student->full_name,
-                    'email' => $enrollment->student->email,
-                    'student_id' => $enrollment->student->student_id,
-                    'course_code' => $enrollment->student->Course?->code,
-                    'student_url' => route('administrators.students.show', $enrollment->student->id),
+                    'id' => $enrollment->student?->id,
+                    'full_name' => $enrollment->student?->full_name ?? 'Unknown Student',
+                    'email' => $enrollment->student?->email,
+                    'phone' => $enrollment->student?->phone ?? $enrollment->student?->studentContactsInfo?->personal_contact,
+                    'address' => $enrollment->student?->personalInfo?->current_adress ?? $enrollment->student?->address,
+                    'emergency_contact_name' => $enrollment->student?->studentContactsInfo?->emergency_contact_name,
+                    'emergency_contact_phone' => $enrollment->student?->studentContactsInfo?->emergency_contact_phone,
+                    'student_id' => $enrollment->student?->student_id,
+                    'course_code' => $course?->code,
+                    'scholarship_type' => $enrollment->student?->scholarship_type?->value,
+                    'scholarship_label' => $enrollment->student?->scholarship_type?->getLabel(),
+                    'student_url' => $enrollment->student ? route('administrators.students.show', $enrollment->student->id) : null,
+                    'documents_url' => $enrollment->student ? route('administrators.students.documents.index', $enrollment->student->id, false) : null,
                 ],
-                'subjects_enrolled' => $enrollment->subjectsEnrolled->map(fn ($se): array => [
-                    'id' => $se->id,
-                    'subject_code' => $se->subject->code ?? 'Unknown',
-                    'subject_title' => $se->subject->title ?? 'Unknown',
-                    'units' => $se->subject->units ?? 0,
-                    'lecture_fee' => $se->lecture,
-                    'lab_fee' => $se->laboratory,
-                ]),
+                'subjects_enrolled' => $subjectsEnrolledPayload,
                 'class_enrollments' => $activeClassEnrollments,
-                'missing_classes' => $missingClasses,
+                'missing_classes' => $missingClasses->values(),
                 'tuition' => $tuitionSummary,
-                'additional_fees' => $enrollment->additionalFees,
-                'transactions' => $enrollmentTransactions->map(function ($studentTransaction): array {
+                'additional_fees' => $enrollment->additionalFees->map(fn (AdditionalFee $fee): array => [
+                    'id' => $fee->id,
+                    'fee_name' => $fee->fee_name,
+                    'amount' => (float) $fee->amount,
+                    'is_separate_transaction' => (bool) $fee->is_separate_transaction,
+                    'transaction_number' => $fee->transaction_number,
+                ])->values(),
+                'transactions' => $enrollmentTransactions->map(function ($studentTransaction): ?array {
                     $tx = $studentTransaction->transaction;
+                    if (! $tx) {
+                        return null;
+                    }
 
                     return [
                         'id' => $tx->id,
@@ -1305,75 +1838,319 @@ final class AdministratorEnrollmentManagementController extends Controller
                         'invoicenumber' => $tx->invoicenumber,
                         'description' => $tx->description,
                         'status' => $tx->status,
-                        'total_amount' => $tx->total_amount,
-                        'amount' => $studentTransaction->amount ?? $tx->raw_total_amount, // Use amount from relationship or transaction total
+                        'total_amount' => (float) $tx->total_amount,
+                        'amount' => (float) ($studentTransaction->amount ?? $tx->raw_total_amount ?? $tx->total_amount ?? 0),
                         'transaction_date' => $tx->transaction_date,
-                        'created_at' => $tx->created_at->toDateTimeString(),
+                        'created_at' => $tx->created_at?->toDateTimeString(),
+                        'receipt_url' => route('administrators.finance.payments.show', $tx->id, false),
                     ];
-                }),
+                })->filter()->values(),
+                'latest_invoice' => $enrollment->latestInvoice ? [
+                    'id' => $enrollment->latestInvoice->id,
+                    'document_number' => $enrollment->latestInvoice->document_number ?? null,
+                    'status' => $enrollment->latestInvoice->status ?? null,
+                    'sent_at' => $enrollment->latestInvoice->sent_at?->toISOString(),
+                    'download_url' => route('administrators.finance.documents.download', $enrollment->latestInvoice->id, false),
+                ] : null,
+                'financial_documents' => $enrollment->financialDocuments->map(fn ($doc): array => [
+                    'id' => $doc->id,
+                    'document_type' => $doc->document_type ?? 'document',
+                    'document_number' => $doc->document_number ?? null,
+                    'status' => $doc->status ?? null,
+                    'created_at' => $doc->created_at?->toISOString(),
+                    'download_url' => route('administrators.finance.documents.download', $doc->id, false),
+                ])->values(),
                 'resources' => $enrollment->resources->map(fn (Resource $res): array => [
                     'id' => $res->id,
                     'type' => $res->type,
                     'file_name' => $res->file_name,
                     'file_size' => $res->file_size,
-                    'created_at' => $res->created_at->toDateTimeString(),
-                    'download_url' => route('assessment.download', ['record' => $enrollment->id], false),
-                ]),
+                    'created_at' => $res->created_at?->toDateTimeString(),
+                    'download_url' => route('assessment.download', ['record' => $enrollment->id, 'resource' => $res->id], false),
+                ])->values(),
                 'requirements' => $enrollment->requirements->map(fn ($requirement): array => [
                     'id' => $requirement->id,
                     'key' => $requirement->requirement_key,
                     'label' => $requirement->label,
                     'description' => $requirement->description,
                     'status' => $requirement->status,
-                    'required' => $requirement->is_required,
+                    'required' => (bool) $requirement->is_required,
                     'enforcement_step' => $requirement->enforcement_step_key,
                     'evidence_path' => $requirement->evidence_path,
+                    'document_url' => filled($requirement->evidence_path)
+                        ? route('administrators.enrollments.requirements.document', ['enrollment' => $enrollment->id, 'requirement' => $requirement->id], false)
+                        : null,
                     'verified_at' => $requirement->verified_at?->toISOString(),
                     'waived_at' => $requirement->waived_at?->toISOString(),
                     'waiver_reason' => $requirement->waiver_reason,
-                ]),
+                ])->values(),
                 'pending_class_schedule_changes' => $this->classScheduleChangeNotificationService
                     ->previewPendingNotifications($pendingScheduleChangeNotifications),
+                'holds' => $holds,
+                'waitlists' => $waitlists,
+                'checklist_summary' => $checklistSummary,
+                'load_changes_summary' => [
+                    'pending_count' => $loadChanges->where('status', EnrollmentLoadChange::StatusPending)->count(),
+                    'total_count' => $loadChanges->count(),
+                    'recent' => $loadChangesSerialized,
+                ],
+                'transfers_summary' => [
+                    'total_count' => count($transfers),
+                    'recent' => $transfers,
+                ],
+                'timeline' => $sortedTimeline,
+                'edit_history' => $editHistory,
+            ],
+            'hold_offices' => $this->studentHoldService->officeOptions(),
+            'enrollment_period' => $this->enrollmentPeriodService->describe((string) $enrollment->school_year, (int) $enrollment->semester),
+            'scheduling_policy' => $schedulingPolicy,
+            'scholarship_options' => array_map(
+                static fn (ScholarshipType $case): array => [
+                    'value' => $case->value,
+                    'label' => $case->getLabel() ?? $case->value,
+                ],
+                ScholarshipType::cases(),
+            ),
+            'document_links' => [
+                'assessment_preview_url' => route('administrators.enrollments.assessment-preview', $enrollment->id, false),
+                'cor_pdf_url' => $enrollment->student_id ? route('administrators.registrar.documents.pdf', [
+                    'template' => 'certificate_of_enrollment',
+                    'variant' => 'full_certificate',
+                    'student_id' => $enrollment->student_id,
+                    'enrollment_id' => $enrollment->id,
+                ], false) : null,
+                'reg_form_student_url' => $enrollment->student_id ? route('administrators.registrar.documents.pdf', [
+                    'template' => 'registration_form',
+                    'variant' => 'student_copy',
+                    'student_id' => $enrollment->student_id,
+                    'enrollment_id' => $enrollment->id,
+                ], false) : null,
+                'reg_form_adviser_url' => $enrollment->student_id ? route('administrators.registrar.documents.pdf', [
+                    'template' => 'registration_form',
+                    'variant' => 'adviser_copy',
+                    'student_id' => $enrollment->student_id,
+                    'enrollment_id' => $enrollment->id,
+                ], false) : null,
+                'reg_form_receipt_url' => $enrollment->student_id ? route('administrators.registrar.documents.pdf', [
+                    'template' => 'registration_form',
+                    'variant' => 'receipt_copy',
+                    'student_id' => $enrollment->student_id,
+                    'enrollment_id' => $enrollment->id,
+                ], false) : null,
+                'grade_report_url' => $enrollment->student_id ? route('administrators.registrar.documents.pdf', [
+                    'template' => 'grade_report',
+                    'variant' => 'grade_slip',
+                    'student_id' => $enrollment->student_id,
+                    'enrollment_id' => $enrollment->id,
+                ], false) : null,
+                'soa_url' => $enrollment->student_id ? route('administrators.students.tuition.soa', $enrollment->student_id, false) : null,
+                'cashier_payment_url' => $enrollment->student_id ? route('administrators.finance.payments.create', [
+                    'student_id' => $enrollment->student_id,
+                    'enrollment_id' => $enrollment->id,
+                ], false) : null,
+                'tuition_adjustments_url' => route('administrators.finance.tuition-adjustments.index', [
+                    'enrollment' => $enrollment->id,
+                ], false),
+                're_enroll_url' => route('administrators.enrollments.create', [
+                    'from_enrollment' => $enrollment->id,
+                ], false),
+                'new_enrollment_url' => route('administrators.enrollments.create', [], false),
+            ],
+            'queue_navigation' => [
+                'prev_id' => $prevId ? (int) $prevId : null,
+                'next_id' => $nextId ? (int) $nextId : null,
+                'return_to' => $returnTo,
             ],
             'auth' => [
-                'user' => Auth::user(),
+                'user' => $userSummary,
+                'can_manage_enrollment' => $canManageEnrollment,
                 'can_verify_head' => (
-                    Auth::user()->can('verify_by_head_dept_guest::enrollment') ||
-                    Auth::user()->hasRole('super_admin') ||
+                    $user->can('verify_by_head_dept_guest::enrollment') ||
+                    $user->hasRole('super_admin') ||
                     $this->enrollmentPipelineService->canUserPerformStep(
-                        Auth::user(),
+                        $user,
                         $this->enrollmentPipelineService->getStepByActionType('department_verification') ?? ['allowed_roles' => []]
                     )
                 ),
                 'can_verify_cashier' => (
-                    Auth::user()->can('verify_by_cashier_guest::enrollment') ||
-                    Auth::user()->hasRole('super_admin') ||
+                    $user->can('verify_by_cashier_guest::enrollment') ||
+                    $user->hasRole('super_admin') ||
                     $this->enrollmentPipelineService->canUserPerformStep(
-                        Auth::user(),
+                        $user,
                         $this->enrollmentPipelineService->getStepByActionType('cashier_verification') ?? ['allowed_roles' => []]
                     )
                 ),
-                'is_super_admin' => Auth::user()->hasRole('super_admin'),
-                'can_reopen' => Auth::user()->can('Reopen:StudentEnrollment') || Auth::user()->hasRole('super_admin'),
-                'can_manage_tuition' => Auth::user()->can('manage_tuition_fees'),
-                'can_advance_pipeline' => $this->enrollmentPipelineService->canUserAdvanceToNextStep(Auth::user(), $enrollment->status),
-                'can_review_requirements' => Auth::user()->can('Update:StudentEnrollment') || Auth::user()->hasRole('super_admin'),
+                'is_super_admin' => $user->hasRole('super_admin'),
+                'can_reopen' => $user->can('Reopen:StudentEnrollment') || $user->hasRole('super_admin'),
+                'can_manage_tuition' => $canManageTuition,
+                'can_advance_pipeline' => ! $enrollment->trashed()
+                    && ! $isTerminalLocked
+                    && ($isPolicyRuntime
+                        ? count($workflow['allowed_transitions'] ?? []) > 0
+                        : $this->enrollmentPipelineService->canUserAdvanceToNextStep($user, $enrollment->status)),
+                'can_review_requirements' => $user->can('Update:StudentEnrollment') || $user->hasRole('super_admin') || $canManageEnrollment,
+                'can_delete' => $user->can('delete', $enrollment) || $user->can('Delete:StudentEnrollment') || $canManageEnrollment,
+                'can_restore' => $user->can('restore', $enrollment) || $user->can('Restore:StudentEnrollment') || $canManageEnrollment,
+                'can_force_delete' => $user->can('forceDelete', $enrollment) || $user->can('ForceDelete:StudentEnrollment') || $user->hasRole('super_admin'),
+                'can_export_documents' => $user->can('exportDetailed', StudentEnrollment::class) || $user->hasRole('super_admin') || $canManageEnrollment,
             ],
             'recent_deletions' => $this->getRecentDeletionsForEnrollment($enrollment),
             'flash' => session('flash'),
-            'enrollment_pipeline' => [
-                ...$this->enrollmentPipelineService->getConfiguration(),
-                'steps' => $this->enrollmentPipelineService->getSteps(),
-                'status_options' => $this->enrollmentPipelineService->getStatusOptions(),
-                'status_classes' => $this->enrollmentPipelineService->getStatusColorClasses(),
-                'next_step' => $this->enrollmentPipelineService->getNextStep($enrollment->status),
-            ],
-            'enrollment_stats' => $this->enrollmentPipelineService->getStatsConfiguration(),
+            'enrollment_pipeline' => $pipelineConfig,
         ]);
+    }
+
+    public function updateRemarks(Request $request, StudentEnrollment $enrollment): RedirectResponse
+    {
+        $user = Auth::user();
+        abort_unless($user instanceof User && $this->canManageEnrollment($user, 'update', $enrollment), 403);
+
+        $validated = $request->validate([
+            'remarks' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $previous = $enrollment->remarks;
+        $next = isset($validated['remarks']) && mb_trim((string) $validated['remarks']) !== ''
+            ? mb_trim((string) $validated['remarks'])
+            : null;
+
+        $enrollment->update(['remarks' => $next]);
+
+        activity('enrollment')
+            ->performedOn($enrollment)
+            ->causedBy($user)
+            ->withProperties([
+                'previous_remarks' => $previous,
+                'new_remarks' => $next,
+            ])
+            ->event('remarks_updated')
+            ->log('Updated registrar enrollment remarks.');
+
+        return back()->with('flash', ['success' => 'Enrollment remarks updated.']);
+    }
+
+    public function swapSubjectSection(
+        Request $request,
+        StudentEnrollment $enrollment,
+        SubjectEnrollment $subjectEnrollment,
+    ): RedirectResponse {
+        $user = Auth::user();
+        abort_unless($user instanceof User && $this->canManageEnrollment($user, 'update', $enrollment), 403);
+        abort_unless((int) $subjectEnrollment->enrollment_id === (int) $enrollment->id, 404);
+
+        if ($this->isTerminalLocked($enrollment) || $enrollment->trashed()) {
+            return back()->with('flash', ['error' => 'Cannot change sections on a cancelled, rejected, or trashed enrollment.']);
+        }
+
+        $validated = $request->validate([
+            'class_id' => ['nullable', 'integer', 'exists:classes,id'],
+            'force_overload' => ['boolean'],
+        ]);
+
+        $newClassId = isset($validated['class_id']) ? (int) $validated['class_id'] : null;
+        $forceOverload = (bool) ($validated['force_overload'] ?? false);
+
+        try {
+            $message = DB::transaction(function () use ($enrollment, $subjectEnrollment, $newClassId, $forceOverload, $user): string {
+                $previousClassId = $subjectEnrollment->class_id;
+                $previousSection = $subjectEnrollment->section;
+                $newSection = null;
+
+                if ($newClassId !== null) {
+                    $this->ensureClassCapacityForSubjects(
+                        [['class_id' => $newClassId]],
+                        (int) $enrollment->student_id,
+                        $forceOverload,
+                        $enrollment,
+                        $user,
+                    );
+
+                    $targetClass = Classes::query()->findOrFail($newClassId);
+                    $newSection = $targetClass->section;
+                }
+
+                if ($previousClassId !== null && $previousClassId !== $newClassId) {
+                    ClassEnrollment::query()
+                        ->where('student_id', $enrollment->student_id)
+                        ->where('class_id', $previousClassId)
+                        ->delete();
+                }
+
+                if ($newClassId !== null) {
+                    Student::query()->whereKey($enrollment->student_id)->lockForUpdate()->first();
+                    app(\App\Services\ClassEnrollmentService::class)->enrollOnceWhileLocked(
+                        (int) $enrollment->student_id,
+                        $newClassId,
+                        ['status' => true],
+                    );
+
+                    EnrollmentClassWaitlist::query()
+                        ->where('student_enrollment_id', $enrollment->id)
+                        ->where(function ($query) use ($subjectEnrollment): void {
+                            $query->where('subject_enrollment_id', $subjectEnrollment->id)
+                                ->orWhere('subject_id', $subjectEnrollment->subject_id);
+                        })
+                        ->where('status', EnrollmentClassWaitlist::StatusWaiting)
+                        ->update([
+                            'status' => EnrollmentClassWaitlist::StatusPromoted,
+                            'promoted_class_id' => $newClassId,
+                            'promoted_by' => $user->id,
+                            'promoted_at' => now(),
+                        ]);
+                }
+
+                $subjectEnrollment->forceFill([
+                    'class_id' => $newClassId,
+                    'section' => $newSection,
+                ])->save();
+
+                $subjectCode = $subjectEnrollment->subject?->code ?? 'Subject';
+
+                activity('enrollment')
+                    ->performedOn($enrollment)
+                    ->causedBy($user)
+                    ->withProperties([
+                        'subject_enrollment_id' => $subjectEnrollment->id,
+                        'subject_code' => $subjectCode,
+                        'from_class_id' => $previousClassId,
+                        'from_section' => $previousSection,
+                        'to_class_id' => $newClassId,
+                        'to_section' => $newSection,
+                    ])
+                    ->event('section_swapped')
+                    ->log($newSection !== null
+                        ? "Assigned {$subjectCode} to Section {$newSection}."
+                        : "Unassigned section for {$subjectCode}.");
+
+                return $newSection !== null
+                    ? "Assigned {$subjectCode} to Section {$newSection}."
+                    : "Unassigned section for {$subjectCode}.";
+            });
+
+            return back()->with('flash', ['success' => $message]);
+        } catch (Throwable $e) {
+            return back()->with('flash', ['error' => $e->getMessage()]);
+        }
+    }
+
+    public function requirementDocument(StudentEnrollment $enrollment, EnrollmentRequirement $requirement): StreamedResponse
+    {
+        $user = Auth::user();
+        abort_unless($user instanceof User && $this->canViewEnrollment($user, $enrollment), 403);
+        abort_unless((int) $requirement->student_enrollment_id === (int) $enrollment->id, 404);
+
+        $path = (string) ($requirement->evidence_path ?? '');
+        abort_if($path === '', 404);
+        abort_unless(Storage::disk('private')->exists($path), 404);
+
+        return Storage::disk('private')->download($path, basename($path));
     }
 
     public function classScheduleChangesPreview(StudentEnrollment $enrollment): JsonResponse
     {
+        $user = Auth::user();
+        abort_unless($user instanceof User && $this->canViewEnrollment($user, $enrollment), 403);
+
         $enrollment->loadMissing('student');
 
         return response()->json([
@@ -1391,9 +2168,11 @@ final class AdministratorEnrollmentManagementController extends Controller
     public function notifyClassScheduleChanges(StudentEnrollment $enrollment): RedirectResponse
     {
         $user = Auth::user();
+        abort_unless($user instanceof User && $this->canManageEnrollment($user, 'update', $enrollment), 403);
+
         $result = $this->classScheduleChangeNotificationService->notifyPendingForEnrollment(
             $enrollment,
-            $user instanceof User ? $user : null
+            $user
         );
 
         if ($result['count'] === 0) {
@@ -1460,6 +2239,26 @@ final class AdministratorEnrollmentManagementController extends Controller
                 ],
             ])
             ->all();
+        $allowedMethods = array_values(array_unique([
+            ...array_map(static fn (PaymentMethod $m): string => $m->value, PaymentMethod::cases()),
+            'cash',
+            'check',
+            'gcash',
+            'maya',
+            'bank_transfer',
+            'credit_card',
+            'debit_card',
+            'online',
+            'online_payment',
+            'card',
+            'Bank Transfer',
+            'Online',
+            'Card',
+            ...array_map(
+                static fn (mixed $m): string => (string) $m,
+                (array) data_get($enrollment->policySnapshot?->configuration, 'billing.allowed_payment_methods', []),
+            ),
+        ]));
         $validated = $request->validate([
             'invoicenumber' => [
                 $enrollment->workflow_runtime === StudentEnrollment::WorkflowRuntimePolicyV1 ? 'nullable' : 'required',
@@ -1471,7 +2270,7 @@ final class AdministratorEnrollmentManagementController extends Controller
             'settlements.tuition_fee' => ['nullable', 'numeric', 'min:0'],
             'settlements.miscelanous_fee' => ['nullable', 'numeric', 'min:0'],
             'settlements.others' => ['nullable', 'numeric', 'min:0'],
-            'payment_method' => ['required', 'string'],
+            'payment_method' => ['required', 'string', Rule::in($allowedMethods)],
             'reason' => ['nullable', 'string', 'max:2000'],
             'transition_key' => ['nullable', 'string', 'max:255'],
             ...$separateFeeTransactionKeys,
@@ -1549,13 +2348,30 @@ final class AdministratorEnrollmentManagementController extends Controller
         }
     }
 
-    public function undoCashierVerification(StudentEnrollment $enrollment): RedirectResponse
+    public function undoCashierVerification(Request $request, StudentEnrollment $enrollment): RedirectResponse
     {
         $user = Auth::user();
         abort_unless($user instanceof User, 403);
+        $canUndoCashier = $user->hasRole('super_admin')
+            || $user->can('Reopen:StudentEnrollment')
+            || $user->can('verify_by_cashier_guest::enrollment')
+            || $this->enrollmentPipelineService->canUserPerformStep(
+                $user,
+                $this->enrollmentPipelineService->getStepByActionType('cashier_verification') ?? ['allowed_roles' => []],
+            );
+        abort_unless($canUndoCashier, 403);
+
+        $reason = mb_trim((string) $request->input('reason', 'Cashier verification correction.')) ?: 'Cashier verification correction.';
 
         try {
-            $this->workflowCoordinator->reopen($enrollment, $user, null, 'Cashier verification correction.');
+            $this->workflowCoordinator->reopen($enrollment, $user, null, $reason);
+
+            activity('enrollment')
+                ->performedOn($enrollment)
+                ->causedBy($user)
+                ->withProperties(['reason' => $reason])
+                ->event('cashier_verification_undone')
+                ->log('Undid cashier payment verification.');
 
             return back()->with('flash', ['success' => 'Cashier verification undone.']);
         } catch (Throwable $throwable) {
@@ -1563,13 +2379,30 @@ final class AdministratorEnrollmentManagementController extends Controller
         }
     }
 
-    public function undoHeadDeptVerification(StudentEnrollment $enrollment): RedirectResponse
+    public function undoHeadDeptVerification(Request $request, StudentEnrollment $enrollment): RedirectResponse
     {
         $user = Auth::user();
         abort_unless($user instanceof User, 403);
+        $canUndoHead = $user->hasRole('super_admin')
+            || $user->can('Reopen:StudentEnrollment')
+            || $user->can('verify_by_head_dept_guest::enrollment')
+            || $this->enrollmentPipelineService->canUserPerformStep(
+                $user,
+                $this->enrollmentPipelineService->getStepByActionType('department_verification') ?? ['allowed_roles' => []],
+            );
+        abort_unless($canUndoHead, 403);
+
+        $reason = mb_trim((string) $request->input('reason', 'Academic verification correction.')) ?: 'Academic verification correction.';
 
         try {
-            $this->workflowCoordinator->reopen($enrollment, $user, null, 'Academic verification correction.');
+            $this->workflowCoordinator->reopen($enrollment, $user, null, $reason);
+
+            activity('enrollment')
+                ->performedOn($enrollment)
+                ->causedBy($user)
+                ->withProperties(['reason' => $reason])
+                ->event('department_verification_undone')
+                ->log('Undid department verification.');
 
             return back()->with('flash', ['success' => 'Head Dept verification undone.']);
         } catch (Throwable $throwable) {
@@ -1579,39 +2412,111 @@ final class AdministratorEnrollmentManagementController extends Controller
 
     public function enrollInClass(Request $request, StudentEnrollment $enrollment): RedirectResponse
     {
+        $user = Auth::user();
+        abort_unless($user instanceof User && $this->canManageEnrollment($user, 'update', $enrollment), 403);
+
+        if ($this->isTerminalLocked($enrollment) || $enrollment->trashed()) {
+            return back()->with('flash', ['error' => 'Cannot assign classes on a cancelled, rejected, or trashed enrollment.']);
+        }
+
         $data = $request->validate([
             'class_id' => 'required|exists:classes,id',
             'force_enrollment' => 'boolean',
         ]);
 
         try {
-            $class = Classes::findOrFail($data['class_id']);
-            $student = $enrollment->student;
+            $forceOverload = (bool) ($data['force_enrollment'] ?? false);
+            $result = DB::transaction(function () use ($enrollment, $data, $forceOverload, $user): array {
+                $class = Classes::query()->whereKey((int) $data['class_id'])->lockForUpdate()->firstOrFail();
+                $student = $enrollment->student;
 
-            // Check if already enrolled
-            $exists = ClassEnrollment::where('class_id', $class->id)
-                ->where('student_id', $student->id)
-                ->exists();
+                if (! $student instanceof Student) {
+                    throw new RuntimeException('Enrollment has no associated student record.');
+                }
 
-            if ($exists) {
-                return back()->with('flash', ['warning' => 'Student is already enrolled in this class.']);
-            }
+                $alreadyActive = ClassEnrollment::query()
+                    ->where('class_id', $class->id)
+                    ->where('student_id', $student->id)
+                    ->where('status', true)
+                    ->exists();
 
-            // Check capacity
-            $enrolledCount = ClassEnrollment::where('class_id', $class->id)->count();
-            if (! ($data['force_enrollment'] ?? false) && $class->maximum_slots > 0 && $enrolledCount >= $class->maximum_slots) {
-                return back()->with('flash', ['error' => 'Class is full. Use force enrollment to override.']);
-            }
+                if ($alreadyActive) {
+                    return ['status' => 'warning', 'message' => 'Student is already enrolled in this class.'];
+                }
 
-            app(\App\Services\ClassEnrollmentService::class)->enrollOnce(
-                (int) $student->id,
-                (int) $class->id,
-                [
-                    'status' => true,
-                ],
-            );
+                $activeSeats = ClassEnrollment::query()
+                    ->where('class_id', $class->id)
+                    ->where('student_id', '!=', $student->id)
+                    ->where('status', true)
+                    ->count();
 
-            return back()->with('flash', ['success' => "Enrolled in {$class->subject_code}."]);
+                if (! $forceOverload && $class->maximum_slots > 0 && $activeSeats >= $class->maximum_slots) {
+                    return ['status' => 'error', 'message' => 'Class is full. Use force enrollment to override.'];
+                }
+
+                if ($forceOverload && $class->maximum_slots > 0 && $activeSeats >= $class->maximum_slots) {
+                    activity('enrollment')
+                        ->performedOn($enrollment)
+                        ->causedBy($user)
+                        ->withProperties([
+                            'class_id' => $class->id,
+                            'section' => $class->section,
+                            'enrolled_count' => $activeSeats,
+                            'maximum_slots' => $class->maximum_slots,
+                        ])
+                        ->event('class_overload_approved')
+                        ->log("Approved class seat overload into Section {$class->section}.");
+                }
+
+                Student::query()->whereKey($student->id)->lockForUpdate()->first();
+                app(\App\Services\ClassEnrollmentService::class)->enrollOnceWhileLocked(
+                    (int) $student->id,
+                    (int) $class->id,
+                    ['status' => true],
+                );
+
+                // Sync matching SubjectEnrollment class_id & section and promote waiting waitlist entries.
+                $classSubjectIds = collect(is_array($class->subject_ids) ? $class->subject_ids : [])
+                    ->map(fn ($id): int => (int) $id)
+                    ->filter()
+                    ->all();
+                $classSubjectCodes = collect(explode(',', (string) $class->subject_code))
+                    ->map(fn ($code): string => mb_strtolower(mb_trim($code)))
+                    ->filter()
+                    ->all();
+
+                $enrollment->loadMissing('subjectsEnrolled.subject');
+                foreach ($enrollment->subjectsEnrolled as $se) {
+                    $matchesById = $se->subject_id !== null && in_array((int) $se->subject_id, $classSubjectIds, true);
+                    $matchesByCode = $se->subject?->code !== null
+                        && in_array(mb_strtolower(mb_trim((string) $se->subject->code)), $classSubjectCodes, true);
+
+                    if ($matchesById || $matchesByCode) {
+                        $se->forceFill([
+                            'class_id' => $class->id,
+                            'section' => $class->section,
+                        ])->saveQuietly();
+
+                        EnrollmentClassWaitlist::query()
+                            ->where('student_enrollment_id', $enrollment->id)
+                            ->where(function ($query) use ($se): void {
+                                $query->where('subject_enrollment_id', $se->id)
+                                    ->orWhere('subject_id', $se->subject_id);
+                            })
+                            ->where('status', EnrollmentClassWaitlist::StatusWaiting)
+                            ->update([
+                                'status' => EnrollmentClassWaitlist::StatusPromoted,
+                                'promoted_class_id' => $class->id,
+                                'promoted_by' => $user->id,
+                                'promoted_at' => now(),
+                            ]);
+                    }
+                }
+
+                return ['status' => 'success', 'message' => "Enrolled in {$class->subject_code} (Section {$class->section})."];
+            });
+
+            return back()->with('flash', [$result['status'] => $result['message']]);
         } catch (Exception $e) {
             return back()->with('flash', ['error' => $e->getMessage()]);
         }
@@ -1619,7 +2524,14 @@ final class AdministratorEnrollmentManagementController extends Controller
 
     public function retryEnrollment(Request $request, StudentEnrollment $enrollment): RedirectResponse
     {
-        $force = $request->boolean('force_enrollment', true);
+        $user = Auth::user();
+        abort_unless($user instanceof User && $this->canManageEnrollment($user, 'update', $enrollment), 403);
+
+        if ($this->isTerminalLocked($enrollment) || $enrollment->trashed()) {
+            return back()->with('flash', ['error' => 'Cannot retry class enrollment on a cancelled, rejected, or trashed enrollment.']);
+        }
+
+        $force = $request->boolean('force_enrollment', false);
         $originalConfig = config('enrollment.force_enroll_when_full');
 
         if ($force) {
@@ -1641,6 +2553,13 @@ final class AdministratorEnrollmentManagementController extends Controller
 
     public function resendAssessment(StudentEnrollment $enrollment): RedirectResponse
     {
+        $user = Auth::user();
+        abort_unless($user instanceof User && $this->canManageEnrollment($user, 'update', $enrollment), 403);
+
+        if ($this->isTerminalLocked($enrollment) || $enrollment->trashed()) {
+            return back()->with('flash', ['error' => 'Cannot resend assessment for a cancelled, rejected, or trashed enrollment.']);
+        }
+
         $result = $this->enrollmentService->resendAssessmentNotification($enrollment);
         if ($result['success']) {
             return back()->with('flash', ['success' => 'Assessment notification queued.']);
@@ -1651,10 +2570,13 @@ final class AdministratorEnrollmentManagementController extends Controller
 
     public function createAssessmentPdf(StudentEnrollment $enrollment): RedirectResponse
     {
-        try {
-            GenerateAssessmentPdfJob::dispatch($enrollment, uniqid('pdf_', true), true);
+        $user = Auth::user();
+        abort_unless($user instanceof User && $this->canManageEnrollment($user, 'update', $enrollment), 403);
 
-            return back()->with('flash', ['success' => 'PDF generation queued.']);
+        try {
+            GenerateAssessmentPdfJob::dispatch($enrollment, uniqid('pdf_', true), true, true);
+
+            return back()->with('flash', ['success' => 'Fresh assessment PDF generation queued.']);
         } catch (Exception $e) {
             return back()->with('flash', ['error' => $e->getMessage()]);
         }
@@ -1704,6 +2626,9 @@ final class AdministratorEnrollmentManagementController extends Controller
      */
     public function assessmentPreviewData(StudentEnrollment $enrollment, AssessmentFormDataService $assessmentFormDataService): JsonResponse
     {
+        $user = Auth::user();
+        abort_unless($user instanceof User && $this->canViewEnrollment($user, $enrollment), 403);
+
         return response()->json($assessmentFormDataService->build($enrollment));
     }
 
@@ -1712,6 +2637,9 @@ final class AdministratorEnrollmentManagementController extends Controller
      */
     public function assessmentPreview(StudentEnrollment $enrollment, AssessmentFormDataService $assessmentFormDataService): Response
     {
+        $user = Auth::user();
+        abort_unless($user instanceof User && $this->canViewEnrollment($user, $enrollment), 403);
+
         return Inertia::render('administrators/enrollments/assessment-preview', [
             'data' => $assessmentFormDataService->build($enrollment),
             'enrollmentId' => $enrollment->id,
@@ -1756,13 +2684,31 @@ final class AdministratorEnrollmentManagementController extends Controller
 
     public function update(Request $request, Student $student): RedirectResponse
     {
+        $user = Auth::user();
+        abort_unless($user instanceof User && $this->canManageEnrollment($user, 'update'), 403);
+
         $validated = $request->validate([
-            'scholarship_type' => ['nullable', 'string', 'max:255'],
+            'scholarship_type' => ['nullable', 'string', Rule::in(array_map(static fn (ScholarshipType $case): string => $case->value, ScholarshipType::cases()))],
         ]);
 
+        $previous = $student->scholarship_type?->value;
+        $next = ($validated['scholarship_type'] ?? null) === ScholarshipType::None->value
+            ? ScholarshipType::None->value
+            : ($validated['scholarship_type'] ?? null);
+
         $student->update([
-            'scholarship_type' => $validated['scholarship_type'],
+            'scholarship_type' => $next,
         ]);
+
+        activity('enrollment')
+            ->performedOn($student)
+            ->causedBy($user)
+            ->withProperties([
+                'previous_scholarship' => $previous,
+                'new_scholarship' => $next,
+            ])
+            ->event('scholarship_updated')
+            ->log('Updated student scholarship classification.');
 
         return redirect()->back()->with('flash', [
             'success' => 'Student scholarship status updated successfully.',
@@ -1771,42 +2717,78 @@ final class AdministratorEnrollmentManagementController extends Controller
 
     public function updateTransaction(Request $request, StudentEnrollment $enrollment, Transaction $transaction): RedirectResponse
     {
+        $user = Auth::user();
+        abort_unless($user instanceof User && $this->canManageTuitionFees($user), 403);
+
+        $studentTransaction = StudentTransaction::query()
+            ->where('student_enrollment_id', $enrollment->id)
+            ->where('transaction_id', $transaction->id)
+            ->first();
+
+        abort_unless($studentTransaction instanceof StudentTransaction, 404);
+
         $validated = $request->validate([
             'amount' => ['required', 'numeric', 'min:0'],
-            'invoicenumber' => ['required', 'string'],
+            'invoicenumber' => ['required', 'string', 'max:255'],
         ]);
 
         try {
-            DB::transaction(function () use ($enrollment, $transaction, $validated): void {
-                // Update settlements
-                $settlements = $transaction->settlements;
+            DB::transaction(function () use ($enrollment, $transaction, $studentTransaction, $validated, $user): void {
+                $lockedTx = Transaction::query()->whereKey($transaction->id)->lockForUpdate()->firstOrFail();
+                $previousInvoice = $lockedTx->invoicenumber;
+                $previousAmount = (float) ($studentTransaction->amount ?? $lockedTx->raw_total_amount ?? 0);
+                $newAmount = round((float) $validated['amount'], 2);
+
+                $settlements = $lockedTx->settlements;
                 if (is_string($settlements)) {
-                    $settlements = json_decode($settlements, true);
+                    $settlements = json_decode($settlements, true) ?: [];
+                }
+                if (! is_array($settlements)) {
+                    $settlements = [];
                 }
 
-                // Heuristic: If settlements has 'tuition_fee', update that.
-                // If it has 'others', update that.
-                // If it's empty or null, create 'tuition_fee'.
                 if (isset($settlements['tuition_fee'])) {
-                    $settlements['tuition_fee'] = $validated['amount'];
+                    $settlements['tuition_fee'] = $newAmount;
                 } elseif (isset($settlements['others'])) {
-                    $settlements['others'] = $validated['amount'];
+                    $settlements['others'] = $newAmount;
                 } else {
-                    // Default to tuition_fee if ambiguous
-                    $settlements['tuition_fee'] = $validated['amount'];
+                    $settlements['tuition_fee'] = $newAmount;
                 }
 
-                $transaction->update([
+                $lockedTx->update([
                     'settlements' => $settlements,
                     'invoicenumber' => $validated['invoicenumber'],
                 ]);
 
-                // Keep tuition balance aligned with verified tuition payments.
-                // Non-tuition settlement categories should not reduce tuition balance.
+                $studentTransaction->update([
+                    'amount' => $newAmount,
+                ]);
+
                 $tuition = $enrollment->studentTuition;
-                if ($tuition) {
+                if ($tuition instanceof StudentTuition) {
+                    $allocations = PaymentAllocation::query()
+                        ->where('transaction_id', $lockedTx->id)
+                        ->where('student_tuition_id', $tuition->id)
+                        ->get();
+                    if ($allocations->count() === 1) {
+                        $allocations->first()->update(['amount' => $newAmount]);
+                    }
+
                     $this->enrollmentBillingService->syncTuitionBalance($tuition->refresh());
                 }
+
+                activity('enrollment')
+                    ->performedOn($enrollment)
+                    ->causedBy($user)
+                    ->withProperties([
+                        'transaction_id' => $lockedTx->id,
+                        'previous_invoice' => $previousInvoice,
+                        'new_invoice' => $validated['invoicenumber'],
+                        'previous_amount' => $previousAmount,
+                        'new_amount' => $newAmount,
+                    ])
+                    ->event('transaction_updated')
+                    ->log("Updated transaction #{$lockedTx->id} ({$validated['invoicenumber']}).");
             });
 
             return back()->with('flash', ['success' => 'Transaction updated successfully.']);
@@ -2508,7 +3490,7 @@ final class AdministratorEnrollmentManagementController extends Controller
         }
     }
 
-    public function create(GeneralSettingsService $settingsService): Response|RedirectResponse
+    public function create(Request $request, GeneralSettingsService $settingsService): Response|RedirectResponse
     {
         $user = Auth::user();
 
@@ -2521,6 +3503,30 @@ final class AdministratorEnrollmentManagementController extends Controller
         $currentSemester = $settingsService->getCurrentSemester();
         $currentSchoolYear = $settingsService->getCurrentSchoolYearString();
 
+        $prefill = null;
+        $fromEnrollmentId = $request->integer('from_enrollment');
+        if ($fromEnrollmentId > 0) {
+            $source = StudentEnrollment::query()
+                ->with(['student.Course', 'studentTuition'])
+                ->find($fromEnrollmentId);
+            if ($source instanceof StudentEnrollment && $source->student instanceof Student) {
+                $nextSemester = $source->semester === 1 ? 2 : 1;
+                $nextAcademicYear = $source->semester >= 2
+                    ? min(5, max(1, (int) ($source->academic_year ?? 1) + 1))
+                    : max(1, (int) ($source->academic_year ?? 1));
+                $prefill = [
+                    'source_enrollment_id' => $source->id,
+                    'student_id' => $source->student->id,
+                    'student_name' => $source->student->full_name,
+                    'student_number' => $source->student->student_id,
+                    'course_code' => $source->student->Course?->code,
+                    'semester' => $nextSemester,
+                    'academic_year' => $nextAcademicYear,
+                    'discount_id' => $source->studentTuition?->discount_id,
+                ];
+            }
+        }
+
         return Inertia::render('administrators/enrollments/create', [
             'user' => [
                 'name' => $user->name,
@@ -2529,6 +3535,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'role' => $user->role?->getLabel() ?? 'Administrator',
             ],
             'can_manage_tuition_fees' => $this->canManageTuitionFees($user),
+            'prefill' => $prefill,
             'settings' => [
                 'currentSemester' => $currentSemester,
                 'currentSchoolYear' => $currentSchoolYear,
@@ -3160,6 +4167,9 @@ final class AdministratorEnrollmentManagementController extends Controller
      */
     public function destroy(StudentEnrollment $enrollment): RedirectResponse
     {
+        $user = Auth::user();
+        abort_unless($user instanceof User && ($user->can('delete', $enrollment) || $user->can('Delete:StudentEnrollment') || $this->canManageEnrollment($user, 'update', $enrollment)), 403);
+
         $studentName = $enrollment->student?->full_name ?? 'Unknown Student';
 
         $enrollment->delete();
@@ -3173,6 +4183,8 @@ final class AdministratorEnrollmentManagementController extends Controller
     public function forceDestroy(int $enrollment): RedirectResponse
     {
         $enrollmentModel = StudentEnrollment::withTrashed()->findOrFail($enrollment);
+        $user = Auth::user();
+        abort_unless($user instanceof User && ($user->can('forceDelete', $enrollmentModel) || $user->can('ForceDelete:StudentEnrollment') || $user->hasRole('super_admin')), 403);
 
         $studentName = $enrollmentModel->student?->full_name ?? 'Unknown Student';
 
@@ -3182,22 +4194,11 @@ final class AdministratorEnrollmentManagementController extends Controller
 
         try {
             DB::transaction(function () use ($enrollmentModel): void {
-                // Delete related subject enrollments
                 $enrollmentModel->subjectsEnrolled()->delete();
-
-                // Delete related additional fees
                 $enrollmentModel->additionalFees()->delete();
-
-                // Delete related tuition record
                 $enrollmentModel->studentTuition()->delete();
-
-                // Delete related resources
                 $enrollmentModel->resources()->delete();
-
-                // Delete related enrollment transactions
                 $enrollmentModel->enrollmentTransactions()->delete();
-
-                // Force delete the enrollment
                 $enrollmentModel->forceDelete();
             });
 
@@ -3215,6 +4216,8 @@ final class AdministratorEnrollmentManagementController extends Controller
     public function restore(int $enrollment): RedirectResponse
     {
         $enrollmentModel = StudentEnrollment::withTrashed()->findOrFail($enrollment);
+        $user = Auth::user();
+        abort_unless($user instanceof User && ($user->can('restore', $enrollmentModel) || $user->can('Restore:StudentEnrollment') || $this->canManageEnrollment($user, 'update', $enrollmentModel)), 403);
 
         if (! $enrollmentModel->trashed()) {
             return back()->with('flash', ['warning' => 'This enrollment is not deleted.']);
@@ -3232,22 +4235,34 @@ final class AdministratorEnrollmentManagementController extends Controller
      */
     public function activityLog(StudentEnrollment $enrollment): JsonResponse
     {
+        $user = Auth::user();
+        abort_unless($user instanceof User && $this->canViewEnrollment($user, $enrollment), 403);
+
         $recentDeletions = Activity::query()
+            ->with('causer')
             ->where(function ($query) use ($enrollment): void {
-                // Subject enrollment deletions for this enrollment
                 $query->where('log_name', 'subject_enrollment')
                     ->where('event', 'deleted')
                     ->where('attribute_changes', 'like', '%"enrollment_id":'.$enrollment->id.'%');
             })
             ->orWhere(function ($query) use ($enrollment): void {
-                // Class enrollment deletions for this student in the same school year/semester
                 $query->where('log_name', 'class_enrollments')
                     ->where('event', 'deleted')
                     ->where('attribute_changes', 'like', '%"student_id":'.$enrollment->student_id.'%');
             })
             ->orderByDesc('created_at')
-            ->limit(50)
+            ->limit(80)
             ->get()
+            ->filter(function (Activity $activity) use ($enrollment): bool {
+                $oldData = ($activity->attribute_changes?->toArray() ?? [])['old'] ?? [];
+                if ($activity->log_name === 'subject_enrollment') {
+                    return (int) ($oldData['enrollment_id'] ?? 0) === (int) $enrollment->id;
+                }
+
+                return (int) ($oldData['student_id'] ?? 0) === (int) $enrollment->student_id;
+            })
+            ->take(50)
+            ->values()
             ->map(function (Activity $activity): array {
                 $properties = $activity->attribute_changes?->toArray() ?? [];
                 $oldData = $properties['old'] ?? [];
@@ -3274,8 +4289,15 @@ final class AdministratorEnrollmentManagementController extends Controller
     /**
      * Restore deleted subject enrollments from activity log.
      */
-    public function restoreSubjects(Request $request, StudentEnrollment $enrollment): RedirectResponse
+    public function restoreSubjects(Request $request, StudentEnrollment $enrollment, EnrollmentLoadChangeService $loadChangeService): RedirectResponse
     {
+        $user = Auth::user();
+        abort_unless($user instanceof User && $this->canManageEnrollment($user, 'update', $enrollment), 403);
+
+        if ($this->isTerminalLocked($enrollment) || $enrollment->trashed()) {
+            return back()->with('flash', ['error' => 'Cannot restore subjects on a cancelled, rejected, or trashed enrollment.']);
+        }
+
         $validated = $request->validate([
             'activity_ids' => ['required', 'array', 'min:1'],
             'activity_ids.*' => ['required', 'integer', 'exists:activity_log,id'],
@@ -3284,7 +4306,7 @@ final class AdministratorEnrollmentManagementController extends Controller
         $restoredCount = 0;
         $errors = [];
 
-        DB::transaction(function () use ($validated, $enrollment, &$restoredCount, &$errors): void {
+        DB::transaction(function () use ($validated, $enrollment, $loadChangeService, &$restoredCount, &$errors): void {
             foreach ($validated['activity_ids'] as $activityId) {
                 $activity = Activity::query()->find($activityId);
                 if (! $activity) {
@@ -3297,14 +4319,12 @@ final class AdministratorEnrollmentManagementController extends Controller
                 $oldData = $properties['old'] ?? [];
 
                 if ($activity->log_name === 'subject_enrollment' && $activity->event === 'deleted') {
-                    // Check if enrollment_id matches
-                    if (($oldData['enrollment_id'] ?? null) !== $enrollment->id) {
+                    if ((int) ($oldData['enrollment_id'] ?? 0) !== (int) $enrollment->id) {
                         $errors[] = "Activity #{$activityId} belongs to a different enrollment";
 
                         continue;
                     }
 
-                    // Check if subject enrollment already exists
                     $existing = SubjectEnrollment::query()
                         ->where('enrollment_id', $oldData['enrollment_id'])
                         ->where('subject_id', $oldData['subject_id'])
@@ -3316,9 +4336,6 @@ final class AdministratorEnrollmentManagementController extends Controller
                         continue;
                     }
 
-                    // Restore the subject enrollment. The activity log stores the
-                    // whole row, including the primary key and the timestamps,
-                    // so the payload is narrowed to the model's allowlist first.
                     $restorable = array_intersect_key(
                         $oldData,
                         array_flip((new SubjectEnrollment)->getFillable()),
@@ -3334,29 +4351,23 @@ final class AdministratorEnrollmentManagementController extends Controller
 
                     $restoredCount++;
 
-                    // Also restore class enrollment if needed
                     if (! empty($oldData['class_id'])) {
-                        $classEnrollmentExists = ClassEnrollment::query()
-                            ->where('class_id', $oldData['class_id'])
-                            ->where('student_id', $oldData['student_id'])
-                            ->exists();
-
-                        if (! $classEnrollmentExists) {
-                            app(\App\Services\ClassEnrollmentService::class)->enrollOnce(
-                                (int) $oldData['student_id'],
-                                (int) $oldData['class_id'],
-                                [
-                                    'status' => true,
-                                ],
-                            );
-                        }
+                        app(\App\Services\ClassEnrollmentService::class)->enrollOnce(
+                            (int) $oldData['student_id'],
+                            (int) $oldData['class_id'],
+                            ['status' => true],
+                        );
                     }
                 }
+            }
+
+            if ($restoredCount > 0) {
+                $loadChangeService->recalculateEnrollmentTuition($enrollment);
             }
         });
 
         if ($restoredCount > 0) {
-            $message = "Successfully restored {$restoredCount} subject enrollment(s).";
+            $message = "Successfully restored {$restoredCount} subject enrollment(s) and updated tuition.";
             if ($errors !== []) {
                 $message .= ' Some items could not be restored: '.implode('; ', $errors);
             }
@@ -4366,21 +5377,36 @@ final class AdministratorEnrollmentManagementController extends Controller
      */
     private function getRecentDeletionsForEnrollment(StudentEnrollment $enrollment): array
     {
-        return Activity::query()
+        $activities = Activity::query()
+            ->with('causer')
             ->where(function ($query) use ($enrollment): void {
                 $query->where('log_name', 'subject_enrollment')
                     ->where('event', 'deleted')
                     ->where('attribute_changes', 'like', '%"enrollment_id":'.$enrollment->id.'%');
             })
             ->orderByDesc('created_at')
-            ->limit(20)
+            ->limit(40)
             ->get()
-            ->map(function (Activity $activity): array {
+            ->filter(function (Activity $activity) use ($enrollment): bool {
+                $oldData = ($activity->attribute_changes?->toArray() ?? [])['old'] ?? [];
+
+                return (int) ($oldData['enrollment_id'] ?? 0) === (int) $enrollment->id;
+            })
+            ->take(20)
+            ->values();
+
+        $subjectIds = $activities
+            ->map(fn (Activity $a): mixed => ($a->attribute_changes?->toArray() ?? [])['old']['subject_id'] ?? null)
+            ->filter()
+            ->unique()
+            ->values();
+        $subjects = $subjectIds->isNotEmpty() ? Subject::query()->findMany($subjectIds)->keyBy('id') : collect();
+
+        return $activities
+            ->map(function (Activity $activity) use ($subjects): array {
                 $properties = $activity->attribute_changes?->toArray() ?? [];
                 $oldData = $properties['old'] ?? [];
-
-                // Get subject info for display
-                $subject = Subject::query()->find($oldData['subject_id'] ?? null);
+                $subject = isset($oldData['subject_id']) ? $subjects->get((int) $oldData['subject_id']) : null;
 
                 return [
                     'id' => $activity->id,
@@ -4396,7 +5422,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                     'causer' => $activity->causer?->name ?? 'System',
                 ];
             })
-            ->toArray();
+            ->all();
     }
 
     /**
@@ -4835,6 +5861,20 @@ final class AdministratorEnrollmentManagementController extends Controller
                 }
             }
         }
+    }
+
+    private function canViewEnrollment(User $user, StudentEnrollment $enrollment): bool
+    {
+        if ($user->can('view', $enrollment) || $user->can('View:StudentEnrollment')) {
+            return true;
+        }
+
+        return $this->canManageEnrollment($user, 'update', $enrollment);
+    }
+
+    private function isTerminalLocked(StudentEnrollment $enrollment): bool
+    {
+        return in_array($enrollment->terminal_outcome, [EnrollmentCancellationService::OUTCOME, 'rejected'], true);
     }
 
     private function canManageEnrollment(User $user, string $ability, ?StudentEnrollment $enrollment = null): bool

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enums\UserRole;
 use App\Http\Requests\Administrators\StoreStudentHoldRequest;
 use App\Models\Student;
 use App\Models\StudentHold;
@@ -106,7 +107,7 @@ final class AdministratorStudentHoldController extends Controller
     public function forStudent(Student $student): JsonResponse
     {
         $user = Auth::user();
-        abort_unless($user instanceof User, 403);
+        abort_unless($user instanceof User && $this->canManageHolds($user), 403);
 
         $holds = $this->holdService->allHoldsForStudent((int) $student->id);
 
@@ -122,7 +123,7 @@ final class AdministratorStudentHoldController extends Controller
     public function store(StoreStudentHoldRequest $request): RedirectResponse|JsonResponse
     {
         $user = $request->user();
-        abort_unless($user instanceof User, 403);
+        abort_unless($user instanceof User && $this->canManageHolds($user), 403);
 
         $student = Student::query()->findOrFail($request->integer('student_id'));
         $hold = $this->holdService->placeHold($student, $request->validated(), $user);
@@ -143,7 +144,7 @@ final class AdministratorStudentHoldController extends Controller
     public function release(Request $request, StudentHold $hold): RedirectResponse|JsonResponse
     {
         $user = $request->user();
-        abort_unless($user instanceof User, 403);
+        abort_unless($user instanceof User && $this->canManageHolds($user), 403);
 
         $validated = $request->validate([
             'release_notes' => ['nullable', 'string', 'max:1000'],
@@ -172,7 +173,7 @@ final class AdministratorStudentHoldController extends Controller
     public function override(Request $request, StudentHold $hold): RedirectResponse|JsonResponse
     {
         $user = $request->user();
-        abort_unless($user instanceof User, 403);
+        abort_unless($user instanceof User && $this->canManageHolds($user), 403);
 
         $validated = $request->validate([
             'override_reason' => ['required', 'string', 'min:5', 'max:1000'],
@@ -196,5 +197,30 @@ final class AdministratorStudentHoldController extends Controller
         }
 
         return back()->with('flash', ['success' => 'Student hold overridden and recorded in audit log.']);
+    }
+
+    private function canManageHolds(User $user): bool
+    {
+        if ($user->can('Update:StudentEnrollment') || $user->can('View:StudentEnrollment') || $user->hasRole('super_admin')) {
+            return true;
+        }
+
+        return in_array($user->role, [
+            UserRole::Developer,
+            UserRole::SuperAdmin,
+            UserRole::Admin,
+            UserRole::Registrar,
+            UserRole::AssistantRegistrar,
+            UserRole::Dean,
+            UserRole::AssociateDean,
+            UserRole::DepartmentHead,
+            UserRole::ProgramChair,
+            UserRole::Cashier,
+            UserRole::AccountingOfficer,
+            UserRole::BursarOfficer,
+            UserRole::Librarian,
+            UserRole::GuidanceCounselor,
+            UserRole::StudentAffairsOfficer,
+        ], true);
     }
 }

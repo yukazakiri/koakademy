@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enums\UserRole;
 use App\Http\Requests\Administrators\StoreEnrollmentLoadChangeRequest;
 use App\Models\EnrollmentLoadChange;
 use App\Models\StudentEnrollment;
@@ -30,7 +31,7 @@ final class AdministratorEnrollmentLoadChangeController extends Controller
     public function index(StudentEnrollment $enrollment): JsonResponse
     {
         $user = Auth::user();
-        abort_unless($user instanceof User, 403);
+        abort_unless($user instanceof User && $this->canManageLoadChange($user, $enrollment), 403);
 
         $enrollment->loadMissing(['course', 'subjectsEnrolled.subject', 'subjectsEnrolled.class', 'studentTuition']);
 
@@ -121,11 +122,16 @@ final class AdministratorEnrollmentLoadChangeController extends Controller
     public function approve(Request $request, StudentEnrollment $enrollment, EnrollmentLoadChange $loadChange): JsonResponse
     {
         $actor = $request->user();
-        abort_unless($actor instanceof User, 403);
+        abort_unless($actor instanceof User && $this->canManageLoadChange($actor, $enrollment), 403);
         abort_if($loadChange->student_enrollment_id !== $enrollment->id, 404);
 
         try {
-            $updated = $this->loadChangeService->approve($loadChange, $actor, $request->boolean('force_overload', false));
+            $updated = $this->loadChangeService->approve(
+                $loadChange,
+                $actor,
+                $request->boolean('force_overload', false),
+                $request->boolean('confirm_grade_loss', false),
+            );
 
             return response()->json([
                 'load_change' => $this->loadChangeService->serialize($updated),
@@ -139,7 +145,7 @@ final class AdministratorEnrollmentLoadChangeController extends Controller
     public function reject(Request $request, StudentEnrollment $enrollment, EnrollmentLoadChange $loadChange): JsonResponse
     {
         $actor = $request->user();
-        abort_unless($actor instanceof User, 403);
+        abort_unless($actor instanceof User && $this->canManageLoadChange($actor, $enrollment), 403);
         abort_if($loadChange->student_enrollment_id !== $enrollment->id, 404);
 
         $validated = $request->validate([
@@ -161,7 +167,7 @@ final class AdministratorEnrollmentLoadChangeController extends Controller
     public function slip(StudentEnrollment $enrollment, EnrollmentLoadChange $loadChange): View
     {
         $actor = Auth::user();
-        abort_unless($actor instanceof User, 403);
+        abort_unless($actor instanceof User && $this->canManageLoadChange($actor, $enrollment), 403);
         abort_if($loadChange->student_enrollment_id !== $enrollment->id, 404);
 
         $enrollment->loadMissing(['student', 'course.department', 'studentTuition']);
@@ -175,5 +181,27 @@ final class AdministratorEnrollmentLoadChangeController extends Controller
             'enrollment' => $enrollment,
             'loadChange' => $loadChange,
         ]);
+    }
+
+    private function canManageLoadChange(User $user, StudentEnrollment $enrollment): bool
+    {
+        if ($user->can('update', $enrollment) || $user->can('Update:StudentEnrollment')) {
+            return true;
+        }
+
+        return in_array($user->role, [
+            UserRole::Developer,
+            UserRole::SuperAdmin,
+            UserRole::Admin,
+            UserRole::Registrar,
+            UserRole::AssistantRegistrar,
+            UserRole::Dean,
+            UserRole::AssociateDean,
+            UserRole::DepartmentHead,
+            UserRole::ProgramChair,
+            UserRole::Cashier,
+            UserRole::AccountingOfficer,
+            UserRole::BursarOfficer,
+        ], true);
     }
 }

@@ -279,10 +279,10 @@ final class StudentEnrollment extends Model
     /**
      * Get student transactions for this enrollment through the student (legacy method)
      */
-    #[Deprecated(message: 'Use enrollmentStudentTransactions() instead')]
+    #[Deprecated(message: 'Use enrollmentTransactions() instead')]
     public function studentTransactions()
     {
-        return $this->enrollmentStudentTransactions();
+        return $this->enrollmentTransactions();
     }
 
     /**

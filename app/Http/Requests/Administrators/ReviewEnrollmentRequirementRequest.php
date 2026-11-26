@@ -26,8 +26,8 @@ final class ReviewEnrollmentRequirementRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'action' => ['required', Rule::in(['verify', 'waive'])],
-            'reason' => ['required_if:action,waive', 'nullable', 'string', 'max:2000'],
+            'action' => ['required', Rule::in(['verify', 'waive', 'reset'])],
+            'reason' => ['required_if:action,waive,reset', 'nullable', 'string', 'max:2000'],
             'evidence_path' => ['nullable', 'string', 'max:255'],
             'idempotency_key' => ['required', 'string', 'max:96'],
         ];

@@ -4,8 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enrollment\EnrollmentCancellationService;
+use App\Enrollment\EnrollmentDiscountCalculation;
+use App\Enrollment\EnrollmentFeeCalculator;
+use App\Enrollment\EnrollmentFeePolicy;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
+use App\Models\EnrollmentClassWaitlist;
 use App\Models\EnrollmentLoadChange;
 use App\Models\StudentEnrollment;
 use App\Models\StudentTuition;
@@ -21,6 +26,10 @@ final readonly class EnrollmentLoadChangeService
     public function __construct(
         private EnrollmentPeriodService $periodService,
         private StudentHoldService $holdService,
+        private EnrollmentFeePolicy $feePolicy,
+        private EnrollmentFeeCalculator $feeCalculator,
+        private TuitionAdjustmentRecalculationService $tuitionAdjustmentRecalculation,
+        private EnrollmentBillingService $billingService,
     ) {}
 
     /**
@@ -108,6 +117,10 @@ final readonly class EnrollmentLoadChangeService
      */
     public function submit(StudentEnrollment $enrollment, array $data, User $actor): EnrollmentLoadChange
     {
+        if (in_array($enrollment->terminal_outcome, [EnrollmentCancellationService::OUTCOME, 'rejected'], true) || $enrollment->trashed()) {
+            throw new RuntimeException('Cannot submit a Change-of-Load on a cancelled, rejected, or trashed enrollment.');
+        }
+
         $preview = $this->preview($enrollment, $data);
         $periodStatus = $this->periodService->describe($enrollment->school_year, $enrollment->semester);
 
@@ -116,8 +129,22 @@ final readonly class EnrollmentLoadChangeService
             throw new RuntimeException('The Add/Drop/Swap deadline for this term has passed. Enable administrator window override to proceed.');
         }
 
-        if ($preview['blocking_holds_count'] > 0 && ! (bool) ($data['override_holds'] ?? false)) {
-            throw new RuntimeException('Student has an active hold blocking Add/Drop changes. Resolve or override the hold first.');
+        if ($preview['blocking_holds_count'] > 0) {
+            $overrideHolds = (bool) ($data['override_holds'] ?? false);
+            if (! $overrideHolds) {
+                throw new RuntimeException('Student has an active hold blocking Add/Drop changes. Resolve or override the hold first.');
+            }
+
+            $overrideReason = mb_trim((string) ($data['override_holds_reason'] ?? $data['reason'] ?? ''));
+            activity('enrollment')
+                ->performedOn($enrollment)
+                ->causedBy($actor)
+                ->withProperties([
+                    'blocking_holds_count' => $preview['blocking_holds_count'],
+                    'override_reason' => $overrideReason,
+                ])
+                ->event('hold_override_for_load_change')
+                ->log('Overrode blocking student holds for Change-of-Load request.');
         }
 
         $changeType = (string) $data['change_type'];
@@ -152,7 +179,12 @@ final readonly class EnrollmentLoadChangeService
         ]);
 
         if ((bool) ($data['apply_immediately'] ?? true)) {
-            return $this->approve($change, $actor, (bool) ($data['force_overload'] ?? false));
+            return $this->approve(
+                $change,
+                $actor,
+                (bool) ($data['force_overload'] ?? false),
+                (bool) ($data['confirm_grade_loss'] ?? false),
+            );
         }
 
         return $change->fresh(['requestedBy', 'approvedBy', 'rejectedBy', 'addedClass']);
@@ -161,16 +193,24 @@ final readonly class EnrollmentLoadChangeService
     /**
      * Approve and atomically apply a pending Add / Drop / Swap request and recalculate tuition.
      */
-    public function approve(EnrollmentLoadChange $change, User $actor, bool $forceOverload = false): EnrollmentLoadChange
-    {
+    public function approve(
+        EnrollmentLoadChange $change,
+        User $actor,
+        bool $forceOverload = false,
+        bool $confirmGradeLoss = false,
+    ): EnrollmentLoadChange {
         if ($change->status !== EnrollmentLoadChange::StatusPending) {
             throw new RuntimeException('Only pending load-change requests can be approved.');
         }
 
-        return DB::transaction(function () use ($change, $actor, $forceOverload): EnrollmentLoadChange {
+        return DB::transaction(function () use ($change, $actor, $forceOverload, $confirmGradeLoss): EnrollmentLoadChange {
             $enrollment = StudentEnrollment::query()
                 ->with(['course', 'studentTuition', 'additionalFees', 'subjectsEnrolled.subject'])
                 ->findOrFail($change->student_enrollment_id);
+
+            if (in_array($enrollment->terminal_outcome, [EnrollmentCancellationService::OUTCOME, 'rejected'], true) || $enrollment->trashed()) {
+                throw new RuntimeException('Cannot apply a Change-of-Load on a cancelled, rejected, or trashed enrollment.');
+            }
 
             $previousTotal = (float) ($enrollment->studentTuition?->overall_tuition ?? 0);
 
@@ -185,7 +225,24 @@ final readonly class EnrollmentLoadChangeService
                     throw new RuntimeException('The subject selected to drop is no longer on this enrollment.');
                 }
 
+                $hasGrade = $subjectEnrollment->grade !== null
+                    || ($subjectEnrollment->class_id !== null && ClassEnrollment::query()
+                        ->where('student_id', $enrollment->student_id)
+                        ->where('class_id', $subjectEnrollment->class_id)
+                        ->where(function ($query): void {
+                            $query->whereNotNull('prelim_grade')
+                                ->orWhereNotNull('midterm_grade')
+                                ->orWhereNotNull('finals_grade')
+                                ->orWhereNotNull('total_average');
+                        })
+                        ->exists());
+
+                if ($hasGrade && ! $confirmGradeLoss) {
+                    throw new RuntimeException('Cannot drop a subject that already has recorded grades without explicit grade-loss confirmation.');
+                }
+
                 $oldClassId = $subjectEnrollment->class_id;
+                $droppedSubjectEnrollmentId = $subjectEnrollment->id;
                 $subjectEnrollment->delete();
 
                 if ($oldClassId) {
@@ -194,6 +251,12 @@ final readonly class EnrollmentLoadChangeService
                         ->where('class_id', $oldClassId)
                         ->delete();
                 }
+
+                EnrollmentClassWaitlist::query()
+                    ->where('student_enrollment_id', $enrollment->id)
+                    ->where('subject_enrollment_id', $droppedSubjectEnrollmentId)
+                    ->where('status', EnrollmentClassWaitlist::StatusWaiting)
+                    ->update(['status' => EnrollmentClassWaitlist::StatusCancelled]);
             }
 
             // 2. Handle add (for add or swap)
@@ -210,11 +273,31 @@ final readonly class EnrollmentLoadChangeService
                 }
 
                 $classId = $change->added_class_id;
+                $classSection = null;
                 if ($classId) {
-                    $class = Classes::query()->findOrFail($classId);
-                    $enrolledCount = ClassEnrollment::query()->where('class_id', $class->id)->count();
+                    $class = Classes::query()->whereKey($classId)->lockForUpdate()->firstOrFail();
+                    $classSection = $class->section;
+                    $enrolledCount = ClassEnrollment::query()
+                        ->where('class_id', $class->id)
+                        ->where('student_id', '!=', $enrollment->student_id)
+                        ->where('status', true)
+                        ->count();
                     if (! $forceOverload && $class->maximum_slots > 0 && $enrolledCount >= $class->maximum_slots) {
                         throw new RuntimeException(sprintf('Section %s for %s is full.', $class->section, $subject->code));
+                    }
+
+                    if ($forceOverload && $class->maximum_slots > 0 && $enrolledCount >= $class->maximum_slots) {
+                        activity('enrollment')
+                            ->performedOn($enrollment)
+                            ->causedBy($actor)
+                            ->withProperties([
+                                'class_id' => $class->id,
+                                'section' => $class->section,
+                                'enrolled_count' => $enrolledCount,
+                                'maximum_slots' => $class->maximum_slots,
+                            ])
+                            ->event('class_overload_approved')
+                            ->log("Approved class seat overload into Section {$class->section} via Change-of-Load.");
                     }
                 }
 
@@ -223,9 +306,10 @@ final readonly class EnrollmentLoadChangeService
                 $lecUnits = (int) ($subject->lecture ?? 0);
                 $labUnits = (int) ($subject->laboratory ?? 0);
 
-                $enrollment->subjectsEnrolled()->create([
+                $createdSubjectEnrollment = $enrollment->subjectsEnrolled()->create([
                     'subject_id' => $subject->id,
                     'class_id' => $classId,
+                    'section' => $classSection,
                     'student_id' => $enrollment->student_id,
                     'academic_year' => $enrollment->academic_year,
                     'school_year' => $enrollment->school_year,
@@ -248,10 +332,22 @@ final readonly class EnrollmentLoadChangeService
                     }
                     $classEnrollment->status = true;
                     $classEnrollment->save();
+
+                    EnrollmentClassWaitlist::query()
+                        ->where('student_enrollment_id', $enrollment->id)
+                        ->where('subject_id', $subject->id)
+                        ->where('status', EnrollmentClassWaitlist::StatusWaiting)
+                        ->update([
+                            'status' => EnrollmentClassWaitlist::StatusPromoted,
+                            'subject_enrollment_id' => $createdSubjectEnrollment->id,
+                            'promoted_class_id' => $classId,
+                            'promoted_by' => $actor->id,
+                            'promoted_at' => now(),
+                        ]);
                 }
             }
 
-            // 3. Recalculate StudentTuition preserving already-paid amount
+            // 3. Recalculate StudentTuition preserving already-paid amount and finance adjustments
             $newTotal = $this->recalculateEnrollmentTuition($enrollment);
 
             $change->forceFill([
@@ -284,12 +380,15 @@ final readonly class EnrollmentLoadChangeService
     }
 
     /**
-     * Recompute tuition ledger totals from active SubjectEnrollments while preserving payments already settled.
+     * Recompute tuition ledger totals from active SubjectEnrollments while preserving payments and finance adjustments.
      */
     public function recalculateEnrollmentTuition(StudentEnrollment $enrollment): float
     {
-        $enrollment->load(['subjectsEnrolled', 'additionalFees', 'studentTuition']);
-        $tuition = $enrollment->studentTuition;
+        $enrollment->load(['subjectsEnrolled.subject', 'additionalFees', 'studentTuition', 'course']);
+        $tuition = StudentTuition::query()
+            ->where('enrollment_id', $enrollment->id)
+            ->lockForUpdate()
+            ->first();
 
         if (! $tuition instanceof StudentTuition) {
             return 0.0;
@@ -297,28 +396,76 @@ final readonly class EnrollmentLoadChangeService
 
         $previousOverall = (float) $tuition->overall_tuition;
         $previousBalance = (float) $tuition->total_balance;
-        $alreadyPaid = max(0.0, round($previousOverall - $previousBalance, 2));
+        $impliedPaid = max(0.0, round($previousOverall - $previousBalance, 2));
+        $recordedPaid = $this->billingService->totalPaid($tuition);
+        $alreadyPaid = $recordedPaid > 0 ? $recordedPaid : $impliedPaid;
 
-        $billableSubjects = $enrollment->subjectsEnrolled->filter(fn (SubjectEnrollment $se): bool => ! $se->exclude_from_tuition);
-        $totalLectures = round((float) $billableSubjects->sum('lecture_fee'), 2);
-        $totalLaboratory = round((float) $billableSubjects->sum('laboratory_fee'), 2);
-        $grossTuition = round($totalLectures + $totalLaboratory, 2);
+        $configuration = $this->feePolicy->forEnrollment($enrollment);
+        $totalLecture = 0.0;
+        $totalLaboratory = 0.0;
+        $totalModularFee = 0.0;
 
-        $discountPct = (float) ($tuition->discount ?? 0);
-        $discountedTuition = round($grossTuition * max(0.0, 1.0 - ($discountPct / 100.0)), 2);
+        foreach ($enrollment->subjectsEnrolled as $se) {
+            if ($se->exclude_from_tuition) {
+                continue;
+            }
+
+            if ($se->subject instanceof Subject) {
+                $fees = $this->feeCalculator->subject(
+                    $se->subject->toArray(),
+                    $configuration,
+                    (bool) $se->is_modular,
+                    array_filter([
+                        'lecture_fee' => $se->lecture_fee,
+                        'laboratory_fee' => $se->laboratory_fee,
+                    ], static fn (mixed $v): bool => $v !== null),
+                );
+                $totalLecture += $fees['lecture_fee'];
+                $totalLaboratory += $fees['laboratory_fee'];
+                $totalModularFee += $fees['modular_fee'];
+            } else {
+                $totalLecture += (float) ($se->lecture_fee ?? 0);
+                $totalLaboratory += (float) ($se->laboratory_fee ?? 0);
+            }
+        }
+
+        $discountPct = (int) ($tuition->discount ?? 0);
+        $discounted = (new EnrollmentDiscountCalculation)->calculate(
+            $totalLecture,
+            $totalLaboratory,
+            $discountPct,
+            (string) ($configuration['discount_scope'] ?? 'lecture_only'),
+        );
+        $discountedLecture = round($discounted['lecture'], 2);
+        $discountedLab = round($discounted['laboratory'], 2);
+        $discountedTuition = round($discountedLecture + $discountedLab + $totalModularFee, 2);
 
         $miscFees = (float) ($tuition->total_miscelaneous_fees ?? 0);
         $additionalTotal = round((float) $enrollment->additionalFees->sum('amount'), 2);
-        $newOverall = round($discountedTuition + $miscFees + $additionalTotal, 2);
-        $newBalance = max(0.0, round($newOverall - $alreadyPaid, 2));
+        $baseOverall = round($discountedTuition + $miscFees + $additionalTotal, 2);
 
-        $tuition->forceFill([
-            'total_lectures' => $totalLectures,
-            'total_laboratory' => $totalLaboratory,
+        $preserved = $this->tuitionAdjustmentRecalculation->preserveFinanceAdjustment($tuition, [
+            'total_lectures' => $discountedLecture,
+            'total_laboratory' => $discountedLab,
             'total_tuition' => $discountedTuition,
-            'overall_tuition' => $newOverall,
+            'overall_tuition' => $baseOverall,
+            'total_balance' => $baseOverall,
+        ]);
+
+        $newOverall = (float) ($preserved['overall_tuition'] ?? $baseOverall);
+
+        $tuition->forceFill($preserved)->save();
+
+        if ($recordedPaid > 0) {
+            $synced = $this->billingService->syncTuitionBalance($tuition->refresh());
+
+            return (float) $synced->overall_tuition;
+        }
+
+        $newBalance = max(0.0, round($newOverall - $alreadyPaid, 2));
+        $tuition->forceFill([
             'total_balance' => $newBalance,
-            'status' => $newBalance <= 0 ? 'fully_paid' : ($alreadyPaid > 0 ? 'partially_paid' : 'unpaid'),
+            'status' => $newBalance <= 0.009 ? 'Paid' : ($alreadyPaid > 0 ? 'Downpayment' : 'Pending'),
         ])->save();
 
         return $newOverall;

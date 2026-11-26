@@ -230,13 +230,18 @@ final class AdministratorEnrollmentPolicyController extends Controller
         $user = $request->user();
         abort_unless($user instanceof User, 403);
         $validated = $request->validated();
-        $result = $coordinator->transition(
-            $enrollment,
-            $user,
-            $validated['transition_key'] ?? null,
-            $validated['payload'] ?? [],
-            $validated['idempotency_key'],
-        );
+
+        try {
+            $result = $coordinator->transition(
+                $enrollment,
+                $user,
+                $validated['transition_key'] ?? null,
+                $validated['payload'] ?? [],
+                $validated['idempotency_key'],
+            );
+        } catch (EnrollmentTransitionException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
 
         return response()->json($result);
     }
@@ -250,13 +255,19 @@ final class AdministratorEnrollmentPolicyController extends Controller
         abort_unless($user instanceof User, 403);
         $validated = $request->validated();
 
-        return response()->json($coordinator->reopen(
-            $enrollment,
-            $user,
-            $validated['target_step_key'] ?? null,
-            $validated['reason'],
-            $validated['idempotency_key'],
-        ));
+        try {
+            $result = $coordinator->reopen(
+                $enrollment,
+                $user,
+                $validated['target_step_key'] ?? null,
+                $validated['reason'],
+                $validated['idempotency_key'],
+            );
+        } catch (EnrollmentTransitionException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
+
+        return response()->json($result);
     }
 
     public function cancel(
@@ -294,19 +305,30 @@ final class AdministratorEnrollmentPolicyController extends Controller
         abort_unless($user instanceof User, 403);
         $validated = $request->validated();
 
-        $updated = $validated['action'] === 'waive'
-            ? $coordinator->waiveRequirement(
-                $requirement,
-                $user,
-                (string) $validated['reason'],
-                $validated['idempotency_key'],
-            )
-            : $coordinator->verifyRequirement(
-                $requirement,
-                $user,
-                $validated['evidence_path'] ?? null,
-                $validated['idempotency_key'],
-            );
+        try {
+            $updated = match ($validated['action']) {
+                'waive' => $coordinator->waiveRequirement(
+                    $requirement,
+                    $user,
+                    (string) $validated['reason'],
+                    $validated['idempotency_key'],
+                ),
+                'reset' => $coordinator->resetRequirement(
+                    $requirement,
+                    $user,
+                    (string) $validated['reason'],
+                    $validated['idempotency_key'],
+                ),
+                default => $coordinator->verifyRequirement(
+                    $requirement,
+                    $user,
+                    $validated['evidence_path'] ?? null,
+                    $validated['idempotency_key'],
+                ),
+            };
+        } catch (EnrollmentTransitionException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
 
         return response()->json([
             'id' => $updated->id,

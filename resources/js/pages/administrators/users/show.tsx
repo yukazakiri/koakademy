@@ -123,8 +123,17 @@ export default function UserDetails({ account, user, logs, filters, event_option
         }
     }
 
-    function filter() {
-        router.get(show.url(account.id), { event: filters.event || "", outcome: filters.outcome || "" }, { preserveScroll: true });
+    function filter(event: React.FormEvent<HTMLFormElement>) {
+        event.preventDefault();
+        const formData = new FormData(event.currentTarget);
+        router.get(
+            show.url(account.id),
+            {
+                event: String(formData.get("event") ?? ""),
+                outcome: String(formData.get("outcome") ?? ""),
+            },
+            { preserveScroll: true },
+        );
     }
 
     function page(number: number) {

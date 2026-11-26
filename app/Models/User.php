@@ -751,7 +751,7 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
 
     public function homeUrl(): string
     {
-        if ($this->isAdministrative()) {
+        if ($this->canAccessAdminPortal()) {
             return '/administrators';
         }
 

@@ -66,16 +66,10 @@ final class SignupController extends Controller
                 ]);
             }
 
-            $faculty = $this->facultySignups->findByEmail($email);
+            $facultyCandidates = $this->facultySignups->candidatesForEmail($email);
+            $registerableFaculties = $facultyCandidates->filter(fn ($candidate): bool => $candidate->isRegisterable())->values();
 
-            if ($faculty) {
-                if (! $faculty->isRegisterable()) {
-                    return response()->json([
-                        'found' => false,
-                        'message' => 'This faculty record is not currently active. Please contact the registrar.',
-                    ]);
-                }
-
+            if ($registerableFaculties->isNotEmpty()) {
                 return response()->json([
                     'found' => true,
                     'type' => 'faculty',
@@ -96,6 +90,13 @@ final class SignupController extends Controller
                 return response()->json([
                     'found' => true,
                     'type' => 'student',
+                ]);
+            }
+
+            if ($facultyCandidates->isNotEmpty()) {
+                return response()->json([
+                    'found' => false,
+                    'message' => 'This faculty record is not currently active. Please contact the registrar.',
                 ]);
             }
 

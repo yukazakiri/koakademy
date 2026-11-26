@@ -184,6 +184,12 @@ final class AuthController extends Controller
 
         $userType = $request->input('user_type');
 
+        if ($userType !== null && ! in_array($userType, ['student', 'faculty'], true)) {
+            return back()
+                ->withErrors(['user_type' => 'Invalid account type selected.'])
+                ->withInput($request->except(['password', 'password_confirmation']));
+        }
+
         // Different validation based on user type
         if ($userType === 'student') {
             return $this->signupStudent($request);
@@ -252,37 +258,49 @@ final class AuthController extends Controller
 
         // Determine the role based on student type
         $role = $isShs ? UserRole::ShsStudent : UserRole::Student;
-        $user = DB::transaction(function () use ($request, $role, $studentType, $email, $identifierField): User {
-            $student = $this->studentOrganizations->resolveForSignup(
-                email: $email,
-                studentType: StudentType::from($studentType),
-                identifier: $request->string($identifierField)->toString(),
-                recordId: $request->input('record_id'),
-                lockForUpdate: true,
-                inputField: $identifierField,
-            );
+        try {
+            $user = DB::transaction(function () use ($request, $role, $studentType, $email, $identifierField): User {
+                if (User::whereRaw('LOWER(email) = ?', [$email])->lockForUpdate()->exists()) {
+                    throw ValidationException::withMessages([
+                        'email' => ['An account with this email already exists.'],
+                    ]);
+                }
 
-            $spatieRole = Role::firstOrCreate(
-                ['name' => $role->value, 'guard_name' => 'web'],
-                ['name' => $role->value, 'guard_name' => 'web'],
-            );
+                $student = $this->studentOrganizations->resolveForSignup(
+                    email: $email,
+                    studentType: StudentType::from($studentType),
+                    identifier: $request->string($identifierField)->toString(),
+                    recordId: $request->input('record_id'),
+                    lockForUpdate: true,
+                    inputField: $identifierField,
+                );
 
-            $user = User::create([
-                'name' => $request->name,
-                'email' => $email,
-                'password' => Hash::make($request->password),
-                'role' => $role,
-                'record_id' => $student->id,
-                'school_id' => $student->school_id,
-                'email_verified_at' => now(),
-                'avatar_url' => $this->pendingSocialiteAvatar($email),
-            ]);
+                $spatieRole = Role::firstOrCreate(
+                    ['name' => $role->value, 'guard_name' => 'web'],
+                    ['name' => $role->value, 'guard_name' => 'web'],
+                );
 
-            $user->assignRole($spatieRole);
-            $this->studentOrganizations->assign($user, $student);
+                $user = User::create([
+                    'name' => $request->name,
+                    'email' => $email,
+                    'password' => Hash::make($request->password),
+                    'role' => $role,
+                    'record_id' => $student->id,
+                    'school_id' => $student->school_id,
+                    'email_verified_at' => now(),
+                    'avatar_url' => $this->pendingSocialiteAvatar($email),
+                ]);
 
-            return $user;
-        });
+                $user->assignRole($spatieRole);
+                $this->studentOrganizations->assign($user, $student);
+
+                return $user;
+            });
+        } catch (ValidationException $exception) {
+            return back()
+                ->withErrors($exception->errors())
+                ->withInput($request->except(['password', 'password_confirmation']));
+        }
 
         $this->signupOtps->forget($email);
 
@@ -331,6 +349,12 @@ final class AuthController extends Controller
 
         try {
             $user = DB::transaction(function () use ($request, $email): User {
+                if (User::whereRaw('LOWER(email) = ?', [$email])->lockForUpdate()->exists()) {
+                    throw ValidationException::withMessages([
+                        'email' => ['An account with this email already exists.'],
+                    ]);
+                }
+
                 // The record is resolved inside the transaction so the roster row stays
                 // locked while the account is written against it.
                 $faculty = $this->facultySignups->resolveForSignup(

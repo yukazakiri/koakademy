@@ -449,7 +449,17 @@ final class AdministratorFacultyManagementController extends Controller
     public function managePortalAccount(ManageFacultyPortalAccountRequest $request, Faculty $faculty): RedirectResponse
     {
         $data = $request->validated();
-        $portalUser = User::query()->where('email', $faculty->email)->first();
+        $normalizedEmail = mb_strtolower(mb_trim((string) $faculty->email));
+
+        if ($normalizedEmail === '') {
+            throw ValidationException::withMessages([
+                'mode' => 'Add an email address to this faculty record before provisioning a portal account.',
+            ]);
+        }
+
+        $portalUser = User::query()
+            ->whereRaw('LOWER(email) = ?', [$normalizedEmail])
+            ->first();
 
         if (! $portalUser && $data['mode'] === 'repair') {
             throw ValidationException::withMessages([
@@ -457,29 +467,56 @@ final class AdministratorFacultyManagementController extends Controller
             ]);
         }
 
-        if (! $portalUser) {
-            $portalUser = User::create([
-                'name' => $faculty->full_name,
-                'email' => $faculty->email,
-                'password' => Hash::make(Str::random(32)),
-                'role' => $data['role'],
-                'school_id' => $faculty->school_id,
-                'department_id' => $faculty->department_id,
-                'department' => $faculty->department,
-                'faculty_id_number' => $faculty->faculty_id_number,
-                'record_id' => $faculty->id,
-            ]);
-        } else {
-            $portalUser->forceFill([
-                'name' => $portalUser->name ?: $faculty->full_name,
-                'role' => $data['role'],
-                'school_id' => $portalUser->school_id ?: $faculty->school_id,
-                'department_id' => $portalUser->department_id ?: $faculty->department_id,
-                'department' => $portalUser->department_profile ?: $faculty->department,
-                'faculty_id_number' => $faculty->faculty_id_number,
-                'record_id' => $faculty->id,
-            ])->save();
+        if ($portalUser instanceof User) {
+            if ($portalUser->canAccessAdminPortal() || $portalUser->role?->isStudent()) {
+                throw ValidationException::withMessages([
+                    'mode' => 'This email already belongs to an administrative or student account and cannot be overwritten.',
+                ]);
+            }
+
+            if (filled($portalUser->record_id) && (string) $portalUser->record_id !== (string) $faculty->id) {
+                throw ValidationException::withMessages([
+                    'mode' => 'This portal account is already linked to a different faculty record.',
+                ]);
+            }
         }
+
+        $targetRole = UserRole::from((string) $data['role']);
+
+        DB::transaction(function () use (&$portalUser, $faculty, $normalizedEmail, $targetRole): void {
+            if (! $portalUser) {
+                $portalUser = User::create([
+                    'name' => $faculty->full_name,
+                    'email' => $normalizedEmail,
+                    'password' => Hash::make(Str::random(32)),
+                    'role' => $targetRole->value,
+                    'school_id' => $faculty->school_id,
+                    'department_id' => $faculty->department_id,
+                    'department' => $faculty->department,
+                    'faculty_id_number' => $faculty->faculty_id_number,
+                    'record_id' => $faculty->id,
+                ]);
+            } else {
+                $portalUser->forceFill([
+                    'name' => $portalUser->name ?: $faculty->full_name,
+                    'school_id' => $portalUser->school_id ?: $faculty->school_id,
+                    'department_id' => $portalUser->department_id ?: $faculty->department_id,
+                    'department' => $portalUser->department_profile ?: $faculty->department,
+                    'faculty_id_number' => $faculty->faculty_id_number,
+                    'record_id' => $faculty->id,
+                ])->save();
+            }
+
+            app(\App\Services\UserSystemRoleService::class)->assign($portalUser, $targetRole);
+
+            if ($faculty->school_id !== null) {
+                $portalUser->addToOrganization($faculty->school_id, [
+                    'role' => $targetRole->value,
+                    'is_primary' => true,
+                    'is_active' => true,
+                ]);
+            }
+        });
 
         if ((bool) ($data['send_reset_link'] ?? false)) {
             Password::broker()->sendResetLink(['email' => $portalUser->email]);
@@ -592,12 +629,15 @@ final class AdministratorFacultyManagementController extends Controller
 
     private function wherePortalLinked(Builder $query): Builder
     {
-        return $query->whereExists(function ($subQuery): void {
+        $castType = in_array($query->getConnection()->getDriverName(), ['mysql', 'mariadb'], true) ? 'CHAR' : 'TEXT';
+
+        return $query->whereExists(function ($subQuery) use ($castType): void {
             $subQuery->selectRaw('1')
                 ->from('users')
-                ->whereColumn('users.email', 'faculty.email')
-                ->where(function ($nested): void {
-                    $nested->whereColumn('users.record_id', DB::raw('cast(faculty.id as varchar)'))
+                ->whereNull('users.deleted_at')
+                ->whereRaw('LOWER(users.email) = LOWER(faculty.email)')
+                ->where(function ($nested) use ($castType): void {
+                    $nested->whereColumn('users.record_id', DB::raw("CAST(faculty.id AS {$castType})"))
                         ->orWhereColumn('users.faculty_id_number', 'faculty.faculty_id_number');
                 });
         });
@@ -605,12 +645,15 @@ final class AdministratorFacultyManagementController extends Controller
 
     private function wherePortalNotLinked(Builder $query): Builder
     {
-        return $query->whereNotExists(function ($subQuery): void {
+        $castType = in_array($query->getConnection()->getDriverName(), ['mysql', 'mariadb'], true) ? 'CHAR' : 'TEXT';
+
+        return $query->whereNotExists(function ($subQuery) use ($castType): void {
             $subQuery->selectRaw('1')
                 ->from('users')
-                ->whereColumn('users.email', 'faculty.email')
-                ->where(function ($nested): void {
-                    $nested->whereColumn('users.record_id', DB::raw('cast(faculty.id as varchar)'))
+                ->whereNull('users.deleted_at')
+                ->whereRaw('LOWER(users.email) = LOWER(faculty.email)')
+                ->where(function ($nested) use ($castType): void {
+                    $nested->whereColumn('users.record_id', DB::raw("CAST(faculty.id AS {$castType})"))
                         ->orWhereColumn('users.faculty_id_number', 'faculty.faculty_id_number');
                 });
         });

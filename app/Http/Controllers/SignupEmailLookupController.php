@@ -54,21 +54,26 @@ final class SignupEmailLookupController extends Controller
                 ]);
             }
 
+            $includeHints = $request->boolean('include_hints');
+
             // Check if email exists in Faculty table
-            $faculty = $this->facultySignups->findByEmail($email);
+            $facultyCandidates = $this->facultySignups->candidatesForEmail($email);
+            $registerableFaculties = $facultyCandidates->filter(fn ($candidate): bool => $candidate->isRegisterable())->values();
 
-            if ($faculty) {
-                if (! $faculty->isRegisterable()) {
-                    return response()->json([
-                        'found' => false,
-                        'message' => 'This faculty record is not currently active. Please contact the registrar.',
-                    ]);
-                }
-
-                return response()->json([
+            if ($registerableFaculties->isNotEmpty()) {
+                $payload = [
                     'found' => true,
                     'type' => 'faculty',
-                ]);
+                ];
+
+                if ($includeHints) {
+                    $payload['hints'] = [
+                        'requires_faculty_id' => $registerableFaculties->count() > 1,
+                        'has_faculty_id' => $registerableFaculties->contains(fn ($candidate): bool => filled($candidate->faculty_id_number)),
+                    ];
+                }
+
+                return response()->json($payload);
             }
 
             $students = $this->studentOrganizations->candidatesForEmail($email);
@@ -82,9 +87,23 @@ final class SignupEmailLookupController extends Controller
                     ]);
                 }
 
-                return response()->json([
+                $payload = [
                     'found' => true,
                     'type' => 'student',
+                ];
+
+                if ($includeHints) {
+                    $payload['hints'] = $this->studentOrganizations->signupHints($students);
+                }
+
+                return response()->json($payload);
+            }
+
+            // Only report an inactive faculty record if no eligible student record exists for the same email.
+            if ($facultyCandidates->isNotEmpty()) {
+                return response()->json([
+                    'found' => false,
+                    'message' => 'This faculty record is not currently active. Please contact the registrar.',
                 ]);
             }
 

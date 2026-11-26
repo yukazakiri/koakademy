@@ -76,6 +76,25 @@ enum StudentStatus: string implements HasColor, HasLabel
     }
 
     /**
+     * Statuses allowed to claim a self-service student portal account.
+     *
+     * @return list<string>
+     */
+    public static function registerableValues(): array
+    {
+        return [
+            self::Enrolled->value,
+            self::OnLeave->value,
+            self::Graduated->value,
+        ];
+    }
+
+    public function isRegisterable(): bool
+    {
+        return in_array($this->value, self::registerableValues(), true);
+    }
+
+    /**
      * Check if this status represents a former student
      */
     public function isFormer(): bool

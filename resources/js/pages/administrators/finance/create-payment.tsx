@@ -17,8 +17,18 @@ import {
 } from "./payment-workspace-types";
 import { SpreadsheetPaymentWorkspace } from "./spreadsheet-payment-workspace";
 
+type PrefillStudent = {
+    id: number;
+    student_id: string | number | null;
+    full_name: string;
+    email: string | null;
+    course_code: string | null;
+    enrollment_id: number | null;
+};
+
 type CreatePaymentProps = {
     user: User;
+    prefill_student?: PrefillStudent | null;
     items: InventoryItem[];
     fee_options: FeeOption[];
     currency: string;
@@ -32,6 +42,7 @@ type Branding = { currency: string };
 
 export default function CreatePaymentPage({
     user,
+    prefill_student,
     items,
     fee_options,
     currency: propCurrency,
@@ -101,7 +112,13 @@ export default function CreatePaymentPage({
                         resolveUrl={ledger_resolve_url}
                     />
                 ) : (
-                    <GuidedPaymentWorkspace currency={currency} inventoryItems={items} paymentMethods={paymentMethods} preference={workspace} />
+                    <GuidedPaymentWorkspace
+                        currency={currency}
+                        inventoryItems={items}
+                        paymentMethods={paymentMethods}
+                        preference={workspace}
+                        prefillStudent={prefill_student}
+                    />
                 )}
             </div>
         </AdminLayout>

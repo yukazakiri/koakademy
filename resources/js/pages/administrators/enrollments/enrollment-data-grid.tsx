@@ -356,7 +356,14 @@ export function EnrollmentDataGrid({
                                         Quick inspect sheet
                                     </DropdownMenuItem>
                                     <DropdownMenuItem asChild>
-                                        <Link href={route("administrators.enrollments.show", enrollment.id)} className="flex w-full items-center">
+                                        <Link
+                                            href={`${route("administrators.enrollments.show", enrollment.id)}?return_to=${encodeURIComponent(
+                                                typeof window !== "undefined"
+                                                    ? `${window.location.pathname}${window.location.search}`
+                                                    : "/administrators/enrollments",
+                                            )}`}
+                                            className="flex w-full items-center"
+                                        >
                                             <FileText className="mr-2 size-4" />
                                             Open full record
                                         </Link>

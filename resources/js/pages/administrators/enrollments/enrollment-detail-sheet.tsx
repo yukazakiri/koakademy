@@ -1603,7 +1603,11 @@ export function EnrollmentDetailSheet({
                                     Edit
                                 </Link>
                                 <Link
-                                    href={detail?.enrollment.show_url ?? route("administrators.enrollments.show", enrollmentId, false)}
+                                    href={`${detail?.enrollment.show_url ?? route("administrators.enrollments.show", enrollmentId, false)}?return_to=${encodeURIComponent(
+                                        typeof window !== "undefined"
+                                            ? `${window.location.pathname}${window.location.search}`
+                                            : "/administrators/enrollments",
+                                    )}`}
                                     className={buttonVariants({ variant: "default", size: "sm", className: "gap-1.5" })}
                                 >
                                     <FileText className="size-3.5" />

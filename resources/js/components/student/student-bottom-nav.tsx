@@ -134,7 +134,7 @@ export function StudentBottomNav() {
                                             className={cn(
                                                 "relative flex h-14 w-14 items-center justify-center rounded-2xl border-2 transition-all duration-300 overflow-hidden",
                                                 active
-                                                    ? "border-primary bg-primary text-primary-foreground shadow-[0_10px_30px_-8px_rgba(var(--primary),0.6)]"
+                                                    ? "border-primary bg-primary text-primary-foreground shadow-primary/40 shadow-lg"
                                                     : "border-border/70 bg-background text-foreground/70 shadow-xl",
                                             )}
                                         >

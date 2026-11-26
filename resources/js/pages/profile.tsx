@@ -1536,7 +1536,7 @@ export default function ProfilePage() {
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: 20 }}
-                            className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-border/80 bg-background/95 px-4 py-3 shadow-2xl backdrop-blur-md sm:px-6"
+                            className="fixed bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-border/80 bg-background/95 px-4 py-3 shadow-2xl backdrop-blur-md sm:px-6 md:bottom-6"
                         >
                             <div className="flex items-center gap-2">
                                 <span className="relative flex h-2.5 w-2.5">

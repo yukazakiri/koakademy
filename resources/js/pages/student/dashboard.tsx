@@ -23,6 +23,7 @@ import {
     BookOpen,
     Calendar,
     CheckCircle2,
+    ChevronRight,
     CircleAlert,
     Clock,
     CreditCard,
@@ -72,6 +73,16 @@ interface AnnouncementInfo {
     type: "info" | "warning" | "important";
 }
 
+interface StudentHoldInfo {
+    id: number | string;
+    office: string;
+    title: string;
+    reason?: string | null;
+    severity?: string;
+    blocks_enrollment?: boolean;
+    placed_at?: string | null;
+}
+
 interface StudentDashboardProps {
     user: User;
     is_new_user: boolean;
@@ -88,6 +99,19 @@ interface StudentDashboardProps {
         tuition_balance: number;
         clearance_status: boolean | null;
         grade_clearance_required: boolean;
+        active_holds?: StudentHoldInfo[];
+        document_summary?: {
+            uploaded: number;
+            total: number;
+            missing: string[];
+        } | null;
+        enrollment_journey?: {
+            student_status: string;
+            latest_status: string | null;
+            school_year: string;
+            semester: number;
+            has_current_enrollment: boolean;
+        } | null;
     };
     id_card: {
         card_data: IdCardData;
@@ -395,6 +419,7 @@ function StatTile({
                         {privateValue && (
                             <button
                                 type="button"
+                                aria-label={revealed ? `Hide ${label}` : `Reveal ${label}`}
                                 onClick={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
@@ -423,45 +448,49 @@ function CourseCard({ classItem, index }: { classItem: ClassInfo; index: number 
     const averageTone = average === null ? "text-muted-foreground" : isPassingGrade(average, gradingConfig) ? "text-emerald-500" : "text-rose-500";
 
     return (
-        <Card className={`${dashboardCardClass} group overflow-hidden hover:-translate-y-0.5`}>
-            <CardContent className="grid gap-4 p-4 md:grid-cols-[1fr_230px] md:items-center">
-                <div className="flex gap-3">
-                    <div className={`${accent} mt-1 h-12 w-1 shrink-0 rounded-full transition-all duration-200 group-hover:h-14`} />
-                    <div className="min-w-0 space-y-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                            <Badge variant="outline" className="font-mono text-[11px]">
-                                {classItem.subject_code}
-                            </Badge>
-                            <span className="text-muted-foreground text-xs">Section {classItem.section}</span>
-                        </div>
-                        <h3 className="text-foreground text-base leading-tight font-semibold">{classItem.subject_title}</h3>
-                        <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                            <span className="flex items-center gap-1.5">
-                                <UserRound className="h-3.5 w-3.5" />
-                                {classItem.faculty_name}
-                            </span>
-                            <span className="flex items-center gap-1.5">
-                                <MapPin className="h-3.5 w-3.5" />
-                                {classItem.room}
-                            </span>
+        <Link href={`/student/classes/${classItem.id}`} className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-xl">
+            <Card className={`${dashboardCardClass} group overflow-hidden hover:-translate-y-0.5 hover:border-primary/40 transition-all duration-200 active:scale-[0.99]`}>
+                <CardContent className="grid gap-4 p-4 md:grid-cols-[1fr_230px] md:items-center">
+                    <div className="flex gap-3">
+                        <div className={`${accent} mt-1 h-12 w-1 shrink-0 rounded-full transition-all duration-200 group-hover:h-14`} />
+                        <div className="min-w-0 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Badge variant="outline" className="font-mono text-[11px]">
+                                    {classItem.subject_code}
+                                </Badge>
+                                <span className="text-muted-foreground text-xs">Section {classItem.section}</span>
+                            </div>
+                            <h3 className="text-foreground group-hover:text-primary text-base leading-tight font-semibold transition-colors">
+                                {classItem.subject_title}
+                            </h3>
+                            <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                                <span className="flex items-center gap-1.5">
+                                    <UserRound className="h-3.5 w-3.5" />
+                                    {classItem.faculty_name}
+                                </span>
+                                <span className="flex items-center gap-1.5">
+                                    <MapPin className="h-3.5 w-3.5" />
+                                    {classItem.room}
+                                </span>
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <div className="border-border/60 bg-background/45 grid grid-cols-2 gap-3 rounded-md border p-3 md:grid-cols-[1fr_auto]">
-                    <div className="min-w-0">
-                        <p className="text-muted-foreground text-[10px] font-semibold tracking-wide uppercase">Schedule</p>
-                        <p className="text-foreground mt-1 truncate text-xs font-medium" title={classItem.schedule}>
-                            {classItem.schedule}
-                        </p>
+                    <div className="border-border/60 bg-background/45 grid grid-cols-2 gap-3 rounded-md border p-3 md:grid-cols-[1fr_auto]">
+                        <div className="min-w-0">
+                            <p className="text-muted-foreground text-[10px] font-semibold tracking-wide uppercase">Schedule</p>
+                            <p className="text-foreground mt-1 truncate text-xs font-medium" title={classItem.schedule}>
+                                {classItem.schedule}
+                            </p>
+                        </div>
+                        <div className="text-right">
+                            <p className="text-muted-foreground text-[10px] font-semibold tracking-wide uppercase">Average</p>
+                            <p className={cn("mt-1 font-mono text-lg font-semibold tabular-nums", averageTone)}>{average ?? "—"}</p>
+                        </div>
                     </div>
-                    <div className="text-right">
-                        <p className="text-muted-foreground text-[10px] font-semibold tracking-wide uppercase">Average</p>
-                        <p className={cn("mt-1 font-mono text-lg font-semibold tabular-nums", averageTone)}>{average ?? "—"}</p>
-                    </div>
-                </div>
-            </CardContent>
-        </Card>
+                </CardContent>
+            </Card>
+        </Link>
     );
 }
 
@@ -840,6 +869,49 @@ function MobileStudentDashboard({
                     <Card className="border-border/40 bg-card/60 rounded-2xl">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
                             <CardTitle className="flex items-center gap-2 text-[15px] font-bold">
+                                <BookOpen className="text-primary h-4 w-4" />
+                                My Classes
+                            </CardTitle>
+                            <Link href="/student/classes" className="text-primary text-xs font-semibold hover:underline">
+                                View all
+                            </Link>
+                        </CardHeader>
+                        <CardContent className="space-y-2 p-4 pt-1">
+                            {visibleClasses.length > 0 ? (
+                                visibleClasses.map((classItem) => (
+                                    <Link
+                                        key={classItem.id}
+                                        href={`/student/classes/${classItem.id}`}
+                                        className="border-border/40 bg-background/40 active:bg-background/70 flex items-center justify-between gap-3 rounded-xl border p-3 transition-colors"
+                                    >
+                                        <div className="min-w-0">
+                                            <p className="font-mono text-[11px] font-semibold text-primary">{classItem.subject_code}</p>
+                                            <p className="truncate text-sm font-semibold">{classItem.subject_title}</p>
+                                            <p className="text-muted-foreground truncate text-xs">
+                                                {classItem.schedule} · {classItem.room}
+                                            </p>
+                                        </div>
+                                        <ChevronRight className="text-muted-foreground h-4 w-4 shrink-0" />
+                                    </Link>
+                                ))
+                            ) : (
+                                <p className="text-muted-foreground py-3 text-center text-xs">No active classes for this term yet.</p>
+                            )}
+                            <Link
+                                href="/student/id-card/view"
+                                className="border-primary/25 bg-primary/5 text-primary mt-1 flex items-center justify-between rounded-xl border px-3.5 py-2.5 text-xs font-semibold"
+                            >
+                                <span>Open Digital Student ID</span>
+                                <ChevronRight className="h-4 w-4" />
+                            </Link>
+                        </CardContent>
+                    </Card>
+                </section>
+
+                <section>
+                    <Card className="border-border/40 bg-card/60 rounded-2xl">
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
+                            <CardTitle className="flex items-center gap-2 text-[15px] font-bold">
                                 <Bell className="text-primary h-4 w-4" />
                                 Notice Board
                             </CardTitle>
@@ -1158,6 +1230,82 @@ export default function StudentDashboard({ user, is_new_user, student_data, id_c
                 </section>
 
                 <MobileQuickActions />
+
+                {/* Guided Campus Canvas: Holds, Enrollment Status & Required Documents */}
+                {((student_data.active_holds && student_data.active_holds.length > 0) || student_data.enrollment_journey || student_data.document_summary) && (
+                    <section className="grid gap-3 lg:grid-cols-3">
+                        {student_data.active_holds && student_data.active_holds.length > 0 && (
+                            <Card className="border-destructive/35 bg-destructive/5 lg:col-span-3">
+                                <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
+                                    <div className="space-y-1.5">
+                                        <div className="flex items-center gap-2">
+                                            <Badge variant="destructive" className="text-[11px]">
+                                                {student_data.active_holds.length} Active Hold{student_data.active_holds.length === 1 ? "" : "s"}
+                                            </Badge>
+                                            <span className="text-foreground text-sm font-semibold">Action required to avoid enrollment or clearance blocks</span>
+                                        </div>
+                                        <ul className="text-muted-foreground space-y-1 text-xs">
+                                            {student_data.active_holds.map((hold) => (
+                                                <li key={hold.id}>
+                                                    <span className="text-foreground font-medium">{hold.title}</span>
+                                                    {hold.reason ? ` — ${hold.reason}` : ""}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                    <Button render={<Link href="/student/help" />} nativeButton={false} size="sm" variant="outline" className="shrink-0">
+                                        Contact Support
+                                    </Button>
+                                </CardContent>
+                            </Card>
+                        )}
+
+                        {student_data.enrollment_journey && (
+                            <Card className={`${dashboardCardClass} lg:col-span-2`}>
+                                <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="space-y-1">
+                                        <p className="text-muted-foreground text-[10px] font-semibold tracking-wide uppercase">Enrollment Journey</p>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className="text-foreground text-sm font-semibold capitalize">
+                                                {student_data.enrollment_journey.has_current_enrollment
+                                                    ? `Current Term: ${student_data.enrollment_journey.latest_status?.replace(/_/g, " ") || "Enrolled"}`
+                                                    : `Status: ${student_data.enrollment_journey.student_status.replace(/_/g, " ")}`}
+                                            </span>
+                                            <Badge variant={student_data.enrollment_journey.has_current_enrollment ? "secondary" : "outline"} className="text-[11px]">
+                                                {student_data.enrollment_journey.school_year} · Sem {student_data.enrollment_journey.semester}
+                                            </Badge>
+                                        </div>
+                                    </div>
+                                    {!student_data.enrollment_journey.has_current_enrollment && (
+                                        <Button render={<a href="/enrollment" />} nativeButton={false} size="sm" variant="outline" className="shrink-0">
+                                            Continue Enrollment
+                                        </Button>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        )}
+
+                        {student_data.document_summary && (
+                            <Card className={dashboardCardClass}>
+                                <CardContent className="flex items-center justify-between gap-3 p-4">
+                                    <div className="min-w-0 space-y-1">
+                                        <p className="text-muted-foreground text-[10px] font-semibold tracking-wide uppercase">Registrar Documents</p>
+                                        <p className="text-foreground font-mono text-sm font-semibold tabular-nums">
+                                            {student_data.document_summary.uploaded} / {student_data.document_summary.total} on file
+                                        </p>
+                                        {student_data.document_summary.missing.length > 0 ? (
+                                            <p className="text-muted-foreground truncate text-xs" title={student_data.document_summary.missing.join(", ")}>
+                                                Missing: {student_data.document_summary.missing.join(", ")}
+                                            </p>
+                                        ) : (
+                                            <p className="text-xs text-emerald-600 dark:text-emerald-400">All core documents submitted</p>
+                                        )}
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
+                    </section>
+                )}
 
                 {onboardingEnabled && <OnboardingChecklistWidget />}
 

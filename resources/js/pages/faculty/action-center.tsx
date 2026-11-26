@@ -342,20 +342,15 @@ export default function ActionCenter({ user, action_center }: ActionCenterProps)
         setDraggedActivityId(null);
     };
 
-    const handleDrop = (status: ActivityStatus) => {
-        if (!draggedActivityId) return;
+    const moveActivityStatus = (activityId: string, status: ActivityStatus) => {
+        const activity = activities.find((a) => a.id === activityId);
+        if (!activity || activity.status === status) return;
 
-        const activity = activities.find((a) => a.id === draggedActivityId);
-        if (!activity) return;
-
-        // Optimistic update
-        setActivities((prev) => prev.map((a) => (a.id === draggedActivityId ? { ...a, status } : a)));
+        setActivities((prev) => prev.map((a) => (a.id === activityId ? { ...a, status } : a)));
 
         router.patch(
             route("faculty.action-center.status.update", activity.source_id),
-            {
-                status: status,
-            },
+            { status },
             {
                 preserveScroll: true,
                 onSuccess: () => {
@@ -363,12 +358,15 @@ export default function ActionCenter({ user, action_center }: ActionCenterProps)
                 },
                 onError: () => {
                     toast.error("Failed to update status");
-                    // Revert
-                    setActivities((prev) => prev.map((a) => (a.id === draggedActivityId ? { ...a, status: activity.status } : a)));
+                    setActivities((prev) => prev.map((a) => (a.id === activityId ? { ...a, status: activity.status } : a)));
                 },
             },
         );
+    };
 
+    const handleDrop = (status: ActivityStatus) => {
+        if (!draggedActivityId) return;
+        moveActivityStatus(draggedActivityId, status);
         setDraggedActivityId(null);
     };
 
@@ -642,9 +640,23 @@ export default function ActionCenter({ user, action_center }: ActionCenterProps)
                                                             </div>
                                                         )}
 
-                                                        <Button asChild size="sm" variant="outline" className="h-7 w-full text-xs">
-                                                            <Link href={activity.primary_action.href}>{activity.primary_action.label}</Link>
-                                                        </Button>
+                                                        <div className="flex items-center gap-2">
+                                                            <select
+                                                                aria-label={`Change status for ${activity.title}`}
+                                                                value={activity.status}
+                                                                onChange={(event) => moveActivityStatus(activity.id, event.target.value as ActivityStatus)}
+                                                                className="border-border bg-background text-foreground h-7 flex-1 rounded-md border px-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                                            >
+                                                                <option value="backlog">Backlog</option>
+                                                                <option value="in_progress">In Progress</option>
+                                                                <option value="review">Review</option>
+                                                                <option value="blocked">Blocked</option>
+                                                                <option value="done">Done</option>
+                                                            </select>
+                                                            <Button asChild size="sm" variant="outline" className="h-7 shrink-0 px-2.5 text-xs">
+                                                                <Link href={activity.primary_action.href}>{activity.primary_action.label}</Link>
+                                                            </Button>
+                                                        </div>
                                                     </CardContent>
                                                 </Card>
                                             ))}

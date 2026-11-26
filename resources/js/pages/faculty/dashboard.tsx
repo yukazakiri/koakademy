@@ -102,6 +102,9 @@ interface DashboardProps {
     faculty_data: {
         stats: Stat[];
         upcoming_classes: DashboardClass[];
+        total_active_classes?: number;
+        total_students?: number;
+        pending_action_items?: number;
         announcements: DashboardAnnouncement[];
         today_schedule: {
             day: string;
@@ -309,7 +312,7 @@ function ClassListCard({ classItem, index }: { classItem: DashboardClass; index:
 
                     <div className="flex items-center gap-2 sm:pl-4">
                         <Button asChild size="sm" variant="outline" className="rounded-lg">
-                            <Link href={`/faculty/classes/${classItem.id}?view=attendance`} prefetch>
+                            <Link href={`/faculty/classes/${classItem.id}?tab=attendance`} prefetch>
                                 <Calendar className="mr-1.5 h-3.5 w-3.5" />
                                 Attendance
                             </Link>
@@ -489,10 +492,12 @@ function TeacherFocusGrid({
                     <div className="flex items-start justify-between gap-4">
                         <div>
                             <p className="text-muted-foreground text-[10px] font-semibold tracking-wide uppercase">Needs Attention</p>
-                            <h2 className="text-foreground mt-2 text-lg font-semibold">
-                                {urgentAnnouncements > 0 ? `${urgentAnnouncements} announcement${urgentAnnouncements === 1 ? "" : "s"}` : "All caught up"}
+                            <h2 className="text-foreground mt-2 text-lg font-semibold tabular-nums">
+                                {(facultyData.pending_action_items ?? urgentAnnouncements) > 0
+                                    ? `${facultyData.pending_action_items ?? urgentAnnouncements} open item${(facultyData.pending_action_items ?? urgentAnnouncements) === 1 ? "" : "s"}`
+                                    : "All caught up"}
                             </h2>
-                            <p className="text-muted-foreground mt-1 text-sm">Review tasks, posts, and class activity in one place.</p>
+                            <p className="text-muted-foreground mt-1 text-sm">Review pending classwork, tasks, and notices in one place.</p>
                         </div>
                         <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-500">
                             <Bell className="size-5" />
@@ -509,10 +514,12 @@ function TeacherFocusGrid({
                     <div className="flex items-start justify-between gap-4">
                         <div>
                             <p className="text-muted-foreground text-[10px] font-semibold tracking-wide uppercase">My Classes</p>
-                            <h2 className="text-foreground mt-2 text-lg font-semibold">
-                                {facultyData.upcoming_classes.length} classes
+                            <h2 className="text-foreground mt-2 text-lg font-semibold tabular-nums">
+                                {facultyData.total_active_classes ?? facultyData.upcoming_classes.length} classes
                             </h2>
-                            <p className="text-muted-foreground mt-1 text-sm">{totalStudents} students this semester.</p>
+                            <p className="text-muted-foreground mt-1 text-sm tabular-nums">
+                                {facultyData.total_students ?? totalStudents} students this semester.
+                            </p>
                         </div>
                         <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-500">
                             <BookOpen className="size-5" />
@@ -528,7 +535,7 @@ function TeacherFocusGrid({
 }
 
 function MobileFacultyDashboard({ greeting, faculty_data, currentSemester, currentSchoolYear, user, id_card, qrCode, refreshCode, isRefreshing }: { greeting: string; faculty_data: DashboardProps['faculty_data']; currentSemester: string; currentSchoolYear: string; user: User; id_card: DashboardProps['id_card']; qrCode: string; refreshCode: () => void; isRefreshing: boolean }) {
-    const totalStudents = faculty_data.upcoming_classes.reduce((sum, c) => sum + c.students_count, 0);
+    const totalStudents = faculty_data.total_students ?? faculty_data.upcoming_classes.reduce((sum, c) => sum + c.students_count, 0);
     const hasClasses = faculty_data.upcoming_classes.length > 0;
     const nextClass = faculty_data.today_schedule.entries[0];
     const greetingCopy = getFacultyGreetingCopy(greeting);

@@ -11,7 +11,7 @@ import { useGradingConfig } from "@/hooks/use-grading-config";
 import { computeGwa, formatGwa, gradeScaleLabel, gwaToneClass, type GwaResult } from "@/lib/gwa";
 import { cn } from "@/lib/utils";
 import { User as UserType } from "@/types/user";
-import { Head, usePage } from "@inertiajs/react";
+import { Head, Link, usePage } from "@inertiajs/react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
     CheckCircle2,
@@ -171,11 +171,14 @@ const StatusBadge = ({ status, grade }: { status: CurriculumSubject["status"]; g
 };
 
 // New Component: InteractiveSubjectRow
-const InteractiveSubjectRow = ({ subject, activeClass }: { subject: CurriculumSubject; activeClass?: ClassData }) => {
+const InteractiveSubjectRow = ({ subject, activeClass }: { subject: CurriculumSubject & { class_id?: number | string | null }; activeClass?: ClassData }) => {
+    const targetClassId = activeClass?.id ?? subject.class_id ?? null;
+
     return (
         <TableRow
             className={cn(
                 "group hover:bg-muted/35 data-[state=selected]:bg-muted transition-colors",
+                targetClassId && "cursor-pointer",
                 subject.status === "failed" || subject.status === "dropped"
                     ? "bg-red-50/40 hover:bg-red-50/70 dark:bg-red-950/10 dark:hover:bg-red-950/20"
                     : subject.status === "ongoing"
@@ -188,7 +191,16 @@ const InteractiveSubjectRow = ({ subject, activeClass }: { subject: CurriculumSu
             <TableCell className="text-muted-foreground w-[100px] py-3 font-mono text-xs font-medium">{subject.code}</TableCell>
             <TableCell>
                 <div className="flex flex-col">
-                    <span className="text-foreground group-hover:text-primary text-sm font-medium transition-colors">{subject.title}</span>
+                    {targetClassId ? (
+                        <Link
+                            href={`/student/classes/${targetClassId}`}
+                            className="text-foreground group-hover:text-primary text-sm font-medium underline-offset-4 transition-colors hover:underline"
+                        >
+                            {subject.title}
+                        </Link>
+                    ) : (
+                        <span className="text-foreground group-hover:text-primary text-sm font-medium transition-colors">{subject.title}</span>
+                    )}
                     {activeClass && (
                         <div className="text-muted-foreground mt-1 flex items-center gap-2 text-xs">
                             <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">

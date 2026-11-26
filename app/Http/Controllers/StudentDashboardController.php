@@ -7,10 +7,12 @@ namespace App\Http\Controllers;
 use App\Features\Toggles\StudentInformationUpdates;
 use App\Models\GeneralSetting;
 use App\Models\Student;
+use App\Models\StudentEnrollment;
 use App\Models\User;
 use App\Services\DigitalIdCardService;
 use App\Services\GeneralSettingsService;
 use App\Services\GradeReleaseService;
+use App\Services\StudentHoldService;
 use App\Services\StudentProfileCompletionService;
 use DateTimeInterface;
 use Illuminate\Http\Request;
@@ -26,9 +28,17 @@ final class StudentDashboardController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        // Get the student record linked to this user
-        $student = Student::where('email', $user->email)
-            ->orWhere('user_id', $user->id)
+        // Prefer direct user_id binding, falling back ONLY to unclaimed student records matching email
+        $student = Student::query()
+            ->with(['Course', 'shsStrand', 'DocumentLocation'])
+            ->where(function ($query) use ($user): void {
+                $query->where('user_id', $user->id)
+                    ->orWhere(function ($unclaimed) use ($user): void {
+                        $unclaimed->whereNull('user_id')
+                            ->whereRaw('LOWER(email) = ?', [mb_strtolower(mb_trim((string) $user->email))]);
+                    });
+            })
+            ->orderByRaw('CASE WHEN user_id = ? THEN 0 ELSE 1 END', [$user->id])
             ->first();
 
         $generalSettingsService = app(GeneralSettingsService::class);
@@ -38,7 +48,7 @@ final class StudentDashboardController extends Controller
         $studentData = [
             'student_id' => $student?->student_id ?? 'N/A',
             'student_name' => $student?->full_name ?? $user->name,
-            'course' => $student?->Course?->name ?? null,
+            'course' => $student?->Course?->title ?? $student?->Course?->name ?? $student?->shsStrand?->name ?? null,
             'academic_year' => $student?->academic_year ?? 1,
             'semester' => $settings?->semester ?? 1,
             'school_year' => $generalSettingsService->getCurrentSchoolYearString(),
@@ -48,6 +58,9 @@ final class StudentDashboardController extends Controller
             'tuition_balance' => 0,
             'clearance_status' => null,
             'grade_clearance_required' => app(GradeReleaseService::class)->requiresClearance(),
+            'active_holds' => [],
+            'enrollment_journey' => null,
+            'document_summary' => null,
         ];
 
         if ($student) {
@@ -103,6 +116,61 @@ final class StudentDashboardController extends Controller
             $studentData['clearance_status'] = $settings !== null
                 ? $gradeReleases->isClearedForPeriod($student, $settings->getSchoolYearString(), (int) $settings->semester)
                 : null;
+
+            // Surface active administrative holds so students can resolve blockers proactively
+            $studentData['active_holds'] = app(StudentHoldService::class)
+                ->activeHoldsForStudent((int) $student->id)
+                ->map(fn ($hold): array => [
+                    'id' => $hold->id,
+                    'office' => $hold->office,
+                    'title' => $hold->title ?? ucfirst(str_replace('_', ' ', (string) $hold->office)).' Hold',
+                    'reason' => $hold->reason,
+                    'severity' => $hold->severity ?? 'blocking',
+                    'blocks_enrollment' => (bool) ($hold->blocks_enrollment ?? true),
+                    'placed_at' => $hold->placed_at?->toDateString(),
+                ])
+                ->values()
+                ->all();
+
+            // Surface latest enrollment pipeline status & document completeness for the student journey tracker
+            $latestEnrollment = StudentEnrollment::query()
+                ->where('student_id', $student->id)
+                ->latest('created_at')
+                ->first();
+
+            $docLocation = $student->DocumentLocation;
+            $trackedDocFields = [
+                'birth_certificate' => 'Birth Certificate',
+                'form_138' => 'Form 138 / Report Card',
+                'good_moral_cert' => 'Good Moral Certificate',
+                'picture_1x1' => '1x1 ID Photo',
+            ];
+            $uploadedDocs = 0;
+            $missingDocs = [];
+            foreach ($trackedDocFields as $field => $label) {
+                $val = $docLocation?->getAttribute($field);
+                if (is_string($val) && mb_trim($val) !== '') {
+                    $uploadedDocs++;
+                } else {
+                    $missingDocs[] = $label;
+                }
+            }
+
+            $studentData['document_summary'] = [
+                'uploaded' => $uploadedDocs,
+                'total' => count($trackedDocFields),
+                'missing' => $missingDocs,
+            ];
+
+            $studentData['enrollment_journey'] = [
+                'student_status' => is_object($student->status) ? $student->status->value : (string) ($student->status ?? 'enrolled'),
+                'latest_status' => $latestEnrollment?->status,
+                'school_year' => $latestEnrollment?->school_year ?? $studentData['school_year'],
+                'semester' => $latestEnrollment?->semester ?? $studentData['semester'],
+                'has_current_enrollment' => $latestEnrollment !== null
+                    && $latestEnrollment->school_year === $studentData['school_year']
+                    && (int) $latestEnrollment->semester === (int) $studentData['semester'],
+            ];
         }
 
         $studentData['announcements'] = app(AnnouncementDataService::class)->getDashboardItems();

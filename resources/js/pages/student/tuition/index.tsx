@@ -102,7 +102,6 @@ export default function TuitionIndex({ auth, tuition, transactions, filters, his
     const currencySymbol = currency === "USD" ? "$" : "₱";
 
     const [isFilterLoading, setIsFilterLoading] = useState(false);
-    const [isNoticeDismissed, setIsNoticeDismissed] = useState(false);
 
     const handleFilterChange = (value: string) => {
         setIsFilterLoading(true);
@@ -225,7 +224,7 @@ export default function TuitionIndex({ auth, tuition, transactions, filters, his
                                 <Button
                                     variant="outline"
                                     size="sm"
-                                    className="hidden rounded-lg shadow-sm sm:inline-flex"
+                                    className="inline-flex h-10 w-full rounded-lg shadow-sm sm:h-7 sm:w-auto"
                                     onClick={() => {
                                         window.open(
                                             route("student.tuition.soa", {
@@ -253,72 +252,6 @@ export default function TuitionIndex({ auth, tuition, transactions, filters, his
                         </div>
                     </CardContent>
                 </Card>
-
-                {/* System Maintenance Notice */}
-                <AnimatePresence>
-                    {!isNoticeDismissed && (
-                        <motion.div
-                            initial={{ opacity: 0, y: -20, scale: 0.95 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                            exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                            transition={{ duration: 0.3, ease: "easeOut" }}
-                            className="relative overflow-hidden"
-                        >
-                            <div className="relative rounded-lg border border-amber-500/35 bg-amber-500/10 shadow-sm">
-                                <div className="relative p-3 md:p-6">
-                                    <div className="flex items-start gap-2.5 md:gap-4">
-                                        {/* Icon Container */}
-                                        <div className="shrink-0 rounded-lg bg-amber-500/15 p-2 text-amber-500 md:p-3">
-                                            <Wrench className="h-4 w-4 md:h-5 md:w-5" />
-                                        </div>
-
-                                        {/* Content */}
-                                        <div className="min-w-0 flex-1">
-                                            <div className="mb-1.5 flex flex-wrap items-center gap-2">
-                                                <h3 className="text-sm font-semibold text-amber-900 md:text-lg dark:text-amber-100">
-                                                    System Under Maintenance
-                                                </h3>
-                                                <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/15 px-1.5 py-0.5 md:px-2">
-                                                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-amber-500 md:h-2 md:w-2" />
-                                                    <span className="text-[10px] font-semibold text-amber-700 md:text-xs dark:text-amber-300">
-                                                        Active
-                                                    </span>
-                                                </span>
-                                            </div>
-
-                                            <p className="mb-2 line-clamp-2 text-xs leading-relaxed text-amber-800/90 md:mb-3 md:line-clamp-none md:text-base dark:text-amber-200/90">
-                                                The tuition and fees system is currently being maintained. The values displayed on this page
-                                                <span className="font-semibold text-amber-900 dark:text-amber-100"> may not be accurate</span>.
-                                            </p>
-
-                                            <div className="hidden md:flex">
-                                                <Link
-                                                    href={tuitionUpdateRequestsIndex.url({ query: filters })}
-                                                    prefetch
-                                                    className="bg-background/45 inline-flex items-center gap-2 rounded-lg border border-amber-300/50 px-3 py-1.5 shadow-sm transition-colors hover:bg-amber-500/15 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 focus-visible:outline-none md:px-4 md:py-2 dark:border-amber-600/30"
-                                                >
-                                                    <ShieldAlert className="h-3.5 w-3.5 text-amber-600 md:h-4 md:w-4 dark:text-amber-400" />
-                                                    <span className="text-[11px] font-medium text-amber-900 md:text-sm dark:text-amber-100">
-                                                        Contact the <span className="font-bold">MIS Administrator</span>
-                                                    </span>
-                                                </Link>
-                                            </div>
-                                        </div>
-
-                                        {/* Dismiss Button */}
-                                        <button
-                                            onClick={() => setIsNoticeDismissed(true)}
-                                            className="shrink-0 rounded-lg p-1 text-amber-600/70 transition-colors hover:bg-amber-500/15 hover:text-amber-900 md:p-2 dark:text-amber-400/70 dark:hover:text-amber-200"
-                                            aria-label="Dismiss notice"
-                                        >
-                                            <X className="h-4 w-4 md:h-5 md:w-5" />
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
 
                 {tuition ? (
                     <motion.div variants={containerVariants} initial="hidden" animate="show" className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -355,7 +288,7 @@ export default function TuitionIndex({ auth, tuition, transactions, filters, his
                                                         initial={{ width: 0 }}
                                                         animate={{ width: `${tuition.payment_progress}%` }}
                                                         transition={{ duration: 1, delay: 0.2, ease: "easeOut" as const }}
-                                                        className="bg-primary h-full rounded-full shadow-[0_0_10px_rgba(var(--primary),0.3)]"
+                                                        className="bg-primary shadow-primary/30 h-full rounded-full shadow-sm"
                                                     />
                                                 </div>
                                             </div>
@@ -444,8 +377,10 @@ export default function TuitionIndex({ auth, tuition, transactions, filters, his
                                                                 </p>
                                                             </div>
                                                         </div>
-                                                        <div className="text-right font-mono font-bold text-emerald-700 dark:text-emerald-400">
-                                                            -{(tuition.overall_tuition / (1 - tuition.discount / 100)) * (tuition.discount / 100)}
+                                                        <div className="text-right font-mono font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
+                                                            {tuition.discount >= 100
+                                                                ? "100% Waived"
+                                                                : `-₱${((tuition.overall_tuition / (1 - tuition.discount / 100)) * (tuition.discount / 100)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                                                         </div>
                                                     </div>
                                                 </div>

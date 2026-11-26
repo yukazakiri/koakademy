@@ -525,14 +525,30 @@ final class FacultyClassController extends Controller
         ];
 
         if (! $isSymbolic) {
-            $rules['grades.*.components.*'] = ['nullable', 'numeric', 'min:'.((float) $policy['numeric_min']), 'max:'.((float) $policy['numeric_max'])];
+            $minRule = 'min:'.((float) $policy['numeric_min']);
+            $maxRule = 'max:'.((float) $policy['numeric_max']);
+            $rules['grades.*.components.*'] = ['nullable', 'numeric', $minRule, $maxRule];
+            $rules['grades.*.prelim'] = ['nullable', 'numeric', $minRule, $maxRule];
+            $rules['grades.*.midterm'] = ['nullable', 'numeric', $minRule, $maxRule];
+            $rules['grades.*.final'] = ['nullable', 'numeric', $minRule, $maxRule];
+            $rules['grades.*.average'] = ['nullable', 'numeric', $minRule, $maxRule];
         }
 
         $validated = $request->validate($rules);
 
+        $updatedCount = 0;
+        $skippedFinalized = 0;
+
         foreach ($validated['grades'] as $gradeData) {
             $enrollment = ClassEnrollment::find($gradeData['enrollment_id']);
             if ($enrollment && $enrollment->class_id === $class->id) {
+                if ((bool) $enrollment->is_grades_finalized) {
+                    $skippedFinalized++;
+
+                    continue;
+                }
+
+                $updatedCount++;
                 if ($isSymbolic) {
                     $symbol = $gradeData['symbol'] ?? null;
                     if ($symbol === null && isset($gradeData['components']['symbol'])) {
@@ -586,8 +602,18 @@ final class FacultyClassController extends Controller
             }
         }
 
+        if ($updatedCount === 0 && $skippedFinalized > 0) {
+            return redirect()->back()->with('flash', [
+                'error' => 'Grades have already been finalized and cannot be edited.',
+            ]);
+        }
+
+        $message = $skippedFinalized > 0
+            ? sprintf('Grades updated (%d finalized record%s locked).', $skippedFinalized, $skippedFinalized === 1 ? '' : 's')
+            : 'Grades updated successfully.';
+
         return redirect()->back()->with('flash', [
-            'success' => 'Grades updated successfully.',
+            'success' => $message,
         ]);
     }
 
@@ -601,7 +627,9 @@ final class FacultyClassController extends Controller
 
         $term = $validated['term'] ?? null;
 
-        $class->class_enrollments()->whereNotNull('grading_policy_version_id')->update(['is_grades_finalized' => true]);
+        if ($term === null || in_array($term, ['final', 'finals'], true)) {
+            $class->class_enrollments()->whereNotNull('grading_policy_version_id')->update(['is_grades_finalized' => true]);
+        }
 
         $message = $term ? ucfirst((string) $term).' grades submitted successfully.' : 'Grades submitted successfully.';
 
@@ -1461,8 +1489,11 @@ final class FacultyClassController extends Controller
             ],
         );
 
-        // Send Notification to Target Faculty
-        // Using Filament Notifications
+        // Send Notification to Target Faculty's portal User account (falling back to Faculty if none exists)
+        $targetRecipient = \App\Models\User::query()
+            ->whereRaw('LOWER(email) = ?', [mb_strtolower(mb_trim((string) $targetClass->faculty->email))])
+            ->first() ?? $targetClass->faculty;
+
         \Filament\Notifications\Notification::make()
             ->title('Student Transfer Request')
             ->body("Faculty {$class->faculty->full_name} requests to transfer student {$student->full_name} from {$class->section} to your section {$targetClass->section}.")
@@ -1476,7 +1507,7 @@ final class FacultyClassController extends Controller
                     ->color('danger')
                     ->close(),
             ])
-            ->sendToDatabase($targetClass->faculty);
+            ->sendToDatabase($targetRecipient);
 
         return redirect()->back()->with('flash', [
             'success' => 'Transfer request sent to '.$targetClass->faculty->full_name,
@@ -1528,12 +1559,16 @@ final class FacultyClassController extends Controller
             'class_id' => $targetClass->id,
         ]);
 
-        // 3. Notify Source Faculty
+        // 3. Notify Source Faculty's portal User account
+        $sourceRecipient = \App\Models\User::query()
+            ->whereRaw('LOWER(email) = ?', [mb_strtolower(mb_trim((string) $class->faculty->email))])
+            ->first() ?? $class->faculty;
+
         \Filament\Notifications\Notification::make()
             ->title('Transfer Accepted')
             ->body("Your request to transfer {$student->full_name} to {$targetClass->section} has been accepted.")
             ->success()
-            ->sendToDatabase($class->faculty);
+            ->sendToDatabase($sourceRecipient);
 
         return redirect()->route('faculty.classes.show', $targetClass)->with('flash', [
             'success' => "Student {$student->full_name} transferred successfully.",

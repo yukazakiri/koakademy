@@ -8,11 +8,12 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { normalizePortalRole } from "@/lib/portal-role";
 import { User } from "@/types/user";
 import { Head, Link, useForm, usePage } from "@inertiajs/react";
 import { motion } from "framer-motion";
 import { AlertCircle, BookOpen, CheckCircle2, Clock, HelpCircle, History, LifeBuoy, MessageSquarePlus, Paperclip, Send } from "lucide-react";
-import { FormEventHandler, useRef } from "react";
+import { FormEventHandler, useRef, useState } from "react";
 import { toast } from "sonner";
 
 interface HelpTicket {
@@ -114,6 +115,27 @@ export default function HelpIndex({ user, tickets, submit_url }: Props) {
         );
     };
 
+    const roleValue = normalizePortalRole(user?.role);
+    const isFacultyRole = ["professor", "associate_professor", "assistant_professor", "instructor", "part_time_faculty"].includes(roleValue);
+    const isStudentRole = ["student", "shs_student", "graduate_student"].includes(roleValue);
+    const supportCenterLabel = isFacultyRole
+        ? "Faculty Support Center"
+        : isStudentRole
+          ? "Student Support Center"
+          : "Campus Support Center";
+    const [activeTab, setActiveTab] = useState<"submit" | "history">("submit");
+    const [showFaqGuide, setShowFaqGuide] = useState(false);
+
+    const handleTopicSelect = (tag: string) => {
+        setActiveTab("submit");
+        setData("subject", data.subject.trim() ? data.subject : `${tag}: `);
+        const subjectEl = document.getElementById("subject");
+        if (subjectEl) {
+            subjectEl.scrollIntoView({ behavior: "smooth", block: "center" });
+            setTimeout(() => subjectEl.focus(), 200);
+        }
+    };
+
     return (
         <PortalLayout user={user as User}>
             <Head title="Help & Support" />
@@ -125,7 +147,7 @@ export default function HelpIndex({ user, tickets, submit_url }: Props) {
                         <div className="max-w-2xl space-y-4">
                             <div className="bg-background/50 text-muted-foreground inline-flex items-center rounded-full border px-3 py-1 text-sm backdrop-blur-sm">
                                 <LifeBuoy className="mr-2 h-3.5 w-3.5" />
-                                Student Support Center
+                                {supportCenterLabel}
                             </div>
                             <h1 className="text-foreground text-3xl font-bold tracking-tight md:text-4xl">
                                 How can we help you today, {user.name.split(" ")[0]}?
@@ -146,7 +168,7 @@ export default function HelpIndex({ user, tickets, submit_url }: Props) {
                 <div className="grid gap-8 lg:grid-cols-12">
                     {/* Main Content - Tabs */}
                     <div className="lg:col-span-8">
-                        <Tabs defaultValue="submit" className="w-full">
+                        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "submit" | "history")} className="w-full">
                             <TabsList className="bg-muted/50 mb-6 grid w-full grid-cols-2 rounded-xl p-1">
                                 <TabsTrigger
                                     value="submit"
@@ -375,10 +397,27 @@ export default function HelpIndex({ user, tickets, submit_url }: Props) {
                                 <p className="text-sm opacity-90">
                                     Before submitting a ticket, check our FAQ section for immediate answers to common questions.
                                 </p>
-                                <Button variant="secondary" className="group w-full justify-between">
-                                    Browse FAQ
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    className="group w-full justify-between"
+                                    onClick={() => setShowFaqGuide((prev) => !prev)}
+                                >
+                                    {showFaqGuide ? "Hide Quick FAQ" : "Browse FAQ"}
                                     <BookOpen className="h-4 w-4 transition-transform group-hover:translate-x-1" />
                                 </Button>
+                                {showFaqGuide && (
+                                    <div className="bg-primary-foreground/10 space-y-2.5 rounded-xl p-3 text-xs leading-relaxed">
+                                        <div>
+                                            <p className="font-semibold">Can&apos;t sign up or activate account?</p>
+                                            <p className="opacity-90">Use the exact school email registered with the Registrar. Contact IT if your ID is not yet on file.</p>
+                                        </div>
+                                        <div>
+                                            <p className="font-semibold">Grades or SOA not showing?</p>
+                                            <p className="opacity-90">Verify your active semester selector or check for an administrative hold on your dashboard.</p>
+                                        </div>
+                                    </div>
+                                )}
                             </CardContent>
                         </Card>
 
@@ -410,13 +449,19 @@ export default function HelpIndex({ user, tickets, submit_url }: Props) {
                             <CardContent>
                                 <div className="flex flex-wrap gap-2">
                                     {["Enrollment", "Grades", "Account Access", "WiFi", "ID Card", "Schedule"].map((tag) => (
-                                        <Badge
+                                        <button
                                             key={tag}
-                                            variant="secondary"
-                                            className="hover:bg-primary hover:text-primary-foreground cursor-pointer transition-colors"
+                                            type="button"
+                                            onClick={() => handleTopicSelect(tag)}
+                                            className="focus-visible:ring-ring rounded-full focus-visible:ring-2 focus-visible:outline-none"
                                         >
-                                            {tag}
-                                        </Badge>
+                                            <Badge
+                                                variant="secondary"
+                                                className="hover:bg-primary hover:text-primary-foreground cursor-pointer transition-colors"
+                                            >
+                                                {tag}
+                                            </Badge>
+                                        </button>
                                     ))}
                                 </div>
                             </CardContent>

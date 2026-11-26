@@ -43,7 +43,20 @@ final class FacultyPortalData
             return $defaults;
         }
 
-        $faculty = Faculty::where('email', $user->email)->first();
+        $hasValidRecordUuid = filled($user->record_id) && \Illuminate\Support\Str::isUuid((string) $user->record_id);
+        $facultyQuery = Faculty::query()
+            ->where(function ($query) use ($user, $hasValidRecordUuid): void {
+                if ($hasValidRecordUuid) {
+                    $query->where('id', (string) $user->record_id);
+                }
+                $query->orWhereRaw('LOWER(email) = ?', [mb_strtolower(mb_trim((string) $user->email))]);
+            });
+
+        if ($hasValidRecordUuid) {
+            $facultyQuery->orderByRaw('CASE WHEN id = ? THEN 0 ELSE 1 END', [(string) $user->record_id]);
+        }
+
+        $faculty = $facultyQuery->first();
 
         if (! $faculty) {
             return $defaults;
@@ -148,34 +161,68 @@ final class FacultyPortalData
             'entries' => $weeklyEntriesByDay->get($currentDayName, collect())->values()->all(),
         ];
 
+        $totalWeeklyMinutes = $weeklyEntriesByDay
+            ->flatten(1)
+            ->sum(function (array $entry): int {
+                $start = $entry['start_time_24h'] ?? null;
+                $end = $entry['end_time_24h'] ?? null;
+                if (! is_string($start) || ! is_string($end) || $start === '' || $end === '') {
+                    return 0;
+                }
+
+                try {
+                    $diff = Carbon::createFromFormat('H:i', $start)->diffInMinutes(Carbon::createFromFormat('H:i', $end), false);
+
+                    return $diff > 0 ? (int) $diff : 0;
+                } catch (\Throwable) {
+                    return 0;
+                }
+            });
+
+        $totalWeeklyHours = round($totalWeeklyMinutes / 60, 1);
+        $formattedWeeklyHours = fmod($totalWeeklyHours, 1.0) === 0.0
+            ? (string) (int) $totalWeeklyHours
+            : number_format($totalWeeklyHours, 1);
+
+        $pendingActionItems = $facultyClassIds->isNotEmpty()
+            ? ClassPost::query()
+                ->whereIn('class_id', $facultyClassIds)
+                ->where(fn ($q) => $q->whereNull('status')->orWhere('status', '!=', 'done'))
+                ->count()
+            : 0;
+
+        $attendanceSessionsCount = $facultyClassIds->isNotEmpty()
+            ? ClassAttendanceSession::query()->whereIn('class_id', $facultyClassIds)->count()
+            : 0;
+
         $stats = [
             [
                 'label' => 'Active Classes',
                 'value' => $activeClassesCount,
                 'icon' => 'book',
-                'trend' => '+2',
-                'trendDirection' => 'up',
+                'trend' => $activeClassesCount > 0 ? 'Current term' : 'No classes',
+                'trendDirection' => 'neutral',
             ],
             [
                 'label' => 'Total Students',
                 'value' => $totalStudentsCount,
                 'icon' => 'users',
-                'trend' => '+5%',
-                'trendDirection' => 'up',
-            ],
-            [
-                'label' => 'Total Hours',
-                'value' => '24',
-                'icon' => 'clock',
-                'trend' => '0%',
+                'trend' => $activeClassesCount > 0 ? 'Across '.$activeClassesCount.' classes' : '0 enrolled',
                 'trendDirection' => 'neutral',
             ],
             [
-                'label' => 'Performance',
-                'value' => '98%',
+                'label' => 'Weekly Hours',
+                'value' => $formattedWeeklyHours.'h',
+                'icon' => 'clock',
+                'trend' => $todaySchedule['entries'] !== [] ? count($todaySchedule['entries']).' today' : 'None today',
+                'trendDirection' => 'neutral',
+            ],
+            [
+                'label' => 'Open Action Items',
+                'value' => $pendingActionItems,
                 'icon' => 'activity',
-                'trend' => '+1%',
-                'trendDirection' => 'up',
+                'trend' => $attendanceSessionsCount.' attendance logs',
+                'trendDirection' => $pendingActionItems > 0 ? 'up' : 'neutral',
             ],
         ];
 
@@ -193,6 +240,9 @@ final class FacultyPortalData
         return [
             'stats' => $stats,
             'upcoming_classes' => $upcomingClasses,
+            'total_active_classes' => $activeClassesCount,
+            'total_students' => $totalStudentsCount,
+            'pending_action_items' => $pendingActionItems,
             'recent_activity' => $recentActivity,
             'announcements' => $announcements,
             'weekly_schedule' => $weeklySchedule,

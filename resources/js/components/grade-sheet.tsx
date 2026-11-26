@@ -1,5 +1,15 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,7 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import type { GradingComponentPayload, GradingConfigPayload } from "@/pages/administrators/system-management/types";
 import { router } from "@inertiajs/react";
-import { Calculator, Save, Send } from "lucide-react";
+import { Calculator, Lock, Save, Send } from "lucide-react";
 import { toast } from "sonner";
 
 type StudentRow = {
@@ -90,6 +100,14 @@ export function GradeSheet({ classId, students, autoAverageDefault = true, gradi
         [components, students],
     );
     const [gradeRows, setGradeRows] = useState(initialRows);
+    const [isDirty, setIsDirty] = useState(false);
+    const [showSubmitDialog, setShowSubmitDialog] = useState(false);
+    const [isSubmittingGrades, setIsSubmittingGrades] = useState(false);
+
+    useEffect(() => {
+        setGradeRows(initialRows);
+        setIsDirty(false);
+    }, [initialRows]);
 
     const numericRange =
         gradingPolicy?.input_type === "numeric" ? { min: gradingPolicy.numeric_min, max: gradingPolicy.numeric_max } : { min: 0, max: 100 };
@@ -110,6 +128,7 @@ export function GradeSheet({ classId, students, autoAverageDefault = true, gradi
     };
 
     const updateComponent = (enrollmentId: number | string, key: string, value: string) => {
+        setIsDirty(true);
         setGradeRows((previous) =>
             previous.map((row) => {
                 if (row.enrollmentId !== enrollmentId) return row;
@@ -120,36 +139,61 @@ export function GradeSheet({ classId, students, autoAverageDefault = true, gradi
     };
 
     const updateSymbol = (enrollmentId: number | string, symbol: string) => {
+        setIsDirty(true);
         setGradeRows((previous) => previous.map((row) => (row.enrollmentId === enrollmentId ? { ...row, symbol } : row)));
     };
 
-    const saveGrades = () => {
+    const buildGradePayload = () => ({
+        grades: gradeRows.map((row) => ({
+            enrollment_id: row.enrollmentId,
+            symbol: row.symbol || null,
+            components: Object.fromEntries(Object.entries(row.components).map(([key, value]) => [key, value === "" ? null : Number(value)])),
+            average: row.average === "" ? null : Number(row.average),
+        })),
+    });
+
+    const saveGrades = (onSaved?: () => void) => {
         setIsSavingGrades(true);
-        router.put(
-            `/faculty/classes/${classId}/grades`,
-            {
-                grades: gradeRows.map((row) => ({
-                    enrollment_id: row.enrollmentId,
-                    symbol: row.symbol || null,
-                    components: Object.fromEntries(Object.entries(row.components).map(([key, value]) => [key, value === "" ? null : Number(value)])),
-                    average: row.average === "" ? null : Number(row.average),
-                })),
+        router.put(`/faculty/classes/${classId}/grades`, buildGradePayload(), {
+            preserveScroll: true,
+            onSuccess: (page) => {
+                const flash = (page.props as { flash?: { error?: string; success?: string } })?.flash;
+                if (flash?.error) {
+                    toast.error(flash.error);
+                    return;
+                }
+                setIsDirty(false);
+                toast.success(flash?.success || "Grades saved");
+                onSaved?.();
             },
-            {
-                preserveScroll: true,
-                onSuccess: () => toast.success("Grades saved"),
-                onError: () => toast.error("Unable to save grades"),
-                onFinish: () => setIsSavingGrades(false),
-            },
-        );
+            onError: () => toast.error("Unable to save grades"),
+            onFinish: () => setIsSavingGrades(false),
+        });
     };
 
-    const submitGrades = () => {
-        router.post(
-            `/faculty/classes/${classId}/grades/submit`,
-            {},
-            { preserveScroll: true, onSuccess: () => toast.success("Grades submitted"), onError: () => toast.error("Unable to submit grades") },
-        );
+    const confirmAndSubmitGrades = () => {
+        const executeSubmit = () => {
+            setIsSubmittingGrades(true);
+            router.post(
+                `/faculty/classes/${classId}/grades/submit`,
+                {},
+                {
+                    preserveScroll: true,
+                    onSuccess: () => {
+                        setShowSubmitDialog(false);
+                        toast.success("Grades finalized and submitted");
+                    },
+                    onError: () => toast.error("Unable to submit grades"),
+                    onFinish: () => setIsSubmittingGrades(false),
+                },
+            );
+        };
+
+        if (isDirty) {
+            saveGrades(executeSubmit);
+        } else {
+            executeSubmit();
+        }
     };
 
     return (
@@ -158,6 +202,11 @@ export function GradeSheet({ classId, students, autoAverageDefault = true, gradi
                 <div>
                     <CardTitle className="flex items-center gap-2">
                         <Calculator className="size-5" /> Gradebook
+                        {isDirty && (
+                            <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                                Unsaved changes
+                            </Badge>
+                        )}
                     </CardTitle>
                     <CardDescription>{label}. Weighted from the active school policy, not a fixed 30 / 30 / 40 formula.</CardDescription>
                 </div>
@@ -170,14 +219,42 @@ export function GradeSheet({ classId, students, autoAverageDefault = true, gradi
                             <Switch id="auto-average" checked={autoAverageEnabled} onCheckedChange={setAutoAverageEnabled} />
                         </div>
                     )}
-                    <Button variant="outline" onClick={submitGrades} className="gap-2">
-                        <Send className="size-4" /> Submit
+                    <Button variant="outline" onClick={() => setShowSubmitDialog(true)} disabled={isSavingGrades || isSubmittingGrades} className="gap-2">
+                        <Send className="size-4" /> Submit &amp; Finalize
                     </Button>
-                    <Button onClick={saveGrades} disabled={isSavingGrades} className="gap-2">
+                    <Button onClick={() => saveGrades()} disabled={isSavingGrades || isSubmittingGrades} className="gap-2">
                         <Save className="size-4" /> {isSavingGrades ? "Saving" : "Save grades"}
                     </Button>
                 </div>
             </CardHeader>
+
+            <AlertDialog open={showSubmitDialog} onOpenChange={setShowSubmitDialog}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="flex items-center gap-2">
+                            <Lock className="size-4 text-amber-500" />
+                            Finalize and submit grades?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {isDirty
+                                ? "Your unsaved grade edits will be saved first, then all evaluated grades for this class will be locked and submitted to the Registrar."
+                                : "Submitted grades will be locked from further editing and queued for Registrar release."}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={isSavingGrades || isSubmittingGrades}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={(event) => {
+                                event.preventDefault();
+                                confirmAndSubmitGrades();
+                            }}
+                            disabled={isSavingGrades || isSubmittingGrades}
+                        >
+                            {isSavingGrades || isSubmittingGrades ? "Submitting..." : "Confirm & Finalize"}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
             <CardContent className="pt-6">
                 <div className="mb-4 flex flex-wrap gap-2">
                     {isSymbolic ? (

@@ -46,6 +46,11 @@ beforeEach(function (): void {
 });
 
 it('audits student profile import spreadsheet and flags invalid LRNs', function (): void {
+    $config = App\Services\StudentConfigurationService::defaults();
+    $config['external_identifier'] = App\Services\StudentConfigurationService::externalIdentifierPresets()['ph_lrn']['config'];
+    $config['external_identifier']['student_types'] = ['college', 'shs'];
+    app(App\Services\StudentConfigurationService::class)->update($config);
+
     $tool = new AuditStudentProfileImportTool;
     $result = $tool->handle(new Request([
         'profiles' => [

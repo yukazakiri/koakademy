@@ -147,6 +147,7 @@ final readonly class EnrollmentAssignmentService
             return ActionResult::failure('Subjects must be assigned before classes can be assigned.');
         }
 
+        $forceOverload = (bool) ($payload['force_overload'] ?? $configuration['force_overload'] ?? false);
         Student::query()->whereKey($enrollment->student_id)->lockForUpdate()->firstOrFail();
         $assigned = [];
         foreach ($subjectEnrollments as $subjectEnrollment) {
@@ -171,15 +172,32 @@ final readonly class EnrollmentAssignmentService
 
                 return ActionResult::failure("No eligible class is available for subject [{$subjectEnrollment->subject?->code}].");
             }
-            if ($this->classIsFull($class, (int) $enrollment->student_id)) {
+            $isFull = $this->classIsFull($class, (int) $enrollment->student_id);
+            if ($isFull && ! $forceOverload) {
                 return ActionResult::failure("Class [{$class->section}] has no available seats.");
+            }
+            if ($isFull && $forceOverload) {
+                activity('enrollment')
+                    ->performedOn($enrollment)
+                    ->causedBy($context->actor)
+                    ->withProperties([
+                        'class_id' => $class->id,
+                        'section' => $class->section,
+                        'subject_code' => $subjectEnrollment->subject?->code,
+                        'maximum_slots' => $class->maximum_slots,
+                    ])
+                    ->event('class_overload_approved')
+                    ->log("Approved class seat overload into Section {$class->section}.");
             }
 
             $this->classes->enrollOnceWhileLocked((int) $enrollment->student_id, (int) $class->id, [
                 'school_id' => $enrollment->school_id,
                 'status' => true,
             ]);
-            $subjectEnrollment->update(['class_id' => $class->id]);
+            $subjectEnrollment->update([
+                'class_id' => $class->id,
+                'section' => $class->section,
+            ]);
             $assigned[] = ['subject_enrollment_id' => $subjectEnrollment->id, 'class_id' => $class->id];
         }
 

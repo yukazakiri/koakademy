@@ -81,7 +81,10 @@ final readonly class EnrollmentSubmissionData
 
         return match ($handler) {
             'enrollment.assign_subjects' => ['subjects' => $this->subjects],
-            'enrollment.assign_classes' => ['assignments' => $this->classAssignments],
+            'enrollment.assign_classes' => [
+                'assignments' => $this->classAssignments,
+                'force_overload' => (bool) ($this->facts['force_overload'] ?? false),
+            ],
             'enrollment.assign_additional_fees' => ['fees' => $this->additionalFees],
             'enrollment.calculate_tuition' => $this->billingOverrides,
             default => [],

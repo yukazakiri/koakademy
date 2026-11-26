@@ -31,6 +31,7 @@ use App\Models\ApplicantCancellation;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
 use App\Models\Course;
+use App\Models\EnrollmentClassWaitlist;
 use App\Models\EnrollmentDiscount;
 use App\Models\EnrollmentPolicy;
 use App\Models\EnrollmentRequirement;
@@ -57,6 +58,7 @@ use App\Services\EnrollmentService;
 use App\Services\GeneralSettingsService;
 use App\Services\PdfGenerationService;
 use App\Services\QueueAssessmentExportService;
+use App\Services\StudentChecklistService;
 use App\Services\StudentDirectoryQuery;
 use App\Services\StudentHoldService;
 use App\Services\TenantContext;
@@ -1871,6 +1873,73 @@ final class AdministratorEnrollmentManagementController extends Controller
         $latestInvoice = $enrollment->latestInvoice;
         $studentCourse = $enrollment->student?->Course;
 
+        $activeHolds = $this->studentHoldService
+            ->activeHoldsForStudent((int) $enrollment->student_id)
+            ->map(fn ($hold): array => $this->studentHoldService->serializeHold($hold))
+            ->values()
+            ->all();
+
+        $enrollmentPeriod = $this->enrollmentPeriodService->describe(
+            (string) $enrollment->school_year,
+            (int) $enrollment->semester,
+        );
+
+        $waitlists = EnrollmentClassWaitlist::query()
+            ->where('student_enrollment_id', $enrollment->id)
+            ->where('status', 'waiting')
+            ->get()
+            ->map(fn (EnrollmentClassWaitlist $w): array => [
+                'id' => $w->id,
+                'subject_id' => $w->subject_id,
+                'subject_enrollment_id' => $w->subject_enrollment_id,
+                'preferred_class_id' => $w->preferred_class_id,
+                'position' => $w->position,
+                'status' => $w->status,
+                'notes' => $w->notes,
+            ])
+            ->values()
+            ->all();
+
+        $editHistory = Activity::query()
+            ->where('subject_type', StudentEnrollment::class)
+            ->where('subject_id', $enrollment->id)
+            ->with('causer')
+            ->latest('id')
+            ->limit(15)
+            ->get()
+            ->map(fn (Activity $activity): array => [
+                'id' => $activity->id,
+                'event' => $activity->event ?? 'updated',
+                'description' => (string) $activity->description,
+                'causer_name' => $activity->causer?->name ?? 'System',
+                'created_at' => $activity->created_at?->toIso8601String(),
+                'changes' => (function () use ($activity): array {
+                    $props = $activity->properties;
+                    if ($props instanceof Collection && $props->isNotEmpty()) {
+                        return $props->toArray();
+                    }
+                    if (is_array($props) && $props !== []) {
+                        return $props;
+                    }
+                    if (is_array($activity->attribute_changes)) {
+                        return $activity->attribute_changes;
+                    }
+
+                    return is_object($activity->attribute_changes) ? $activity->attribute_changes->toArray() : [];
+                })(),
+            ])
+            ->values()
+            ->all();
+
+        $isTerminalLocked = in_array(mb_strtolower((string) $enrollment->status), ['cancelled', 'rejected'], true)
+            || ($enrollment->terminal_outcome !== null
+                && ! in_array(mb_strtolower((string) $enrollment->terminal_outcome), ['enrolled', 'completed'], true));
+
+        $checklistAnalysis = $enrollment->student instanceof Student && $enrollment->student->course_id
+            ? app(StudentChecklistService::class)->analyze($enrollment->student)
+            : [];
+        $checklistBySubjectId = collect($checklistAnalysis['checklist'] ?? [])->keyBy('id');
+
         return Inertia::render('administrators/enrollments/edit', [
             'user' => [
                 'name' => $user->name,
@@ -1879,6 +1948,17 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'role' => $user->role?->getLabel() ?? 'Administrator',
             ],
             'can_manage_tuition_fees' => $this->canManageTuitionFees($user),
+            'enrollment_period' => $enrollmentPeriod,
+            'active_holds' => $activeHolds,
+            'waitlists' => $waitlists,
+            'edit_history' => $editHistory,
+            'is_terminal_locked' => $isTerminalLocked,
+            'recommended_unit_cap' => 24,
+            'checklist_summary' => isset($checklistAnalysis['academic_summary']) ? [
+                'progress_percentage' => $checklistAnalysis['academic_summary']['progress_percentage'] ?? 0,
+                'failed_retakes_count' => $checklistAnalysis['academic_summary']['failed_subjects_count'] ?? 0,
+                'completed_subjects_count' => $checklistAnalysis['academic_summary']['completed_subjects_count'] ?? 0,
+            ] : null,
             'settings' => [
                 'currentSemester' => $currentSemester,
                 'currentSchoolYear' => $currentSchoolYear,
@@ -1921,10 +2001,11 @@ final class AdministratorEnrollmentManagementController extends Controller
                     'formatted_academic_year' => $enrollment->student->formatted_academic_year,
                     'miscellaneous_fee' => $studentCourse?->getMiscellaneousFee() ?? 3500,
                 ],
-                'subjects' => $enrollment->subjectsEnrolled->map(function ($subjectEnrollment) use ($subjectClassMap, $subjectsWithClasses): array {
+                'subjects' => $enrollment->subjectsEnrolled->map(function ($subjectEnrollment) use ($subjectClassMap, $subjectsWithClasses, $checklistBySubjectId): array {
                     $hasGrades = $subjectEnrollment->grade !== null
                         || filled($subjectEnrollment->grade_symbol)
                         || filled($subjectEnrollment->grade_outcome);
+                    $checkItem = $checklistBySubjectId->get($subjectEnrollment->subject_id);
 
                     return [
                         'id' => $subjectEnrollment->id,
@@ -1946,6 +2027,10 @@ final class AdministratorEnrollmentManagementController extends Controller
                         'grade_summary' => $hasGrades
                             ? ($subjectEnrollment->grade_symbol ?? ($subjectEnrollment->grade !== null ? (string) $subjectEnrollment->grade : $subjectEnrollment->grade_outcome))
                             : null,
+                        'prerequisite_satisfied' => is_array($checkItem) ? (bool) ($checkItem['prerequisite_satisfied'] ?? true) : true,
+                        'missing_prerequisite' => is_array($checkItem) ? ($checkItem['missing_prerequisite'] ?? null) : null,
+                        'already_passed' => is_array($checkItem) ? (bool) ($checkItem['is_completed'] ?? false) : false,
+                        'is_failed_retake' => is_array($checkItem) ? (($checkItem['status'] ?? null) === 'Failed') : false,
                     ];
                 })->values(),
                 'tuition' => $tuition ? [
@@ -2015,11 +2100,48 @@ final class AdministratorEnrollmentManagementController extends Controller
             return back()->with('flash', ['error' => 'Student selection cannot be changed for this enrollment.']);
         }
 
+        $isTerminalLocked = in_array(mb_strtolower((string) $enrollment->status), ['cancelled', 'rejected'], true)
+            || ($enrollment->terminal_outcome !== null
+                && ! in_array(mb_strtolower((string) $enrollment->terminal_outcome), ['enrolled', 'completed'], true));
+
+        if ($isTerminalLocked) {
+            return back()->with('flash', ['error' => 'Cancelled or rejected enrollments cannot be edited directly. Restore or undo cancellation first.']);
+        }
+
+        if ((int) $validated['semester'] !== (int) $enrollment->semester) {
+            $duplicateInTargetSemester = StudentEnrollment::query()
+                ->where('student_id', $enrollment->student_id)
+                ->where('school_year', $enrollment->school_year)
+                ->where('semester', (int) $validated['semester'])
+                ->whereKeyNot($enrollment->id)
+                ->exists();
+
+            if ($duplicateInTargetSemester) {
+                return back()->withInput()->with('flash', ['error' => 'Student already has another enrollment for the selected semester.']);
+            }
+        }
+
         try {
             /** @var array<int, array{subject_code: string, subject_title: string, old_class_id: int|null, new_class_id: int|null, old_section: string, new_section: string}> $classChanges */
             $classChanges = [];
+            /** @var array<int, string> $addedSubjectCodes */
+            $addedSubjectCodes = [];
+            /** @var array<int, string> $removedSubjectCodes */
+            $removedSubjectCodes = [];
+            $previousTuitionTotal = (float) ($enrollment->studentTuition?->overall_tuition ?? 0);
+            $newTuitionTotal = $previousTuitionTotal;
 
-            DB::transaction(function () use ($validated, $enrollment, $actor, $canManageTuitionFees, &$classChanges): void {
+            DB::transaction(function () use (
+                $validated,
+                $enrollment,
+                $actor,
+                $canManageTuitionFees,
+                $previousTuitionTotal,
+                &$classChanges,
+                &$addedSubjectCodes,
+                &$removedSubjectCodes,
+                &$newTuitionTotal
+            ): void {
                 $this->ensureClassCapacityForSubjects(
                     $validated['subjects'],
                     (int) $validated['student_id'],
@@ -2027,6 +2149,34 @@ final class AdministratorEnrollmentManagementController extends Controller
                     $enrollment,
                     $actor,
                 );
+
+                /** @var Collection<int|string, SubjectEnrollment> $existingSubjects */
+                $existingSubjects = $enrollment->subjectsEnrolled()->with(['subject', 'class'])->get()->keyBy('subject_id');
+
+                $incomingSubjectIdsPreview = collect($validated['subjects'])
+                    ->pluck('subject_id')
+                    ->map(fn (mixed $value): int => (int) $value)
+                    ->all();
+                $existingSubjectIdsPreview = $existingSubjects->keys()->map(fn (mixed $k): int => (int) $k)->all();
+                $subjectsWereAdded = array_diff($incomingSubjectIdsPreview, $existingSubjectIdsPreview) !== [];
+                $subjectsWereRemoved = array_diff($existingSubjectIdsPreview, $incomingSubjectIdsPreview) !== [];
+
+                if ($subjectsWereAdded || $subjectsWereRemoved) {
+                    $this->enrollmentPeriodService->assertAddDropAllowed(
+                        overrideWindow: (bool) ($validated['override_window'] ?? false),
+                        schoolYear: (string) $enrollment->school_year,
+                        semester: (int) $validated['semester'],
+                    );
+
+                    if ($enrollment->student instanceof Student) {
+                        $this->studentHoldService->assertNoBlockingAddDropHolds(
+                            student: $enrollment->student,
+                            actor: $actor,
+                            overrideHolds: (bool) ($validated['override_holds'] ?? false),
+                            overrideReason: isset($validated['override_holds_reason']) ? (string) $validated['override_holds_reason'] : null,
+                        );
+                    }
+                }
 
                 $enrollment->update([
                     'semester' => $validated['semester'],
@@ -2036,8 +2186,6 @@ final class AdministratorEnrollmentManagementController extends Controller
                 ]);
 
                 $feeConfig = $this->feePolicy->forEnrollment($enrollment);
-                /** @var Collection<int|string, SubjectEnrollment> $existingSubjects */
-                $existingSubjects = $enrollment->subjectsEnrolled()->with(['subject', 'class'])->get()->keyBy('subject_id');
 
                 $normalizedSubjects = $this->resolveSubjectFeesForPersistence(
                     $validated['subjects'],
@@ -2093,6 +2241,11 @@ final class AdministratorEnrollmentManagementController extends Controller
                 $classesById = $classIdsToLoad->isNotEmpty()
                     ? Classes::query()->whereIn('id', $classIdsToLoad)->get()->keyBy('id')
                     : collect();
+
+                $addedSubjectModels = Subject::query()
+                    ->whereIn('id', array_values(array_diff($incomingSubjectIds, $existingSubjectIdsPreview)))
+                    ->get()
+                    ->keyBy('id');
 
                 foreach ($incomingSubjects as $subjectData) {
                     $subjectId = (int) $subjectData['subject_id'];
@@ -2163,12 +2316,37 @@ final class AdministratorEnrollmentManagementController extends Controller
 
                             $classEnrollment->status = true;
                             $classEnrollment->save();
+
+                            // Auto-promote any waiting waitlist entries for this subject now that a section is assigned.
+                            EnrollmentClassWaitlist::query()
+                                ->where('student_enrollment_id', $enrollment->id)
+                                ->where('subject_id', $subjectId)
+                                ->where('status', 'waiting')
+                                ->update([
+                                    'status' => 'promoted',
+                                    'promoted_by' => $actor->id,
+                                    'promoted_class_id' => $incomingClassId,
+                                    'promoted_at' => now(),
+                                ]);
                         }
                     } else {
                         $enrollment->subjectsEnrolled()->create(array_merge($payload, [
                             'subject_id' => $subjectId,
                             'student_id' => $enrollment->student_id,
                         ]));
+
+                        $addedModel = $addedSubjectModels->get($subjectId);
+                        if ($addedModel instanceof Subject) {
+                            $addedSubjectCodes[] = (string) $addedModel->code;
+                            $classChanges[] = [
+                                'subject_code' => (string) $addedModel->code,
+                                'subject_title' => (string) $addedModel->title,
+                                'old_class_id' => null,
+                                'new_class_id' => $incomingClassId,
+                                'old_section' => 'Not enrolled',
+                                'new_section' => (string) ($incomingClass instanceof Classes ? $incomingClass->section : 'Unassigned'),
+                            ];
+                        }
 
                         if ($incomingClassId) {
                             $classEnrollment = ClassEnrollment::query()
@@ -2188,13 +2366,31 @@ final class AdministratorEnrollmentManagementController extends Controller
                     }
                 }
 
-                $removedSubjects->each(function (SubjectEnrollment $subject) use ($enrollment): void {
+                $removedSubjects->each(function (SubjectEnrollment $subject) use ($enrollment, &$removedSubjectCodes, &$classChanges): void {
+                    if ($subject->subject?->code) {
+                        $removedSubjectCodes[] = (string) $subject->subject->code;
+                        $classChanges[] = [
+                            'subject_code' => (string) $subject->subject->code,
+                            'subject_title' => (string) ($subject->subject->title ?? ''),
+                            'old_class_id' => $subject->class_id ? (int) $subject->class_id : null,
+                            'new_class_id' => null,
+                            'old_section' => (string) ($subject->class?->section ?? $subject->section ?? 'Unassigned'),
+                            'new_section' => 'Removed',
+                        ];
+                    }
+
                     if ($subject->class_id) {
                         ClassEnrollment::query()
                             ->where('student_id', $enrollment->student_id)
                             ->where('class_id', $subject->class_id)
                             ->delete();
                     }
+
+                    EnrollmentClassWaitlist::query()
+                        ->where('student_enrollment_id', $enrollment->id)
+                        ->where('subject_id', $subject->subject_id)
+                        ->where('status', 'waiting')
+                        ->update(['status' => 'cancelled']);
 
                     $subject->deleteQuietly();
                 });
@@ -2217,21 +2413,76 @@ final class AdministratorEnrollmentManagementController extends Controller
                     (float) ($validated['downpayment'] ?? 0),
                     $reconciledFees
                 );
+
+                $newTuitionTotal = (float) ($enrollment->studentTuition()->value('overall_tuition') ?? $previousTuitionTotal);
+
+                // Persist structured revision diff audit entry so change_reason and deltas are never lost.
+                $feeDelta = round($newTuitionTotal - $previousTuitionTotal, 2);
+                $summaryParts = [];
+                if ($addedSubjectCodes !== []) {
+                    $summaryParts[] = 'Added '.implode(', ', $addedSubjectCodes);
+                }
+                if ($removedSubjectCodes !== []) {
+                    $summaryParts[] = 'Removed '.implode(', ', $removedSubjectCodes);
+                }
+                if ($classChanges !== [] && $addedSubjectCodes === [] && $removedSubjectCodes === []) {
+                    $summaryParts[] = sprintf('Updated %d section assignment(s)', count($classChanges));
+                }
+                if (abs($feeDelta) >= 0.01) {
+                    $summaryParts[] = sprintf('Tuition delta %s%.2f', $feeDelta > 0 ? '+' : '', $feeDelta);
+                }
+                $changeReason = mb_trim((string) ($validated['change_reason'] ?? ''));
+                $description = $summaryParts !== []
+                    ? implode(' · ', $summaryParts)
+                    : 'Updated enrollment details';
+                if ($changeReason !== '') {
+                    $description .= " — {$changeReason}";
+                }
+
+                activity('enrollment')
+                    ->performedOn($enrollment)
+                    ->causedBy($actor)
+                    ->withProperties([
+                        'added_subjects' => $addedSubjectCodes,
+                        'removed_subjects' => $removedSubjectCodes,
+                        'section_changes' => $classChanges,
+                        'previous_total' => $previousTuitionTotal,
+                        'new_total' => $newTuitionTotal,
+                        'fee_delta' => $feeDelta,
+                        'change_reason' => $changeReason !== '' ? $changeReason : null,
+                        'notify_student' => (bool) ($validated['notify_student'] ?? false),
+                        'override_window' => (bool) ($validated['override_window'] ?? false),
+                        'override_holds' => (bool) ($validated['override_holds'] ?? false),
+                    ])
+                    ->event('enrollment_edited')
+                    ->log($description);
             });
 
-            // Dispatch class change notification if requested
-            $shouldNotify = $validated['notify_student'] ?? false;
-            if ($shouldNotify && $classChanges !== [] && $enrollment->student?->email) {
+            // Dispatch change notification whenever requested and subjects, sections, or tuition changed
+            $shouldNotify = (bool) ($validated['notify_student'] ?? false);
+            $tuitionChanged = abs($newTuitionTotal - $previousTuitionTotal) >= 0.01;
+            if ($shouldNotify && ($classChanges !== [] || $tuitionChanged) && $enrollment->student?->email) {
+                $notificationItems = $classChanges !== []
+                    ? $classChanges
+                    : [[
+                        'subject_code' => 'ASSESSMENT',
+                        'subject_title' => 'Tuition Assessment Updated',
+                        'old_class_id' => null,
+                        'new_class_id' => null,
+                        'old_section' => number_format($previousTuitionTotal, 2),
+                        'new_section' => number_format($newTuitionTotal, 2),
+                    ]];
+
                 SendClassChangeNotificationJob::dispatch(
                     $enrollment,
-                    $classChanges,
+                    $notificationItems,
                     $validated['change_reason'] ?? ''
                 );
 
                 Log::info('Class change notification job dispatched.', [
                     'enrollment_id' => $enrollment->id,
                     'student_email' => $enrollment->student->email,
-                    'changes_count' => count($classChanges),
+                    'changes_count' => count($notificationItems),
                 ]);
             }
 
@@ -2600,27 +2851,60 @@ final class AdministratorEnrollmentManagementController extends Controller
             });
         }
 
+        $targetAcademicYear = $request->filled('academic_year') ? (int) $request->input('academic_year') : null;
+        $checklistBySubjectId = collect();
+        if ($request->filled('student_id')) {
+            $studentForChecklist = Student::with('Course')->find((int) $request->input('student_id'));
+            if ($studentForChecklist instanceof Student && $studentForChecklist->course_id) {
+                $analysis = app(StudentChecklistService::class)->analyze($studentForChecklist);
+                $checklistBySubjectId = collect($analysis['checklist'] ?? [])->keyBy('id');
+                $targetAcademicYear ??= (int) ($studentForChecklist->academic_year ?? 1);
+            }
+        }
+
         $subjects = $subjectsQuery
             ->orderBy('academic_year')
             ->orderBy('semester')
             ->orderBy('code')
             ->limit(100)
             ->get()
-            ->map(fn (Subject $subject): array => [
-                'id' => $subject->id,
-                'code' => $subject->code,
-                'title' => $subject->title,
-                'academic_year' => $subject->academic_year,
-                'semester' => $subject->semester,
-                'lecture' => $subject->lecture,
-                'laboratory' => $subject->laboratory,
-                'lec_per_unit' => $subject->course?->lec_per_unit ?? 0,
-                'lab_per_unit' => $subject->course?->lab_per_unit ?? 0,
-                'has_classes' => $subjectsWithClasses->contains($subject->code),
-                'label' => ($subjectsWithClasses->contains($subject->code) ? '⭐ ' : '')
-                    .$subject->code.' - '.$subject->title
-                    .($subjectsWithClasses->contains($subject->code) ? '' : ' (⚠️ No Classes)'),
-            ]);
+            ->map(function (Subject $subject) use ($subjectsWithClasses, $checklistBySubjectId, $targetAcademicYear, $semester): array {
+                $checkItem = $checklistBySubjectId->get($subject->id);
+                $alreadyPassed = is_array($checkItem) ? (bool) ($checkItem['is_completed'] ?? false) : false;
+                $isFailedRetake = is_array($checkItem) ? (($checkItem['status'] ?? null) === 'Failed') : false;
+                $prereqSatisfied = is_array($checkItem) ? (bool) ($checkItem['prerequisite_satisfied'] ?? true) : true;
+                $missingPrereq = is_array($checkItem) ? ($checkItem['missing_prerequisite'] ?? null) : null;
+                $recommended = ! $alreadyPassed
+                    && $prereqSatisfied
+                    && (
+                        $isFailedRetake
+                        || ($targetAcademicYear !== null
+                            && (int) $subject->academic_year === $targetAcademicYear
+                            && (int) $subject->semester === $semester)
+                    );
+
+                return [
+                    'id' => $subject->id,
+                    'code' => $subject->code,
+                    'title' => $subject->title,
+                    'academic_year' => $subject->academic_year,
+                    'semester' => $subject->semester,
+                    'lecture' => $subject->lecture,
+                    'laboratory' => $subject->laboratory,
+                    'lec_per_unit' => $subject->course?->lec_per_unit ?? 0,
+                    'lab_per_unit' => $subject->course?->lab_per_unit ?? 0,
+                    'has_classes' => $subjectsWithClasses->contains($subject->code),
+                    'checklist_status' => is_array($checkItem) ? ($checkItem['status'] ?? null) : null,
+                    'already_passed' => $alreadyPassed,
+                    'is_failed_retake' => $isFailedRetake,
+                    'prerequisite_satisfied' => $prereqSatisfied,
+                    'missing_prerequisite' => $missingPrereq,
+                    'recommended' => $recommended,
+                    'label' => ($subjectsWithClasses->contains($subject->code) ? '⭐ ' : '')
+                        .$subject->code.' - '.$subject->title
+                        .($subjectsWithClasses->contains($subject->code) ? '' : ' (⚠️ No Classes)'),
+                ];
+            });
 
         return response()->json($subjects);
     }
@@ -2780,6 +3064,22 @@ final class AdministratorEnrollmentManagementController extends Controller
         }
 
         $feeConfiguration = $this->studentFeeConfiguration($student, $request, $resolver, $settingsService);
+        $targetSchoolYear = filled($request->input('school_year'))
+            ? (string) $request->input('school_year')
+            : $settingsService->getCurrentSchoolYearString();
+        $targetSemester = $request->filled('semester')
+            ? (int) $request->input('semester')
+            : $settingsService->getCurrentSemester();
+
+        $existingEnrollment = StudentEnrollment::query()
+            ->where('student_id', $student->id)
+            ->forAcademicPeriod($targetSchoolYear, $targetSemester)
+            ->whereNotIn('status', ['Cancelled', 'Rejected'])
+            ->first();
+
+        $checklistAnalysis = $student->course_id
+            ? app(StudentChecklistService::class)->analyze($student)
+            : [];
 
         return response()->json([
             'billing_configuration' => $feeConfiguration,
@@ -2797,9 +3097,23 @@ final class AdministratorEnrollmentManagementController extends Controller
             'duration_years' => $student->Course?->duration_years,
             'internship_hours' => $student->Course?->internship_hours,
             'bundled_qualifications' => $student->Course?->bundled_qualifications,
+            'scholarship_type' => $student->scholarship_type?->value,
+            'scholarship_label' => $student->scholarship_type?->getLabel(),
             'academic_year' => $student->academic_year,
             'formatted_academic_year' => $student->formatted_academic_year,
             'miscellaneous_fee' => $feeConfiguration['miscellaneous_fee_override'] ?? $student->Course?->getMiscellaneousFee() ?? EnrollmentFeeCalculator::Defaults['miscellaneous_fee_fallback'],
+            'recommended_unit_cap' => 24,
+            'existing_enrollment' => $existingEnrollment ? [
+                'id' => $existingEnrollment->id,
+                'status' => $existingEnrollment->status,
+                'school_year' => $existingEnrollment->school_year,
+                'semester' => $existingEnrollment->semester,
+            ] : null,
+            'checklist_summary' => isset($checklistAnalysis['academic_summary']) ? [
+                'progress_percentage' => $checklistAnalysis['academic_summary']['progress_percentage'] ?? 0,
+                'failed_retakes_count' => $checklistAnalysis['academic_summary']['failed_subjects_count'] ?? 0,
+                'completed_subjects_count' => $checklistAnalysis['academic_summary']['completed_subjects_count'] ?? 0,
+            ] : null,
             'active_holds' => $this->studentHoldService
                 ->activeHoldsForStudent((int) $student->id)
                 ->map(fn ($hold): array => $this->studentHoldService->serializeHold($hold))

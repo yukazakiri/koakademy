@@ -103,6 +103,26 @@
             }
         }
 
+        // Public pages need distinct descriptions and their own canonical URLs.
+        $publicPageSeo = match (request()->route()?->getName()) {
+            'login' => ['Student Portal Login', 'Sign in to '.$resolvedAppName.' to access the student portal.'],
+            'signup' => ['Create an Account', 'Create an account for '.$resolvedAppName.'.'],
+            'enrollment.create' => ['Online Enrollment', 'Apply for enrollment online at '.$resolvedAppName.'.'],
+            'terms-of-service' => ['Terms of Service', 'Read the terms of service for '.$resolvedAppName.'.'],
+            'privacy-policy' => ['Privacy Policy', 'Read the privacy policy for '.$resolvedAppName.'.'],
+            'changelog' => ['Changelog', 'See the latest updates to '.$resolvedAppName.'.'],
+            default => null,
+        };
+        if ($publicPageSeo !== null) {
+            $metaTitle = $publicPageSeo[0].' | '.$resolvedAppName;
+            $metaDescription = $publicPageSeo[1];
+            $ogTitle = $metaTitle;
+            $ogDescription = $metaDescription;
+            $canonicalOverride = url()->current();
+        } elseif ($isDocsPage) {
+            $canonicalOverride = url()->current();
+        }
+
         // Generate proper URLs for R2-stored files
         $faviconUrl = $siteSettings->getFavicon();
         $appleTouchIconUrl = $siteSettings->getLogo();

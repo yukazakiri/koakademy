@@ -43,6 +43,17 @@ $portalHosts = array_values(array_unique(array_filter([
 ])));
 
 $registerPortalRoutes = function (): void {
+    Route::get('/sitemap.xml', function () {
+        $paths = ['/login', '/signup', '/enrollment', '/terms-of-service', '/privacy-policy'];
+        $entries = collect($paths)->map(function (string $path): string {
+            $url = htmlspecialchars(url($path), ENT_XML1 | ENT_QUOTES, 'UTF-8');
+
+            return '<url><loc>'.$url.'</loc></url>';
+        })->implode('');
+
+        return response('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'.$entries.'</urlset>', 200, ['Content-Type' => 'application/xml; charset=UTF-8']);
+    })->name('sitemap');
+
     Route::get('/verify/finance/{token}', FinancialDocumentVerificationController::class)
         ->middleware('throttle:30,1')
         ->name('finance-documents.verify');

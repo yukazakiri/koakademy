@@ -1,3 +1,5 @@
+import type { CrudFacultyOption, CrudRoomOption } from "../crud/types";
+
 export type Classification = "college" | "shs";
 export type DeliveryMode = "face_to_face" | "online" | "online_synchronous";
 export type DeliverySummary = DeliveryMode | "mixed";
@@ -45,8 +47,18 @@ export type SubjectOption = {
     course_code: string | null;
     academic_year: number | null;
     semester: string | null;
+    lecture?: number | null;
+    laboratory?: number | null;
+    units?: number | null;
 };
-export type ShsSubjectOption = { code: string; label: string; title?: string };
+export type ShsSubjectOption = {
+    code: string;
+    label: string;
+    title?: string;
+    lecture?: number | null;
+    laboratory?: number | null;
+    units?: number | null;
+};
 
 export type ClassFormOptions = {
     classifications: ValueOption[];
@@ -58,8 +70,8 @@ export type ClassFormOptions = {
     academic_years: ValueOption[];
     day_of_week: ValueOption[];
     courses: EntityOption[];
-    faculties: EntityOption[];
-    rooms: EntityOption[];
+    faculties: CrudFacultyOption[];
+    rooms: CrudRoomOption[];
     shs_tracks: EntityOption[];
 };
 
@@ -84,11 +96,14 @@ export type ClassSettings = {
     enable_announcements: boolean;
     enable_grade_visibility: boolean;
     enable_attendance_tracking: boolean;
+    enable_online_resources?: boolean;
     allow_late_submissions: boolean;
     enable_discussion_board: boolean;
     notify_students_on_schedule_changes: boolean;
     custom: Record<string, string>;
     banner_image: File | null;
+    banner_image_url?: string | null;
+    remove_banner_image?: boolean;
 };
 
 export type ClassFormData = {
@@ -104,6 +119,7 @@ export type ClassFormData = {
     faculty_id: string | null;
     semester: "1" | "2" | "summer";
     school_year: string;
+    start_date?: string | null;
     section: string;
     delivery_mode: DeliveryMode;
     room_id: number | null;
@@ -176,12 +192,18 @@ export type ClassStorePayload = {
     faculty_id: string | null;
     semester: "1" | "2" | "summer";
     school_year: string;
+    start_date?: string | null;
     section: string;
     delivery_mode: DeliveryMode;
     room_id: number | null;
     maximum_slots: number;
     schedules: ClassSchedule[];
     schedules_match_by_id?: boolean;
+    schedule_status?: "draft" | "published";
+    notify_enrolled?: boolean;
+    allow_below_enrolled?: boolean;
+    redirect_to?: "index" | "show" | "duplicate";
+    remove_banner_image?: boolean;
     settings: ClassSettings;
 } & (
     | {
@@ -200,20 +222,23 @@ export type ClassStorePayload = {
       }
 );
 
-export function createDefaultSchedule(defaultRoomId: number | null, delivery_mode: DeliveryMode = "face_to_face"): ClassSchedule {
+export function createDefaultSchedule(
+    defaultRoomId: number | null,
+    delivery_mode: DeliveryMode = "face_to_face",
+    component_type: "lecture" | "lab" = "lecture",
+): ClassSchedule {
     const mode = canonicalDeliveryMode(delivery_mode);
     return {
         day_of_week: "Monday",
         start_time: "08:00",
         end_time: "09:00",
         delivery_mode: mode,
+        component_type,
         room_id: isOnlineDeliveryMode(mode) ? null : defaultRoomId || null,
     };
 }
 
 export function buildClassDefaults(defaults: ClassDefaultsInput): ClassFormData {
-    const defaultRoomId = Number(defaults.options.rooms[0]?.id ?? 0);
-
     return {
         classification: "college",
         course_codes: [],
@@ -227,9 +252,10 @@ export function buildClassDefaults(defaults: ClassDefaultsInput): ClassFormData 
         faculty_id: null,
         semester: defaults.semester,
         school_year: defaults.school_year,
+        start_date: null,
         section: "A",
         delivery_mode: "face_to_face",
-        room_id: defaultRoomId || null,
+        room_id: null,
         maximum_slots: 40,
         schedules: [],
         settings: {
@@ -239,11 +265,14 @@ export function buildClassDefaults(defaults: ClassDefaultsInput): ClassFormData 
             enable_announcements: true,
             enable_grade_visibility: true,
             enable_attendance_tracking: false,
+            enable_online_resources: true,
             allow_late_submissions: false,
             enable_discussion_board: false,
             notify_students_on_schedule_changes: true,
             custom: {},
             banner_image: null,
+            banner_image_url: null,
+            remove_banner_image: false,
         },
     };
 }
@@ -349,12 +378,16 @@ export function buildClassStorePayload(formData: ClassFormData): ClassStorePaylo
         faculty_id: data.faculty_id,
         semester: data.semester,
         school_year: data.school_year,
+        start_date: data.start_date || null,
         section: data.section,
         delivery_mode: data.delivery_mode,
         room_id: data.room_id,
         maximum_slots: data.maximum_slots,
         schedules: data.schedules,
-        settings: data.settings,
+        settings: {
+            ...data.settings,
+            enable_online_resources: data.settings.enable_online_resources ?? true,
+        },
     };
 
     if (data.classification === "shs") {

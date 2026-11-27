@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enums\AttendanceStatus;
+use App\Enums\ClassPostType;
 use App\Enums\UserRole;
 use App\Exports\StudentListExport;
 use App\Http\Controllers\Api\V1\ApiPagination;
@@ -12,9 +14,15 @@ use App\Http\Requests\Administrators\StoreClassRequest;
 use App\Http\Requests\Administrators\UpdateClassRequest;
 use App\Http\Requests\Administrators\UpdateClassScheduleRequest;
 use App\Jobs\MoveStudentToSectionJob;
+use App\Models\ClassAttendanceRecord;
+use App\Models\ClassAttendanceSession;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
+use App\Models\ClassPost;
+use App\Models\ClassScheduleChange;
+use App\Models\ClassScheduleChangeStudentNotification;
 use App\Models\Course;
+use App\Models\EnrollmentClassWaitlist;
 use App\Models\Faculty;
 use App\Models\Room;
 use App\Models\Schedule;
@@ -22,11 +30,13 @@ use App\Models\ShsStrand;
 use App\Models\ShsTrack;
 use App\Models\StrandSubject;
 use App\Models\Subject;
+use App\Models\SubjectEnrollment;
 use App\Models\User;
 use App\Services\ClassCurriculumPlacementService;
 use App\Services\ClassScheduleChangeNotificationService;
 use App\Services\GeneralSettingsService;
 use App\Services\Scheduling\ClassScheduleWorkspaceService;
+use App\Services\Scheduling\ScheduleConflictService;
 use App\Services\Scheduling\SchedulingService;
 use App\Support\Database\JsonArrayQuery;
 use App\Support\Database\SqlDialect;
@@ -36,13 +46,16 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 use Maatwebsite\Excel\Facades\Excel;
+use Spatie\Activitylog\Models\Activity;
 
 final class AdministratorClassManagementController extends Controller
 {
@@ -317,8 +330,39 @@ final class AdministratorClassManagementController extends Controller
         ]);
     }
 
-    public function create(GeneralSettingsService $generalSettingsService): Response
+    public function create(Request $request, GeneralSettingsService $generalSettingsService): Response
     {
+        $this->authorizeClassAction('Create:Classes');
+
+        $semester = (string) $generalSettingsService->getCurrentSemester();
+        $schoolYear = $generalSettingsService->getCurrentSchoolYearString();
+        $duplicateFromId = $request->integer('duplicate_from');
+        $initialMode = $request->query('mode') === 'batch' ? 'batch' : 'single';
+        $prefillData = null;
+        $siblingSections = [];
+
+        if ($duplicateFromId > 0) {
+            $sourceClass = Classes::query()->with(['schedules.room'])->find($duplicateFromId);
+            if ($sourceClass instanceof Classes) {
+                $prefillData = $this->buildClassFormData($sourceClass);
+                $siblingSections = $this->buildSiblingSections($sourceClass, includeSelf: true);
+                $takenSections = collect($siblingSections)->pluck('section')->map(fn ($s) => mb_strtoupper((string) $s))->all();
+                $nextSection = collect(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'])
+                    ->first(fn (string $letter): bool => ! in_array($letter, $takenSections, true)) ?? 'B';
+
+                $prefillData['section'] = $nextSection;
+                $prefillData['schedules'] = [];
+                $prefillData['settings']['banner_image'] = null;
+                $prefillData['settings']['banner_image_url'] = null;
+            }
+        } elseif ($request->integer('blueprint_class_id') > 0) {
+            $sourceClass = Classes::query()->with(['schedules.room'])->find($request->integer('blueprint_class_id'));
+            if ($sourceClass instanceof Classes) {
+                $prefillData = $this->buildClassFormData($sourceClass);
+                $siblingSections = $this->buildSiblingSections($sourceClass, includeSelf: true);
+            }
+        }
+
         return Inertia::render('administrators/classes/create', [
             'user' => $this->getUserProps(),
             'filament' => [
@@ -326,19 +370,30 @@ final class AdministratorClassManagementController extends Controller
                     'index_url' => route('filament.admin.resources.classes.index'),
                 ],
             ],
-            'options' => $this->buildClassFormOptions(),
-            'defaults' => [
-                'semester' => (string) $generalSettingsService->getCurrentSemester(),
-                'school_year' => $generalSettingsService->getCurrentSchoolYearString(),
+            'options' => $this->buildClassFormOptions($semester, $schoolYear),
+            'defaults' => $prefillData ?? [
+                'semester' => $semester,
+                'school_year' => $schoolYear,
                 'delivery_mode' => Classes::DELIVERY_FACE_TO_FACE,
             ],
+            'initial_mode' => $initialMode,
+            'duplicate_from' => $duplicateFromId > 0 ? $duplicateFromId : null,
+            'sibling_sections' => $siblingSections,
             'flash' => session('flash'),
         ]);
     }
 
     public function edit(Classes $class): Response
     {
+        $this->authorizeClassAction('Update:Classes');
+
         $class->loadMissing(['schedules.room']);
+
+        $activeEnrolledCount = $class->class_enrollments()
+            ->where(fn (Builder $q) => $this->applyActiveEnrollmentConstraint($q))
+            ->count();
+        $totalEnrolledCount = $class->class_enrollments()->count();
+        $formData = $this->buildClassFormData($class);
 
         return Inertia::render('administrators/classes/create', [
             'user' => $this->getUserProps(),
@@ -347,11 +402,19 @@ final class AdministratorClassManagementController extends Controller
                     'index_url' => route('filament.admin.resources.classes.index'),
                 ],
             ],
-            'options' => $this->buildClassFormOptions(),
-            'defaults' => $this->buildClassFormData($class),
+            'options' => $this->buildClassFormOptions((string) ($class->semester ?? '1'), (string) ($class->school_year ?? '')),
+            'defaults' => $formData,
             'mode' => 'edit',
             'class_id' => $class->id,
             'class_title' => $class->record_title,
+            'sibling_sections' => $this->buildSiblingSections($class, includeSelf: true),
+            'class_meta' => [
+                'enrolled_count' => $totalEnrolledCount,
+                'active_enrolled_count' => $activeEnrolledCount,
+                'is_archived' => $class->trashed(),
+                'banner_image_url' => $formData['settings']['banner_image_url'] ?? null,
+                'schedule_revision' => app(SchedulingService::class)->revisionFor($class->schedules),
+            ],
             'flash' => session('flash'),
         ]);
     }
@@ -361,12 +424,16 @@ final class AdministratorClassManagementController extends Controller
         $this->authorizeClassAction('Create:Classes');
 
         $validated = $request->validated();
+        $redirectTo = is_string($validated['redirect_to'] ?? null) ? $validated['redirect_to'] : 'index';
+        $scheduleStatus = is_string($validated['schedule_status'] ?? null) ? $validated['schedule_status'] : null;
+        $notifyEnrolled = array_key_exists('notify_enrolled', $validated) ? (bool) $validated['notify_enrolled'] : true;
+        unset($validated['redirect_to'], $validated['schedule_status'], $validated['notify_enrolled']);
 
         $classification = $validated['classification'];
 
         /** @var array<string, mixed> $settings */
         $settings = (array) ($validated['settings'] ?? []);
-        unset($validated['settings']);
+        unset($validated['settings'], $settings['banner_image_url']);
 
         $settings = array_merge(Classes::getDefaultSettings(), $settings);
 
@@ -405,20 +472,38 @@ final class AdministratorClassManagementController extends Controller
             }
         }
 
-        $schedules = Arr::wrap($validated['schedules'] ?? []);
+        $schedules = $this->normalizeIncomingSchedules(Arr::wrap($validated['schedules'] ?? []));
         unset($validated['schedules']);
 
-        $class = DB::transaction(function () use ($validated, $schedules): Classes {
+        $class = DB::transaction(function () use ($validated, $schedules, $scheduleStatus, $notifyEnrolled): Classes {
             $class = Classes::query()->create($validated);
 
             app(SchedulingService::class)->syncClassSchedules(
                 $class,
                 $schedules,
                 Auth::user() instanceof User ? Auth::user() : null,
+                scheduleStatus: $scheduleStatus,
+                notifyEnrolled: $notifyEnrolled,
             );
 
             return $class;
         });
+
+        if ($redirectTo === 'show') {
+            return redirect()->route('administrators.classes.show', $class)->with('flash', [
+                'type' => 'success',
+                'message' => 'Class created successfully.',
+                'class_id' => $class->id,
+            ]);
+        }
+
+        if ($redirectTo === 'duplicate') {
+            return redirect()->route('administrators.classes.create', ['duplicate_from' => $class->id])->with('flash', [
+                'type' => 'success',
+                'message' => sprintf('%s created. Ready to configure next section.', $class->record_title),
+                'class_id' => $class->id,
+            ]);
+        }
 
         return redirect()->route('administrators.classes.index')->with('flash', [
             'type' => 'success',
@@ -436,9 +521,15 @@ final class AdministratorClassManagementController extends Controller
         $this->authorizeClassAction('Update:Classes');
 
         $validated = $request->validated();
+        $redirectTo = is_string($validated['redirect_to'] ?? null) ? $validated['redirect_to'] : 'index';
+        $scheduleStatus = is_string($validated['schedule_status'] ?? null) ? $validated['schedule_status'] : null;
+        $notifyEnrolled = array_key_exists('notify_enrolled', $validated) ? (bool) $validated['notify_enrolled'] : true;
+        unset($validated['redirect_to'], $validated['allow_below_enrolled'], $validated['schedule_status'], $validated['notify_enrolled']);
         $matchLegacySchedules = ! ($validated['schedules_match_by_id'] ?? false);
         unset($validated['schedules_match_by_id']);
-        $classification = $validated['classification'] ?? $class->classification ?? 'college';
+        $previousClassification = $class->classification === 'shs' ? 'shs' : 'college';
+        $classification = $validated['classification'] ?? $previousClassification;
+        $classificationChanged = array_key_exists('classification', $validated) && $classification !== $previousClassification;
 
         /** @var array<string, mixed> $settings */
         $settings = (array) ($validated['settings'] ?? []);
@@ -453,26 +544,46 @@ final class AdministratorClassManagementController extends Controller
                 Storage::disk('public')->delete($currentBanner);
             }
             $settings['banner_image'] = null;
-        }
-
-        if (isset($settings['banner_image']) && $settings['banner_image'] instanceof \Illuminate\Http\UploadedFile) {
+        } elseif (isset($settings['banner_image']) && $settings['banner_image'] instanceof \Illuminate\Http\UploadedFile) {
             $currentBanner = $class->getSetting('banner_image');
             if (is_string($currentBanner) && $currentBanner !== '') {
                 Storage::disk('public')->delete($currentBanner);
             }
             $settings['banner_image'] = $settings['banner_image']->storePublicly('class-banners', 'public');
+        } else {
+            // Preserve existing banner_image when the edit form submits null/empty without remove_banner_image=true.
+            unset($settings['banner_image']);
         }
+
+        unset($settings['banner_image_url']);
 
         if ($settings !== []) {
             $class->settings = array_merge((array) ($class->settings ?? []), $settings);
         }
 
-        if ($classification === 'shs' && isset($validated['subject_code_shs'])) {
-            $validated['subject_code'] = $validated['subject_code_shs'];
-            unset($validated['subject_code_shs']);
+        if ($classification === 'shs') {
+            if (isset($validated['subject_code_shs'])) {
+                $validated['subject_code'] = $validated['subject_code_shs'];
+                unset($validated['subject_code_shs']);
+            }
+
+            if ($classificationChanged) {
+                $validated['course_codes'] = null;
+                $validated['subject_ids'] = null;
+                $validated['subject_id'] = null;
+                $validated['academic_year'] = null;
+            }
         }
 
         if ($classification === 'college') {
+            unset($validated['subject_code_shs']);
+
+            if ($classificationChanged) {
+                $validated['shs_track_id'] = null;
+                $validated['shs_strand_id'] = null;
+                $validated['grade_level'] = null;
+            }
+
             $validated = $curriculumPlacement->normalizeCollegeAttributes($validated, $class);
 
             if (isset($validated['subject_ids']) && is_array($validated['subject_ids']) && $validated['subject_ids'] !== []) {
@@ -489,7 +600,7 @@ final class AdministratorClassManagementController extends Controller
 
         $schedules = null;
         if (array_key_exists('schedules', $validated)) {
-            $schedules = Arr::wrap($validated['schedules']);
+            $schedules = $this->normalizeIncomingSchedules(Arr::wrap($validated['schedules']));
             unset($validated['schedules']);
         }
 
@@ -498,7 +609,7 @@ final class AdministratorClassManagementController extends Controller
 
         $actor = Auth::user() instanceof User ? Auth::user() : null;
 
-        DB::transaction(function () use ($class, $validated, $schedules, $scheduleNotifications, $actor, $matchLegacySchedules, $applyDeliveryModeToSchedules): void {
+        DB::transaction(function () use ($class, $validated, $schedules, $scheduleNotifications, $actor, $matchLegacySchedules, $applyDeliveryModeToSchedules, $scheduleStatus, $notifyEnrolled): void {
             // Class delivery_mode is the default for new meetings; existing meetings only change
             // when schedules are submitted or apply_delivery_mode_to_schedules is explicitly requested.
             $oldSnapshot = $scheduleNotifications->snapshot($class);
@@ -512,6 +623,8 @@ final class AdministratorClassManagementController extends Controller
                     $actor,
                     $oldSnapshot,
                     $matchLegacySchedules,
+                    $scheduleStatus,
+                    $notifyEnrolled,
                 );
             } else {
                 if ($applyDeliveryModeToSchedules && array_key_exists('delivery_mode', $validated)) {
@@ -527,9 +640,33 @@ final class AdministratorClassManagementController extends Controller
                     $class->unsetRelation('Schedule');
                 }
 
-                $scheduleNotifications->notifyIfChanged($class, $oldSnapshot, $actor);
+                if ($scheduleStatus !== null) {
+                    $class->schedules()->update(['status' => $scheduleStatus]);
+                    $class->unsetRelation('schedules');
+                    $class->unsetRelation('Schedule');
+                }
+
+                if ($notifyEnrolled && ($scheduleStatus ?? 'published') === 'published') {
+                    $scheduleNotifications->notifyIfChanged($class, $oldSnapshot, $actor);
+                }
             }
         });
+
+        if ($redirectTo === 'show') {
+            return redirect()->route('administrators.classes.show', $class)->with('flash', [
+                'type' => 'success',
+                'message' => 'Class updated successfully.',
+                'class_id' => $class->id,
+            ]);
+        }
+
+        if ($redirectTo === 'duplicate') {
+            return redirect()->route('administrators.classes.create', ['duplicate_from' => $class->id])->with('flash', [
+                'type' => 'success',
+                'message' => sprintf('%s updated. Ready to duplicate as next section.', $class->record_title),
+                'class_id' => $class->id,
+            ]);
+        }
 
         return redirect()->route('administrators.classes.index')->with('flash', [
             'type' => 'success',
@@ -623,8 +760,10 @@ final class AdministratorClassManagementController extends Controller
 
         $section = $request->validated()['section'];
 
-        $copySchedules = $request->boolean('copy_schedules', true);
-        $newClass = DB::transaction(function () use ($class, $section, $copySchedules): Classes {
+        $copySchedules = $request->boolean('copy_schedules', false);
+        $hadScheduleConflicts = false;
+
+        $newClass = DB::transaction(function () use ($class, $section, $copySchedules, &$hadScheduleConflicts): Classes {
             $newClass = $class->replicate(['section'])->unsetRelations();
             $newClass->section = $section;
 
@@ -637,11 +776,53 @@ final class AdministratorClassManagementController extends Controller
             $newClass->save();
 
             if ($copySchedules) {
-                app(SchedulingService::class)->copyClassSchedules($class, $newClass);
+                $copiedSchedules = app(SchedulingService::class)->copyClassSchedules($class, $newClass);
+
+                if ($copiedSchedules->isNotEmpty()) {
+                    $schoolYearVariants = $this->schoolYearVariants($newClass->school_year);
+                    $termClasses = Classes::query()
+                        ->where('semester', $newClass->semester)
+                        ->when($schoolYearVariants !== [], fn (Builder $q) => $q->whereIn('school_year', $schoolYearVariants))
+                        ->with(['schedules.room', 'Faculty'])
+                        ->get();
+
+                    $conflicts = app(ScheduleConflictService::class)->detectConflictsForClasses($termClasses, includeSectionConflicts: true);
+                    $conflictedScheduleIds = [];
+
+                    foreach ($conflicts as $conflict) {
+                        $c1 = (int) ($conflict['class_1']['id'] ?? 0);
+                        $c2 = (int) ($conflict['class_2']['id'] ?? 0);
+
+                        if ($c1 === (int) $newClass->id && isset($conflict['schedule_1_id'])) {
+                            $conflictedScheduleIds[] = (int) $conflict['schedule_1_id'];
+                        }
+                        if ($c2 === (int) $newClass->id && isset($conflict['schedule_2_id'])) {
+                            $conflictedScheduleIds[] = (int) $conflict['schedule_2_id'];
+                        }
+                    }
+
+                    $conflictedScheduleIds = array_values(array_unique($conflictedScheduleIds));
+
+                    if ($conflictedScheduleIds !== []) {
+                        $hadScheduleConflicts = true;
+                        Schedule::query()
+                            ->where('class_id', $newClass->id)
+                            ->whereIn('id', $conflictedScheduleIds)
+                            ->update(['status' => 'draft']);
+                    }
+                }
             }
 
             return $newClass;
         });
+
+        if ($hadScheduleConflicts) {
+            return redirect()->route('administrators.classes.index')->with('flash', [
+                'type' => 'warning',
+                'message' => 'Class copied, but conflicting schedules were saved as draft due to room or faculty overlap.',
+                'class_id' => $newClass->id,
+            ]);
+        }
 
         return redirect()->route('administrators.classes.index')->with('flash', [
             'type' => 'success',
@@ -652,7 +833,7 @@ final class AdministratorClassManagementController extends Controller
         ]);
     }
 
-    public function show(Request $request, Classes $class): Response
+    public function show(Request $request, Classes $class, ClassScheduleWorkspaceService $scheduleWorkspace): Response
     {
         $class->loadMissing([
             'Subject',
@@ -664,8 +845,6 @@ final class AdministratorClassManagementController extends Controller
             'shsStrand',
             'schedules.room',
         ]);
-
-        $class->loadCount('class_enrollments');
 
         $subjects = $class->subjects;
         $subjectsDisplay = $subjects->isEmpty()
@@ -702,33 +881,61 @@ final class AdministratorClassManagementController extends Controller
         }
 
         $settings = array_merge(Classes::getDefaultSettings(), (array) ($class->settings ?? []));
-        $bannerPath = $settings['banner_image'] ?? null;
-        $bannerUrl = null;
+        $bannerUrl = $this->resolveBannerUrl($settings['banner_image'] ?? null);
+        $schoolYearVariants = $this->schoolYearVariants($class->school_year);
 
-        if (is_string($bannerPath) && $bannerPath !== '') {
-            $bannerUrl = str_starts_with($bannerPath, 'http')
-                ? $bannerPath
-                : Storage::url($bannerPath);
-        }
-
-        // Fetch all enrollments for this class (client-side filtering/sorting/pagination)
-        $classEnrollments = $class->class_enrollments()
+        // Fetch enrollments (including soft-deleted so the Show Soft-Deleted toggle works)
+        $allClassEnrollments = $class->class_enrollments()
+            ->withTrashed()
             ->with([
-                'student:id,student_id,first_name,last_name,course_id,academic_year',
+                'student:id,student_id,first_name,last_name,middle_name,course_id,academic_year,email',
                 'student.course:id,code',
             ])
             ->latest('created_at')
             ->get();
 
+        $nonTrashedEnrollments = $allClassEnrollments
+            ->filter(fn (ClassEnrollment $enrollment): bool => ! $enrollment->trashed())
+            ->values();
+        $trashedEnrollments = $allClassEnrollments
+            ->filter(fn (ClassEnrollment $enrollment): bool => $enrollment->trashed())
+            ->values();
+        $activeEnrollments = $nonTrashedEnrollments
+            ->filter(fn (ClassEnrollment $enrollment): bool => $this->isActiveEnrollment($enrollment))
+            ->values();
+
         // Map student IDs to their StudentEnrollment IDs for the current semester/school year
-        $studentIds = $classEnrollments->pluck('student_id')->filter()->unique();
-        $studentEnrollmentIds = \App\Models\StudentEnrollment::whereIn('student_id', $studentIds)
+        $studentIds = $allClassEnrollments->pluck('student_id')->filter()->unique();
+        $studentEnrollmentIds = \App\Models\StudentEnrollment::query()
+            ->whereIn('student_id', $studentIds)
             ->where('semester', $class->semester)
-            ->where('school_year', $class->school_year)
+            ->when($schoolYearVariants !== [], fn (Builder $q) => $q->whereIn('school_year', $schoolYearVariants))
             ->pluck('id', 'student_id');
 
-        $enrollments = $classEnrollments
-            ->map(fn ($enrollment): array => [
+        $currentSchedules = $class->schedules
+            ->map(fn (Schedule $schedule): array => [
+                'day_of_week' => (string) $schedule->day_of_week,
+                'start_time' => $schedule->start_time?->format('H:i') ?? '',
+                'end_time' => $schedule->end_time?->format('H:i') ?? '',
+                'room_id' => $schedule->room_id !== null ? (int) $schedule->room_id : null,
+                'delivery_mode' => $schedule->delivery_mode ?? Classes::DELIVERY_FACE_TO_FACE,
+                'component_type' => $this->normalizeComponentType($schedule->component_type),
+            ])
+            ->values()
+            ->all();
+
+        $impact = $scheduleWorkspace->previewRescheduleImpact($class, $currentSchedules);
+        $timetableMap = $impact['enrolled_timetable_map'] ?? [];
+
+        $formatEnrollment = static function (ClassEnrollment $enrollment) use ($studentEnrollmentIds, $timetableMap): array {
+            $studentTimetable = $timetableMap[(int) $enrollment->student_id] ?? [
+                'status' => 'clear',
+                'conflicts' => [],
+            ];
+            $isVerified = (bool) $enrollment->is_grades_verified;
+            $isFinalized = (bool) $enrollment->is_grades_finalized;
+
+            return [
                 'id' => $enrollment->id,
                 'student_enrollment_id' => $enrollment->student_id
                     ? ($studentEnrollmentIds[$enrollment->student_id] ?? null)
@@ -739,48 +946,92 @@ final class AdministratorClassManagementController extends Controller
                     'name' => $enrollment->student->full_name,
                     'course' => $enrollment->student->course?->code,
                     'academic_year' => $enrollment->student->academic_year,
+                    'email' => $enrollment->student->email,
                 ] : null,
                 'status' => $enrollment->status,
+                'enrollment_status' => $enrollment->resolvedEnrollmentStatus(),
+                'status_reason' => $enrollment->status_reason,
                 'prelim_grade' => $enrollment->prelim_grade,
                 'midterm_grade' => $enrollment->midterm_grade,
                 'finals_grade' => $enrollment->finals_grade,
                 'total_average' => $enrollment->total_average,
+                'grade_symbol' => $enrollment->grade_symbol,
+                'grade_outcome' => $enrollment->grade_outcome,
                 'remarks' => $enrollment->remarks,
-            ])
+                'is_grades_verified' => $isVerified,
+                'is_grades_finalized' => $isFinalized,
+                'is_grade_protected' => $isVerified || $isFinalized,
+                'deleted_at' => $enrollment->deleted_at?->toIso8601String(),
+                'timetable_status' => ($studentTimetable['status'] ?? 'clear') === 'clash' ? 'clash' : 'ok',
+                'timetable_conflicts' => array_values($studentTimetable['conflicts'] ?? []),
+            ];
+        };
+
+        $includeDeleted = $request->boolean('include_deleted');
+        $enrollments = ($includeDeleted ? $allClassEnrollments : $nonTrashedEnrollments)
+            ->map($formatEnrollment)
+            ->values();
+        $formattedTrashedEnrollments = $trashedEnrollments
+            ->map($formatEnrollment)
             ->values();
 
-        // Fetch transferable classes (other sections of the same subject)
+        // Fetch transferable classes (other non-archived sections of the same subject in the same term)
         $transferableClasses = Classes::query()
             ->where('id', '!=', $class->id)
             ->where('semester', $class->semester)
-            ->where('school_year', $class->school_year)
-            ->where(function ($query) use ($class): void {
-                if ($class->subject_id) {
+            ->when($schoolYearVariants !== [], fn (Builder $q) => $q->whereIn('school_year', $schoolYearVariants))
+            ->when(
+                $class->isShs(),
+                fn (Builder $q) => $q->where('classification', 'shs'),
+                fn (Builder $q) => $q->where(fn (Builder $sq) => $sq->whereNull('classification')->orWhere('classification', 'college')),
+            )
+            ->where(function (Builder $query) use ($class): void {
+                if ($class->isShs()) {
+                    if (filled($class->subject_code)) {
+                        $query->where('subject_code', $class->subject_code);
+                    } else {
+                        $query->whereRaw('1 = 0');
+                    }
+                } elseif ($class->subject_id && filled($class->subject_code)) {
+                    $query->where('subject_id', $class->subject_id)
+                        ->orWhere('subject_code', $class->subject_code);
+                } elseif ($class->subject_id) {
                     $query->where('subject_id', $class->subject_id);
-                } elseif ($class->subject_code) {
+                } elseif (filled($class->subject_code)) {
                     $query->where('subject_code', $class->subject_code);
                 } else {
-                    // Prevent matching all classes with null subject info
                     $query->whereRaw('1 = 0');
                 }
             })
-            ->withCount('class_enrollments')
+            ->withCount([
+                'class_enrollments as active_students_count' => fn (Builder $q) => $this->applyActiveEnrollmentConstraint($q),
+            ])
+            ->orderBy('section')
+            ->orderBy('id')
             ->get(['id', 'section', 'maximum_slots', 'subject_code'])
-            ->map(function ($c): array {
-                $available = max(0, $c->maximum_slots - ($c->class_enrollments_count ?? 0));
-                $isFull = $available <= 0;
+            ->map(function (Classes $c): array {
+                $maxSlots = (int) ($c->maximum_slots ?? 0);
+                $activeCount = (int) ($c->active_students_count ?? 0);
+                $isFull = $maxSlots > 0 && $activeCount >= $maxSlots;
+                $available = $maxSlots > 0 ? max(0, $maxSlots - $activeCount) : null;
 
                 return [
                     'id' => $c->id,
                     'section' => $c->section,
-                    'label' => sprintf(
-                        '%s - Section %s (Available: %s/%s)%s',
-                        $c->subject_code ?? 'Unknown Subject',
-                        $c->section,
-                        $available,
-                        $c->maximum_slots,
-                        $isFull ? ' [FULL]' : ''
-                    ),
+                    'label' => $maxSlots > 0
+                        ? sprintf(
+                            '%s - Section %s (%d/%d)',
+                            $c->subject_code ?? 'Unknown Subject',
+                            $c->section ?? 'N/A',
+                            $activeCount,
+                            $maxSlots,
+                        )
+                        : sprintf(
+                            '%s - Section %s (%d enrolled)',
+                            $c->subject_code ?? 'Unknown Subject',
+                            $c->section ?? 'N/A',
+                            $activeCount,
+                        ),
                     'is_full' => $isFull,
                     'available_slots' => $available,
                 ];
@@ -807,6 +1058,24 @@ final class AdministratorClassManagementController extends Controller
             $associatedCourses = $class->formatted_track_strand;
         }
 
+        $policyFlags = [
+            'enable_announcements' => (bool) ($settings['enable_announcements'] ?? true),
+            'enable_grade_visibility' => (bool) ($settings['enable_grade_visibility'] ?? true),
+            'enable_attendance_tracking' => (bool) ($settings['enable_attendance_tracking'] ?? false),
+            'enable_online_resources' => (bool) ($settings['enable_online_resources'] ?? true),
+            'allow_late_submissions' => (bool) ($settings['allow_late_submissions'] ?? false),
+            'enable_discussion_board' => (bool) ($settings['enable_discussion_board'] ?? false),
+            'notify_students_on_schedule_changes' => (bool) ($settings['notify_students_on_schedule_changes'] ?? true),
+        ];
+
+        $dossier = $this->buildDossierProps(
+            $class,
+            $activeEnrollments,
+            $scheduleWorkspace,
+            $impact,
+            $schoolYearVariants,
+        );
+
         return Inertia::render('administrators/classes/show', [
             'user' => $this->getUserProps(),
             'class' => [
@@ -821,9 +1090,13 @@ final class AdministratorClassManagementController extends Controller
                 'year_level' => $yearLevelLabel,
                 'semester' => $semesterLabel,
                 'school_year' => $class->school_year ?? 'N/A',
-                'students_count' => (int) ($class->class_enrollments_count ?? 0),
+                'start_date' => $class->start_date?->format('Y-m-d'),
+                'students_count' => $activeEnrollments->count(),
                 'maximum_slots' => (int) ($class->maximum_slots ?? 0),
+                'banner_image_url' => $bannerUrl,
+                'faculty_id' => $class->faculty_id,
                 'faculty' => $class->faculty ? [
+                    'id' => $class->faculty->id,
                     'name' => $class->faculty->full_name,
                     'email' => $class->faculty->email,
                     'avatar_url' => $class->faculty->avatar_url,
@@ -834,14 +1107,8 @@ final class AdministratorClassManagementController extends Controller
                     'accent_color' => $settings['accent_color'] ?? null,
                     'theme' => $settings['theme'] ?? null,
                     'banner_image_url' => $bannerUrl,
-                    'features' => [
-                        'enable_announcements' => (bool) ($settings['enable_announcements'] ?? false),
-                        'enable_grade_visibility' => (bool) ($settings['enable_grade_visibility'] ?? false),
-                        'enable_attendance_tracking' => (bool) ($settings['enable_attendance_tracking'] ?? false),
-                        'allow_late_submissions' => (bool) ($settings['allow_late_submissions'] ?? false),
-                        'enable_discussion_board' => (bool) ($settings['enable_discussion_board'] ?? false),
-                        'notify_students_on_schedule_changes' => (bool) ($settings['notify_students_on_schedule_changes'] ?? true),
-                    ],
+                    ...$policyFlags,
+                    'features' => $policyFlags,
                     'custom' => (array) ($settings['custom'] ?? []),
                 ],
                 'filament' => [
@@ -854,12 +1121,14 @@ final class AdministratorClassManagementController extends Controller
                 'is_archived' => $class->trashed(),
             ],
             'capabilities' => [
+                'create' => $this->canManageClasses('Create:Classes'),
                 'update' => $this->canManageClasses('Update:Classes'),
                 'delete' => $this->canManageClasses('Delete:Classes'),
                 'restore' => $this->canManageClasses('Restore:Classes'),
                 'force_delete' => $this->canManageClasses('ForceDelete:Classes'),
             ],
             'enrollments' => $enrollments,
+            'trashed_enrollments' => $formattedTrashedEnrollments,
             'raw_schedules' => $class->schedules
                 ->sortBy([
                     fn ($schedule) => $schedule->day_of_week,
@@ -874,7 +1143,7 @@ final class AdministratorClassManagementController extends Controller
                     'room_id' => $schedule->room_id,
                     'room_name' => $schedule->room?->name,
                     'delivery_mode' => $schedule->delivery_mode,
-                    'component_type' => $schedule->component_type,
+                    'component_type' => $this->normalizeComponentType($schedule->component_type),
                     'pattern_group_id' => $schedule->pattern_group_id,
                     'status' => $schedule->status,
                     'subject_id' => $schedule->subject_id,
@@ -885,11 +1154,15 @@ final class AdministratorClassManagementController extends Controller
             'rooms' => Room::query()
                 ->where('is_active', true)
                 ->orderBy('name')
-                ->get(['id', 'name'])
+                ->get(['id', 'name', 'capacity', 'type'])
                 ->map(fn (Room $room): array => [
                     'id' => $room->id,
                     'label' => $room->name,
+                    'capacity' => $room->capacity !== null ? (int) $room->capacity : null,
+                    'type' => $room->type,
                 ])->values(),
+            'faculties' => $this->buildFacultyOptions((string) ($class->semester ?? '1'), (string) ($class->school_year ?? '')),
+            'dossier' => $dossier,
             'flash' => session('flash'),
         ]);
     }
@@ -910,7 +1183,7 @@ final class AdministratorClassManagementController extends Controller
             ->with('course:id,code,curriculum_year')
             ->whereIn('course_id', $availableCourseIds)
             ->orderBy('code')
-            ->get(['id', 'code', 'title', 'course_id', 'academic_year', 'semester']);
+            ->get(['id', 'code', 'title', 'course_id', 'academic_year', 'semester', 'lecture', 'laboratory', 'units']);
 
         return response()->json([
             'data' => $subjects->map(fn (Subject $subject): array => [
@@ -929,6 +1202,9 @@ final class AdministratorClassManagementController extends Controller
                 'course_code' => $subject->course?->code,
                 'academic_year' => $subject->academic_year ? (int) $subject->academic_year : null,
                 'semester' => $subject->semester ? (string) $subject->semester : null,
+                'lecture' => $subject->lecture !== null ? (int) $subject->lecture : null,
+                'laboratory' => $subject->laboratory !== null ? (int) $subject->laboratory : null,
+                'units' => $subject->units !== null ? (int) $subject->units : null,
             ])->values(),
         ]);
     }
@@ -1623,6 +1899,7 @@ final class AdministratorClassManagementController extends Controller
         $classification = $class->classification === 'shs' ? 'shs' : 'college';
 
         $subjectIds = Arr::wrap($class->subject_ids ?: ($class->subject_id ? [$class->subject_id] : []));
+        $bannerUrl = $this->resolveBannerUrl($settings['banner_image'] ?? null);
 
         return [
             'classification' => $classification,
@@ -1637,6 +1914,7 @@ final class AdministratorClassManagementController extends Controller
             'faculty_id' => $class->faculty_id,
             'semester' => (string) ($class->semester ?? '1'),
             'school_year' => (string) ($class->school_year ?? ''),
+            'start_date' => $class->start_date?->format('Y-m-d'),
             'section' => (string) ($class->section ?? 'A'),
             'delivery_mode' => $class->delivery_mode ?? Classes::DELIVERY_FACE_TO_FACE,
             'delivery_summary' => $class->deliverySummary(),
@@ -1656,9 +1934,9 @@ final class AdministratorClassManagementController extends Controller
                     'room_id' => $schedule->room_id,
                     'room_name' => $schedule->room?->name,
                     'delivery_mode' => $schedule->delivery_mode,
-                    'component_type' => $schedule->component_type,
+                    'component_type' => $this->normalizeComponentType($schedule->component_type),
                     'pattern_group_id' => $schedule->pattern_group_id,
-                    'status' => $schedule->status,
+                    'status' => $schedule->status === 'draft' ? 'draft' : 'published',
                     'subject_id' => $schedule->subject_id,
                 ])
                 ->all(),
@@ -1669,20 +1947,27 @@ final class AdministratorClassManagementController extends Controller
                 'enable_announcements' => (bool) ($settings['enable_announcements'] ?? true),
                 'enable_grade_visibility' => (bool) ($settings['enable_grade_visibility'] ?? true),
                 'enable_attendance_tracking' => (bool) ($settings['enable_attendance_tracking'] ?? false),
+                'enable_online_resources' => (bool) ($settings['enable_online_resources'] ?? true),
                 'allow_late_submissions' => (bool) ($settings['allow_late_submissions'] ?? false),
                 'enable_discussion_board' => (bool) ($settings['enable_discussion_board'] ?? false),
                 'notify_students_on_schedule_changes' => (bool) ($settings['notify_students_on_schedule_changes'] ?? true),
                 'custom' => (array) ($settings['custom'] ?? []),
                 'banner_image' => null,
+                'banner_image_url' => $bannerUrl,
             ],
         ];
     }
 
     /**
-     * @return array<string, array<int, array<string, mixed>>>
+     * @return array<string, mixed>
      */
-    private function buildClassFormOptions(): array
+    private function buildClassFormOptions(?string $semester = null, ?string $schoolYear = null): array
     {
+        $generalSettings = app(GeneralSettingsService::class);
+        $resolvedSemester = filled($semester) ? $semester : (string) $generalSettings->getCurrentSemester();
+        $resolvedSchoolYear = filled($schoolYear) ? $schoolYear : $generalSettings->getCurrentSchoolYearString();
+        $schedulingPolicy = $generalSettings->getSchedulingConfig();
+
         $courses = Course::query()
             ->where('is_active', true)
             ->orderBy('code')
@@ -1703,7 +1988,7 @@ final class AdministratorClassManagementController extends Controller
                 ['value' => 'shs', 'label' => 'Senior High School (SHS)'],
             ],
             'delivery_modes' => ScheduleDelivery::options(),
-            'scheduling_policy' => app(GeneralSettingsService::class)->getSchedulingConfig(),
+            'scheduling_policy' => $schedulingPolicy,
             'sections' => [
                 ['value' => 'A', 'label' => 'Section A'],
                 ['value' => 'B', 'label' => 'Section B'],
@@ -1725,34 +2010,24 @@ final class AdministratorClassManagementController extends Controller
                 ['value' => '3', 'label' => '3rd Year'],
                 ['value' => '4', 'label' => '4th Year'],
             ],
-            'day_of_week' => [
-                ['value' => 'Monday', 'label' => 'Monday'],
-                ['value' => 'Tuesday', 'label' => 'Tuesday'],
-                ['value' => 'Wednesday', 'label' => 'Wednesday'],
-                ['value' => 'Thursday', 'label' => 'Thursday'],
-                ['value' => 'Friday', 'label' => 'Friday'],
-                ['value' => 'Saturday', 'label' => 'Saturday'],
-                ['value' => 'Sunday', 'label' => 'Sunday'],
-            ],
+            'day_of_week' => array_map(
+                static fn (string $day): array => ['value' => $day, 'label' => $day],
+                ScheduleDelivery::allowedDays($schedulingPolicy),
+            ),
             'courses' => $courses->map(fn (Course $course): array => [
                 'id' => $course->id,
                 'label' => $courseLabelById[$course->id],
             ])->values()->all(),
-            'faculties' => Faculty::query()
-                ->orderBy('last_name')
-                ->orderBy('first_name')
-                ->get(['id', 'first_name', 'last_name', 'middle_name'])
-                ->map(fn (Faculty $faculty): array => [
-                    'id' => $faculty->id,
-                    'label' => $faculty->full_name,
-                ])->values()->all(),
+            'faculties' => $this->buildFacultyOptions($resolvedSemester, $resolvedSchoolYear),
             'rooms' => Room::query()
                 ->where('is_active', true)
                 ->orderBy('name')
-                ->get(['id', 'name'])
+                ->get(['id', 'name', 'capacity', 'type'])
                 ->map(fn (Room $room): array => [
                     'id' => $room->id,
                     'label' => $room->name,
+                    'capacity' => $room->capacity !== null ? (int) $room->capacity : null,
+                    'type' => $room->type,
                 ])->values()->all(),
             'shs_tracks' => ShsTrack::query()
                 ->orderBy('track_name')
@@ -1762,6 +2037,608 @@ final class AdministratorClassManagementController extends Controller
                     'label' => $track->track_name,
                 ])->values()->all(),
         ];
+    }
+
+    /**
+     * @return list<array{id: int, section: string, record_title: string, faculty: string|null, students_count: int, maximum_slots: int, is_current: bool}>
+     */
+    private function buildSiblingSections(Classes $class, bool $includeSelf = false): array
+    {
+        $schoolYearVariants = $this->schoolYearVariants($class->school_year);
+
+        $query = Classes::query()
+            ->where('semester', $class->semester)
+            ->when($schoolYearVariants !== [], fn (Builder $q) => $q->whereIn('school_year', $schoolYearVariants))
+            ->when(
+                $class->isShs(),
+                fn (Builder $q) => $q->where('classification', 'shs'),
+                fn (Builder $q) => $q->where(fn (Builder $sq) => $sq->whereNull('classification')->orWhere('classification', 'college')),
+            )
+            ->when(! $includeSelf, fn (Builder $q) => $q->where('id', '!=', $class->id))
+            ->where(function (Builder $subjectQuery) use ($class): void {
+                if ($class->isShs()) {
+                    if (filled($class->subject_code)) {
+                        $subjectQuery->where('subject_code', $class->subject_code);
+                    } else {
+                        $subjectQuery->whereKey($class->id);
+                    }
+                } elseif ($class->subject_id && filled($class->subject_code)) {
+                    $subjectQuery->where('subject_id', $class->subject_id)
+                        ->orWhere('subject_code', $class->subject_code);
+                } elseif ($class->subject_id) {
+                    $subjectQuery->where('subject_id', $class->subject_id);
+                } elseif (filled($class->subject_code)) {
+                    $subjectQuery->where('subject_code', $class->subject_code);
+                } else {
+                    $subjectQuery->whereKey($class->id);
+                }
+            })
+            ->with([
+                'faculty:id,first_name,last_name,middle_name',
+                'subjects:id,code',
+            ])
+            ->withCount([
+                'class_enrollments as active_students_count' => fn (Builder $q) => $this->applyActiveEnrollmentConstraint($q),
+            ])
+            ->orderBy('section')
+            ->orderBy('id');
+
+        return $query
+            ->get(['id', 'subject_code', 'subject_ids', 'section', 'faculty_id', 'maximum_slots', 'school_year', 'semester', 'classification'])
+            ->map(fn (Classes $sibling): array => [
+                'id' => (int) $sibling->id,
+                'section' => (string) ($sibling->section ?? 'N/A'),
+                'record_title' => $sibling->record_title,
+                'faculty' => $sibling->faculty?->full_name,
+                'students_count' => (int) ($sibling->active_students_count ?? 0),
+                'maximum_slots' => (int) ($sibling->maximum_slots ?? 0),
+                'is_current' => (int) $sibling->id === (int) $class->id,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<array{id: string, label: string, load_hours: float, max_load_hours: int}>
+     */
+    private function buildFacultyOptions(?string $semester = null, ?string $schoolYear = null): array
+    {
+        $generalSettings = app(GeneralSettingsService::class);
+        $resolvedSemester = filled($semester) ? $semester : (string) $generalSettings->getCurrentSemester();
+        $resolvedSchoolYear = filled($schoolYear) ? $schoolYear : $generalSettings->getCurrentSchoolYearString();
+        $schoolYearVariants = $this->schoolYearVariants($resolvedSchoolYear);
+
+        $facultyLoadMinutes = [];
+        $termClassFacultyMap = Classes::query()
+            ->whereNotNull('faculty_id')
+            ->where('semester', $resolvedSemester)
+            ->when($schoolYearVariants !== [], fn (Builder $q) => $q->whereIn('school_year', $schoolYearVariants))
+            ->pluck('faculty_id', 'id');
+
+        if ($termClassFacultyMap->isNotEmpty()) {
+            $termSchedules = Schedule::query()
+                ->whereIn('class_id', $termClassFacultyMap->keys())
+                ->get(['class_id', 'start_time', 'end_time']);
+
+            foreach ($termSchedules as $sched) {
+                if (! $sched->start_time || ! $sched->end_time) {
+                    continue;
+                }
+
+                $facultyId = (string) ($termClassFacultyMap[$sched->class_id] ?? '');
+                if ($facultyId === '') {
+                    continue;
+                }
+
+                $startMinutes = (int) $sched->start_time->format('H') * 60 + (int) $sched->start_time->format('i');
+                $endMinutes = (int) $sched->end_time->format('H') * 60 + (int) $sched->end_time->format('i');
+
+                if ($endMinutes > $startMinutes) {
+                    $facultyLoadMinutes[$facultyId] = ($facultyLoadMinutes[$facultyId] ?? 0) + ($endMinutes - $startMinutes);
+                }
+            }
+        }
+
+        return Faculty::query()
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->get(['id', 'first_name', 'last_name', 'middle_name'])
+            ->map(fn (Faculty $faculty): array => [
+                'id' => (string) $faculty->id,
+                'label' => $faculty->full_name,
+                'load_hours' => round(($facultyLoadMinutes[(string) $faculty->id] ?? 0) / 60, 1),
+                'max_load_hours' => 24,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  Collection<int, ClassEnrollment>  $activeEnrollments
+     * @param  array<string, mixed>  $impact
+     * @param  list<string>  $schoolYearVariants
+     * @return array<string, mixed>
+     */
+    private function buildDossierProps(
+        Classes $class,
+        Collection $activeEnrollments,
+        ClassScheduleWorkspaceService $scheduleWorkspace,
+        array $impact,
+        array $schoolYearVariants,
+    ): array {
+        $siblingSections = $this->buildSiblingSections($class, includeSelf: true);
+        $siblingIds = array_values(array_unique(array_merge([(int) $class->id], array_column($siblingSections, 'id'))));
+
+        $subjectIdsForClass = array_values(array_unique(array_filter(array_map(
+            intval(...),
+            array_merge(
+                is_array($class->subject_ids) ? $class->subject_ids : [],
+                $class->subject_id ? [$class->subject_id] : [],
+            ),
+        ))));
+
+        // Active waitlist entries + per-sibling compatibility
+        $dossierWaitlist = [];
+        if (Schema::hasTable('enrollment_class_waitlists')) {
+            $hasWaitingEntries = EnrollmentClassWaitlist::query()
+                ->waiting()
+                ->where('semester', $class->semester)
+                ->when($schoolYearVariants !== [], fn (Builder $q) => $q->whereIn('school_year', $schoolYearVariants))
+                ->where(function (Builder $q) use ($siblingIds, $subjectIdsForClass, $class): void {
+                    if ($siblingIds !== []) {
+                        $q->orWhereIn('preferred_class_id', $siblingIds);
+                    }
+                    if ($subjectIdsForClass !== []) {
+                        $q->orWhereIn('subject_id', $subjectIdsForClass);
+                    }
+                    if (filled($class->subject_code)) {
+                        $q->orWhereHas('subject', fn (Builder $sq) => $sq->where('code', $class->subject_code));
+                    }
+                })
+                ->exists();
+
+            if ($hasWaitingEntries) {
+                $parallelWorkspace = $scheduleWorkspace->parallelSectionsWorkspace($class);
+                $dossierWaitlist = array_map(
+                    static fn (array $entry): array => [
+                        'id' => (int) $entry['id'],
+                        'position' => isset($entry['position']) ? (int) $entry['position'] : null,
+                        'student_id' => (int) $entry['student_id'],
+                        'student_number' => $entry['student_number'] ?? null,
+                        'student_name' => (string) ($entry['student_name'] ?? 'Unknown Student'),
+                        'queued_at' => $entry['created_at'] ?? null,
+                        'compatibility' => $entry['section_compatibility'] ?? [],
+                    ],
+                    $parallelWorkspace['waitlist'] ?? [],
+                );
+            }
+        }
+
+        // Unassigned cohort count (students enrolled in this subject for this term without a class section)
+        $unassignedCohort = 0;
+        if ($subjectIdsForClass !== [] && Schema::hasTable('subject_enrollments')) {
+            $unassignedCohort = (int) SubjectEnrollment::query()
+                ->whereIn('subject_id', $subjectIdsForClass)
+                ->whereNull('class_id')
+                ->where('semester', $class->semester)
+                ->when($schoolYearVariants !== [], fn (Builder $q) => $q->whereIn('school_year', $schoolYearVariants))
+                ->count();
+        }
+
+        // Schedule health & schedule change history
+        $summary = $scheduleWorkspace->summarizeForIndex(collect([$class]))[(int) $class->id] ?? null;
+        $scheduleHealth = $summary['schedule_health'] ?? null;
+
+        $dossierScheduleChanges = [];
+        $totalScheduleChanges = 0;
+        $pendingNotices = 0;
+
+        if (Schema::hasTable('class_schedule_changes')) {
+            $totalScheduleChanges = ClassScheduleChange::query()
+                ->where('class_id', $class->id)
+                ->count();
+
+            $changesQuery = ClassScheduleChange::query()
+                ->where('class_id', $class->id)
+                ->with('changedBy:id,name')
+                ->latest('created_at')
+                ->limit(15);
+
+            if (Schema::hasTable('class_schedule_change_student_notifications')) {
+                $changesQuery->withCount([
+                    'studentNotifications as notified_count' => fn (Builder $q) => $q->whereNotNull('notified_at'),
+                    'studentNotifications as pending_count' => fn (Builder $q) => $q->whereNull('notified_at'),
+                ]);
+
+                $pendingNotices = ClassScheduleChangeStudentNotification::query()
+                    ->pending()
+                    ->whereHas('scheduleChange', fn (Builder $q) => $q->where('class_id', $class->id))
+                    ->count();
+            }
+
+            $dossierScheduleChanges = $changesQuery
+                ->get()
+                ->map(fn (ClassScheduleChange $change): array => [
+                    'id' => (int) $change->id,
+                    'changed_at' => $change->created_at?->toIso8601String(),
+                    'changed_by' => $change->changedBy?->name,
+                    'summary' => $this->summarizeScheduleChange($change),
+                    'notified_count' => (int) ($change->notified_count ?? 0),
+                    'pending_count' => (int) ($change->pending_count ?? 0),
+                ])
+                ->values()
+                ->all();
+        }
+
+        $conflictCount = count($impact['room_conflicts'] ?? []) + count($impact['faculty_conflicts'] ?? []);
+        if ($conflictCount === 0 && (bool) ($scheduleHealth['has_conflict'] ?? false)) {
+            $conflictCount = 1;
+        }
+
+        // Grades health across active enrolled students
+        $gradesTotal = $activeEnrollments->count();
+        $gradesVerified = 0;
+        $gradesFinalized = 0;
+        $gradesInProgress = 0;
+        $gradesPending = 0;
+
+        foreach ($activeEnrollments as $enrollment) {
+            $isVerified = (bool) $enrollment->is_grades_verified;
+            $isFinalized = (bool) $enrollment->is_grades_finalized;
+            $hasAnyGrade = $enrollment->prelim_grade !== null
+                || $enrollment->midterm_grade !== null
+                || $enrollment->finals_grade !== null
+                || $enrollment->total_average !== null
+                || filled($enrollment->grade_symbol);
+
+            if ($isVerified) {
+                $gradesVerified++;
+            }
+            if ($isFinalized) {
+                $gradesFinalized++;
+            }
+            if (! $isVerified && ! $isFinalized) {
+                if ($hasAnyGrade) {
+                    $gradesInProgress++;
+                } else {
+                    $gradesPending++;
+                }
+            }
+        }
+
+        // Attendance sessions & rate
+        $sessionsHeld = 0;
+        $sessionsExpected = null;
+        $averageRate = null;
+        $dossierAttendanceSessions = [];
+
+        if (Schema::hasTable('class_attendance_sessions')) {
+            $sessionsHeld = (int) $class->attendanceSessions()
+                ->where('is_no_meeting', false)
+                ->count();
+
+            $recentSessions = $class->attendanceSessions()
+                ->with(['records:id,class_attendance_session_id,status'])
+                ->latestFirst()
+                ->limit(20)
+                ->get();
+
+            $dossierAttendanceSessions = $recentSessions
+                ->map(function (ClassAttendanceSession $session): array {
+                    $counts = is_array($session->summary) ? $session->summary : [];
+
+                    if ($counts === [] && $session->records->isNotEmpty()) {
+                        $counts = $session->records
+                            ->groupBy(fn (ClassAttendanceRecord $r): string => $r->status instanceof AttendanceStatus ? $r->status->value : (string) $r->status)
+                            ->map(fn (Collection $group): int => $group->count())
+                            ->all();
+                    }
+
+                    return [
+                        'id' => (int) $session->id,
+                        'date' => $session->session_date?->toDateString(),
+                        'title' => $session->topic ?: ($session->is_no_meeting ? ($session->no_meeting_reason ?: 'No meeting') : null),
+                        'present' => (int) ($counts['present'] ?? 0),
+                        'absent' => (int) ($counts['absent'] ?? 0),
+                        'late' => (int) ($counts['late'] ?? 0),
+                        'excused' => (int) ($counts['excused'] ?? 0),
+                        'is_locked' => (bool) $session->is_locked,
+                    ];
+                })
+                ->values()
+                ->all();
+
+            if (Schema::hasTable('class_attendance_records')) {
+                $statusTotals = ClassAttendanceRecord::query()
+                    ->where('class_id', $class->id)
+                    ->select('status', DB::raw('count(*) as total'))
+                    ->groupBy('status')
+                    ->pluck('total', 'status')
+                    ->all();
+
+                $totalMarked = array_sum(array_map(intval(...), $statusTotals));
+                if ($totalMarked > 0) {
+                    $attended = (int) ($statusTotals['present'] ?? 0) + (int) ($statusTotals['late'] ?? 0);
+                    $averageRate = round(($attended / $totalMarked) * 100, 1);
+                }
+            }
+
+            if ($class->start_date !== null && $class->schedules->isNotEmpty()) {
+                $scheduleDays = $class->schedules->pluck('day_of_week')
+                    ->map(fn ($day): string => mb_strtolower((string) $day))
+                    ->unique()
+                    ->all();
+                $cursor = $class->start_date->copy()->startOfDay();
+                $today = now()->startOfDay();
+                if ($cursor->lte($today)) {
+                    $expected = 0;
+                    $safetyCap = 365;
+                    while ($cursor->lte($today) && $safetyCap-- > 0) {
+                        if (in_array(mb_strtolower($cursor->format('l')), $scheduleDays, true)) {
+                            $expected++;
+                        }
+                        $cursor->addDay();
+                    }
+                    $sessionsExpected = $expected;
+                } else {
+                    $sessionsExpected = 0;
+                }
+            }
+        }
+
+        // Class posts
+        $postsCount = 0;
+        $dossierPosts = [];
+
+        if (Schema::hasTable('class_posts')) {
+            $postsCount = (int) $class->classPosts()->count();
+            $dossierPosts = $class->classPosts()
+                ->with('assignedFaculty:id,first_name,last_name,middle_name')
+                ->latest('created_at')
+                ->limit(15)
+                ->get(['id', 'class_id', 'title', 'type', 'created_at', 'assigned_faculty_id'])
+                ->map(fn (ClassPost $post): array => [
+                    'id' => (int) $post->id,
+                    'title' => (string) ($post->title ?? 'Untitled'),
+                    'type' => $post->type instanceof ClassPostType ? $post->type->value : (string) ($post->type ?? 'announcement'),
+                    'created_at' => $post->created_at?->toIso8601String(),
+                    'author' => $post->assignedFaculty?->full_name ?? $class->faculty?->full_name,
+                ])
+                ->values()
+                ->all();
+        }
+
+        // Spatie Activity log for this class and its enrollments/posts
+        $dossierActivity = [];
+        if (Schema::hasTable('activity_log')) {
+            $classId = (int) $class->id;
+            $hasPostsTable = Schema::hasTable('class_posts');
+
+            $activities = Activity::query()
+                ->with('causer')
+                ->where(function (Builder $query) use ($classId, $hasPostsTable): void {
+                    $query->where(function (Builder $q) use ($classId): void {
+                        $q->where('subject_type', Classes::class)
+                            ->where('subject_id', $classId);
+                    })
+                        ->orWhere(function (Builder $q) use ($classId): void {
+                            $q->where('subject_type', ClassEnrollment::class)
+                                ->whereIn('subject_id', function ($subQuery) use ($classId): void {
+                                    $subQuery->select('id')
+                                        ->from('class_enrollments')
+                                        ->where('class_id', $classId);
+                                });
+                        });
+
+                    if ($hasPostsTable) {
+                        $query->orWhere(function (Builder $q) use ($classId): void {
+                            $q->where('subject_type', ClassPost::class)
+                                ->whereIn('subject_id', function ($subQuery) use ($classId): void {
+                                    $subQuery->select('id')
+                                        ->from('class_posts')
+                                        ->where('class_id', $classId);
+                                });
+                        });
+                    }
+                })
+                ->latest('created_at')
+                ->limit(30)
+                ->get();
+
+            $dossierActivity = $activities
+                ->map(static function (Activity $activity): array {
+                    $causer = $activity->causer;
+                    $actor = null;
+                    if ($causer !== null) {
+                        $actor = is_string($causer->name ?? null)
+                            ? $causer->name
+                            : (is_string($causer->full_name ?? null) ? $causer->full_name : null);
+                    }
+
+                    return [
+                        'id' => (int) $activity->id,
+                        'at' => $activity->created_at?->toIso8601String(),
+                        'actor' => $actor,
+                        'description' => (string) $activity->description,
+                        'log' => (string) ($activity->log_name ?? match ($activity->subject_type) {
+                            ClassEnrollment::class => 'class_enrollments',
+                            ClassPost::class => 'class_posts',
+                            default => 'classes',
+                        }),
+                    ];
+                })
+                ->values()
+                ->all();
+        }
+
+        $activityTimestamps = array_values(array_filter([
+            $dossierActivity[0]['at'] ?? null,
+            $dossierScheduleChanges[0]['changed_at'] ?? null,
+            $dossierPosts[0]['created_at'] ?? null,
+            $class->updated_at?->toIso8601String(),
+        ]));
+        rsort($activityTimestamps);
+        $lastActivityAt = $activityTimestamps[0] ?? null;
+
+        $activeCount = $activeEnrollments->count();
+        $maxSlots = (int) ($class->maximum_slots ?? 0);
+
+        return [
+            'health' => [
+                'seats' => [
+                    'active' => $activeCount,
+                    'max' => $maxSlots,
+                    'over' => $maxSlots > 0 ? max(0, $activeCount - $maxSlots) : 0,
+                    'waitlisted' => count($dossierWaitlist),
+                    'unassigned_cohort' => $unassignedCohort,
+                ],
+                'schedule' => [
+                    'scheduled_hours' => (float) ($scheduleHealth['scheduled_hours'] ?? 0.0),
+                    'required_hours' => isset($scheduleHealth['required_hours']) ? (float) $scheduleHealth['required_hours'] : null,
+                    'status' => $scheduleHealth['status'] ?? ($class->schedules->isEmpty() ? 'unscheduled' : 'published'),
+                    'conflict_count' => $conflictCount,
+                    'conflict_summary' => $scheduleHealth['conflict_summary'] ?? null,
+                    'pending_notices' => (int) $pendingNotices,
+                    'revision_label' => 'Rev '.($totalScheduleChanges + 1),
+                ],
+                'grades' => [
+                    'total' => $gradesTotal,
+                    'verified' => $gradesVerified,
+                    'finalized' => $gradesFinalized,
+                    'in_progress' => $gradesInProgress,
+                    'pending' => $gradesPending,
+                ],
+                'attendance' => [
+                    'average_rate' => $averageRate,
+                    'sessions_held' => $sessionsHeld,
+                    'sessions_expected' => $sessionsExpected,
+                ],
+                'posts' => [
+                    'count' => $postsCount,
+                ],
+                'last_activity_at' => $lastActivityAt,
+            ],
+            'sibling_sections' => $siblingSections,
+            'waitlist' => $dossierWaitlist,
+            'schedule_changes' => $dossierScheduleChanges,
+            'activity' => $dossierActivity,
+            'attendance_sessions' => $dossierAttendanceSessions,
+            'posts' => $dossierPosts,
+        ];
+    }
+
+    private function applyActiveEnrollmentConstraint(Builder $query): void
+    {
+        $query
+            ->where(fn (Builder $q) => $q->whereNull('status')->orWhere('status', true))
+            ->where(fn (Builder $q) => $q->whereNull('enrollment_status')->orWhereNotIn('enrollment_status', [
+                ClassEnrollment::STATUS_DROPPED,
+                ClassEnrollment::STATUS_WITHDRAWN,
+            ]));
+    }
+
+    private function isActiveEnrollment(ClassEnrollment $enrollment): bool
+    {
+        if ($enrollment->trashed()) {
+            return false;
+        }
+
+        if ($enrollment->status === false) {
+            return false;
+        }
+
+        return ! in_array($enrollment->enrollment_status, [
+            ClassEnrollment::STATUS_DROPPED,
+            ClassEnrollment::STATUS_WITHDRAWN,
+        ], true);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function schoolYearVariants(?string $schoolYear): array
+    {
+        $raw = is_string($schoolYear) ? mb_trim($schoolYear) : '';
+        if ($raw === '') {
+            return [];
+        }
+
+        $normalized = GeneralSettingsService::normalizeSchoolYear($raw);
+        $compact = str_replace(' ', '', $normalized);
+
+        return array_values(array_unique([$raw, $normalized, $compact]));
+    }
+
+    private function normalizeComponentType(mixed $type): string
+    {
+        if (! is_string($type)) {
+            return 'lecture';
+        }
+
+        $normalized = mb_strtolower(mb_trim($type));
+
+        return in_array($normalized, ['lab', 'laboratory'], true) ? 'lab' : 'lecture';
+    }
+
+    /**
+     * @param  array<int, mixed>  $schedules
+     * @return array<int, array<string, mixed>>
+     */
+    private function normalizeIncomingSchedules(array $schedules): array
+    {
+        $normalized = [];
+
+        foreach ($schedules as $block) {
+            if (! is_array($block)) {
+                continue;
+            }
+
+            if (array_key_exists('component_type', $block) && is_string($block['component_type'])) {
+                $block['component_type'] = $this->normalizeComponentType($block['component_type']);
+            }
+
+            $normalized[] = $block;
+        }
+
+        return $normalized;
+    }
+
+    private function summarizeScheduleChange(ClassScheduleChange $change): string
+    {
+        $old = is_array($change->old_schedule) ? $change->old_schedule : [];
+        $new = is_array($change->new_schedule) ? $change->new_schedule : [];
+
+        if ($new === []) {
+            return 'Cleared all scheduled meetings';
+        }
+
+        $parts = [];
+        foreach (array_slice($new, 0, 3) as $block) {
+            if (! is_array($block)) {
+                continue;
+            }
+            $day = mb_substr((string) ($block['day_of_week'] ?? ''), 0, 3);
+            $start = (string) ($block['start_time'] ?? '');
+            $end = (string) ($block['end_time'] ?? '');
+            $room = is_string($block['room_name'] ?? null) && $block['room_name'] !== '' ? ' · '.$block['room_name'] : '';
+            $parts[] = mb_trim(sprintf('%s %s-%s%s', $day, $start, $end, $room));
+        }
+
+        $extra = count($new) > 3 ? sprintf(' (+%d more)', count($new) - 3) : '';
+        $prefix = $old === [] ? 'Scheduled: ' : 'Updated to ';
+
+        return $prefix.implode(', ', $parts).$extra;
+    }
+
+    private function resolveBannerUrl(mixed $bannerPath): ?string
+    {
+        if (! is_string($bannerPath) || mb_trim($bannerPath) === '') {
+            return null;
+        }
+
+        return str_starts_with($bannerPath, 'http')
+            ? $bannerPath
+            : Storage::disk('public')->url($bannerPath);
     }
 
     private function buildSelectedClassProps(int $classId, array $courseCodeById, array $courseLabelById): ?array

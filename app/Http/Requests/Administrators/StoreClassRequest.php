@@ -10,6 +10,7 @@ use App\Rules\NonOverlappingScheduleBlocksRule;
 use App\Rules\ScheduleOverlapRule;
 use App\Support\AdministratorPermissionChecker;
 use App\Support\ScheduleDelivery;
+use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -42,8 +43,8 @@ final class StoreClassRequest extends FormRequest
             'academic_year' => ['exclude_unless:classification,college', 'required_if:classification,college', 'integer', 'min:1', 'max:4'],
 
             // SHS fields
-            'shs_track_id' => ['exclude_unless:classification,shs', 'required_if:classification,shs', 'integer'],
-            'shs_strand_id' => ['exclude_unless:classification,shs', 'required_if:classification,shs', 'integer'],
+            'shs_track_id' => ['exclude_unless:classification,shs', 'required_if:classification,shs', 'integer', 'exists:shs_tracks,id'],
+            'shs_strand_id' => ['exclude_unless:classification,shs', 'required_if:classification,shs', 'integer', 'exists:shs_strands,id'],
             'grade_level' => ['exclude_unless:classification,shs', 'required_if:classification,shs', Rule::in(['Grade 11', 'Grade 12'])],
             'subject_code_shs' => ['exclude_unless:classification,shs', 'required_if:classification,shs', 'string', 'max:255'],
 
@@ -51,20 +52,24 @@ final class StoreClassRequest extends FormRequest
             'faculty_id' => ['nullable', 'string', 'exists:faculty,id'],
             'semester' => ['required', Rule::in(['1', '2', 1, 2, 'summer'])],
             'school_year' => ['required', 'string', 'max:50'],
-            'section' => ['required', Rule::in(['A', 'B', 'C', 'D'])],
+            'start_date' => ['nullable', 'date'],
+            'section' => ['required', 'string', 'max:20'],
             'delivery_mode' => ['sometimes', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
             'room_id' => ['nullable', 'integer', 'exists:rooms,id'],
             'maximum_slots' => ['required', 'integer', 'min:1'],
+            'schedule_status' => ['sometimes', 'nullable', Rule::in(['draft', 'published'])],
+            'notify_enrolled' => ['sometimes', 'boolean'],
+            'redirect_to' => ['sometimes', 'nullable', Rule::in(['index', 'show', 'duplicate'])],
 
             // Schedule (optional so classes can be created as unscheduled offerings first)
             'schedules' => ['nullable', 'array', new NonOverlappingScheduleBlocksRule, new ScheduleOverlapRule],
             'schedules.*.id' => ['prohibited'],
-            'schedules.*.day_of_week' => ['required', Rule::in(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])],
+            'schedules.*.day_of_week' => ['required', Rule::in(ScheduleDelivery::allowedDays())],
             'schedules.*.start_time' => ['required', 'date_format:H:i'],
-            'schedules.*.end_time' => ['required', 'date_format:H:i'],
+            'schedules.*.end_time' => ['required', 'date_format:H:i', 'after:schedules.*.start_time'],
             'schedules.*.delivery_mode' => ['sometimes', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
             'schedules.*.room_id' => ['nullable', 'integer', 'exists:rooms,id'],
-            'schedules.*.component_type' => ['nullable', 'string', Rule::in(['lecture', 'lab'])],
+            'schedules.*.component_type' => ['nullable', 'string', Rule::in(['lecture', 'lab', 'laboratory'])],
             'schedules.*.pattern_group_id' => ['nullable', 'string', 'max:64'],
             'schedules.*.status' => ['nullable', 'string', Rule::in(['draft', 'published'])],
             'schedules.*.subject_id' => ['nullable', 'integer', 'exists:subject,id'],
@@ -73,11 +78,31 @@ final class StoreClassRequest extends FormRequest
             'settings' => ['nullable', 'array'],
             'settings.background_color' => ['nullable', 'string', 'max:50'],
             'settings.accent_color' => ['nullable', 'string', 'max:50'],
-            'settings.banner_image' => ['nullable'],
+            'settings.banner_image' => [
+                'nullable',
+                function (string $attribute, mixed $value, Closure $fail): void {
+                    if ($value === null || $value === '') {
+                        return;
+                    }
+                    if (! $value instanceof \Illuminate\Http\UploadedFile) {
+                        $fail('The banner image must be a valid uploaded image file.');
+
+                        return;
+                    }
+                    $ext = mb_strtolower((string) $value->getClientOriginalExtension());
+                    if (! in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'svg'], true)) {
+                        $fail('The banner image must be a JPG, PNG, WebP, or SVG file.');
+                    }
+                    if ($value->getSize() !== false && $value->getSize() > 4 * 1024 * 1024) {
+                        $fail('The banner image may not be larger than 4 MB.');
+                    }
+                },
+            ],
             'settings.theme' => ['nullable', Rule::in(['default', 'modern', 'classic', 'minimal', 'vibrant'])],
             'settings.enable_announcements' => ['nullable', 'boolean'],
             'settings.enable_grade_visibility' => ['nullable', 'boolean'],
             'settings.enable_attendance_tracking' => ['nullable', 'boolean'],
+            'settings.enable_online_resources' => ['nullable', 'boolean'],
             'settings.allow_late_submissions' => ['nullable', 'boolean'],
             'settings.enable_discussion_board' => ['nullable', 'boolean'],
             'settings.notify_students_on_schedule_changes' => ['nullable', 'boolean'],

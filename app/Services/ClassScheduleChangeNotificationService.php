@@ -149,6 +149,29 @@ final class ClassScheduleChangeNotificationService
         ];
     }
 
+    /**
+     * @return array{count: int, recipients: int}
+     */
+    public function notifyPendingForClass(Classes $class, ?User $notifiedBy = null): array
+    {
+        $pending = ClassScheduleChangeStudentNotification::query()
+            ->pending()
+            ->whereHas('scheduleChange', fn ($query) => $query->where('class_id', $class->id))
+            ->with([
+                'scheduleChange.class.subject',
+                'scheduleChange.class.faculty',
+                'scheduleChange.changedBy',
+                'student',
+                'user',
+            ])
+            ->get();
+
+        return [
+            'count' => $pending->count(),
+            'recipients' => $this->sendPendingNotifications($pending, $notifiedBy),
+        ];
+    }
+
     /** Retry durable automatic dispatches after queue outages. */
     public function dispatchPendingAutomatic(int $limit = 100): int
     {

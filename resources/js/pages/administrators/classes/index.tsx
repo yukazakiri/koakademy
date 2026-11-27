@@ -2,6 +2,7 @@ import AdminLayout from "@/components/administrators/admin-layout";
 import { type FilterFieldConfig, type Filter as FilterType } from "@/components/reui/filters";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -543,6 +544,7 @@ export default function AdministratorClassesIndex({
     const [editActiveTab, setEditActiveTab] = React.useState<ClassDialogTab>("details");
     const [copySourceId, setCopySourceId] = React.useState<number | null>(null);
     const [copySection, setCopySection] = React.useState("A");
+    const [copySchedules, setCopySchedules] = React.useState(false);
     const [pendingDelete, setPendingDelete] = React.useState<ClassRow | null>(null);
     const [isCompareOpen, setIsCompareOpen] = React.useState(false);
     const [compareInitialClassIds, setCompareInitialClassIds] = React.useState<[number, number] | undefined>();
@@ -882,6 +884,7 @@ export default function AdministratorClassesIndex({
         onCopy: (id) => {
             setCopySourceId(id);
             setCopySection("A");
+            setCopySchedules(false);
             setIsCopyOpen(true);
         },
         capabilities,
@@ -1419,23 +1422,45 @@ export default function AdministratorClassesIndex({
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>Copy class</DialogTitle>
-                        <DialogDescription>Creates a new class with the same data (schedules not copied).</DialogDescription>
+                        <DialogDescription>
+                            Creates a new section with the same curriculum, faculty, capacity, and classroom settings.
+                        </DialogDescription>
                     </DialogHeader>
 
-                    <div className="space-y-2">
-                        <Label>New section</Label>
-                        <Select value={copySection} onValueChange={setCopySection}>
-                            <SelectTrigger className="w-full">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {options.sections.map((sec) => (
-                                    <SelectItem key={sec.value} value={sec.value}>
-                                        {sec.label}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <Label>New section</Label>
+                            <Select value={copySection} onValueChange={setCopySection}>
+                                <SelectTrigger className="w-full">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {options.sections.map((sec) => (
+                                        <SelectItem key={sec.value} value={sec.value}>
+                                            {sec.label}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <label
+                            htmlFor="copy-class-schedules"
+                            className="bg-muted/30 flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-sm"
+                        >
+                            <Checkbox
+                                id="copy-class-schedules"
+                                checked={copySchedules}
+                                onCheckedChange={(checked) => setCopySchedules(checked === true)}
+                                className="mt-0.5"
+                            />
+                            <span className="space-y-0.5">
+                                <span className="text-foreground block font-medium">Copy weekly schedules as well</span>
+                                <span className="text-muted-foreground block text-xs">
+                                    Leave unchecked to copy the offering without duplicating existing room or faculty time blocks.
+                                </span>
+                            </span>
+                        </label>
                     </div>
 
                     <DialogFooter>
@@ -1447,7 +1472,7 @@ export default function AdministratorClassesIndex({
                                 if (!copySourceId) return;
                                 router.post(
                                     copyClass.url(copySourceId),
-                                    { section: copySection },
+                                    { section: copySection, copy_schedules: copySchedules },
                                     { preserveScroll: true, onSuccess: () => setIsCopyOpen(false) },
                                 );
                             }}

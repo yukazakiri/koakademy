@@ -64,12 +64,27 @@ export function MoveStudentDialog({
                             </SelectTrigger>
                             <SelectContent>
                                 {transferableClasses.length ? (
-                                    transferableClasses.map((classItem) => (
-                                        <SelectItem key={classItem.id} value={String(classItem.id)} disabled={classItem.is_full}>
-                                            {classItem.label}
-                                            {classItem.is_full ? " · Full" : ""}
-                                        </SelectItem>
-                                    ))
+                                    transferableClasses.map((classItem) => {
+                                        const isUncapped =
+                                            classItem.available_slots === -1 || /\(\s*Available:\s*-?\d+\/0\s*\)/i.test(classItem.label);
+                                        const isFull = !isUncapped && classItem.is_full;
+                                        const cleanLabel = classItem.label
+                                            .replace(/\s*\(\s*Available:\s*-?\d+\/0\s*\)/gi, "")
+                                            .replace(/\s*(\[FULL\]|·\s*Full)\s*$/i, "")
+                                            .trim();
+                                        const suffix = isFull
+                                            ? " · Full"
+                                            : isUncapped && !/(unlimited|open)/i.test(cleanLabel)
+                                              ? " · Unlimited"
+                                              : "";
+
+                                        return (
+                                            <SelectItem key={classItem.id} value={String(classItem.id)} disabled={isFull}>
+                                                {cleanLabel}
+                                                {suffix}
+                                            </SelectItem>
+                                        );
+                                    })
                                 ) : (
                                     <SelectItem value="none" disabled>
                                         No other sections available

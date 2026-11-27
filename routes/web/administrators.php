@@ -411,6 +411,8 @@ Route::middleware(['auth', 'administrators.only'])
 
         // Static routes — must come before /classes/{class} to avoid route parameter conflicts
         Route::post('/classes/bulk-action', [AdministratorClassWorkspaceController::class, 'bulkClassAction'])->name('classes.bulk-action');
+        Route::post('/classes/preflight', [AdministratorClassWorkspaceController::class, 'preflight'])->name('classes.workspace.preflight');
+        Route::post('/classes/batch-blueprint', [AdministratorClassWorkspaceController::class, 'batchBlueprint'])->name('classes.workspace.batch-blueprint');
         Route::get('/classes/compare', [AdministratorClassManagementController::class, 'compare'])->name('classes.compare');
         Route::get('/classes/options/subjects', [AdministratorClassManagementController::class, 'subjectOptions'])->name('classes.options.subjects');
         Route::get('/classes/options/shs-strands', [AdministratorClassManagementController::class, 'shsStrandOptions'])->name('classes.options.shs-strands');
@@ -437,6 +439,9 @@ Route::middleware(['auth', 'administrators.only'])
         Route::patch('/classes/{class}/schedule/workspace', [AdministratorClassWorkspaceController::class, 'updateScheduleWorkspace'])->name('classes.workspace.schedule.update');
         Route::get('/classes/{class}/parallel-sections', [AdministratorClassWorkspaceController::class, 'parallelSections'])->name('classes.workspace.parallel-sections');
         Route::post('/classes/{class}/waitlist/promote', [AdministratorClassWorkspaceController::class, 'promoteWaitlist'])->name('classes.workspace.waitlist.promote');
+        Route::post('/classes/{class}/grades/verify', [AdministratorClassWorkspaceController::class, 'verifyGrades'])->name('classes.workspace.grades.verify');
+        Route::post('/classes/{class}/schedule-notices/send', [AdministratorClassWorkspaceController::class, 'sendScheduleNotices'])->name('classes.workspace.schedule-notices.send');
+        Route::patch('/classes/{class}/quick-settings', [AdministratorClassWorkspaceController::class, 'quickSettings'])->name('classes.workspace.quick-settings')->withTrashed();
 
         Route::get('/classes/{class}', [AdministratorClassManagementController::class, 'show'])->name('classes.show')->withTrashed();
         Route::get('/classes/{class}/export-student-list', [AdministratorClassManagementController::class, 'exportStudentList'])->name('classes.export-student-list');

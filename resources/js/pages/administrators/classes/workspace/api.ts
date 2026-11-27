@@ -44,7 +44,7 @@ export class WorkspaceApiError extends Error {
     }
 }
 
-async function requestJson<T>(url: string, options: RequestInit = {}): Promise<T> {
+export async function requestJson<T>(url: string, options: RequestInit = {}): Promise<T> {
     const method = (options.method ?? "GET").toUpperCase();
     const headers: Record<string, string> = {
         Accept: "application/json",

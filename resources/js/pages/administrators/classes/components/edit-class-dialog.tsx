@@ -214,7 +214,6 @@ export function EditClassDialog({
 
         setSubjectCodeTouched(Boolean(selectedClass.subject_code));
         setValidationError(null);
-        setCurrentStep(0);
         void loadCollegeSubjects(selectedClass.course_ids ?? []);
     }, [open, selectedClass]);
 
@@ -261,24 +260,6 @@ export function EditClassDialog({
         setCurrentStep(stepIndex);
         setValidationError(null);
         scrollContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-    };
-
-    const validateStep = (indexToValidate: number): boolean => {
-        if (indexToValidate === 0) {
-            if (step1Valid !== true) {
-                setValidationError(step1Valid.message);
-                toast.error(step1Valid.message);
-                return false;
-            }
-        } else if (indexToValidate === 1) {
-            if (step2Valid !== true) {
-                setValidationError(step2Valid.message);
-                toast.error(step2Valid.message);
-                return false;
-            }
-        }
-        setValidationError(null);
-        return true;
     };
 
     const submit = (): void => {

@@ -1,5 +1,76 @@
 # Changelog
 
+## [1.32.0](https://github.com/yukazakiri/koakademy/compare/v1.31.0...v1.32.0) (2026-11-27)
+
+
+### Features
+
+* **auth:** harden authentication security, 2FA, magic links, and profile security UX ([#606](https://github.com/yukazakiri/koakademy/issues/606)) ([f6bbe5f](https://github.com/yukazakiri/koakademy/commit/f6bbe5f03deeb7937b4849fbcec90277eb7c77b3))
+* **classes:** unified hybrid student roster & schedule management workspace ([#612](https://github.com/yukazakiri/koakademy/issues/612)) ([ec245fd](https://github.com/yukazakiri/koakademy/commit/ec245fd967e3217994125e82901f67e2947da3e1))
+* **dev:** streamline cross-machine OSS contributor onboarding (Phase 2) ([#586](https://github.com/yukazakiri/koakademy/issues/586)) ([dc73125](https://github.com/yukazakiri/koakademy/commit/dc731250e73c8c30c95da546e7adbcf75c10f1db))
+* **enrollments:** redesign edit/create workbenches with ReUI and harden backend integrity ([#608](https://github.com/yukazakiri/koakademy/issues/608)) ([3b7ee24](https://github.com/yukazakiri/koakademy/commit/3b7ee240930d9c95d7b31a9dab5e099d5a8909f9))
+* **enrollments:** redesign view page with Style C Lifecycle Hub, Style A Command Dossier, and backend hardening ([#610](https://github.com/yukazakiri/koakademy/issues/610)) ([50beb0f](https://github.com/yukazakiri/koakademy/commit/50beb0f8d1825f14065a824ae798fe9b43ea1720))
+* **enrollments:** redesign workspace and add complete enrollment management suite ([#607](https://github.com/yukazakiri/koakademy/issues/607)) ([c7a2b22](https://github.com/yukazakiri/koakademy/commit/c7a2b22cff36f9f5c2facab9cab9d9b1691278a0))
+* **library:** upgrade koakademy/library-system to v1.2.0 with open eBook reading ([023f675](https://github.com/yukazakiri/koakademy/commit/023f675b5001b2d2472d2ca8da3771cba26a98a9))
+* **modules:** integrate koakademy/online-resources and rotate official registry key ([#600](https://github.com/yukazakiri/koakademy/issues/600)) ([33dcc51](https://github.com/yukazakiri/koakademy/commit/33dcc51bed5fcd6a73df4eaed1d7cfb79609203f))
+* **online-resources:** auto-fill link title from URL metadata (v1.1.0) ([#602](https://github.com/yukazakiri/koakademy/issues/602)) ([e9ec4ce](https://github.com/yukazakiri/koakademy/commit/e9ec4ce5cfa571825f8df697ff778e3e1b1f5959))
+* **online-resources:** upgrade to v1.2.0 with bug fixes, WCAG 2.1 AA accessibility, and student mobile UX ([#603](https://github.com/yukazakiri/koakademy/issues/603)) ([a523ed2](https://github.com/yukazakiri/koakademy/commit/a523ed2d5199513e0594122f4edd365adb8c93f5))
+* **online-resources:** upgrade to v1.3.0 with customizable public hub websites, client-token themes, class hubs, and SSR SEO ([#604](https://github.com/yukazakiri/koakademy/issues/604)) ([a5d7fb4](https://github.com/yukazakiri/koakademy/commit/a5d7fb459e2a57ee46f6b0d1d1670ce8f75df6d5))
+* **portal:** upgrade signup, enrollment workflows, self-service handoffs, registrar tools, and query performance ([#611](https://github.com/yukazakiri/koakademy/issues/611)) ([cce6457](https://github.com/yukazakiri/koakademy/commit/cce64575840c19f6a2f499359106fe17c1eba276))
+* **scheduling:** add sync/async online modes and configurable conflict rules ([#595](https://github.com/yukazakiri/koakademy/issues/595)) ([0fa5631](https://github.com/yukazakiri/koakademy/commit/0fa5631a3f78de3fb6577209423db54232bb8fcc))
+* **scheduling:** remaster administrator weekly schedule and board with sliding sheets, drag-and-drop, and context menus ([#601](https://github.com/yukazakiri/koakademy/issues/601)) ([9b7f51d](https://github.com/yukazakiri/koakademy/commit/9b7f51df1997d0833c21c1bbb42728ee40aa1952))
+* **seo:** improve public portal search metadata ([42f660a](https://github.com/yukazakiri/koakademy/commit/42f660a6a6418b3bac75d44081459f6a08fbb784))
+* **seo:** use school information in public metadata ([ee9fb48](https://github.com/yukazakiri/koakademy/commit/ee9fb486dd3f3bcf472eadaa5845e12115d9796e))
+* **signup:** universal config-driven signup, international presets, document vault config, and faculty fast-track ([#613](https://github.com/yukazakiri/koakademy/issues/613)) ([53e78f2](https://github.com/yukazakiri/koakademy/commit/53e78f227aff219dcadf31f203e913b3e54751af))
+* **students:** 3-surface student & documents workflow system with backend hardening ([#614](https://github.com/yukazakiri/koakademy/issues/614)) ([96e5d67](https://github.com/yukazakiri/koakademy/commit/96e5d67798cb0ff9e4a8e667b86a823aca23d46c))
+* **updates:** enable zero-interruption rollouts and soft Inertia updates ([#605](https://github.com/yukazakiri/koakademy/issues/605)) ([e93ca19](https://github.com/yukazakiri/koakademy/commit/e93ca19a382da4f4e872bfa9c64cf3786cc36e72))
+
+
+### Bug Fixes
+
+* **admin:** replace native confirm/prompt dialogs with AlertDialog and Dialog ([#592](https://github.com/yukazakiri/koakademy/issues/592)) ([ec63373](https://github.com/yukazakiri/koakademy/commit/ec63373f10fe24cd35ef6b7c1a45be03e3355185))
+* **deps:** update league/csv to 9.29.1 for security advisory ([73dbbc8](https://github.com/yukazakiri/koakademy/commit/73dbbc82b42f234cc5776e95d334f4004f7194a0))
+* **docker:** enforce and verify optional native bindings during npm ci ([4854135](https://github.com/yukazakiri/koakademy/commit/48541356b5edb1734bb4176bd045fc6195762764))
+* **enrollments:** respect scheduling conflict policy and online delivery modes in workbench ([#609](https://github.com/yukazakiri/koakademy/issues/609)) ([2b9e0fd](https://github.com/yukazakiri/koakademy/commit/2b9e0fd430487e91d81c30a6897ee12a8ccfbeba))
+* **faculty:** display actual class capacity, wire roster actions, and add roster search ([#591](https://github.com/yukazakiri/koakademy/issues/591)) ([ff58d34](https://github.com/yukazakiri/koakademy/commit/ff58d3459369a5a7bde299403c3b2ca8a5f0751b))
+* **faculty:** repair broken legacy /classes, /schedule, /announcements, and /settings links ([#588](https://github.com/yukazakiri/koakademy/issues/588)) ([58764ba](https://github.com/yukazakiri/koakademy/commit/58764ba363f5e77c31113ced5309f2151a91538e))
+* **finance:** auto-load accounting report tabs, surface fetch errors, and harden CSV exports ([#596](https://github.com/yukazakiri/koakademy/issues/596)) ([9ebe392](https://github.com/yukazakiri/koakademy/commit/9ebe392ea541e02235dfbcf10a365897b942e491))
+* **help:** stop copying ticket text into URLs and exposing staff details on ticket pages ([#593](https://github.com/yukazakiri/koakademy/issues/593)) ([2206cb6](https://github.com/yukazakiri/koakademy/commit/2206cb6af6952578f7840a2f0598c8ac41e60b61))
+* **id-card:** detect faculty roles correctly and surface QR refresh failures ([#594](https://github.com/yukazakiri/koakademy/issues/594)) ([340ecaa](https://github.com/yukazakiri/koakademy/commit/340ecaab8dc2c05072b126e1556f078e3b4e5eb0))
+* **mcp:** prevent OAuth 500s and harden AI integrations ([#599](https://github.com/yukazakiri/koakademy/issues/599)) ([3c220c5](https://github.com/yukazakiri/koakademy/commit/3c220c554e637168f87dda2079b1d10ec6d90f30))
+* **navigation:** fix broken command palette and sidebar notification/portal routes ([#589](https://github.com/yukazakiri/koakademy/issues/589)) ([0eff3c4](https://github.com/yukazakiri/koakademy/commit/0eff3c48a8820144acb3a71ef43aef880e35dbbd))
+* **octane:** disconnect file-backed SQLite connections between operations ([60a2dcb](https://github.com/yukazakiri/koakademy/commit/60a2dcb86f6720ff2b9924b2fd403a3516435d0d))
+* **organizations:** send CSRF token and surface errors when switching or creating organizations ([#597](https://github.com/yukazakiri/koakademy/issues/597)) ([a587f72](https://github.com/yukazakiri/koakademy/commit/a587f721bd387c37747e53552da532f421f1b522))
+* **profile:** replace plaintext password prompt, native confirm dialogs, and broken password route ([#590](https://github.com/yukazakiri/koakademy/issues/590)) ([3fc973c](https://github.com/yukazakiri/koakademy/commit/3fc973c07adc98ab492be65d1e0d73794fda996e))
+* **security:** remediate all 17 Laravel security audit findings ([#551](https://github.com/yukazakiri/koakademy/issues/551)–[#567](https://github.com/yukazakiri/koakademy/issues/567)) ([#568](https://github.com/yukazakiri/koakademy/issues/568)) ([8b04865](https://github.com/yukazakiri/koakademy/commit/8b048654b92bd65078b31600aac600251792114f))
+* **security:** remediate follow-up security and performance audit findings ([#570](https://github.com/yukazakiri/koakademy/issues/570)–[#582](https://github.com/yukazakiri/koakademy/issues/582)) ([#583](https://github.com/yukazakiri/koakademy/issues/583)) ([66b707b](https://github.com/yukazakiri/koakademy/commit/66b707bcc4df8b7e40d3353c84b71bd005c0334e))
+* **seeders:** seed complete 4-year curricula, checklists, grades, and schedules ([#584](https://github.com/yukazakiri/koakademy/issues/584)) ([06c00e3](https://github.com/yukazakiri/koakademy/commit/06c00e32ada2c93c9bdae9ae774f41598efedd20))
+* **self-hosting:** remediate Phase 1 production deployment, installer, and guide breakages ([#585](https://github.com/yukazakiri/koakademy/issues/585)) ([763835d](https://github.com/yukazakiri/koakademy/commit/763835d9cb36fcdb18d29ea14f99756169c674ac))
+* **system-management:** wire admin monitoring sidebar link and gate Trail dashboard button ([#598](https://github.com/yukazakiri/koakademy/issues/598)) ([8365e8d](https://github.com/yukazakiri/koakademy/commit/8365e8d1acc6487db0b398597fcf23672f9694c9))
+
+
+### Build System
+
+* **deps:** bump the composer-patch group with 2 updates ([#587](https://github.com/yukazakiri/koakademy/issues/587)) ([aeb518e](https://github.com/yukazakiri/koakademy/commit/aeb518e4d11e41997b92a6e917f86420f24ced8f))
+
+
+### Documentation
+
+* **readme:** refresh overview screenshots with SaaS showcase visuals ([909c3e7](https://github.com/yukazakiri/koakademy/commit/909c3e71cd35a30b437478e8211504ebedf729b6))
+* **site:** add showcase screenshots across docs and user guides ([782b54e](https://github.com/yukazakiri/koakademy/commit/782b54eeff17417a1143bf6db0d519824c62ec1f))
+
+
+### Tests
+
+* improve administrator class management workflows ([#615](https://github.com/yukazakiri/koakademy/issues/615)) ([8a0e789](https://github.com/yukazakiri/koakademy/commit/8a0e789f313ceabcb1e2acaad423e375dd1a59c0))
+
+
+### Maintenance
+
+* **library:** bump koakademy/library-system to v1.3.0 and add eBook screening tests ([9b1a84a](https://github.com/yukazakiri/koakademy/commit/9b1a84a4cb3f775429b7881317f9125210ee03f9))
+* **library:** bump koakademy/library-system to v1.4.0 with academic PDF extraction and Laravel AI decisioning ([6ec0467](https://github.com/yukazakiri/koakademy/commit/6ec046720278b786cd6338adf852181b3026a7df))
+* **library:** bump koakademy/library-system to v1.5.0 with per-eBook visibility controls ([4f0079f](https://github.com/yukazakiri/koakademy/commit/4f0079ff738de4e08cb6e9276fbb07d6a64d9230))
+
 ## [1.31.0](https://github.com/yukazakiri/koakademy/compare/v1.30.1...v1.31.0) (2026-11-21)
 
 

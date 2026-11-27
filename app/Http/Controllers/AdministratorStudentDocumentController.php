@@ -330,6 +330,7 @@ final class AdministratorStudentDocumentController extends Controller
             'notes' => ['nullable', 'string', 'max:1000'],
             'expires_at' => ['nullable', 'date'],
             'notify_student' => ['nullable', 'boolean'],
+            'expected_file_revision' => ['nullable', 'string', 'max:128'],
         ]);
 
         /** @var User|null $actor */
@@ -346,6 +347,7 @@ final class AdministratorStudentDocumentController extends Controller
             expiresAt: array_key_exists('expires_at', $validated) ? ($validated['expires_at'] ?? '') : null,
             notifyStudent: (bool) ($validated['notify_student'] ?? true),
             notified: $notified,
+            expectedFileRevision: $validated['expected_file_revision'] ?? null,
         );
 
         $message = match ($validated['action']) {
@@ -376,6 +378,7 @@ final class AdministratorStudentDocumentController extends Controller
             'student_ids.*' => ['integer', 'exists:students,id'],
             'document_key' => ['nullable', 'string', Rule::in(DocumentLocation::DOCUMENT_FIELDS)],
             'scope' => ['nullable', 'string', Rule::in(['selected', 'cohort'])],
+            'after_student_id' => ['nullable', 'integer', 'min:0'],
             'search' => ['nullable', 'string', 'max:255'],
             'student_type' => ['nullable', 'string', 'max:64'],
             'course_id' => ['nullable', 'integer'],
@@ -387,7 +390,8 @@ final class AdministratorStudentDocumentController extends Controller
         $studentIds = is_array($validated['student_ids'] ?? null)
             ? array_values(array_unique(array_map('intval', $validated['student_ids'])))
             : [];
-        $specificKeys = filled($validated['document_key'] ?? null) ? [(string) $validated['document_key']] : null;
+        $documentKey = filled($validated['document_key'] ?? null) ? (string) $validated['document_key'] : null;
+        $specificKeys = $documentKey !== null ? [$documentKey] : null;
         $isExplicitCohort = ($validated['scope'] ?? null) === 'cohort'
             || (! $hasStudentIdsParam && $specificKeys !== null);
 
@@ -395,55 +399,113 @@ final class AdministratorStudentDocumentController extends Controller
             $feedback = 'No students were selected for reminders.';
 
             if ($request->expectsJson() && ! $request->header('X-Inertia')) {
-                return response()->json(['message' => $feedback, 'sent_count' => 0]);
+                return response()->json([
+                    'message' => $feedback,
+                    'sent_count' => 0,
+                    'processed_count' => 0,
+                    'has_more' => false,
+                    'next_after_student_id' => null,
+                ]);
             }
 
             return redirect()->back()->with('info', $feedback);
         }
 
-        $query = Student::query()->with(['DocumentLocation', 'user']);
+        $batchSize = 500;
+        $hasDocRecordsTable = Schema::hasTable('student_document_records');
+
         if ($studentIds !== []) {
-            $query->whereIn('id', $studentIds);
+            $query = Student::query()
+                ->with(['DocumentLocation', 'user'])
+                ->whereIn('students.id', $studentIds)
+                ->orderBy('students.id');
+
+            if ($hasDocRecordsTable) {
+                $query->with('documentRecords');
+            }
+
+            $students = $query->get();
+            $hasMore = false;
+            $nextAfterStudentId = null;
+            $missingStatusOnly = false;
         } else {
+            $afterStudentId = isset($validated['after_student_id']) ? (int) $validated['after_student_id'] : 0;
             $search = is_string($validated['search'] ?? null) ? mb_trim($validated['search']) : '';
             $studentType = is_string($validated['student_type'] ?? null) ? mb_trim($validated['student_type']) : '';
             $courseId = isset($validated['course_id']) && (int) $validated['course_id'] > 0 ? (int) $validated['course_id'] : null;
             $yearLevel = isset($validated['year_level']) && (int) $validated['year_level'] > 0 ? (int) $validated['year_level'] : null;
 
-            $query
+            $scopeQuery = Student::query()
                 ->when($search !== '', function (Builder $q) use ($search): void {
                     $like = "%{$search}%";
                     $q->where(function (Builder $sub) use ($like): void {
-                        $sub->where('first_name', 'like', $like)
-                            ->orWhere('last_name', 'like', $like)
-                            ->orWhere('student_id', 'like', $like)
-                            ->orWhere('lrn', 'like', $like)
-                            ->orWhere('email', 'like', $like);
+                        $sub->where('students.first_name', 'like', $like)
+                            ->orWhere('students.last_name', 'like', $like)
+                            ->orWhere('students.student_id', 'like', $like)
+                            ->orWhere('students.lrn', 'like', $like)
+                            ->orWhere('students.email', 'like', $like);
                     });
                 })
-                ->when($studentType !== '', fn (Builder $q) => $q->where('student_type', $studentType))
-                ->when($courseId !== null, fn (Builder $q) => $q->where('course_id', $courseId))
-                ->when($yearLevel !== null, fn (Builder $q) => $q->where('academic_year', $yearLevel));
-        }
-        if (Schema::hasTable('student_document_records')) {
-            $query->with('documentRecords');
+                ->when($studentType !== '', fn (Builder $q) => $q->where('students.student_type', $studentType))
+                ->when($courseId !== null, fn (Builder $q) => $q->where('students.course_id', $courseId))
+                ->when($yearLevel !== null, fn (Builder $q) => $q->where('students.academic_year', $yearLevel))
+                ->where('students.id', '>', $afterStudentId);
+
+            $query = (clone $scopeQuery)->with(['DocumentLocation', 'user']);
+            if ($hasDocRecordsTable) {
+                $query->with('documentRecords');
+            }
+
+            $missingStatusOnly = $documentKey !== null;
+            if ($missingStatusOnly) {
+                $cohortGroups = $this->documentService->resolveCohortGroups($scopeQuery);
+                $this->documentService->applyStrictMissingSlotFilter($query, $cohortGroups, $documentKey);
+            }
+
+            $batch = $query
+                ->orderBy('students.id')
+                ->limit($batchSize + 1)
+                ->get();
+
+            $hasMore = $batch->count() > $batchSize;
+            $students = $batch->take($batchSize);
+            $lastStudent = $students->last();
+            $nextAfterStudentId = $hasMore && $lastStudent instanceof Student ? (int) $lastStudent->id : null;
         }
 
-        $students = $query->limit(500)->get();
+        $processedCount = $students->count();
         $sent = 0;
 
         foreach ($students as $student) {
-            if ($this->documentService->remindMissing($student, $specificKeys, $validated['message'] ?? null)) {
+            if ($this->documentService->remindMissing(
+                $student,
+                $specificKeys,
+                $validated['message'] ?? null,
+                missingStatusOnly: $missingStatusOnly,
+            )) {
                 $sent++;
             }
         }
 
-        $feedback = $sent > 0
-            ? "Sent missing-document reminders to {$sent} student(s)."
-            : 'No students required reminders or had reachable contact details.';
+        if ($sent > 0) {
+            $feedback = "Sent missing-document reminders to {$sent} student(s).";
+            if ($hasMore) {
+                $feedback .= " Processed {$processedCount} students in this batch; more matching students remain (continue with after_student_id={$nextAfterStudentId}).";
+            }
+        } elseif ($hasMore) {
+            $feedback = "Processed {$processedCount} students in this batch with no reminders sent; more matching students remain (continue with after_student_id={$nextAfterStudentId}).";
+        } else {
+            $feedback = 'No students required reminders or had reachable contact details.';
+        }
 
         if ($request->expectsJson() && ! $request->header('X-Inertia')) {
-            return response()->json(['message' => $feedback, 'sent_count' => $sent]);
+            return response()->json([
+                'message' => $feedback,
+                'sent_count' => $sent,
+                'processed_count' => $processedCount,
+                'has_more' => $hasMore,
+                'next_after_student_id' => $nextAfterStudentId,
+            ]);
         }
 
         return redirect()->back()->with($sent > 0 ? 'success' : 'info', $feedback);

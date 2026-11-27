@@ -32,6 +32,7 @@ export function DocumentPreviewViewer({
 }: DocumentPreviewViewerProps) {
     const [zoom, setZoom] = useState(1);
     const [rotation, setRotation] = useState(0);
+    const [loadError, setLoadError] = useState(false);
     const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
     const [viewportSize, setViewportSize] = useState<{ width: number; height: number } | null>(null);
     const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -40,8 +41,15 @@ export function DocumentPreviewViewer({
     useEffect(() => {
         setZoom(1);
         setRotation(0);
+        setLoadError(false);
         const img = imgRef.current;
-        if (img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
+        if (
+            img &&
+            img.complete &&
+            img.naturalWidth > 0 &&
+            img.naturalHeight > 0 &&
+            img.getAttribute("src") === previewUrl
+        ) {
             setNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
         } else {
             setNaturalSize(null);
@@ -188,41 +196,69 @@ export function DocumentPreviewViewer({
 
             <div ref={viewportRef} className="bg-muted/15 relative flex flex-1 overflow-auto p-3">
                 {isImage ? (
-                    <div
-                        className="relative m-auto flex shrink-0 items-center justify-center"
-                        style={
-                            hasMeasuredBounds
-                                ? { width: `${boxWidth}px`, height: `${boxHeight}px` }
-                                : undefined
-                        }
-                    >
-                        <img
-                            ref={imgRef}
-                            src={previewUrl}
-                            alt={fileName || "Student document"}
-                            onLoad={(e) => {
-                                const target = e.currentTarget;
-                                if (target.naturalWidth > 0 && target.naturalHeight > 0) {
-                                    setNaturalSize({ width: target.naturalWidth, height: target.naturalHeight });
-                                }
-                            }}
-                            className={cn(
-                                "rounded-md shadow-xs motion-safe:transition-transform motion-safe:duration-150 motion-reduce:transition-none",
-                                hasMeasuredBounds ? "max-h-none max-w-none shrink-0" : "max-h-full max-w-full object-contain",
+                    loadError ? (
+                        <div className="m-auto flex flex-col items-center justify-center p-6 text-center">
+                            <FileText className="text-muted-foreground mb-2 size-10" />
+                            <p className="text-sm font-medium">Unable to load image preview</p>
+                            <p className="text-muted-foreground mt-1 text-xs">
+                                Open the file in a new tab or download it directly.
+                            </p>
+                            {downloadUrl && (
+                                <Button
+                                    render={<a href={downloadUrl} />}
+                                    nativeButton={false}
+                                    size="sm"
+                                    className="mt-4 gap-1.5"
+                                >
+                                    <Download className="size-3.5" />
+                                    Download File
+                                </Button>
                             )}
+                        </div>
+                    ) : (
+                        <div
+                            className="relative m-auto flex shrink-0 items-center justify-center"
                             style={
                                 hasMeasuredBounds
-                                    ? {
-                                          width: `${baseWidth}px`,
-                                          height: `${baseHeight}px`,
-                                          transform: `scale(${zoom}) rotate(${rotation}deg)`,
-                                      }
-                                    : { transform: `scale(${zoom}) rotate(${rotation}deg)` }
+                                    ? { width: `${boxWidth}px`, height: `${boxHeight}px` }
+                                    : undefined
                             }
-                        />
-                    </div>
+                        >
+                            <img
+                                key={previewUrl}
+                                ref={imgRef}
+                                src={previewUrl}
+                                alt={fileName || "Student document"}
+                                onLoad={(e) => {
+                                    setLoadError(false);
+                                    const target = e.currentTarget;
+                                    if (target.naturalWidth > 0 && target.naturalHeight > 0) {
+                                        setNaturalSize({ width: target.naturalWidth, height: target.naturalHeight });
+                                    }
+                                }}
+                                onError={() => {
+                                    setNaturalSize(null);
+                                    setLoadError(true);
+                                }}
+                                className={cn(
+                                    "rounded-md shadow-xs motion-safe:transition-transform motion-safe:duration-150 motion-reduce:transition-none",
+                                    hasMeasuredBounds ? "max-h-none max-w-none shrink-0" : "max-h-full max-w-full object-contain",
+                                )}
+                                style={
+                                    hasMeasuredBounds
+                                        ? {
+                                              width: `${baseWidth}px`,
+                                              height: `${baseHeight}px`,
+                                              transform: `scale(${zoom}) rotate(${rotation}deg)`,
+                                          }
+                                        : { transform: `scale(${zoom}) rotate(${rotation}deg)` }
+                                }
+                            />
+                        </div>
+                    )
                 ) : isPdf ? (
                     <iframe
+                        key={previewUrl}
                         src={`${previewUrl}#toolbar=1&navpanes=0`}
                         title={fileName || "PDF Document"}
                         className="h-full w-full rounded-md border-0 bg-white"

@@ -164,7 +164,12 @@ export function DocumentStudioCards({
         try {
             const response = await axios.post(
                 `/administrators/students/${studentId}/documents/fixed/${slot.key}/review`,
-                { action, reason: reason || null, notify_student: notify },
+                {
+                    action,
+                    reason: reason || null,
+                    notify_student: notify,
+                    ...(action === "verify" ? { expected_file_revision: slot.file_revision ?? undefined } : {}),
+                },
                 { headers: { Accept: "application/json" } },
             );
             applyNextDossier(response.data?.dossier);
@@ -172,9 +177,16 @@ export function DocumentStudioCards({
             return { ok: true };
         } catch (error: unknown) {
             const err = error as {
-                response?: { data?: { message?: string; errors?: Record<string, string[]> } };
+                response?: {
+                    status?: number;
+                    data?: { message?: string; errors?: Record<string, string[]>; dossier?: DocumentDossier };
+                };
             };
+            if (err.response?.data?.dossier) {
+                applyNextDossier(err.response.data.dossier);
+            }
             const fieldError =
+                err.response?.data?.errors?.expected_file_revision?.[0] ??
                 err.response?.data?.errors?.reason?.[0] ??
                 (err.response?.data?.errors ? Object.values(err.response.data.errors)[0]?.[0] : null);
             const message = fieldError || err.response?.data?.message || "Failed to update document status.";

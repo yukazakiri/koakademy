@@ -299,6 +299,7 @@ export function StudentInspectorDrawer({
                     action,
                     reason: action === "reject" ? trimmedReason : null,
                     notify_student: notifyStudent,
+                    ...(action === "verify" ? { expected_file_revision: slot.file_revision ?? undefined } : {}),
                 },
                 { headers: { Accept: "application/json" } },
             );
@@ -313,8 +314,23 @@ export function StudentInspectorDrawer({
             }
             router.reload({ only: ["students", "triage_counts"] });
         } catch (error: unknown) {
-            const err = error as { response?: { data?: { message?: string } } };
-            toast.error(err.response?.data?.message || "Failed to update document.");
+            const err = error as {
+                response?: {
+                    status?: number;
+                    data?: { message?: string; errors?: Record<string, string[]>; dossier?: DocumentDossier };
+                };
+            };
+            const fieldError =
+                err.response?.data?.errors?.expected_file_revision?.[0] ??
+                (err.response?.data?.errors ? Object.values(err.response.data.errors)[0]?.[0] : null);
+            toast.error(fieldError || err.response?.data?.message || "Failed to update document.");
+            if (err.response?.status === 422 && err.response?.data?.errors?.expected_file_revision) {
+                if (err.response.data.dossier && activeStudentIdRef.current === targetStudentId) {
+                    setDossierState({ studentId: targetStudentId, dossier: err.response.data.dossier });
+                } else if (activeStudentIdRef.current === targetStudentId) {
+                    void loadDossier(targetStudentId);
+                }
+            }
         } finally {
             unmarkSlotBusy(targetStudentId, slot.key);
         }

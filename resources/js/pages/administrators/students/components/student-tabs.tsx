@@ -609,12 +609,22 @@ export function StudentTabs({ student, options, onAdjustTuition, selectedTab, on
                                             {student.current_semester}).
                                         </p>
                                     </div>
-                                    <Link
-                                        href={`/administrators/enrollments/create?student_id=${student.id}`}
-                                        className={buttonVariants({ variant: "outline" })}
-                                    >
-                                        Create Enrollment &amp; Billing
-                                    </Link>
+                                    {(() => {
+                                        const currentEnrollmentId =
+                                            student.current_enrollment?.id ?? student.current_enrollment_id ?? null;
+                                        return (
+                                            <Link
+                                                href={
+                                                    currentEnrollmentId
+                                                        ? `/administrators/enrollments/${currentEnrollmentId}`
+                                                        : `/administrators/enrollments/create?student_id=${student.id}`
+                                                }
+                                                className={buttonVariants({ variant: "outline" })}
+                                            >
+                                                {currentEnrollmentId ? "View Enrollment & Billing" : "Create Enrollment & Billing"}
+                                            </Link>
+                                        );
+                                    })()}
                                 </div>
                             </CardContent>
                         </Card>

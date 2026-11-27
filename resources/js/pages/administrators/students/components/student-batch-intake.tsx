@@ -67,6 +67,9 @@ function escapeCsvCell(value: string): string {
 
 function detectDelimiter(text: string): "\t" | "," {
     let inQuotes = false;
+    let sawHeaderContent = false;
+    let sawTabOnLine = false;
+
     for (let i = 0; i < text.length; i++) {
         const ch = text[i];
         if (inQuotes) {
@@ -81,13 +84,20 @@ function detectDelimiter(text: string): "\t" | "," {
         }
         if (ch === '"') {
             inQuotes = true;
+            sawHeaderContent = true;
         } else if (ch === "\t") {
-            return "\t";
+            sawTabOnLine = true;
         } else if (ch === "\n") {
-            break;
+            if (sawHeaderContent) {
+                return sawTabOnLine ? "\t" : ",";
+            }
+            sawTabOnLine = false;
+        } else if (ch !== " " && ch !== "\r") {
+            sawHeaderContent = true;
         }
     }
-    return ",";
+
+    return sawHeaderContent && sawTabOnLine ? "\t" : ",";
 }
 
 function parseDelimitedText(input: string): ParsedDelimitedResult {
@@ -234,6 +244,7 @@ export function StudentBatchIntake({
 }: StudentBatchIntakeProps) {
     const [rawText, setRawText] = useState("");
     const [inputRevision, setInputRevision] = useState(0);
+    const [readingFile, setReadingFile] = useState(false);
     const [validating, setValidating] = useState(false);
     const [committing, setCommitting] = useState(false);
     const [skipDuplicates, setSkipDuplicates] = useState(true);
@@ -255,11 +266,16 @@ export function StudentBatchIntake({
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const inputRevisionRef = useRef(0);
     const validationRequestIdRef = useRef(0);
+    const fileReadRequestIdRef = useRef(0);
+    const readingFileRef = useRef(false);
 
     const updateRawText = (nextText: string): number => {
         const nextRevision = inputRevisionRef.current + 1;
         inputRevisionRef.current = nextRevision;
         validationRequestIdRef.current += 1;
+        fileReadRequestIdRef.current += 1;
+        readingFileRef.current = false;
+        setReadingFile(false);
         setInputRevision(nextRevision);
         setRawText(nextText);
         setValidating(false);
@@ -349,8 +365,8 @@ export function StudentBatchIntake({
     };
 
     const handleValidate = async (sourceText?: string, targetRevision?: number) => {
-        if (committing) {
-            toast.warning("Wait for the current import to finish before re-validating.");
+        if (committing || readingFileRef.current) {
+            toast.warning("Wait for the current operation to finish before re-validating.");
             return;
         }
 
@@ -378,7 +394,6 @@ export function StudentBatchIntake({
         setParseErrors([]);
         setValidating(true);
         setCommitResult(null);
-        setCommittedRowNumbers(new Set());
         try {
             const response = await axios.post(
                 "/administrators/students/batch-import/validate",
@@ -410,16 +425,32 @@ export function StudentBatchIntake({
     };
 
     const handleFileUpload = async (file: File) => {
-        if (committing) {
-            toast.warning("Wait for the current import to finish before loading another file.");
+        if (committing || readingFileRef.current) {
+            toast.warning("Wait for the current operation to finish before loading another file.");
             return;
         }
+
+        const startRevision = inputRevisionRef.current;
+        const readRequestId = ++fileReadRequestIdRef.current;
+        readingFileRef.current = true;
+        setReadingFile(true);
 
         let content: string;
         try {
             content = await file.text();
         } catch {
-            toast.error(`Could not read "${file.name}". Your current input was left unchanged.`);
+            if (readRequestId === fileReadRequestIdRef.current && inputRevisionRef.current === startRevision) {
+                toast.error(`Could not read "${file.name}". Your current input was left unchanged.`);
+            }
+            return;
+        } finally {
+            if (readRequestId === fileReadRequestIdRef.current) {
+                readingFileRef.current = false;
+                setReadingFile(false);
+            }
+        }
+
+        if (inputRevisionRef.current !== startRevision || readRequestId !== fileReadRequestIdRef.current) {
             return;
         }
 
@@ -451,7 +482,9 @@ export function StudentBatchIntake({
         });
 
     const handleCommit = async () => {
-        if (!currentPreview || rowsToCommit.length === 0 || committing || validating) return;
+        if (!currentPreview || rowsToCommit.length === 0 || committing || validating || readingFile || readingFileRef.current) {
+            return;
+        }
         const commitRevision = currentPreview.revision;
         const submittedRows = [...rowsToCommit];
         setCommitting(true);
@@ -461,6 +494,7 @@ export function StudentBatchIntake({
                 {
                     rows: submittedRows.map((r) => r.normalized),
                     provision_portal_accounts: provisionPortals,
+                    allow_duplicates: !skipDuplicates,
                 },
                 { headers: { Accept: "application/json" } },
             );
@@ -535,7 +569,7 @@ export function StudentBatchIntake({
                             type="button"
                             variant="outline"
                             size="sm"
-                            disabled={committing}
+                            disabled={committing || readingFile}
                             className="h-8 gap-1.5 text-xs"
                             onClick={() => updateRawText(buildTemplateCsv())}
                         >
@@ -557,7 +591,7 @@ export function StudentBatchIntake({
                             type="file"
                             accept=".csv,.tsv,.txt"
                             className="hidden"
-                            disabled={committing}
+                            disabled={committing || readingFile}
                             onChange={(e) => {
                                 const file = e.target.files?.[0];
                                 if (file) void handleFileUpload(file);
@@ -568,12 +602,12 @@ export function StudentBatchIntake({
                             type="button"
                             variant="secondary"
                             size="sm"
-                            disabled={committing}
+                            disabled={committing || readingFile}
                             className="h-8 gap-1.5 text-xs"
                             onClick={() => fileInputRef.current?.click()}
                         >
-                            <UploadCloud className="size-3.5" />
-                            Upload CSV
+                            {readingFile ? <Loader2 className="size-3.5 animate-spin" /> : <UploadCloud className="size-3.5" />}
+                            {readingFile ? "Reading CSV..." : "Upload CSV"}
                         </Button>
                     </div>
                 </CardHeader>
@@ -585,7 +619,7 @@ export function StudentBatchIntake({
                         <Textarea
                             id="batch-csv-input"
                             value={rawText}
-                            disabled={committing}
+                            disabled={committing || readingFile}
                             onChange={(e) => updateRawText(e.target.value)}
                             placeholder="first_name,middle_name,last_name,gender,birth_date,email,phone,program,year_level,status"
                             rows={7}
@@ -599,7 +633,7 @@ export function StudentBatchIntake({
                         <Button
                             type="button"
                             size="sm"
-                            disabled={validating || committing || rawText.trim() === ""}
+                            disabled={validating || committing || readingFile || rawText.trim() === ""}
                             onClick={() => void handleValidate()}
                             className="gap-1.5 text-xs"
                         >
@@ -665,7 +699,7 @@ export function StudentBatchIntake({
                             <label className="flex items-center gap-1.5 text-xs">
                                 <Checkbox
                                     checked={skipDuplicates}
-                                    disabled={committing}
+                                    disabled={committing || readingFile}
                                     onCheckedChange={(checked) => setSkipDuplicates(Boolean(checked))}
                                 />
                                 <span>Skip potential duplicates</span>
@@ -673,7 +707,7 @@ export function StudentBatchIntake({
                             <label className="flex items-center gap-1.5 text-xs">
                                 <Checkbox
                                     checked={provisionPortals}
-                                    disabled={committing}
+                                    disabled={committing || readingFile}
                                     onCheckedChange={(checked) => setProvisionPortals(Boolean(checked))}
                                 />
                                 <span>Provision portal accounts</span>
@@ -681,7 +715,7 @@ export function StudentBatchIntake({
                             <Button
                                 type="button"
                                 size="sm"
-                                disabled={committing || validating || rowsToCommit.length === 0}
+                                disabled={committing || validating || readingFile || rowsToCommit.length === 0}
                                 onClick={() => void handleCommit()}
                                 className="gap-1.5 text-xs"
                             >

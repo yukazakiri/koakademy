@@ -19,9 +19,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AdminLink } from "@/lib/admin-navigation";
+import { canAccessRoute } from "@/config/admin-routes";
 import { cn } from "@/lib/utils";
 import type { User } from "@/types/user";
-import { Head, Link, router, useRemember } from "@inertiajs/react";
+import { Head, Link, router, usePage, useRemember } from "@inertiajs/react";
 import type { SortingState } from "@tanstack/react-table";
 import {
     AlertCircle,
@@ -189,6 +190,25 @@ export default function AdministratorStudentsIndex({
     filters: serverFilters,
     options,
 }: StudentsIndexProps) {
+    const { props: pageProps } = usePage<{ auth?: { user?: User | null } }>();
+    const sharedAuthUser = pageProps.auth?.user;
+    const resolvedUserRole = sharedAuthUser?.role ?? user.role ?? "";
+    const resolvedUserPermissions = sharedAuthUser?.permissions ?? user.permissions ?? [];
+    const canCreateStudent = useMemo(
+        () =>
+            canAccessRoute(
+                {
+                    id: "admin-students-create",
+                    title: "Create Student",
+                    link: "/administrators/students/create",
+                    requiredPermission: "Create:Student",
+                },
+                resolvedUserRole,
+                resolvedUserPermissions,
+            ),
+        [resolvedUserRole, resolvedUserPermissions],
+    );
+
     const schoolProfile = options.school_profile;
     const identifierPolicy = options.identifier_policy;
     const studentConfig = options.student_configuration;
@@ -681,33 +701,37 @@ export default function AdministratorStudentsIndex({
                             <GitMerge className="size-3.5" />
                             Duplicates
                         </Button>
-                        <Button
-                            render={<AdminLink href="/administrators/students/create?mode=batch" />}
-                            nativeButton={false}
-                            variant="outline"
-                            size="sm"
-                            className="h-9 gap-1.5 text-xs"
-                        >
-                            <FileSpreadsheet className="size-3.5" />
-                            Batch Intake
-                        </Button>
-                        <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            className="h-9 gap-1.5 text-xs"
-                            onClick={() => setQuickCreateOpen(true)}
-                        >
-                            <UserPlus className="size-3.5" />
-                            Quick Add
-                        </Button>
-                        <Link
-                            href={route("administrators.students.create")}
-                            className={buttonVariants({ size: "sm", className: "h-9 gap-1.5 text-xs" })}
-                        >
-                            <Plus className="size-3.5" />
-                            Full Intake
-                        </Link>
+                        {canCreateStudent && (
+                            <>
+                                <Button
+                                    render={<AdminLink href="/administrators/students/create?mode=batch" />}
+                                    nativeButton={false}
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-9 gap-1.5 text-xs"
+                                >
+                                    <FileSpreadsheet className="size-3.5" />
+                                    Batch Intake
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="sm"
+                                    className="h-9 gap-1.5 text-xs"
+                                    onClick={() => setQuickCreateOpen(true)}
+                                >
+                                    <UserPlus className="size-3.5" />
+                                    Quick Add
+                                </Button>
+                                <Link
+                                    href={route("administrators.students.create")}
+                                    className={buttonVariants({ size: "sm", className: "h-9 gap-1.5 text-xs" })}
+                                >
+                                    <Plus className="size-3.5" />
+                                    Full Intake
+                                </Link>
+                            </>
+                        )}
                     </div>
                 </div>
 
@@ -950,15 +974,17 @@ export default function AdministratorStudentsIndex({
             </div>
 
             {/* Walk-in Quick-Create Drawer */}
-            <SchoolAdaptiveQuickCreateDrawer
-                open={quickCreateOpen}
-                onOpenChange={setQuickCreateOpen}
-                configuration={studentConfig}
-                identifierPolicy={identifierPolicy}
-                schoolProfile={schoolProfile}
-                courses={options.quick_create_courses ?? []}
-                shsStrands={options.shs_strands ?? []}
-            />
+            {canCreateStudent && (
+                <SchoolAdaptiveQuickCreateDrawer
+                    open={quickCreateOpen}
+                    onOpenChange={setQuickCreateOpen}
+                    configuration={studentConfig}
+                    identifierPolicy={identifierPolicy}
+                    schoolProfile={schoolProfile}
+                    courses={options.quick_create_courses ?? []}
+                    shsStrands={options.shs_strands ?? []}
+                />
+            )}
 
             {/* Deep 4-Tab Keyboard-Steppable Inspector Drawer */}
             <StudentInspectorDrawer

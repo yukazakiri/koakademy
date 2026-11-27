@@ -16,6 +16,7 @@ use App\Http\Requests\Administrators\BulkEmailStudentsRequest;
 use App\Http\Requests\Administrators\BulkForceDeleteStudentRequest;
 use App\Http\Requests\Administrators\BulkUpdateStudentClearanceRequest;
 use App\Http\Requests\Administrators\BulkUpdateStudentStatusRequest;
+use App\Jobs\CleanupDeletedStudentFilesJob;
 use App\Jobs\GenerateStudentSoaPdfJob;
 use App\Mail\StudentBulkMessage;
 use App\Models\Account;
@@ -967,22 +968,7 @@ final class AdministratorStudentManagementController extends Controller
         $canPublishGrades = $isGradeReleaseAdmin || (($actor?->isAdministrative() || in_array($actor?->role, [UserRole::Registrar, UserRole::AssistantRegistrar], true)) && $actor?->can('Update:Student'));
         $canViewGradeRelease = $canManageGradeClearance || $canPublishGrades || (bool) $actor?->can('view_clearance');
 
-        $portalUser = $student->user;
-        if (! $portalUser && filled($student->email)) {
-            $portalUser = User::query()
-                ->whereRaw('LOWER(email) = ?', [mb_strtolower(mb_trim((string) $student->email))])
-                ->first(['id', 'name', 'email', 'email_verified_at', 'suspended_at']);
-        }
-
-        $portalAccount = $portalUser ? [
-            'id' => $portalUser->id,
-            'name' => $portalUser->name,
-            'email' => $portalUser->email,
-            'is_linked' => (int) $student->user_id === (int) $portalUser->id,
-            'email_verified' => $portalUser->email_verified_at !== null,
-            'suspended' => $portalUser->suspended_at !== null,
-            'email_mismatch' => filled($student->email) && strcasecmp((string) $student->email, (string) $portalUser->email) !== 0,
-        ] : null;
+        $portalAccount = $this->resolvePortalAccountSummary($student, includeEmailMismatch: true);
 
         $activeHolds = Schema::hasTable('student_holds')
             ? $student->holds()
@@ -1642,25 +1628,7 @@ final class AdministratorStudentManagementController extends Controller
             'portal_account' => function () use ($student, $ensureStudentLoaded): ?array {
                 $ensureStudentLoaded();
 
-                $portalUser = $student->user;
-                if (! $portalUser && filled($student->email)) {
-                    $portalUser = User::query()
-                        ->whereRaw('LOWER(email) = ?', [mb_strtolower(mb_trim((string) $student->email))])
-                        ->first(['id', 'name', 'email', 'email_verified_at', 'suspended_at']);
-                }
-
-                if (! $portalUser) {
-                    return null;
-                }
-
-                return [
-                    'id' => $portalUser->id,
-                    'name' => $portalUser->name,
-                    'email' => $portalUser->email,
-                    'is_linked' => (int) $student->user_id === (int) $portalUser->id,
-                    'email_verified' => $portalUser->email_verified_at !== null,
-                    'suspended' => $portalUser->suspended_at !== null,
-                ];
+                return $this->resolvePortalAccountSummary($student);
             },
             'student_assets' => function () use ($student, $ensureStudentLoaded): array {
                 $ensureStudentLoaded();
@@ -1797,16 +1765,48 @@ final class AdministratorStudentManagementController extends Controller
                         };
 
                         if ($fkColumn !== null) {
-                            $query->where(function ($scope) use ($table, $fkColumn, $schoolId): void {
+                            $hasStudentIdColumn = $this->hasColumn($table, 'student_id');
+
+                            $query->where(function ($scope) use ($table, $fkColumn, $schoolId, $hasStudentIdColumn): void {
                                 $scope->whereExists(function ($sub) use ($table, $fkColumn, $schoolId): void {
                                     $sub->selectRaw('1')
                                         ->from('students')
                                         ->whereColumn("students.{$fkColumn}", "{$table}.id")
                                         ->where('students.school_id', $schoolId);
-                                })->orWhereNotExists(function ($sub) use ($table, $fkColumn): void {
-                                    $sub->selectRaw('1')
-                                        ->from('students')
-                                        ->whereColumn("students.{$fkColumn}", "{$table}.id");
+                                });
+
+                                if ($hasStudentIdColumn) {
+                                    $scope->orWhere(function ($direct) use ($table, $fkColumn, $schoolId): void {
+                                        $direct->whereNotExists(function ($sub) use ($table, $fkColumn): void {
+                                            $sub->selectRaw('1')
+                                                ->from('students')
+                                                ->whereColumn("students.{$fkColumn}", "{$table}.id");
+                                        })->whereExists(function ($sub) use ($table, $schoolId): void {
+                                            $sub->selectRaw('1')
+                                                ->from('students')
+                                                ->whereColumn('students.id', "{$table}.student_id")
+                                                ->where('students.school_id', $schoolId);
+                                        });
+                                    });
+                                }
+
+                                $scope->orWhere(function ($unreferenced) use ($table, $fkColumn, $hasStudentIdColumn): void {
+                                    $unreferenced->whereNotExists(function ($sub) use ($table, $fkColumn): void {
+                                        $sub->selectRaw('1')
+                                            ->from('students')
+                                            ->whereColumn("students.{$fkColumn}", "{$table}.id");
+                                    });
+
+                                    if ($hasStudentIdColumn) {
+                                        $unreferenced->where(function ($noOwner) use ($table): void {
+                                            $noOwner->whereNull("{$table}.student_id")
+                                                ->orWhereNotExists(function ($sub) use ($table): void {
+                                                    $sub->selectRaw('1')
+                                                        ->from('students')
+                                                        ->whereColumn('students.id', "{$table}.student_id");
+                                                });
+                                        });
+                                    }
                                 });
                             });
                         }
@@ -2482,6 +2482,30 @@ final class AdministratorStudentManagementController extends Controller
 
                 return back()->with('error', $message);
             }
+
+            if (
+                $student->school_id !== null
+                && $portalUser->school_id !== null
+                && (int) $portalUser->school_id !== (int) $student->school_id
+            ) {
+                $message = 'This portal account belongs to a different school and cannot be linked to this student record.';
+
+                if ($request->wantsJson() && ! $request->header('X-Inertia')) {
+                    return response()->json(['message' => $message], 422);
+                }
+
+                return back()->with('error', $message);
+            }
+
+            if (Student::withoutSchoolScope()->withTrashed()->where('user_id', $portalUser->id)->whereKeyNot($student->id)->exists()) {
+                $message = 'This portal account is already linked to a different student record.';
+
+                if ($request->wantsJson() && ! $request->header('X-Inertia')) {
+                    return response()->json(['message' => $message], 422);
+                }
+
+                return back()->with('error', $message);
+            }
         }
 
         $targetRole = $student->student_type === StudentType::SeniorHighSchool
@@ -2617,6 +2641,28 @@ final class AdministratorStudentManagementController extends Controller
         $configuration->assertRequiredFieldsSupported(['email', 'phone'], $schoolId);
 
         $validated = $request->validate($configuration->rules($rules, $typeValue, schoolId: $schoolId));
+
+        if (isset($validated['course_id']) && ($validated['student_type'] ?? null) !== StudentType::SeniorHighSchool->value) {
+            $course = Course::query()->with('department')->find($validated['course_id']);
+
+            if (! $course instanceof Course) {
+                throw ValidationException::withMessages([
+                    'course_id' => 'Select a course from the current school.',
+                ]);
+            }
+
+            if (($validated['student_type'] ?? null) === StudentType::TESDA->value && ! $capabilityResolver->isTesdaCourse($course)) {
+                throw ValidationException::withMessages([
+                    'course_id' => 'Select a TESDA qualification for a TESDA student.',
+                ]);
+            }
+
+            if (($validated['student_type'] ?? null) === StudentType::College->value && ! $capabilityResolver->isCollegeCourse($course)) {
+                throw ValidationException::withMessages([
+                    'course_id' => 'Select a college program for a college student.',
+                ]);
+            }
+        }
 
         // Fuzzy duplicate detection on name + birth_date or email before creating a new walk-in record
         if (! (bool) ($validated['allow_duplicate'] ?? false)) {
@@ -3379,6 +3425,14 @@ final class AdministratorStudentManagementController extends Controller
 
         $deletedStudentIds = [];
         $failures = [];
+        $cleanupWarnings = [];
+        $queueConnection = (string) config('queue.default', 'sync');
+        $queueDriver = (string) config("queue.connections.{$queueConnection}.driver", $queueConnection);
+        $queueDbConnection = config("queue.connections.{$queueConnection}.connection");
+        $queueTable = (string) config("queue.connections.{$queueConnection}.table", 'jobs');
+        $canEnqueueAtomicallyInDbTransaction = $queueDriver === 'database'
+            && ($queueDbConnection === null || $queueDbConnection === config('database.default'))
+            && Schema::hasTable($queueTable);
 
         foreach (BulkChunk::of($studentIds) as $chunk) {
             $students = Student::withTrashed()->whereIn('id', $chunk)->get();
@@ -3404,9 +3458,16 @@ final class AdministratorStudentManagementController extends Controller
             $chunkStudentIds = $eligibleStudents->pluck('id')->all();
             /** @var list<array{disk: string|null, path: string}> $filesToDelete */
             $filesToDelete = [];
+            $cleanupDispatchedInTransaction = false;
 
             try {
-                DB::transaction(function () use ($eligibleStudents, $chunkStudentIds, &$filesToDelete): void {
+                DB::transaction(function () use (
+                    $eligibleStudents,
+                    $chunkStudentIds,
+                    &$filesToDelete,
+                    &$cleanupDispatchedInTransaction,
+                    $canEnqueueAtomicallyInDbTransaction,
+                ): void {
                     $docLocationIds = $eligibleStudents->pluck('document_location_id')->filter()->unique()->values()->all();
                     $parentInfoIds = $eligibleStudents->pluck('student_parent_info')->filter()->unique()->values()->all();
                     $educationInfoIds = $eligibleStudents->pluck('student_education_id')->filter()->unique()->values()->all();
@@ -3414,7 +3475,16 @@ final class AdministratorStudentManagementController extends Controller
                     $personalInfoIds = $eligibleStudents->pluck('student_personal_id')->filter()->unique()->values()->all();
 
                     // Collect non-empty file references before rows are deleted so storage
-                    // cleanup can execute only after the transaction commits.
+                    // cleanup executes only after the transaction commits.
+                    foreach ($eligibleStudents as $eligibleStudent) {
+                        if (is_string($eligibleStudent->signature_path) && mb_trim($eligibleStudent->signature_path) !== '') {
+                            $filesToDelete[] = [
+                                'disk' => null,
+                                'path' => mb_trim($eligibleStudent->signature_path),
+                            ];
+                        }
+                    }
+
                     if (Schema::hasTable('student_document_records')) {
                         $docRecords = StudentDocumentRecord::query()
                             ->whereIn('student_id', $chunkStudentIds)
@@ -3550,19 +3620,34 @@ final class AdministratorStudentManagementController extends Controller
                             })
                             ->delete();
                     }
+
+                    if ($filesToDelete !== [] && $canEnqueueAtomicallyInDbTransaction) {
+                        CleanupDeletedStudentFilesJob::dispatch($filesToDelete)->beforeCommit();
+                        $cleanupDispatchedInTransaction = true;
+                    }
                 });
 
                 foreach ($chunkStudentIds as $deletedId) {
                     $deletedStudentIds[] = $deletedId;
                 }
-
-                $fileDeletionFailures = $this->deleteCollectedStudentFiles($filesToDelete);
-                foreach ($fileDeletionFailures as $fileFailure) {
-                    $failures[] = $fileFailure;
-                }
             } catch (Exception $e) {
                 foreach ($eligibleStudents as $student) {
                     $failures[] = $student->full_name.' ('.$e->getMessage().')';
+                }
+
+                continue;
+            }
+
+            if ($filesToDelete !== [] && ! $cleanupDispatchedInTransaction) {
+                try {
+                    CleanupDeletedStudentFilesJob::dispatch($filesToDelete);
+                } catch (Throwable $cleanupException) {
+                    Log::error('Deleted student file cleanup failed after commit; manual or queued retry required.', [
+                        'student_ids' => $chunkStudentIds,
+                        'files' => $filesToDelete,
+                        'error' => $cleanupException->getMessage(),
+                    ]);
+                    $cleanupWarnings[] = $cleanupException->getMessage();
                 }
             }
         }
@@ -3584,8 +3669,19 @@ final class AdministratorStudentManagementController extends Controller
 
         if ($failures !== []) {
             $message .= ' '.count($failures).' failed: '.implode('; ', $failures);
+            if ($cleanupWarnings !== []) {
+                $message .= ' File cleanup is pending retry.';
+            }
 
             return back()->with('error', $message);
+        }
+
+        if ($cleanupWarnings !== []) {
+            $message .= ' Some stored files could not be removed immediately and are pending cleanup retry.';
+
+            return redirect()
+                ->route('administrators.students.index')
+                ->with('warning', $message);
         }
 
         return redirect()
@@ -3637,6 +3733,12 @@ final class AdministratorStudentManagementController extends Controller
         $targetCourse = isset($validated['course_id'])
             ? Course::query()->with('department')->find($validated['course_id'])
             : null;
+
+        if (isset($validated['course_id']) && ! $targetCourse instanceof Course) {
+            return back()->withErrors([
+                'course_id' => 'Select a course from the current school.',
+            ])->withInput();
+        }
 
         if ($targetCourse instanceof Course) {
             foreach ($students as $student) {
@@ -3723,6 +3825,7 @@ final class AdministratorStudentManagementController extends Controller
 
         $schoolId = app(TenantContext::class)->getCurrentSchoolId();
         $configService = app(StudentConfigurationService::class);
+        $configService->assertRequiredFieldsSupported(['email', 'phone'], $schoolId);
         $config = $configService->get($schoolId);
         $policy = app(IdentifierGenerator::class)->studentPolicy(schoolId: $schoolId);
         $courses = Course::query()->with('department:id,code')->get(['id', 'code', 'title', 'department_id', 'curriculum_kind']);
@@ -3823,12 +3926,15 @@ final class AdministratorStudentManagementController extends Controller
         $validated = $request->validate([
             'rows' => ['required', 'array', 'min:1', 'max:250'],
             'provision_portal_accounts' => ['nullable', 'boolean'],
+            'allow_duplicates' => ['nullable', 'boolean'],
         ]);
 
+        $allowDuplicates = (bool) ($validated['allow_duplicates'] ?? false);
         $schoolId = app(TenantContext::class)->getCurrentSchoolId();
         $identifierGenerator = app(IdentifierGenerator::class);
         $configuration = app(StudentConfigurationService::class);
         $configuration->forget($schoolId);
+        $configuration->assertRequiredFieldsSupported(['email', 'phone'], $schoolId);
         $config = $configuration->get($schoolId);
         $policy = $identifierGenerator->studentPolicy(schoolId: $schoolId);
         $courses = Course::query()->with('department:id,code')->get(['id', 'code', 'title', 'department_id', 'curriculum_kind']);
@@ -3883,7 +3989,7 @@ final class AdministratorStudentManagementController extends Controller
             }
 
             try {
-                $student = DB::transaction(function () use ($row, $identifierGenerator, $configuration, $policy, $schoolId): Student {
+                $student = DB::transaction(function () use ($row, $identifierGenerator, $configuration, $policy, $schoolId, $allowDuplicates): Student {
                     $identifierGenerator->sequenceFor(IdentifierGenerator::Student, lock: true, schoolId: $schoolId);
                     $studentType = StudentType::from($row['student_type']);
                     $usesExternal = $configuration->usesExternal($studentType->value, $schoolId);
@@ -3891,29 +3997,40 @@ final class AdministratorStudentManagementController extends Controller
                     $status = StudentStatus::tryFrom((string) ($row['status'] ?? StudentStatus::Applicant->value)) ?? StudentStatus::Applicant;
                     $birthDate = Carbon::parse($row['birth_date']);
 
-                    // Backend replay/duplicate safeguard: reject rows whose normalized identity already exists.
-                    $existingDuplicate = Student::query()
-                        ->where(function (Builder $q) use ($row, $birthDate): void {
-                            $q->where(function (Builder $nameQ) use ($row, $birthDate): void {
-                                $nameQ->whereRaw('LOWER(first_name) = ?', [mb_strtolower((string) $row['first_name'])])
-                                    ->whereRaw('LOWER(last_name) = ?', [mb_strtolower((string) $row['last_name'])])
-                                    ->whereDate('birth_date', $birthDate->toDateString());
-                            });
+                    // Backend replay/duplicate safeguard: always reject exact identity collisions
+                    // (email, LRN, student_id), and reject name + birth_date duplicates unless
+                    // the caller explicitly passed allow_duplicates.
+                    $hasIdentityFilters = ! $allowDuplicates
+                        || filled($row['email'] ?? null)
+                        || filled($row['lrn'] ?? null)
+                        || filled($row['student_id'] ?? null);
 
-                            if (filled($row['email'] ?? null)) {
-                                $q->orWhereRaw('LOWER(email) = ?', [mb_strtolower((string) $row['email'])]);
-                            }
+                    $existingDuplicate = $hasIdentityFilters
+                        ? Student::query()
+                            ->where(function (Builder $q) use ($row, $birthDate, $allowDuplicates): void {
+                                if (! $allowDuplicates) {
+                                    $q->orWhere(function (Builder $nameQ) use ($row, $birthDate): void {
+                                        $nameQ->whereRaw('LOWER(first_name) = ?', [mb_strtolower((string) $row['first_name'])])
+                                            ->whereRaw('LOWER(last_name) = ?', [mb_strtolower((string) $row['last_name'])])
+                                            ->whereDate('birth_date', $birthDate->toDateString());
+                                    });
+                                }
 
-                            if (filled($row['lrn'] ?? null)) {
-                                $q->orWhere('lrn', (string) $row['lrn']);
-                            }
+                                if (filled($row['email'] ?? null)) {
+                                    $q->orWhereRaw('LOWER(email) = ?', [mb_strtolower((string) $row['email'])]);
+                                }
 
-                            if (filled($row['student_id'] ?? null)) {
-                                $q->orWhere('student_id', (string) $row['student_id']);
-                            }
-                        })
-                        ->lockForUpdate()
-                        ->first(['id', 'student_id', 'first_name', 'last_name']);
+                                if (filled($row['lrn'] ?? null)) {
+                                    $q->orWhere('lrn', (string) $row['lrn']);
+                                }
+
+                                if (filled($row['student_id'] ?? null)) {
+                                    $q->orWhere('student_id', (string) $row['student_id']);
+                                }
+                            })
+                            ->lockForUpdate()
+                            ->first(['id', 'student_id', 'first_name', 'last_name'])
+                        : null;
 
                     if ($existingDuplicate !== null) {
                         throw ValidationException::withMessages([
@@ -4161,21 +4278,39 @@ final class AdministratorStudentManagementController extends Controller
                     throw new RuntimeException('Unable to store ID photo.');
                 }
 
-                $student->loadMissing('DocumentLocation');
-                if (! $student->DocumentLocation) {
-                    $docLocation = DocumentLocation::create(['picture_1x1' => $path]);
-                    $student->forceFill(['document_location_id' => $docLocation->id])->save();
-                    $student->setRelation('DocumentLocation', $docLocation);
-                } else {
-                    $oldPath = $student->DocumentLocation->picture_1x1;
-                    if (is_string($oldPath) && $oldPath !== '' && ! filter_var($oldPath, FILTER_VALIDATE_URL) && ! str_starts_with($oldPath, '/')) {
-                        foreach (['private', config('filesystems.default'), 'public'] as $disk) {
-                            if (is_string($disk) && Storage::disk($disk)->exists($oldPath)) {
-                                Storage::disk($disk)->delete($oldPath);
-                            }
+                $oldPath = DB::transaction(function () use ($student, $path): ?string {
+                    Student::withoutSchoolScope()->withTrashed()->whereKey($student->id)->lockForUpdate()->first();
+                    $student->refresh()->load('DocumentLocation');
+
+                    if (! $student->DocumentLocation) {
+                        $docLocation = DocumentLocation::create(['picture_1x1' => $path]);
+                        $student->forceFill(['document_location_id' => $docLocation->id])->save();
+                        $student->setRelation('DocumentLocation', $docLocation);
+
+                        return null;
+                    }
+
+                    $previousPath = $student->DocumentLocation->picture_1x1;
+                    $student->DocumentLocation->update(['picture_1x1' => $path]);
+
+                    return is_string($previousPath) && $previousPath !== '' && $previousPath !== $path
+                        ? $previousPath
+                        : null;
+                });
+
+                if (is_string($oldPath) && ! filter_var($oldPath, FILTER_VALIDATE_URL) && ! str_starts_with($oldPath, '/')) {
+                    $candidateDisks = array_values(array_unique(array_filter([
+                        (string) config('filesystems.private_disk', 'private'),
+                        'private',
+                        is_string(config('filesystems.default')) ? (string) config('filesystems.default') : null,
+                        'public',
+                    ])));
+
+                    foreach ($candidateDisks as $disk) {
+                        if (Storage::disk($disk)->exists($oldPath)) {
+                            Storage::disk($disk)->delete($oldPath);
                         }
                     }
-                    $student->DocumentLocation->update(['picture_1x1' => $path]);
                 }
 
                 $uploadedSlots[] = 'picture_1x1';
@@ -4401,67 +4536,71 @@ final class AdministratorStudentManagementController extends Controller
     }
 
     /**
-     * Delete storage files collected prior to a committed bulk force-delete chunk.
+     * Resolve the student's portal account summary for show/edit views using the same
+     * eligibility rules enforced by managePortalAccount() so staff, cross-school, or
+     * already-bound users are never surfaced as linkable student portal accounts.
      *
-     * @param  list<array{disk: string|null, path: string}>  $files
-     * @return list<string>
+     * @return array<string, mixed>|null
      */
-    private function deleteCollectedStudentFiles(array $files): array
+    private function resolvePortalAccountSummary(Student $student, bool $includeEmailMismatch = false): ?array
     {
-        $failures = [];
-        $seen = [];
-        $candidateDisks = array_values(array_unique(array_filter([
-            (string) config('filesystems.private_disk', 'private'),
-            'private',
-            is_string(config('filesystems.default')) ? (string) config('filesystems.default') : null,
-            'public',
-        ])));
+        $portalUser = $student->user;
 
-        foreach ($files as $entry) {
-            $path = $entry['path'];
-            $recordedDisk = $entry['disk'];
+        if (! $portalUser && filled($student->email)) {
+            $normalizedEmail = mb_strtolower(mb_trim((string) $student->email));
+            $candidate = User::query()
+                ->whereRaw('LOWER(email) = ?', [$normalizedEmail])
+                ->first();
 
-            if (
-                $path === ''
-                || str_contains($path, '..')
-                || filter_var($path, FILTER_VALIDATE_URL)
-                || str_starts_with($path, '/')
-            ) {
-                continue;
-            }
-
-            $disksToCheck = $recordedDisk !== null ? [$recordedDisk] : $candidateDisks;
-
-            foreach ($disksToCheck as $disk) {
-                $key = $disk.'|'.$path;
-                if (isset($seen[$key])) {
-                    continue;
-                }
-                $seen[$key] = true;
-
-                try {
-                    if (Storage::disk($disk)->exists($path)) {
-                        $deleted = Storage::disk($disk)->delete($path);
-                        if (! $deleted) {
-                            $failures[] = "File cleanup failed for {$path} on disk {$disk}";
-                            Log::warning('Failed to delete student file after bulk permanent deletion.', [
-                                'disk' => $disk,
-                                'path' => $path,
-                            ]);
-                        }
-                    }
-                } catch (Throwable $e) {
-                    $failures[] = "File cleanup failed for {$path} on disk {$disk} ({$e->getMessage()})";
-                    Log::warning('Exception while deleting student file after bulk permanent deletion.', [
-                        'disk' => $disk,
-                        'path' => $path,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
+            if ($candidate instanceof User && $this->isEligibleStudentPortalUser($candidate, $student)) {
+                $portalUser = $candidate;
             }
         }
 
-        return $failures;
+        if (! $portalUser instanceof User) {
+            return null;
+        }
+
+        $summary = [
+            'id' => $portalUser->id,
+            'name' => $portalUser->name,
+            'email' => $portalUser->email,
+            'is_linked' => (int) $student->user_id === (int) $portalUser->id,
+            'email_verified' => $portalUser->email_verified_at !== null,
+            'suspended' => $portalUser->suspended_at !== null,
+        ];
+
+        if ($includeEmailMismatch) {
+            $summary['email_mismatch'] = filled($student->email)
+                && strcasecmp((string) $student->email, (string) $portalUser->email) !== 0;
+        }
+
+        return $summary;
+    }
+
+    private function isEligibleStudentPortalUser(User $candidate, Student $student): bool
+    {
+        if ($candidate->canAccessAdminPortal() || $candidate->isFaculty()) {
+            return false;
+        }
+
+        if (filled($candidate->record_id) && (string) $candidate->record_id !== (string) $student->id) {
+            return false;
+        }
+
+        if (
+            $student->school_id !== null
+            && $candidate->school_id !== null
+            && (int) $candidate->school_id !== (int) $student->school_id
+        ) {
+            return false;
+        }
+
+        return ! Student::withoutSchoolScope()
+            ->withTrashed()
+            ->where('user_id', $candidate->id)
+            ->whereKeyNot($student->id)
+            ->exists();
     }
 
     /**

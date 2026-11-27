@@ -356,6 +356,7 @@ export function StudentFormStudio({
                     "religion",
                     "elementary_school",
                     "junior_high_school_name",
+                    "junior_high_graduation_year",
                     "senior_high_name",
                     "college_school",
                     "vocational_school",
@@ -394,36 +395,56 @@ export function StudentFormStudio({
 
     const currentStep = steps[Math.min(activeStepIndex, steps.length - 1)];
 
+    const originalStudentType = isEdit && student?.student_type ? String(student.student_type) : null;
+    const originalAcademicYear = isEdit && student?.academic_year != null ? String(student.academic_year) : null;
+
+    const getYearLevelsForType = useCallback(
+        (studentType: string) => {
+            const list = config.year_levels?.[studentType];
+            if (list && list.length > 0) return list;
+            return studentType === "shs"
+                ? [
+                      { value: 11, label: "Grade 11" },
+                      { value: 12, label: "Grade 12" },
+                  ]
+                : [
+                      { value: 1, label: "1st Year" },
+                      { value: 2, label: "2nd Year" },
+                      { value: 3, label: "3rd Year" },
+                      { value: 4, label: "4th Year" },
+                  ];
+        },
+        [config.year_levels],
+    );
+
     // Year levels for selected student type
-    const yearLevels = useMemo(() => {
-        const list = config.year_levels?.[data.student_type];
-        if (list && list.length > 0) return list;
-        return isShs
-            ? [
-                  { value: 11, label: "Grade 11" },
-                  { value: 12, label: "Grade 12" },
-              ]
-            : [
-                  { value: 1, label: "1st Year" },
-                  { value: 2, label: "2nd Year" },
-                  { value: 3, label: "3rd Year" },
-                  { value: 4, label: "4th Year" },
-              ];
-    }, [config.year_levels, data.student_type, isShs]);
+    const yearLevels = useMemo(
+        () => getYearLevelsForType(data.student_type),
+        [getYearLevelsForType, data.student_type],
+    );
+
+    const shouldPreserveOutOfListAcademicYear =
+        isEdit &&
+        originalStudentType !== null &&
+        data.student_type === originalStudentType &&
+        originalAcademicYear !== null &&
+        String(data.academic_year ?? "").trim() === originalAcademicYear;
 
     const displayYearLevels = useMemo(() => {
         const currentValue = String(data.academic_year ?? "").trim();
         if (!currentValue || yearLevels.some((lvl) => String(lvl.value) === currentValue)) {
             return yearLevels;
         }
-        const recordedLabel =
-            isEdit && student?.formatted_academic_year
-                ? String(student.formatted_academic_year)
-                : isShs
-                  ? `Grade ${currentValue}`
-                  : `Level ${currentValue}`;
+        if (!shouldPreserveOutOfListAcademicYear) {
+            return yearLevels;
+        }
+        const recordedLabel = student?.formatted_academic_year
+            ? String(student.formatted_academic_year)
+            : isShs
+              ? `Grade ${currentValue}`
+              : `Level ${currentValue}`;
         return [{ value: currentValue, label: recordedLabel }, ...yearLevels];
-    }, [yearLevels, data.academic_year, isEdit, student?.formatted_academic_year, isShs]);
+    }, [yearLevels, data.academic_year, shouldPreserveOutOfListAcademicYear, student?.formatted_academic_year, isShs]);
 
     // Filter course groups by pathway (TESDA vs College/Program)
     const filteredCourseGroups = useMemo(() => {
@@ -458,26 +479,25 @@ export function StudentFormStudio({
     );
 
     const handleStudentTypeChange = (nextType: string) => {
-        const allowedKeys = new Set(
-            (options.document_checklists?.[nextType] ?? [])
-                .filter((slot) => slot.key !== "picture_1x1")
-                .map((slot) => slot.key),
-        );
-        const filteredDocs: Record<string, File> = {};
-        for (const [key, file] of Object.entries(data.documents)) {
-            if (allowedKeys.has(key)) {
-                filteredDocs[key] = file;
-            } else {
-                form.clearErrors(`documents.${key}` as never);
-                const inputEl = documentInputRefs.current[key];
-                if (inputEl) inputEl.value = "";
-            }
-        }
-        setData((prev) => ({
-            ...prev,
-            student_type: nextType,
-            documents: filteredDocs,
-        }));
+        const nextYearLevels = getYearLevelsForType(nextType);
+        setData((prev) => {
+            const currentYear = String(prev.academic_year ?? "").trim();
+            const keepOutOfList =
+                isEdit &&
+                originalStudentType !== null &&
+                nextType === originalStudentType &&
+                originalAcademicYear !== null &&
+                currentYear === originalAcademicYear;
+            const nextAcademicYear =
+                keepOutOfList || nextYearLevels.some((lvl) => String(lvl.value) === currentYear)
+                    ? prev.academic_year
+                    : String(nextYearLevels[0]?.value ?? (nextType === "shs" ? 11 : 1));
+            return {
+                ...prev,
+                student_type: nextType,
+                academic_year: nextAcademicYear,
+            };
+        });
     };
 
     const handleRemoveDocument = (slotKey: string) => {
@@ -494,13 +514,13 @@ export function StudentFormStudio({
         return modeObj?.brackets ?? [];
     }, [options.income_modes, data.income_bracket_mode]);
 
-    // Sync year level when switching student_type in create mode only
+    // Sync year level when switching student_type (preserve legacy out-of-list value only for original type in Edit mode)
     useEffect(() => {
-        if (isEdit) return;
+        if (shouldPreserveOutOfListAcademicYear) return;
         if (!yearLevels.some((lvl) => String(lvl.value) === String(data.academic_year))) {
             setData("academic_year", String(yearLevels[0]?.value ?? (isShs ? 11 : 1)));
         }
-    }, [isEdit, yearLevels, data.academic_year, isShs, setData]);
+    }, [shouldPreserveOutOfListAcademicYear, yearLevels, data.academic_year, isShs, setData]);
 
     // Fetch live preview of next automatic Student ID in Create mode
     const fetchNextIdPreview = useCallback(async (studentType: string) => {
@@ -1443,8 +1463,14 @@ export function StudentFormStudio({
                                                             placeholder="Year graduated (e.g. 2024)"
                                                             value={data.junior_high_graduation_year}
                                                             onChange={(e) => setData("junior_high_graduation_year", e.target.value)}
+                                                            maxLength={4}
                                                             className="h-8 text-xs"
                                                         />
+                                                        {errors.junior_high_graduation_year && (
+                                                            <p className="text-destructive text-xs">
+                                                                {errors.junior_high_graduation_year}
+                                                            </p>
+                                                        )}
                                                     </div>
                                                     <div className="space-y-2 rounded-lg border p-3">
                                                         <p className="text-xs font-semibold">Elementary School</p>

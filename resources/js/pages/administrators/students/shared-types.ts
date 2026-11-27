@@ -111,6 +111,7 @@ export interface DocumentSlot {
     notes: string | null;
     expires_at: string | null;
     history: DocumentHistoryEntry[];
+    file_revision?: string | null;
     download_url: string | null;
     preview_url: string | null;
 }
@@ -194,6 +195,7 @@ export interface MatrixSlotCell {
     file_name: string | null;
     rejection_reason: string | null;
     waiver_reason: string | null;
+    file_revision?: string | null;
     preview_url: string | null;
     download_url: string | null;
 }

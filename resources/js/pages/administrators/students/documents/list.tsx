@@ -376,12 +376,18 @@ export default function AdministratorStudentDocumentsHub({
         docKey: string,
         action: "verify" | "reject" | "physical" | "waive" | "reset",
         reason?: string,
+        expectedFileRevision?: string | null,
     ) => {
         setCellBusy(true);
         try {
             const res = await axios.post(
                 `/administrators/students/${studentId}/documents/fixed/${docKey}/review`,
-                { action, reason: reason || null, notify_student: true },
+                {
+                    action,
+                    reason: reason || null,
+                    notify_student: true,
+                    ...(action === "verify" ? { expected_file_revision: expectedFileRevision ?? undefined } : {}),
+                },
                 { headers: { Accept: "application/json" } },
             );
             toast.success(res.data?.message || "Document updated.");
@@ -396,8 +402,24 @@ export default function AdministratorStudentDocumentsHub({
             setWorkbenchRejectReason(DOCUMENT_REJECTION_PRESETS[0]);
             router.reload({ only: ["students", "column_stats", "kpis"] });
         } catch (error: unknown) {
-            const err = error as { response?: { data?: { message?: string } } };
-            toast.error(err.response?.data?.message || "Failed to update document.");
+            const err = error as {
+                response?: {
+                    status?: number;
+                    data?: { message?: string; errors?: Record<string, string[]>; dossier?: DocumentDossier };
+                };
+            };
+            const fieldError =
+                err.response?.data?.errors?.expected_file_revision?.[0] ??
+                (err.response?.data?.errors ? Object.values(err.response.data.errors)[0]?.[0] : null);
+            toast.error(fieldError || err.response?.data?.message || "Failed to update document.");
+            if (err.response?.status === 422 && err.response?.data?.errors?.expected_file_revision) {
+                if (err.response.data.dossier && selectedStudentIdRef.current === studentId) {
+                    setWorkbenchDossierState({ studentId, dossier: err.response.data.dossier });
+                } else if (viewMode === "workbench" && selectedStudentIdRef.current === studentId) {
+                    void fetchWorkbenchDossier(studentId);
+                }
+                router.reload({ only: ["students", "column_stats", "kpis"] });
+            }
         } finally {
             setCellBusy(false);
         }
@@ -432,41 +454,83 @@ export default function AdministratorStudentDocumentsHub({
 
     const handleBulkRemind = async (opts?: { studentIds?: number[]; documentKey?: string }) => {
         const batchStudentIds = opts?.studentIds ? [...opts.studentIds] : null;
-        const payload: Record<string, unknown> = {
-            document_key: opts?.documentKey,
-        };
+        const isExplicitSelection = Boolean(batchStudentIds && batchStudentIds.length > 0);
+        const isColumnReminder = !isExplicitSelection && Boolean(opts?.documentKey);
 
-        if (batchStudentIds && batchStudentIds.length > 0) {
-            payload.student_ids = batchStudentIds;
-        } else if (opts?.documentKey) {
-            if (serverFilters.search) payload.search = serverFilters.search;
-            if (serverFilters.student_type) payload.student_type = serverFilters.student_type;
-            if (serverFilters.course_id) payload.course_id = serverFilters.course_id;
-            if (serverFilters.year_level) payload.year_level = serverFilters.year_level;
+        const basePayload: Record<string, unknown> = {};
+        if (opts?.documentKey) {
+            basePayload.document_key = opts.documentKey;
+        }
 
-            if (students.last_page === 1 && serverFilters.compliance === "all" && !serverFilters.missing_doc) {
-                const scopedMissingIds = students.data
-                    .filter((student) => student.slots[opts.documentKey!]?.status === "missing")
-                    .map((student) => student.id);
-                if (scopedMissingIds.length > 0) {
-                    payload.student_ids = scopedMissingIds;
-                }
-            }
+        if (isExplicitSelection && batchStudentIds) {
+            basePayload.student_ids = batchStudentIds;
+        } else if (isColumnReminder) {
+            if (serverFilters.search) basePayload.search = serverFilters.search;
+            if (serverFilters.student_type) basePayload.student_type = serverFilters.student_type;
+            if (serverFilters.course_id) basePayload.course_id = serverFilters.course_id;
+            if (serverFilters.year_level) basePayload.year_level = serverFilters.year_level;
         }
 
         setReminding(true);
+        let totalSent = 0;
         try {
-            const res = await axios.post("/administrators/students/documents/bulk-remind", payload, {
-                headers: { Accept: "application/json" },
-            });
-            toast.success(res.data?.message || "Reminders sent.");
-            if (batchStudentIds && batchStudentIds.length > 0) {
-                const completedSet = new Set(batchStudentIds);
-                setSelectedIds((prev) => prev.filter((id) => !completedSet.has(id)));
+            if (isColumnReminder) {
+                let afterStudentId: number | null = null;
+                let lastMessage: string | undefined;
+                let pages = 0;
+                const maxPages = 100;
+
+                while (pages < maxPages) {
+                    pages += 1;
+                    const pagePayload: Record<string, unknown> =
+                        afterStudentId !== null
+                            ? { ...basePayload, after_student_id: afterStudentId }
+                            : basePayload;
+                    const res = await axios.post("/administrators/students/documents/bulk-remind", pagePayload, {
+                        headers: { Accept: "application/json" },
+                    });
+                    const data = res.data as {
+                        message?: string;
+                        sent_count?: number;
+                        has_more?: boolean;
+                        next_after_student_id?: number | null;
+                    };
+                    totalSent += Number(data?.sent_count ?? 0);
+                    lastMessage = data?.message;
+
+                    if (data?.has_more === true && typeof data.next_after_student_id === "number") {
+                        if (data.next_after_student_id === afterStudentId) {
+                            break;
+                        }
+                        afterStudentId = data.next_after_student_id;
+                    } else {
+                        break;
+                    }
+                }
+
+                if (pages > 1) {
+                    toast.success(
+                        totalSent > 0
+                            ? `Sent missing-document reminders to ${totalSent} student(s).`
+                            : "No students required reminders or had reachable contact details.",
+                    );
+                } else {
+                    toast.success(lastMessage || "Reminders sent.");
+                }
+            } else {
+                const res = await axios.post("/administrators/students/documents/bulk-remind", basePayload, {
+                    headers: { Accept: "application/json" },
+                });
+                toast.success(res.data?.message || "Reminders sent.");
+                if (isExplicitSelection && batchStudentIds) {
+                    const completedSet = new Set(batchStudentIds);
+                    setSelectedIds((prev) => prev.filter((id) => !completedSet.has(id)));
+                }
             }
         } catch (error: unknown) {
             const err = error as { response?: { data?: { message?: string } } };
-            toast.error(err.response?.data?.message || "Could not send reminders.");
+            const baseErr = err.response?.data?.message || "Could not send reminders.";
+            toast.error(totalSent > 0 ? `${baseErr} (${totalSent} reminder(s) were already sent.)` : baseErr);
         } finally {
             setReminding(false);
         }
@@ -1254,6 +1318,8 @@ export default function AdministratorStudentDocumentsHub({
                                                                                 activeWorkbenchStudent.id,
                                                                                 slot.key,
                                                                                 "verify",
+                                                                                undefined,
+                                                                                slot.file_revision,
                                                                             );
                                                                         }}
                                                                     >
@@ -1609,7 +1675,13 @@ export default function AdministratorStudentDocumentsHub({
                                         }
                                         onClick={() => {
                                             if (!activeCell.cell.has_file) return;
-                                            void handleReviewSlot(activeCell.student.id, activeCell.cell.key, "verify");
+                                            void handleReviewSlot(
+                                                activeCell.student.id,
+                                                activeCell.cell.key,
+                                                "verify",
+                                                undefined,
+                                                activeCell.cell.file_revision,
+                                            );
                                         }}
                                     >
                                         {cellBusy ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}

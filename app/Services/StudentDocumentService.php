@@ -116,6 +116,28 @@ final class StudentDocumentService
     }
 
     /**
+     * Compute a deterministic file revision token derived strictly from stored file attributes
+     * (never from review status or updated_at, so review actions without file replacement stay stable).
+     */
+    public function fileRevision(?StudentDocumentRecord $record, ?string $legacyPath = null): ?string
+    {
+        $filePath = filled($record?->file_path)
+            ? (string) $record->file_path
+            : (filled($legacyPath) ? (string) $legacyPath : null);
+
+        if ($filePath === null) {
+            return null;
+        }
+
+        return mb_substr(hash('sha256', implode('|', [
+            $filePath,
+            (string) ($record?->disk ?? ''),
+            (string) ($record?->file_size ?? ''),
+            $record?->uploaded_at?->toIso8601String() ?? '',
+        ])), 0, 16);
+    }
+
+    /**
      * Resolve the school-configured document checklist for a student type (or school default).
      *
      * @return list<array{key: string, label: string, short_label: string, description: string, accepted: string, required: bool, enabled: bool, image_only: bool}>
@@ -284,8 +306,10 @@ final class StudentDocumentService
             /** @var StudentDocumentRecord|null $record */
             $record = $recordsByKey[$key] ?? null;
             $legacyPath = $docLocation?->getAttribute($key);
-            $storedPath = filled($record?->file_path) ? (string) $record->file_path : (is_string($legacyPath) && mb_trim($legacyPath) !== '' ? $legacyPath : null);
+            $legacyPathString = is_string($legacyPath) && mb_trim($legacyPath) !== '' ? $legacyPath : null;
+            $storedPath = filled($record?->file_path) ? (string) $record->file_path : $legacyPathString;
             $hasFile = $storedPath !== null;
+            $fileRevision = $this->fileRevision($record, $legacyPathString);
 
             $status = $this->resolveEffectiveStatus($record, $hasFile);
             $isCompliant = in_array($status, StudentDocumentRecord::COMPLIANT_STATUSES, true);
@@ -319,18 +343,26 @@ final class StudentDocumentService
             $previewUrl = null;
             if ($hasFile) {
                 if ($forStudentPortal) {
+                    $previewParams = ['documentType' => $key, 'preview' => 1];
+                    if ($fileRevision !== null) {
+                        $previewParams['v'] = $fileRevision;
+                    }
                     $downloadUrl = route('student.documents.download', ['documentType' => $key]);
-                    $previewUrl = route('student.documents.download', ['documentType' => $key, 'preview' => 1]);
+                    $previewUrl = route('student.documents.download', $previewParams);
                 } else {
+                    $previewParams = [
+                        'student' => $student->id,
+                        'documentType' => $key,
+                        'preview' => 1,
+                    ];
+                    if ($fileRevision !== null) {
+                        $previewParams['v'] = $fileRevision;
+                    }
                     $downloadUrl = route('administrators.students.documents.fixed.show', [
                         'student' => $student->id,
                         'documentType' => $key,
                     ]);
-                    $previewUrl = route('administrators.students.documents.fixed.show', [
-                        'student' => $student->id,
-                        'documentType' => $key,
-                        'preview' => 1,
-                    ]);
+                    $previewUrl = route('administrators.students.documents.fixed.show', $previewParams);
                 }
             }
 
@@ -345,6 +377,7 @@ final class StudentDocumentService
                 'status' => $status,
                 'is_compliant' => $isCompliant,
                 'has_file' => $hasFile,
+                'file_revision' => $fileRevision,
                 'file_name' => $record?->file_name ?: ($hasFile ? basename($storedPath) : null),
                 'mime_type' => $record?->mime_type ?: ($hasFile ? $this->guessMimeFromExtension($storedPath) : null),
                 'file_size' => $record?->file_size,
@@ -440,7 +473,9 @@ final class StudentDocumentService
             /** @var StudentDocumentRecord|null $record */
             $record = $recordsByKey->get($key);
             $legacyPath = $docLocation?->getAttribute($key);
-            $hasFile = filled($record?->file_path) || (is_string($legacyPath) && mb_trim($legacyPath) !== '');
+            $legacyPathString = is_string($legacyPath) && mb_trim($legacyPath) !== '' ? $legacyPath : null;
+            $hasFile = filled($record?->file_path) || $legacyPathString !== null;
+            $fileRevision = $this->fileRevision($record, $legacyPathString);
             $status = $this->resolveEffectiveStatus($record, $hasFile);
             $isCompliant = in_array($status, StudentDocumentRecord::COMPLIANT_STATUSES, true);
 
@@ -465,6 +500,15 @@ final class StudentDocumentService
                 $rejected++;
             }
 
+            $previewParams = [
+                'student' => $student->id,
+                'documentType' => $key,
+                'preview' => 1,
+            ];
+            if ($fileRevision !== null) {
+                $previewParams['v'] = $fileRevision;
+            }
+
             $slotStatuses[$key] = [
                 'key' => $key,
                 'label' => $slot['label'],
@@ -473,11 +517,12 @@ final class StudentDocumentService
                 'status' => $status,
                 'is_compliant' => $isCompliant,
                 'has_file' => $hasFile,
-                'file_name' => $record?->file_name ?: ($hasFile && is_string($legacyPath) ? basename($legacyPath) : null),
+                'file_revision' => $fileRevision,
+                'file_name' => $record?->file_name ?: ($hasFile && $legacyPathString !== null ? basename($legacyPathString) : null),
                 'rejection_reason' => $record?->rejection_reason,
                 'waiver_reason' => $record?->waiver_reason,
                 'preview_url' => $hasFile
-                    ? route('administrators.students.documents.fixed.show', ['student' => $student->id, 'documentType' => $key, 'preview' => 1])
+                    ? route('administrators.students.documents.fixed.show', $previewParams)
                     : null,
                 'download_url' => $hasFile
                     ? route('administrators.students.documents.fixed.show', ['student' => $student->id, 'documentType' => $key])
@@ -699,6 +744,7 @@ final class StudentDocumentService
         ?string $expiresAt = null,
         bool $notifyStudent = true,
         bool &$notified = false,
+        ?string $expectedFileRevision = null,
     ): StudentDocumentRecord {
         if (! in_array($documentKey, DocumentLocation::DOCUMENT_FIELDS, true)) {
             throw ValidationException::withMessages(['document_type' => 'Invalid document type.']);
@@ -706,15 +752,26 @@ final class StudentDocumentService
 
         $notified = false;
 
-        $record = DB::transaction(function () use ($student, $documentKey, $action, $actor, $reason, $notes, $expiresAt): StudentDocumentRecord {
+        $record = DB::transaction(function () use ($student, $documentKey, $action, $actor, $reason, $notes, $expiresAt, $expectedFileRevision): StudentDocumentRecord {
             Student::withoutSchoolScope()->withTrashed()->whereKey($student->id)->lockForUpdate()->first();
             $student->refresh()->load('DocumentLocation');
             $record = $this->firstOrNewRecord($student, $documentKey, lockForUpdate: true);
 
             $legacyPath = $student->DocumentLocation?->getAttribute($documentKey);
-            if (! filled($record->file_path) && is_string($legacyPath) && mb_trim($legacyPath) !== '') {
-                $record->file_path = $legacyPath;
-                $record->file_name = basename($legacyPath);
+            $legacyPathString = is_string($legacyPath) && mb_trim($legacyPath) !== '' ? $legacyPath : null;
+
+            if ($action === 'verify' && filled($expectedFileRevision)) {
+                $currentFileRevision = $this->fileRevision($record, $legacyPathString);
+                if ($currentFileRevision === null || ! hash_equals($currentFileRevision, (string) $expectedFileRevision)) {
+                    throw ValidationException::withMessages([
+                        'expected_file_revision' => 'This document file was replaced after you opened it. Please reload and review the latest file before verifying.',
+                    ]);
+                }
+            }
+
+            if (! filled($record->file_path) && $legacyPathString !== null) {
+                $record->file_path = $legacyPathString;
+                $record->file_name = basename($legacyPathString);
             }
 
             $history = is_array($record->history) ? $record->history : [];
@@ -849,6 +906,7 @@ final class StudentDocumentService
         Student $student,
         ?array $specificDocumentKeys = null,
         ?string $customMessage = null,
+        bool $missingStatusOnly = false,
     ): bool {
         $summary = $this->rowSummaryFor($student);
         $missingLabels = [];
@@ -857,7 +915,11 @@ final class StudentDocumentService
             if ($specificDocumentKeys !== null && $specificDocumentKeys !== [] && ! in_array($key, $specificDocumentKeys, true)) {
                 continue;
             }
-            if (! $slot['is_compliant'] && ($slot['required'] || ($specificDocumentKeys !== null && $specificDocumentKeys !== []))) {
+            $isEligible = $missingStatusOnly
+                ? $slot['status'] === StudentDocumentRecord::StatusMissing
+                : ! $slot['is_compliant'];
+
+            if ($isEligible && ($slot['required'] || ($specificDocumentKeys !== null && $specificDocumentKeys !== []))) {
                 $missingLabels[] = (string) $slot['label'];
             }
         }
@@ -1277,6 +1339,54 @@ final class StudentDocumentService
                 });
             }
         });
+    }
+
+    /**
+     * Restrict a Student query to students whose applicable checklist includes $documentKey
+     * and whose effective slot status for that key is strictly missing.
+     *
+     * @param  Builder<Student>  $query
+     * @param  list<array{school_id: int|null, student_type: string|null, checklist: list<array{key: string, label: string, short_label: string, description: string, accepted: string, required: bool, enabled: bool, image_only: bool}>}>  $cohortGroups
+     */
+    public function applyStrictMissingSlotFilter(Builder $query, array $cohortGroups, string $documentKey): void
+    {
+        if (! in_array($documentKey, DocumentLocation::DOCUMENT_FIELDS, true) || $cohortGroups === []) {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
+
+        $applicableGroups = array_values(array_filter(
+            $cohortGroups,
+            static fn (array $group): bool => in_array($documentKey, array_column($group['checklist'], 'key'), true),
+        ));
+
+        if ($applicableGroups === []) {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
+
+        $hasDocRecordsTable = Schema::hasTable('student_document_records');
+        [$missingSql, $missingBindings] = $this->sqlSlotMissing($documentKey, $hasDocRecordsTable, false);
+
+        $query->where(function (Builder $outer) use ($applicableGroups): void {
+            foreach ($applicableGroups as $group) {
+                $outer->orWhere(function (Builder $groupQuery) use ($group): void {
+                    if ($group['school_id'] === null) {
+                        $groupQuery->whereNull('students.school_id');
+                    } else {
+                        $groupQuery->where('students.school_id', $group['school_id']);
+                    }
+
+                    if ($group['student_type'] === null) {
+                        $groupQuery->whereNull('students.student_type');
+                    } else {
+                        $groupQuery->where('students.student_type', $group['student_type']);
+                    }
+                });
+            }
+        })->whereRaw($missingSql, $missingBindings);
     }
 
     /**

@@ -161,7 +161,9 @@ export function SchoolAdaptiveQuickCreateDrawer({
         [firstName, lastName, birthDate, emailVisible, email, externalEnabled, lrn],
     );
     const currentIdentityKeyRef = useRef(currentIdentityKey);
-    currentIdentityKeyRef.current = currentIdentityKey;
+    useEffect(() => {
+        currentIdentityKeyRef.current = currentIdentityKey;
+    }, [currentIdentityKey]);
 
     const activeDuplicateState =
         duplicateCheckState && duplicateCheckState.identityKey === currentIdentityKey
@@ -345,7 +347,8 @@ export function SchoolAdaptiveQuickCreateDrawer({
                     }}
                     className="flex min-h-0 flex-1 flex-col overflow-hidden"
                 >
-                    <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+                    <div className="flex-1 overflow-y-auto px-5 py-4">
+                        <fieldset disabled={submitting} className="space-y-4">
                         {duplicates.length > 0 && (
                             <Alert className="border-amber-500/40 bg-amber-500/10">
                                 <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400" />
@@ -365,11 +368,22 @@ export function SchoolAdaptiveQuickCreateDrawer({
                                                     </p>
                                                 </div>
                                                 <Button
-                                                    render={<Link href={`/administrators/students/${dup.id}`} />}
+                                                    render={
+                                                        <Link
+                                                            href={`/administrators/students/${dup.id}`}
+                                                            aria-disabled={submitting}
+                                                            onClick={(e) => {
+                                                                if (submitting) e.preventDefault();
+                                                            }}
+                                                        />
+                                                    }
                                                     nativeButton={false}
                                                     size="sm"
                                                     variant="outline"
-                                                    className="h-7 gap-1 text-[11px]"
+                                                    className={cn(
+                                                        "h-7 gap-1 text-[11px]",
+                                                        submitting && "pointer-events-none opacity-50",
+                                                    )}
                                                 >
                                                     Open
                                                     <ExternalLink className="size-3" />
@@ -380,6 +394,7 @@ export function SchoolAdaptiveQuickCreateDrawer({
                                     <label className="flex items-center gap-2 pt-1 text-[11px]">
                                         <Checkbox
                                             checked={allowDuplicate}
+                                            disabled={submitting}
                                             onCheckedChange={(checked) =>
                                                 setDuplicateCheckState((prev) =>
                                                     prev && prev.identityKey === currentIdentityKey
@@ -399,7 +414,7 @@ export function SchoolAdaptiveQuickCreateDrawer({
                             {enabledTypes.length > 1 && (
                                 <div className="space-y-1.5">
                                     <Label className="text-xs">Student Category *</Label>
-                                    <Select value={studentType} onValueChange={setStudentType}>
+                                    <Select value={studentType} onValueChange={setStudentType} disabled={submitting}>
                                         <SelectTrigger className="h-9 text-xs">
                                             <SelectValue />
                                         </SelectTrigger>
@@ -416,7 +431,7 @@ export function SchoolAdaptiveQuickCreateDrawer({
 
                             <div className={enabledTypes.length > 1 ? "space-y-1.5" : "col-span-2 space-y-1.5"}>
                                 <Label className="text-xs">Initial Status *</Label>
-                                <Select value={status} onValueChange={setStatus}>
+                                <Select value={status} onValueChange={setStatus} disabled={submitting}>
                                     <SelectTrigger className="h-9 text-xs">
                                         <SelectValue />
                                     </SelectTrigger>
@@ -536,7 +551,7 @@ export function SchoolAdaptiveQuickCreateDrawer({
                             </div>
                             <div className="space-y-1.5">
                                 <Label className="text-xs">Gender *</Label>
-                                <Select value={gender} onValueChange={setGender}>
+                                <Select value={gender} onValueChange={setGender} disabled={submitting}>
                                     <SelectTrigger className="h-9 text-xs">
                                         <SelectValue />
                                     </SelectTrigger>
@@ -571,7 +586,7 @@ export function SchoolAdaptiveQuickCreateDrawer({
                                     {isShs ? "SHS Strand *" : isTesda ? "TESDA Qualification *" : "Program / Course *"}
                                 </Label>
                                 {isShs ? (
-                                    <Select value={shsStrandId} onValueChange={setShsStrandId}>
+                                    <Select value={shsStrandId} onValueChange={setShsStrandId} disabled={submitting}>
                                         <SelectTrigger className="h-9 text-xs">
                                             <SelectValue placeholder="Select strand" />
                                         </SelectTrigger>
@@ -584,7 +599,7 @@ export function SchoolAdaptiveQuickCreateDrawer({
                                         </SelectContent>
                                     </Select>
                                 ) : (
-                                    <Select value={courseId} onValueChange={setCourseId}>
+                                    <Select value={courseId} onValueChange={setCourseId} disabled={submitting}>
                                         <SelectTrigger className="h-9 text-xs">
                                             <SelectValue placeholder="Select program" />
                                         </SelectTrigger>
@@ -603,7 +618,7 @@ export function SchoolAdaptiveQuickCreateDrawer({
                             </div>
                             <div className="space-y-1.5">
                                 <Label className="text-xs">{isShs ? "Grade *" : "Level *"}</Label>
-                                <Select value={academicYear} onValueChange={setAcademicYear}>
+                                <Select value={academicYear} onValueChange={setAcademicYear} disabled={submitting}>
                                     <SelectTrigger className="h-9 text-xs">
                                         <SelectValue />
                                     </SelectTrigger>
@@ -665,6 +680,7 @@ export function SchoolAdaptiveQuickCreateDrawer({
                                 <label className="flex items-center gap-2 text-xs font-medium">
                                     <Checkbox
                                         checked={provisionPortal}
+                                        disabled={submitting}
                                         onCheckedChange={(checked) => setProvisionPortal(Boolean(checked))}
                                     />
                                     <span>Auto-provision Student Portal account (requires email)</span>
@@ -673,6 +689,7 @@ export function SchoolAdaptiveQuickCreateDrawer({
                                     <label className="text-muted-foreground flex items-center gap-2 pl-6 text-[11px]">
                                         <Checkbox
                                             checked={sendActivation}
+                                            disabled={submitting}
                                             onCheckedChange={(checked) => setSendActivation(Boolean(checked))}
                                         />
                                         <span>Send activation / password setup email immediately</span>
@@ -680,6 +697,7 @@ export function SchoolAdaptiveQuickCreateDrawer({
                                 )}
                             </div>
                         )}
+                        </fieldset>
                     </div>
 
                     <SheetFooter className="border-border/70 bg-muted/20 flex-row items-center justify-between gap-2 border-t px-5 py-3.5">

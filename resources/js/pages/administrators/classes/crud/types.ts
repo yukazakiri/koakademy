@@ -174,7 +174,7 @@ export type VerifyGradesResponse = {
     message: string;
 };
 
-export type SendScheduleNoticesResponse = { count: number; recipients: number; message: string };
+export type SendScheduleNoticesResponse = { count: number; recipients: number; failed: number; message: string };
 
 export type ClassPolicySettings = {
     enable_announcements: boolean;

@@ -62,6 +62,7 @@ import {
 } from "../lib/class-defaults";
 import { SectionSlotPopover } from "./section-slot-popover";
 import { facultyLoadDeltas } from "./faculty-load";
+import { autoStagger } from "./auto-stagger";
 import { WorkspaceApiError } from "../workspace/api";
 
 type MatrixSectionRow = BlueprintSection & {
@@ -540,6 +541,8 @@ export function BlueprintMatrixWorkbench({
     const [submittingMode, setSubmittingMode] = useState<"draft" | "published" | null>(null);
     const [commitResult, setCommitResult] = useState<BatchBlueprintResponse | null>(null);
     const [commitError, setCommitError] = useState<string | null>(null);
+    const [dryRunResult, setDryRunResult] = useState<BatchBlueprintResponse | null>(null);
+    const [dryRunError, setDryRunError] = useState<string | null>(null);
 
     const subjectReqRef = useRef(0);
     const dryRunReqRef = useRef(0);
@@ -799,11 +802,11 @@ export function BlueprintMatrixWorkbench({
                 setServerSignature(payloadSignature);
                 setDryRunState(res.ok ? "verified" : "rejected");
                 if (!res.ok) {
-                    setCommitResult(res);
-                    setCommitError(res.message || "Review the blueprint and section errors.");
+                    setDryRunResult(res);
+                    setDryRunError(res.message || "Review the blueprint and section errors.");
                 } else {
-                    setCommitResult((previous) => previous?.dry_run ? null : previous);
-                    setCommitError(null);
+                    setDryRunResult(null);
+                    setDryRunError(null);
                 }
                 if (manual) {
                     const blocking = (res.conflicts ?? []).filter((c) => c.severity === "blocking").length;
@@ -815,9 +818,19 @@ export function BlueprintMatrixWorkbench({
                         toast.warning(`Dry-run found ${blocking} blocking conflict${blocking === 1 ? "" : "s"}.`);
                     }
                 }
-            } catch {
+            } catch (error) {
                 if (reqId !== dryRunReqRef.current) return;
                 setServerSignature(payloadSignature);
+                if (error instanceof WorkspaceApiError && error.status === 422) {
+                    setDryRunState("rejected");
+                    setDryRunError(error.message);
+                    setDryRunResult(Array.isArray(error.payload.results) ? error.payload as BatchBlueprintResponse : null);
+                    setServerConflicts(Array.isArray(error.payload.conflicts) ? error.payload.conflicts as BatchBlueprintConflict[] : []);
+                    if (manual) toast.error(error.message);
+                    return;
+                }
+                setDryRunError(null);
+                setDryRunResult(null);
                 setDryRunState("fallback");
                 if (manual) {
                     toast.info("Server dry-run unavailable right now; using live client conflict checks.");
@@ -831,8 +844,8 @@ export function BlueprintMatrixWorkbench({
     useEffect(() => {
         ++dryRunReqRef.current;
         setServerConflicts([]);
-        setCommitResult((previous) => previous && !previous.ok ? null : previous);
-        setCommitError(null);
+        setDryRunResult(null);
+        setDryRunError(null);
         if (!isBlueprintReady) {
             setDryRunState("idle");
             return;
@@ -998,168 +1011,20 @@ export function BlueprintMatrixWorkbench({
     };
 
     const handleAutoStagger = () => {
-        const defaultMode = canonicalDeliveryMode(blueprint.delivery_mode);
-        const isOnline = isOnlineDeliveryMode(defaultMode);
-        const needsLab = requiredHours.lab > 0;
-
-        // Track occupied room/faculty slots from preserved existing rows
-        const usedRoomSlots: Array<{ room_id: number; day: string; start: string; end: string }> = [];
-        const usedFacultySlots: Array<{ faculty_id: string; day: string; start: string; end: string }> = [];
-
-        const isSlotFree = (day: string, start: string, end: string, roomId: number | null, facultyId: string | null) => {
-            if (roomId !== null && usedRoomSlots.some((u) => u.room_id === roomId && u.day === day && timesOverlap(u.start, u.end, start, end))) {
-                return false;
-            }
-            if (
-                facultyId !== null &&
-                usedFacultySlots.some((u) => u.faculty_id === facultyId && u.day === day && timesOverlap(u.start, u.end, start, end))
-            ) {
-                return false;
-            }
-            return true;
-        };
-
-        const pickBestRoom = (capacity: number, days: string[], start: string, end: string, preferLab: boolean): number | null => {
-            if (isOnline || options.rooms.length === 0) return null;
-            const sortedRooms = [...options.rooms].sort((a, b) => {
-                const aIsLab = (a.type ?? "").toLowerCase().includes("lab") || a.label.toLowerCase().includes("lab");
-                const bIsLab = (b.type ?? "").toLowerCase().includes("lab") || b.label.toLowerCase().includes("lab");
-                if (preferLab && aIsLab !== bIsLab) return aIsLab ? -1 : 1;
-                if (!preferLab && aIsLab !== bIsLab) return aIsLab ? 1 : -1;
-                const aFits = !a.capacity || a.capacity >= capacity;
-                const bFits = !b.capacity || b.capacity >= capacity;
-                if (aFits !== bFits) return aFits ? -1 : 1;
-                return (a.capacity ?? 999) - (b.capacity ?? 999);
-            });
-
-            for (const room of sortedRooms) {
-                const id = Number(room.id);
-                if (days.every((day) => isSlotFree(day, start, end, id, null))) {
-                    return id;
-                }
-            }
-            return null;
-        };
-
-        const rowHasBlocking = new Set(blockingConflicts.map((c) => c.client_key));
-        let shiftedCount = 0;
-        const skippedSections: string[] = [];
-
-        // First register schedules of clean existing rows so we don't move them
-        for (const row of rows) {
-            if (row.class_id !== null && row.schedules.length > 0 && !rowHasBlocking.has(row.client_key)) {
-                for (const s of row.schedules) {
-                    if (!isOnlineDeliveryMode(s.delivery_mode) && s.room_id !== null) {
-                        usedRoomSlots.push({ room_id: Number(s.room_id), day: s.day_of_week, start: s.start_time, end: s.end_time });
-                    }
-                    if (row.faculty_id) {
-                        usedFacultySlots.push({ faculty_id: row.faculty_id, day: s.day_of_week, start: s.start_time, end: s.end_time });
-                    }
-                }
-            }
-        }
-
-        const nextRows = rows.map((row, idx) => {
-            const shouldStagger = row.class_id === null || row.schedules.length === 0 || rowHasBlocking.has(row.client_key);
-            if (!shouldStagger) return row;
-
-            // Find first clean lecture band
-            let chosenBand: (typeof STAGGER_BANDS)[number] | null = null;
-            let chosenRoom: number | null = isOnline ? null : row.room_id;
-
-            for (let attempt = 0; attempt < STAGGER_BANDS.length; attempt += 1) {
-                const candidate = STAGGER_BANDS[(idx + attempt) % STAGGER_BANDS.length];
-                const facFree = candidate.days.every((day) => isSlotFree(day, candidate.start_time, candidate.end_time, null, row.faculty_id));
-                if (!facFree) continue;
-
-                const roomCandidate =
-                    !isOnline && row.room_id !== null && candidate.days.every((d) => isSlotFree(d, candidate.start_time, candidate.end_time, row.room_id, null))
-                        ? row.room_id
-                        : pickBestRoom(row.maximum_slots, candidate.days, candidate.start_time, candidate.end_time, false);
-
-                if (isOnline || roomCandidate !== null || options.rooms.length === 0) {
-                    chosenBand = candidate;
-                    chosenRoom = roomCandidate;
-                    break;
-                }
-            }
-
-            if (!chosenBand) {
-                skippedSections.push(row.section || "(unnamed)");
-                return row;
-            }
-
-            const roomCountBefore = usedRoomSlots.length;
-            const facultyCountBefore = usedFacultySlots.length;
-
-            const newSchedules: CrudScheduleBlock[] = chosenBand.days.map((day) => ({
-                day_of_week: day,
-                start_time: chosenBand.start_time,
-                end_time: chosenBand.end_time,
-                room_id: isOnline ? null : chosenRoom,
-                delivery_mode: defaultMode,
-                component_type: "lecture",
-            }));
-
-            for (const s of newSchedules) {
-                if (s.room_id !== null) {
-                    usedRoomSlots.push({ room_id: Number(s.room_id), day: s.day_of_week, start: s.start_time, end: s.end_time });
-                }
-                if (row.faculty_id) {
-                    usedFacultySlots.push({ faculty_id: row.faculty_id, day: s.day_of_week, start: s.start_time, end: s.end_time });
-                }
-            }
-
-            if (needsLab) {
-                let labBand: (typeof LAB_STAGGER_BANDS)[number] | null = null;
-                let labRoom: number | null = null;
-                for (let attempt = 0; attempt < LAB_STAGGER_BANDS.length; attempt += 1) {
-                    const candidate = LAB_STAGGER_BANDS[(idx + attempt) % LAB_STAGGER_BANDS.length];
-                    if (!isSlotFree(candidate.day, candidate.start_time, candidate.end_time, null, row.faculty_id)) continue;
-                    if (newSchedules.some((slot) => slot.day_of_week === candidate.day && timesOverlap(slot.start_time, slot.end_time, candidate.start_time, candidate.end_time))) continue;
-                    const roomCandidate = pickBestRoom(row.maximum_slots, [candidate.day], candidate.start_time, candidate.end_time, true);
-                    if (isOnline || roomCandidate !== null || options.rooms.length === 0) {
-                        labBand = candidate;
-                        labRoom = roomCandidate;
-                        break;
-                    }
-                }
-                if (!labBand) {
-                    usedRoomSlots.length = roomCountBefore;
-                    usedFacultySlots.length = facultyCountBefore;
-                    skippedSections.push(row.section || "(unnamed)");
-                    return row;
-                }
-                const labSlot: CrudScheduleBlock = {
-                    day_of_week: labBand.day,
-                    start_time: labBand.start_time,
-                    end_time: labBand.end_time,
-                    room_id: isOnline ? null : labRoom,
-                    delivery_mode: defaultMode,
-                    component_type: "lab",
-                };
-                newSchedules.push(labSlot);
-                if (labSlot.room_id !== null) {
-                    usedRoomSlots.push({ room_id: Number(labSlot.room_id), day: labSlot.day_of_week, start: labSlot.start_time, end: labSlot.end_time });
-                }
-                if (row.faculty_id) {
-                    usedFacultySlots.push({ faculty_id: row.faculty_id, day: labSlot.day_of_week, start: labSlot.start_time, end: labSlot.end_time });
-                }
-            }
-
-            shiftedCount += 1;
-            return {
-                ...row,
-                room_id: isOnline ? null : (chosenRoom ?? row.room_id),
-                schedules: newSchedules,
-            };
-        });
-
-        setRows(nextRows);
-        if (skippedSections.length > 0) {
-            toast.warning(`Auto-staggered ${shiftedCount} sections; ${skippedSections.join(", ")} need manual placement and remain unchanged.`);
+        const result = autoStagger(
+            rows,
+            new Set(blockingConflicts.map((conflict) => conflict.client_key)),
+            options.rooms,
+            canonicalDeliveryMode(blueprint.delivery_mode),
+            requiredHours.lab > 0,
+            STAGGER_BANDS,
+            LAB_STAGGER_BANDS,
+        );
+        setRows(result.rows);
+        if (result.skipped.length > 0) {
+            toast.warning(`Auto-staggered ${result.shifted} sections; ${result.skipped.join(", ")} need manual placement and remain unchanged.`);
         } else {
-            toast.success(shiftedCount > 0 ? `Auto-staggered ${shiftedCount} sections.` : "All existing sections are already conflict-free.");
+            toast.success(result.shifted > 0 ? `Auto-staggered ${result.shifted} sections.` : "All existing sections are already conflict-free.");
         }
     };
 
@@ -1179,6 +1044,7 @@ export function BlueprintMatrixWorkbench({
         }
 
         setSubmittingMode(scheduleStatus);
+        ++dryRunReqRef.current;
         setCommitError(null);
         setCommitResult(null);
 
@@ -1257,6 +1123,8 @@ export function BlueprintMatrixWorkbench({
 
     const createdCount = commitResult?.results.filter((r) => r.status === "created").length ?? 0;
     const updatedCount = commitResult?.results.filter((r) => r.status === "updated").length ?? 0;
+    const displayError = commitError ?? (serverSignature === payloadSignature ? dryRunError : null);
+    const displayResult = commitError ? commitResult : dryRunResult;
 
     return (
         <TooltipProvider delay={150}>
@@ -1297,14 +1165,14 @@ export function BlueprintMatrixWorkbench({
                     </Alert>
                 ) : null}
 
-                {commitError ? (
+                {displayError ? (
                     <Alert variant="destructive">
                         <ShieldAlert className="size-4" />
-                        <AlertTitle>Batch save blocked</AlertTitle>
-                        <AlertDescription>{commitError}</AlertDescription>
-                        {commitResult?.results.some((result) => result.errors.length > 0) ? (
+                        <AlertTitle>{commitError ? "Batch save blocked" : "Schedule check rejected"}</AlertTitle>
+                        <AlertDescription>{displayError}</AlertDescription>
+                        {displayResult?.results.some((result) => result.errors.length > 0) ? (
                             <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
-                                {commitResult.results.flatMap((result) => result.errors.map((message, index) => (
+                                {displayResult.results.flatMap((result) => result.errors.map((message, index) => (
                                     <li key={`${result.client_key}-${index}`}>Section {result.section}: {message}</li>
                                 )))}
                             </ul>

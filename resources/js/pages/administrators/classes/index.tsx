@@ -112,6 +112,7 @@ type SelectedClass = {
         enable_announcements?: boolean;
         enable_grade_visibility?: boolean;
         enable_attendance_tracking?: boolean;
+        enable_online_resources?: boolean;
         allow_late_submissions?: boolean;
         enable_discussion_board?: boolean;
         notify_students_on_schedule_changes?: boolean;

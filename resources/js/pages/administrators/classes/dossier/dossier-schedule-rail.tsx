@@ -289,7 +289,7 @@ export function DossierScheduleRail({
                 },
             });
         } catch (error) {
-            toast.error(error instanceof WorkspaceApiError ? error.message : "Could not apply suggested room.");
+            toast.error(error instanceof Error ? error.message : "Could not apply suggested room.");
         } finally {
             setApplyingFix(false);
         }
@@ -299,7 +299,9 @@ export function DossierScheduleRail({
         setSendingNotices(true);
         try {
             const response = await postSendScheduleNotices(classItem.id);
-            toast.success(response.message || `Sent ${response.count} notice(s) to ${response.recipients} student(s).`);
+            const message = response.message || `Queued ${response.count - response.failed} notice(s) across ${response.recipients} delivery channel(s).`;
+            if (response.failed > 0) toast.warning(message);
+            else toast.success(message);
             onRefresh();
         } catch (error) {
             toast.error(error instanceof WorkspaceApiError ? error.message : "Could not send schedule notices.");
@@ -666,7 +668,7 @@ export function DossierScheduleTab({
                 },
             });
         } catch (error) {
-            toast.error(error instanceof WorkspaceApiError ? error.message : "Could not apply suggested room.");
+            toast.error(error instanceof Error ? error.message : "Could not apply suggested room.");
         } finally {
             setApplyingFix(false);
         }

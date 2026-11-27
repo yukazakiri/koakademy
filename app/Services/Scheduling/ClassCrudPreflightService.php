@@ -959,7 +959,7 @@ final readonly class ClassCrudPreflightService
                         'errors' => [],
                     ];
                 } else {
-                    $existing = Classes::query()->findOrFail($sec['class_id']);
+                    $existing = Classes::query()->lockForUpdate()->findOrFail($sec['class_id']);
                     $oldSnapshot = $this->notificationService->snapshot($existing);
 
                     // Preserve existing banner_image, visual settings, and custom keys

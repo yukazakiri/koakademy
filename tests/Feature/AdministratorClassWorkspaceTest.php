@@ -1127,6 +1127,24 @@ it('returns parallel sections with merge candidate evaluation and inspected stud
 // 9. Multi-class bulk action (POST /administrators/classes/bulk-action)
 // =========================================================================
 
+it('rejects a bulk capacity reduction below active enrollment without changing any class', function (): void {
+    $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
+    $course = Course::factory()->create();
+    $class = Classes::factory()->create(['maximum_slots' => 0]);
+    $other = Classes::factory()->create(['maximum_slots' => 20]);
+    makeCleanEnrollment($class, makeWorkspaceStudent($course));
+    makeCleanEnrollment($class, makeWorkspaceStudent($course));
+
+    $this->postJson(route('administrators.classes.bulk-action'), [
+        'class_ids' => [$other->id, $class->id],
+        'action' => 'set_capacity',
+        'maximum_slots' => 1,
+    ])->assertUnprocessable()->assertJsonValidationErrors('maximum_slots');
+
+    expect($class->fresh()->maximum_slots)->toBe(0)
+        ->and($other->fresh()->maximum_slots)->toBe(20);
+});
+
 it('executes assign_faculty, set_capacity, publish_drafts, and enroll_cohort bulk actions across multiple classes', function (): void {
     Notification::fake();
 

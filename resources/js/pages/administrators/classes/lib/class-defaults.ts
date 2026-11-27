@@ -388,7 +388,9 @@ export function buildClassStorePayload(formData: ClassFormData): ClassStorePaylo
         schedules: data.schedules,
         settings: {
             ...data.settings,
-            enable_online_resources: data.settings.enable_online_resources ?? true,
+            ...(data.settings.enable_online_resources !== undefined
+                ? { enable_online_resources: data.settings.enable_online_resources }
+                : {}),
         },
     };
 

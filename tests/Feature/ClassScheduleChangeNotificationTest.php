@@ -171,6 +171,28 @@ it('records a manual notice when automatic delivery is suppressed', function () 
     Notification::assertNothingSent();
 });
 
+it('uses resolved enrollment status when creating and sending notices', function () {
+    Notification::fake();
+    $service = app(ClassScheduleChangeNotificationService::class);
+    $class = Classes::factory()->create();
+    $meeting = Schedule::factory()->create(['class_id' => $class->id, 'status' => 'published', 'day_of_week' => 'Monday']);
+    $enrolled = Student::factory()->create(['email' => 'enrolled-status@example.test']);
+    $dropped = Student::factory()->create(['email' => 'dropped-status@example.test']);
+    $legacyInactive = Student::factory()->create(['email' => 'legacy-inactive@example.test']);
+    ClassEnrollment::factory()->create(['class_id' => $class->id, 'student_id' => $enrolled->id, 'status' => true, 'enrollment_status' => ClassEnrollment::STATUS_AUDIT]);
+    ClassEnrollment::factory()->create(['class_id' => $class->id, 'student_id' => $dropped->id, 'status' => true, 'enrollment_status' => ClassEnrollment::STATUS_DROPPED]);
+    ClassEnrollment::factory()->create(['class_id' => $class->id, 'student_id' => $legacyInactive->id, 'status' => false, 'enrollment_status' => ClassEnrollment::STATUS_ENROLLED]);
+    $snapshot = $service->snapshot($class);
+    $meeting->update(['day_of_week' => 'Tuesday']);
+
+    $service->notifyIfChanged($class, $snapshot, null, false);
+    $change = $class->scheduleChanges()->firstOrFail();
+    expect($change->studentNotifications()->pluck('student_id')->map(fn ($id) => (int) $id)->all())->toBe([(int) $enrolled->id]);
+    $result = $service->notifyPendingForClass($class);
+    expect($result)->toBe(['count' => 1, 'recipients' => 1, 'failed' => 0]);
+    Notification::assertSentOnDemandTimes(ClassScheduleChangedNotification::class, 1);
+});
+
 it('does not send pending notices to dropped or unreachable students', function () {
     Notification::fake();
     $service = app(ClassScheduleChangeNotificationService::class);
@@ -185,7 +207,7 @@ it('does not send pending notices to dropped or unreachable students', function 
 
     $result = $service->notifyPendingForClass($class);
 
-    expect($result)->toBe(['count' => 1, 'recipients' => 0])
+    expect($result)->toBe(['count' => 1, 'recipients' => 0, 'failed' => 1])
         ->and($droppedNotice->fresh()->notified_at)->toBeNull()
         ->and($unreachableNotice->fresh()->notified_at)->toBeNull();
     Notification::assertNothingSent();
@@ -194,13 +216,14 @@ it('does not send pending notices to dropped or unreachable students', function 
 it('continues to other recipients after a manual delivery fails', function () {
     $service = app(ClassScheduleChangeNotificationService::class);
     $class = Classes::factory()->create();
-    $first = Student::factory()->create(['user_id' => null, 'email' => 'fail@example.test']);
+    $firstUser = User::factory()->create(['role' => UserRole::Student, 'email' => 'fail@example.test']);
+    $first = Student::factory()->create(['user_id' => $firstUser->id, 'email' => 'fail@example.test']);
     $second = Student::factory()->create(['user_id' => null, 'email' => 'success@example.test']);
     foreach ([$first, $second] as $student) {
         ClassEnrollment::factory()->create(['class_id' => $class->id, 'student_id' => $student->id, 'status' => true]);
     }
     $change = $class->scheduleChanges()->create(['old_schedule' => [], 'new_schedule' => []]);
-    $failed = $change->studentNotifications()->create(['student_id' => $first->id, 'email' => $first->email]);
+    $failed = $change->studentNotifications()->create(['student_id' => $first->id, 'user_id' => $firstUser->id, 'email' => $first->email]);
     $succeeded = $change->studentNotifications()->create(['student_id' => $second->id, 'email' => $second->email]);
     $fake = new class extends NotificationFake
     {
@@ -218,9 +241,11 @@ it('continues to other recipients after a manual delivery fails', function () {
 
     $result = $service->notifyPendingForClass($class);
 
-    expect($result)->toBe(['count' => 2, 'recipients' => 1])
+    expect($result)->toBe(['count' => 2, 'recipients' => 2, 'failed' => 1])
         ->and($failed->fresh()->notified_at)->toBeNull()
+        ->and($failed->fresh()->database_queued_at)->not->toBeNull()
         ->and($succeeded->fresh()->notified_at)->not->toBeNull();
+    $fake->assertSentToTimes($firstUser, ClassScheduleChangedNotification::class, 1);
     $fake->assertSentOnDemandTimes(ClassScheduleChangedNotification::class, 1);
 });
 
@@ -421,7 +446,7 @@ it('manually notifies pending schedule changes for an enrollment', function () {
     $service->notifyIfChanged($class, $oldSnapshot);
     $result = $service->notifyPendingForEnrollment($enrollment);
 
-    expect($result)->toBe(['count' => 1, 'recipients' => 2])
+    expect($result)->toBe(['count' => 1, 'recipients' => 2, 'failed' => 0])
         ->and($service->pendingNotificationsForEnrollment($enrollment))->toHaveCount(0);
 
     Notification::assertSentTo($studentUser, ClassScheduleChangedNotification::class);

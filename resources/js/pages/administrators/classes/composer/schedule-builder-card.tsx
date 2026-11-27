@@ -161,7 +161,7 @@ export function ScheduleBuilderCard({
     const [blockDeliveryMode, setBlockDeliveryMode] = useState<DeliveryMode>(deliveryMode);
     const [blockRoomId, setBlockRoomId] = useState<number | null>(roomId);
     const [builderError, setBuilderError] = useState<string | null>(null);
-    const loadedBlockRef = useRef<ClassSchedule | null>(null);
+    const loadedBlockRef = useRef<string | null>(null);
 
     const roomsById = useMemo(() => {
         const map = new Map<number, CrudRoomOption>();
@@ -229,8 +229,9 @@ export function ScheduleBuilderCard({
             onEditingIndexChange(null);
             return;
         }
-        if (loadedBlockRef.current === target) return;
-        loadedBlockRef.current = target;
+        const signature = `${editingIndex}:${JSON.stringify(target)}`;
+        if (loadedBlockRef.current === signature) return;
+        loadedBlockRef.current = signature;
         const targetMode = canonicalDeliveryMode(target.delivery_mode ?? deliveryMode);
         setSelectedDays([target.day_of_week]);
         setStartTime(target.start_time.slice(0, 5));
@@ -243,6 +244,7 @@ export function ScheduleBuilderCard({
     }, [editingIndex, schedules, deliveryMode, onEditingIndexChange]);
 
     const resetBuilder = (): void => {
+        loadedBlockRef.current = null;
         setSelectedDays(["Monday"]);
         setStartTime("08:00");
         setEndTime("09:00");
@@ -904,10 +906,13 @@ export function ScheduleBuilderCard({
                                                 type="button"
                                                 variant={isEditingThis ? "secondary" : "ghost"}
                                                 size="icon-sm"
-                                                aria-label={`Edit ${block.day_of_week} ${block.start_time} block`}
-                                                onClick={() => isEditingThis ? resetBuilder() : onEditingIndexChange(index)}
+                                                aria-label={`${isEditingThis ? "Cancel edit of" : "Edit"} ${block.day_of_week} ${block.start_time} block`}
+                                                onClick={() => {
+                                                    if (isEditingThis) resetBuilder();
+                                                    else { loadedBlockRef.current = null; onEditingIndexChange(index); }
+                                                }}
                                             >
-                                                <Pencil className="size-3.5" />
+                                                {isEditingThis ? <X className="size-3.5" /> : <Pencil className="size-3.5" />}
                                             </Button>
                                             <Button
                                                 type="button"

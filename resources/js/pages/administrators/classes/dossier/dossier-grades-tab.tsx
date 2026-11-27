@@ -313,7 +313,7 @@ export function DossierGradesTab({
                                     const dirty = isRowDirty(row);
                                     const isFinalized = Boolean(row.is_grades_finalized);
                                     const isVerified = Boolean(row.is_grades_verified);
-                                    const rowLocked = !isEditable;
+                                    const rowLocked = !isEditable || bulkActionLoading !== null;
                                     const gradeLocked = rowLocked || isVerified || isFinalized;
                                     const gradesChanged = draft.prelim_grade !== toInputString(row.prelim_grade) || draft.midterm_grade !== toInputString(row.midterm_grade) || draft.finals_grade !== toInputString(row.finals_grade);
                                     const computedAvg = gradesChanged ? null : row.total_average;
@@ -423,7 +423,7 @@ export function DossierGradesTab({
                                                     </Tooltip>
                                                 ) : isVerified ? (
                                                     <Tooltip><TooltipTrigger render={<Badge variant="outline" className="gap-1 border-sky-600/35 bg-sky-500/10 text-[11px] text-sky-700 dark:text-sky-300" />}><Check className="size-3" aria-hidden="true" />Verified</TooltipTrigger><TooltipContent>Unverify before editing period grades.</TooltipContent></Tooltip>
-                                                ) : computedAvg !== null ? (
+                                                ) : [row.prelim_grade, row.midterm_grade, row.finals_grade, row.total_average].some((grade) => grade !== null) ? (
                                                     <Badge
                                                         variant="outline"
                                                         className="border-amber-600/35 bg-amber-500/10 text-[11px] text-amber-700 dark:text-amber-300"
@@ -443,7 +443,7 @@ export function DossierGradesTab({
                                                             <Button
                                                                 type="button"
                                                                 size="xs"
-                                                                disabled={savingRows.has(row.id)}
+                                                                disabled={savingRows.has(row.id) || bulkActionLoading !== null}
                                                                 onClick={() => saveRow(row)}
                                                             >
                                                                 <Save className="size-3" aria-hidden="true" />

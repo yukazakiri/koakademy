@@ -568,7 +568,7 @@ final class AdministratorClassWorkspaceController extends Controller
                 'enroll_cohort',
             ])],
             'faculty_id' => ['nullable', 'exists:faculty,id'],
-            'maximum_slots' => ['nullable', 'integer', 'min:0', 'max:1000'],
+            'maximum_slots' => ['required_if:action,set_capacity', 'nullable', 'integer', 'min:0', 'max:1000'],
             'notify_enrolled' => ['sometimes', 'boolean'],
             'pattern' => ['nullable', 'string', Rule::in(['mwf', 'tth', 'custom'])],
             'days' => ['sometimes', 'array'],
@@ -1025,12 +1025,14 @@ final class AdministratorClassWorkspaceController extends Controller
         $result = $notifications->notifyPendingForClass($class, $actor);
         $count = (int) $result['count'];
         $recipients = (int) $result['recipients'];
+        $failed = (int) $result['failed'];
 
         return response()->json([
             'count' => $count,
             'recipients' => $recipients,
+            'failed' => $failed,
             'message' => $count > 0
-                ? sprintf('Sent %d pending schedule notice(s) across %d delivery channel(s).', $count, $recipients)
+                ? sprintf('Queued %d notice(s) across %d delivery channel(s).%s', $count - $failed, $recipients, $failed > 0 ? sprintf(' %d could not be sent and remain pending.', $failed) : '')
                 : 'No pending schedule notices to send.',
         ]);
     }

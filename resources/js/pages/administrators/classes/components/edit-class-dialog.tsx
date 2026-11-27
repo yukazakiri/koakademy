@@ -66,6 +66,7 @@ type SelectedClass = {
         enable_announcements?: boolean;
         enable_grade_visibility?: boolean;
         enable_attendance_tracking?: boolean;
+        enable_online_resources?: boolean;
         allow_late_submissions?: boolean;
         enable_discussion_board?: boolean;
         notify_students_on_schedule_changes?: boolean;
@@ -203,6 +204,7 @@ export function EditClassDialog({
                     enable_announcements: selectedClass.settings?.enable_announcements ?? true,
                     enable_grade_visibility: selectedClass.settings?.enable_grade_visibility ?? true,
                     enable_attendance_tracking: selectedClass.settings?.enable_attendance_tracking ?? false,
+                    enable_online_resources: selectedClass.settings?.enable_online_resources ?? true,
                     allow_late_submissions: selectedClass.settings?.allow_late_submissions ?? false,
                     enable_discussion_board: selectedClass.settings?.enable_discussion_board ?? false,
                     notify_students_on_schedule_changes: selectedClass.settings?.notify_students_on_schedule_changes ?? true,

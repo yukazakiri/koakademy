@@ -187,13 +187,17 @@ export function DossierRosterTab({
                 setFetchedTrashed(deleted);
             })
             .catch(() => {
-                if (!cancelled) setFetchedTrashed([]);
+                if (!cancelled) {
+                    toast.error("Could not load removed enrollments. Try again.");
+                    setShowSoftDeleted(false);
+                }
             })
             .finally(() => {
                 if (!cancelled) setLoadingTrashed(false);
             });
         return () => {
             cancelled = true;
+            setLoadingTrashed(false);
         };
     }, [showSoftDeleted, trashedEnrollments, fetchedTrashed, classItem.id]);
 
@@ -469,15 +473,20 @@ export function DossierRosterTab({
                             </span>
                         </div>
 
+                        {bulkTransferIssues.length > 0 && (
+                            <div role="alert" className="border-destructive/30 bg-destructive/5 flex w-full items-start justify-between gap-2 rounded-lg border px-3 py-2 text-xs text-destructive">
+                                <div>
+                                    <p className="font-medium">Students not moved:</p>
+                                    <ul className="list-inside list-disc">{bulkTransferIssues.map((issue, index) => <li key={index}>{issue}</li>)}</ul>
+                                </div>
+                                <Button type="button" variant="ghost" size="xs" onClick={() => setBulkTransferIssues([])}>
+                                    Dismiss
+                                </Button>
+                            </div>
+                        )}
                         {/* Inline Bulk Action Bar */}
                         {canUpdate && selectedStudentIds.length > 0 && (
                             <div className="bg-background flex flex-wrap items-center justify-between gap-2.5 rounded-lg border px-3 py-2">
-                                {bulkTransferIssues.length > 0 && (
-                                    <div role="alert" className="w-full text-xs text-destructive">
-                                        <p className="font-medium">Students not moved:</p>
-                                        <ul className="list-inside list-disc">{bulkTransferIssues.map((issue, index) => <li key={index}>{issue}</li>)}</ul>
-                                    </div>
-                                )}
                                 <div className="flex flex-wrap items-center gap-2">
                                     <Badge variant="secondary" className="tabular-nums">
                                         {selectedStudentIds.length} selected
@@ -533,7 +542,7 @@ export function DossierRosterTab({
                                         )}
                                         Move {selectedStudentIds.length} to Section
                                     </Button>
-                                    <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedStudentIds([])}>
+                                    <Button type="button" variant="ghost" size="sm" onClick={() => { setSelectedStudentIds([]); setBulkTransferIssues([]); }}>
                                         Cancel
                                     </Button>
                                 </div>

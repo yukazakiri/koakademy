@@ -683,7 +683,16 @@ final class AdministratorClassManagementController extends Controller
                     $class->settings = array_merge((array) ($lockedClass->settings ?? []), $settings);
                 }
                 if (($shouldRemoveBanner || $uploadedBanner !== null) && is_string($currentBanner) && $currentBanner !== '') {
-                    DB::afterCommit(static fn () => Storage::disk('public')->delete($currentBanner));
+                    DB::afterCommit(static function () use ($currentBanner): void {
+                        try {
+                            if (! Classes::withTrashed()->where('settings->banner_image', $currentBanner)->exists()) {
+                                Storage::disk('public')->delete($currentBanner);
+                            }
+                        } catch (Throwable $exception) {
+                            // A cleanup failure after commit must never delete the newly saved banner.
+                            report($exception);
+                        }
+                    });
                 }
 
                 // Class delivery_mode is the default for new meetings; existing meetings only change
@@ -729,7 +738,14 @@ final class AdministratorClassManagementController extends Controller
             });
         } catch (Throwable $exception) {
             if (is_string($newBannerPath) && $newBannerPath !== '') {
-                Storage::disk('public')->delete($newBannerPath);
+                try {
+                    // The transaction may already have committed if an after-commit callback failed.
+                    if (! Classes::withTrashed()->where('settings->banner_image', $newBannerPath)->exists()) {
+                        Storage::disk('public')->delete($newBannerPath);
+                    }
+                } catch (Throwable $cleanupException) {
+                    report($cleanupException);
+                }
             }
             throw $exception;
         }

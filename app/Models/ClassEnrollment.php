@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Laravel\Scout\Searchable;
 use Override;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
@@ -107,15 +108,47 @@ final class ClassEnrollment extends Model implements RecordsActivity
         return in_array($enrollmentStatus, self::ACTIVE_ENROLLMENT_STATUSES, true);
     }
 
+    /** Match resolvedEnrollmentStatus() for records eligible to receive schedule notices. */
+    public static function applyActiveForNotices(Builder|QueryBuilder $query): Builder|QueryBuilder
+    {
+        return $query->where(function ($active): void {
+            $active->where(function ($explicit): void {
+                $explicit->whereIn('class_enrollments.enrollment_status', self::ACTIVE_ENROLLMENT_STATUSES)
+                    ->where(function ($status): void {
+                        $status->whereNull('class_enrollments.status')
+                            ->orWhere('class_enrollments.status', true);
+                    });
+            })->orWhere(function ($legacy): void {
+                $legacy->where(function ($status): void {
+                    $status->whereNull('class_enrollments.enrollment_status')
+                        ->orWhereNotIn('class_enrollments.enrollment_status', self::ENROLLMENT_STATUSES);
+                })->where('class_enrollments.status', true);
+            });
+        });
+    }
+
     public function resolvedEnrollmentStatus(): string
     {
         $status = $this->enrollment_status;
+
+        if ($this->status === false) {
+            return $status === self::STATUS_WITHDRAWN
+                ? self::STATUS_WITHDRAWN
+                : self::STATUS_DROPPED;
+        }
 
         if (is_string($status) && in_array($status, self::ENROLLMENT_STATUSES, true)) {
             return $status;
         }
 
         return $this->status ? self::STATUS_ENROLLED : self::STATUS_DROPPED;
+    }
+
+    public function scopeActiveForNotices(Builder $query): Builder
+    {
+        self::applyActiveForNotices($query);
+
+        return $query;
     }
 
     public function isGradeProtected(): bool

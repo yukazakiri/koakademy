@@ -167,6 +167,7 @@ export function SplitComposerStudio({
     const [isDirty, setIsDirty] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [customError, setCustomError] = useState<string | null>(null);
+    const [draftRestoreRevision, setDraftRestoreRevision] = useState(0);
     const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
     const [validationError, setValidationError] = useState<string | null>(null);
     const [subjectCodeTouched, setSubjectCodeTouched] = useState(Boolean(initialData?.subject_code));
@@ -211,6 +212,7 @@ export function SplitComposerStudio({
     const [preflightResult, setPreflightResult] = useState<{ signature: string; response: PreflightResponse } | null>(null);
     const [preflightLoading, setPreflightLoading] = useState(false);
     const [preflightError, setPreflightError] = useState<string | null>(null);
+    const [preflightAttempt, setPreflightAttempt] = useState(0);
     const [clashesExpanded, setClashesExpanded] = useState(false);
 
     // Scroll to requested initial focus card on mount
@@ -248,7 +250,7 @@ export function SplitComposerStudio({
 
     // Dirty-only autosave to scoped localStorage in Create mode
     useEffect(() => {
-        if (isEditing || !draftChecked || !isDirty || savedDraft) return;
+        if (isEditing || !draftChecked || !isDirty || savedDraft || customError) return;
         const timer = window.setTimeout(() => {
             try {
                 const serializable: ClassDraft = {
@@ -264,7 +266,7 @@ export function SplitComposerStudio({
             }
         }, 600);
         return () => window.clearTimeout(timer);
-    }, [formData, isEditing, draftChecked, isDirty, savedDraft, draftStorageKey]);
+    }, [formData, isEditing, draftChecked, isDirty, savedDraft, draftStorageKey, customError]);
 
     // Warn on unload if dirty and not submitting
     useEffect(() => {
@@ -530,7 +532,7 @@ export function SplitComposerStudio({
             window.clearTimeout(timer);
             controller.abort();
         };
-    }, [preflightSignature, preflightPayload, formData.school_year, formData.semester]);
+    }, [preflightSignature, preflightPayload, formData.school_year, formData.semester, preflightAttempt]);
 
     // Derived curriculum helpers
     const selectedCollegeSubjects = useMemo(
@@ -714,6 +716,8 @@ export function SplitComposerStudio({
             },
         });
         setFormData(restored);
+        setCustomError(null);
+        setDraftRestoreRevision((revision) => revision + 1);
         setCapacityDraft(String(restored.maximum_slots));
         setSubjectCodeTouched(Boolean(restored.subject_code));
         setSavedDraft(null);
@@ -1016,6 +1020,13 @@ export function SplitComposerStudio({
                         </Button>
                     </div>
                 </div>
+            ) : null}
+
+            {!isEditing && customError ? (
+                <Alert variant="destructive" role="alert">
+                    <AlertTitle>Draft backup paused</AlertTitle>
+                    <AlertDescription>Resolve duplicate metadata keys to resume saving a local draft. Current changes are not backed up.</AlertDescription>
+                </Alert>
             ) : null}
 
             {/* Quick-Jump Strip (Zero-Stepper Navigation) */}
@@ -1602,6 +1613,7 @@ export function SplitComposerStudio({
 
                     {/* CARD 3: Policies, Appearance & Banner */}
                     <PoliciesBannerCard
+                        key={draftRestoreRevision}
                         settings={formData.settings}
                         existingBannerUrl={existingBannerUrl}
                         removeBannerImage={removeBannerImage}
@@ -1663,9 +1675,12 @@ export function SplitComposerStudio({
 
                         <CardContent className="space-y-3.5 pt-3.5">
                             {preflightError ? (
-                                <p className="text-muted-foreground rounded-lg border border-dashed px-3 py-2 text-xs">
-                                    {preflightError}
-                                </p>
+                                <div className="text-muted-foreground rounded-lg border border-dashed px-3 py-2 text-xs">
+                                    <p>{preflightError}</p>
+                                    <Button type="button" size="sm" variant="outline" className="mt-2" onClick={() => { setPreflightError(null); setPreflightResult(null); setPreflightLoading(true); setPreflightAttempt((attempt) => attempt + 1); }}>
+                                        Retry schedule check
+                                    </Button>
+                                </div>
                             ) : null}
 
                             {/* Conflicts & Warnings List */}

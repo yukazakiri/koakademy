@@ -23,11 +23,12 @@ final class StudentIdentifierRecoveryMail extends Mailable
     public string $signupUrl;
 
     /**
-     * @param  list<array{student_name: string, student_id: string|null, lrn: string|null, student_type: string|null, program: string|null}>  $records
+     * @param  list<array{student_name: string, student_id_label?: string, student_id: string|null, external_id_label?: string, external_id?: string|null, lrn?: string|null, student_type: string|null, program: string|null}>  $records
      */
     public function __construct(
         public string $recipientEmail,
         public array $records,
+        public string $identifierHeading = 'Student ID',
     ) {
         $settings = app(SiteSettings::class);
         $this->appName = $settings->getAppName();
@@ -38,7 +39,7 @@ final class StudentIdentifierRecoveryMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: "{$this->appName} — Your Student Number / LRN",
+            subject: "{$this->appName} — Your {$this->identifierHeading}",
         );
     }
 

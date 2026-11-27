@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Models\DocumentLocation;
 use App\Models\Student;
 use App\Models\User;
+use App\Services\StudentConfigurationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -18,45 +19,18 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class StudentDocumentController extends Controller
 {
-    /**
-     * Core registrar document slots surfaced in the student document vault.
-     *
-     * @var array<string, array{label: string, description: string, accepted: string}>
-     */
-    private const array CORE_DOCUMENTS = [
-        'birth_certificate' => [
-            'label' => 'Birth Certificate',
-            'description' => 'PSA / NSO Birth Certificate (clear scan or photo)',
-            'accepted' => 'PDF, JPG, PNG, or WebP up to 5 MB',
-        ],
-        'form_138' => [
-            'label' => 'Form 138 / Report Card',
-            'description' => 'Latest official high school or prior school report card',
-            'accepted' => 'PDF, JPG, PNG, or WebP up to 5 MB',
-        ],
-        'good_moral_cert' => [
-            'label' => 'Good Moral Certificate',
-            'description' => 'Certificate of Good Moral Character from previous school',
-            'accepted' => 'PDF, JPG, PNG, or WebP up to 5 MB',
-        ],
-        'picture_1x1' => [
-            'label' => '1x1 ID Photo',
-            'description' => 'Recent clear 1x1 or 2x2 plain-background ID photo',
-            'accepted' => 'JPG, PNG, WebP, or PDF up to 5 MB',
-        ],
-    ];
-
     public function index(Request $request): Response
     {
         /** @var User $user */
         $user = $request->user();
         $student = $this->resolveStudent($user);
         $docLocation = $student?->DocumentLocation;
+        $checklist = app(StudentConfigurationService::class)->documentChecklist($student?->school_id);
 
         $documents = [];
         $uploadedCount = 0;
 
-        foreach (self::CORE_DOCUMENTS as $key => $meta) {
+        foreach ($checklist as $key => $meta) {
             $storedPath = $docLocation?->getAttribute($key);
             $hasFile = is_string($storedPath) && mb_trim($storedPath) !== '';
 
@@ -69,6 +43,7 @@ final class StudentDocumentController extends Controller
                 'label' => $meta['label'],
                 'description' => $meta['description'],
                 'accepted' => $meta['accepted'],
+                'required' => $meta['required'],
                 'status' => $hasFile ? 'on_file' : 'missing',
                 'file_name' => $hasFile ? basename($storedPath) : null,
                 'download_url' => $hasFile ? route('student.documents.download', ['documentType' => $key]) : null,
@@ -93,7 +68,7 @@ final class StudentDocumentController extends Controller
             'documents' => $documents,
             'summary' => [
                 'uploaded' => $uploadedCount,
-                'total' => count(self::CORE_DOCUMENTS),
+                'total' => count($checklist),
             ],
         ]);
     }
@@ -106,8 +81,14 @@ final class StudentDocumentController extends Controller
 
         abort_if(! $student instanceof Student, 404, 'Student record not found.');
 
+        $checklist = app(StudentConfigurationService::class)->documentChecklist($student->school_id);
+        $allowedDocumentTypes = array_values(array_intersect(
+            array_keys($checklist),
+            DocumentLocation::DOCUMENT_FIELDS,
+        ));
+
         $validated = $request->validate([
-            'document_type' => ['required', 'string', Rule::in(DocumentLocation::DOCUMENT_FIELDS)],
+            'document_type' => ['required', 'string', Rule::in($allowedDocumentTypes)],
             'file' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png,webp', 'max:5120'],
         ]);
 
@@ -143,7 +124,7 @@ final class StudentDocumentController extends Controller
             $student->DocumentLocation->update([$type => $path]);
         }
 
-        $label = self::CORE_DOCUMENTS[$type]['label'] ?? str_replace('_', ' ', ucfirst($type));
+        $label = $checklist[$type]['label'] ?? str_replace('_', ' ', ucfirst($type));
 
         return redirect()
             ->back()
@@ -152,15 +133,18 @@ final class StudentDocumentController extends Controller
 
     public function download(Request $request, string $documentType): StreamedResponse
     {
-        if (! in_array($documentType, DocumentLocation::DOCUMENT_FIELDS, true)) {
-            abort(404, 'Invalid document type.');
-        }
-
         /** @var User $user */
         $user = $request->user();
         $student = $this->resolveStudent($user);
 
         abort_if(! $student instanceof Student, 404, 'Student record not found.');
+
+        $configuredSlots = array_keys(app(StudentConfigurationService::class)->documentChecklist($student->school_id, onlyVisible: false));
+        $allowedDocumentTypes = array_values(array_unique([...$configuredSlots, ...DocumentLocation::DOCUMENT_FIELDS]));
+
+        if (! in_array($documentType, $allowedDocumentTypes, true) || ! in_array($documentType, DocumentLocation::DOCUMENT_FIELDS, true)) {
+            abort(404, 'Invalid document type.');
+        }
 
         $path = $student->DocumentLocation?->getAttribute($documentType);
 

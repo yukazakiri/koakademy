@@ -153,9 +153,25 @@ final class IdentifierGenerator
         ]);
     }
 
-    public function previewStaffId(): string
+    public function staffPolicy(?int $schoolId = null): array
     {
-        return $this->preview(self::Staff);
+        $policy = $this->sequenceFor(self::Staff, schoolId: $schoolId)->only([
+            'display_label', 'assignment_mode', 'character_set', 'legacy_format',
+        ]);
+
+        $label = mb_trim((string) ($policy['display_label'] ?? ''));
+        if ($label === '' || mb_strtolower($label) === 'student id') {
+            $policy['display_label'] = 'Faculty ID';
+        }
+
+        return $policy;
+    }
+
+    public function previewStaffId(?int $schoolId = null): string
+    {
+        $sequence = $this->sequenceFor(self::Staff, schoolId: $schoolId);
+
+        return $this->format($sequence->next_number, $sequence->padding);
     }
 
     public function generateStaffId(): string
@@ -426,7 +442,7 @@ final class IdentifierGenerator
             'prefix_mode' => 'none', 'prefix_value' => null, 'enforce_prefix' => false,
             'enforce_length' => false, 'exact_length' => 6, 'min_length' => $legacy ? 4 : 1, 'max_length' => $legacy ? 12 : 64,
             'type_prefixes' => $legacy ? ['college' => '2', 'tesda' => '2', 'dhrt' => '2', 'shs' => '3'] : [],
-            'assignment_mode' => 'hybrid', 'character_set' => 'numeric', 'display_label' => 'Student ID',
+            'assignment_mode' => 'hybrid', 'character_set' => 'numeric', 'display_label' => $key === self::Student ? 'Student ID' : 'Faculty ID',
             'counter_scope' => 'shared', 'legacy_format' => $legacy,
         ];
     }

@@ -844,6 +844,21 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
             ?? (filled($this->name) ? (explode(' ', (string) $this->name, 2)[1] ?? null) : null);
     }
 
+    public function hasProvisionedPassword(): bool
+    {
+        return (bool) data_get($this->preferences, 'security.password_provisioned', true);
+    }
+
+    public function markPasswordProvisioned(bool $provisioned = true): void
+    {
+        $preferences = is_array($this->preferences) ? $this->preferences : [];
+        $security = is_array($preferences['security'] ?? null) ? $preferences['security'] : [];
+        $security['password_provisioned'] = $provisioned;
+        $preferences['security'] = $security;
+
+        $this->preferences = $preferences;
+    }
+
     protected static function booted(): void
     {
         self::saving(function (User $user): void {

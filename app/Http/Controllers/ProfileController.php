@@ -233,6 +233,7 @@ final class ProfileController extends Controller
                 'security_two_factor_enabled' => $user->security_two_factor_enabled ?? true,
                 'two_factor_enabled' => ! is_null($user->app_authentication_secret),
                 'email_two_factor_enabled' => $user->hasEmailAuthentication(),
+                'has_password' => $user->hasProvisionedPassword(),
                 'recovery_codes_count' => is_array($user->app_authentication_recovery_codes)
                     ? count($user->app_authentication_recovery_codes)
                     : 0,
@@ -1025,28 +1026,36 @@ final class ProfileController extends Controller
     }
 
     /**
-     * Change user password
+     * Change or provision user password
      */
     public function changePassword(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'current_password' => 'required|string',
+        /** @var User $user */
+        $user = Auth::user();
+        $hasPassword = $user->hasProvisionedPassword();
+
+        $rules = [
             'password' => ['required', 'confirmed', \Illuminate\Validation\Rules\Password::defaults()],
-        ]);
+        ];
+
+        if ($hasPassword) {
+            $rules['current_password'] = 'required|string';
+        }
+
+        $validator = Validator::make($request->all(), $rules);
 
         if ($validator->fails()) {
             return back()
                 ->withErrors($validator->errors());
         }
 
-        $user = Auth::user();
-
-        // Verify current password
-        if (! Hash::check($request->current_password, $user->password)) {
+        // Verify current password when the account already has one provisioned.
+        if ($hasPassword && ! Hash::check((string) $request->current_password, $user->password)) {
             return back()
                 ->withErrors(['current_password' => 'The current password is incorrect.']);
         }
 
+        $user->markPasswordProvisioned(true);
         $user->forceFill([
             'password' => Hash::make($request->password),
             'session_version' => ((int) ($user->session_version ?? 0)) + 1,
@@ -1060,14 +1069,18 @@ final class ProfileController extends Controller
         $request->session()->put('user_session_version', (int) $user->session_version);
         app(UserSecurityActivityService::class)->record($user, 'password_changed', 'success');
         $user->notify(new SecurityActivityNotification(
-            actionTitle: 'Password Changed',
-            actionSummary: 'Your account password was changed and other active sessions/tokens were signed out.',
+            actionTitle: $hasPassword ? 'Password Changed' : 'Password Created',
+            actionSummary: $hasPassword
+                ? 'Your account password was changed and other active sessions/tokens were signed out.'
+                : 'A portal password was created for your account. You can now sign in with your email and password as well.',
             ipAddress: $request->ip(),
             userAgent: $request->userAgent(),
         ));
 
         return back()->with('flash', [
-            'success' => 'Password changed successfully!',
+            'success' => $hasPassword
+                ? 'Password changed successfully!'
+                : 'Password created successfully! You can now sign in with your email and password.',
         ]);
     }
 

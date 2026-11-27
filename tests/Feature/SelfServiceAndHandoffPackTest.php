@@ -111,8 +111,16 @@ it('allows an authenticated student to view, upload, and download their own regi
 it('emails student identifier recovery for unclaimed students and returns privacy-safe responses otherwise', function (): void {
     Mail::fake();
 
-    $course = Course::factory()->create();
+    $school = School::factory()->create();
+    app(TenantContext::class)->setCurrentSchool($school);
+    $config = StudentConfigurationService::defaults(legacy: true);
+    $config['external_identifier']['student_types'] = ['college', 'shs'];
+    app(StudentConfigurationService::class)->update($config, $school->id);
+
+    $course = Course::factory()->create(['school_id' => $school->id]);
     Student::factory()->create([
+        'school_id' => $school->id,
+        'institution_id' => $school->id,
         'user_id' => null,
         'email' => 'Unclaimed.Student@Example.Test',
         'student_id' => '20269901',
@@ -122,7 +130,7 @@ it('emails student identifier recovery for unclaimed students and returns privac
         'status' => StudentStatus::Enrolled,
     ]);
 
-    $expectedMessage = 'If a matching student record exists, we have sent your Student Number / LRN to that email address.';
+    $expectedMessage = 'If a matching student record exists, we have sent your Student ID or LRN to that email address.';
 
     $this->postJson(route('signup.recover-identifier'), [
         'email' => 'unclaimed.student@example.test',

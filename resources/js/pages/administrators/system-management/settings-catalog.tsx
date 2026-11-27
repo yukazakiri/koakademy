@@ -194,9 +194,9 @@ export const systemSettingsItems: SystemSettingsItem[] = [
         key: "student_configuration",
         group: "academic_operations",
         label: "Student Configuration",
-        description: "Configure student categories, external identifiers, and form preferences.",
+        description: "Configure student tracks, regional/national identifiers, portal signup rules, and profile fields.",
         href: studentConfigurationIndex.url(),
-        keywords: ["student", "fields", "nationality", "LRN", "preset", "categories"],
+        keywords: ["student", "fields", "nationality", "LRN", "ULN", "USI", "signup", "self-activation", "regional", "preset", "categories"],
         icon: Fingerprint,
     },
     {

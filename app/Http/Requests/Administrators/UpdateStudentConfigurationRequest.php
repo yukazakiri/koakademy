@@ -32,6 +32,7 @@ final class UpdateStudentConfigurationRequest extends FormRequest
             'defaults.gender' => ['nullable', Rule::in(['male', 'female', 'other', 'prefer_not_to_say'])],
             'philippine_reporting' => ['required', 'boolean'],
             'fields' => ['required', 'array:'.implode(',', array_keys(StudentConfigurationService::fieldLabels()))],
+            'documents' => ['sometimes', 'array:'.implode(',', StudentConfigurationService::documentSlotKeys())],
             'custom_fields' => ['sometimes', 'array', 'max:30'],
             'custom_fields.*' => ['required', 'array:key,label,type,active,required,options'],
             'custom_fields.*.key' => ['required', 'string', 'max:64', 'distinct', 'regex:/\A[a-z][a-z0-9_]*\z/'],
@@ -41,17 +42,29 @@ final class UpdateStudentConfigurationRequest extends FormRequest
             'custom_fields.*.required' => ['required', 'boolean'],
             'custom_fields.*.options' => ['present', 'array', 'max:30'],
             'custom_fields.*.options.*' => ['required', 'string', 'max:80'],
-            'external_identifier' => ['required', 'array:enabled,label,help_text,required,student_types,format,min_length,max_length,use_as_student_id'],
+            'external_identifier' => ['required', 'array:enabled,label,help_text,placeholder,required,student_types,format,min_length,max_length,use_as_student_id,allow_for_signup'],
             'external_identifier.enabled' => ['required', 'boolean'],
             'external_identifier.label' => ['required', 'string', 'max:80'],
             'external_identifier.help_text' => ['nullable', 'string', 'max:500'],
+            'external_identifier.placeholder' => ['sometimes', 'nullable', 'string', 'max:120'],
             'external_identifier.required' => ['required', 'boolean'],
             'external_identifier.student_types' => ['present', 'array'],
             'external_identifier.student_types.*' => ['required', 'distinct', Rule::in($types)],
-            'external_identifier.format' => ['required', Rule::in(['text', 'digits'])],
+            'external_identifier.format' => ['required', Rule::in(['text', 'digits', 'alphanumeric'])],
             'external_identifier.min_length' => ['required', 'integer', 'min:1', 'max:32'],
             'external_identifier.max_length' => ['required', 'integer', 'gte:external_identifier.min_length', 'max:32'],
             'external_identifier.use_as_student_id' => ['required', 'boolean'],
+            'external_identifier.allow_for_signup' => ['sometimes', 'boolean'],
+            'signup' => ['sometimes', 'array:allow_student_self_signup,allow_faculty_self_signup,allow_identifier_recovery,require_faculty_id,require_password_on_social_signup,student_identifier_placeholder,student_identifier_help_text,faculty_identifier_placeholder,faculty_identifier_help_text'],
+            'signup.allow_student_self_signup' => ['sometimes', 'boolean'],
+            'signup.allow_faculty_self_signup' => ['sometimes', 'boolean'],
+            'signup.allow_identifier_recovery' => ['sometimes', 'boolean'],
+            'signup.require_faculty_id' => ['sometimes', 'boolean'],
+            'signup.require_password_on_social_signup' => ['sometimes', 'boolean'],
+            'signup.student_identifier_placeholder' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'signup.student_identifier_help_text' => ['sometimes', 'nullable', 'string', 'max:300'],
+            'signup.faculty_identifier_placeholder' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'signup.faculty_identifier_help_text' => ['sometimes', 'nullable', 'string', 'max:300'],
             'type_labels' => ['required', 'array:'.implode(',', $types)],
             'year_levels' => ['required', 'array:'.implode(',', $types)],
         ];
@@ -60,6 +73,13 @@ final class UpdateStudentConfigurationRequest extends FormRequest
             $rules['fields.'.$field.'.label'] = ['required', 'string', 'max:80'];
             $rules['fields.'.$field.'.visible'] = ['required', 'boolean'];
             $rules['fields.'.$field.'.required'] = ['required', 'boolean'];
+        }
+        foreach (StudentConfigurationService::documentSlotKeys() as $slotKey) {
+            $rules['documents.'.$slotKey] = ['sometimes', 'array:label,description,visible,required', 'min:1'];
+            $rules['documents.'.$slotKey.'.label'] = ['required_with:documents.'.$slotKey, 'string', 'max:80'];
+            $rules['documents.'.$slotKey.'.description'] = ['nullable', 'string', 'max:250'];
+            $rules['documents.'.$slotKey.'.visible'] = ['required_with:documents.'.$slotKey, 'boolean'];
+            $rules['documents.'.$slotKey.'.required'] = ['required_with:documents.'.$slotKey, 'boolean'];
         }
         foreach ($types as $type) {
             $rules['type_labels.'.$type] = ['required', 'string', 'max:80'];
@@ -84,6 +104,11 @@ final class UpdateStudentConfigurationRequest extends FormRequest
             foreach ($this->input('fields') as $key => $field) {
                 if ($field['required'] && ! $field['visible']) {
                     $validator->errors()->add('fields.'.$key.'.required', 'A hidden field cannot be required.');
+                }
+            }
+            foreach ($this->input('documents', []) as $key => $slot) {
+                if (is_array($slot) && ($slot['required'] ?? false) && ! ($slot['visible'] ?? true)) {
+                    $validator->errors()->add('documents.'.$key.'.required', 'A hidden document cannot be required.');
                 }
             }
             $existing = collect(app(StudentConfigurationService::class)->get()['custom_fields'])->keyBy('key');

@@ -66,7 +66,7 @@ final class UpdateClassRequest extends FormRequest
             'delivery_mode' => ['sometimes', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
             'apply_delivery_mode_to_schedules' => ['sometimes', 'boolean'],
             'room_id' => ['sometimes', 'nullable', 'integer', 'exists:rooms,id'],
-            'maximum_slots' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'maximum_slots' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'allow_below_enrolled' => ['sometimes', 'boolean'],
             'schedule_status' => ['sometimes', 'nullable', Rule::in(['draft', 'published'])],
             'notify_enrolled' => ['sometimes', 'boolean'],
@@ -95,26 +95,7 @@ final class UpdateClassRequest extends FormRequest
             'settings' => ['sometimes', 'nullable', 'array'],
             'settings.background_color' => ['nullable', 'string', 'max:50'],
             'settings.accent_color' => ['nullable', 'string', 'max:50'],
-            'settings.banner_image' => [
-                'nullable',
-                function (string $attribute, mixed $value, Closure $fail): void {
-                    if ($value === null || $value === '') {
-                        return;
-                    }
-                    if (! $value instanceof \Illuminate\Http\UploadedFile) {
-                        $fail('The banner image must be a valid uploaded image file.');
-
-                        return;
-                    }
-                    $ext = mb_strtolower((string) $value->getClientOriginalExtension());
-                    if (! in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'svg'], true)) {
-                        $fail('The banner image must be a JPG, PNG, WebP, or SVG file.');
-                    }
-                    if ($value->getSize() !== false && $value->getSize() > 4 * 1024 * 1024) {
-                        $fail('The banner image may not be larger than 4 MB.');
-                    }
-                },
-            ],
+            'settings.banner_image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'extensions:jpg,jpeg,png,webp', 'max:4096'],
             'settings.theme' => ['nullable', Rule::in(['default', 'modern', 'classic', 'minimal', 'vibrant'])],
             'settings.enable_announcements' => ['nullable', 'boolean'],
             'settings.enable_grade_visibility' => ['nullable', 'boolean'],
@@ -132,6 +113,17 @@ final class UpdateClassRequest extends FormRequest
     public function after(): array
     {
         return [
+            function (Validator $validator): void {
+                $class = $this->route('class');
+                if ($validator->errors()->isNotEmpty() || $this->input('classification') !== 'shs' || ! ($this->exists('shs_track_id') || $this->exists('shs_strand_id'))) {
+                    return;
+                }
+                $trackId = $this->input('shs_track_id', $class instanceof Classes ? $class->shs_track_id : null);
+                $strandId = $this->input('shs_strand_id', $class instanceof Classes ? $class->shs_strand_id : null);
+                if ($strandId !== null && ! \App\Models\ShsStrand::query()->whereKey($strandId)->where('track_id', $trackId)->exists()) {
+                    $validator->errors()->add('shs_strand_id', 'The selected strand does not belong to the selected track.');
+                }
+            },
             function (Validator $validator): void {
                 if ($validator->errors()->isNotEmpty() || ! $this->exists('maximum_slots') || $this->boolean('allow_below_enrolled')) {
                     return;
@@ -155,7 +147,7 @@ final class UpdateClassRequest extends FormRequest
                     ]))
                     ->count();
 
-                if ($activeEnrolled > 0 && $requestedSlots < $activeEnrolled && $requestedSlots < (int) ($class->maximum_slots ?? 0)) {
+                if ($activeEnrolled > 0 && $requestedSlots < $activeEnrolled && ((int) ($class->maximum_slots ?? 0) === 0 || $requestedSlots < (int) $class->maximum_slots)) {
                     $validator->errors()->add(
                         'maximum_slots',
                         sprintf(
@@ -171,7 +163,7 @@ final class UpdateClassRequest extends FormRequest
                     return;
                 }
 
-                if ($this->only([
+                if ($this->input('schedule_status') !== 'published' && $this->only([
                     'delivery_mode', 'faculty_id', 'school_year', 'semester', 'classification',
                     'section', 'academic_year', 'course_codes', 'shs_strand_id', 'grade_level',
                 ]) === []) {

@@ -10,7 +10,7 @@ import { useState, type ReactNode } from "react";
 import { BlueprintMatrixWorkbench } from "./blueprint/blueprint-matrix-workbench";
 import { SplitComposerStudio } from "./composer/split-composer-studio";
 import type { BlueprintSection, EditClassMeta, SiblingSection } from "./crud/types";
-import type { ClassFormData, ClassFormOptions } from "./lib/class-defaults";
+import { canonicalDeliveryMode, type ClassFormData, type ClassFormOptions } from "./lib/class-defaults";
 
 type MinimalDefaults = {
     semester: "1" | "2" | "summer";
@@ -69,6 +69,11 @@ export default function AdministratorClassCreate({
     const [createMode, setCreateMode] = useState<"single" | "batch">(() =>
         !isEditing && (urlMode === "batch" || initial_mode === "batch") ? "batch" : "single",
     );
+    const [visitedModes, setVisitedModes] = useState(() => new Set([createMode]));
+    const switchMode = (next: "single" | "batch") => {
+        setVisitedModes((previous) => new Set([...previous, next]));
+        setCreateMode(next);
+    };
 
     const semester = defaults.semester;
     const schoolYear = defaults.school_year;
@@ -145,14 +150,13 @@ export default function AdministratorClassCreate({
                             {!isEditing ? (
                                 <div
                                     className="inline-flex items-center gap-1 rounded-xl border bg-muted/40 p-1"
-                                    role="tablist"
+                                    role="group"
                                     aria-label="Class creation mode"
                                 >
                                     <button
                                         type="button"
-                                        role="tab"
-                                        aria-selected={createMode === "single"}
-                                        onClick={() => setCreateMode("single")}
+                                        aria-pressed={createMode === "single"}
+                                        onClick={() => switchMode("single")}
                                         className={cn(
                                             "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
                                             createMode === "single"
@@ -165,9 +169,8 @@ export default function AdministratorClassCreate({
                                     </button>
                                     <button
                                         type="button"
-                                        role="tab"
-                                        aria-selected={createMode === "batch"}
-                                        onClick={() => setCreateMode("batch")}
+                                        aria-pressed={createMode === "batch"}
+                                        onClick={() => switchMode("batch")}
                                         className={cn(
                                             "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
                                             createMode === "batch"
@@ -224,7 +227,8 @@ export default function AdministratorClassCreate({
                 ) : null}
 
                 {/* Surface 1 (Single Class / Edit) vs Surface 3 (Batch Blueprint Matrix) */}
-                {isEditing || createMode === "single" ? (
+                {(isEditing || visitedModes.has("single")) && (
+                    <div hidden={!isEditing && createMode !== "single"}>
                     <SplitComposerStudio
                         semester={semester}
                         school_year={schoolYear}
@@ -236,15 +240,19 @@ export default function AdministratorClassCreate({
                         siblingSections={sibling_sections}
                         initialFocus={initialFocus}
                     />
-                ) : (
+                    </div>
+                )}
+                {!isEditing && visitedModes.has("batch") && (
+                    <div hidden={createMode !== "batch"}>
                     <BlueprintMatrixWorkbench
                         semester={semester}
                         school_year={schoolYear}
                         options={options}
-                        initialBlueprint={initialData ?? null}
+                        initialBlueprint={initialData ?? { delivery_mode: canonicalDeliveryMode(defaults.delivery_mode) }}
                         siblingSections={sibling_sections}
                         preloadedSections={blueprint_sections}
                     />
+                    </div>
                 )}
             </div>
         </AdminLayout>

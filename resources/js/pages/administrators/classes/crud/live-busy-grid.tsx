@@ -8,7 +8,6 @@ const ALL_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Satur
 
 const START_HOUR = 7;
 const END_HOUR = 20;
-const TOTAL_MINUTES = (END_HOUR - START_HOUR) * 60;
 
 function parseMinutes(time?: string | null): number | null {
     if (!time) return null;
@@ -16,6 +15,7 @@ function parseMinutes(time?: string | null): number | null {
     const hours = Number(parts[0]);
     const minutes = Number(parts[1] ?? 0);
     if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
     return hours * 60 + minutes;
 }
 
@@ -27,7 +27,7 @@ function normalizeDay(day: string): string {
 
 function formatHourTick(hour: number): string {
     if (hour === 12) return "12p";
-    return hour > 12 ? `${hour - 12}p` : `${hour}a`;
+    return hour === 0 || hour === 24 ? "12a" : hour > 12 ? `${hour - 12}p` : `${hour}a`;
 }
 
 function formatShortTime(time: string): string {
@@ -46,6 +46,31 @@ export type LiveBusyGridBlock = CrudScheduleBlock & {
     section?: string;
     has_conflict?: boolean;
 };
+
+function assignLanes(blocks: Array<{ s: LiveBusyGridBlock; idx: number }>): Map<number, { lane: number; count: number }> {
+    const ordered = blocks.map(({ s, idx }) => ({ idx, start: parseMinutes(s.start_time), end: parseMinutes(s.end_time) }))
+        .filter((block): block is { idx: number; start: number; end: number } => block.start !== null && block.end !== null && block.end > block.start)
+        .sort((a, b) => a.start - b.start || a.end - b.end || a.idx - b.idx);
+    const result = new Map<number, { lane: number; count: number }>();
+    let group: Array<{ idx: number; lane: number }> = [];
+    let laneEnds: number[] = [];
+    let groupEnd = -1;
+    const flush = () => {
+        for (const block of group) result.set(block.idx, { lane: block.lane, count: laneEnds.length });
+        group = [];
+        laneEnds = [];
+    };
+    for (const block of ordered) {
+        if (group.length && block.start >= groupEnd) flush();
+        let lane = laneEnds.findIndex((end) => end <= block.start);
+        if (lane < 0) lane = laneEnds.length;
+        laneEnds[lane] = block.end;
+        group.push({ idx: block.idx, lane });
+        groupEnd = Math.max(groupEnd, block.end);
+    }
+    flush();
+    return result;
+}
 
 type OverlayFilter = "all" | "faculty" | "room" | "cohort";
 
@@ -86,13 +111,23 @@ export function LiveBusyGrid({
     }, [allowSunday, schedules, busyOverlay]);
 
     const days = hasSundayBlock ? ALL_DAYS : BASE_DAYS;
+    const { startHour, endHour } = useMemo(() => {
+        const blocks = [...schedules, ...(busyOverlay?.faculty_busy ?? []), ...(busyOverlay?.room_busy ?? []), ...(busyOverlay?.cohort_busy ?? [])];
+        const starts = blocks.map((block) => parseMinutes(block.start_time)).filter((value): value is number => value !== null);
+        const ends = blocks.map((block) => parseMinutes(block.end_time)).filter((value): value is number => value !== null);
+        return {
+            startHour: Math.min(START_HOUR, ...starts.map((value) => Math.floor(value / 60))),
+            endHour: Math.max(END_HOUR, ...ends.map((value) => Math.ceil(value / 60))),
+        };
+    }, [schedules, busyOverlay]);
+    const totalMinutes = (endHour - startHour) * 60;
     const hourTicks = useMemo(() => {
         const ticks: number[] = [];
-        for (let h = START_HOUR; h <= END_HOUR; h += compact ? 2 : 1) {
+        for (let h = startHour; h <= endHour; h += compact ? 2 : 1) {
             ticks.push(h);
         }
         return ticks;
-    }, [compact]);
+    }, [compact, startHour, endHour]);
 
     const conflictedIndices = useMemo(() => {
         const set = new Set<number>();
@@ -147,6 +182,7 @@ export function LiveBusyGrid({
                             <button
                                 key={item.id}
                                 type="button"
+                                aria-pressed={active}
                                 onClick={() => setFilter(item.id)}
                                 className={cn(
                                     "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium transition-colors",
@@ -188,7 +224,7 @@ export function LiveBusyGrid({
                     {/* Time axis */}
                     <div className="relative border-r bg-background/60">
                         {hourTicks.map((hour) => {
-                            const topPct = (((hour - START_HOUR) * 60) / TOTAL_MINUTES) * 100;
+                            const topPct = (((hour - startHour) * 60) / totalMinutes) * 100;
                             if (topPct > 96) return null;
                             return (
                                 <span
@@ -208,12 +244,13 @@ export function LiveBusyGrid({
                         const dayProposed = schedules
                             .map((s, idx) => ({ s, idx }))
                             .filter(({ s }) => normalizeDay(s.day_of_week) === day);
+                        const lanes = assignLanes(dayProposed);
 
                         return (
                             <div key={day} className="relative border-r last:border-r-0">
                                 {/* Hour gridlines */}
                                 {hourTicks.map((hour) => {
-                                    const topPct = (((hour - START_HOUR) * 60) / TOTAL_MINUTES) * 100;
+                                    const topPct = (((hour - startHour) * 60) / totalMinutes) * 100;
                                     return (
                                         <div
                                             key={hour}
@@ -228,10 +265,8 @@ export function LiveBusyGrid({
                                     const start = parseMinutes(block.start_time);
                                     const end = parseMinutes(block.end_time);
                                     if (start === null || end === null || end <= start) return null;
-                                    const clampedStart = Math.max(START_HOUR * 60, Math.min(END_HOUR * 60, start));
-                                    const clampedEnd = Math.max(clampedStart + 20, Math.min(END_HOUR * 60, end));
-                                    const topPct = ((clampedStart - START_HOUR * 60) / TOTAL_MINUTES) * 100;
-                                    const heightPct = ((clampedEnd - clampedStart) / TOTAL_MINUTES) * 100;
+                                    const topPct = ((start - startHour * 60) / totalMinutes) * 100;
+                                    const heightPct = ((end - start) / totalMinutes) * 100;
 
                                     const kindStyles =
                                         block.kind === "faculty"
@@ -261,13 +296,12 @@ export function LiveBusyGrid({
                                     const start = parseMinutes(s.start_time);
                                     const end = parseMinutes(s.end_time);
                                     if (start === null || end === null || end <= start) return null;
-                                    const clampedStart = Math.max(START_HOUR * 60, Math.min(END_HOUR * 60, start));
-                                    const clampedEnd = Math.max(clampedStart + 25, Math.min(END_HOUR * 60, end));
-                                    const topPct = ((clampedStart - START_HOUR * 60) / TOTAL_MINUTES) * 100;
-                                    const heightPct = ((clampedEnd - clampedStart) / TOTAL_MINUTES) * 100;
+                                    const topPct = ((start - startHour * 60) / totalMinutes) * 100;
+                                    const heightPct = ((end - start) / totalMinutes) * 100;
                                     const hasConflict = Boolean(s.has_conflict) || conflictedIndices.has(idx);
                                     const isLab = s.component_type === "lab";
                                     const isActive = activeScheduleIndex === idx;
+                                    const { lane, count } = lanes.get(idx) ?? { lane: 0, count: 1 };
                                     const resolvedRoom =
                                         s.room_name ?? (s.room_id && roomsById ? roomsById.get(Number(s.room_id))?.label : null);
 
@@ -284,10 +318,10 @@ export function LiveBusyGrid({
                                             key={`prop-${idx}`}
                                             type={onBlockClick ? "button" : undefined}
                                             onClick={onBlockClick ? () => onBlockClick(idx, s) : undefined}
-                                            style={{ top: `${topPct}%`, height: `${heightPct}%` }}
+                                            style={{ top: `${topPct}%`, height: `${heightPct}%`, left: `${(lane / count) * 100}%`, width: `${100 / count}%` }}
                                             title={`${s.label ?? (isLab ? "Lab" : "Lecture")} · ${formatShortTime(s.start_time)}–${formatShortTime(s.end_time)}${resolvedRoom ? ` · ${resolvedRoom}` : ""}`}
                                             className={cn(
-                                                "absolute inset-x-1 z-20 flex flex-col justify-between overflow-hidden rounded-md border px-1.5 py-0.5 text-left text-[10px] leading-tight shadow-2xs transition",
+                                                "absolute z-20 flex flex-col justify-between overflow-hidden rounded-md border px-1.5 py-0.5 text-left text-[10px] leading-tight shadow-2xs transition",
                                                 blockTone,
                                                 onBlockClick && "cursor-pointer hover:brightness-95",
                                                 isActive && "ring-2 ring-primary ring-offset-1",
@@ -335,6 +369,10 @@ export function LiveBusyGrid({
                 <span className="inline-flex items-center gap-1">
                     <span className="size-2.5 rounded-xs border border-dashed border-slate-500/60 bg-slate-500/15" />
                     Room busy
+                </span>
+                <span className="inline-flex items-center gap-1">
+                    <span className="size-2.5 rounded-xs border border-dashed border-sky-500/60 bg-sky-500/15" />
+                    Cohort busy
                 </span>
             </div>
         </div>

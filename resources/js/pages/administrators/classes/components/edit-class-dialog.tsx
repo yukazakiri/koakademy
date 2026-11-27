@@ -253,7 +253,7 @@ export function EditClassDialog({
         );
     };
 
-    const step1Valid = useMemo(() => step1IsValid(form.data, normalizedOptions), [form.data, normalizedOptions]);
+    const step1Valid = useMemo(() => step1IsValid(form.data, normalizedOptions, true), [form.data, normalizedOptions]);
     const step2Valid = useMemo(() => step2IsValid(form.data), [form.data]);
 
     const navigateTo = (stepIndex: number): void => {

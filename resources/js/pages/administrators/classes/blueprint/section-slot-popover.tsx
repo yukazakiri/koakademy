@@ -116,7 +116,8 @@ export function SectionSlotPopover({
             : 0;
 
     const applyDuration = (minutes: number) => {
-        const base = parseTimeToMinutes(draft.start_time) ?? 8 * 60;
+        const base = parseTimeToMinutes(draft.start_time);
+        if (base === null || base + minutes > 23 * 60 + 59) return;
         setDraft((prev) => ({
             ...prev,
             end_time: formatMinutesToTime(base + minutes),
@@ -168,6 +169,7 @@ export function SectionSlotPopover({
                                 <button
                                     key={opt.value}
                                     type="button"
+                                    aria-pressed={active}
                                     onClick={() => setDraft((prev) => ({ ...prev, component_type: opt.value }))}
                                     className={cn(
                                         "rounded-md px-2.5 py-1 text-xs font-semibold transition-colors",
@@ -190,7 +192,7 @@ export function SectionSlotPopover({
                     <div className="space-y-1">
                         <Label className="text-xs">Day of week</Label>
                         <Select value={draft.day_of_week} onValueChange={(day_of_week) => setDraft((prev) => ({ ...prev, day_of_week }))}>
-                            <SelectTrigger className="h-8 w-full text-xs">
+                            <SelectTrigger aria-label="Day of week" className="h-8 w-full text-xs">
                                 <SelectValue placeholder="Choose day" />
                             </SelectTrigger>
                             <SelectContent>
@@ -208,6 +210,7 @@ export function SectionSlotPopover({
                             <Label className="text-xs">Start time</Label>
                             <Input
                                 type="time"
+                                aria-label="Start time"
                                 value={draft.start_time}
                                 onChange={(event) => setDraft((prev) => ({ ...prev, start_time: event.target.value }))}
                                 className="h-8 text-xs tabular-nums"
@@ -217,6 +220,7 @@ export function SectionSlotPopover({
                             <Label className="text-xs">End time</Label>
                             <Input
                                 type="time"
+                                aria-label="End time"
                                 value={draft.end_time}
                                 onChange={(event) => setDraft((prev) => ({ ...prev, end_time: event.target.value }))}
                                 className="h-8 text-xs tabular-nums"
@@ -231,8 +235,9 @@ export function SectionSlotPopover({
                                 <button
                                     key={preset.label}
                                     type="button"
+                                    disabled={startMins === null || startMins + preset.minutes > 23 * 60 + 59}
                                     onClick={() => applyDuration(preset.minutes)}
-                                    className="rounded border bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                                    className="rounded border bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
                                 >
                                     {preset.label}
                                 </button>
@@ -257,7 +262,7 @@ export function SectionSlotPopover({
                             }));
                         }}
                     >
-                        <SelectTrigger className="h-8 w-full text-xs">
+                        <SelectTrigger aria-label="Delivery mode" className="h-8 w-full text-xs">
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -281,7 +286,7 @@ export function SectionSlotPopover({
                                 value={draft.room_id !== null ? String(draft.room_id) : "none"}
                                 onValueChange={(value) => setDraft((prev) => ({ ...prev, room_id: value === "none" ? null : Number(value) }))}
                             >
-                                <SelectTrigger className="h-8 w-full text-xs">
+                                <SelectTrigger aria-label="Room" className="h-8 w-full text-xs">
                                     <SelectValue placeholder="Room unassigned" />
                                 </SelectTrigger>
                                 <SelectContent>

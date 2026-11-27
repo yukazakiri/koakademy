@@ -422,6 +422,27 @@ it('computes lecture and lab hours and student_impact when class_id is provided 
         ->assertJsonPath('student_impact.clashing_students.0.student_id', $clashingStudent->id);
 });
 
+it('does not replace an explicitly unassigned meeting room with the class default', function (): void {
+    $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
+    $period = app(GeneralSettingsService::class);
+    $room = crudSurfaceRoom('Default room', 40);
+
+    $this->postJson(route('administrators.classes.workspace.preflight'), [
+        'classification' => 'college',
+        'school_year' => $period->getCurrentSchoolYearString(),
+        'semester' => (string) $period->getCurrentSemester(),
+        'room_id' => $room->id,
+        'maximum_slots' => 30,
+        'schedules' => [[
+            'day_of_week' => 'Monday',
+            'start_time' => '08:00',
+            'end_time' => '09:00',
+            'room_id' => null,
+            'delivery_mode' => 'face_to_face',
+        ]],
+    ])->assertSuccessful()->assertJsonPath('room_checks.0.room_id', null);
+});
+
 it('returns can_publish true with zero conflicts on clean preflight', function (): void {
     $admin = User::factory()->create(['role' => UserRole::Admin]);
     $this->actingAs($admin);
@@ -1095,7 +1116,7 @@ it('rejects invalid banner file types on store and update', function (string $fi
     $course = Course::factory()->create();
     $subject = crudSurfaceSubject($course, ['code' => 'BAD-BNR-101']);
 
-    $invalidFile = UploadedFile::fake()->create($filename, 12);
+    $invalidFile = UploadedFile::fake()->create($filename, 12, 'text/plain');
 
     // Reject on store
     $this->post(route('administrators.classes.store'), [
@@ -1125,12 +1146,14 @@ it('rejects invalid banner file types on store and update', function (string $fi
 
     $this->patch(route('administrators.classes.update', $class), [
         'settings' => [
-            'banner_image' => UploadedFile::fake()->create($filename, 12),
+            'banner_image' => UploadedFile::fake()->create($filename, 12, 'text/plain'),
         ],
     ])->assertSessionHasErrors('settings.banner_image');
 })->with([
     'php script' => 'shell.php',
     'plain text' => 'notes.txt',
+    'text disguised as image' => 'fake.png',
+    'svg image' => 'image.svg',
 ]);
 
 it('blocks shrinking maximum_slots below active enrolled count unless allow_below_enrolled is true and ignores dropped or trashed enrollments', function (): void {
@@ -1173,6 +1196,14 @@ it('blocks shrinking maximum_slots below active enrolled count unless allow_belo
     ])->assertSessionHasErrors('maximum_slots');
 
     expect((int) $class->fresh()->maximum_slots)->toBe(10);
+
+    $class->update(['maximum_slots' => 0]);
+    $this->patch(route('administrators.classes.update', $class), [
+        'maximum_slots' => 2,
+    ])->assertSessionHasErrors('maximum_slots');
+    expect((int) $class->fresh()->maximum_slots)->toBe(0);
+
+    $class->update(['maximum_slots' => 10]);
 
     // Shrinking to 3 (== 3 active, even though 6 total rows with dropped/trashed) succeeds
     $this->patch(route('administrators.classes.update', $class), [
@@ -1228,6 +1259,7 @@ it('clears opposite classification columns when switching between college and sh
 
     $track = ShsTrack::query()->create(['track_name' => 'Academic Track']);
     $strand = ShsStrand::query()->create(['strand_name' => 'STEM', 'track_id' => $track->id]);
+    $otherTrack = ShsTrack::query()->create(['track_name' => 'Other Track']);
     $shsSubject = StrandSubject::query()->create([
         'code' => 'SHS-CALC11',
         'title' => 'Pre-Calculus',
@@ -1247,6 +1279,15 @@ it('clears opposite classification columns when switching between college and sh
         'shs_strand_id' => null,
         'grade_level' => null,
     ]);
+
+    $this->patch(route('administrators.classes.update', $class), [
+        'classification' => 'shs',
+        'shs_track_id' => $otherTrack->id,
+        'shs_strand_id' => $strand->id,
+        'grade_level' => 'Grade 11',
+        'subject_code_shs' => $shsSubject->code,
+    ])->assertSessionHasErrors('shs_strand_id');
+    expect($class->fresh()->classification)->toBe('college');
 
     // 1. Switch college -> shs
     $this->patch(route('administrators.classes.update', $class), [

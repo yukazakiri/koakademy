@@ -66,7 +66,7 @@ export function MoveStudentDialog({
                                 {transferableClasses.length ? (
                                     transferableClasses.map((classItem) => {
                                         const isUncapped =
-                                            classItem.available_slots === -1 || /\(\s*Available:\s*-?\d+\/0\s*\)/i.test(classItem.label);
+                                            classItem.available_slots === null || classItem.available_slots === -1 || /\(\s*Available:\s*-?\d+\/0\s*\)/i.test(classItem.label);
                                         const isFull = !isUncapped && classItem.is_full;
                                         const cleanLabel = classItem.label
                                             .replace(/\s*\(\s*Available:\s*-?\d+\/0\s*\)/gi, "")

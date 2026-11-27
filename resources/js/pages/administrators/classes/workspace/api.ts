@@ -35,12 +35,14 @@ function xsrfCookieToken(): string {
 export class WorkspaceApiError extends Error {
     status: number;
     errors: Record<string, string[]>;
+    payload: Record<string, unknown>;
 
-    constructor(message: string, status: number, errors: Record<string, string[]> = {}) {
+    constructor(message: string, status: number, errors: Record<string, string[]> = {}, payload: Record<string, unknown> = {}) {
         super(message);
         this.name = "WorkspaceApiError";
         this.status = status;
         this.errors = errors;
+        this.payload = payload;
     }
 }
 
@@ -85,7 +87,7 @@ export async function requestJson<T>(url: string, options: RequestInit = {}): Pr
         const rawErrors = (payload.errors as Record<string, string[]> | undefined) ?? {};
         const firstFieldError = Object.values(rawErrors).flat()[0];
         const message = firstFieldError || (typeof payload.message === "string" ? payload.message : `Request failed (${response.status})`);
-        throw new WorkspaceApiError(message, response.status, rawErrors);
+        throw new WorkspaceApiError(message, response.status, rawErrors, payload);
     }
 
     return payload as T;

@@ -27,7 +27,7 @@ import { toast } from "sonner";
 import type { ClassSettings } from "../lib/class-defaults";
 
 const MAX_BANNER_BYTES = 4 * 1024 * 1024;
-const ALLOWED_BANNER_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/svg+xml"]);
+const ALLOWED_BANNER_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 type PolicyToggleKey = keyof Pick<
     ClassSettings,
@@ -112,6 +112,7 @@ export type PoliciesBannerCardProps = {
     onOpenChange: (open: boolean) => void;
     onSettingsChange: (patch: Partial<ClassSettings>) => void;
     onRemoveBannerChange: (remove: boolean) => void;
+    onCustomErrorChange: (error: string | null) => void;
     errors?: Record<string, string>;
 };
 
@@ -123,6 +124,7 @@ export function PoliciesBannerCard({
     onOpenChange,
     onSettingsChange,
     onRemoveBannerChange,
+    onCustomErrorChange,
     errors = {},
 }: PoliciesBannerCardProps): ReactNode {
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -142,6 +144,7 @@ export function PoliciesBannerCard({
         const incoming = JSON.stringify(settings.custom ?? {});
         if (incoming !== syncedCustomJsonRef.current) {
             syncedCustomJsonRef.current = incoming;
+            onCustomErrorChange(null);
             setCustomRows(
                 Object.entries(settings.custom ?? {}).map(([key, value], idx) => ({
                     id: `row-ext-${idx}-${key}`,
@@ -150,7 +153,7 @@ export function PoliciesBannerCard({
                 })),
             );
         }
-    }, [settings.custom]);
+    }, [settings.custom, onCustomErrorChange]);
 
     // Manage object URL for newly picked banner file
     useEffect(() => {
@@ -180,7 +183,7 @@ export function PoliciesBannerCard({
         if (!file) return;
 
         if (file.type && !ALLOWED_BANNER_TYPES.has(file.type)) {
-            const msg = "Please choose a JPEG, PNG, WebP, or SVG image.";
+            const msg = "Please choose a JPEG, PNG, or WebP image.";
             setBannerError(msg);
             toast.error(msg);
             return;
@@ -213,7 +216,9 @@ export function PoliciesBannerCard({
 
     const commitCustomRows = (nextRows: CustomRow[]): void => {
         setCustomRows(nextRows);
-        const record: Record<string, string> = {};
+        const keys = nextRows.map((row) => row.key.trim()).filter(Boolean);
+        onCustomErrorChange(new Set(keys).size === keys.length ? null : "Metadata keys must be unique after trimming spaces.");
+        const record: Record<string, string> = Object.create(null);
         for (const row of nextRows) {
             const trimmedKey = row.key.trim();
             if (trimmedKey.length > 0) {
@@ -416,13 +421,14 @@ export function PoliciesBannerCard({
                                         <ImageUp className="text-primary size-3.5" aria-hidden="true" />
                                         Class Banner
                                     </h3>
-                                    <span className="text-muted-foreground text-[11px]">JPG, PNG, WebP, SVG · Max 4 MB</span>
+                                    <span className="text-muted-foreground text-[11px]">JPG, PNG, WebP · Max 4 MB</span>
                                 </div>
 
                                 <input
                                     ref={fileInputRef}
                                     type="file"
-                                    accept="image/jpeg,image/png,image/webp,image/svg+xml"
+                                    tabIndex={-1}
+                                    accept="image/jpeg,image/png,image/webp"
                                     className="sr-only"
                                     onChange={handleBannerFilePick}
                                 />
@@ -554,7 +560,8 @@ export function PoliciesBannerCard({
                                                 onChange={(e) => updateCustomRow(row.id, "key", e.target.value)}
                                                 placeholder="Property name"
                                                 aria-label="Custom metadata key"
-                                                className="h-9 rounded-lg text-xs"
+                                                aria-invalid={row.key.trim() !== "" && customRows.filter((other) => other.key.trim() === row.key.trim()).length > 1}
+                                                className="h-9 rounded-lg text-xs aria-invalid:border-destructive"
                                             />
                                             <Input
                                                 value={row.value}
@@ -577,6 +584,9 @@ export function PoliciesBannerCard({
                                     ))}
                                 </div>
                             )}
+                            {customRows.some((row) => row.key.trim() !== "" && customRows.filter((other) => other.key.trim() === row.key.trim()).length > 1) ? (
+                                <p role="alert" className="text-destructive text-xs">Metadata keys must be unique after trimming spaces.</p>
+                            ) : null}
                         </div>
                     </CardContent>
                 </CollapsibleContent>

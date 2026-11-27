@@ -79,7 +79,8 @@ export const POLICY_TOGGLES: ReadonlyArray<{
 
 export function formatShortDate(value: string | null | undefined): string {
     if (!value) return "—";
-    const parsed = new Date(value);
+    const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    const parsed = dateOnly ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3])) : new Date(value);
     if (Number.isNaN(parsed.getTime())) return value;
     return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
@@ -111,10 +112,12 @@ function humanizeLabel(value: string | null | undefined, fallback = "General"): 
 export function DossierAttendanceTab({
     sessions,
     averageRate,
+    sessionsHeld,
     sessionsExpected,
 }: {
     sessions: DossierAttendanceSession[];
     averageRate: number | null;
+    sessionsHeld: number;
     sessionsExpected: number | null;
 }) {
     return (
@@ -131,8 +134,8 @@ export function DossierAttendanceTab({
                         )}
                     </div>
                     <p className="text-muted-foreground text-xs">
-                        {sessions.length} {sessions.length === 1 ? "session" : "sessions"} recorded
-                        {sessionsExpected ? ` of ${sessionsExpected} expected` : ""}.
+                        {sessionsHeld} {sessionsHeld === 1 ? "session" : "sessions"} recorded
+                        {sessionsExpected ? ` of ${sessionsExpected} expected` : ""}. Showing the most recent {sessions.length}.
                     </p>
                 </div>
             </div>
@@ -340,7 +343,6 @@ export function DossierSettingsTab({
                 <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 sm:p-5">
                     {POLICY_TOGGLES.map((policy) => {
                         const checked = Boolean(policyState[policy.key]);
-                        const saving = savingPolicyKey === policy.key;
 
                         return (
                             <div
@@ -363,7 +365,7 @@ export function DossierSettingsTab({
                                     <Switch
                                         id={`policy-switch-${policy.key}`}
                                         checked={checked}
-                                        disabled={!isEditable || saving}
+                                        disabled={!isEditable || savingPolicyKey !== null}
                                         onCheckedChange={(next) => onTogglePolicy(policy.key, next)}
                                         aria-label={policy.label}
                                     />

@@ -61,6 +61,8 @@ import {
     type SubjectOption,
 } from "../lib/class-defaults";
 import { SectionSlotPopover } from "./section-slot-popover";
+import { facultyLoadDeltas } from "./faculty-load";
+import { WorkspaceApiError } from "../workspace/api";
 
 type MatrixSectionRow = BlueprintSection & {
     enrolled_count?: number;
@@ -208,7 +210,7 @@ function buildStarterSections(
         return preloadedSections.map((section, idx) => ({
             ...section,
             client_key: section.client_key || `preloaded-${section.class_id ?? idx}`,
-            capacity_input: String(section.maximum_slots || 40),
+            capacity_input: String(section.maximum_slots),
         }));
     }
 
@@ -232,7 +234,7 @@ function buildStarterSections(
                       status: sched.status,
                   }))
                 : [];
-            const maxSlots = sib.maximum_slots > 0 ? sib.maximum_slots : 40;
+            const maxSlots = sib.maximum_slots;
             return {
                 client_key: `existing-${sib.id}-${idx}`,
                 class_id: sib.id,
@@ -281,6 +283,8 @@ function detectClientMatrixConflicts(
     options: ClassFormOptions,
     roomsById: Map<number, { label: string; capacity?: number | null }>,
     facultiesById: Map<string, { label: string; load_hours?: number; max_load_hours?: number | null }>,
+    facultyDeltas: Map<string, number>,
+    hasTermLoad: boolean,
 ): BatchBlueprintConflict[] {
     const conflicts: BatchBlueprintConflict[] = [];
     const policy = options.scheduling_policy;
@@ -449,16 +453,10 @@ function detectClientMatrixConflicts(
     }
 
     // 4. Projected faculty overload warnings (> max_load_hours or 24h)
-    const batchHoursByFaculty = new Map<string, number>();
-    for (const row of rows) {
-        if (!row.faculty_id) continue;
-        const hrs = row.schedules.reduce((acc, s) => acc + slotHours(s), 0);
-        batchHoursByFaculty.set(row.faculty_id, (batchHoursByFaculty.get(row.faculty_id) ?? 0) + hrs);
-    }
-
-    for (const [facId, addedHours] of batchHoursByFaculty.entries()) {
+    for (const [facId, addedHours] of hasTermLoad ? facultyDeltas.entries() : []) {
         const fac = facultiesById.get(facId);
-        const base = fac?.load_hours ?? 0;
+        if (typeof fac?.load_hours !== "number") continue;
+        const base = fac.load_hours;
         const max = fac?.max_load_hours ?? 24;
         const projected = Number((base + addedHours).toFixed(1));
         if (projected > max) {
@@ -516,10 +514,17 @@ export function BlueprintMatrixWorkbench({
     const [subjectCodeTouched, setSubjectCodeTouched] = useState(Boolean(initialBlueprint?.subject_code));
     const [collegeSubjects, setCollegeSubjects] = useState<SubjectOption[]>([]);
     const [collegeSubjectsLoading, setCollegeSubjectsLoading] = useState(false);
+    const [loadedCourseKey, setLoadedCourseKey] = useState<string | null>(null);
     const [shsStrandList, setShsStrandList] = useState<EntityOption[]>([]);
     const [shsStrandsLoading, setShsStrandsLoading] = useState(false);
+    const [loadedTrackId, setLoadedTrackId] = useState<number | null>(null);
+    const [strandError, setStrandError] = useState(false);
+    const [strandRetry, setStrandRetry] = useState(0);
     const [shsSubjectList, setShsSubjectList] = useState<ShsSubjectOption[]>([]);
     const [shsSubjectsLoading, setShsSubjectsLoading] = useState(false);
+    const [loadedStrandId, setLoadedStrandId] = useState<number | null>(null);
+    const [subjectError, setSubjectError] = useState(false);
+    const [subjectRetry, setSubjectRetry] = useState(0);
     const [curriculumError, setCurriculumError] = useState<string | null>(null);
 
     const [rows, setRows] = useState<MatrixSectionRow[]>(() =>
@@ -529,8 +534,9 @@ export function BlueprintMatrixWorkbench({
     const [hoveredRowKey, setHoveredRowKey] = useState<string | null>(null);
 
     // Dry-run & commit state
-    const [dryRunState, setDryRunState] = useState<"idle" | "checking" | "verified" | "fallback">("idle");
+    const [dryRunState, setDryRunState] = useState<"idle" | "checking" | "verified" | "rejected" | "fallback">("idle");
     const [serverConflicts, setServerConflicts] = useState<BatchBlueprintConflict[]>([]);
+    const [serverSignature, setServerSignature] = useState<string | null>(null);
     const [submittingMode, setSubmittingMode] = useState<"draft" | "published" | null>(null);
     const [commitResult, setCommitResult] = useState<BatchBlueprintResponse | null>(null);
     const [commitError, setCommitError] = useState<string | null>(null);
@@ -557,12 +563,17 @@ export function BlueprintMatrixWorkbench({
     // Fetch College subjects whenever course_codes changes
     const courseKey = blueprint.course_codes.join(",");
     useEffect(() => {
-        if (blueprint.classification !== "college") return;
         const reqId = ++subjectReqRef.current;
+        if (blueprint.classification !== "college") {
+            setCollegeSubjectsLoading(false);
+            setLoadedCourseKey(null);
+            return;
+        }
 
         if (blueprint.course_codes.length === 0) {
             setCollegeSubjects([]);
             setCollegeSubjectsLoading(false);
+            setLoadedCourseKey(null);
             return;
         }
 
@@ -572,6 +583,7 @@ export function BlueprintMatrixWorkbench({
             .then((list) => {
                 if (reqId !== subjectReqRef.current) return;
                 setCollegeSubjects(list);
+                setLoadedCourseKey(courseKey);
                 setBlueprint((prev) => {
                     const kept = prev.subject_ids.filter((id) => list.some((s) => s.id === id));
                     const selected = list.filter((s) => kept.includes(s.id));
@@ -604,29 +616,40 @@ export function BlueprintMatrixWorkbench({
             })
             .catch(() => {
                 if (reqId === subjectReqRef.current) {
+                    setLoadedCourseKey(null);
                     setCurriculumError("Subjects could not be loaded. Check your connection and try again.");
                 }
             })
             .finally(() => {
                 if (reqId === subjectReqRef.current) setCollegeSubjectsLoading(false);
             });
+        return () => {
+            if (reqId === subjectReqRef.current) subjectReqRef.current += 1;
+        };
     }, [blueprint.classification, courseKey, subjectCodeTouched]);
 
     // Fetch SHS strands whenever track changes
     useEffect(() => {
         if (blueprint.classification !== "shs" || !blueprint.shs_track_id) {
             setShsStrandList([]);
+            setLoadedTrackId(null);
             return;
         }
         let active = true;
+        const trackId = blueprint.shs_track_id;
+        setShsStrandList([]);
+        setLoadedTrackId(null);
+        setStrandError(false);
         setShsStrandsLoading(true);
-        setCurriculumError(null);
         fetchOptionList<EntityOption>(shsStrands.url({ query: { track_id: blueprint.shs_track_id } }), isEntityOption)
             .then((list) => {
-                if (active) setShsStrandList(list);
+                if (active) {
+                    setShsStrandList(list);
+                    setLoadedTrackId(trackId);
+                }
             })
             .catch(() => {
-                if (active) setCurriculumError("SHS strands could not be loaded.");
+                if (active) setStrandError(true);
             })
             .finally(() => {
                 if (active) setShsStrandsLoading(false);
@@ -634,23 +657,30 @@ export function BlueprintMatrixWorkbench({
         return () => {
             active = false;
         };
-    }, [blueprint.classification, blueprint.shs_track_id]);
+    }, [blueprint.classification, blueprint.shs_track_id, strandRetry]);
 
     // Fetch SHS subjects whenever strand changes
     useEffect(() => {
         if (blueprint.classification !== "shs" || !blueprint.shs_strand_id) {
             setShsSubjectList([]);
+            setLoadedStrandId(null);
             return;
         }
         let active = true;
+        const strandId = blueprint.shs_strand_id;
+        setShsSubjectList([]);
+        setLoadedStrandId(null);
+        setSubjectError(false);
         setShsSubjectsLoading(true);
-        setCurriculumError(null);
         fetchOptionList<ShsSubjectOption>(shsSubjects.url({ query: { strand_id: blueprint.shs_strand_id } }), isShsSubjectOption)
             .then((list) => {
-                if (active) setShsSubjectList(list);
+                if (active) {
+                    setShsSubjectList(list);
+                    setLoadedStrandId(strandId);
+                }
             })
             .catch(() => {
-                if (active) setCurriculumError("SHS subjects could not be loaded.");
+                if (active) setSubjectError(true);
             })
             .finally(() => {
                 if (active) setShsSubjectsLoading(false);
@@ -658,7 +688,7 @@ export function BlueprintMatrixWorkbench({
         return () => {
             active = false;
         };
-    }, [blueprint.classification, blueprint.shs_strand_id]);
+    }, [blueprint.classification, blueprint.shs_strand_id, subjectRetry]);
 
     // Required Lec / Lab / Total hours computed from selected subject(s)
     const requiredHours = useMemo(() => {
@@ -683,22 +713,29 @@ export function BlueprintMatrixWorkbench({
 
     // Blueprint completeness check
     const blueprintMissingReason = useMemo<string | null>(() => {
+        if (siblingSections.some((sibling) => !preloadedSections.some((section) => section.class_id === sibling.id))) {
+            return "Existing section details are unavailable. Reload before saving to avoid changing their schedules.";
+        }
         if (!blueprint.school_year.trim() || !blueprint.semester) {
             return "Confirm the academic term and school year.";
         }
         if (blueprint.classification === "college") {
             if (blueprint.course_codes.length === 0) return "Select at least one course program.";
+            if (collegeSubjectsLoading || loadedCourseKey !== courseKey) return "Wait for subjects to load for the selected programs.";
             if (blueprint.subject_ids.length === 0) return "Select at least one college subject.";
+            if (blueprint.subject_ids.some((id) => !collegeSubjects.some((subject) => subject.id === id))) return "Choose subjects from the selected programs.";
             if (!blueprint.subject_code.trim()) return "Provide a subject code.";
         } else {
             if (!blueprint.shs_track_id) return "Select an SHS track.";
             if (!blueprint.shs_strand_id) return "Select an SHS strand.";
+            if (loadedTrackId !== blueprint.shs_track_id || !shsStrandList.some((strand) => Number(strand.id) === blueprint.shs_strand_id)) return "Select a strand from the chosen track.";
             if (!blueprint.subject_code_shs.trim()) return "Select an SHS subject.";
+            if (loadedStrandId !== blueprint.shs_strand_id || !shsSubjectList.some((subject) => subject.code === blueprint.subject_code_shs)) return "Select a subject from the chosen strand.";
             if (!blueprint.grade_level.trim()) return "Select a grade level.";
         }
         if (rows.length === 0) return "Add at least one section.";
         return null;
-    }, [blueprint, rows.length]);
+    }, [blueprint, rows.length, siblingSections, preloadedSections, collegeSubjectsLoading, loadedCourseKey, courseKey, collegeSubjects, loadedTrackId, loadedStrandId, shsStrandList, shsSubjectList]);
 
     const isBlueprintReady = blueprintMissingReason === null;
 
@@ -710,7 +747,7 @@ export function BlueprintMatrixWorkbench({
                 class_id: row.class_id,
                 section: row.section.trim(),
                 faculty_id: row.faculty_id,
-                maximum_slots: Math.max(1, Math.min(1000, Math.round(row.maximum_slots || 1))),
+                maximum_slots: row.maximum_slots,
                 room_id: isOnlineDeliveryMode(blueprint.delivery_mode) ? null : row.room_id,
                 schedules: row.schedules.map((s) => {
                     const mode = canonicalDeliveryMode(s.delivery_mode || blueprint.delivery_mode);
@@ -742,6 +779,9 @@ export function BlueprintMatrixWorkbench({
         [blueprint, notifyEnrolled, rows],
     );
 
+    const payloadSignature = useMemo(() => JSON.stringify({ blueprint, rows, notifyEnrolled }), [blueprint, rows, notifyEnrolled]);
+    const currentDryRunState = !isBlueprintReady ? "idle" : serverSignature === payloadSignature ? dryRunState : "checking";
+
     // Run dry-run preflight against server
     const runDryRunCheck = useCallback(
         async (manual = false) => {
@@ -756,44 +796,63 @@ export function BlueprintMatrixWorkbench({
                 const res = await postBatchBlueprint(buildRequestPayload(true, "published"));
                 if (reqId !== dryRunReqRef.current) return;
                 setServerConflicts(Array.isArray(res.conflicts) ? res.conflicts : []);
-                setDryRunState("verified");
+                setServerSignature(payloadSignature);
+                setDryRunState(res.ok ? "verified" : "rejected");
+                if (!res.ok) {
+                    setCommitResult(res);
+                    setCommitError(res.message || "Review the blueprint and section errors.");
+                } else {
+                    setCommitResult((previous) => previous?.dry_run ? null : previous);
+                    setCommitError(null);
+                }
                 if (manual) {
                     const blocking = (res.conflicts ?? []).filter((c) => c.severity === "blocking").length;
-                    if (blocking === 0) {
+                    if (res.ok && blocking === 0) {
                         toast.success("Dry-run check complete: all sections are clear.");
+                    } else if (blocking === 0) {
+                        toast.warning("Dry-run found blueprint errors. Review the blueprint settings.");
                     } else {
                         toast.warning(`Dry-run found ${blocking} blocking conflict${blocking === 1 ? "" : "s"}.`);
                     }
                 }
             } catch {
                 if (reqId !== dryRunReqRef.current) return;
+                setServerSignature(payloadSignature);
                 setDryRunState("fallback");
                 if (manual) {
                     toast.info("Server dry-run unavailable right now; using live client conflict checks.");
                 }
             }
         },
-        [buildRequestPayload, isBlueprintReady],
+        [buildRequestPayload, isBlueprintReady, payloadSignature],
     );
 
     // Debounced auto dry-run (450ms) whenever blueprint or sections change
-    const payloadSignature = useMemo(() => JSON.stringify({ blueprint, rows, notifyEnrolled }), [blueprint, rows, notifyEnrolled]);
     useEffect(() => {
+        ++dryRunReqRef.current;
+        setServerConflicts([]);
+        setCommitResult((previous) => previous && !previous.ok ? null : previous);
+        setCommitError(null);
         if (!isBlueprintReady) {
-            setServerConflicts([]);
             setDryRunState("idle");
             return;
         }
+        setDryRunState("checking");
         const timer = window.setTimeout(() => {
             void runDryRunCheck(false);
         }, 450);
-        return () => window.clearTimeout(timer);
+        return () => {
+            window.clearTimeout(timer);
+            ++dryRunReqRef.current;
+        };
     }, [isBlueprintReady, payloadSignature, runDryRunCheck]);
 
     // Client-side instant conflict detection + server conflict merge
+    const hasTermLoad = blueprint.semester === semester && blueprint.school_year.replace(/\s/g, "") === school_year.replace(/\s/g, "");
+    const batchHoursByFaculty = useMemo(() => facultyLoadDeltas(rows, preloadedSections), [rows, preloadedSections]);
     const clientConflicts = useMemo(
-        () => detectClientMatrixConflicts(rows, options, roomsById, facultiesById),
-        [facultiesById, options, roomsById, rows],
+        () => detectClientMatrixConflicts(rows, options, roomsById, facultiesById, batchHoursByFaculty, hasTermLoad),
+        [facultiesById, options, roomsById, rows, batchHoursByFaculty, hasTermLoad],
     );
 
     const allConflicts = useMemo<BatchBlueprintConflict[]>(() => {
@@ -806,10 +865,10 @@ export function BlueprintMatrixWorkbench({
                 merged.push(item);
             }
         };
-        serverConflicts.forEach(pushUnique);
+        if (serverSignature === payloadSignature) serverConflicts.forEach(pushUnique);
         clientConflicts.forEach(pushUnique);
         return merged;
-    }, [clientConflicts, serverConflicts]);
+    }, [clientConflicts, serverConflicts, serverSignature, payloadSignature]);
 
     const blockingConflicts = useMemo(() => allConflicts.filter((c) => c.severity === "blocking"), [allConflicts]);
     const warningConflicts = useMemo(() => allConflicts.filter((c) => c.severity === "warning"), [allConflicts]);
@@ -823,17 +882,6 @@ export function BlueprintMatrixWorkbench({
         }
         return map;
     }, [allConflicts]);
-
-    // Live projected faculty hours across the entire batch
-    const batchHoursByFaculty = useMemo(() => {
-        const map = new Map<string, number>();
-        for (const row of rows) {
-            if (!row.faculty_id) continue;
-            const hrs = row.schedules.reduce((sum, s) => sum + slotHours(s), 0);
-            map.set(row.faculty_id, (map.get(row.faculty_id) ?? 0) + hrs);
-        }
-        return map;
-    }, [rows]);
 
     // Single-source-of-truth reactive totals
     const totals = useMemo(() => {
@@ -995,6 +1043,7 @@ export function BlueprintMatrixWorkbench({
 
         const rowHasBlocking = new Set(blockingConflicts.map((c) => c.client_key));
         let shiftedCount = 0;
+        const skippedSections: string[] = [];
 
         // First register schedules of clean existing rows so we don't move them
         for (const row of rows) {
@@ -1015,7 +1064,7 @@ export function BlueprintMatrixWorkbench({
             if (!shouldStagger) return row;
 
             // Find first clean lecture band
-            let chosenBand = STAGGER_BANDS[idx % STAGGER_BANDS.length];
+            let chosenBand: (typeof STAGGER_BANDS)[number] | null = null;
             let chosenRoom: number | null = isOnline ? null : row.room_id;
 
             for (let attempt = 0; attempt < STAGGER_BANDS.length; attempt += 1) {
@@ -1034,6 +1083,14 @@ export function BlueprintMatrixWorkbench({
                     break;
                 }
             }
+
+            if (!chosenBand) {
+                skippedSections.push(row.section || "(unnamed)");
+                return row;
+            }
+
+            const roomCountBefore = usedRoomSlots.length;
+            const facultyCountBefore = usedFacultySlots.length;
 
             const newSchedules: CrudScheduleBlock[] = chosenBand.days.map((day) => ({
                 day_of_week: day,
@@ -1054,17 +1111,24 @@ export function BlueprintMatrixWorkbench({
             }
 
             if (needsLab) {
-                let labBand = LAB_STAGGER_BANDS[idx % LAB_STAGGER_BANDS.length];
+                let labBand: (typeof LAB_STAGGER_BANDS)[number] | null = null;
                 let labRoom: number | null = null;
                 for (let attempt = 0; attempt < LAB_STAGGER_BANDS.length; attempt += 1) {
                     const candidate = LAB_STAGGER_BANDS[(idx + attempt) % LAB_STAGGER_BANDS.length];
                     if (!isSlotFree(candidate.day, candidate.start_time, candidate.end_time, null, row.faculty_id)) continue;
+                    if (newSchedules.some((slot) => slot.day_of_week === candidate.day && timesOverlap(slot.start_time, slot.end_time, candidate.start_time, candidate.end_time))) continue;
                     const roomCandidate = pickBestRoom(row.maximum_slots, [candidate.day], candidate.start_time, candidate.end_time, true);
                     if (isOnline || roomCandidate !== null || options.rooms.length === 0) {
                         labBand = candidate;
                         labRoom = roomCandidate;
                         break;
                     }
+                }
+                if (!labBand) {
+                    usedRoomSlots.length = roomCountBefore;
+                    usedFacultySlots.length = facultyCountBefore;
+                    skippedSections.push(row.section || "(unnamed)");
+                    return row;
                 }
                 const labSlot: CrudScheduleBlock = {
                     day_of_week: labBand.day,
@@ -1092,11 +1156,11 @@ export function BlueprintMatrixWorkbench({
         });
 
         setRows(nextRows);
-        toast.success(
-            shiftedCount > 0
-                ? `Auto-staggered ${shiftedCount} section${shiftedCount === 1 ? "" : "s"} into non-overlapping slots.`
-                : "All existing sections are already conflict-free.",
-        );
+        if (skippedSections.length > 0) {
+            toast.warning(`Auto-staggered ${shiftedCount} sections; ${skippedSections.join(", ")} need manual placement and remain unchanged.`);
+        } else {
+            toast.success(shiftedCount > 0 ? `Auto-staggered ${shiftedCount} sections.` : "All existing sections are already conflict-free.");
+        }
     };
 
     // Atomic commit (Draft or Publish)
@@ -1109,6 +1173,10 @@ export function BlueprintMatrixWorkbench({
             toast.error("Resolve all blocking conflicts before publishing.");
             return;
         }
+        if (scheduleStatus === "published" && currentDryRunState !== "verified") {
+            toast.error("Wait for a successful current schedule check before publishing.");
+            return;
+        }
 
         setSubmittingMode(scheduleStatus);
         setCommitError(null);
@@ -1118,6 +1186,7 @@ export function BlueprintMatrixWorkbench({
             const response = await postBatchBlueprint(buildRequestPayload(false, scheduleStatus));
             setCommitResult(response);
             setServerConflicts(Array.isArray(response.conflicts) ? response.conflicts : []);
+            setServerSignature(payloadSignature);
 
             // Hydrate newly created class_ids back into rows so Dossier links appear immediately
             if (Array.isArray(response.results) && response.results.length > 0) {
@@ -1145,6 +1214,17 @@ export function BlueprintMatrixWorkbench({
                 toast.error(response.message || "Batch save encountered issues.");
             }
         } catch (error) {
+            if (error instanceof WorkspaceApiError && error.status === 422) {
+                const payload = error.payload;
+                if (Array.isArray(payload.conflicts)) {
+                    setServerConflicts(payload.conflicts as BatchBlueprintConflict[]);
+                    setServerSignature(payloadSignature);
+                }
+                if (Array.isArray(payload.results)) {
+                    setCommitResult(payload as BatchBlueprintResponse);
+                }
+                setDryRunState("fallback");
+            }
             const message = error instanceof Error ? error.message : "Failed to save batch blueprint.";
             setCommitError(message);
             toast.error(message);
@@ -1222,9 +1302,17 @@ export function BlueprintMatrixWorkbench({
                         <ShieldAlert className="size-4" />
                         <AlertTitle>Batch save blocked</AlertTitle>
                         <AlertDescription>{commitError}</AlertDescription>
+                        {commitResult?.results.some((result) => result.errors.length > 0) ? (
+                            <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
+                                {commitResult.results.flatMap((result) => result.errors.map((message, index) => (
+                                    <li key={`${result.client_key}-${index}`}>Section {result.section}: {message}</li>
+                                )))}
+                            </ul>
+                        ) : null}
                     </Alert>
                 ) : null}
 
+                <fieldset disabled={submittingMode !== null} className="flex min-w-0 flex-col gap-5">
                 {/* 1. 5-Column Shared Subject Blueprint Bar */}
                 <section className="bg-card overflow-hidden rounded-2xl border shadow-xs" aria-label="Shared Subject Blueprint">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/35 px-4 py-2.5">
@@ -1233,17 +1321,19 @@ export function BlueprintMatrixWorkbench({
                             <span>Shared Subject Blueprint — Configured once, inherited by all sections</span>
                         </div>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            {dryRunState === "checking" ? (
+                            {currentDryRunState === "checking" ? (
                                 <span className="inline-flex items-center gap-1.5 text-primary font-medium">
                                     <Loader2 className="size-3 animate-spin" aria-hidden="true" />
                                     Checking term conflicts…
                                 </span>
-                            ) : dryRunState === "verified" ? (
+                            ) : currentDryRunState === "verified" ? (
                                 <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-medium">
                                     <CheckCircle2 className="size-3" aria-hidden="true" />
                                     Term preflight synced
                                 </span>
-                            ) : dryRunState === "fallback" ? (
+                            ) : currentDryRunState === "rejected" ? (
+                                <span className="text-destructive">Resolve blueprint or schedule errors</span>
+                            ) : currentDryRunState === "fallback" ? (
                                 <span className="text-muted-foreground">Live local conflict preview</span>
                             ) : (
                                 <span>Select subject to enable live term preflight</span>
@@ -1364,7 +1454,7 @@ export function BlueprintMatrixWorkbench({
                                                     subject_code_shs: "",
                                                 }))
                                             }
-                                            disabled={!blueprint.shs_track_id || shsStrandsLoading}
+                                            disabled={!blueprint.shs_track_id || shsStrandsLoading || loadedTrackId !== blueprint.shs_track_id}
                                         >
                                             <SelectTrigger className="h-8 w-full text-xs" aria-label="SHS strand">
                                                 <SelectValue placeholder={shsStrandsLoading ? "Loading…" : "Strand"} />
@@ -1448,7 +1538,7 @@ export function BlueprintMatrixWorkbench({
                                 <Select
                                     value={blueprint.subject_code_shs}
                                     onValueChange={(val) => setBlueprint((prev) => ({ ...prev, subject_code_shs: val }))}
-                                    disabled={!blueprint.shs_strand_id || shsSubjectsLoading}
+                                    disabled={!blueprint.shs_strand_id || shsSubjectsLoading || loadedStrandId !== blueprint.shs_strand_id}
                                 >
                                     <SelectTrigger className="h-8 w-full text-xs" aria-label="SHS subject">
                                         <SelectValue placeholder={shsSubjectsLoading ? "Loading subjects…" : "Choose SHS subject"} />
@@ -1482,7 +1572,13 @@ export function BlueprintMatrixWorkbench({
                                     <span>Required hours calculate once a subject is picked.</span>
                                 )}
                             </div>
-                            {curriculumError ? <p className="text-destructive text-[11px]">{curriculumError}</p> : null}
+                            {blueprint.classification === "college" && curriculumError ? <p className="text-destructive text-[11px]">{curriculumError}</p> : null}
+                            {blueprint.classification === "shs" && strandError ? (
+                                <p className="text-destructive text-[11px]">SHS strands could not be loaded. <button type="button" className="underline" onClick={() => setStrandRetry((value) => value + 1)}>Retry</button></p>
+                            ) : null}
+                            {blueprint.classification === "shs" && subjectError ? (
+                                <p className="text-destructive text-[11px]">SHS subjects could not be loaded. <button type="button" className="underline" onClick={() => setSubjectRetry((value) => value + 1)}>Retry</button></p>
+                            ) : null}
                         </div>
 
                         {/* Col 3: Term & Start Date */}
@@ -1725,11 +1821,11 @@ export function BlueprintMatrixWorkbench({
                                 type="button"
                                 variant="secondary"
                                 size="sm"
-                                disabled={!isBlueprintReady || dryRunState === "checking"}
+                                disabled={!isBlueprintReady || currentDryRunState === "checking"}
                                 onClick={() => void runDryRunCheck(true)}
                                 className="h-8 gap-1.5 text-xs font-semibold"
                             >
-                                <RefreshCw className={cn("size-3.5", dryRunState === "checking" && "animate-spin")} aria-hidden="true" />
+                                <RefreshCw className={cn("size-3.5", currentDryRunState === "checking" && "animate-spin")} aria-hidden="true" />
                                 Run Dry-Run Check
                             </Button>
                         </div>
@@ -1758,7 +1854,8 @@ export function BlueprintMatrixWorkbench({
                                     const facBatchHours = row.faculty_id ? Number((batchHoursByFaculty.get(row.faculty_id) ?? 0).toFixed(1)) : 0;
                                     const facProjected = Number((facBaseHours + facBatchHours).toFixed(1));
                                     const facMax = selectedFac?.max_load_hours ?? 24;
-                                    const facOverloaded = Boolean(selectedFac && facProjected > facMax);
+                                    const hasFacultyLoad = hasTermLoad && typeof selectedFac?.load_hours === "number";
+                                    const facOverloaded = Boolean(hasFacultyLoad && facProjected > facMax);
 
                                     const defaultRoomObj = row.room_id ? roomsById.get(Number(row.room_id)) : null;
                                     const defaultRoomTight = Boolean(
@@ -1770,7 +1867,7 @@ export function BlueprintMatrixWorkbench({
                                     );
 
                                     const swatchClass = SECTION_SWATCHES[rowIndex % SECTION_SWATCHES.length];
-                                    const belowEnrolled = typeof row.enrolled_count === "number" && row.maximum_slots < row.enrolled_count;
+                                    const belowEnrolled = row.maximum_slots > 0 && typeof row.enrolled_count === "number" && row.maximum_slots < row.enrolled_count;
 
                                     const nextSuggestedComponent: "lecture" | "lab" =
                                         requiredHours.lab > 0 && !row.schedules.some((s) => s.component_type === "lab") ? "lab" : "lecture";
@@ -1850,13 +1947,13 @@ export function BlueprintMatrixWorkbench({
                                                             {options.faculties.map((fac) => (
                                                                 <SelectItem key={fac.id} value={String(fac.id)}>
                                                                     {fac.label}
-                                                                    {typeof fac.load_hours === "number" ? ` · ${fac.load_hours}h` : ""}
+                                                                    {hasTermLoad && typeof fac.load_hours === "number" ? ` · ${fac.load_hours}h` : ""}
                                                                 </SelectItem>
                                                             ))}
                                                         </SelectContent>
                                                     </Select>
 
-                                                    {selectedFac ? (
+                                                    {selectedFac && hasFacultyLoad ? (
                                                         <div
                                                             className={cn(
                                                                 "flex items-center gap-1 text-[11px] tabular-nums",
@@ -1869,9 +1966,11 @@ export function BlueprintMatrixWorkbench({
                                                         >
                                                             {facOverloaded ? <AlertTriangle className="size-3 shrink-0" aria-hidden="true" /> : null}
                                                             <span>
-                                                                {facBaseHours}h + {facBatchHours}h batch = {facProjected}h/{facMax}h
+                                                                {facBaseHours}h {facBatchHours < 0 ? "−" : "+"} {Math.abs(facBatchHours)}h change = {facProjected}h/{facMax}h
                                                             </span>
                                                         </div>
+                                                    ) : selectedFac ? (
+                                                        <div className="text-[11px] text-muted-foreground">Load unavailable for this term; use the schedule check.</div>
                                                     ) : (
                                                         <div className="text-[11px] text-muted-foreground">Assign instructor or leave TBA</div>
                                                     )}
@@ -1891,12 +1990,12 @@ export function BlueprintMatrixWorkbench({
                                                             updateRow(row.client_key, (curr) => ({
                                                                 ...curr,
                                                                 capacity_input: raw,
-                                                                maximum_slots: Number.isFinite(parsed) && parsed > 0 ? parsed : curr.maximum_slots,
+                                                                maximum_slots: Number.isFinite(parsed) && parsed >= 0 ? parsed : curr.maximum_slots,
                                                             }));
                                                         }}
                                                         onBlur={() => {
                                                             const parsed = Number.parseInt(row.capacity_input, 10);
-                                                            const clamped = Number.isFinite(parsed) ? Math.max(1, Math.min(1000, parsed)) : 40;
+                                                            const clamped = Number.isFinite(parsed) && parsed >= 0 ? parsed : row.maximum_slots;
                                                             updateRow(row.client_key, (curr) => ({
                                                                 ...curr,
                                                                 maximum_slots: clamped,
@@ -2260,6 +2359,7 @@ export function BlueprintMatrixWorkbench({
                     </div>
                 </section>
 
+                </fieldset>
                 {/* 4. Bottom Atomic Staging Bar (Sticky) */}
                 <footer
                     className="bg-card/95 sticky bottom-3 z-30 flex flex-col gap-3 rounded-2xl border p-4 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between"
@@ -2298,6 +2398,7 @@ export function BlueprintMatrixWorkbench({
                                 <Checkbox
                                     id="batch-notify-enrolled"
                                     checked={notifyEnrolled}
+                                    disabled={submittingMode !== null}
                                     onCheckedChange={(checked) => setNotifyEnrolled(checked === true)}
                                 />
                                 <span>Notify enrolled students of schedule changes</span>
@@ -2324,7 +2425,7 @@ export function BlueprintMatrixWorkbench({
                             <Button
                                 type="button"
                                 size="sm"
-                                disabled={!isBlueprintReady || totals.blockingCount > 0 || submittingMode !== null}
+                                disabled={!isBlueprintReady || totals.blockingCount > 0 || currentDryRunState !== "verified" || submittingMode !== null}
                                 onClick={() => void handleCommit("published")}
                                 className="h-9 gap-1.5 px-4 text-xs font-semibold shadow-xs"
                             >

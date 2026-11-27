@@ -10,7 +10,6 @@ use App\Rules\NonOverlappingScheduleBlocksRule;
 use App\Rules\ScheduleOverlapRule;
 use App\Support\AdministratorPermissionChecker;
 use App\Support\ScheduleDelivery;
-use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -44,7 +43,7 @@ final class StoreClassRequest extends FormRequest
 
             // SHS fields
             'shs_track_id' => ['exclude_unless:classification,shs', 'required_if:classification,shs', 'integer', 'exists:shs_tracks,id'],
-            'shs_strand_id' => ['exclude_unless:classification,shs', 'required_if:classification,shs', 'integer', 'exists:shs_strands,id'],
+            'shs_strand_id' => ['exclude_unless:classification,shs', 'required_if:classification,shs', 'integer', Rule::exists('shs_strands', 'id')->where('track_id', $this->input('shs_track_id'))],
             'grade_level' => ['exclude_unless:classification,shs', 'required_if:classification,shs', Rule::in(['Grade 11', 'Grade 12'])],
             'subject_code_shs' => ['exclude_unless:classification,shs', 'required_if:classification,shs', 'string', 'max:255'],
 
@@ -78,26 +77,7 @@ final class StoreClassRequest extends FormRequest
             'settings' => ['nullable', 'array'],
             'settings.background_color' => ['nullable', 'string', 'max:50'],
             'settings.accent_color' => ['nullable', 'string', 'max:50'],
-            'settings.banner_image' => [
-                'nullable',
-                function (string $attribute, mixed $value, Closure $fail): void {
-                    if ($value === null || $value === '') {
-                        return;
-                    }
-                    if (! $value instanceof \Illuminate\Http\UploadedFile) {
-                        $fail('The banner image must be a valid uploaded image file.');
-
-                        return;
-                    }
-                    $ext = mb_strtolower((string) $value->getClientOriginalExtension());
-                    if (! in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'svg'], true)) {
-                        $fail('The banner image must be a JPG, PNG, WebP, or SVG file.');
-                    }
-                    if ($value->getSize() !== false && $value->getSize() > 4 * 1024 * 1024) {
-                        $fail('The banner image may not be larger than 4 MB.');
-                    }
-                },
-            ],
+            'settings.banner_image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'extensions:jpg,jpeg,png,webp', 'max:4096'],
             'settings.theme' => ['nullable', Rule::in(['default', 'modern', 'classic', 'minimal', 'vibrant'])],
             'settings.enable_announcements' => ['nullable', 'boolean'],
             'settings.enable_grade_visibility' => ['nullable', 'boolean'],

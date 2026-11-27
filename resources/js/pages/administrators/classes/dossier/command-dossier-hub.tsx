@@ -268,7 +268,7 @@ export function CommandDossierHub({
 
     const handleSaveCapacity = async () => {
         const parsed = Number(capacityDraft);
-        if (!Number.isInteger(parsed) || parsed < 0) {
+        if (!capacityDraft.trim() || !Number.isInteger(parsed) || parsed < 0) {
             toast.error("Enter a valid non-negative integer capacity.");
             return;
         }
@@ -421,7 +421,7 @@ export function CommandDossierHub({
                             </Button>
                         )}
 
-                        {capabilities.update && (
+                        {canEditLive && (
                             <Button
                                 variant="outline"
                                 size="sm"
@@ -445,7 +445,7 @@ export function CommandDossierHub({
                             </Button>
                         )}
 
-                        <Button
+                        {capabilities.create !== false && !classItem.is_archived && <Button
                             variant="outline"
                             size="sm"
                             nativeButton={false}
@@ -459,7 +459,7 @@ export function CommandDossierHub({
                         >
                             <Layers className="size-3.5" aria-hidden="true" />
                             Manage All Sections
-                        </Button>
+                        </Button>}
 
                         {hasLifecycleOverflow && (
                             <DropdownMenu>
@@ -981,6 +981,7 @@ export function CommandDossierHub({
                     <TabsContent value="attendance" className="min-w-0">
                         <DossierAttendanceTab
                             sessions={attendanceSessions}
+                            sessionsHeld={health.attendance.sessions_held}
                             averageRate={health.attendance.average_rate}
                             sessionsExpected={health.attendance.sessions_expected}
                         />

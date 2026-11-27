@@ -38,6 +38,7 @@ export type PreflightRequest = {
     semester: string;
     course_codes?: number[];
     subject_ids?: number[];
+    subject_code?: string;
     academic_year?: number | null;
     grade_level?: string | null;
     shs_strand_id?: number | null;

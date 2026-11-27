@@ -161,6 +161,7 @@ export function ScheduleBuilderCard({
     const [blockDeliveryMode, setBlockDeliveryMode] = useState<DeliveryMode>(deliveryMode);
     const [blockRoomId, setBlockRoomId] = useState<number | null>(roomId);
     const [builderError, setBuilderError] = useState<string | null>(null);
+    const loadedBlockRef = useRef<ClassSchedule | null>(null);
 
     const roomsById = useMemo(() => {
         const map = new Map<number, CrudRoomOption>();
@@ -219,12 +220,17 @@ export function ScheduleBuilderCard({
 
     // Load block into builder when editingIndex changes
     useEffect(() => {
-        if (editingIndex === null) return;
+        if (editingIndex === null) {
+            loadedBlockRef.current = null;
+            return;
+        }
         const target = schedules[editingIndex];
         if (!target) {
             onEditingIndexChange(null);
             return;
         }
+        if (loadedBlockRef.current === target) return;
+        loadedBlockRef.current = target;
         const targetMode = canonicalDeliveryMode(target.delivery_mode ?? deliveryMode);
         setSelectedDays([target.day_of_week]);
         setStartTime(target.start_time.slice(0, 5));
@@ -233,7 +239,7 @@ export function ScheduleBuilderCard({
         setBlockDeliveryMode(targetMode);
         setBlockRoomId(isOnlineDeliveryMode(targetMode) ? null : (target.room_id ?? null));
         setBuilderError(null);
-        builderRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        builderRef.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "nearest" });
     }, [editingIndex, schedules, deliveryMode, onEditingIndexChange]);
 
     const resetBuilder = (): void => {
@@ -899,7 +905,7 @@ export function ScheduleBuilderCard({
                                                 variant={isEditingThis ? "secondary" : "ghost"}
                                                 size="icon-sm"
                                                 aria-label={`Edit ${block.day_of_week} ${block.start_time} block`}
-                                                onClick={() => onEditingIndexChange(isEditingThis ? null : index)}
+                                                onClick={() => isEditingThis ? resetBuilder() : onEditingIndexChange(index)}
                                             >
                                                 <Pencil className="size-3.5" />
                                             </Button>

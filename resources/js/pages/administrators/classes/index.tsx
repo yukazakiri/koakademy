@@ -5,6 +5,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -224,6 +225,7 @@ interface ClassesIndexProps {
     };
     options?: Partial<ClassOptions>;
     defaults?: Partial<ClassDefaults>;
+    flash?: { type: string; message: string } | null;
 }
 
 function createActiveFilters(filters?: ClassesIndexProps["filters"]): FilterType[] {
@@ -304,7 +306,14 @@ export default function AdministratorClassesIndex({
     filters = {},
     options: rawOptions,
     defaults: rawDefaults,
+    flash,
 }: ClassesIndexProps) {
+    React.useEffect(() => {
+        if (!flash?.message) return;
+        if (flash.type === "warning") toast.warning(flash.message);
+        else if (flash.type === "error") toast.error(flash.message);
+        else toast.success(flash.message);
+    }, [flash]);
     const options: ClassOptions = React.useMemo(
         () => ({
             classifications: rawOptions?.classifications ?? DEFAULT_OPTIONS.classifications,
@@ -1429,19 +1438,8 @@ export default function AdministratorClassesIndex({
 
                     <div className="space-y-4">
                         <div className="space-y-2">
-                            <Label>New section</Label>
-                            <Select value={copySection} onValueChange={setCopySection}>
-                                <SelectTrigger className="w-full">
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {options.sections.map((sec) => (
-                                        <SelectItem key={sec.value} value={sec.value}>
-                                            {sec.label}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            <Label htmlFor="copy-class-section">New section</Label>
+                            <Input id="copy-class-section" value={copySection} maxLength={20} onChange={(event) => setCopySection(event.target.value)} />
                         </div>
 
                         <label
@@ -1468,12 +1466,13 @@ export default function AdministratorClassesIndex({
                             Cancel
                         </Button>
                         <Button
+                            disabled={!copySection.trim()}
                             onClick={() => {
                                 if (!copySourceId) return;
                                 router.post(
                                     copyClass.url(copySourceId),
-                                    { section: copySection, copy_schedules: copySchedules },
-                                    { preserveScroll: true, onSuccess: () => setIsCopyOpen(false) },
+                                    { section: copySection.trim(), copy_schedules: copySchedules },
+                                    { preserveScroll: true, onSuccess: () => setIsCopyOpen(false), onError: (errors) => toast.error(errors.section ?? "Could not copy this class.") },
                                 );
                             }}
                         >

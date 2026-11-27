@@ -22,6 +22,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { exportStudentList } from "@/routes/administrators/classes";
+import { show as showEnrollment } from "@/routes/administrators/enrollments";
+import { Link } from "@inertiajs/react";
 import {
     AlertTriangle,
     ArrowRightLeft,
@@ -158,6 +160,8 @@ export function DossierRosterTab({
     const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
     const [bulkTargetClassId, setBulkTargetClassId] = useState("");
     const [bulkForceOverload, setBulkForceOverload] = useState(false);
+    const [bulkOverloadReason, setBulkOverloadReason] = useState("");
+    const [bulkTransferIssues, setBulkTransferIssues] = useState<string[]>([]);
     const [bulkMoving, setBulkMoving] = useState(false);
 
     const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
@@ -309,17 +313,32 @@ export function DossierRosterTab({
 
     const handleBulkMove = async () => {
         if (selectedStudentIds.length === 0 || !bulkTargetClassId) return;
+        if (bulkForceOverload && !bulkOverloadReason.trim()) {
+            toast.error("Enter a reason for the capacity override.");
+            return;
+        }
         setBulkMoving(true);
+        setBulkTransferIssues([]);
         try {
             const response = await postBulkMoveStudents(classItem.id, {
                 target_class_id: Number(bulkTargetClassId),
                 student_ids: selectedStudentIds,
                 force_overload: bulkForceOverload,
+                reason: bulkForceOverload ? bulkOverloadReason.trim() : null,
             });
-            toast.success(response.message || `Moved ${response.result.moved_count} student(s).`);
-            setSelectedStudentIds([]);
-            setBulkTargetClassId("");
-            setBulkForceOverload(false);
+            const result = response.result as typeof response.result & { skipped?: Array<Record<string, unknown>> };
+            const unresolved = [...result.errors, ...(result.skipped ?? [])];
+            if (unresolved.length) {
+                setBulkTransferIssues(unresolved.map((item) => `${item.student_name ?? `Student #${item.student_id}`}: ${item.message ?? "Not moved"}`));
+                toast.warning(`${result.moved_count} moved; ${unresolved.length} need attention.`);
+                setSelectedStudentIds(unresolved.map((item) => Number(item.student_id)).filter(Number.isFinite));
+            } else {
+                toast.success(response.message || `Moved ${result.moved_count} student(s).`);
+                setSelectedStudentIds([]);
+                setBulkTargetClassId("");
+                setBulkForceOverload(false);
+                setBulkOverloadReason("");
+            }
             onRefresh();
         } catch (error) {
             toast.error(error instanceof WorkspaceApiError ? error.message : "Bulk transfer failed.");
@@ -453,6 +472,12 @@ export function DossierRosterTab({
                         {/* Inline Bulk Action Bar */}
                         {canUpdate && selectedStudentIds.length > 0 && (
                             <div className="bg-background flex flex-wrap items-center justify-between gap-2.5 rounded-lg border px-3 py-2">
+                                {bulkTransferIssues.length > 0 && (
+                                    <div role="alert" className="w-full text-xs text-destructive">
+                                        <p className="font-medium">Students not moved:</p>
+                                        <ul className="list-inside list-disc">{bulkTransferIssues.map((issue, index) => <li key={index}>{issue}</li>)}</ul>
+                                    </div>
+                                )}
                                 <div className="flex flex-wrap items-center gap-2">
                                     <Badge variant="secondary" className="tabular-nums">
                                         {selectedStudentIds.length} selected
@@ -472,7 +497,7 @@ export function DossierRosterTab({
                                                         .replace(/\s*\(\s*Available:\s*-?\d+\/0\s*\)/gi, "")
                                                         .replace(/\s*(\[FULL\]|·\s*Full)\s*$/i, "")
                                                         .trim();
-                                                    const isUncapped = target.available_slots === -1;
+                                                    const isUncapped = target.available_slots === null || target.available_slots === -1;
                                                     return (
                                                         <SelectItem key={target.id} value={String(target.id)}>
                                                             {cleanLabel}
@@ -490,6 +515,9 @@ export function DossierRosterTab({
                                         />
                                         <span>Allow overload</span>
                                     </label>
+                                    {bulkForceOverload && (
+                                        <Input value={bulkOverloadReason} onChange={(event) => setBulkOverloadReason(event.target.value)} placeholder="Reason for overload" aria-label="Reason for overload" className="h-8 w-56 text-xs" />
+                                    )}
                                 </div>
                                 <div className="flex items-center gap-1.5">
                                     <Button
@@ -721,7 +749,12 @@ export function DossierRosterTab({
                                                 </TableCell>
                                                 <TableCell className="px-3 py-2.5 text-right">
                                                     <div className="inline-flex items-center justify-end gap-1">
-                                                        {isDeleted ? (
+                                                        {row.student_enrollment_id && (
+                                                            <Button variant="ghost" size="xs" nativeButton={false} render={<Link href={showEnrollment.url(row.student_enrollment_id)} />}>
+                                                                View enrollment
+                                                            </Button>
+                                                        )}
+                                                        {isDeleted || effectiveEnrollmentStatus(row) === "dropped" ? (
                                                             canUpdate && (
                                                                 <Button
                                                                     type="button"
@@ -973,6 +1006,8 @@ function EnrollStudentDialog({
     const [query, setQuery] = useState("");
     const [candidates, setCandidates] = useState<StudentSearchCandidate[]>([]);
     const [searching, setSearching] = useState(false);
+    const [searchError, setSearchError] = useState(false);
+    const [searchAttempt, setSearchAttempt] = useState(0);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
     const [forceOverload, setForceOverload] = useState(false);
     const [allowClashOverride, setAllowClashOverride] = useState(false);
@@ -988,6 +1023,7 @@ function EnrollStudentDialog({
         const seq = ++requestSeq.current;
         const timer = window.setTimeout(() => {
             setSearching(true);
+            setSearchError(false);
             searchClassCandidates(classItem.id, trimmed, 15)
                 .then((rows) => {
                     if (seq === requestSeq.current) {
@@ -997,6 +1033,7 @@ function EnrollStudentDialog({
                 .catch(() => {
                     if (seq === requestSeq.current) {
                         setCandidates([]);
+                        setSearchError(true);
                     }
                 })
                 .finally(() => {
@@ -1007,7 +1044,7 @@ function EnrollStudentDialog({
         }, 280);
 
         return () => window.clearTimeout(timer);
-    }, [open, query, classItem.id]);
+    }, [open, query, classItem.id, searchAttempt]);
 
     const toggleCandidate = (candidate: StudentSearchCandidate, checked: boolean) => {
         if (candidate.already_enrolled_here) return;
@@ -1090,7 +1127,9 @@ function EnrollStudentDialog({
                     <div className="max-h-72 overflow-y-auto rounded-lg border">
                         {candidates.length === 0 ? (
                             <div className="px-4 py-8 text-center text-xs text-muted-foreground">
-                                {searching ? "Searching candidates…" : "No matching students found."}
+                                {searching ? "Searching candidates…" : searchError ? (
+                                    <span>Search failed. <button type="button" className="underline" onClick={() => setSearchAttempt((value) => value + 1)}>Try again</button></span>
+                                ) : "No matching students found."}
                             </div>
                         ) : (
                             <ul className="divide-y">

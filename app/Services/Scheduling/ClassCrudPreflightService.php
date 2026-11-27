@@ -153,7 +153,7 @@ final readonly class ClassCrudPreflightService
         $conflicts = [];
 
         // 1. Self overlaps and invalid time ranges
-        $conflicts = array_merge($conflicts, $this->detectSelfConflicts($blocks));
+        $conflicts = array_merge($conflicts, $this->detectSelfConflicts($blocks, $policy));
 
         // 2. External room, faculty, and cohort conflicts
         $conflicts = array_merge(
@@ -328,6 +328,19 @@ final readonly class ClassCrudPreflightService
      * @return array{status: int, body: array<string, mixed>}
      */
     public function batchBlueprint(array $payload, ?User $actor): array
+    {
+        if (! (bool) ($payload['dry_run'] ?? true)) {
+            return DB::transaction(function () use ($payload, $actor): array {
+                $this->schedulingService->lockScheduleWrites();
+
+                return $this->evaluateBatchBlueprint($payload, $actor);
+            });
+        }
+
+        return $this->evaluateBatchBlueprint($payload, $actor);
+    }
+
+    private function evaluateBatchBlueprint(array $payload, ?User $actor): array
     {
         /** @var array<string, mixed> $blueprint */
         $blueprint = (array) ($payload['blueprint'] ?? []);
@@ -514,7 +527,7 @@ final readonly class ClassCrudPreflightService
             $facultyId = $sec['faculty_id'];
             $facultyName = $facultyId !== null ? ($facultyNamesById[$facultyId] ?? null) : null;
 
-            $selfConflicts = $this->detectSelfConflicts($sec['blocks']);
+            $selfConflicts = $this->detectSelfConflicts($sec['blocks'], $policy);
             foreach ($selfConflicts as $conflict) {
                 $allConflicts[] = [...$conflict, 'client_key' => $key];
                 $sectionErrors[$key][] = $conflict['message'];
@@ -1041,7 +1054,7 @@ final readonly class ClassCrudPreflightService
             $mode = ScheduleDelivery::canonicalize($raw['delivery_mode'] ?? $defaultMode, $defaultMode);
             $isOnline = ScheduleDelivery::isOnline($mode);
             $blockRoomId = $this->normalizePositiveInt($raw['room_id'] ?? null);
-            $effectiveRoomId = $isOnline ? null : ($blockRoomId ?? $defaultRoomId);
+            $effectiveRoomId = $isOnline ? null : (array_key_exists('room_id', $raw) ? $blockRoomId : $defaultRoomId);
             $component = is_string($raw['component_type'] ?? null) && mb_strtolower($raw['component_type']) === 'lab'
                 ? 'lab'
                 : 'lecture';
@@ -1159,13 +1172,25 @@ final readonly class ClassCrudPreflightService
      * @param  list<array<string, mixed>>  $blocks
      * @return list<array<string, mixed>>
      */
-    private function detectSelfConflicts(array $blocks): array
+    private function detectSelfConflicts(array $blocks, array $policy): array
     {
         $conflicts = [];
         $count = count($blocks);
 
         for ($i = 0; $i < $count; $i++) {
             $a = $blocks[$i];
+            if (! in_array($a['day_of_week'], ScheduleDelivery::allowedDays($policy), true)) {
+                $conflicts[] = [
+                    'kind' => 'self',
+                    'severity' => 'blocking',
+                    'schedule_index' => $a['index'],
+                    'message' => sprintf('Scheduling is not allowed on %s.', $a['day_of_week']),
+                    'day_of_week' => $a['day_of_week'],
+                    'start_time' => $a['start_time'],
+                    'end_time' => $a['end_time'],
+                    'with_class' => null,
+                ];
+            }
             if ($a['start_min'] === null || $a['end_min'] === null || $a['end_min'] <= $a['start_min']) {
                 $conflicts[] = [
                     'kind' => 'self',
@@ -1572,7 +1597,7 @@ final readonly class ClassCrudPreflightService
 
             // 2. Up to 2 alternative free time slots when faculty clashes or editing an existing class
             if (isset($kinds['faculty']) || $existingClass instanceof Classes) {
-                $duration = max(30, $block['end_min'] - $block['start_min']);
+                $duration = $block['end_min'] - $block['start_min'];
                 $orderedDays = array_values(array_unique(array_merge(
                     in_array($block['day_of_week'], $allowedDays, true) ? [$block['day_of_week']] : [],
                     $allowedDays,

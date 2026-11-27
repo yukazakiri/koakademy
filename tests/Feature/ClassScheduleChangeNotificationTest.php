@@ -17,6 +17,19 @@ use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Testing\Fakes\NotificationFake;
 
+it('records publication of a previously drafted meeting as a visible schedule change', function () {
+    $service = app(ClassScheduleChangeNotificationService::class);
+    $class = Classes::factory()->create();
+    $meeting = Schedule::factory()->create(['class_id' => $class->id, 'status' => 'draft']);
+    $before = $service->snapshot($class);
+
+    $meeting->update(['status' => 'published']);
+    $service->notifyIfChanged($class, $before, null, false);
+
+    expect($before)->toBe([])
+        ->and($class->scheduleChanges()->count())->toBe(1);
+});
+
 it('notifies enrolled students when a class schedule changes', function () {
     Notification::fake();
 
@@ -128,6 +141,7 @@ it('skips archived class notifications before limiting automatic retries', funct
     $liveClass = Classes::factory()->create();
     $archivedStudent = Student::factory()->create(['email' => 'archived@example.test']);
     $liveStudent = Student::factory()->create(['email' => 'live@example.test']);
+    ClassEnrollment::factory()->create(['class_id' => $liveClass->id, 'student_id' => $liveStudent->id, 'status' => true]);
     $archivedChange = $archivedClass->scheduleChanges()->create(['old_schedule' => [], 'new_schedule' => []]);
     $liveChange = $liveClass->scheduleChanges()->create(['old_schedule' => [], 'new_schedule' => []]);
     $archivedNotice = $archivedChange->studentNotifications()->create(['student_id' => $archivedStudent->id, 'email' => $archivedStudent->email, 'auto_dispatch' => true]);
@@ -138,6 +152,76 @@ it('skips archived class notifications before limiting automatic retries', funct
         ->and($liveNotice->fresh()->notified_at)->not->toBeNull()
         ->and($archivedNotice->fresh()->notified_at)->toBeNull();
     Notification::assertSentOnDemandTimes(ClassScheduleChangedNotification::class, 1);
+});
+
+it('records a manual notice when automatic delivery is suppressed', function () {
+    Notification::fake();
+    $service = app(ClassScheduleChangeNotificationService::class);
+    $class = Classes::factory()->create();
+    $meeting = Schedule::factory()->create(['class_id' => $class->id, 'day_of_week' => 'Monday']);
+    $student = Student::factory()->create(['email' => 'manual@example.test']);
+    ClassEnrollment::factory()->create(['class_id' => $class->id, 'student_id' => $student->id, 'status' => true]);
+    $snapshot = $service->snapshot($class);
+    $meeting->update(['day_of_week' => 'Tuesday']);
+
+    $service->notifyIfChanged($class, $snapshot, null, false);
+
+    $notice = $class->scheduleChanges()->firstOrFail()->studentNotifications()->firstOrFail();
+    expect($notice->auto_dispatch)->toBeFalse()->and($notice->notified_at)->toBeNull();
+    Notification::assertNothingSent();
+});
+
+it('does not send pending notices to dropped or unreachable students', function () {
+    Notification::fake();
+    $service = app(ClassScheduleChangeNotificationService::class);
+    $class = Classes::factory()->create();
+    $dropped = Student::factory()->create(['email' => 'dropped@example.test']);
+    $unreachable = Student::factory()->create(['user_id' => null, 'email' => null]);
+    ClassEnrollment::factory()->create(['class_id' => $class->id, 'student_id' => $dropped->id, 'status' => false, 'enrollment_status' => ClassEnrollment::STATUS_DROPPED]);
+    ClassEnrollment::factory()->create(['class_id' => $class->id, 'student_id' => $unreachable->id, 'status' => true]);
+    $change = $class->scheduleChanges()->create(['old_schedule' => [], 'new_schedule' => []]);
+    $droppedNotice = $change->studentNotifications()->create(['student_id' => $dropped->id, 'email' => $dropped->email]);
+    $unreachableNotice = $change->studentNotifications()->create(['student_id' => $unreachable->id, 'email' => null]);
+
+    $result = $service->notifyPendingForClass($class);
+
+    expect($result)->toBe(['count' => 1, 'recipients' => 0])
+        ->and($droppedNotice->fresh()->notified_at)->toBeNull()
+        ->and($unreachableNotice->fresh()->notified_at)->toBeNull();
+    Notification::assertNothingSent();
+});
+
+it('continues to other recipients after a manual delivery fails', function () {
+    $service = app(ClassScheduleChangeNotificationService::class);
+    $class = Classes::factory()->create();
+    $first = Student::factory()->create(['user_id' => null, 'email' => 'fail@example.test']);
+    $second = Student::factory()->create(['user_id' => null, 'email' => 'success@example.test']);
+    foreach ([$first, $second] as $student) {
+        ClassEnrollment::factory()->create(['class_id' => $class->id, 'student_id' => $student->id, 'status' => true]);
+    }
+    $change = $class->scheduleChanges()->create(['old_schedule' => [], 'new_schedule' => []]);
+    $failed = $change->studentNotifications()->create(['student_id' => $first->id, 'email' => $first->email]);
+    $succeeded = $change->studentNotifications()->create(['student_id' => $second->id, 'email' => $second->email]);
+    $fake = new class extends NotificationFake
+    {
+        public function send($notifiables, $notification)
+        {
+            if ($notifiables instanceof AnonymousNotifiable && ($notifiables->routes['mail'] ?? null) === 'fail@example.test') {
+                throw new RuntimeException('Queue unavailable');
+            }
+
+            return parent::send($notifiables, $notification);
+        }
+    };
+    Notification::swap($fake);
+    $this->app->instance(Illuminate\Contracts\Notifications\Dispatcher::class, $fake);
+
+    $result = $service->notifyPendingForClass($class);
+
+    expect($result)->toBe(['count' => 2, 'recipients' => 1])
+        ->and($failed->fresh()->notified_at)->toBeNull()
+        ->and($succeeded->fresh()->notified_at)->not->toBeNull();
+    $fake->assertSentOnDemandTimes(ClassScheduleChangedNotification::class, 1);
 });
 
 it('does not notify when normalized schedules are unchanged', function () {

@@ -138,7 +138,7 @@ export type TransferableClass = {
     section: string;
     label: string;
     is_full: boolean;
-    available_slots: number;
+    available_slots: number | null;
 };
 
 export type ClassShowCapabilities = {

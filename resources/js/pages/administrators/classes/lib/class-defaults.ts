@@ -288,7 +288,7 @@ export function buildSubjectCodeFromSubjectOptions(selectedIds: number[], option
     return Array.from(new Set(selectedCodes)).join(", ");
 }
 
-export function step1IsValid(data: ClassFormData, options: ClassFormOptions): ValidationResult {
+export function step1IsValid(data: ClassFormData, options: ClassFormOptions, allowUnlimited = false): ValidationResult {
     if (!options.classifications.some((option) => option.value === data.classification)) {
         return { message: "Choose College or Senior High School." };
     }
@@ -301,8 +301,8 @@ export function step1IsValid(data: ClassFormData, options: ClassFormOptions): Va
         return { message: "Confirm the semester and school year." };
     }
 
-    if (!Number.isInteger(data.maximum_slots) || data.maximum_slots < 1) {
-        return { message: "Set a capacity of at least one student." };
+    if (!Number.isInteger(data.maximum_slots) || data.maximum_slots < (allowUnlimited ? 0 : 1)) {
+        return { message: allowUnlimited ? "Set a non-negative capacity." : "Set a capacity of at least one student." };
     }
 
     if (data.classification === "college") {
@@ -380,7 +380,7 @@ export function buildClassStorePayload(formData: ClassFormData): ClassStorePaylo
         faculty_id: data.faculty_id,
         semester: data.semester,
         school_year: data.school_year,
-        start_date: data.start_date || null,
+        ...(data.start_date !== undefined ? { start_date: data.start_date || null } : {}),
         section: data.section,
         delivery_mode: data.delivery_mode,
         room_id: data.room_id,

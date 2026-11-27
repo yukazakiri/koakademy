@@ -31,17 +31,6 @@ function parseGradeNumber(value: string): number | null {
     return Number.isFinite(num) ? num : null;
 }
 
-function computeDraftAverage(draft: GradeDraft, fallback: number | null): number | null {
-    const nums = [parseGradeNumber(draft.prelim_grade), parseGradeNumber(draft.midterm_grade), parseGradeNumber(draft.finals_grade)].filter(
-        (n): n is number => n !== null,
-    );
-    if (nums.length === 0) return fallback;
-    if (nums.length < 3) {
-        return nums.reduce((acc, v) => acc + v, 0) / nums.length;
-    }
-    return nums.reduce((acc, v) => acc + v, 0) / 3;
-}
-
 export function DossierGradesTab({
     classItem,
     enrollments,
@@ -61,7 +50,7 @@ export function DossierGradesTab({
 
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
     const [drafts, setDrafts] = useState<Record<number, GradeDraft>>({});
-    const [savingRowId, setSavingRowId] = useState<number | null>(null);
+    const [savingRows, setSavingRows] = useState<Set<number>>(() => new Set());
     const [bulkActionLoading, setBulkActionLoading] = useState<VerifyGradesRequest["action"] | null>(null);
     const [governanceNotes, setGovernanceNotes] = useState("");
 
@@ -88,7 +77,8 @@ export function DossierGradesTab({
         return { total: activeEnrollments.length, verified, finalized, inProgress, pending };
     }, [activeEnrollments]);
 
-    const allSelected = activeEnrollments.length > 0 && selectedIds.length === activeEnrollments.length;
+    const activeSelectedIds = selectedIds.filter((id) => activeEnrollments.some((row) => row.id === id));
+    const allSelected = activeEnrollments.length > 0 && activeSelectedIds.length === activeEnrollments.length;
 
     const toggleSelectAll = (checked: boolean) => {
         setSelectedIds(checked ? activeEnrollments.map((row) => row.id) : []);
@@ -113,7 +103,12 @@ export function DossierGradesTab({
         setDrafts((prev) => ({
             ...prev,
             [row.id]: {
-                ...getDraft(row),
+                ...(prev[row.id] ?? {
+                    prelim_grade: toInputString(row.prelim_grade),
+                    midterm_grade: toInputString(row.midterm_grade),
+                    finals_grade: toInputString(row.finals_grade),
+                    remarks: row.remarks ?? "",
+                }),
                 ...patch,
             },
         }));
@@ -141,12 +136,18 @@ export function DossierGradesTab({
     const saveRow = async (row: EnrollmentRow) => {
         const draft = drafts[row.id];
         if (!draft) return;
-        setSavingRowId(row.id);
+        setSavingRows((prev) => new Set(prev).add(row.id));
         try {
             const response = await patchClassEnrollment(classItem.id, row.id, {
-                prelim_grade: parseGradeNumber(draft.prelim_grade),
-                midterm_grade: parseGradeNumber(draft.midterm_grade),
-                finals_grade: parseGradeNumber(draft.finals_grade),
+                ...(!row.is_grades_verified && !row.is_grades_finalized && (
+                    draft.prelim_grade !== toInputString(row.prelim_grade) ||
+                    draft.midterm_grade !== toInputString(row.midterm_grade) ||
+                    draft.finals_grade !== toInputString(row.finals_grade)
+                ) ? {
+                    prelim_grade: parseGradeNumber(draft.prelim_grade),
+                    midterm_grade: parseGradeNumber(draft.midterm_grade),
+                    finals_grade: parseGradeNumber(draft.finals_grade),
+                } : {}),
                 remarks: draft.remarks.trim() || null,
             });
             toast.success(response.message || `Saved grades for ${row.student?.name ?? "student"}.`);
@@ -155,14 +156,22 @@ export function DossierGradesTab({
         } catch (error) {
             toast.error(error instanceof WorkspaceApiError ? error.message : "Could not save grades. Please try again.");
         } finally {
-            setSavingRowId(null);
+            setSavingRows((prev) => { const next = new Set(prev); next.delete(row.id); return next; });
         }
     };
 
     const runGovernanceAction = async (action: VerifyGradesRequest["action"], targetIds?: number[]) => {
-        const ids = targetIds ?? selectedIds;
+        const ids = targetIds ?? activeSelectedIds;
         if (ids.length === 0) {
             toast.error("Select at least one student first.");
+            return;
+        }
+        if (ids.some((id) => savingRows.has(id))) {
+            toast.error("Wait for grade saves to finish before changing verification status.");
+            return;
+        }
+        if (ids.some((id) => activeEnrollments.some((row) => row.id === id && isRowDirty(row)))) {
+            toast.error("Save or cancel grade edits before changing verification status.");
             return;
         }
         setBulkActionLoading(action);
@@ -172,8 +181,9 @@ export function DossierGradesTab({
                 action,
                 notes: governanceNotes.trim() || null,
             });
-            const skippedSuffix = response.skipped?.length ? ` (${response.skipped.length} skipped)` : "";
-            toast.success(`${response.message || `Updated ${response.updated} record(s).`}${skippedSuffix}`);
+            const skippedDetails = response.skipped?.map((item) => `#${item.id}: ${item.reason}`).join("; ");
+            if (skippedDetails) toast.warning(`${response.updated} updated. ${skippedDetails}`);
+            else toast.success(response.message || `Updated ${response.updated} record(s).`);
             setSelectedIds([]);
             setGovernanceNotes("");
             onRefresh();
@@ -206,18 +216,18 @@ export function DossierGradesTab({
                                 <Button
                                     type="button"
                                     size="sm"
-                                    disabled={selectedIds.length === 0 || bulkActionLoading !== null}
+                                    disabled={activeSelectedIds.length === 0 || bulkActionLoading !== null}
                                     onClick={() => runGovernanceAction("verify")}
                                     className="bg-emerald-600 text-white hover:bg-emerald-700"
                                 >
                                     <CheckCircle2 className="size-3.5" aria-hidden="true" />
-                                    Verify Selected{selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}
+                                    Verify Selected{activeSelectedIds.length > 0 ? ` (${activeSelectedIds.length})` : ""}
                                 </Button>
                                 <Button
                                     type="button"
                                     variant="outline"
                                     size="sm"
-                                    disabled={selectedIds.length === 0 || bulkActionLoading !== null}
+                                    disabled={activeSelectedIds.length === 0 || bulkActionLoading !== null}
                                     onClick={() => runGovernanceAction("unverify")}
                                 >
                                     <RotateCcw className="size-3.5" aria-hidden="true" />
@@ -227,7 +237,7 @@ export function DossierGradesTab({
                                     type="button"
                                     variant="outline"
                                     size="sm"
-                                    disabled={selectedIds.length === 0 || bulkActionLoading !== null}
+                                    disabled={activeSelectedIds.length === 0 || bulkActionLoading !== null}
                                     onClick={() => runGovernanceAction("finalize")}
                                 >
                                     <Lock className="size-3.5" aria-hidden="true" />
@@ -237,7 +247,7 @@ export function DossierGradesTab({
                                     type="button"
                                     variant="outline"
                                     size="sm"
-                                    disabled={selectedIds.length === 0 || bulkActionLoading !== null}
+                                    disabled={activeSelectedIds.length === 0 || bulkActionLoading !== null}
                                     onClick={() => runGovernanceAction("unlock")}
                                 >
                                     <Unlock className="size-3.5" aria-hidden="true" />
@@ -247,9 +257,9 @@ export function DossierGradesTab({
                         )}
                     </div>
 
-                    {isEditable && selectedIds.length > 0 && (
+                    {isEditable && activeSelectedIds.length > 0 && (
                         <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-background px-3 py-2">
-                            <span className="text-xs font-medium tabular-nums">{selectedIds.length} selected</span>
+                            <span className="text-xs font-medium tabular-nums">{activeSelectedIds.length} selected</span>
                             <Input
                                 value={governanceNotes}
                                 onChange={(event) => setGovernanceNotes(event.target.value)}
@@ -303,8 +313,10 @@ export function DossierGradesTab({
                                     const dirty = isRowDirty(row);
                                     const isFinalized = Boolean(row.is_grades_finalized);
                                     const isVerified = Boolean(row.is_grades_verified);
-                                    const rowLocked = !isEditable || isFinalized;
-                                    const computedAvg = dirty ? computeDraftAverage(draft, row.total_average) : row.total_average;
+                                    const rowLocked = !isEditable;
+                                    const gradeLocked = rowLocked || isVerified || isFinalized;
+                                    const gradesChanged = draft.prelim_grade !== toInputString(row.prelim_grade) || draft.midterm_grade !== toInputString(row.midterm_grade) || draft.finals_grade !== toInputString(row.finals_grade);
+                                    const computedAvg = gradesChanged ? null : row.total_average;
                                     const selected = selectedIds.includes(row.id);
 
                                     return (
@@ -335,7 +347,7 @@ export function DossierGradesTab({
                                                     min="0"
                                                     max="100"
                                                     value={draft.prelim_grade}
-                                                    disabled={rowLocked || savingRowId === row.id}
+                                                    disabled={gradeLocked || savingRows.has(row.id)}
                                                     onChange={(event) => updateDraft(row, { prelim_grade: event.target.value })}
                                                     placeholder="—"
                                                     aria-label={`Prelim grade for ${row.student?.name ?? "student"}`}
@@ -349,7 +361,7 @@ export function DossierGradesTab({
                                                     min="0"
                                                     max="100"
                                                     value={draft.midterm_grade}
-                                                    disabled={rowLocked || savingRowId === row.id}
+                                                    disabled={gradeLocked || savingRows.has(row.id)}
                                                     onChange={(event) => updateDraft(row, { midterm_grade: event.target.value })}
                                                     placeholder="—"
                                                     aria-label={`Midterm grade for ${row.student?.name ?? "student"}`}
@@ -363,7 +375,7 @@ export function DossierGradesTab({
                                                     min="0"
                                                     max="100"
                                                     value={draft.finals_grade}
-                                                    disabled={rowLocked || savingRowId === row.id}
+                                                    disabled={gradeLocked || savingRows.has(row.id)}
                                                     onChange={(event) => updateDraft(row, { finals_grade: event.target.value })}
                                                     placeholder="—"
                                                     aria-label={`Finals grade for ${row.student?.name ?? "student"}`}
@@ -373,7 +385,7 @@ export function DossierGradesTab({
                                             <TableCell className="px-3 py-2">
                                                 <div className="flex flex-col gap-0.5">
                                                     <span className="font-mono text-xs font-semibold tabular-nums">
-                                                        {computedAvg !== null ? Number(computedAvg).toFixed(2) : "—"}
+                                                        {gradesChanged ? "After save" : computedAvg !== null ? Number(computedAvg).toFixed(2) : "—"}
                                                     </span>
                                                     {(row.grade_symbol || row.grade_outcome) && (
                                                         <span className="text-muted-foreground text-[11px]">
@@ -386,7 +398,7 @@ export function DossierGradesTab({
                                                 <Input
                                                     type="text"
                                                     value={draft.remarks}
-                                                    disabled={rowLocked || savingRowId === row.id}
+                                                    disabled={rowLocked || savingRows.has(row.id)}
                                                     onChange={(event) => updateDraft(row, { remarks: event.target.value })}
                                                     placeholder="Add remark…"
                                                     aria-label={`Remarks for ${row.student?.name ?? "student"}`}
@@ -407,16 +419,10 @@ export function DossierGradesTab({
                                                             <Lock className="size-3" aria-hidden="true" />
                                                             Finalized
                                                         </TooltipTrigger>
-                                                        <TooltipContent>Finalized grades are locked. Unlock to modify.</TooltipContent>
+                                                        <TooltipContent>Unlock and unverify to edit period grades.</TooltipContent>
                                                     </Tooltip>
                                                 ) : isVerified ? (
-                                                    <Badge
-                                                        variant="outline"
-                                                        className="gap-1 border-sky-600/35 bg-sky-500/10 text-[11px] text-sky-700 dark:text-sky-300"
-                                                    >
-                                                        <Check className="size-3" aria-hidden="true" />
-                                                        Verified
-                                                    </Badge>
+                                                    <Tooltip><TooltipTrigger render={<Badge variant="outline" className="gap-1 border-sky-600/35 bg-sky-500/10 text-[11px] text-sky-700 dark:text-sky-300" />}><Check className="size-3" aria-hidden="true" />Verified</TooltipTrigger><TooltipContent>Unverify before editing period grades.</TooltipContent></Tooltip>
                                                 ) : computedAvg !== null ? (
                                                     <Badge
                                                         variant="outline"
@@ -437,7 +443,7 @@ export function DossierGradesTab({
                                                             <Button
                                                                 type="button"
                                                                 size="xs"
-                                                                disabled={savingRowId === row.id}
+                                                                disabled={savingRows.has(row.id)}
                                                                 onClick={() => saveRow(row)}
                                                             >
                                                                 <Save className="size-3" aria-hidden="true" />
@@ -447,7 +453,7 @@ export function DossierGradesTab({
                                                                 type="button"
                                                                 variant="ghost"
                                                                 size="icon-xs"
-                                                                disabled={savingRowId === row.id}
+                                                                disabled={savingRows.has(row.id)}
                                                                 onClick={() => cancelRowDraft(row.id)}
                                                                 aria-label="Cancel grade edits"
                                                             >

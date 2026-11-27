@@ -17,10 +17,8 @@ type SectionSlotInputProps = {
     onMaximumSlotsChange: (maximumSlots: number) => void;
 };
 
-const MAX_SLOTS_CAP = 200;
-
 function clampSlots(value: number): number {
-    return Math.min(Math.max(Math.trunc(value), 1), MAX_SLOTS_CAP);
+    return Math.max(Math.trunc(value), 0);
 }
 
 export function SectionSlotInput({
@@ -50,14 +48,14 @@ export function SectionSlotInput({
         }
         setSlotsDraft(raw);
         const parsed = Number.parseInt(raw, 10);
-        if (Number.isFinite(parsed) && parsed >= 1) {
-            onMaximumSlotsChange(Math.min(parsed, MAX_SLOTS_CAP));
+        if (Number.isFinite(parsed) && parsed >= 0) {
+            onMaximumSlotsChange(parsed);
         }
     };
 
     const handleSlotsBlur = (): void => {
         const parsed = Number.parseInt(slotsDraft, 10);
-        const clamped = Number.isFinite(parsed) ? clampSlots(parsed) : clampSlots(maximumSlots || 1);
+        const clamped = Number.isFinite(parsed) ? clampSlots(parsed) : maximumSlots;
         setSlotsDraft(String(clamped));
         if (clamped !== maximumSlots) {
             onMaximumSlotsChange(clamped);
@@ -151,7 +149,7 @@ export function SectionSlotInput({
                     </Button>
                 </div>
                 <div className="text-muted-foreground flex items-center justify-between text-xs">
-                    <span>1 to {MAX_SLOTS_CAP} student cap</span>
+                    <span>Existing classes: 0 means unlimited</span>
                     <button type="button" className="text-primary font-medium hover:underline" onClick={() => onMaximumSlotsChange(40)}>
                         Standard (40)
                     </button>

@@ -166,6 +166,7 @@ export function SplitComposerStudio({
 
     const [isDirty, setIsDirty] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [customError, setCustomError] = useState<string | null>(null);
     const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
     const [validationError, setValidationError] = useState<string | null>(null);
     const [subjectCodeTouched, setSubjectCodeTouched] = useState(Boolean(initialData?.subject_code));
@@ -207,7 +208,7 @@ export function SplitComposerStudio({
     const [editingScheduleIndex, setEditingScheduleIndex] = useState<number | null>(null);
 
     // Preflight state
-    const [preflight, setPreflight] = useState<PreflightResponse | null>(null);
+    const [preflightResult, setPreflightResult] = useState<{ signature: string; response: PreflightResponse } | null>(null);
     const [preflightLoading, setPreflightLoading] = useState(false);
     const [preflightError, setPreflightError] = useState<string | null>(null);
     const [clashesExpanded, setClashesExpanded] = useState(false);
@@ -216,12 +217,12 @@ export function SplitComposerStudio({
     useEffect(() => {
         if (initialFocus === "schedule") {
             requestAnimationFrame(() => {
-                document.getElementById("composer-schedule")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                document.getElementById("composer-schedule")?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "start" });
             });
         } else if (initialFocus === "settings") {
             setPoliciesOpen(true);
             requestAnimationFrame(() => {
-                document.getElementById("composer-settings")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                document.getElementById("composer-settings")?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "start" });
             });
         }
     }, [initialFocus]);
@@ -334,13 +335,18 @@ export function SplitComposerStudio({
     }, []);
 
     useEffect(() => {
-        if (formData.classification !== "college") return;
+        if (formData.classification !== "college") {
+            ++fetchCollegeSubjectsRef.current;
+            setCollegeSubjectsLoading(false);
+            return;
+        }
         if (formData.course_codes.length === 0) {
             setCollegeSubjects([]);
             setLoadedCourseKey("");
             return;
         }
         void loadCollegeSubjects(formData.course_codes);
+        return () => { ++fetchCollegeSubjectsRef.current; };
     }, [formData.classification, courseKey, loadCollegeSubjects]);
 
     // Keep college subject_ids and academic_year aligned with loaded subjects
@@ -389,9 +395,11 @@ export function SplitComposerStudio({
     useEffect(() => {
         if (formData.classification !== "shs" || !formData.shs_track_id) {
             setShsStrandOptions([]);
+            setShsStrandsLoading(false);
             return;
         }
         const controller = new AbortController();
+        setShsStrandOptions([]);
         setShsStrandsLoading(true);
         setShsLoadError(null);
         fetchOptionData<EntityOption>(
@@ -399,13 +407,13 @@ export function SplitComposerStudio({
             isEntityOption,
             controller.signal,
         )
-            .then((rows) => setShsStrandOptions(rows))
+            .then((rows) => { if (!controller.signal.aborted) setShsStrandOptions(rows); })
             .catch((err) => {
                 if ((err as Error).name !== "AbortError") {
                     setShsLoadError("SHS strands could not be loaded.");
                 }
             })
-            .finally(() => setShsStrandsLoading(false));
+            .finally(() => { if (!controller.signal.aborted) setShsStrandsLoading(false); });
 
         return () => controller.abort();
     }, [formData.classification, formData.shs_track_id]);
@@ -414,9 +422,11 @@ export function SplitComposerStudio({
     useEffect(() => {
         if (formData.classification !== "shs" || !formData.shs_strand_id) {
             setShsSubjectOptions([]);
+            setShsSubjectsLoading(false);
             return;
         }
         const controller = new AbortController();
+        setShsSubjectOptions([]);
         setShsSubjectsLoading(true);
         setShsLoadError(null);
         fetchOptionData<ShsSubjectOption>(
@@ -424,13 +434,13 @@ export function SplitComposerStudio({
             isShsSubjectOption,
             controller.signal,
         )
-            .then((rows) => setShsSubjectOptions(rows))
+            .then((rows) => { if (!controller.signal.aborted) setShsSubjectOptions(rows); })
             .catch((err) => {
                 if ((err as Error).name !== "AbortError") {
                     setShsLoadError("SHS subjects could not be loaded.");
                 }
             })
-            .finally(() => setShsSubjectsLoading(false));
+            .finally(() => { if (!controller.signal.aborted) setShsSubjectsLoading(false); });
 
         return () => controller.abort();
     }, [formData.classification, formData.shs_strand_id]);
@@ -461,6 +471,7 @@ export function SplitComposerStudio({
             semester: formData.semester,
             course_codes: formData.classification === "college" ? formData.course_codes : [],
             subject_ids: formData.classification === "college" ? formData.subject_ids : [],
+            subject_code: formData.classification === "shs" ? formData.subject_code_shs : formData.subject_code,
             academic_year: formData.classification === "college" ? formData.academic_year : null,
             grade_level: formData.classification === "shs" ? formData.grade_level : null,
             shs_strand_id: formData.classification === "shs" ? formData.shs_strand_id : null,
@@ -479,6 +490,8 @@ export function SplitComposerStudio({
             formData.semester,
             formData.course_codes,
             formData.subject_ids,
+            formData.subject_code,
+            formData.subject_code_shs,
             formData.academic_year,
             formData.grade_level,
             formData.shs_strand_id,
@@ -488,6 +501,7 @@ export function SplitComposerStudio({
     );
 
     const preflightSignature = useMemo(() => JSON.stringify(preflightPayload), [preflightPayload]);
+    const preflight = preflightResult?.signature === preflightSignature ? preflightResult.response : null;
 
     useEffect(() => {
         if (!formData.school_year.trim() || !formData.semester) return;
@@ -498,7 +512,7 @@ export function SplitComposerStudio({
             postClassPreflight(preflightPayload, controller.signal)
                 .then((res) => {
                     if (!controller.signal.aborted) {
-                        setPreflight(res);
+                        setPreflightResult({ signature: preflightSignature, response: res });
                     }
                 })
                 .catch((err) => {
@@ -580,7 +594,7 @@ export function SplitComposerStudio({
     }, [preflightSchedules, formData.classification, formData.subject_code, formData.subject_code_shs, formData.section, roomsById]);
 
     const activeEnrolledCount = editMeta?.active_enrolled_count ?? 0;
-    const isBelowEnrolled = isEditing && activeEnrolledCount > 0 && formData.maximum_slots < activeEnrolledCount;
+    const isBelowEnrolled = isEditing && activeEnrolledCount > 0 && formData.maximum_slots > 0 && formData.maximum_slots < activeEnrolledCount;
     const belowEnrolledBlocked = isBelowEnrolled && !allowBelowEnrolled;
 
     const blockingConflicts = useMemo(
@@ -594,9 +608,11 @@ export function SplitComposerStudio({
 
     const topSuggestion = preflight?.suggestions?.[0] ?? null;
     const preflightBlocksPublish = preflight?.can_publish === false;
-    const canPublish = !preflightBlocksPublish && !belowEnrolledBlocked;
+    const canPublish = Boolean(preflight) && !preflightLoading && !preflightError && !preflightBlocksPublish && !belowEnrolledBlocked;
 
-    const publishDisabledReason = preflightBlocksPublish
+    const publishDisabledReason = !preflight || preflightLoading || preflightError
+        ? "Wait for a successful schedule check before publishing."
+        : preflightBlocksPublish
         ? `Resolve ${blockingConflicts.length || 1} blocking schedule ${blockingConflicts.length === 1 ? "conflict" : "conflicts"} before publishing, or use Save Draft.`
         : belowEnrolledBlocked
           ? `Capacity is below ${activeEnrolledCount} enrolled students. Increase capacity or confirm the override checkbox.`
@@ -636,14 +652,15 @@ export function SplitComposerStudio({
         if (!/^\d+$/.test(raw)) return;
         setCapacityDraft(raw);
         const parsed = Number.parseInt(raw, 10);
-        if (Number.isFinite(parsed) && parsed >= 1) {
-            updateForm({ maximum_slots: Math.min(parsed, 500) });
+        if (Number.isFinite(parsed) && parsed >= (isEditing ? 0 : 1)) {
+            updateForm({ maximum_slots: parsed });
         }
     };
 
     const handleCapacityBlur = (): void => {
         const parsed = Number.parseInt(capacityDraft, 10);
-        const clamped = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 500) : Math.max(1, formData.maximum_slots || 1);
+        const minimum = isEditing ? 0 : 1;
+        const clamped = Number.isFinite(parsed) ? Math.max(parsed, minimum) : formData.maximum_slots;
         setCapacityDraft(String(clamped));
         if (clamped !== formData.maximum_slots) {
             updateForm({ maximum_slots: clamped });
@@ -690,9 +707,6 @@ export function SplitComposerStudio({
         const restored = normalizeClassDelivery({
             ...baseDefaults,
             ...savedDraft,
-            // Never overwrite the active school_year or semester props!
-            school_year,
-            semester,
             settings: {
                 ...baseDefaults.settings,
                 ...savedDraft.settings,
@@ -721,16 +735,21 @@ export function SplitComposerStudio({
             setPoliciesOpen(true);
         }
         requestAnimationFrame(() => {
-            document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+            document.getElementById(sectionId)?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "start" });
         });
     };
 
     const submitForm = (targetStatus: "draft" | "published", redirectTo: "show" | "duplicate" | "index"): void => {
-        if (isSubmitting) return;
+        if (isSubmitting || editMeta?.is_archived) return;
+        if (customError) {
+            toast.error(customError);
+            jumpToSection("composer-settings");
+            return;
+        }
 
         // Ensure capacity draft is committed
         const parsedCap = Number.parseInt(capacityDraft, 10);
-        const committedSlots = Number.isFinite(parsedCap) ? Math.min(Math.max(parsedCap, 1), 500) : Math.max(1, formData.maximum_slots || 1);
+        const committedSlots = Number.isFinite(parsedCap) ? Math.max(parsedCap, isEditing ? 0 : 1) : formData.maximum_slots;
         const currentData: ClassFormData = normalizeClassDelivery({
             ...formData,
             section: formData.section.trim(),
@@ -738,7 +757,7 @@ export function SplitComposerStudio({
             maximum_slots: committedSlots,
         });
 
-        const basicsCheck = step1IsValid(currentData, options);
+        const basicsCheck = step1IsValid(currentData, options, isEditing);
         if (basicsCheck !== true) {
             setValidationError(basicsCheck.message);
             toast.error(basicsCheck.message);
@@ -746,7 +765,7 @@ export function SplitComposerStudio({
             return;
         }
 
-        if (isEditing && activeEnrolledCount > 0 && currentData.maximum_slots < activeEnrolledCount && !allowBelowEnrolled) {
+        if (isEditing && activeEnrolledCount > 0 && currentData.maximum_slots > 0 && currentData.maximum_slots < activeEnrolledCount && !allowBelowEnrolled) {
             const msg = `Capacity (${currentData.maximum_slots}) is below ${activeEnrolledCount} enrolled students. Check the override option to proceed.`;
             setValidationError(msg);
             toast.error(msg);
@@ -755,6 +774,10 @@ export function SplitComposerStudio({
         }
 
         if (targetStatus === "published") {
+            if (!canPublish) {
+                toast.error(publishDisabledReason ?? "Wait for the schedule check before publishing.");
+                return;
+            }
             const scheduleCheck = step2IsValid(currentData);
             if (scheduleCheck !== true) {
                 setValidationError(scheduleCheck.message);
@@ -961,7 +984,7 @@ export function SplitComposerStudio({
                     <Archive className="size-4 text-amber-600 dark:text-amber-400" />
                     <AlertTitle className="text-sm font-semibold">Archived Class Offering</AlertTitle>
                     <AlertDescription className="text-xs">
-                        This class is currently archived. Saving changes updates the archived record without restoring it automatically.
+                        This class is archived. Restore it before saving changes.
                     </AlertDescription>
                 </Alert>
             ) : null}
@@ -1589,6 +1612,7 @@ export function SplitComposerStudio({
                             setRemoveBannerImage(nextRemove);
                             setIsDirty(true);
                         }}
+                        onCustomErrorChange={setCustomError}
                         errors={serverErrors}
                     />
                 </div>
@@ -1859,7 +1883,7 @@ export function SplitComposerStudio({
                                 type="button"
                                 variant="outline"
                                 className="h-10 gap-1.5 rounded-xl px-3.5 text-xs font-semibold"
-                                disabled={isSubmitting}
+                                disabled={isSubmitting || Boolean(editMeta?.is_archived)}
                                 onClick={() => submitForm("draft", "show")}
                             >
                                 <Save className="size-3.5" aria-hidden="true" />
@@ -1871,7 +1895,7 @@ export function SplitComposerStudio({
                                     type="button"
                                     variant="outline"
                                     className="h-10 gap-1.5 rounded-xl px-3.5 text-xs font-semibold"
-                                    disabled={isSubmitting || !canPublish}
+                                    disabled={isSubmitting || Boolean(editMeta?.is_archived) || !canPublish}
                                     onClick={() => submitForm("published", "duplicate")}
                                 >
                                     <CopyPlus className="size-3.5" aria-hidden="true" />
@@ -1887,7 +1911,7 @@ export function SplitComposerStudio({
                                                 <Button
                                                     type="button"
                                                     className="h-10 gap-1.5 rounded-xl px-5 text-xs font-semibold shadow-xs"
-                                                    disabled={isSubmitting || !canPublish}
+                                                    disabled={isSubmitting || Boolean(editMeta?.is_archived) || !canPublish}
                                                     onClick={() => submitForm("published", "show")}
                                                 >
                                                     {isSubmitting ? (

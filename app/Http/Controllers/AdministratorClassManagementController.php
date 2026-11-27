@@ -32,6 +32,7 @@ use App\Models\StrandSubject;
 use App\Models\Subject;
 use App\Models\SubjectEnrollment;
 use App\Models\User;
+use App\Rules\ScheduleOverlapRule;
 use App\Services\ClassCurriculumPlacementService;
 use App\Services\ClassScheduleChangeNotificationService;
 use App\Services\GeneralSettingsService;
@@ -51,11 +52,15 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Maatwebsite\Excel\Facades\Excel;
+use RuntimeException;
 use Spatie\Activitylog\Models\Activity;
+use Throwable;
 
 final class AdministratorClassManagementController extends Controller
 {
@@ -340,6 +345,7 @@ final class AdministratorClassManagementController extends Controller
         $initialMode = $request->query('mode') === 'batch' ? 'batch' : 'single';
         $prefillData = null;
         $siblingSections = [];
+        $blueprintSections = [];
 
         if ($duplicateFromId > 0) {
             $sourceClass = Classes::query()->with(['schedules.room'])->find($duplicateFromId);
@@ -347,8 +353,8 @@ final class AdministratorClassManagementController extends Controller
                 $prefillData = $this->buildClassFormData($sourceClass);
                 $siblingSections = $this->buildSiblingSections($sourceClass, includeSelf: true);
                 $takenSections = collect($siblingSections)->pluck('section')->map(fn ($s) => mb_strtoupper((string) $s))->all();
-                $nextSection = collect(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'])
-                    ->first(fn (string $letter): bool => ! in_array($letter, $takenSections, true)) ?? 'B';
+                $nextSection = collect(range('A', 'Z'))
+                    ->first(fn (string $letter): bool => ! in_array($letter, $takenSections, true)) ?? '';
 
                 $prefillData['section'] = $nextSection;
                 $prefillData['schedules'] = [];
@@ -360,6 +366,26 @@ final class AdministratorClassManagementController extends Controller
             if ($sourceClass instanceof Classes) {
                 $prefillData = $this->buildClassFormData($sourceClass);
                 $siblingSections = $this->buildSiblingSections($sourceClass, includeSelf: true);
+                $classes = Classes::query()->with('schedules.room')
+                    ->whereIn('id', array_column($siblingSections, 'id'))
+                    ->get()->keyBy('id');
+                foreach ($siblingSections as $sibling) {
+                    $siblingClass = $classes->get($sibling['id']);
+                    if (! $siblingClass instanceof Classes) {
+                        continue;
+                    }
+                    $form = $this->buildClassFormData($siblingClass);
+                    $blueprintSections[] = [
+                        'client_key' => 'existing-'.$siblingClass->id,
+                        'class_id' => (int) $siblingClass->id,
+                        'section' => $form['section'],
+                        'faculty_id' => $form['faculty_id'] !== null ? (string) $form['faculty_id'] : null,
+                        'maximum_slots' => $form['maximum_slots'],
+                        'room_id' => $form['room_id'],
+                        'schedules' => $form['schedules'],
+                        'enrolled_count' => $sibling['students_count'],
+                    ];
+                }
             }
         }
 
@@ -370,7 +396,7 @@ final class AdministratorClassManagementController extends Controller
                     'index_url' => route('filament.admin.resources.classes.index'),
                 ],
             ],
-            'options' => $this->buildClassFormOptions($semester, $schoolYear),
+            'options' => $this->buildClassFormOptions($prefillData['semester'] ?? $semester, $prefillData['school_year'] ?? $schoolYear),
             'defaults' => $prefillData ?? [
                 'semester' => $semester,
                 'school_year' => $schoolYear,
@@ -379,6 +405,7 @@ final class AdministratorClassManagementController extends Controller
             'initial_mode' => $initialMode,
             'duplicate_from' => $duplicateFromId > 0 ? $duplicateFromId : null,
             'sibling_sections' => $siblingSections,
+            'blueprint_sections' => $blueprintSections,
             'flash' => session('flash'),
         ]);
     }
@@ -476,6 +503,11 @@ final class AdministratorClassManagementController extends Controller
         unset($validated['schedules']);
 
         $class = DB::transaction(function () use ($validated, $schedules, $scheduleStatus, $notifyEnrolled): Classes {
+            app(SchedulingService::class)->lockScheduleWrites();
+            Validator::make([...$validated, 'schedules' => $schedules], [
+                'schedules' => [new ScheduleOverlapRule],
+            ])->validate();
+
             $class = Classes::query()->create($validated);
 
             app(SchedulingService::class)->syncClassSchedules(
@@ -524,6 +556,7 @@ final class AdministratorClassManagementController extends Controller
         $redirectTo = is_string($validated['redirect_to'] ?? null) ? $validated['redirect_to'] : 'index';
         $scheduleStatus = is_string($validated['schedule_status'] ?? null) ? $validated['schedule_status'] : null;
         $notifyEnrolled = array_key_exists('notify_enrolled', $validated) ? (bool) $validated['notify_enrolled'] : true;
+        $allowBelowEnrolled = (bool) ($validated['allow_below_enrolled'] ?? false);
         unset($validated['redirect_to'], $validated['allow_below_enrolled'], $validated['schedule_status'], $validated['notify_enrolled']);
         $matchLegacySchedules = ! ($validated['schedules_match_by_id'] ?? false);
         unset($validated['schedules_match_by_id']);
@@ -537,29 +570,16 @@ final class AdministratorClassManagementController extends Controller
 
         $shouldRemoveBanner = (bool) ($validated['remove_banner_image'] ?? false);
         unset($validated['remove_banner_image']);
-
+        $uploadedBanner = ! $shouldRemoveBanner && ($settings['banner_image'] ?? null) instanceof \Illuminate\Http\UploadedFile
+            ? $settings['banner_image'] : null;
         if ($shouldRemoveBanner) {
-            $currentBanner = $class->getSetting('banner_image');
-            if (is_string($currentBanner) && $currentBanner !== '') {
-                Storage::disk('public')->delete($currentBanner);
-            }
             $settings['banner_image'] = null;
-        } elseif (isset($settings['banner_image']) && $settings['banner_image'] instanceof \Illuminate\Http\UploadedFile) {
-            $currentBanner = $class->getSetting('banner_image');
-            if (is_string($currentBanner) && $currentBanner !== '') {
-                Storage::disk('public')->delete($currentBanner);
-            }
-            $settings['banner_image'] = $settings['banner_image']->storePublicly('class-banners', 'public');
         } else {
-            // Preserve existing banner_image when the edit form submits null/empty without remove_banner_image=true.
+            // A new file is stored only after validation under the lock; null means preserve.
             unset($settings['banner_image']);
         }
 
         unset($settings['banner_image_url']);
-
-        if ($settings !== []) {
-            $class->settings = array_merge((array) ($class->settings ?? []), $settings);
-        }
 
         if ($classification === 'shs') {
             if (isset($validated['subject_code_shs'])) {
@@ -609,48 +629,110 @@ final class AdministratorClassManagementController extends Controller
 
         $actor = Auth::user() instanceof User ? Auth::user() : null;
 
-        DB::transaction(function () use ($class, $validated, $schedules, $scheduleNotifications, $actor, $matchLegacySchedules, $applyDeliveryModeToSchedules, $scheduleStatus, $notifyEnrolled): void {
-            // Class delivery_mode is the default for new meetings; existing meetings only change
-            // when schedules are submitted or apply_delivery_mode_to_schedules is explicitly requested.
-            $oldSnapshot = $scheduleNotifications->snapshot($class);
-            $class->fill($validated);
-            $class->save();
-
-            if (is_array($schedules)) {
-                app(SchedulingService::class)->syncClassSchedules(
-                    $class,
-                    $schedules,
-                    $actor,
-                    $oldSnapshot,
-                    $matchLegacySchedules,
-                    $scheduleStatus,
-                    $notifyEnrolled,
-                );
-            } else {
-                if ($applyDeliveryModeToSchedules && array_key_exists('delivery_mode', $validated)) {
-                    $targetMode = ScheduleDelivery::canonicalize($validated['delivery_mode']);
-                    $class->schedules()->get()->each(function (Schedule $schedule) use ($targetMode): void {
-                        $schedule->delivery_mode = $targetMode;
-                        if (ScheduleDelivery::isOnline($targetMode)) {
-                            $schedule->room_id = null;
+        $newBannerPath = null;
+        try {
+            DB::transaction(function () use ($class, $validated, $schedules, $scheduleNotifications, $actor, $matchLegacySchedules, $applyDeliveryModeToSchedules, $scheduleStatus, $notifyEnrolled, $allowBelowEnrolled, $settings, $uploadedBanner, $shouldRemoveBanner, &$newBannerPath): void {
+                app(SchedulingService::class)->lockScheduleWrites();
+                $lockedClass = $class->newQuery()->whereKey($class->getKey())->lockForUpdate()->firstOrFail();
+                if (! $allowBelowEnrolled && array_key_exists('maximum_slots', $validated) && (int) $validated['maximum_slots'] > 0) {
+                    $requestedSlots = (int) $validated['maximum_slots'];
+                    $currentSlots = (int) ($lockedClass->maximum_slots ?? 0);
+                    if ($currentSlots === 0 || $requestedSlots < $currentSlots) {
+                        $activeEnrolled = $lockedClass->class_enrollments()
+                            ->where(fn (Builder $query) => $this->applyActiveEnrollmentConstraint($query))->count();
+                        if ($requestedSlots < $activeEnrolled) {
+                            throw ValidationException::withMessages([
+                                'maximum_slots' => sprintf('Capacity cannot be reduced to %d while %d active students are currently enrolled.', $requestedSlots, $activeEnrolled),
+                            ]);
                         }
-                        $schedule->save();
-                    });
-                    $class->unsetRelation('schedules');
-                    $class->unsetRelation('Schedule');
+                    }
                 }
 
-                if ($scheduleStatus !== null) {
-                    $class->schedules()->update(['status' => $scheduleStatus]);
-                    $class->unsetRelation('schedules');
-                    $class->unsetRelation('Schedule');
+                $checksRetainedSchedules = $scheduleStatus === 'published'
+                    || $applyDeliveryModeToSchedules
+                    || Arr::hasAny($validated, ['delivery_mode', 'faculty_id', 'school_year', 'semester', 'classification', 'section', 'academic_year', 'course_codes', 'shs_strand_id', 'grade_level']);
+                if (is_array($schedules) || $checksRetainedSchedules) {
+                    $checkedSchedules = $schedules ?? $class->schedules()->get()->map(function (Schedule $schedule) use ($applyDeliveryModeToSchedules, $validated): array {
+                        $mode = $applyDeliveryModeToSchedules && isset($validated['delivery_mode'])
+                            ? ScheduleDelivery::canonicalize($validated['delivery_mode'])
+                            : $schedule->delivery_mode;
+
+                        return [
+                            'id' => $schedule->id,
+                            'day_of_week' => $schedule->day_of_week,
+                            'start_time' => $schedule->start_time?->format('H:i:s'),
+                            'end_time' => $schedule->end_time?->format('H:i:s'),
+                            'room_id' => ScheduleDelivery::isOnline($mode) ? null : $schedule->room_id,
+                            'delivery_mode' => $mode,
+                        ];
+                    })->all();
+                    Validator::make([...$validated, 'schedules' => $checkedSchedules], [
+                        'schedules' => [new ScheduleOverlapRule($class->id)],
+                    ])->validate();
                 }
 
-                if ($notifyEnrolled && ($scheduleStatus ?? 'published') === 'published') {
-                    $scheduleNotifications->notifyIfChanged($class, $oldSnapshot, $actor);
+                $currentBanner = $lockedClass->getSetting('banner_image');
+                if ($uploadedBanner !== null) {
+                    $newBannerPath = $uploadedBanner->storePublicly('class-banners', 'public');
+                    if (! is_string($newBannerPath) || $newBannerPath === '') {
+                        throw new RuntimeException('The class banner could not be stored.');
+                    }
+                    $settings['banner_image'] = $newBannerPath;
                 }
+                if ($settings !== []) {
+                    $class->settings = array_merge((array) ($lockedClass->settings ?? []), $settings);
+                }
+                if (($shouldRemoveBanner || $uploadedBanner !== null) && is_string($currentBanner) && $currentBanner !== '') {
+                    DB::afterCommit(static fn () => Storage::disk('public')->delete($currentBanner));
+                }
+
+                // Class delivery_mode is the default for new meetings; existing meetings only change
+                // when schedules are submitted or apply_delivery_mode_to_schedules is explicitly requested.
+                $oldSnapshot = $scheduleNotifications->snapshot($class);
+                $class->fill($validated);
+                $class->save();
+
+                if (is_array($schedules)) {
+                    app(SchedulingService::class)->syncClassSchedules(
+                        $class,
+                        $schedules,
+                        $actor,
+                        $oldSnapshot,
+                        $matchLegacySchedules,
+                        $scheduleStatus,
+                        $notifyEnrolled,
+                    );
+                } else {
+                    if ($applyDeliveryModeToSchedules && array_key_exists('delivery_mode', $validated)) {
+                        $targetMode = ScheduleDelivery::canonicalize($validated['delivery_mode']);
+                        $class->schedules()->get()->each(function (Schedule $schedule) use ($targetMode): void {
+                            $schedule->delivery_mode = $targetMode;
+                            if (ScheduleDelivery::isOnline($targetMode)) {
+                                $schedule->room_id = null;
+                            }
+                            $schedule->save();
+                        });
+                        $class->unsetRelation('schedules');
+                        $class->unsetRelation('Schedule');
+                    }
+
+                    if ($scheduleStatus !== null) {
+                        $class->schedules()->update(['status' => $scheduleStatus]);
+                        $class->unsetRelation('schedules');
+                        $class->unsetRelation('Schedule');
+                    }
+
+                    if (($scheduleStatus ?? 'published') === 'published') {
+                        $scheduleNotifications->notifyIfChanged($class, $oldSnapshot, $actor, $notifyEnrolled);
+                    }
+                }
+            });
+        } catch (Throwable $exception) {
+            if (is_string($newBannerPath) && $newBannerPath !== '') {
+                Storage::disk('public')->delete($newBannerPath);
             }
-        });
+            throw $exception;
+        }
 
         if ($redirectTo === 'show') {
             return redirect()->route('administrators.classes.show', $class)->with('flash', [
@@ -660,7 +742,7 @@ final class AdministratorClassManagementController extends Controller
             ]);
         }
 
-        if ($redirectTo === 'duplicate') {
+        if ($redirectTo === 'duplicate' && $this->canManageClasses('Create:Classes')) {
             return redirect()->route('administrators.classes.create', ['duplicate_from' => $class->id])->with('flash', [
                 'type' => 'success',
                 'message' => sprintf('%s updated. Ready to duplicate as next section.', $class->record_title),
@@ -764,6 +846,9 @@ final class AdministratorClassManagementController extends Controller
         $hadScheduleConflicts = false;
 
         $newClass = DB::transaction(function () use ($class, $section, $copySchedules, &$hadScheduleConflicts): Classes {
+            if ($copySchedules) {
+                app(SchedulingService::class)->lockScheduleWrites();
+            }
             $newClass = $class->replicate(['section'])->unsetRelations();
             $newClass->section = $section;
 
@@ -910,7 +995,10 @@ final class AdministratorClassManagementController extends Controller
             ->whereIn('student_id', $studentIds)
             ->where('semester', $class->semester)
             ->when($schoolYearVariants !== [], fn (Builder $q) => $q->whereIn('school_year', $schoolYearVariants))
-            ->pluck('id', 'student_id');
+            ->orderByDesc('id')
+            ->get(['id', 'student_id', 'school_year'])
+            ->groupBy('student_id')
+            ->map(fn (Collection $rows) => ($rows->firstWhere('school_year', $class->school_year) ?? $rows->first())?->id);
 
         $currentSchedules = $class->schedules
             ->map(fn (Schedule $schedule): array => [
@@ -960,7 +1048,7 @@ final class AdministratorClassManagementController extends Controller
                 'remarks' => $enrollment->remarks,
                 'is_grades_verified' => $isVerified,
                 'is_grades_finalized' => $isFinalized,
-                'is_grade_protected' => $isVerified || $isFinalized,
+                'is_grade_protected' => $enrollment->isGradeProtected(),
                 'deleted_at' => $enrollment->deleted_at?->toIso8601String(),
                 'timetable_status' => ($studentTimetable['status'] ?? 'clear') === 'clash' ? 'clash' : 'ok',
                 'timetable_conflicts' => array_values($studentTimetable['conflicts'] ?? []),
@@ -2366,17 +2454,14 @@ final class AdministratorClassManagementController extends Controller
             if ($class->start_date !== null && $class->schedules->isNotEmpty()) {
                 $scheduleDays = $class->schedules->pluck('day_of_week')
                     ->map(fn ($day): string => mb_strtolower((string) $day))
-                    ->unique()
-                    ->all();
+                    ->countBy();
                 $cursor = $class->start_date->copy()->startOfDay();
                 $today = now()->startOfDay();
                 if ($cursor->lte($today)) {
                     $expected = 0;
                     $safetyCap = 365;
                     while ($cursor->lte($today) && $safetyCap-- > 0) {
-                        if (in_array(mb_strtolower($cursor->format('l')), $scheduleDays, true)) {
-                            $expected++;
-                        }
+                        $expected += $scheduleDays->get(mb_strtolower($cursor->format('l')), 0);
                         $cursor->addDay();
                     }
                     $sessionsExpected = $expected;

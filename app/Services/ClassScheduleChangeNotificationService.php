@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Enums\UserRole;
+use App\Models\ClassEnrollment;
 use App\Models\Classes;
 use App\Models\ClassScheduleChangeStudentNotification;
 use App\Models\Student;
@@ -29,6 +30,7 @@ final class ClassScheduleChangeNotificationService
     {
         return $this->formatScheduleSnapshot(
             $class->schedules()
+                ->where(fn ($query) => $query->whereNull('status')->orWhere('status', 'published'))
                 ->with('room:id,name')
                 ->get(),
         );
@@ -37,7 +39,7 @@ final class ClassScheduleChangeNotificationService
     /**
      * @param  array<int, array{day_of_week: string, start_time: string, end_time: string, room_id: int|null, room_name: string|null, delivery_mode?: string}>  $oldSnapshot
      */
-    public function notifyIfChanged(Classes $class, array $oldSnapshot, ?User $changedBy = null): int
+    public function notifyIfChanged(Classes $class, array $oldSnapshot, ?User $changedBy = null, bool $dispatchAutomatically = true): int
     {
         $newSnapshot = $this->snapshot($class);
 
@@ -62,7 +64,7 @@ final class ClassScheduleChangeNotificationService
         }
 
         $settings = array_merge(Classes::getDefaultSettings(), (array) ($class->settings ?? []));
-        $automatic = (bool) ($settings['notify_students_on_schedule_changes'] ?? true);
+        $automatic = $dispatchAutomatically && (bool) ($settings['notify_students_on_schedule_changes'] ?? true);
         $users = $this->linkedStudentUsers($students);
         foreach ($students as $student) {
             $user = $this->linkedUserForStudent($student, $users);
@@ -104,7 +106,8 @@ final class ClassScheduleChangeNotificationService
     public function pendingNotificationsForEnrollment(StudentEnrollment $enrollment): Collection
     {
         $classIds = $enrollment->student->classEnrollments()
-            ->where('status', true)
+            ->where(fn ($q) => $q->whereNull('status')->orWhere('status', true))
+            ->where(fn ($q) => $q->whereNull('enrollment_status')->orWhereNotIn('enrollment_status', [ClassEnrollment::STATUS_DROPPED, ClassEnrollment::STATUS_WITHDRAWN]))
             ->whereHas('class', function ($query) use ($enrollment): void {
                 $query->where('school_year', $enrollment->school_year)
                     ->where('semester', $enrollment->semester);
@@ -157,14 +160,11 @@ final class ClassScheduleChangeNotificationService
         $pending = ClassScheduleChangeStudentNotification::query()
             ->pending()
             ->whereHas('scheduleChange', fn ($query) => $query->where('class_id', $class->id))
-            ->with([
-                'scheduleChange.class.subject',
-                'scheduleChange.class.faculty',
-                'scheduleChange.changedBy',
-                'student',
-                'user',
-            ])
-            ->get();
+            ->whereHas('student.classEnrollments', fn ($query) => $query
+                ->where('class_id', $class->id)
+                ->where(fn ($q) => $q->whereNull('status')->orWhere('status', true))
+                ->where(fn ($q) => $q->whereNull('enrollment_status')->orWhereNotIn('enrollment_status', [ClassEnrollment::STATUS_DROPPED, ClassEnrollment::STATUS_WITHDRAWN])))
+            ->get(['id']);
 
         return [
             'count' => $pending->count(),
@@ -176,7 +176,16 @@ final class ClassScheduleChangeNotificationService
     public function dispatchPendingAutomatic(int $limit = 100): int
     {
         $ids = ClassScheduleChangeStudentNotification::query()->pending()->where('auto_dispatch', true)
-            ->whereHas('scheduleChange.class')
+            ->where(fn ($query) => $query->whereNotNull('user_id')->orWhereNotNull('email')
+                ->orWhereNotNull('database_queued_at')->orWhereNotNull('mail_queued_at'))
+            ->whereHas('scheduleChange', fn ($query) => $query->whereHas('class')->whereExists(
+                fn ($enrollments) => $enrollments->selectRaw('1')->from('class_enrollments')
+                    ->whereColumn('class_enrollments.class_id', 'class_schedule_changes.class_id')
+                    ->whereColumn('class_enrollments.student_id', 'class_schedule_change_student_notifications.student_id')
+                    ->whereNull('class_enrollments.deleted_at')
+                    ->where(fn ($q) => $q->whereNull('class_enrollments.status')->orWhere('class_enrollments.status', true))
+                    ->where(fn ($q) => $q->whereNull('class_enrollments.enrollment_status')->orWhereNotIn('class_enrollments.enrollment_status', [ClassEnrollment::STATUS_DROPPED, ClassEnrollment::STATUS_WITHDRAWN]))
+            ))
             ->orderBy('id')->limit($limit)->pluck('id');
         $count = 0;
         foreach ($ids as $id) {
@@ -315,6 +324,7 @@ final class ClassScheduleChangeNotificationService
             ->where(fn ($query) => $query
                 ->whereNull('status')
                 ->orWhere('status', true))
+            ->where(fn ($query) => $query->whereNull('enrollment_status')->orWhereNotIn('enrollment_status', [ClassEnrollment::STATUS_DROPPED, ClassEnrollment::STATUS_WITHDRAWN]))
             ->with('student')
             ->get()
             ->pluck('student')
@@ -397,7 +407,11 @@ final class ClassScheduleChangeNotificationService
     {
         $recipientCount = 0;
         foreach ($pending as $studentNotification) {
-            $recipientCount += $this->dispatchOne((int) $studentNotification->id, $notifiedBy);
+            try {
+                $recipientCount += $this->dispatchOne((int) $studentNotification->id, $notifiedBy);
+            } catch (Throwable $exception) {
+                report($exception);
+            }
         }
 
         return $recipientCount;
@@ -433,6 +447,15 @@ final class ClassScheduleChangeNotificationService
                 return 0;
             }
 
+            $active = $class->class_enrollments()
+                ->where('student_id', $studentNotification->student_id)
+                ->where(fn ($q) => $q->whereNull('status')->orWhere('status', true))
+                ->where(fn ($q) => $q->whereNull('enrollment_status')->orWhereNotIn('enrollment_status', [ClassEnrollment::STATUS_DROPPED, ClassEnrollment::STATUS_WITHDRAWN]))
+                ->exists();
+            if (! $active) {
+                return 0;
+            }
+
             $notification = new ClassScheduleChangedNotification(
                 classId: (int) $class->id,
                 classTitle: $class->record_title,
@@ -463,7 +486,7 @@ final class ClassScheduleChangeNotificationService
                 $recipientCount++;
             }
 
-            if ($channel === 'complete') {
+            if ($channel === 'complete' && ($studentNotification->database_queued_at !== null || $studentNotification->mail_queued_at !== null)) {
                 $studentNotification->forceFill([
                     'notified_at' => now(),
                     'notified_by_user_id' => $notifiedBy?->id,

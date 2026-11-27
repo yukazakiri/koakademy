@@ -19,7 +19,7 @@ import {
     Sliders,
     Sparkles,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { postSendScheduleNotices } from "../crud/api";
 import { LiveBusyGrid, type LiveBusyGridBlock } from "../crud/live-busy-grid";
@@ -110,26 +110,31 @@ function toGridBlocks(
     }));
 }
 
-function useWorkspaceScheduleData(classId: number, autoFetch: boolean) {
-    const [workspace, setWorkspace] = useState<ClassWorkspacePayload | null>(null);
+function useWorkspaceScheduleData(classId: number, autoFetch: boolean, revision: string) {
+    const [result, setResult] = useState<{ key: string; workspace: ClassWorkspacePayload } | null>(null);
     const [loading, setLoading] = useState(false);
+    const requestId = useRef(0);
+    const key = `${classId}:${revision}`;
+    const workspace = !loading && result?.key === key ? result.workspace : null;
 
     const load = useCallback(async () => {
+        const current = ++requestId.current;
         setLoading(true);
         try {
             const data = await fetchClassWorkspace(classId, false);
-            setWorkspace(data);
+            if (requestId.current === current) setResult({ key, workspace: data });
         } catch {
             // Non-blocking enrichment; base dossier props still render cleanly.
         } finally {
-            setLoading(false);
+            if (requestId.current === current) setLoading(false);
         }
-    }, [classId]);
+    }, [classId, key]);
 
     useEffect(() => {
         if (autoFetch) {
             void load();
         }
+        return () => { ++requestId.current; };
     }, [autoFetch, load]);
 
     return { workspace, loading, reloadWorkspace: load };
@@ -180,7 +185,8 @@ async function applySuggestedRoomResolution({
     const targetIndex = sourceBlocks.findIndex((b) =>
         targetScheduleId ? b.id === targetScheduleId : b.has_conflict,
     );
-    const resolvedIndex = targetIndex >= 0 ? targetIndex : 0;
+    if (targetIndex < 0) throw new Error("The conflicting meeting could not be identified. Open the schedule to resolve it.");
+    const resolvedIndex = targetIndex;
 
     const updatedSchedules: EditableScheduleBlock[] = sourceBlocks.map((block, index) => ({
         ...(block.id ? { id: block.id } : {}),
@@ -244,6 +250,7 @@ export function DossierScheduleRail({
     const { workspace, loading: workspaceLoading, reloadWorkspace } = useWorkspaceScheduleData(
         classItem.id,
         hasConflicts || showBusyGrid,
+        scheduleRevision,
     );
 
     const roomsById = useMemo(
@@ -257,7 +264,8 @@ export function DossierScheduleRail({
         [sortedSchedules, classItem, roomsById, workspace],
     );
 
-    const bestRoom = workspace?.resolutions?.available_rooms?.[0] ?? null;
+    const mixedStatuses = new Set(rawSchedules.map((s) => s.status === "draft" ? "draft" : "published")).size > 1;
+    const bestRoom = mixedStatuses ? null : workspace?.resolutions?.available_rooms?.[0] ?? null;
     const quickPolicies = useMemo(
         () => POLICY_TOGGLES.filter((p) => QUICK_POLICY_KEYS.includes(p.key)),
         [],
@@ -342,6 +350,9 @@ export function DossierScheduleRail({
                                     </button>
                                 </div>
                             </div>
+                            {mixedStatuses && isEditable && (
+                                <p className="mt-2 text-rose-700 dark:text-rose-300">This class has both draft and published meetings. Edit the schedule to resolve conflicts without changing their statuses.</p>
+                            )}
                             {isEditable && bestRoom && (
                                 <Button
                                     type="button"
@@ -546,7 +557,6 @@ export function DossierScheduleRail({
                 <div className="grid grid-cols-1 gap-2 p-3.5 sm:grid-cols-2 xl:grid-cols-1">
                     {quickPolicies.map((policy) => {
                         const checked = Boolean(policyState[policy.key]);
-                        const saving = savingPolicyKey === policy.key;
                         return (
                             <div
                                 key={policy.key}
@@ -561,7 +571,7 @@ export function DossierScheduleRail({
                                 <Switch
                                     id={`rail-policy-${policy.key}`}
                                     checked={checked}
-                                    disabled={!isEditable || saving}
+                                    disabled={!isEditable || savingPolicyKey !== null}
                                     onCheckedChange={(next) => onTogglePolicy(policy.key, next)}
                                     aria-label={policy.label}
                                 />
@@ -604,7 +614,7 @@ export function DossierScheduleTab({
     onRefresh: () => void;
 }) {
     const isEditable = canUpdate && !classItem.is_archived;
-    const { workspace, reloadWorkspace } = useWorkspaceScheduleData(classItem.id, true);
+    const { workspace, reloadWorkspace } = useWorkspaceScheduleData(classItem.id, true, scheduleRevision);
     const [applyingFix, setApplyingFix] = useState(false);
     const [sendingNotices, setSendingNotices] = useState(false);
 
@@ -619,7 +629,8 @@ export function DossierScheduleTab({
         [sortedSchedules, classItem, roomsById, workspace],
     );
 
-    const bestRoom = workspace?.resolutions?.available_rooms?.[0] ?? null;
+    const mixedStatuses = new Set(rawSchedules.map((s) => s.status === "draft" ? "draft" : "published")).size > 1;
+    const bestRoom = mixedStatuses ? null : workspace?.resolutions?.available_rooms?.[0] ?? null;
 
     if (scheduleEditing && isEditable) {
         return (

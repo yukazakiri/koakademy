@@ -769,8 +769,8 @@ final class AdministratorClassWorkspaceController extends Controller
             'blueprint.subject_ids.*' => ['integer'],
             'blueprint.subject_code' => ['nullable', 'string', 'max:255'],
             'blueprint.academic_year' => ['nullable', 'integer', 'min:1', 'max:4'],
-            'blueprint.shs_track_id' => ['nullable', 'integer'],
-            'blueprint.shs_strand_id' => ['nullable', 'integer'],
+            'blueprint.shs_track_id' => ['nullable', 'integer', 'exists:shs_tracks,id'],
+            'blueprint.shs_strand_id' => ['nullable', 'integer', Rule::exists('shs_strands', 'id')->where('track_id', $request->input('blueprint.shs_track_id'))],
             'blueprint.subject_code_shs' => ['nullable', 'string', 'max:255'],
             'blueprint.grade_level' => ['nullable', 'string', 'max:50'],
             'blueprint.school_year' => ['required', 'string', 'max:50'],
@@ -787,11 +787,11 @@ final class AdministratorClassWorkspaceController extends Controller
             'blueprint.settings.notify_students_on_schedule_changes' => ['sometimes', 'boolean'],
             'sections' => ['required', 'array', 'min:1'],
             'sections.*' => ['required', 'array'],
-            'sections.*.client_key' => ['required', 'string', 'max:100'],
-            'sections.*.class_id' => ['nullable', 'integer', 'exists:classes,id'],
+            'sections.*.client_key' => ['required', 'string', 'max:100', 'distinct'],
+            'sections.*.class_id' => ['nullable', 'integer', 'distinct', 'exists:classes,id'],
             'sections.*.section' => ['required', 'string', 'max:20'],
             'sections.*.faculty_id' => ['nullable', 'exists:faculty,id'],
-            'sections.*.maximum_slots' => ['required', 'integer', 'min:1'],
+            'sections.*.maximum_slots' => ['required', 'integer', 'min:0'],
             'sections.*.room_id' => ['nullable', 'integer', 'exists:rooms,id'],
             'sections.*.schedules' => ['nullable', 'array'],
             'sections.*.schedules.*' => ['required', 'array'],
@@ -840,23 +840,13 @@ final class AdministratorClassWorkspaceController extends Controller
             ? array_values(array_unique(array_map(intval(...), $validated['enrollment_ids'])))
             : null;
 
-        $enrollments = $class->class_enrollments()
-            ->when($requestedIds !== null, fn (Builder $query) => $query->whereIn('id', $requestedIds))
-            ->orderBy('id')
-            ->get()
-            ->filter(fn (ClassEnrollment $enrollment): bool => ! in_array(
-                $enrollment->resolvedEnrollmentStatus(),
-                [ClassEnrollment::STATUS_DROPPED, ClassEnrollment::STATUS_WITHDRAWN],
-                true,
-            ))
-            ->values();
-
         $updated = 0;
         $updatedIds = [];
         $skipped = [];
 
         DB::transaction(function () use (
-            $enrollments,
+            $class,
+            $requestedIds,
             $action,
             $actor,
             $notes,
@@ -865,6 +855,17 @@ final class AdministratorClassWorkspaceController extends Controller
             &$updatedIds,
             &$skipped,
         ): void {
+            $enrollments = $class->class_enrollments()
+                ->when($requestedIds !== null, fn (Builder $query) => $query->whereIn('id', $requestedIds))
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->filter(fn (ClassEnrollment $enrollment): bool => ! in_array(
+                    $enrollment->resolvedEnrollmentStatus(),
+                    [ClassEnrollment::STATUS_DROPPED, ClassEnrollment::STATUS_WITHDRAWN],
+                    true,
+                ));
+
             foreach ($enrollments as $enrollment) {
                 $hasAnyGrade = $enrollment->prelim_grade !== null
                     || $enrollment->midterm_grade !== null
@@ -973,25 +974,24 @@ final class AdministratorClassWorkspaceController extends Controller
                 $updated++;
                 $updatedIds[] = (int) $enrollment->id;
             }
-        });
+            if ($updated > 0 && function_exists('activity')) {
+                $logger = activity('classes')
+                    ->performedOn($class)
+                    ->withProperties([
+                        'action' => 'grades_'.$action,
+                        'updated_count' => $updated,
+                        'skipped_count' => count($skipped),
+                        'enrollment_ids' => $updatedIds,
+                        'notes' => $notes,
+                    ]);
 
-        if ($updated > 0 && function_exists('activity')) {
-            $logger = activity('classes')
-                ->performedOn($class)
-                ->withProperties([
-                    'action' => 'grades_'.$action,
-                    'updated_count' => $updated,
-                    'skipped_count' => count($skipped),
-                    'enrollment_ids' => $updatedIds,
-                    'notes' => $notes,
-                ]);
+                if ($actor instanceof User) {
+                    $logger->causedBy($actor);
+                }
 
-            if ($actor instanceof User) {
-                $logger->causedBy($actor);
+                $logger->log(sprintf('Grades %s applied to %d enrollment(s) in %s', $action, $updated, $class->record_title));
             }
-
-            $logger->log(sprintf('Grades %s applied to %d enrollment(s) in %s', $action, $updated, $class->record_title));
-        }
+        });
 
         $actionPastTense = match ($action) {
             'verify' => 'verified',
@@ -1058,15 +1058,19 @@ final class AdministratorClassWorkspaceController extends Controller
             'notify_students_on_schedule_changes' => ['sometimes', 'boolean'],
         ]);
 
-        $merged = array_merge(Classes::getDefaultSettings(), (array) ($class->settings ?? []));
-        foreach (ClassCrudPreflightService::POLICY_SETTING_KEYS as $key) {
-            if (array_key_exists($key, $validated)) {
-                $merged[$key] = (bool) $validated[$key];
+        $merged = DB::transaction(function () use ($class, $validated): array {
+            $locked = Classes::query()->lockForUpdate()->findOrFail($class->getKey());
+            $merged = array_merge(Classes::getDefaultSettings(), (array) ($locked->settings ?? []));
+            foreach (ClassCrudPreflightService::POLICY_SETTING_KEYS as $key) {
+                if (array_key_exists($key, $validated)) {
+                    $merged[$key] = (bool) $validated[$key];
+                }
             }
-        }
+            $locked->settings = $merged;
+            $locked->save();
 
-        $class->settings = $merged;
-        $class->save();
+            return $merged;
+        });
 
         $policySettings = [];
         foreach (ClassCrudPreflightService::POLICY_SETTING_KEYS as $key) {

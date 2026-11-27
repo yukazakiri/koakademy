@@ -126,6 +126,15 @@ test("class-form face-to-face payloads allow an unassigned room without replacin
     assert.deepEqual(buildClassStorePayload({ ...form, schedules: [] }).schedules, []);
 });
 
+test("class edit payload omits an unknown start date but can explicitly clear one", async () => {
+    const { buildClassDefaults, buildClassStorePayload } =
+        await import("../../resources/js/pages/administrators/classes/lib/class-defaults.ts");
+    const form = buildClassDefaults({ semester: "1", school_year: "2026-2027", options: { rooms: [] } });
+    delete form.start_date;
+    assert.equal(Object.hasOwn(buildClassStorePayload(form), "start_date"), false);
+    assert.equal(buildClassStorePayload({ ...form, start_date: null }).start_date, null);
+});
+
 test("mixed class drafts and submissions retain face-to-face rooms and clear only online rooms", async () => {
     const { buildClassDefaults, buildClassStorePayload, createDefaultSchedule, isClassDraft, normalizeClassDelivery, meetingDeliverySummary } =
         await import("../../resources/js/pages/administrators/classes/lib/class-defaults.ts");

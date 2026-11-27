@@ -11,7 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { useFeatureFlags } from "@/hooks/use-feature-flags";
 import { cn } from "@/lib/utils";
-import { Link, useForm } from "@inertiajs/react";
+import { Link, useForm, usePage } from "@inertiajs/react";
 import axios from "axios";
 import {
     AlertCircle,
@@ -34,6 +34,7 @@ import {
     UploadCloud,
     User as UserIcon,
     Users,
+    X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -83,6 +84,7 @@ interface StudentFormStudioProps {
         picture_1x1_url?: string | null;
         signature_url?: string | null;
     };
+    active?: boolean;
 }
 
 interface StepSpec {
@@ -107,12 +109,25 @@ const RELATIONSHIP_OPTIONS = [
 
 function computeAge(birthDate: string): string {
     if (!birthDate) return "";
-    const dob = new Date(birthDate);
-    if (Number.isNaN(dob.getTime())) return "";
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(birthDate.trim());
+    if (!match) return "";
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    if (month < 1 || month > 12 || day < 1 || day > 31) return "";
+    const dob = new Date(year, month - 1, day);
+    if (
+        Number.isNaN(dob.getTime()) ||
+        dob.getFullYear() !== year ||
+        dob.getMonth() !== month - 1 ||
+        dob.getDate() !== day
+    ) {
+        return "";
+    }
     const today = new Date();
-    let age = today.getFullYear() - dob.getFullYear();
-    const m = today.getMonth() - dob.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+    let age = today.getFullYear() - year;
+    const m = today.getMonth() + 1 - month;
+    if (m < 0 || (m === 0 && today.getDate() < day)) age--;
     return age >= 0 ? String(age) : "";
 }
 
@@ -122,14 +137,25 @@ export function StudentFormStudio({
     student,
     portalAccount,
     studentAssets,
+    active = true,
 }: StudentFormStudioProps) {
     const flags = useFeatureFlags();
+    const pageProps = usePage<{
+        auth?: { user?: { id?: number | string } | null };
+        user?: { id?: number | string } | null;
+    }>().props;
+    const adminUserId = pageProps.auth?.user?.id ?? pageProps.user?.id ?? null;
     const config = options.student_configuration;
     const schoolProfile = options.school_profile;
     const policy = options.identifier_policy;
     const isEdit = mode === "edit" && Boolean(student);
 
-    const draftStorageKey = `koakademy:student-form-draft:${options.configuration_scope || "default"}`;
+    const draftStorageKey = useMemo(() => {
+        if (adminUserId === null || adminUserId === undefined || String(adminUserId).trim() === "") {
+            return null;
+        }
+        return `koakademy:student-form-draft:v2:admin:${String(adminUserId)}:${options.configuration_scope || "default"}`;
+    }, [adminUserId, options.configuration_scope]);
 
     const defaultType = isEdit
         ? String(student?.student_type || config.default_type || "college")
@@ -266,6 +292,22 @@ export function StudentFormStudio({
     const [signatureDialogOpen, setSignatureDialogOpen] = useState(false);
     const [savedDraftBanner, setSavedDraftBanner] = useState<Record<string, unknown> | null>(null);
     const photoInputRef = useRef<HTMLInputElement | null>(null);
+    const photoObjectUrlRef = useRef<string | null>(null);
+    const documentInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+    const idPreviewRequestRef = useRef(0);
+
+    const revokeLocalPhotoPreviewUrl = useCallback(() => {
+        if (photoObjectUrlRef.current) {
+            URL.revokeObjectURL(photoObjectUrlRef.current);
+            photoObjectUrlRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            revokeLocalPhotoPreviewUrl();
+        };
+    }, [revokeLocalPhotoPreviewUrl]);
 
     const isShs = data.student_type === "shs";
     const isTesda = data.student_type === "tesda";
@@ -306,7 +348,26 @@ export function StudentFormStudio({
                 title: "Education & Profile",
                 subtitle: "Prior schooling, personal details & custom fields",
                 icon: <BookOpen className="size-4" />,
-                fields: ["birthplace", "civil_status", "nationality", "citizenship", "religion", "elementary_school", "junior_high_school_name", "senior_high_name", "college_school", "vocational_school", "remarks"],
+                fields: [
+                    "birthplace",
+                    "civil_status",
+                    "nationality",
+                    "citizenship",
+                    "religion",
+                    "elementary_school",
+                    "junior_high_school_name",
+                    "senior_high_name",
+                    "college_school",
+                    "vocational_school",
+                    "employment_status",
+                    "employer_name",
+                    "job_position",
+                    "withdrawal_date",
+                    "dropout_date",
+                    "withdrawal_reason",
+                    "attrition_category",
+                    "remarks",
+                ],
             },
         ];
 
@@ -350,6 +411,20 @@ export function StudentFormStudio({
               ];
     }, [config.year_levels, data.student_type, isShs]);
 
+    const displayYearLevels = useMemo(() => {
+        const currentValue = String(data.academic_year ?? "").trim();
+        if (!currentValue || yearLevels.some((lvl) => String(lvl.value) === currentValue)) {
+            return yearLevels;
+        }
+        const recordedLabel =
+            isEdit && student?.formatted_academic_year
+                ? String(student.formatted_academic_year)
+                : isShs
+                  ? `Grade ${currentValue}`
+                  : `Level ${currentValue}`;
+        return [{ value: currentValue, label: recordedLabel }, ...yearLevels];
+    }, [yearLevels, data.academic_year, isEdit, student?.formatted_academic_year, isShs]);
+
     // Filter course groups by pathway (TESDA vs College/Program)
     const filteredCourseGroups = useMemo(() => {
         if (isTesda) {
@@ -364,72 +439,149 @@ export function StudentFormStudio({
         return options.document_checklists?.[data.student_type] ?? [];
     }, [options.document_checklists, data.student_type]);
 
+    const filterDocumentsForType = useCallback(
+        (documents: Record<string, File>, studentType: string): Record<string, File> => {
+            const allowedKeys = new Set(
+                (options.document_checklists?.[studentType] ?? [])
+                    .filter((slot) => slot.key !== "picture_1x1")
+                    .map((slot) => slot.key),
+            );
+            const filtered: Record<string, File> = {};
+            for (const [key, file] of Object.entries(documents)) {
+                if (allowedKeys.has(key)) {
+                    filtered[key] = file;
+                }
+            }
+            return filtered;
+        },
+        [options.document_checklists],
+    );
+
+    const handleStudentTypeChange = (nextType: string) => {
+        const allowedKeys = new Set(
+            (options.document_checklists?.[nextType] ?? [])
+                .filter((slot) => slot.key !== "picture_1x1")
+                .map((slot) => slot.key),
+        );
+        const filteredDocs: Record<string, File> = {};
+        for (const [key, file] of Object.entries(data.documents)) {
+            if (allowedKeys.has(key)) {
+                filteredDocs[key] = file;
+            } else {
+                form.clearErrors(`documents.${key}` as never);
+                const inputEl = documentInputRefs.current[key];
+                if (inputEl) inputEl.value = "";
+            }
+        }
+        setData((prev) => ({
+            ...prev,
+            student_type: nextType,
+            documents: filteredDocs,
+        }));
+    };
+
+    const handleRemoveDocument = (slotKey: string) => {
+        const nextDocs = { ...data.documents };
+        delete nextDocs[slotKey];
+        setData("documents", nextDocs);
+        form.clearErrors(`documents.${slotKey}` as never);
+        const inputEl = documentInputRefs.current[slotKey];
+        if (inputEl) inputEl.value = "";
+    };
+
     const activeIncomeBrackets = useMemo(() => {
         const modeObj = options.income_modes.find((m) => m.value === data.income_bracket_mode) ?? options.income_modes[0];
         return modeObj?.brackets ?? [];
     }, [options.income_modes, data.income_bracket_mode]);
 
-    // Sync year level when switching student_type in create mode
+    // Sync year level when switching student_type in create mode only
     useEffect(() => {
+        if (isEdit) return;
         if (!yearLevels.some((lvl) => String(lvl.value) === String(data.academic_year))) {
             setData("academic_year", String(yearLevels[0]?.value ?? (isShs ? 11 : 1)));
         }
-    }, [yearLevels, data.academic_year, isShs, setData]);
+    }, [isEdit, yearLevels, data.academic_year, isShs, setData]);
 
     // Fetch live preview of next automatic Student ID in Create mode
     const fetchNextIdPreview = useCallback(async (studentType: string) => {
         if (isEdit || policy.assignment_mode === "manual") return;
+        const requestId = ++idPreviewRequestRef.current;
         setLoadingIdPreview(true);
         try {
             const res = await axios.get("/administrators/students/generate-id", {
                 params: { student_type: studentType },
                 headers: { Accept: "application/json" },
             });
+            if (requestId !== idPreviewRequestRef.current) return;
             setPreviewId(String(res.data?.student_id ?? res.data?.id ?? ""));
         } catch {
+            if (requestId !== idPreviewRequestRef.current) return;
             setPreviewId("");
         } finally {
-            setLoadingIdPreview(false);
+            if (requestId === idPreviewRequestRef.current) {
+                setLoadingIdPreview(false);
+            }
         }
     }, [isEdit, policy.assignment_mode]);
 
     useEffect(() => {
+        idPreviewRequestRef.current += 1;
+        setPreviewId("");
+        setLoadingIdPreview(false);
         if (!isEdit && !usesExternalAsId && data.identifier_assignment === "automatic") {
             void fetchNextIdPreview(data.student_type);
         }
+        return () => {
+            idPreviewRequestRef.current += 1;
+        };
     }, [isEdit, usesExternalAsId, data.identifier_assignment, data.student_type, fetchNextIdPreview]);
 
-    // Reliable local draft recovery banner in Create mode
+    // Reliable local draft recovery banner in Create mode (scoped to authenticated admin)
     useEffect(() => {
-        if (isEdit || typeof window === "undefined") return;
+        setSavedDraftBanner(null);
+        if (isEdit || !draftStorageKey || adminUserId === null || typeof window === "undefined") return;
         try {
             const raw = window.localStorage.getItem(draftStorageKey);
             if (raw) {
-                const parsed = JSON.parse(raw) as Record<string, unknown>;
-                if (parsed && (parsed.first_name || parsed.last_name || parsed.email)) {
-                    setSavedDraftBanner(parsed);
+                const parsed = JSON.parse(raw) as {
+                    __draft_owner_id?: string;
+                    data?: Record<string, unknown>;
+                };
+                if (
+                    parsed &&
+                    parsed.__draft_owner_id === String(adminUserId) &&
+                    parsed.data &&
+                    (parsed.data.first_name || parsed.data.last_name || parsed.data.email)
+                ) {
+                    setSavedDraftBanner(parsed.data);
                 }
             }
         } catch {
             // ignore
         }
-    }, [isEdit, draftStorageKey]);
+    }, [isEdit, draftStorageKey, adminUserId]);
 
     useEffect(() => {
-        if (isEdit || !isDirty || typeof window === "undefined") return;
+        if (isEdit || !isDirty || !draftStorageKey || adminUserId === null || typeof window === "undefined") return;
         const timer = setTimeout(() => {
             try {
                 const { picture_1x1, signature, documents, ...serializable } = data;
                 void picture_1x1;
                 void signature;
                 void documents;
-                window.localStorage.setItem(draftStorageKey, JSON.stringify(serializable));
+                window.localStorage.setItem(
+                    draftStorageKey,
+                    JSON.stringify({
+                        __draft_owner_id: String(adminUserId),
+                        data: serializable,
+                    }),
+                );
             } catch {
                 // ignore
             }
         }, 900);
         return () => clearTimeout(timer);
-    }, [isEdit, isDirty, data, draftStorageKey]);
+    }, [isEdit, isDirty, data, draftStorageKey, adminUserId]);
 
     // Jump to first step containing validation errors on submit failure
     const errorStepCounts = useMemo(() => {
@@ -449,6 +601,7 @@ export function StudentFormStudio({
                 ...payload,
                 _method: "put",
                 stay: submitAction === "stay",
+                documents: filterDocumentsForType(payload.documents, payload.student_type),
                 guardian_name: payload.guardian_name || payload.emergency_contact_name,
                 guardian_contact: payload.guardian_contact || payload.emergency_contact_phone,
                 guardian_relationship: payload.guardian_relationship || payload.emergency_contact_relationship,
@@ -475,6 +628,7 @@ export function StudentFormStudio({
         form.transform((payload) => ({
             ...payload,
             submit_action: submitAction === "stay" ? "view" : submitAction,
+            documents: filterDocumentsForType(payload.documents, payload.student_type),
             guardian_name: payload.guardian_name || payload.emergency_contact_name,
             guardian_contact: payload.guardian_contact || payload.emergency_contact_phone,
             guardian_relationship: payload.guardian_relationship || payload.emergency_contact_relationship,
@@ -484,15 +638,21 @@ export function StudentFormStudio({
             forceFormData: true,
             preserveScroll: true,
             onSuccess: () => {
-                try {
-                    window.localStorage.removeItem(draftStorageKey);
-                } catch {
-                    // ignore
+                if (draftStorageKey) {
+                    try {
+                        window.localStorage.removeItem(draftStorageKey);
+                    } catch {
+                        // ignore
+                    }
                 }
                 if (submitAction === "create_another") {
                     form.reset();
                     setActiveStepIndex(0);
+                    revokeLocalPhotoPreviewUrl();
                     setPhotoPreviewUrl(null);
+                    if (photoInputRef.current) {
+                        photoInputRef.current.value = "";
+                    }
                     setSignaturePreviewUrl(null);
                     toast.success("Student saved! Ready for the next student.");
                 }
@@ -509,8 +669,9 @@ export function StudentFormStudio({
         });
     };
 
-    // Keyboard shortcut Ctrl/Cmd + S to save
+    // Keyboard shortcut Ctrl/Cmd + S to save (only while panel is active)
     useEffect(() => {
+        if (!active) return;
         const onKeyDown = (e: KeyboardEvent) => {
             if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
                 e.preventDefault();
@@ -548,7 +709,9 @@ export function StudentFormStudio({
                             variant="outline"
                             className="h-7 text-xs"
                             onClick={() => {
-                                window.localStorage.removeItem(draftStorageKey);
+                                if (draftStorageKey) {
+                                    window.localStorage.removeItem(draftStorageKey);
+                                }
                                 setSavedDraftBanner(null);
                             }}
                         >
@@ -588,8 +751,8 @@ export function StudentFormStudio({
                                     isActive
                                         ? "border-primary bg-primary/8 text-foreground shadow-2xs"
                                         : errCount > 0
-                                          ? "border-destructive/50 bg-destructive/5 text-foreground"
-                                          : "border-transparent hover:bg-muted/60 text-muted-foreground hover:text-foreground",
+                                          ? "border-destructive/50 bg-destructive/5 active:bg-destructive/10 text-foreground active:scale-[0.98]"
+                                          : "border-transparent hover:bg-muted/60 active:bg-muted text-muted-foreground hover:text-foreground active:scale-[0.98]",
                                 )}
                             >
                                 <span
@@ -639,7 +802,7 @@ export function StudentFormStudio({
                                                     <button
                                                         key={t.value}
                                                         type="button"
-                                                        onClick={() => setData("student_type", t.value)}
+                                                        onClick={() => handleStudentTypeChange(t.value)}
                                                         className={cn(
                                                             "rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
                                                             data.student_type === t.value
@@ -949,7 +1112,7 @@ export function StudentFormStudio({
                                                 <SelectValue />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                {yearLevels.map((lvl) => (
+                                                {displayYearLevels.map((lvl) => (
                                                     <SelectItem key={lvl.value} value={String(lvl.value)}>
                                                         {lvl.label}
                                                     </SelectItem>
@@ -1376,42 +1539,70 @@ export function StudentFormStudio({
                                     )}
 
                                     {/* Conditional Withdrawal / Dropout */}
-                                    {(data.status === "withdrawn" || data.status === "dropped") && (
-                                        <div className="space-y-3 rounded-xl border border-amber-500/35 bg-amber-500/5 p-4">
-                                            <h3 className="text-xs font-semibold">Attrition / Exit Details</h3>
-                                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                                <Input
-                                                    type="date"
-                                                    value={data.withdrawal_date}
-                                                    onChange={(e) => setData("withdrawal_date", e.target.value)}
-                                                    className="h-8 text-xs"
-                                                />
-                                                <Select
-                                                    value={data.attrition_category || "__none__"}
-                                                    onValueChange={(v) => setData("attrition_category", v === "__none__" ? "" : v)}
-                                                >
-                                                    <SelectTrigger className="h-8 text-xs">
-                                                        <SelectValue placeholder="Attrition category" />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        <SelectItem value="__none__">None</SelectItem>
-                                                        {options.attrition_categories.map((c) => (
-                                                            <SelectItem key={c.value} value={c.value}>
-                                                                {c.label}
-                                                            </SelectItem>
-                                                        ))}
-                                                    </SelectContent>
-                                                </Select>
-                                                <Textarea
-                                                    placeholder="Reason for withdrawal or drop..."
-                                                    value={data.withdrawal_reason}
-                                                    onChange={(e) => setData("withdrawal_reason", e.target.value)}
-                                                    rows={2}
-                                                    className="text-xs sm:col-span-2"
-                                                />
+                                    {(data.status === "withdrawn" || data.status === "dropped") && (() => {
+                                        const isDropped = data.status === "dropped";
+                                        const exitDateError = isDropped ? errors.dropout_date : errors.withdrawal_date;
+                                        return (
+                                            <div className="space-y-3 rounded-xl border border-amber-500/35 bg-amber-500/5 p-4">
+                                                <h3 className="text-xs font-semibold">Attrition / Exit Details</h3>
+                                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                                    <div className="space-y-1.5">
+                                                        <Label htmlFor="sf-exit-date" className="text-xs font-medium">
+                                                            {isDropped ? "Dropout Date" : "Withdrawal Date"}
+                                                        </Label>
+                                                        <Input
+                                                            id="sf-exit-date"
+                                                            type="date"
+                                                            value={isDropped ? data.dropout_date : data.withdrawal_date}
+                                                            onChange={(e) =>
+                                                                setData(isDropped ? "dropout_date" : "withdrawal_date", e.target.value)
+                                                            }
+                                                            className="h-8 text-xs"
+                                                        />
+                                                        {exitDateError && <p className="text-destructive text-xs">{exitDateError}</p>}
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-xs font-medium">Attrition Category</Label>
+                                                        <Select
+                                                            value={data.attrition_category || "__none__"}
+                                                            onValueChange={(v) => setData("attrition_category", v === "__none__" ? "" : v)}
+                                                        >
+                                                            <SelectTrigger className="h-8 text-xs">
+                                                                <SelectValue placeholder="Attrition category" />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="__none__">None</SelectItem>
+                                                                {options.attrition_categories.map((c) => (
+                                                                    <SelectItem key={c.value} value={c.value}>
+                                                                        {c.label}
+                                                                    </SelectItem>
+                                                                ))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                        {errors.attrition_category && (
+                                                            <p className="text-destructive text-xs">{errors.attrition_category}</p>
+                                                        )}
+                                                    </div>
+                                                    <div className="space-y-1.5 sm:col-span-2">
+                                                        <Label htmlFor="sf-withdrawal-reason" className="text-xs font-medium">
+                                                            {isDropped ? "Dropout Reason" : "Withdrawal Reason"}
+                                                        </Label>
+                                                        <Textarea
+                                                            id="sf-withdrawal-reason"
+                                                            placeholder="Reason for withdrawal or drop..."
+                                                            value={data.withdrawal_reason}
+                                                            onChange={(e) => setData("withdrawal_reason", e.target.value)}
+                                                            rows={2}
+                                                            className="text-xs"
+                                                        />
+                                                        {errors.withdrawal_reason && (
+                                                            <p className="text-destructive text-xs">{errors.withdrawal_reason}</p>
+                                                        )}
+                                                    </div>
+                                                </div>
                                             </div>
-                                        </div>
-                                    )}
+                                        );
+                                    })()}
 
                                     <div className="space-y-1.5">
                                         <Label htmlFor="sf-remarks" className="text-xs font-medium">
@@ -1578,8 +1769,11 @@ export function StudentFormStudio({
                                             onChange={(e) => {
                                                 const file = e.target.files?.[0];
                                                 if (!file) return;
+                                                revokeLocalPhotoPreviewUrl();
+                                                const nextObjectUrl = URL.createObjectURL(file);
+                                                photoObjectUrlRef.current = nextObjectUrl;
                                                 setData("picture_1x1", file);
-                                                setPhotoPreviewUrl(URL.createObjectURL(file));
+                                                setPhotoPreviewUrl(nextObjectUrl);
                                             }}
                                         />
                                         {photoPreviewUrl ? (
@@ -1649,10 +1843,16 @@ export function StudentFormStudio({
                                             .filter((s) => s.key !== "picture_1x1")
                                             .map((slot) => {
                                                 const attached = data.documents[slot.key];
+                                                const slotError = (errors as Record<string, string | undefined>)[
+                                                    `documents.${slot.key}`
+                                                ];
                                                 return (
                                                     <div
                                                         key={slot.key}
-                                                        className="border-border/70 flex items-center justify-between gap-2 rounded-xl border p-3"
+                                                        className={cn(
+                                                            "border-border/70 flex items-center justify-between gap-2 rounded-xl border p-3",
+                                                            slotError && "border-destructive/50 bg-destructive/5",
+                                                        )}
                                                     >
                                                         <div className="min-w-0">
                                                             <div className="flex items-center gap-1.5">
@@ -1666,24 +1866,54 @@ export function StudentFormStudio({
                                                             <p className="text-muted-foreground truncate text-[11px]">
                                                                 {attached ? attached.name : "No file selected"}
                                                             </p>
+                                                            {slotError && (
+                                                                <p className="text-destructive mt-0.5 text-[11px]">{slotError}</p>
+                                                            )}
                                                         </div>
-                                                        <label className="border-border hover:bg-muted inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium">
-                                                            <UploadCloud className="size-3.5" />
-                                                            {attached ? "Change" : "Attach"}
+                                                        <div className="flex shrink-0 items-center gap-1.5">
                                                             <input
+                                                                ref={(el) => {
+                                                                    documentInputRefs.current[slot.key] = el;
+                                                                }}
                                                                 type="file"
+                                                                tabIndex={-1}
                                                                 className="hidden"
                                                                 accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
                                                                 onChange={(e) => {
                                                                     const file = e.target.files?.[0];
                                                                     if (!file) return;
+                                                                    form.clearErrors(`documents.${slot.key}` as never);
                                                                     setData("documents", {
                                                                         ...data.documents,
                                                                         [slot.key]: file,
                                                                     });
                                                                 }}
                                                             />
-                                                        </label>
+                                                            {attached && (
+                                                                <Button
+                                                                    type="button"
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    className="text-muted-foreground hover:text-destructive h-8 px-2 text-xs"
+                                                                    aria-label={`Remove ${slot.label}`}
+                                                                    onClick={() => handleRemoveDocument(slot.key)}
+                                                                >
+                                                                    <X className="size-3.5" />
+                                                                    <span className="sr-only sm:not-sr-only">Remove</span>
+                                                                </Button>
+                                                            )}
+                                                            <Button
+                                                                type="button"
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="h-8 gap-1.5 px-2.5 text-xs font-medium"
+                                                                aria-label={`${attached ? "Change" : "Attach"} ${slot.label}`}
+                                                                onClick={() => documentInputRefs.current[slot.key]?.click()}
+                                                            >
+                                                                <UploadCloud className="size-3.5" />
+                                                                {attached ? "Change" : "Attach"}
+                                                            </Button>
+                                                        </div>
                                                     </div>
                                                 );
                                             })}
@@ -1729,7 +1959,7 @@ export function StudentFormStudio({
                             <div className="flex items-center justify-between">
                                 <span className="text-muted-foreground">Level</span>
                                 <span className="font-medium">
-                                    {yearLevels.find((l) => String(l.value) === String(data.academic_year))?.label || data.academic_year}
+                                    {displayYearLevels.find((l) => String(l.value) === String(data.academic_year))?.label || data.academic_year}
                                 </span>
                             </div>
                             {Object.keys(errors).length > 0 && (

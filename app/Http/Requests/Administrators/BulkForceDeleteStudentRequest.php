@@ -12,6 +12,9 @@ final class BulkForceDeleteStudentRequest extends FormRequest
 {
     public function authorize(): bool
     {
+        // Intentionally permits the portal Admin role alongside explicit ForceDelete grants
+        // (matching AdministratorStudentManagementController::forceDestroy), while restricting
+        // Registrar and other staff roles unless they hold ForceDelete:Student or ForceDeleteAny:Student.
         return AdministratorPermissionChecker::userHasAnyPermission(
             $this->user(),
             ['ForceDelete:Student', 'ForceDeleteAny:Student'],

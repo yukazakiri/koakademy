@@ -6,10 +6,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { cn } from "@/lib/utils";
 import { Link, router } from "@inertiajs/react";
 import axios from "axios";
 import { AlertTriangle, ClipboardPlus, ExternalLink, Loader2, Sparkles, UserPlus } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { IdentifierPolicy, SchoolProfile, StudentConfiguration } from "../shared-types";
 
@@ -78,8 +79,11 @@ export function SchoolAdaptiveQuickCreateDrawer({
     const [academicYear, setAcademicYear] = useState<string>("1");
     const [provisionPortal, setProvisionPortal] = useState(true);
     const [sendActivation, setSendActivation] = useState(true);
-    const [allowDuplicate, setAllowDuplicate] = useState(false);
-    const [duplicates, setDuplicates] = useState<DuplicateCandidate[]>([]);
+    const [duplicateCheckState, setDuplicateCheckState] = useState<{
+        identityKey: string;
+        candidates: DuplicateCandidate[];
+        confirmed: boolean;
+    } | null>(null);
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [submitting, setSubmitting] = useState(false);
 
@@ -145,22 +149,79 @@ export function SchoolAdaptiveQuickCreateDrawer({
         }
     }, [isShs, filteredCourses, shsStrands, courseId, shsStrandId]);
 
+    const currentIdentityKey = useMemo(
+        () =>
+            JSON.stringify([
+                firstName.trim().toLowerCase(),
+                lastName.trim().toLowerCase(),
+                birthDate.trim(),
+                emailVisible ? email.trim().toLowerCase() : "",
+                externalEnabled ? lrn.trim().toLowerCase() : "",
+            ]),
+        [firstName, lastName, birthDate, emailVisible, email, externalEnabled, lrn],
+    );
+    const currentIdentityKeyRef = useRef(currentIdentityKey);
+    currentIdentityKeyRef.current = currentIdentityKey;
+
+    const activeDuplicateState =
+        duplicateCheckState && duplicateCheckState.identityKey === currentIdentityKey
+            ? duplicateCheckState
+            : null;
+    const duplicates = activeDuplicateState?.candidates ?? [];
+    const allowDuplicate = activeDuplicateState?.confirmed ?? false;
+
+    useEffect(() => {
+        setDuplicateCheckState((prev) =>
+            prev && prev.identityKey !== currentIdentityKey ? null : prev,
+        );
+    }, [currentIdentityKey]);
+
     const resetForm = () => {
+        const defaultIsShs = defaultType === "shs";
+        const defaultIsTesda = defaultType === "tesda";
+        const defaultYearLevels = configuration?.year_levels?.[defaultType];
+        const defaultAcademicYear = String(
+            defaultYearLevels && defaultYearLevels.length > 0
+                ? defaultYearLevels[0].value
+                : defaultIsShs
+                  ? 11
+                  : 1,
+        );
+        const defaultCourseList = defaultIsTesda
+            ? courses.filter((c) => c.curriculum_kind === "tesda_qualification")
+            : courses.filter((c) => c.curriculum_kind !== "tesda_qualification");
+        const resolvedDefaultCourses = defaultCourseList.length > 0 ? defaultCourseList : courses;
+
+        setStudentType(defaultType);
+        setStatus("enrolled");
+        setIdMode(identifierPolicy?.assignment_mode === "manual" ? "manual" : "automatic");
         setStudentId("");
         setLrn("");
         setFirstName("");
         setMiddleName("");
         setLastName("");
+        setGender(configuration?.defaults?.gender || "male");
         setBirthDate("");
         setEmail("");
         setPhone("");
-        setAllowDuplicate(false);
-        setDuplicates([]);
+        setCourseId(defaultIsShs ? "" : resolvedDefaultCourses[0] ? String(resolvedDefaultCourses[0].id) : "");
+        setShsStrandId(defaultIsShs && shsStrands[0] ? String(shsStrands[0].id) : "");
+        setAcademicYear(defaultAcademicYear);
+        setProvisionPortal(true);
+        setSendActivation(true);
+        setDuplicateCheckState(null);
         setErrors({});
     };
 
     const submitQuickCreate = async (redirectToEnrollment: boolean) => {
         if (submitting) return;
+        const submittedIdentityKey = currentIdentityKey;
+        const allowDuplicateForRequest = Boolean(
+            duplicateCheckState &&
+                duplicateCheckState.identityKey === submittedIdentityKey &&
+                duplicateCheckState.confirmed,
+        );
+
         setSubmitting(true);
         setErrors({});
 
@@ -185,7 +246,7 @@ export function SchoolAdaptiveQuickCreateDrawer({
                     status,
                     provision_portal_account: provisionPortal && email.trim() !== "",
                     send_activation_link: sendActivation,
-                    allow_duplicate: allowDuplicate,
+                    allow_duplicate: allowDuplicateForRequest,
                 },
                 { headers: { Accept: "application/json" } },
             );
@@ -214,8 +275,15 @@ export function SchoolAdaptiveQuickCreateDrawer({
             };
 
             if (err.response?.status === 409 && Array.isArray(err.response.data?.duplicates)) {
-                setDuplicates(err.response.data.duplicates);
-                toast.warning("Possible duplicate record found — review below.");
+                if (currentIdentityKeyRef.current === submittedIdentityKey) {
+                    const matchedDuplicates = err.response.data.duplicates;
+                    setDuplicateCheckState((prev) => ({
+                        identityKey: submittedIdentityKey,
+                        candidates: matchedDuplicates,
+                        confirmed: prev?.identityKey === submittedIdentityKey ? prev.confirmed : false,
+                    }));
+                    toast.warning("Possible duplicate record found — review below.");
+                }
             } else if (err.response?.data?.errors) {
                 const flat: Record<string, string> = {};
                 for (const [k, msgs] of Object.entries(err.response.data.errors)) {
@@ -231,9 +299,26 @@ export function SchoolAdaptiveQuickCreateDrawer({
         }
     };
 
+    const handleOpenChange = (nextOpen: boolean) => {
+        if (!nextOpen && submitting) return;
+        onOpenChange(nextOpen);
+    };
+
     return (
-        <Sheet open={open} onOpenChange={onOpenChange}>
-            <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-[520px]">
+        <Sheet open={open} onOpenChange={handleOpenChange}>
+            <SheetContent
+                side="right"
+                className="flex w-full flex-col gap-0 p-0 sm:max-w-[520px]"
+                onEscapeKeyDown={(event) => {
+                    if (submitting) event.preventDefault();
+                }}
+                onPointerDownOutside={(event) => {
+                    if (submitting) event.preventDefault();
+                }}
+                onInteractOutside={(event) => {
+                    if (submitting) event.preventDefault();
+                }}
+            >
                 <SheetHeader className="border-border/70 bg-muted/20 border-b px-5 py-4">
                     <div className="flex items-center justify-between gap-2 pr-6">
                         <SheetTitle className="flex items-center gap-2 text-base font-semibold">
@@ -254,7 +339,9 @@ export function SchoolAdaptiveQuickCreateDrawer({
                 <form
                     onSubmit={(e) => {
                         e.preventDefault();
-                        void submitQuickCreate(false);
+                        const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+                        const redirectToEnrollment = submitter?.value === "create_enrollment";
+                        void submitQuickCreate(redirectToEnrollment);
                     }}
                     className="flex min-h-0 flex-1 flex-col overflow-hidden"
                 >
@@ -293,7 +380,13 @@ export function SchoolAdaptiveQuickCreateDrawer({
                                     <label className="flex items-center gap-2 pt-1 text-[11px]">
                                         <Checkbox
                                             checked={allowDuplicate}
-                                            onCheckedChange={(checked) => setAllowDuplicate(Boolean(checked))}
+                                            onCheckedChange={(checked) =>
+                                                setDuplicateCheckState((prev) =>
+                                                    prev && prev.identityKey === currentIdentityKey
+                                                        ? { ...prev, confirmed: Boolean(checked) }
+                                                        : prev,
+                                                )
+                                            }
                                         />
                                         <span>Confirm creating a separate student record anyway</span>
                                     </label>
@@ -591,29 +684,45 @@ export function SchoolAdaptiveQuickCreateDrawer({
 
                     <SheetFooter className="border-border/70 bg-muted/20 flex-row items-center justify-between gap-2 border-t px-5 py-3.5">
                         <Button
-                            render={<Link href="/administrators/students/create" />}
+                            render={
+                                <Link
+                                    href="/administrators/students/create"
+                                    aria-disabled={submitting}
+                                    onClick={(e) => {
+                                        if (submitting) e.preventDefault();
+                                    }}
+                                />
+                            }
                             nativeButton={false}
                             variant="ghost"
                             size="sm"
-                            className="text-muted-foreground text-xs"
+                            className={cn("text-muted-foreground text-xs", submitting && "pointer-events-none opacity-50")}
                         >
                             Full Intake Form
                         </Button>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-row-reverse items-center gap-2">
                             <Button
-                                type="button"
+                                type="submit"
+                                name="submit_action"
+                                value="create"
+                                size="sm"
+                                disabled={submitting}
+                                className="gap-1.5 text-xs"
+                            >
+                                {submitting ? <Loader2 className="size-3.5 animate-spin" /> : <UserPlus className="size-3.5" />}
+                                Create Student
+                            </Button>
+                            <Button
+                                type="submit"
+                                name="submit_action"
+                                value="create_enrollment"
                                 variant="outline"
                                 size="sm"
                                 disabled={submitting}
-                                onClick={() => void submitQuickCreate(true)}
                                 className="gap-1.5 text-xs"
                             >
                                 <ClipboardPlus className="size-3.5" />
                                 Create &amp; Enroll
-                            </Button>
-                            <Button type="submit" size="sm" disabled={submitting} className="gap-1.5 text-xs">
-                                {submitting ? <Loader2 className="size-3.5 animate-spin" /> : <UserPlus className="size-3.5" />}
-                                Create Student
                             </Button>
                         </div>
                     </SheetFooter>

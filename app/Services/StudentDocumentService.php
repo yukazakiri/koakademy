@@ -13,6 +13,7 @@ use App\Models\StudentDocumentRecord;
 use App\Models\StudentEnrollment;
 use App\Models\User;
 use App\Notifications\StudentDocumentStatusNotification;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +21,7 @@ use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 use ZipArchive;
 
 final class StudentDocumentService
@@ -120,49 +122,35 @@ final class StudentDocumentService
      */
     public function checklistFor(?string $studentType = null, ?int $schoolId = null, bool $forStudentPortal = false): array
     {
-        if ($forStudentPortal) {
-            $portalChecklist = $this->configuration->documentChecklist($schoolId);
-            $slots = [];
-
-            foreach ($portalChecklist as $key => $meta) {
-                if (! array_key_exists($key, self::SLOT_CATALOG)) {
-                    continue;
-                }
-                $catalog = self::SLOT_CATALOG[$key];
-                $slots[] = [
-                    'key' => $key,
-                    'label' => (string) $meta['label'],
-                    'short_label' => $catalog['short_label'],
-                    'description' => (string) ($meta['description'] ?? ''),
-                    'accepted' => (string) ($meta['accepted'] ?? $catalog['accepted']),
-                    'required' => (bool) ($meta['required'] ?? false),
-                    'enabled' => true,
-                    'image_only' => (bool) ($catalog['image_only'] ?? false),
-                ];
-            }
-
-            if ($slots !== []) {
-                return $slots;
-            }
-        }
-
         $config = $this->configuration->get($schoolId);
         $resolvedType = $studentType ?: (string) ($config['default_type'] ?? StudentType::College->value);
         $isPhilippine = (bool) ($config['philippine_reporting'] ?? false);
         $configuredDocSlots = is_array($config['documents'] ?? null) ? $config['documents'] : [];
 
-        $configuredChecklist = $config['document_checklist'][$resolvedType]
-            ?? $config['document_checklist']['default']
-            ?? null;
+        $configuredChecklist = null;
+        if (is_array($config['document_checklist'] ?? null)) {
+            if (array_key_exists($resolvedType, $config['document_checklist']) && is_array($config['document_checklist'][$resolvedType])) {
+                $configuredChecklist = $config['document_checklist'][$resolvedType];
+            } elseif (array_key_exists('default', $config['document_checklist']) && is_array($config['document_checklist']['default'])) {
+                $configuredChecklist = $config['document_checklist']['default'];
+            }
+        }
 
-        if (is_array($configuredChecklist) && $configuredChecklist !== []) {
+        if ($configuredChecklist !== null) {
             $slots = [];
             foreach ($configuredChecklist as $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
                 $key = (string) ($item['key'] ?? '');
                 if ($key === '' || ! array_key_exists($key, self::SLOT_CATALOG)) {
                     continue;
                 }
                 if (array_key_exists('enabled', $item) && ! (bool) $item['enabled']) {
+                    continue;
+                }
+                $docSlotOverride = is_array($configuredDocSlots[$key] ?? null) ? $configuredDocSlots[$key] : null;
+                if ($forStudentPortal && is_array($docSlotOverride) && array_key_exists('visible', $docSlotOverride) && ! (bool) $docSlotOverride['visible']) {
                     continue;
                 }
                 $catalog = self::SLOT_CATALOG[$key];
@@ -184,9 +172,31 @@ final class StudentDocumentService
                 ];
             }
 
-            if ($slots !== []) {
-                return $slots;
+            return $slots;
+        }
+
+        if ($forStudentPortal) {
+            $portalChecklist = $this->configuration->documentChecklist($schoolId);
+            $slots = [];
+
+            foreach ($portalChecklist as $key => $meta) {
+                if (! array_key_exists($key, self::SLOT_CATALOG)) {
+                    continue;
+                }
+                $catalog = self::SLOT_CATALOG[$key];
+                $slots[] = [
+                    'key' => $key,
+                    'label' => (string) $meta['label'],
+                    'short_label' => $catalog['short_label'],
+                    'description' => (string) ($meta['description'] ?? ''),
+                    'accepted' => (string) ($meta['accepted'] ?? $catalog['accepted']),
+                    'required' => (bool) ($meta['required'] ?? false),
+                    'enabled' => true,
+                    'image_only' => (bool) ($catalog['image_only'] ?? false),
+                ];
             }
+
+            return $slots;
         }
 
         return $this->defaultChecklistForType($resolvedType, $isPhilippine, $configuredDocSlots);
@@ -506,66 +516,95 @@ final class StudentDocumentService
             throw ValidationException::withMessages(['file' => 'Unable to store uploaded document.']);
         }
 
-        return DB::transaction(function () use ($student, $documentKey, $file, $path, $disk, $actor, $autoVerify): StudentDocumentRecord {
-            $student->loadMissing('DocumentLocation');
-            $oldPath = $student->DocumentLocation?->getAttribute($documentKey);
+        /** @var list<array{0: string, 1: string|null}> $filesToDelete */
+        $filesToDelete = [];
 
-            if (! $student->DocumentLocation) {
-                $docLocation = DocumentLocation::create([$documentKey => $path]);
-                $student->forceFill(['document_location_id' => $docLocation->id])->save();
-            } else {
-                $this->deleteStoredFile($oldPath);
-                $student->DocumentLocation->update([$documentKey => $path]);
-            }
+        try {
+            $record = DB::transaction(function () use ($student, $documentKey, $file, $path, $disk, $actor, $autoVerify, &$filesToDelete): StudentDocumentRecord {
+                Student::withoutSchoolScope()->withTrashed()->whereKey($student->id)->lockForUpdate()->first();
+                $student->refresh()->load('DocumentLocation');
+                $oldPath = $student->DocumentLocation?->getAttribute($documentKey);
 
-            $record = $this->firstOrNewRecord($student, $documentKey);
-            $history = is_array($record->history) ? $record->history : [];
+                if (! $student->DocumentLocation) {
+                    $docLocation = DocumentLocation::create([$documentKey => $path]);
+                    $student->forceFill(['document_location_id' => $docLocation->id])->save();
+                } else {
+                    if (is_string($oldPath) && mb_trim($oldPath) !== '' && $oldPath !== $path) {
+                        $filesToDelete[] = [$oldPath, null];
+                    }
+                    $student->DocumentLocation->update([$documentKey => $path]);
+                }
 
-            if (filled($record->file_path)) {
-                $history[] = [
-                    'event' => 'replaced',
-                    'previous_file_name' => $record->file_name,
-                    'previous_status' => $record->status,
-                    'actor' => $actor?->name ?? 'System',
-                    'at' => now()->toIso8601String(),
-                ];
-            } else {
-                $history[] = [
-                    'event' => 'uploaded',
+                $record = $this->firstOrNewRecord($student, $documentKey, lockForUpdate: true);
+                if (filled($record->file_path) && $record->file_path !== $path && $record->file_path !== $oldPath) {
+                    $filesToDelete[] = [(string) $record->file_path, $record->disk];
+                }
+
+                $history = is_array($record->history) ? $record->history : [];
+
+                if (filled($record->file_path)) {
+                    $history[] = [
+                        'event' => 'replaced',
+                        'previous_file_name' => $record->file_name,
+                        'previous_status' => $record->status,
+                        'actor' => $actor?->name ?? 'System',
+                        'at' => now()->toIso8601String(),
+                    ];
+                } else {
+                    $history[] = [
+                        'event' => 'uploaded',
+                        'file_name' => $file->getClientOriginalName(),
+                        'actor' => $actor?->name ?? 'Student',
+                        'at' => now()->toIso8601String(),
+                    ];
+                }
+
+                $wasPhysicalOnFile = $record->exists
+                    && $record->status === StudentDocumentRecord::StatusPhysicalOnFile;
+
+                $nextStatus = $autoVerify
+                    ? StudentDocumentRecord::StatusVerified
+                    : ($wasPhysicalOnFile
+                        ? StudentDocumentRecord::StatusPhysicalOnFile
+                        : StudentDocumentRecord::StatusPendingReview);
+
+                $record->fill([
+                    'school_id' => $student->school_id,
+                    'status' => $nextStatus,
+                    'file_path' => $path,
+                    'disk' => $disk,
                     'file_name' => $file->getClientOriginalName(),
-                    'actor' => $actor?->name ?? 'Student',
-                    'at' => now()->toIso8601String(),
-                ];
-            }
+                    'mime_type' => $file->getClientMimeType(),
+                    'file_size' => $file->getSize(),
+                    'uploaded_by' => $actor?->id,
+                    'uploaded_at' => now(),
+                    'verified_by' => $autoVerify
+                        ? $actor?->id
+                        : ($wasPhysicalOnFile ? $record->verified_by : null),
+                    'verified_at' => $autoVerify
+                        ? now()
+                        : ($wasPhysicalOnFile ? $record->verified_at : null),
+                    'rejection_reason' => null,
+                    'waiver_reason' => null,
+                    'history' => array_slice($history, -20),
+                ]);
+                $record->save();
 
-            $nextStatus = $autoVerify
-                ? StudentDocumentRecord::StatusVerified
-                : StudentDocumentRecord::StatusPendingReview;
-
-            $record->fill([
-                'school_id' => $student->school_id,
-                'status' => $nextStatus,
-                'file_path' => $path,
-                'disk' => $disk,
-                'file_name' => $file->getClientOriginalName(),
-                'mime_type' => $file->getClientMimeType(),
-                'file_size' => $file->getSize(),
-                'uploaded_by' => $actor?->id,
-                'uploaded_at' => now(),
-                'verified_by' => $autoVerify ? $actor?->id : null,
-                'verified_at' => $autoVerify ? now() : null,
-                'rejection_reason' => null,
-                'waiver_reason' => null,
-                'history' => array_slice($history, -20),
-            ]);
-            $record->save();
-
-            if ($autoVerify) {
                 $this->syncToEnrollmentRequirements($student, $documentKey, $record, $actor);
-            }
 
-            return $record;
-        });
+                return $record;
+            });
+        } catch (Throwable $exception) {
+            $this->deleteStoredFile($path, $disk);
+
+            throw $exception;
+        }
+
+        foreach ($filesToDelete as [$stalePath, $staleDisk]) {
+            $this->deleteStoredFile($stalePath, $staleDisk);
+        }
+
+        return $record;
     }
 
     public function removeFixed(Student $student, string $documentKey, ?User $actor = null): void
@@ -574,17 +613,25 @@ final class StudentDocumentService
             abort(404, 'Invalid document type.');
         }
 
-        DB::transaction(function () use ($student, $documentKey, $actor): void {
-            $student->loadMissing('DocumentLocation');
+        /** @var list<array{0: string, 1: string|null}> $filesToDelete */
+        $filesToDelete = [];
+
+        DB::transaction(function () use ($student, $documentKey, $actor, &$filesToDelete): void {
+            Student::withoutSchoolScope()->withTrashed()->whereKey($student->id)->lockForUpdate()->first();
+            $student->refresh()->load('DocumentLocation');
             $oldPath = $student->DocumentLocation?->getAttribute($documentKey);
 
             if ($student->DocumentLocation) {
-                $this->deleteStoredFile($oldPath);
+                if (is_string($oldPath) && mb_trim($oldPath) !== '') {
+                    $filesToDelete[] = [$oldPath, null];
+                }
                 $student->DocumentLocation->update([$documentKey => null]);
             }
 
             if ($documentKey === 'picture_1x1' && $student->profile_url) {
-                $this->deleteStoredFile($student->profile_url);
+                if ($student->profile_url !== $oldPath) {
+                    $filesToDelete[] = [(string) $student->profile_url, null];
+                }
                 $student->update(['profile_url' => null]);
             }
 
@@ -592,11 +639,12 @@ final class StudentDocumentService
                 $record = StudentDocumentRecord::query()
                     ->where('student_id', $student->id)
                     ->where('document_key', $documentKey)
+                    ->lockForUpdate()
                     ->first();
 
                 if ($record) {
                     if (filled($record->file_path) && $record->file_path !== $oldPath) {
-                        $this->deleteStoredFile($record->file_path, $record->disk);
+                        $filesToDelete[] = [(string) $record->file_path, $record->disk];
                     }
                     $history = is_array($record->history) ? $record->history : [];
                     $history[] = [
@@ -616,11 +664,26 @@ final class StudentDocumentService
                         'verified_by' => null,
                         'verified_at' => null,
                         'rejection_reason' => null,
+                        'waiver_reason' => null,
                         'history' => array_slice($history, -20),
                     ])->save();
+
+                    $this->syncToEnrollmentRequirements($student, $documentKey, $record, $actor);
+                } elseif (is_string($oldPath) && mb_trim($oldPath) !== '') {
+                    $missingPlaceholder = new StudentDocumentRecord([
+                        'school_id' => $student->school_id,
+                        'student_id' => $student->id,
+                        'document_key' => $documentKey,
+                        'status' => StudentDocumentRecord::StatusMissing,
+                    ]);
+                    $this->syncToEnrollmentRequirements($student, $documentKey, $missingPlaceholder, $actor);
                 }
             }
         });
+
+        foreach ($filesToDelete as [$stalePath, $staleDisk]) {
+            $this->deleteStoredFile($stalePath, $staleDisk);
+        }
     }
 
     /**
@@ -635,14 +698,18 @@ final class StudentDocumentService
         ?string $notes = null,
         ?string $expiresAt = null,
         bool $notifyStudent = true,
+        bool &$notified = false,
     ): StudentDocumentRecord {
         if (! in_array($documentKey, DocumentLocation::DOCUMENT_FIELDS, true)) {
             throw ValidationException::withMessages(['document_type' => 'Invalid document type.']);
         }
 
+        $notified = false;
+
         $record = DB::transaction(function () use ($student, $documentKey, $action, $actor, $reason, $notes, $expiresAt): StudentDocumentRecord {
-            $student->loadMissing('DocumentLocation');
-            $record = $this->firstOrNewRecord($student, $documentKey);
+            Student::withoutSchoolScope()->withTrashed()->whereKey($student->id)->lockForUpdate()->first();
+            $student->refresh()->load('DocumentLocation');
+            $record = $this->firstOrNewRecord($student, $documentKey, lockForUpdate: true);
 
             $legacyPath = $student->DocumentLocation?->getAttribute($documentKey);
             if (! filled($record->file_path) && is_string($legacyPath) && mb_trim($legacyPath) !== '') {
@@ -690,7 +757,7 @@ final class StudentDocumentService
 
         if ($action === 'reject' && $notifyStudent) {
             $label = $this->labelFor($documentKey, $student->student_type?->value, $student->school_id);
-            $this->notifyStudent($student, new StudentDocumentStatusNotification(
+            $notified = $this->notifyStudent($student, new StudentDocumentStatusNotification(
                 student: $student,
                 eventType: 'rejected',
                 documentLabels: [$label],
@@ -721,40 +788,56 @@ final class StudentDocumentService
         }
 
         $student = Student::query()
-            ->where('id', $enrollment->student_id)
-            ->orWhere('student_id', (string) $enrollment->student_id)
+            ->whereKey($enrollment->student_id)
             ->first();
 
         if (! $student instanceof Student) {
             return;
         }
 
-        $record = $this->firstOrNewRecord($student, $documentKey);
-        $nextStatus = match ($requirement->status) {
-            EnrollmentRequirement::Verified => StudentDocumentRecord::StatusVerified,
-            EnrollmentRequirement::Waived => StudentDocumentRecord::StatusWaived,
-            default => filled($record->file_path) || filled($student->DocumentLocation?->getAttribute($documentKey))
-                ? StudentDocumentRecord::StatusPendingReview
-                : StudentDocumentRecord::StatusMissing,
-        };
+        DB::transaction(function () use ($student, $documentKey, $requirement, $enrollment, $actor): void {
+            Student::withoutSchoolScope()->withTrashed()->whereKey($student->id)->lockForUpdate()->first();
+            $student->refresh()->load('DocumentLocation');
+            $record = $this->firstOrNewRecord($student, $documentKey, lockForUpdate: true);
 
-        $history = is_array($record->history) ? $record->history : [];
-        $history[] = [
-            'event' => 'synced_from_enrollment',
-            'status' => $nextStatus,
-            'enrollment_id' => $enrollment->id,
-            'actor' => $actor?->name ?? 'System',
-            'at' => now()->toIso8601String(),
-        ];
+            $nextStatus = match ($requirement->status) {
+                EnrollmentRequirement::Verified => StudentDocumentRecord::StatusVerified,
+                EnrollmentRequirement::Waived => StudentDocumentRecord::StatusWaived,
+                default => filled($record->file_path) || filled($student->DocumentLocation?->getAttribute($documentKey))
+                    ? StudentDocumentRecord::StatusPendingReview
+                    : StudentDocumentRecord::StatusMissing,
+            };
 
-        $record->fill([
-            'school_id' => $student->school_id,
-            'status' => $nextStatus,
-            'verified_by' => $requirement->verified_by ?? $requirement->waived_by ?? $actor?->id,
-            'verified_at' => $requirement->verified_at ?? $requirement->waived_at ?? (in_array($nextStatus, StudentDocumentRecord::COMPLIANT_STATUSES, true) ? now() : null),
-            'waiver_reason' => $requirement->waiver_reason,
-            'history' => array_slice($history, -20),
-        ])->save();
+            $history = is_array($record->history) ? $record->history : [];
+            $history[] = [
+                'event' => 'synced_from_enrollment',
+                'status' => $nextStatus,
+                'enrollment_id' => $enrollment->id,
+                'actor' => $actor?->name ?? 'System',
+                'at' => now()->toIso8601String(),
+            ];
+
+            $verifiedBy = match ($nextStatus) {
+                StudentDocumentRecord::StatusVerified => $requirement->verified_by ?? $actor?->id,
+                StudentDocumentRecord::StatusWaived => $requirement->waived_by ?? $actor?->id,
+                default => null,
+            };
+
+            $verifiedAt = match ($nextStatus) {
+                StudentDocumentRecord::StatusVerified => $requirement->verified_at ?? now(),
+                StudentDocumentRecord::StatusWaived => $requirement->waived_at ?? now(),
+                default => null,
+            };
+
+            $record->fill([
+                'school_id' => $student->school_id,
+                'status' => $nextStatus,
+                'verified_by' => $verifiedBy,
+                'verified_at' => $verifiedAt,
+                'waiver_reason' => $nextStatus === StudentDocumentRecord::StatusWaived ? $requirement->waiver_reason : null,
+                'history' => array_slice($history, -20),
+            ])->save();
+        });
     }
 
     /**
@@ -887,7 +970,7 @@ final class StudentDocumentService
             }
             $contents = Storage::disk($resolved['disk'])->get($resolved['path']);
             if (is_string($contents)) {
-                $zip->addFromString('required/'.$resolved['filename'], $contents);
+                $zip->addFromString('required/'.$field.'_'.$resolved['filename'], $contents);
                 $added++;
             }
         }
@@ -942,10 +1025,7 @@ final class StudentDocumentService
         ];
 
         $latestEnrollment = StudentEnrollment::query()
-            ->where(function ($query) use ($student): void {
-                $query->where('student_id', (string) $student->id)
-                    ->orWhere('student_id', (string) $student->student_id);
-            })
+            ->where('student_id', $student->id)
             ->latest('id')
             ->first();
 
@@ -968,6 +1048,294 @@ final class StudentDocumentService
         ];
 
         return $docs;
+    }
+
+    /**
+     * Resolve distinct (school_id, student_type) cohorts and their applicable checklists for a scoped Student query.
+     *
+     * @param  Builder<Student>  $scopeQuery
+     * @return list<array{school_id: int|null, student_type: string|null, checklist: list<array{key: string, label: string, short_label: string, description: string, accepted: string, required: bool, enabled: bool, image_only: bool}>}>
+     */
+    public function resolveCohortGroups(Builder $scopeQuery): array
+    {
+        $rows = (clone $scopeQuery)
+            ->toBase()
+            ->select(['students.school_id', 'students.student_type'])
+            ->distinct()
+            ->get();
+
+        $groups = [];
+        foreach ($rows as $row) {
+            $groupSchoolId = $row->school_id !== null ? (int) $row->school_id : null;
+            $groupType = is_string($row->student_type) && $row->student_type !== '' ? $row->student_type : null;
+
+            $groups[] = [
+                'school_id' => $groupSchoolId,
+                'student_type' => $groupType,
+                'checklist' => $this->checklistFor($groupType, $groupSchoolId),
+            ];
+        }
+
+        return $groups;
+    }
+
+    /**
+     * Compute KPI totals and per-column compliance metrics in SQL without hydrating the full student roster.
+     *
+     * @param  Builder<Student>  $scopeQuery
+     * @param  list<array{school_id: int|null, student_type: string|null, checklist: list<array{key: string, label: string, short_label: string, description: string, accepted: string, required: bool, enabled: bool, image_only: bool}>}>  $cohortGroups
+     * @param  list<array{key: string, label: string, short_label: string, description: string, accepted: string, required: bool, enabled: bool, image_only: bool}>  $matrixColumns
+     * @return array{kpis: array{total_students: int, fully_compliant: int, pending_review: int, missing_required: int, rejected_count: int}, column_stats: array<string, array<string, mixed>>}
+     */
+    public function cohortComplianceStats(Builder $scopeQuery, array $cohortGroups, array $matrixColumns): array
+    {
+        $hasDocRecordsTable = Schema::hasTable('student_document_records');
+
+        $columnStats = [];
+        foreach ($matrixColumns as $col) {
+            $columnStats[$col['key']] = [
+                'key' => $col['key'],
+                'label' => $col['label'],
+                'short_label' => $col['short_label'],
+                'required' => $col['required'],
+                'compliant' => 0,
+                'pending_review' => 0,
+                'rejected' => 0,
+                'missing' => 0,
+                'applicable' => 0,
+                'compliance_percent' => 100,
+            ];
+        }
+
+        $kpis = [
+            'total_students' => 0,
+            'fully_compliant' => 0,
+            'pending_review' => 0,
+            'missing_required' => 0,
+            'rejected_count' => 0,
+        ];
+
+        $matrixKeys = array_keys($columnStats);
+
+        foreach ($cohortGroups as $group) {
+            $checklist = $group['checklist'];
+            $applicableKeys = array_values(array_intersect(
+                array_column($checklist, 'key'),
+                DocumentLocation::DOCUMENT_FIELDS,
+            ));
+            $requiredKeys = array_values(array_intersect(
+                array_column(array_filter($checklist, static fn (array $slot): bool => $slot['required']), 'key'),
+                DocumentLocation::DOCUMENT_FIELDS,
+            ));
+
+            $aggQuery = (clone $scopeQuery)
+                ->toBase()
+                ->leftJoin('document_locations as dl', 'dl.id', '=', 'students.document_location_id');
+
+            if ($group['school_id'] === null) {
+                $aggQuery->whereNull('students.school_id');
+            } else {
+                $aggQuery->where('students.school_id', $group['school_id']);
+            }
+
+            if ($group['student_type'] === null) {
+                $aggQuery->whereNull('students.student_type');
+            } else {
+                $aggQuery->where('students.student_type', $group['student_type']);
+            }
+
+            $aggQuery->selectRaw('COUNT(*) as total_students');
+
+            [$allCompliantSql, $allCompliantBindings] = $this->sqlAllSlotsCompliant($requiredKeys, $hasDocRecordsTable);
+            $aggQuery->selectRaw("COALESCE(SUM(CASE WHEN ({$allCompliantSql}) THEN 1 ELSE 0 END), 0) as fully_compliant", $allCompliantBindings);
+
+            [$anyPendingSql, $anyPendingBindings] = $this->sqlAnySlotPendingReview($applicableKeys, $hasDocRecordsTable, true);
+            $aggQuery->selectRaw("COALESCE(SUM(CASE WHEN ({$anyPendingSql}) THEN 1 ELSE 0 END), 0) as pending_review", $anyPendingBindings);
+
+            [$anyMissingSql, $anyMissingBindings] = $this->sqlAnySlotMissing($requiredKeys, $hasDocRecordsTable, true);
+            $aggQuery->selectRaw("COALESCE(SUM(CASE WHEN ({$anyMissingSql}) THEN 1 ELSE 0 END), 0) as missing_required", $anyMissingBindings);
+
+            [$anyRejectedSql, $anyRejectedBindings] = $this->sqlAnySlotRejected($applicableKeys, $hasDocRecordsTable);
+            $aggQuery->selectRaw("COALESCE(SUM(CASE WHEN ({$anyRejectedSql}) THEN 1 ELSE 0 END), 0) as rejected_count", $anyRejectedBindings);
+
+            $groupMatrixKeys = array_values(array_intersect($matrixKeys, $applicableKeys));
+            foreach ($groupMatrixKeys as $colKey) {
+                [$cSql, $cBind] = $this->sqlSlotCompliant($colKey, $hasDocRecordsTable);
+                $aggQuery->selectRaw("COALESCE(SUM(CASE WHEN ({$cSql}) THEN 1 ELSE 0 END), 0) as col_{$colKey}_compliant", $cBind);
+
+                [$pSql, $pBind] = $this->sqlSlotPendingReview($colKey, $hasDocRecordsTable, true);
+                $aggQuery->selectRaw("COALESCE(SUM(CASE WHEN ({$pSql}) THEN 1 ELSE 0 END), 0) as col_{$colKey}_pending", $pBind);
+
+                [$rSql, $rBind] = $this->sqlSlotRejected($colKey, $hasDocRecordsTable);
+                $aggQuery->selectRaw("COALESCE(SUM(CASE WHEN ({$rSql}) THEN 1 ELSE 0 END), 0) as col_{$colKey}_rejected", $rBind);
+
+                [$mSql, $mBind] = $this->sqlSlotMissing($colKey, $hasDocRecordsTable, true);
+                $aggQuery->selectRaw("COALESCE(SUM(CASE WHEN ({$mSql}) THEN 1 ELSE 0 END), 0) as col_{$colKey}_missing", $mBind);
+            }
+
+            $row = $aggQuery->first();
+            if ($row === null) {
+                continue;
+            }
+
+            $groupTotal = (int) ($row->total_students ?? 0);
+            $kpis['total_students'] += $groupTotal;
+            $kpis['fully_compliant'] += (int) ($row->fully_compliant ?? 0);
+            $kpis['pending_review'] += (int) ($row->pending_review ?? 0);
+            $kpis['missing_required'] += (int) ($row->missing_required ?? 0);
+            $kpis['rejected_count'] += (int) ($row->rejected_count ?? 0);
+
+            foreach ($groupMatrixKeys as $colKey) {
+                $columnStats[$colKey]['applicable'] += $groupTotal;
+                $columnStats[$colKey]['compliant'] += (int) ($row->{"col_{$colKey}_compliant"} ?? 0);
+                $columnStats[$colKey]['pending_review'] += (int) ($row->{"col_{$colKey}_pending"} ?? 0);
+                $columnStats[$colKey]['rejected'] += (int) ($row->{"col_{$colKey}_rejected"} ?? 0);
+                $columnStats[$colKey]['missing'] += (int) ($row->{"col_{$colKey}_missing"} ?? 0);
+            }
+        }
+
+        foreach ($columnStats as &$stat) {
+            $stat['compliance_percent'] = $stat['applicable'] > 0
+                ? (int) round(($stat['compliant'] / $stat['applicable']) * 100)
+                : 100;
+        }
+        unset($stat);
+
+        return [
+            'kpis' => $kpis,
+            'column_stats' => $columnStats,
+        ];
+    }
+
+    /**
+     * Push compliance & missing_doc filters directly into SQL so pagination runs before row hydration.
+     *
+     * @param  Builder<Student>  $query
+     * @param  list<array{school_id: int|null, student_type: string|null, checklist: list<array{key: string, label: string, short_label: string, description: string, accepted: string, required: bool, enabled: bool, image_only: bool}>}>  $cohortGroups
+     */
+    public function applyComplianceFilters(Builder $query, array $cohortGroups, string $compliance, string $missingDoc): void
+    {
+        if ($compliance === 'all' && $missingDoc === '') {
+            return;
+        }
+
+        if ($cohortGroups === []) {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
+
+        $hasDocRecordsTable = Schema::hasTable('student_document_records');
+
+        $query->where(function (Builder $outer) use ($cohortGroups, $compliance, $missingDoc, $hasDocRecordsTable): void {
+            foreach ($cohortGroups as $group) {
+                $outer->orWhere(function (Builder $groupQuery) use ($group, $compliance, $missingDoc, $hasDocRecordsTable): void {
+                    if ($group['school_id'] === null) {
+                        $groupQuery->whereNull('students.school_id');
+                    } else {
+                        $groupQuery->where('students.school_id', $group['school_id']);
+                    }
+
+                    if ($group['student_type'] === null) {
+                        $groupQuery->whereNull('students.student_type');
+                    } else {
+                        $groupQuery->where('students.student_type', $group['student_type']);
+                    }
+
+                    $checklist = $group['checklist'];
+                    $applicableKeys = array_values(array_intersect(
+                        array_column($checklist, 'key'),
+                        DocumentLocation::DOCUMENT_FIELDS,
+                    ));
+                    $requiredKeys = array_values(array_intersect(
+                        array_column(array_filter($checklist, static fn (array $slot): bool => $slot['required']), 'key'),
+                        DocumentLocation::DOCUMENT_FIELDS,
+                    ));
+
+                    if ($compliance === 'pending_review') {
+                        [$sql, $bindings] = $this->sqlAnySlotPendingReview($applicableKeys, $hasDocRecordsTable, false);
+                        $groupQuery->whereRaw($sql, $bindings);
+                    } elseif ($compliance === 'missing') {
+                        [$sql, $bindings] = $this->sqlAnySlotMissing($requiredKeys, $hasDocRecordsTable, false);
+                        $groupQuery->whereRaw($sql, $bindings);
+                    } elseif ($compliance === 'rejected') {
+                        [$sql, $bindings] = $this->sqlAnySlotRejected($applicableKeys, $hasDocRecordsTable);
+                        $groupQuery->whereRaw($sql, $bindings);
+                    } elseif ($compliance === 'complete') {
+                        [$sql, $bindings] = $this->sqlAllSlotsCompliant($requiredKeys, $hasDocRecordsTable);
+                        $groupQuery->whereRaw($sql, $bindings);
+                    }
+
+                    if ($missingDoc !== '') {
+                        if (! in_array($missingDoc, $applicableKeys, true)) {
+                            $groupQuery->whereRaw('1 = 0');
+                        } else {
+                            [$sql, $bindings] = $this->sqlSlotCompliant($missingDoc, $hasDocRecordsTable);
+                            $groupQuery->whereRaw("NOT ({$sql})", $bindings);
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    /**
+     * Count Pending Review document slots for active in-scope students using their applicable checklists
+     * (matching the Documents Hub queue).
+     */
+    public function countPendingReviewDocuments(): int
+    {
+        $scopeQuery = Student::query();
+        $cohortGroups = $this->resolveCohortGroups($scopeQuery);
+        if ($cohortGroups === []) {
+            return 0;
+        }
+
+        $hasDocRecordsTable = Schema::hasTable('student_document_records');
+        $total = 0;
+
+        foreach ($cohortGroups as $group) {
+            $applicableKeys = array_values(array_intersect(
+                array_column($group['checklist'], 'key'),
+                DocumentLocation::DOCUMENT_FIELDS,
+            ));
+
+            if ($applicableKeys === []) {
+                continue;
+            }
+
+            $aggQuery = (clone $scopeQuery)
+                ->toBase()
+                ->leftJoin('document_locations as dl', 'dl.id', '=', 'students.document_location_id');
+
+            if ($group['school_id'] === null) {
+                $aggQuery->whereNull('students.school_id');
+            } else {
+                $aggQuery->where('students.school_id', $group['school_id']);
+            }
+
+            if ($group['student_type'] === null) {
+                $aggQuery->whereNull('students.student_type');
+            } else {
+                $aggQuery->where('students.student_type', $group['student_type']);
+            }
+
+            foreach ($applicableKeys as $key) {
+                [$sql, $bindings] = $this->sqlSlotPendingReview($key, $hasDocRecordsTable, true);
+                $aggQuery->selectRaw("COALESCE(SUM(CASE WHEN ({$sql}) THEN 1 ELSE 0 END), 0) as pending_{$key}", $bindings);
+            }
+
+            $row = $aggQuery->first();
+            if ($row === null) {
+                continue;
+            }
+
+            foreach ($applicableKeys as $key) {
+                $total += (int) ($row->{"pending_{$key}"} ?? 0);
+            }
+        }
+
+        return $total;
     }
 
     /**
@@ -1028,7 +1396,9 @@ final class StudentDocumentService
                 'short_label' => $catalog['short_label'],
                 'description' => $description,
                 'accepted' => $catalog['accepted'],
-                'required' => is_array($docSlotOverride) && ($docSlotOverride['required'] ?? false) ? true : $required,
+                'required' => is_array($docSlotOverride) && array_key_exists('required', $docSlotOverride)
+                    ? (bool) $docSlotOverride['required']
+                    : $required,
                 'enabled' => true,
                 'image_only' => (bool) ($catalog['image_only'] ?? false),
             ];
@@ -1055,11 +1425,12 @@ final class StudentDocumentService
             ->keyBy('document_key');
     }
 
-    private function firstOrNewRecord(Student $student, string $documentKey): StudentDocumentRecord
+    private function firstOrNewRecord(Student $student, string $documentKey, bool $lockForUpdate = false): StudentDocumentRecord
     {
         $record = StudentDocumentRecord::query()
             ->where('student_id', $student->id)
             ->where('document_key', $documentKey)
+            ->when($lockForUpdate, fn ($query) => $query->lockForUpdate())
             ->first();
 
         if ($record instanceof StudentDocumentRecord) {
@@ -1102,10 +1473,7 @@ final class StudentDocumentService
         $aliases = self::REQUIREMENT_KEY_ALIASES[$documentKey] ?? [$documentKey];
 
         $enrollmentIds = StudentEnrollment::query()
-            ->where(function ($query) use ($student): void {
-                $query->where('student_id', (string) $student->id)
-                    ->orWhere('student_id', (string) $student->student_id);
-            })
+            ->where('student_id', $student->id)
             ->whereNotIn('status', ['cancelled', 'rejected', 'withdrawn'])
             ->pluck('id');
 
@@ -1138,6 +1506,9 @@ final class StudentDocumentService
                     'status' => EnrollmentRequirement::Pending,
                     'verified_by' => null,
                     'verified_at' => null,
+                    'waived_by' => null,
+                    'waived_at' => null,
+                    'waiver_reason' => null,
                 ]);
             }
         }
@@ -1210,8 +1581,201 @@ final class StudentDocumentService
         foreach ($candidateDisks as $disk) {
             if (Storage::disk($disk)->exists($path)) {
                 Storage::disk($disk)->delete($path);
+
+                break;
             }
         }
+    }
+
+    /**
+     * @return array{0: string, 1: list<mixed>}
+     */
+    private function sqlSlotCompliant(string $key, bool $hasDocRecordsTable): array
+    {
+        if (! $hasDocRecordsTable) {
+            return ['0 = 1', []];
+        }
+
+        return [
+            'EXISTS (SELECT 1 FROM student_document_records sdr WHERE sdr.student_id = students.id AND sdr.document_key = ? AND sdr.status IN (?, ?, ?))',
+            [
+                $key,
+                StudentDocumentRecord::StatusVerified,
+                StudentDocumentRecord::StatusWaived,
+                StudentDocumentRecord::StatusPhysicalOnFile,
+            ],
+        ];
+    }
+
+    /**
+     * @return array{0: string, 1: list<mixed>}
+     */
+    private function sqlSlotHasFile(string $key, bool $hasDocRecordsTable, bool $hasJoinedDocLocation): array
+    {
+        $legacySql = $hasJoinedDocLocation
+            ? "(dl.{$key} IS NOT NULL AND TRIM(dl.{$key}) <> '')"
+            : "EXISTS (SELECT 1 FROM document_locations dl WHERE dl.id = students.document_location_id AND dl.{$key} IS NOT NULL AND TRIM(dl.{$key}) <> '')";
+
+        if (! $hasDocRecordsTable) {
+            return [$legacySql, []];
+        }
+
+        $recordFileSql = "EXISTS (SELECT 1 FROM student_document_records sdr WHERE sdr.student_id = students.id AND sdr.document_key = ? AND sdr.file_path IS NOT NULL AND TRIM(sdr.file_path) <> '')";
+
+        return ["({$recordFileSql} OR {$legacySql})", [$key]];
+    }
+
+    /**
+     * @return array{0: string, 1: list<mixed>}
+     */
+    private function sqlSlotNonMissingRecord(string $key, bool $hasDocRecordsTable): array
+    {
+        if (! $hasDocRecordsTable) {
+            return ['0 = 1', []];
+        }
+
+        return [
+            'EXISTS (SELECT 1 FROM student_document_records sdr WHERE sdr.student_id = students.id AND sdr.document_key = ? AND sdr.status <> ?)',
+            [$key, StudentDocumentRecord::StatusMissing],
+        ];
+    }
+
+    /**
+     * @return array{0: string, 1: list<mixed>}
+     */
+    private function sqlSlotPendingReview(string $key, bool $hasDocRecordsTable, bool $hasJoinedDocLocation): array
+    {
+        [$hasFileSql, $hasFileBindings] = $this->sqlSlotHasFile($key, $hasDocRecordsTable, $hasJoinedDocLocation);
+
+        if (! $hasDocRecordsTable) {
+            return [$hasFileSql, $hasFileBindings];
+        }
+
+        [$nonMissingSql, $nonMissingBindings] = $this->sqlSlotNonMissingRecord($key, true);
+        $explicitPendingSql = 'EXISTS (SELECT 1 FROM student_document_records sdr WHERE sdr.student_id = students.id AND sdr.document_key = ? AND sdr.status = ?)';
+
+        return [
+            "({$explicitPendingSql} OR (NOT ({$nonMissingSql}) AND ({$hasFileSql})))",
+            [$key, StudentDocumentRecord::StatusPendingReview, ...$nonMissingBindings, ...$hasFileBindings],
+        ];
+    }
+
+    /**
+     * @return array{0: string, 1: list<mixed>}
+     */
+    private function sqlSlotRejected(string $key, bool $hasDocRecordsTable): array
+    {
+        if (! $hasDocRecordsTable) {
+            return ['0 = 1', []];
+        }
+
+        return [
+            'EXISTS (SELECT 1 FROM student_document_records sdr WHERE sdr.student_id = students.id AND sdr.document_key = ? AND sdr.status = ?)',
+            [$key, StudentDocumentRecord::StatusRejected],
+        ];
+    }
+
+    /**
+     * @return array{0: string, 1: list<mixed>}
+     */
+    private function sqlSlotMissing(string $key, bool $hasDocRecordsTable, bool $hasJoinedDocLocation): array
+    {
+        [$hasFileSql, $hasFileBindings] = $this->sqlSlotHasFile($key, $hasDocRecordsTable, $hasJoinedDocLocation);
+
+        if (! $hasDocRecordsTable) {
+            return ["NOT ({$hasFileSql})", $hasFileBindings];
+        }
+
+        [$nonMissingSql, $nonMissingBindings] = $this->sqlSlotNonMissingRecord($key, true);
+
+        return [
+            "(NOT ({$nonMissingSql}) AND NOT ({$hasFileSql}))",
+            [...$nonMissingBindings, ...$hasFileBindings],
+        ];
+    }
+
+    /**
+     * @param  list<string>  $keys
+     * @return array{0: string, 1: list<mixed>}
+     */
+    private function sqlAllSlotsCompliant(array $keys, bool $hasDocRecordsTable): array
+    {
+        if ($keys === []) {
+            return ['1 = 1', []];
+        }
+
+        $clauses = [];
+        $bindings = [];
+        foreach ($keys as $key) {
+            [$sql, $bind] = $this->sqlSlotCompliant($key, $hasDocRecordsTable);
+            $clauses[] = "({$sql})";
+            $bindings = [...$bindings, ...$bind];
+        }
+
+        return [implode(' AND ', $clauses), $bindings];
+    }
+
+    /**
+     * @param  list<string>  $keys
+     * @return array{0: string, 1: list<mixed>}
+     */
+    private function sqlAnySlotPendingReview(array $keys, bool $hasDocRecordsTable, bool $hasJoinedDocLocation): array
+    {
+        if ($keys === []) {
+            return ['0 = 1', []];
+        }
+
+        $clauses = [];
+        $bindings = [];
+        foreach ($keys as $key) {
+            [$sql, $bind] = $this->sqlSlotPendingReview($key, $hasDocRecordsTable, $hasJoinedDocLocation);
+            $clauses[] = "({$sql})";
+            $bindings = [...$bindings, ...$bind];
+        }
+
+        return [implode(' OR ', $clauses), $bindings];
+    }
+
+    /**
+     * @param  list<string>  $keys
+     * @return array{0: string, 1: list<mixed>}
+     */
+    private function sqlAnySlotMissing(array $keys, bool $hasDocRecordsTable, bool $hasJoinedDocLocation): array
+    {
+        if ($keys === []) {
+            return ['0 = 1', []];
+        }
+
+        $clauses = [];
+        $bindings = [];
+        foreach ($keys as $key) {
+            [$sql, $bind] = $this->sqlSlotMissing($key, $hasDocRecordsTable, $hasJoinedDocLocation);
+            $clauses[] = "({$sql})";
+            $bindings = [...$bindings, ...$bind];
+        }
+
+        return [implode(' OR ', $clauses), $bindings];
+    }
+
+    /**
+     * @param  list<string>  $keys
+     * @return array{0: string, 1: list<mixed>}
+     */
+    private function sqlAnySlotRejected(array $keys, bool $hasDocRecordsTable): array
+    {
+        if ($keys === []) {
+            return ['0 = 1', []];
+        }
+
+        $clauses = [];
+        $bindings = [];
+        foreach ($keys as $key) {
+            [$sql, $bind] = $this->sqlSlotRejected($key, $hasDocRecordsTable);
+            $clauses[] = "({$sql})";
+            $bindings = [...$bindings, ...$bind];
+        }
+
+        return [implode(' OR ', $clauses), $bindings];
     }
 
     private function guessMimeFromExtension(string $path): ?string

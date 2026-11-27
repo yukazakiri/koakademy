@@ -53,28 +53,177 @@ interface StudentBatchIntakeProps {
     sampleProgramCode?: string;
 }
 
-function parseDelimitedText(input: string): Record<string, string>[] {
-    const lines = input
-        .replace(/\r\n/g, "\n")
-        .split("\n")
-        .map((line) => line.replace(/\r$/, ""))
-        .filter((line) => line.trim().length > 0);
+interface ParsedDelimitedResult {
+    rows: Record<string, string>[];
+    parseErrors: Array<{ row_number: number; message: string }>;
+}
 
-    if (lines.length < 2) return [];
+function escapeCsvCell(value: string): string {
+    if (/[",\r\n]/.test(value)) {
+        return `"${value.replace(/"/g, '""')}"`;
+    }
+    return value;
+}
 
-    const delimiter = lines[0].includes("\t") ? "\t" : ",";
-    const headers = lines[0]
-        .split(delimiter)
-        .map((h) => h.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, ""));
+function detectDelimiter(text: string): "\t" | "," {
+    let inQuotes = false;
+    for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (inQuotes) {
+            if (ch === '"') {
+                if (text[i + 1] === '"') {
+                    i += 1;
+                } else {
+                    inQuotes = false;
+                }
+            }
+            continue;
+        }
+        if (ch === '"') {
+            inQuotes = true;
+        } else if (ch === "\t") {
+            return "\t";
+        } else if (ch === "\n") {
+            break;
+        }
+    }
+    return ",";
+}
 
-    return lines.slice(1).map((line) => {
-        const values = line.split(delimiter).map((v) => v.trim().replace(/^"|"$/g, ""));
+function parseDelimitedText(input: string): ParsedDelimitedResult {
+    const normalized = input.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    if (normalized.trim().length === 0) {
+        return { rows: [], parseErrors: [] };
+    }
+
+    const delimiter = detectDelimiter(normalized);
+    const records: Array<{ values: string[]; malformedReason: string | null }> = [];
+
+    let inQuotes = false;
+    let justClosedQuote = false;
+    let currentField = "";
+    let currentRow: string[] = [];
+    let malformedReason: string | null = null;
+
+    const pushRecord = () => {
+        currentRow.push(currentField);
+        const isBlank = malformedReason === null && currentRow.every((cell) => cell.trim() === "");
+        if (!isBlank) {
+            records.push({ values: currentRow, malformedReason });
+        }
+        currentField = "";
+        currentRow = [];
+        justClosedQuote = false;
+        malformedReason = null;
+    };
+
+    for (let i = 0; i < normalized.length; i++) {
+        const ch = normalized[i];
+
+        if (inQuotes) {
+            if (ch === '"') {
+                if (normalized[i + 1] === '"') {
+                    currentField += '"';
+                    i += 1;
+                } else {
+                    inQuotes = false;
+                    justClosedQuote = true;
+                }
+            } else {
+                currentField += ch;
+            }
+            continue;
+        }
+
+        if (justClosedQuote) {
+            if (ch === delimiter) {
+                currentRow.push(currentField);
+                currentField = "";
+                justClosedQuote = false;
+            } else if (ch === "\n") {
+                pushRecord();
+            } else if (ch === " " || (ch === "\t" && delimiter !== "\t")) {
+                // Ignore trailing spaces after a closing quote before the delimiter/newline
+            } else {
+                malformedReason ??= "Unexpected characters after a closing quote.";
+                currentField += ch;
+                justClosedQuote = false;
+            }
+            continue;
+        }
+
+        if (ch === '"') {
+            if (currentField.trim().length === 0) {
+                inQuotes = true;
+                currentField = "";
+            } else {
+                malformedReason ??= "Unexpected quote inside an unquoted field.";
+                currentField += ch;
+            }
+        } else if (ch === delimiter) {
+            currentRow.push(currentField);
+            currentField = "";
+        } else if (ch === "\n") {
+            pushRecord();
+        } else {
+            currentField += ch;
+        }
+    }
+
+    if (inQuotes) {
+        malformedReason ??= "Unclosed quoted field.";
+        pushRecord();
+    } else if (currentRow.length > 0 || currentField.length > 0 || justClosedQuote) {
+        pushRecord();
+    }
+
+    if (records.length === 0) {
+        return { rows: [], parseErrors: [] };
+    }
+
+    const headerRecord = records[0];
+    if (headerRecord.malformedReason) {
+        return {
+            rows: [],
+            parseErrors: [{ row_number: 0, message: `Header row: ${headerRecord.malformedReason}` }],
+        };
+    }
+
+    const headers = headerRecord.values.map((h) =>
+        h.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, ""),
+    );
+
+    if (records.length < 2) {
+        return { rows: [], parseErrors: [] };
+    }
+
+    const rows: Record<string, string>[] = [];
+    const parseErrors: Array<{ row_number: number; message: string }> = [];
+
+    records.slice(1).forEach((record, index) => {
+        const rowNumber = index + 1;
+        if (record.malformedReason) {
+            parseErrors.push({ row_number: rowNumber, message: record.malformedReason });
+            return;
+        }
+        if (record.values.length !== headers.length) {
+            parseErrors.push({
+                row_number: rowNumber,
+                message: `Expected ${headers.length} column(s), found ${record.values.length}. Wrap values containing commas in double quotes.`,
+            });
+            return;
+        }
+
         const row: Record<string, string> = {};
         headers.forEach((header, idx) => {
-            row[header] = values[idx] ?? "";
+            if (header) {
+                row[header] = record.values[idx].trim();
+            }
         });
-        return row;
+        rows.push(row);
     });
+
+    return { rows, parseErrors };
 }
 
 export function StudentBatchIntake({
@@ -84,11 +233,15 @@ export function StudentBatchIntake({
     sampleProgramCode = "BSCS",
 }: StudentBatchIntakeProps) {
     const [rawText, setRawText] = useState("");
+    const [inputRevision, setInputRevision] = useState(0);
     const [validating, setValidating] = useState(false);
     const [committing, setCommitting] = useState(false);
     const [skipDuplicates, setSkipDuplicates] = useState(true);
     const [provisionPortals, setProvisionPortals] = useState(false);
+    const [parseErrors, setParseErrors] = useState<Array<{ row_number: number; message: string }>>([]);
+    const [committedRowNumbers, setCommittedRowNumbers] = useState<Set<number>>(() => new Set());
     const [preview, setPreview] = useState<{
+        revision: number;
         summary: { total: number; valid: number; errors: number; duplicates: number };
         rows: ValidatedBatchRow[];
     } | null>(null);
@@ -100,6 +253,22 @@ export function StudentBatchIntake({
     } | null>(null);
 
     const fileInputRef = useRef<HTMLInputElement | null>(null);
+    const inputRevisionRef = useRef(0);
+    const validationRequestIdRef = useRef(0);
+
+    const updateRawText = (nextText: string): number => {
+        const nextRevision = inputRevisionRef.current + 1;
+        inputRevisionRef.current = nextRevision;
+        validationRequestIdRef.current += 1;
+        setInputRevision(nextRevision);
+        setRawText(nextText);
+        setValidating(false);
+        setParseErrors([]);
+        setPreview(null);
+        setCommitResult(null);
+        setCommittedRowNumbers(new Set());
+        return nextRevision;
+    };
 
     const defaultType = configuration.default_type || "college";
     const defaultLevel = configuration.year_levels?.[defaultType]?.[0]?.value ?? (defaultType === "shs" ? 11 : 1);
@@ -161,7 +330,11 @@ export function StudentBatchIntake({
             row2.push("260002");
         }
 
-        return [headers.join(","), row1.join(","), row2.join(",")].join("\n");
+        return [
+            headers.map(escapeCsvCell).join(","),
+            row1.map(escapeCsvCell).join(","),
+            row2.map(escapeCsvCell).join(","),
+        ].join("\n");
     };
 
     const handleDownloadTemplate = () => {
@@ -175,61 +348,169 @@ export function StudentBatchIntake({
         URL.revokeObjectURL(url);
     };
 
-    const handleValidate = async (sourceText?: string) => {
+    const handleValidate = async (sourceText?: string, targetRevision?: number) => {
+        if (committing) {
+            toast.warning("Wait for the current import to finish before re-validating.");
+            return;
+        }
+
         const text = sourceText ?? rawText;
+        const revision = targetRevision ?? inputRevisionRef.current;
         const parsed = parseDelimitedText(text);
-        if (parsed.length === 0) {
+
+        if (parsed.parseErrors.length > 0) {
+            setParseErrors(parsed.parseErrors);
+            setPreview(null);
+            setCommitResult(null);
+            toast.error(
+                `Found ${parsed.parseErrors.length} malformed CSV row(s). Fix quoting or column counts before validating.`,
+            );
+            return;
+        }
+
+        if (parsed.rows.length === 0) {
+            setParseErrors([]);
             toast.error("Paste or upload at least a header row plus one student row.");
             return;
         }
 
+        const requestId = ++validationRequestIdRef.current;
+        setParseErrors([]);
         setValidating(true);
         setCommitResult(null);
+        setCommittedRowNumbers(new Set());
         try {
             const response = await axios.post(
                 "/administrators/students/batch-import/validate",
-                { rows: parsed },
+                { rows: parsed.rows },
                 { headers: { Accept: "application/json" } },
             );
-            setPreview(response.data);
+            if (revision !== inputRevisionRef.current || requestId !== validationRequestIdRef.current) {
+                return;
+            }
+            setPreview({
+                revision,
+                summary: response.data.summary,
+                rows: response.data.rows,
+            });
             toast.success(
                 `Validated ${response.data.summary.total} row(s): ${response.data.summary.valid} ready, ${response.data.summary.errors} with errors.`,
             );
         } catch (error: unknown) {
+            if (revision !== inputRevisionRef.current || requestId !== validationRequestIdRef.current) {
+                return;
+            }
             const err = error as { response?: { data?: { message?: string } } };
             toast.error(err.response?.data?.message || "Failed to validate batch rows.");
         } finally {
-            setValidating(false);
+            if (requestId === validationRequestIdRef.current) {
+                setValidating(false);
+            }
         }
     };
 
     const handleFileUpload = async (file: File) => {
-        const content = await file.text();
-        setRawText(content);
-        await handleValidate(content);
+        if (committing) {
+            toast.warning("Wait for the current import to finish before loading another file.");
+            return;
+        }
+
+        let content: string;
+        try {
+            content = await file.text();
+        } catch {
+            toast.error(`Could not read "${file.name}". Your current input was left unchanged.`);
+            return;
+        }
+
+        const nextRevision = updateRawText(content);
+        await handleValidate(content, nextRevision);
     };
 
-    const rowsToCommit = (preview?.rows ?? []).filter(
-        (r) => r.valid && (!skipDuplicates || r.warnings.length === 0),
+    const currentPreview = preview && preview.revision === inputRevision ? preview : null;
+
+    const rowsToCommit = (currentPreview?.rows ?? []).filter(
+        (r) => r.valid && (!skipDuplicates || r.warnings.length === 0) && !committedRowNumbers.has(r.row_number),
     );
 
+    const mapCommitFailures = (
+        failedList: Array<{ row_number: number; name: string; error: string }>,
+        submittedRows: ValidatedBatchRow[],
+    ) =>
+        failedList.map((entry) => {
+            const matchedRow = submittedRows[entry.row_number - 1];
+            return {
+                ...entry,
+                row_number: matchedRow ? matchedRow.row_number : entry.row_number,
+                name:
+                    entry.name ||
+                    (matchedRow
+                        ? `${matchedRow.normalized.first_name} ${matchedRow.normalized.last_name}`.trim()
+                        : "Unknown student"),
+            };
+        });
+
     const handleCommit = async () => {
-        if (rowsToCommit.length === 0 || committing) return;
+        if (!currentPreview || rowsToCommit.length === 0 || committing || validating) return;
+        const commitRevision = currentPreview.revision;
+        const submittedRows = [...rowsToCommit];
         setCommitting(true);
         try {
             const response = await axios.post(
                 "/administrators/students/batch-import/commit",
                 {
-                    rows: rowsToCommit.map((r) => r.normalized),
+                    rows: submittedRows.map((r) => r.normalized),
                     provision_portal_accounts: provisionPortals,
                 },
                 { headers: { Accept: "application/json" } },
             );
-            setCommitResult(response.data);
+            if (commitRevision !== inputRevisionRef.current) {
+                return;
+            }
+            const mappedFailed = mapCommitFailures(response.data?.failed ?? [], submittedRows);
+            const failedRowNumbers = new Set(mappedFailed.map((f) => f.row_number));
+            setCommittedRowNumbers((prev) => {
+                const next = new Set(prev);
+                for (const row of submittedRows) {
+                    if (!failedRowNumbers.has(row.row_number)) {
+                        next.add(row.row_number);
+                    }
+                }
+                return next;
+            });
+            setCommitResult({
+                created_count: Number(response.data?.created_count ?? 0),
+                failed_count: Number(response.data?.failed_count ?? mappedFailed.length),
+                created: response.data?.created ?? [],
+                failed: mappedFailed,
+            });
             toast.success(response.data?.message || "Batch import complete.");
         } catch (error: unknown) {
-            const err = error as { response?: { data?: { message?: string } } };
-            toast.error(err.response?.data?.message || "Failed to commit batch import.");
+            if (commitRevision !== inputRevisionRef.current) {
+                return;
+            }
+            const err = error as {
+                response?: {
+                    data?: {
+                        message?: string;
+                        created_count?: number;
+                        failed_count?: number;
+                        created?: Array<{ id: number; student_id: string; full_name: string }>;
+                        failed?: Array<{ row_number: number; name: string; error: string }>;
+                    };
+                };
+            };
+            const responseData = err.response?.data;
+            if (responseData && Array.isArray(responseData.failed)) {
+                const mappedFailed = mapCommitFailures(responseData.failed, submittedRows);
+                setCommitResult({
+                    created_count: Number(responseData.created_count ?? 0),
+                    failed_count: Number(responseData.failed_count ?? mappedFailed.length),
+                    created: responseData.created ?? [],
+                    failed: mappedFailed,
+                });
+            }
+            toast.error(responseData?.message || "Failed to commit batch import.");
         } finally {
             setCommitting(false);
         }
@@ -254,8 +535,9 @@ export function StudentBatchIntake({
                             type="button"
                             variant="outline"
                             size="sm"
+                            disabled={committing}
                             className="h-8 gap-1.5 text-xs"
-                            onClick={() => setRawText(buildTemplateCsv())}
+                            onClick={() => updateRawText(buildTemplateCsv())}
                         >
                             <Sparkles className="size-3.5" />
                             Load Sample
@@ -275,6 +557,7 @@ export function StudentBatchIntake({
                             type="file"
                             accept=".csv,.tsv,.txt"
                             className="hidden"
+                            disabled={committing}
                             onChange={(e) => {
                                 const file = e.target.files?.[0];
                                 if (file) void handleFileUpload(file);
@@ -285,6 +568,7 @@ export function StudentBatchIntake({
                             type="button"
                             variant="secondary"
                             size="sm"
+                            disabled={committing}
                             className="h-8 gap-1.5 text-xs"
                             onClick={() => fileInputRef.current?.click()}
                         >
@@ -301,7 +585,8 @@ export function StudentBatchIntake({
                         <Textarea
                             id="batch-csv-input"
                             value={rawText}
-                            onChange={(e) => setRawText(e.target.value)}
+                            disabled={committing}
+                            onChange={(e) => updateRawText(e.target.value)}
                             placeholder="first_name,middle_name,last_name,gender,birth_date,email,phone,program,year_level,status"
                             rows={7}
                             className="font-mono text-xs"
@@ -314,7 +599,7 @@ export function StudentBatchIntake({
                         <Button
                             type="button"
                             size="sm"
-                            disabled={validating || rawText.trim() === ""}
+                            disabled={validating || committing || rawText.trim() === ""}
                             onClick={() => void handleValidate()}
                             className="gap-1.5 text-xs"
                         >
@@ -325,34 +610,53 @@ export function StudentBatchIntake({
                 </CardContent>
             </Card>
 
-            {preview && (
+            {parseErrors.length > 0 && (
+                <Alert variant="destructive">
+                    <XCircle className="size-4" />
+                    <AlertTitle className="text-sm font-semibold">
+                        Malformed CSV / TSV Input ({parseErrors.length} issue{parseErrors.length === 1 ? "" : "s"})
+                    </AlertTitle>
+                    <AlertDescription className="mt-2 space-y-1 text-xs">
+                        {parseErrors.map((err, idx) => (
+                            <p key={`${err.row_number}-${idx}`}>
+                                <span className="font-mono font-semibold">
+                                    {err.row_number === 0 ? "Header" : `Row ${err.row_number}`}:
+                                </span>{" "}
+                                {err.message}
+                            </p>
+                        ))}
+                    </AlertDescription>
+                </Alert>
+            )}
+
+            {currentPreview && (
                 <Card className="border-border/70">
                     <CardHeader className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
                         <div className="flex flex-wrap items-center gap-2">
                             <CardTitle className="text-sm font-semibold">Validation Preview</CardTitle>
                             <Badge variant="secondary" className="font-mono text-xs tabular-nums">
-                                {preview.summary.total} Total
+                                {currentPreview.summary.total} Total
                             </Badge>
                             <Badge
                                 variant="outline"
                                 className="border-emerald-500/35 bg-emerald-500/10 font-mono text-xs text-emerald-700 tabular-nums dark:text-emerald-300"
                             >
-                                {preview.summary.valid} Valid
+                                {currentPreview.summary.valid} Valid
                             </Badge>
-                            {preview.summary.errors > 0 && (
+                            {currentPreview.summary.errors > 0 && (
                                 <Badge
                                     variant="outline"
                                     className="border-rose-500/35 bg-rose-500/10 font-mono text-xs text-rose-700 tabular-nums dark:text-rose-300"
                                 >
-                                    {preview.summary.errors} Errors
+                                    {currentPreview.summary.errors} Errors
                                 </Badge>
                             )}
-                            {preview.summary.duplicates > 0 && (
+                            {currentPreview.summary.duplicates > 0 && (
                                 <Badge
                                     variant="outline"
                                     className="border-amber-500/35 bg-amber-500/10 font-mono text-xs text-amber-700 tabular-nums dark:text-amber-300"
                                 >
-                                    {preview.summary.duplicates} Possible Duplicates
+                                    {currentPreview.summary.duplicates} Possible Duplicates
                                 </Badge>
                             )}
                         </div>
@@ -361,6 +665,7 @@ export function StudentBatchIntake({
                             <label className="flex items-center gap-1.5 text-xs">
                                 <Checkbox
                                     checked={skipDuplicates}
+                                    disabled={committing}
                                     onCheckedChange={(checked) => setSkipDuplicates(Boolean(checked))}
                                 />
                                 <span>Skip potential duplicates</span>
@@ -368,6 +673,7 @@ export function StudentBatchIntake({
                             <label className="flex items-center gap-1.5 text-xs">
                                 <Checkbox
                                     checked={provisionPortals}
+                                    disabled={committing}
                                     onCheckedChange={(checked) => setProvisionPortals(Boolean(checked))}
                                 />
                                 <span>Provision portal accounts</span>
@@ -375,7 +681,7 @@ export function StudentBatchIntake({
                             <Button
                                 type="button"
                                 size="sm"
-                                disabled={committing || rowsToCommit.length === 0}
+                                disabled={committing || validating || rowsToCommit.length === 0}
                                 onClick={() => void handleCommit()}
                                 className="gap-1.5 text-xs"
                             >
@@ -397,58 +703,69 @@ export function StudentBatchIntake({
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {preview.rows.map((row) => (
-                                        <TableRow key={row.row_number}>
-                                            <TableCell className="font-mono text-xs">{row.row_number}</TableCell>
-                                            <TableCell className="text-xs">
-                                                <p className="font-medium">
-                                                    {row.normalized.first_name} {row.normalized.last_name}
-                                                </p>
-                                                <p className="text-muted-foreground text-[11px]">
-                                                    {row.normalized.gender} · {row.normalized.birth_date || "No DOB"}
-                                                    {row.normalized.lrn ? ` · LRN ${row.normalized.lrn}` : ""}
-                                                </p>
-                                            </TableCell>
-                                            <TableCell className="text-xs">
-                                                <span className="font-medium">{row.normalized.program_label || "Default"}</span> · Level{" "}
-                                                {row.normalized.academic_year}
-                                            </TableCell>
-                                            <TableCell className="text-muted-foreground text-xs">
-                                                {row.normalized.email || row.normalized.phone || "—"}
-                                            </TableCell>
-                                            <TableCell className="text-xs">
-                                                {row.valid ? (
-                                                    <div className="space-y-1">
+                                    {currentPreview.rows.map((row) => {
+                                        const isImported = committedRowNumbers.has(row.row_number);
+                                        return (
+                                            <TableRow key={row.row_number}>
+                                                <TableCell className="font-mono text-xs">{row.row_number}</TableCell>
+                                                <TableCell className="text-xs">
+                                                    <p className="font-medium">
+                                                        {row.normalized.first_name} {row.normalized.last_name}
+                                                    </p>
+                                                    <p className="text-muted-foreground text-[11px]">
+                                                        {row.normalized.gender} · {row.normalized.birth_date || "No DOB"}
+                                                        {row.normalized.lrn ? ` · LRN ${row.normalized.lrn}` : ""}
+                                                    </p>
+                                                </TableCell>
+                                                <TableCell className="text-xs">
+                                                    <span className="font-medium">{row.normalized.program_label || "Default"}</span> · Level{" "}
+                                                    {row.normalized.academic_year}
+                                                </TableCell>
+                                                <TableCell className="text-muted-foreground text-xs">
+                                                    {row.normalized.email || row.normalized.phone || "—"}
+                                                </TableCell>
+                                                <TableCell className="text-xs">
+                                                    {isImported ? (
                                                         <Badge
                                                             variant="outline"
                                                             className="border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 gap-1 text-[10px]"
                                                         >
                                                             <CheckCircle2 className="size-3" />
-                                                            Ready
+                                                            Imported
                                                         </Badge>
-                                                        {row.warnings.map((w, idx) => (
-                                                            <p
-                                                                key={idx}
-                                                                className="flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-300"
+                                                    ) : row.valid ? (
+                                                        <div className="space-y-1">
+                                                            <Badge
+                                                                variant="outline"
+                                                                className="border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 gap-1 text-[10px]"
                                                             >
-                                                                <AlertTriangle className="size-3 shrink-0" />
-                                                                {w}
-                                                            </p>
-                                                        ))}
-                                                    </div>
-                                                ) : (
-                                                    <div className="space-y-1">
-                                                        {row.errors.map((e, idx) => (
-                                                            <p key={idx} className="text-destructive flex items-center gap-1 text-[11px]">
-                                                                <XCircle className="size-3 shrink-0" />
-                                                                {e}
-                                                            </p>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
+                                                                <CheckCircle2 className="size-3" />
+                                                                Ready
+                                                            </Badge>
+                                                            {row.warnings.map((w, idx) => (
+                                                                <p
+                                                                    key={idx}
+                                                                    className="flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-300"
+                                                                >
+                                                                    <AlertTriangle className="size-3 shrink-0" />
+                                                                    {w}
+                                                                </p>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="space-y-1">
+                                                            {row.errors.map((e, idx) => (
+                                                                <p key={idx} className="text-destructive flex items-center gap-1 text-[11px]">
+                                                                    <XCircle className="size-3 shrink-0" />
+                                                                    {e}
+                                                                </p>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </TableCell>
+                                            </TableRow>
+                                        );
+                                    })}
                                 </TableBody>
                             </Table>
                         </div>
@@ -457,13 +774,27 @@ export function StudentBatchIntake({
             )}
 
             {commitResult && (
-                <Alert className="border-emerald-500/35 bg-emerald-500/10">
-                    <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" />
+                <Alert
+                    className={
+                        commitResult.created_count === 0 && commitResult.failed_count > 0
+                            ? "border-destructive/40 bg-destructive/10"
+                            : commitResult.failed_count > 0
+                              ? "border-amber-500/40 bg-amber-500/10"
+                              : "border-emerald-500/35 bg-emerald-500/10"
+                    }
+                >
+                    {commitResult.created_count === 0 && commitResult.failed_count > 0 ? (
+                        <XCircle className="text-destructive size-4" />
+                    ) : commitResult.failed_count > 0 ? (
+                        <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400" />
+                    ) : (
+                        <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" />
+                    )}
                     <AlertTitle className="text-sm font-semibold">
                         Batch Import Completed — {commitResult.created_count} Created
                         {commitResult.failed_count > 0 ? `, ${commitResult.failed_count} Failed` : ""}
                     </AlertTitle>
-                    <AlertDescription className="mt-2 space-y-2 text-xs">
+                    <AlertDescription className="mt-2 space-y-2.5 text-xs">
                         {commitResult.created.length > 0 && (
                             <div className="flex flex-wrap gap-1.5">
                                 {commitResult.created.slice(0, 12).map((s) => (
@@ -475,6 +806,25 @@ export function StudentBatchIntake({
                                         {s.student_id} · {s.full_name}
                                     </Link>
                                 ))}
+                            </div>
+                        )}
+                        {commitResult.failed.length > 0 && (
+                            <div className="border-destructive/30 bg-background/80 space-y-1.5 rounded-lg border p-2.5">
+                                <p className="text-destructive text-[11px] font-semibold">
+                                    Failed Rows ({commitResult.failed.length})
+                                </p>
+                                <ul className="space-y-1">
+                                    {commitResult.failed.map((failure, idx) => (
+                                        <li
+                                            key={`${failure.row_number}-${idx}`}
+                                            className="flex flex-wrap items-baseline gap-x-1.5 text-[11px]"
+                                        >
+                                            <span className="font-mono font-semibold">Row #{failure.row_number}</span>
+                                            <span className="font-medium">{failure.name || "Unnamed student"}</span>
+                                            <span className="text-destructive">— {failure.error}</span>
+                                        </li>
+                                    ))}
+                                </ul>
                             </div>
                         )}
                         <div className="pt-1">

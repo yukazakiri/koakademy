@@ -138,6 +138,81 @@ final class StudentDataTransferService
             $warnings[] = "Target student already has {$duplicateSubjects->count()} of the subjects being transferred (potential duplicates).";
         }
 
+        $documentsCount = 0;
+        $holdsCount = 0;
+        $statusRecordsCount = 0;
+
+        if ($scopeEnrollmentId === null) {
+            $source->loadMissing('DocumentLocation');
+            $target->loadMissing('DocumentLocation');
+
+            $targetOccupiedLegacyKeys = [];
+            if ($target->DocumentLocation) {
+                foreach (DocumentLocation::DOCUMENT_FIELDS as $field) {
+                    $targetVal = $target->DocumentLocation->getAttribute($field);
+                    if (is_string($targetVal) && mb_trim($targetVal) !== '') {
+                        $targetOccupiedLegacyKeys[] = $field;
+                    }
+                }
+            }
+
+            $targetRecordKeys = Schema::hasTable('student_document_records')
+                ? StudentDocumentRecord::query()
+                    ->where('student_id', $target->id)
+                    ->pluck('document_key')
+                    ->all()
+                : [];
+
+            $occupiedKeys = array_values(array_unique([...$targetRecordKeys, ...$targetOccupiedLegacyKeys]));
+
+            $transferableFixedKeys = [];
+            if ($source->DocumentLocation) {
+                foreach (DocumentLocation::DOCUMENT_FIELDS as $field) {
+                    $sourceVal = $source->DocumentLocation->getAttribute($field);
+                    if (is_string($sourceVal) && mb_trim($sourceVal) !== '' && ! in_array($field, $occupiedKeys, true)) {
+                        $transferableFixedKeys[] = $field;
+                    }
+                }
+            }
+
+            if (Schema::hasTable('student_document_records')) {
+                $transferableRecordKeys = StudentDocumentRecord::query()
+                    ->where('student_id', $source->id)
+                    ->whereNotIn('document_key', $occupiedKeys)
+                    ->pluck('document_key')
+                    ->all();
+                $transferableFixedKeys = array_values(array_unique([...$transferableFixedKeys, ...$transferableRecordKeys]));
+            }
+
+            $dynamicCount = Resource::query()
+                ->where('resourceable_type', Student::class)
+                ->where('resourceable_id', $source->id)
+                ->count();
+
+            $signatureCount = (filled($source->signature_path) && blank($target->signature_path)) ? 1 : 0;
+            $documentsCount = count($transferableFixedKeys) + $dynamicCount + $signatureCount;
+
+            if (Schema::hasTable('student_holds')) {
+                $holdsCount = StudentHold::query()
+                    ->where('student_id', $source->id)
+                    ->count();
+            }
+
+            if (Schema::hasTable('student_status_records')) {
+                $existingPeriods = StudentStatusRecord::query()
+                    ->where('student_id', $target->id)
+                    ->get(['academic_year', 'semester'])
+                    ->map(fn ($r): string => "{$r->academic_year}|{$r->semester}")
+                    ->all();
+
+                $statusRecordsCount = StudentStatusRecord::query()
+                    ->where('student_id', $source->id)
+                    ->get(['academic_year', 'semester'])
+                    ->filter(fn ($r): bool => ! in_array("{$r->academic_year}|{$r->semester}", $existingPeriods, true))
+                    ->count();
+            }
+        }
+
         return [
             'mode' => $scopeEnrollmentId !== null ? 'selective_enrollment' : 'all_records',
             'scoped_enrollment_id' => $scopeEnrollmentId,
@@ -164,6 +239,9 @@ final class StudentDataTransferService
                 'transactions_count' => $transactions->count(),
                 'clearances_count' => $clearances->count(),
                 'attendance_records_count' => $attendances->count(),
+                'documents_count' => $documentsCount,
+                'holds_count' => $holdsCount,
+                'status_records_count' => $statusRecordsCount,
             ],
             'warnings' => $warnings,
             'safe_to_proceed' => ! $gradeReleaseRecords,
@@ -184,7 +262,13 @@ final class StudentDataTransferService
         $reason = (string) ($options['reason'] ?? 'Reassigned via administrative assistant.');
 
         return DB::transaction(function () use ($source, $target, $actor, $scopeEnrollmentId, $reason): array {
-            Student::withoutSchoolScope()->withTrashed()->whereKey($source->id)->lockForUpdate()->firstOrFail();
+            $lockIds = [(int) $source->id, (int) $target->id];
+            sort($lockIds);
+            foreach ($lockIds as $lockId) {
+                Student::withoutSchoolScope()->withTrashed()->whereKey($lockId)->lockForUpdate()->firstOrFail();
+            }
+            $source->refresh();
+            $target->refresh();
 
             if (\App\Models\GradeRelease::query()->where('student_id', $source->id)->exists()
                 || \App\Models\GradeReleaseClearance::query()->where('student_id', $source->id)->exists()) {
@@ -297,41 +381,93 @@ final class StudentDataTransferService
             $transferredStatusRecords = 0;
 
             if ($scopeEnrollmentId === null) {
-                $source->loadMissing('DocumentLocation');
-                $target->loadMissing('DocumentLocation');
+                $source->load('DocumentLocation');
+                $target->load('DocumentLocation');
 
-                if ($source->DocumentLocation) {
-                    $targetDocLocation = $target->DocumentLocation ?? DocumentLocation::create([]);
-                    if (! $target->document_location_id) {
-                        $target->forceFill(['document_location_id' => $targetDocLocation->id])->save();
-                    }
-
-                    $docUpdates = [];
+                // Snapshot the target's already-occupied slots (both legacy DocumentLocation and StudentDocumentRecord)
+                // before moving any files or metadata so we never overwrite or shadow target files.
+                $targetOccupiedLegacyKeys = [];
+                if ($target->DocumentLocation) {
                     foreach (DocumentLocation::DOCUMENT_FIELDS as $field) {
-                        $sourceVal = $source->DocumentLocation->getAttribute($field);
-                        $targetVal = $targetDocLocation->getAttribute($field);
-                        if (is_string($sourceVal) && mb_trim($sourceVal) !== '' && (! is_string($targetVal) || mb_trim($targetVal) === '')) {
-                            $docUpdates[$field] = $sourceVal;
-                            $transferredDocuments++;
+                        $targetVal = $target->DocumentLocation->getAttribute($field);
+                        if (is_string($targetVal) && mb_trim($targetVal) !== '') {
+                            $targetOccupiedLegacyKeys[] = $field;
                         }
                     }
+                }
+
+                $hasDocRecordsTable = Schema::hasTable('student_document_records');
+                $targetExistingRecordKeys = $hasDocRecordsTable
+                    ? StudentDocumentRecord::query()
+                        ->where('student_id', $target->id)
+                        ->lockForUpdate()
+                        ->pluck('document_key')
+                        ->all()
+                    : [];
+
+                $occupiedDocumentKeys = array_values(array_unique([
+                    ...$targetExistingRecordKeys,
+                    ...$targetOccupiedLegacyKeys,
+                ]));
+
+                $movedFixedKeys = [];
+
+                if ($source->DocumentLocation) {
+                    $docUpdates = [];
+                    $sourceDocClears = [];
+
+                    foreach (DocumentLocation::DOCUMENT_FIELDS as $field) {
+                        $sourceVal = $source->DocumentLocation->getAttribute($field);
+                        if (is_string($sourceVal) && mb_trim($sourceVal) !== '' && ! in_array($field, $occupiedDocumentKeys, true)) {
+                            $docUpdates[$field] = $sourceVal;
+                            $sourceDocClears[$field] = null;
+                            $movedFixedKeys[] = $field;
+                        }
+                    }
+
                     if ($docUpdates !== []) {
+                        $targetDocLocation = $target->DocumentLocation ?? DocumentLocation::create([]);
+                        if (! $target->document_location_id) {
+                            $target->forceFill(['document_location_id' => $targetDocLocation->id])->save();
+                        }
+
                         $targetDocLocation->update($docUpdates);
+                        $source->DocumentLocation->update($sourceDocClears);
+
+                        if (isset($docUpdates['picture_1x1']) && $source->profile_url === $docUpdates['picture_1x1']) {
+                            if (blank($target->profile_url)) {
+                                $target->forceFill(['profile_url' => $docUpdates['picture_1x1']])->save();
+                            }
+                            $source->forceFill(['profile_url' => null])->save();
+                        }
                     }
                 }
 
-                if (Schema::hasTable('student_document_records')) {
-                    $existingKeys = StudentDocumentRecord::query()
-                        ->where('student_id', $target->id)
-                        ->pluck('document_key')
-                        ->all();
-
-                    $movedRecords = StudentDocumentRecord::query()
+                if ($hasDocRecordsTable) {
+                    $recordsToMove = StudentDocumentRecord::query()
                         ->where('student_id', $source->id)
-                        ->whereNotIn('document_key', $existingKeys)
-                        ->update(['student_id' => $target->id]);
-                    $transferredDocuments += $movedRecords;
+                        ->when($occupiedDocumentKeys !== [], fn ($q) => $q->whereNotIn('document_key', $occupiedDocumentKeys))
+                        ->lockForUpdate()
+                        ->get();
+
+                    if ($recordsToMove->isNotEmpty()) {
+                        $moveKeys = $recordsToMove->pluck('document_key')->all();
+                        StudentDocumentRecord::query()
+                            ->where('student_id', $source->id)
+                            ->whereIn('document_key', $moveKeys)
+                            ->whereNotExists(function ($sub) use ($target): void {
+                                $sub->select(DB::raw(1))
+                                    ->from('student_document_records as target_records')
+                                    ->where('target_records.student_id', $target->id)
+                                    ->whereColumn('target_records.document_key', 'student_document_records.document_key');
+                            })
+                            ->update(['student_id' => $target->id]);
+
+                        $movedFixedKeys = array_values(array_unique([...$movedFixedKeys, ...$moveKeys]));
+                    }
                 }
+
+                $transferredDocuments += count($movedFixedKeys);
 
                 $transferredDynamic = Resource::query()
                     ->where('resourceable_type', Student::class)
@@ -340,7 +476,9 @@ final class StudentDataTransferService
                 $transferredDocuments += $transferredDynamic;
 
                 if (filled($source->signature_path) && blank($target->signature_path)) {
-                    $target->forceFill(['signature_path' => $source->signature_path])->save();
+                    $signaturePath = $source->signature_path;
+                    $target->forceFill(['signature_path' => $signaturePath])->save();
+                    $source->forceFill(['signature_path' => null])->save();
                     $transferredDocuments++;
                 }
 
@@ -391,6 +529,9 @@ final class StudentDataTransferService
                     'transactions' => $updatedTransactions,
                     'clearances' => $updatedClearances,
                     'attendances' => $updatedAttendances,
+                    'documents' => $transferredDocuments,
+                    'holds' => $transferredHolds,
+                    'status_records' => $transferredStatusRecords,
                     'total_updated' => $affectedTotal,
                 ],
                 'backup_data' => [
@@ -433,6 +574,9 @@ final class StudentDataTransferService
                     'transactions' => $updatedTransactions,
                     'clearances' => $updatedClearances,
                     'attendances' => $updatedAttendances,
+                    'documents' => $transferredDocuments,
+                    'holds' => $transferredHolds,
+                    'status_records' => $transferredStatusRecords,
                     'total' => $affectedTotal,
                 ],
             ];

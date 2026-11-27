@@ -55,6 +55,8 @@ interface StudentDocumentsPageProps {
     summary: {
         uploaded: number;
         compliant?: number;
+        required_compliant?: number;
+        required_total?: number;
         total: number;
         pending_review?: number;
         rejected?: number;
@@ -125,8 +127,16 @@ export default function StudentDocumentsIndex({ user, student, documents, summar
     const [uploadingKey, setUploadingKey] = useState<string | null>(null);
     const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
-    const compliantCount = summary.compliant ?? summary.uploaded;
-    const completionPercent = summary.total > 0 ? Math.min(100, Math.round((compliantCount / summary.total) * 100)) : 0;
+    const requiredDocuments = documents.filter((slot) => slot.required !== false);
+    const hasDocumentList = documents.length > 0;
+    const requiredTotal = hasDocumentList ? requiredDocuments.length : (summary.required_total ?? summary.total);
+    const compliantCount = hasDocumentList
+        ? requiredDocuments.filter(
+              (slot) => slot.is_compliant ?? ["verified", "physical_on_file", "waived", "on_file"].includes(slot.status),
+          ).length
+        : (summary.required_compliant ?? summary.compliant ?? summary.uploaded);
+    const completionPercent =
+        requiredTotal > 0 ? Math.min(100, Math.round((compliantCount / requiredTotal) * 100)) : student ? 100 : 0;
     const flashSuccess = props.flash?.success ?? props.success;
     const flashError = props.flash?.error ?? props.error;
 
@@ -194,10 +204,10 @@ export default function StudentDocumentsIndex({ user, student, documents, summar
                                     Registrar Document Vault
                                 </Badge>
                                 <Badge
-                                    variant={compliantCount >= summary.total && summary.total > 0 ? "default" : "outline"}
+                                    variant={compliantCount >= requiredTotal && requiredTotal > 0 ? "default" : "outline"}
                                     className="rounded-full font-mono text-xs tabular-nums"
                                 >
-                                    {compliantCount} / {summary.total} compliant
+                                    {compliantCount} / {requiredTotal} required compliant
                                 </Badge>
                                 {(summary.pending_review ?? 0) > 0 && (
                                     <Badge
@@ -354,7 +364,14 @@ export default function StudentDocumentsIndex({ user, student, documents, summar
                                         {slot.status === "physical_on_file" && !hasFile && (
                                             <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-800 dark:text-emerald-200">
                                                 The registrar has confirmed your physical hard copy is on file. You may optionally upload a digital copy
-                                                for your own records.
+                                                — your requirement remains compliant while the registrar reviews the uploaded file.
+                                            </div>
+                                        )}
+
+                                        {slot.status === "physical_on_file" && hasFile && (
+                                            <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-800 dark:text-emerald-200">
+                                                Your physical hard copy is on file and keeps this requirement compliant while your optional digital copy
+                                                is pending registrar review.
                                             </div>
                                         )}
 

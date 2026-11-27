@@ -9,6 +9,7 @@ use App\Enums\UserRole;
 use App\Models\StudentEnrollment;
 use App\Models\User;
 use App\Services\EnrollmentPipelineService;
+use App\Services\StudentDocumentService;
 use Flowframe\Trend\Trend;
 
 /**
@@ -122,11 +123,7 @@ final class RegistrarDesk implements Dashboard
                     'id' => 'documents-review',
                     'title' => 'Student documents pending review',
                     'description' => 'Uploaded student documents awaiting registrar verification.',
-                    'count' => \Illuminate\Support\Facades\Schema::hasTable('student_document_records')
-                        ? \App\Models\StudentDocumentRecord::query()
-                            ->where('status', \App\Models\StudentDocumentRecord::StatusPendingReview)
-                            ->count()
-                        : 0,
+                    'count' => app(StudentDocumentService::class)->countPendingReviewDocuments(),
                     'severity' => 'warning',
                     'href' => '/administrators/students/documents?compliance=pending_review',
                     'icon' => 'file-check',

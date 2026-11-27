@@ -161,6 +161,11 @@ it('supports server-side compliance filtering, sorting, per_page, and matrix col
     ]);
     $studentB = Student::factory()->create([
         'school_id' => $school->id,
+        'first_name' => 'Middle',
+        'last_name' => 'Midway',
+    ]);
+    $studentC = Student::factory()->create([
+        'school_id' => $school->id,
         'first_name' => 'Zeta',
         'last_name' => 'Zephyr',
     ]);
@@ -168,6 +173,12 @@ it('supports server-side compliance filtering, sorting, per_page, and matrix col
     StudentDocumentRecord::query()->create([
         'school_id' => $school->id,
         'student_id' => $studentA->id,
+        'document_key' => 'birth_certificate',
+        'status' => StudentDocumentRecord::StatusPendingReview,
+    ]);
+    StudentDocumentRecord::query()->create([
+        'school_id' => $school->id,
+        'student_id' => $studentB->id,
         'document_key' => 'birth_certificate',
         'status' => StudentDocumentRecord::StatusPendingReview,
     ]);
@@ -182,8 +193,9 @@ it('supports server-side compliance filtering, sorting, per_page, and matrix col
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
             ->component('administrators/students/documents/list', false)
-            ->has('students.data', 1)
-            ->where('students.data.0.id', $studentA->id)
+            ->has('students.data', 2)
+            ->where('students.data.0.id', $studentB->id)
+            ->where('students.data.1.id', $studentA->id)
             ->where('students.per_page', 25)
             ->where('filters.compliance', 'pending_review')
             ->where('filters.sort', 'name')
@@ -276,7 +288,8 @@ it('streams fixed documents inline when preview=1 is requested and syncs status 
         'email' => $studentUser->email,
     ]);
 
-    $file = UploadedFile::fake()->create('psa_birth.pdf', 120, 'application/pdf');
+    $pdfFixture = "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n";
+    $file = UploadedFile::fake()->createWithContent('psa_birth.pdf', $pdfFixture);
     app(StudentDocumentService::class)->uploadFixed($student, 'birth_certificate', $file, $admin, autoVerify: true);
 
     $response = actingAs($admin)
@@ -287,16 +300,24 @@ it('streams fixed documents inline when preview=1 is requested and syncs status 
         ]))
         ->assertOk();
 
-    expect((string) $response->headers->get('Content-Disposition'))->not->toContain('attachment');
+    expect((string) $response->headers->get('Content-Type'))->toContain('application/pdf')
+        ->and((string) $response->headers->get('Content-Disposition'))->not->toContain('attachment')
+        ->and($response->streamedContent())->toBe($pdfFixture);
 
-    // Student portal reflects verified status
+    // Student portal reflects verified status on the exact birth_certificate slot
     actingAs($studentUser)
         ->get(route('student.documents.index'))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
             ->component('student/documents/index', false)
             ->where('summary.compliant', fn ($value) => $value >= 1)
-            ->has('documents')
+            ->where('documents', function ($documents): bool {
+                $slot = collect($documents)->firstWhere('key', 'birth_certificate');
+
+                return is_array($slot)
+                    && ($slot['status'] ?? null) === StudentDocumentRecord::StatusVerified
+                    && ($slot['is_compliant'] ?? false) === true;
+            })
         );
 });
 
@@ -408,6 +429,55 @@ it('validates and commits batch spreadsheet student intake', function (): void {
     $created = Student::query()->where('email', 'maria.clara@example.com')->first();
     expect($created)->not->toBeNull()
         ->and($created->course_id)->toBe($course->id);
+
+    // Replaying the same normalized row is rejected on the backend without creating a duplicate
+    actingAs($admin)
+        ->postJson(route('administrators.students.batch-import.commit'), [
+            'rows' => [$normalizedFirstRow],
+        ])
+        ->assertStatus(422)
+        ->assertJsonPath('created_count', 0)
+        ->assertJsonPath('failed_count', 1);
+
+    expect(Student::query()->where('email', 'maria.clara@example.com')->count())->toBe(1);
+});
+
+it('preserves physical-copy compliance on digital upload and emails students without portal accounts on reminders', function (): void {
+    Notification::fake();
+    $disk = (string) config('filesystems.private_disk', 'local');
+    Storage::fake($disk);
+
+    $school = School::factory()->create();
+    app(TenantContext::class)->setCurrentSchool($school);
+    $admin = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
+    $studentWithoutPortal = Student::factory()->create([
+        'school_id' => $school->id,
+        'user_id' => null,
+        'email' => 'noportal.student@example.com',
+    ]);
+
+    $service = app(StudentDocumentService::class);
+    $service->review($studentWithoutPortal, 'birth_certificate', 'physical', $admin, null, 'Cabinet A', notifyStudent: false);
+
+    $digitalScan = UploadedFile::fake()->createWithContent('birth_scan.pdf', "%PDF-1.4\n%%EOF\n");
+    $updated = $service->uploadFixed($studentWithoutPortal, 'birth_certificate', $digitalScan, null, autoVerify: false);
+
+    expect($updated->status)->toBe(StudentDocumentRecord::StatusPhysicalOnFile)
+        ->and($updated->isCompliant())->toBeTrue()
+        ->and($updated->file_path)->not->toBeNull();
+
+    // Reminder to student without a portal account routes via mail channel
+    actingAs($admin)
+        ->post(route('administrators.students.documents.bulk-remind'), [
+            'student_ids' => [$studentWithoutPortal->id],
+        ])
+        ->assertRedirect();
+
+    Notification::assertSentOnDemand(
+        StudentDocumentStatusNotification::class,
+        fn ($notification, $channels, $notifiable): bool => in_array('mail', $channels, true)
+            && $notifiable->routes['mail'] === 'noportal.student@example.com'
+    );
 });
 
 it('supports quickStore for manual-ID and SHS schools and triage filters on index', function (): void {

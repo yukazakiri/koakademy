@@ -47,6 +47,17 @@ export function StudentTabs({ student, options, onAdjustTuition, selectedTab, on
         school_year: student.tuition?.school_year ?? student.current_school_year,
         semester: student.tuition?.semester ?? student.current_semester,
     });
+    const hasGuardianInfo = Boolean(
+        student.parents?.guardian_name ||
+            student.parents?.guardian_relationship ||
+            student.parents?.guardian_contact ||
+            student.parents?.guardian_email,
+    );
+    const guardianName = hasGuardianInfo ? student.parents?.guardian_name : student.contacts?.emergency_contact_name;
+    const guardianRelationship = hasGuardianInfo
+        ? student.parents?.guardian_relationship
+        : student.contacts?.emergency_contact_relationship;
+    const guardianContact = hasGuardianInfo ? student.parents?.guardian_contact : student.contacts?.emergency_contact_phone;
 
     return (
         <Tabs value={selectedTab} onValueChange={onTabChange} className="w-full">
@@ -178,15 +189,9 @@ export function StudentTabs({ student, options, onAdjustTuition, selectedTab, on
                             </div>
                             <Separator />
                             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                <TextEntry label="Guardian Name" value={student.parents?.guardian_name ?? student.contacts?.emergency_contact_name} />
-                                <TextEntry
-                                    label="Relationship"
-                                    value={student.parents?.guardian_relationship ?? student.contacts?.emergency_contact_relationship}
-                                />
-                                <TextEntry
-                                    label="Guardian Contact"
-                                    value={student.parents?.guardian_contact ?? student.contacts?.emergency_contact_phone}
-                                />
+                                <TextEntry label="Guardian Name" value={guardianName} />
+                                <TextEntry label="Relationship" value={guardianRelationship} />
+                                <TextEntry label="Guardian Contact" value={guardianContact} />
                                 <TextEntry label="Guardian Email" value={student.parents?.guardian_email} />
                                 <TextEntry label="Family Address" value={student.parents?.family_address} />
                             </div>
@@ -256,6 +261,7 @@ export function StudentTabs({ student, options, onAdjustTuition, selectedTab, on
                 <TabsContent value="documents">
                     {student.dossier ? (
                         <DocumentStudioCards
+                            key={student.id}
                             studentId={student.id}
                             studentName={student.name}
                             dossier={student.dossier}
@@ -578,7 +584,7 @@ export function StudentTabs({ student, options, onAdjustTuition, selectedTab, on
                                                         <div className="space-y-1">
                                                             <p className="text-muted-foreground text-xs tracking-wider uppercase">Last Updated</p>
                                                             <p className="text-muted-foreground text-sm font-medium">
-                                                                {student.tuition.adjusted_at || student.updated_at || "—"}
+                                                                {student.tuition.adjusted_at || student.tuition.updated_at || "—"}
                                                             </p>
                                                         </div>
                                                     </div>

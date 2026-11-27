@@ -30,16 +30,17 @@ final class StudentDocumentStatusNotification extends Notification implements Sh
     {
         $channels = [];
 
-        if (method_exists($notifiable, 'routeNotificationFor')) {
-            if ($notifiable instanceof \App\Models\User || $notifiable instanceof Student) {
-                $channels[] = 'database';
-            }
-            if (filled($notifiable->email ?? null)) {
-                $channels[] = 'mail';
-            }
+        if ($notifiable instanceof \App\Models\User || $notifiable instanceof Student) {
+            $channels[] = 'database';
         }
 
-        return $channels === [] ? ['database'] : $channels;
+        if (method_exists($notifiable, 'routeNotificationFor') && filled($notifiable->routeNotificationFor('mail', $this))) {
+            $channels[] = 'mail';
+        } elseif (filled($notifiable->email ?? null)) {
+            $channels[] = 'mail';
+        }
+
+        return $channels;
     }
 
     public function toMail(object $notifiable): MailMessage

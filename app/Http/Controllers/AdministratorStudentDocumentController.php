@@ -10,7 +10,6 @@ use App\Models\Course;
 use App\Models\DocumentLocation;
 use App\Models\Resource;
 use App\Models\Student;
-use App\Models\StudentDocumentRecord;
 use App\Models\User;
 use App\Services\IdentifierGenerator;
 use App\Services\StudentConfigurationService;
@@ -73,7 +72,29 @@ final class AdministratorStudentDocumentController extends Controller
         $matrixColumns = $this->documentService->matrixColumnsForSchool($schoolId, $studentType !== '' ? $studentType : null);
         $hasDocRecordsTable = Schema::hasTable('student_document_records');
 
-        $baseQuery = Student::query()
+        $scopeQuery = Student::query()
+            ->when($search !== '', function (Builder $query) use ($search): void {
+                $like = "%{$search}%";
+                $query->where(function (Builder $q) use ($like): void {
+                    $q->where('students.first_name', 'like', $like)
+                        ->orWhere('students.last_name', 'like', $like)
+                        ->orWhere('students.student_id', 'like', $like)
+                        ->orWhere('students.lrn', 'like', $like)
+                        ->orWhere('students.email', 'like', $like);
+                });
+            })
+            ->when($studentType !== '', fn (Builder $query) => $query->where('students.student_type', $studentType))
+            ->when($courseId !== null, fn (Builder $query) => $query->where('students.course_id', $courseId))
+            ->when($yearLevel !== null, fn (Builder $query) => $query->where('students.academic_year', $yearLevel));
+
+        // Compute compliance KPIs & per-column readiness in SQL without hydrating the full roster
+        $cohortGroups = $this->documentService->resolveCohortGroups($scopeQuery);
+        $stats = $this->documentService->cohortComplianceStats($scopeQuery, $cohortGroups, $matrixColumns);
+        $kpis = $stats['kpis'];
+        $columnStats = $stats['column_stats'];
+
+        // Apply compliance & missing_doc filters in SQL, paginate first, and hydrate display relations only for the page
+        $filteredQuery = (clone $scopeQuery)
             ->with(array_filter([
                 'DocumentLocation',
                 'Course:id,code,title',
@@ -81,125 +102,23 @@ final class AdministratorStudentDocumentController extends Controller
                 'user:id,email',
                 $hasDocRecordsTable ? 'documentRecords.verifier:id,name' : null,
             ]))
-            ->withCount('resources')
-            ->when($search !== '', function (Builder $query) use ($search): void {
-                $like = "%{$search}%";
-                $query->where(function (Builder $q) use ($like): void {
-                    $q->where('first_name', 'like', $like)
-                        ->orWhere('last_name', 'like', $like)
-                        ->orWhere('student_id', 'like', $like)
-                        ->orWhere('lrn', 'like', $like)
-                        ->orWhere('email', 'like', $like);
-                });
-            })
-            ->when($studentType !== '', fn (Builder $query) => $query->where('student_type', $studentType))
-            ->when($courseId !== null, fn (Builder $query) => $query->where('course_id', $courseId))
-            ->when($yearLevel !== null, fn (Builder $query) => $query->where('academic_year', $yearLevel));
+            ->withCount('resources');
+
+        $this->documentService->applyComplianceFilters($filteredQuery, $cohortGroups, $compliance, $missingDoc);
 
         if ($sort === 'name') {
-            $baseQuery->orderBy('last_name', $direction)->orderBy('first_name', $direction);
+            $filteredQuery->orderBy('students.last_name', $direction)->orderBy('students.first_name', $direction);
         } else {
-            $baseQuery->orderBy($sort, $direction);
+            $filteredQuery->orderBy("students.{$sort}", $direction);
         }
 
-        // Compute compliance KPIs & per-column readiness across the scoped cohort (bounded cleanly)
-        $allScoped = (clone $baseQuery)->get();
+        $paginated = $filteredQuery->paginate($perPage)->withQueryString();
 
-        $columnStats = [];
-        foreach ($matrixColumns as $col) {
-            $columnStats[$col['key']] = [
-                'key' => $col['key'],
-                'label' => $col['label'],
-                'short_label' => $col['short_label'],
-                'required' => $col['required'],
-                'compliant' => 0,
-                'pending_review' => 0,
-                'rejected' => 0,
-                'missing' => 0,
-                'applicable' => 0,
-                'compliance_percent' => 100,
-            ];
-        }
-
-        $kpis = [
-            'total_students' => $allScoped->count(),
-            'fully_compliant' => 0,
-            'pending_review' => 0,
-            'missing_required' => 0,
-            'rejected_count' => 0,
-        ];
-
-        $matchingIds = [];
-        $summaryCache = [];
-
-        foreach ($allScoped as $student) {
+        $paginated->through(function (Student $student) use ($hasDocRecordsTable): array {
             $summary = $this->documentService->rowSummaryFor(
                 $student,
                 $hasDocRecordsTable ? $student->documentRecords : collect(),
             );
-            $summaryCache[$student->id] = $summary;
-
-            if ($summary['is_complete']) {
-                $kpis['fully_compliant']++;
-            } else {
-                $kpis['missing_required']++;
-            }
-            if ($summary['pending_review_count'] > 0) {
-                $kpis['pending_review']++;
-            }
-            if ($summary['rejected_count'] > 0) {
-                $kpis['rejected_count']++;
-            }
-
-            foreach ($matrixColumns as $col) {
-                $slotState = $summary['slots'][$col['key']] ?? null;
-                if ($slotState === null) {
-                    continue;
-                }
-                $columnStats[$col['key']]['applicable']++;
-                if ($slotState['is_compliant']) {
-                    $columnStats[$col['key']]['compliant']++;
-                } elseif ($slotState['status'] === StudentDocumentRecord::StatusPendingReview) {
-                    $columnStats[$col['key']]['pending_review']++;
-                } elseif ($slotState['status'] === StudentDocumentRecord::StatusRejected) {
-                    $columnStats[$col['key']]['rejected']++;
-                } else {
-                    $columnStats[$col['key']]['missing']++;
-                }
-            }
-
-            // Apply compliance & missing_doc filters
-            $matchesCompliance = match ($compliance) {
-                'pending_review' => $summary['pending_review_count'] > 0,
-                'missing' => $summary['missing_count'] > 0 || ! $summary['is_complete'],
-                'rejected' => $summary['rejected_count'] > 0,
-                'complete' => $summary['is_complete'],
-                default => true,
-            };
-
-            $matchesMissingDoc = true;
-            if ($missingDoc !== '') {
-                $slot = $summary['slots'][$missingDoc] ?? null;
-                $matchesMissingDoc = $slot !== null && ! $slot['is_compliant'];
-            }
-
-            if ($matchesCompliance && $matchesMissingDoc) {
-                $matchingIds[] = $student->id;
-            }
-        }
-
-        foreach ($columnStats as &$stat) {
-            $stat['compliance_percent'] = $stat['applicable'] > 0
-                ? (int) round(($stat['compliant'] / $stat['applicable']) * 100)
-                : 100;
-        }
-        unset($stat);
-
-        $filteredQuery = (clone $baseQuery)->whereIn('id', $matchingIds === [] ? [-1] : $matchingIds);
-        $paginated = $filteredQuery->paginate($perPage)->withQueryString();
-
-        $paginated->through(function (Student $student) use ($summaryCache): array {
-            $summary = $summaryCache[$student->id] ?? $this->documentService->rowSummaryFor($student);
 
             return [
                 'id' => $student->id,
@@ -416,6 +335,7 @@ final class AdministratorStudentDocumentController extends Controller
         /** @var User|null $actor */
         $actor = Auth::user();
 
+        $notified = false;
         $record = $this->documentService->review(
             student: $student,
             documentKey: $documentType,
@@ -425,11 +345,12 @@ final class AdministratorStudentDocumentController extends Controller
             notes: $validated['notes'] ?? null,
             expiresAt: array_key_exists('expires_at', $validated) ? ($validated['expires_at'] ?? '') : null,
             notifyStudent: (bool) ($validated['notify_student'] ?? true),
+            notified: $notified,
         );
 
         $message = match ($validated['action']) {
             'verify' => 'Document marked as verified.',
-            'reject' => 'Document rejected and student notified.',
+            'reject' => $notified ? 'Document rejected and student notified.' : 'Document rejected.',
             'physical' => 'Marked physical copy on file.',
             'waive' => 'Document requirement waived.',
             default => 'Document status reset.',
@@ -448,25 +369,67 @@ final class AdministratorStudentDocumentController extends Controller
 
     public function bulkRemind(Request $request): RedirectResponse|JsonResponse
     {
-        $this->authorizeDocumentAccess(['Update:Student', 'ViewAny:Student']);
+        $this->authorizeDocumentAccess('Update:Student');
 
         $validated = $request->validate([
             'student_ids' => ['nullable', 'array', 'max:500'],
             'student_ids.*' => ['integer', 'exists:students,id'],
             'document_key' => ['nullable', 'string', Rule::in(DocumentLocation::DOCUMENT_FIELDS)],
+            'scope' => ['nullable', 'string', Rule::in(['selected', 'cohort'])],
+            'search' => ['nullable', 'string', 'max:255'],
+            'student_type' => ['nullable', 'string', 'max:64'],
+            'course_id' => ['nullable', 'integer'],
+            'year_level' => ['nullable', 'integer'],
             'message' => ['nullable', 'string', 'max:1000'],
         ]);
 
+        $hasStudentIdsParam = $request->exists('student_ids');
+        $studentIds = is_array($validated['student_ids'] ?? null)
+            ? array_values(array_unique(array_map('intval', $validated['student_ids'])))
+            : [];
+        $specificKeys = filled($validated['document_key'] ?? null) ? [(string) $validated['document_key']] : null;
+        $isExplicitCohort = ($validated['scope'] ?? null) === 'cohort'
+            || (! $hasStudentIdsParam && $specificKeys !== null);
+
+        if (($hasStudentIdsParam && $studentIds === []) || ($studentIds === [] && ! $isExplicitCohort)) {
+            $feedback = 'No students were selected for reminders.';
+
+            if ($request->expectsJson() && ! $request->header('X-Inertia')) {
+                return response()->json(['message' => $feedback, 'sent_count' => 0]);
+            }
+
+            return redirect()->back()->with('info', $feedback);
+        }
+
         $query = Student::query()->with(['DocumentLocation', 'user']);
-        if (! empty($validated['student_ids'])) {
-            $query->whereIn('id', $validated['student_ids']);
+        if ($studentIds !== []) {
+            $query->whereIn('id', $studentIds);
+        } else {
+            $search = is_string($validated['search'] ?? null) ? mb_trim($validated['search']) : '';
+            $studentType = is_string($validated['student_type'] ?? null) ? mb_trim($validated['student_type']) : '';
+            $courseId = isset($validated['course_id']) && (int) $validated['course_id'] > 0 ? (int) $validated['course_id'] : null;
+            $yearLevel = isset($validated['year_level']) && (int) $validated['year_level'] > 0 ? (int) $validated['year_level'] : null;
+
+            $query
+                ->when($search !== '', function (Builder $q) use ($search): void {
+                    $like = "%{$search}%";
+                    $q->where(function (Builder $sub) use ($like): void {
+                        $sub->where('first_name', 'like', $like)
+                            ->orWhere('last_name', 'like', $like)
+                            ->orWhere('student_id', 'like', $like)
+                            ->orWhere('lrn', 'like', $like)
+                            ->orWhere('email', 'like', $like);
+                    });
+                })
+                ->when($studentType !== '', fn (Builder $q) => $q->where('student_type', $studentType))
+                ->when($courseId !== null, fn (Builder $q) => $q->where('course_id', $courseId))
+                ->when($yearLevel !== null, fn (Builder $q) => $q->where('academic_year', $yearLevel));
         }
         if (Schema::hasTable('student_document_records')) {
             $query->with('documentRecords');
         }
 
         $students = $query->limit(500)->get();
-        $specificKeys = filled($validated['document_key'] ?? null) ? [(string) $validated['document_key']] : null;
         $sent = 0;
 
         foreach ($students as $student) {
@@ -533,20 +496,27 @@ final class AdministratorStudentDocumentController extends Controller
             abort(403);
         }
 
-        $candidateDisks = array_values(array_unique(array_filter([
-            $resource->disk,
-            $this->documentService->privateDisk(),
-            'private',
-            'public',
-        ])));
-
-        foreach ($candidateDisks as $disk) {
-            if (Storage::disk($disk)->exists($resource->file_path)) {
-                Storage::disk($disk)->delete($resource->file_path);
-            }
-        }
+        $filePath = $resource->file_path;
+        $recordedDisk = $resource->disk;
 
         $resource->delete();
+
+        if (is_string($filePath) && mb_trim($filePath) !== '' && ! str_contains($filePath, '..')) {
+            $candidateDisks = array_values(array_unique(array_filter([
+                $recordedDisk,
+                $this->documentService->privateDisk(),
+                'private',
+                'public',
+            ])));
+
+            foreach ($candidateDisks as $disk) {
+                if (Storage::disk($disk)->exists($filePath)) {
+                    Storage::disk($disk)->delete($filePath);
+
+                    break;
+                }
+            }
+        }
 
         if ($request->expectsJson() && ! $request->header('X-Inertia')) {
             return response()->json([

@@ -142,16 +142,45 @@ export default function AdministratorStudentDocumentsHub({
 
     // Split-Pane Workbench state
     const [selectedStudentId, setSelectedStudentId] = useState<number | null>(students.data[0]?.id ?? null);
-    const [workbenchDossier, setWorkbenchDossier] = useState<DocumentDossier | null>(null);
+    const [workbenchDossierState, setWorkbenchDossierState] = useState<{
+        studentId: number;
+        dossier: DocumentDossier;
+    } | null>(null);
     const [workbenchLoading, setWorkbenchLoading] = useState(false);
     const [activeSlotKey, setActiveSlotKey] = useState<string | null>(null);
+    const [workbenchRejectOpen, setWorkbenchRejectOpen] = useState(false);
+    const [workbenchRejectReason, setWorkbenchRejectReason] = useState<string>(DOCUMENT_REJECTION_PRESETS[0]);
     const workbenchFileRef = useRef<HTMLInputElement | null>(null);
 
     const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const selectedStudentIdRef = useRef<number | null>(selectedStudentId);
+    selectedStudentIdRef.current = selectedStudentId;
+    const dossierRequestSeqRef = useRef(0);
+    const dossierAbortRef = useRef<AbortController | null>(null);
+
+    const clearSearchDebounce = useCallback(() => {
+        if (searchDebounceRef.current) {
+            clearTimeout(searchDebounceRef.current);
+            searchDebounceRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => {
+        return () => clearSearchDebounce();
+    }, [clearSearchDebounce]);
 
     useEffect(() => {
         setSelectedIds([]);
-        if (students.data.length > 0 && !students.data.some((s) => s.id === selectedStudentId)) {
+    }, [students.data]);
+
+    useEffect(() => {
+        if (students.data.length === 0) {
+            if (selectedStudentId !== null) {
+                setSelectedStudentId(null);
+            }
+            return;
+        }
+        if (!students.data.some((s) => s.id === selectedStudentId)) {
             setSelectedStudentId(students.data[0].id);
         }
     }, [students.data, selectedStudentId]);
@@ -170,6 +199,8 @@ export default function AdministratorStudentDocumentsHub({
             page?: number;
             view?: "matrix" | "workbench";
         }) => {
+            clearSearchDebounce();
+
             const nextSearch = overrides?.search ?? search;
             const nextCompliance = overrides?.compliance ?? compliance;
             const nextMissingDoc = overrides?.missing_doc ?? missingDoc;
@@ -205,37 +236,118 @@ export default function AdministratorStudentDocumentsHub({
                 onFinish: () => setLoading(false),
             });
         },
-        [search, compliance, missingDoc, studentType, courseId, yearLevel, sort, direction, perPage, viewMode],
+        [clearSearchDebounce, search, compliance, missingDoc, studentType, courseId, yearLevel, sort, direction, perPage, viewMode],
     );
+
+    const navigateHubRef = useRef(navigateHub);
+    useEffect(() => {
+        navigateHubRef.current = navigateHub;
+    }, [navigateHub]);
 
     // Load dossier for active Split-Pane Workbench student
     const fetchWorkbenchDossier = useCallback(async (studentId: number) => {
+        dossierAbortRef.current?.abort();
+        const controller = new AbortController();
+        dossierAbortRef.current = controller;
+        const requestId = ++dossierRequestSeqRef.current;
+
+        setWorkbenchDossierState(null);
+        setActiveSlotKey(null);
+        setWorkbenchRejectOpen(false);
+        setWorkbenchRejectReason(DOCUMENT_REJECTION_PRESETS[0]);
         setWorkbenchLoading(true);
+
         try {
             const res = await axios.get(`/administrators/students/${studentId}/documents/dossier`, {
                 headers: { Accept: "application/json" },
+                signal: controller.signal,
             });
-            const nextDossier = res.data?.dossier as DocumentDossier | null;
-            setWorkbenchDossier(nextDossier);
-            if (nextDossier && nextDossier.slots.length > 0) {
-                const prioritySlot =
-                    nextDossier.slots.find((s) => s.status === "pending_review") ??
-                    nextDossier.slots.find((s) => s.has_file) ??
-                    nextDossier.slots[0];
-                setActiveSlotKey(prioritySlot.key);
+            if (
+                controller.signal.aborted ||
+                requestId !== dossierRequestSeqRef.current ||
+                selectedStudentIdRef.current !== studentId
+            ) {
+                return;
             }
-        } catch {
+            const nextDossier = res.data?.dossier as DocumentDossier | null;
+            if (nextDossier) {
+                setWorkbenchDossierState({ studentId, dossier: nextDossier });
+                if (nextDossier.slots.length > 0) {
+                    const prioritySlot =
+                        nextDossier.slots.find((s) => s.status === "pending_review") ??
+                        nextDossier.slots.find((s) => s.has_file) ??
+                        nextDossier.slots[0];
+                    setActiveSlotKey(prioritySlot.key);
+                } else {
+                    setActiveSlotKey(null);
+                }
+            } else {
+                setWorkbenchDossierState(null);
+                setActiveSlotKey(null);
+            }
+        } catch (error: unknown) {
+            if (
+                axios.isCancel(error) ||
+                controller.signal.aborted ||
+                requestId !== dossierRequestSeqRef.current ||
+                selectedStudentIdRef.current !== studentId
+            ) {
+                return;
+            }
+            setWorkbenchDossierState(null);
+            setActiveSlotKey(null);
             toast.error("Failed to load student document dossier.");
         } finally {
-            setWorkbenchLoading(false);
+            if (requestId === dossierRequestSeqRef.current) {
+                setWorkbenchLoading(false);
+            }
         }
     }, []);
 
     useEffect(() => {
         if (viewMode === "workbench" && selectedStudentId !== null) {
             void fetchWorkbenchDossier(selectedStudentId);
+        } else {
+            dossierAbortRef.current?.abort();
+            dossierRequestSeqRef.current += 1;
+            setWorkbenchDossierState(null);
+            setActiveSlotKey(null);
+            setWorkbenchRejectOpen(false);
+            setWorkbenchRejectReason(DOCUMENT_REJECTION_PRESETS[0]);
+            setWorkbenchLoading(false);
         }
+
+        return () => {
+            dossierAbortRef.current?.abort();
+        };
     }, [viewMode, selectedStudentId, fetchWorkbenchDossier]);
+
+    const openMatrixCell = (student: DocumentMatrixStudent, cell: MatrixSlotCell) => {
+        const isSameDocument = activeCell?.student.id === student.id && activeCell?.cell.key === cell.key;
+        if (!isSameDocument) {
+            setRejectMode(false);
+            setWaiveMode(false);
+            setRejectReason(DOCUMENT_REJECTION_PRESETS[0]);
+            setWaiveReason("");
+        }
+        setActiveCell({ student, cell });
+    };
+
+    const closeMatrixCell = () => {
+        setActiveCell(null);
+        setRejectMode(false);
+        setWaiveMode(false);
+        setRejectReason(DOCUMENT_REJECTION_PRESETS[0]);
+        setWaiveReason("");
+    };
+
+    const selectWorkbenchSlot = (slotKey: string) => {
+        if (slotKey !== activeSlotKey) {
+            setWorkbenchRejectOpen(false);
+            setWorkbenchRejectReason(DOCUMENT_REJECTION_PRESETS[0]);
+        }
+        setActiveSlotKey(slotKey);
+    };
 
     // Keyboard stepping in Workbench mode (Alt+ArrowRight / Alt+ArrowLeft)
     const selectedStudentIdx = useMemo(
@@ -273,12 +385,15 @@ export default function AdministratorStudentDocumentsHub({
                 { headers: { Accept: "application/json" } },
             );
             toast.success(res.data?.message || "Document updated.");
-            if (viewMode === "workbench" && res.data?.dossier) {
-                setWorkbenchDossier(res.data.dossier);
+            if (res.data?.dossier && selectedStudentIdRef.current === studentId) {
+                dossierAbortRef.current?.abort();
+                dossierRequestSeqRef.current += 1;
+                setWorkbenchLoading(false);
+                setWorkbenchDossierState({ studentId, dossier: res.data.dossier });
             }
-            setActiveCell(null);
-            setRejectMode(false);
-            setWaiveMode(false);
+            closeMatrixCell();
+            setWorkbenchRejectOpen(false);
+            setWorkbenchRejectReason(DOCUMENT_REJECTION_PRESETS[0]);
             router.reload({ only: ["students", "column_stats", "kpis"] });
         } catch (error: unknown) {
             const err = error as { response?: { data?: { message?: string } } };
@@ -299,10 +414,13 @@ export default function AdministratorStudentDocumentsHub({
                 headers: { Accept: "application/json", "Content-Type": "multipart/form-data" },
             });
             toast.success("Document uploaded and verified.");
-            if (viewMode === "workbench" && res.data?.dossier) {
-                setWorkbenchDossier(res.data.dossier);
+            if (res.data?.dossier && selectedStudentIdRef.current === studentId) {
+                dossierAbortRef.current?.abort();
+                dossierRequestSeqRef.current += 1;
+                setWorkbenchLoading(false);
+                setWorkbenchDossierState({ studentId, dossier: res.data.dossier });
             }
-            setActiveCell(null);
+            closeMatrixCell();
             router.reload({ only: ["students", "column_stats", "kpis"] });
         } catch (error: unknown) {
             const err = error as { response?: { data?: { message?: string } } };
@@ -313,18 +431,39 @@ export default function AdministratorStudentDocumentsHub({
     };
 
     const handleBulkRemind = async (opts?: { studentIds?: number[]; documentKey?: string }) => {
+        const batchStudentIds = opts?.studentIds ? [...opts.studentIds] : null;
+        const payload: Record<string, unknown> = {
+            document_key: opts?.documentKey,
+        };
+
+        if (batchStudentIds && batchStudentIds.length > 0) {
+            payload.student_ids = batchStudentIds;
+        } else if (opts?.documentKey) {
+            if (serverFilters.search) payload.search = serverFilters.search;
+            if (serverFilters.student_type) payload.student_type = serverFilters.student_type;
+            if (serverFilters.course_id) payload.course_id = serverFilters.course_id;
+            if (serverFilters.year_level) payload.year_level = serverFilters.year_level;
+
+            if (students.last_page === 1 && serverFilters.compliance === "all" && !serverFilters.missing_doc) {
+                const scopedMissingIds = students.data
+                    .filter((student) => student.slots[opts.documentKey!]?.status === "missing")
+                    .map((student) => student.id);
+                if (scopedMissingIds.length > 0) {
+                    payload.student_ids = scopedMissingIds;
+                }
+            }
+        }
+
         setReminding(true);
         try {
-            const res = await axios.post(
-                "/administrators/students/documents/bulk-remind",
-                {
-                    student_ids: opts?.studentIds,
-                    document_key: opts?.documentKey,
-                },
-                { headers: { Accept: "application/json" } },
-            );
+            const res = await axios.post("/administrators/students/documents/bulk-remind", payload, {
+                headers: { Accept: "application/json" },
+            });
             toast.success(res.data?.message || "Reminders sent.");
-            setSelectedIds([]);
+            if (batchStudentIds && batchStudentIds.length > 0) {
+                const completedSet = new Set(batchStudentIds);
+                setSelectedIds((prev) => prev.filter((id) => !completedSet.has(id)));
+            }
         } catch (error: unknown) {
             const err = error as { response?: { data?: { message?: string } } };
             toast.error(err.response?.data?.message || "Could not send reminders.");
@@ -342,10 +481,75 @@ export default function AdministratorStudentDocumentsHub({
     }, [column_stats]);
 
     const activeWorkbenchStudent = students.data.find((s) => s.id === selectedStudentId) ?? null;
+    const workbenchDossier =
+        activeWorkbenchStudent !== null && workbenchDossierState?.studentId === activeWorkbenchStudent.id
+            ? workbenchDossierState.dossier
+            : null;
     const activeWorkbenchSlot: DocumentSlot | null =
         workbenchDossier?.slots.find((s) => s.key === activeSlotKey) ?? workbenchDossier?.slots[0] ?? null;
 
     const allPageSelected = students.data.length > 0 && selectedIds.length === students.data.length;
+
+    const paginationFooter = (
+        <div className="border-border/70 flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3 text-xs">
+            <span className="text-muted-foreground">
+                {students.total === 0
+                    ? "No students"
+                    : `Showing ${students.from ?? 1}–${students.to ?? students.data.length} of ${students.total} students`}
+            </span>
+            <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                    <span className="text-muted-foreground">Rows:</span>
+                    <Select
+                        value={String(perPage)}
+                        onValueChange={(v) => {
+                            const n = Number(v);
+                            setPerPage(n);
+                            navigateHub({ per_page: n, page: 1 });
+                        }}
+                    >
+                        <SelectTrigger className="h-8 w-16 text-xs">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {[15, 25, 50, 100].map((n) => (
+                                <SelectItem key={n} value={String(n)}>
+                                    {n}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div className="flex items-center gap-1">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="size-8"
+                        disabled={students.current_page <= 1}
+                        onClick={() => navigateHub({ page: students.current_page - 1 })}
+                        aria-label="Previous page"
+                    >
+                        <ChevronLeft className="size-4" />
+                    </Button>
+                    <span className="px-2 font-mono text-xs tabular-nums">
+                        {students.current_page} / {students.last_page}
+                    </span>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="size-8"
+                        disabled={students.current_page >= students.last_page}
+                        onClick={() => navigateHub({ page: students.current_page + 1 })}
+                        aria-label="Next page"
+                    >
+                        <ChevronRight className="size-4" />
+                    </Button>
+                </div>
+            </div>
+        </div>
+    );
 
     return (
         <AdminLayout user={auth.user} title="Student Documents">
@@ -426,7 +630,7 @@ export default function AdministratorStudentDocumentsHub({
                         },
                         {
                             key: "missing",
-                            label: "Missing / Rejected",
+                            label: "Missing / Pending / Rejected",
                             value: kpis.missing_required,
                             icon: <FileWarning className="size-4 text-rose-600 dark:text-rose-400" />,
                             accent: "border-rose-500/40 bg-rose-500/5",
@@ -466,9 +670,10 @@ export default function AdministratorStudentDocumentsHub({
                                 onChange={(e) => {
                                     const val = e.target.value;
                                     setSearch(val);
-                                    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+                                    clearSearchDebounce();
                                     searchDebounceRef.current = setTimeout(() => {
-                                        navigateHub({ search: val, page: 1 });
+                                        searchDebounceRef.current = null;
+                                        navigateHubRef.current({ search: val, page: 1 });
                                     }, 280);
                                 }}
                                 placeholder={`Search student name, ${idLabel}, LRN, email...`}
@@ -478,10 +683,12 @@ export default function AdministratorStudentDocumentsHub({
                                 <button
                                     type="button"
                                     onClick={() => {
+                                        clearSearchDebounce();
                                         setSearch("");
                                         navigateHub({ search: "", page: 1 });
                                     }}
                                     className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2.5 -translate-y-1/2"
+                                    aria-label="Clear search"
                                 >
                                     <X className="size-3.5" />
                                 </button>
@@ -581,6 +788,7 @@ export default function AdministratorStudentDocumentsHub({
                                 size="sm"
                                 className="h-9 gap-1 text-xs"
                                 onClick={() => {
+                                    clearSearchDebounce();
                                     setSearch("");
                                     setCompliance("all");
                                     setMissingDoc("");
@@ -767,11 +975,7 @@ export default function AdministratorStudentDocumentsHub({
                                                             <TableCell key={col.key} className="text-center">
                                                                 <button
                                                                     type="button"
-                                                                    onClick={() => {
-                                                                        setRejectMode(false);
-                                                                        setWaiveMode(false);
-                                                                        setActiveCell({ student, cell });
-                                                                    }}
+                                                                    onClick={() => openMatrixCell(student, cell)}
                                                                     className={cn(
                                                                         "inline-flex items-center justify-center rounded-md border px-2 py-1 text-[11px] font-medium transition-transform hover:scale-[1.03]",
                                                                         meta.className,
@@ -832,315 +1036,379 @@ export default function AdministratorStudentDocumentsHub({
                         </div>
 
                         {/* Pagination Footer */}
-                        <div className="border-border/70 flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3 text-xs">
-                            <span className="text-muted-foreground">
-                                {students.total === 0
-                                    ? "No students"
-                                    : `Showing ${students.from ?? 1}–${students.to ?? students.data.length} of ${students.total} students`}
-                            </span>
-                            <div className="flex items-center gap-3">
-                                <div className="flex items-center gap-1.5">
-                                    <span className="text-muted-foreground">Rows:</span>
-                                    <Select
-                                        value={String(perPage)}
-                                        onValueChange={(v) => {
-                                            const n = Number(v);
-                                            setPerPage(n);
-                                            navigateHub({ per_page: n, page: 1 });
-                                        }}
-                                    >
-                                        <SelectTrigger className="h-8 w-16 text-xs">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {[15, 25, 50, 100].map((n) => (
-                                                <SelectItem key={n} value={String(n)}>
-                                                    {n}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="icon"
-                                        className="size-8"
-                                        disabled={students.current_page <= 1}
-                                        onClick={() => navigateHub({ page: students.current_page - 1 })}
-                                    >
-                                        <ChevronLeft className="size-4" />
-                                    </Button>
-                                    <span className="px-2 font-mono text-xs tabular-nums">
-                                        {students.current_page} / {students.last_page}
-                                    </span>
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="icon"
-                                        className="size-8"
-                                        disabled={students.current_page >= students.last_page}
-                                        onClick={() => navigateHub({ page: students.current_page + 1 })}
-                                    >
-                                        <ChevronRight className="size-4" />
-                                    </Button>
-                                </div>
-                            </div>
-                        </div>
+                        {paginationFooter}
                     </Card>
                 )}
 
                 {/* VIEW 2: SPLIT-PANE VERIFICATION WORKBENCH */}
                 {viewMode === "workbench" && (
-                    <div className="border-border/70 bg-card grid h-[72vh] min-h-[540px] grid-cols-1 divide-y overflow-hidden rounded-xl border lg:grid-cols-[260px_minmax(0,1fr)_320px] lg:divide-x lg:divide-y-0">
-                        {/* Left Pane: Student Queue */}
-                        <div className="flex min-h-0 flex-col overflow-hidden">
-                            <div className="border-border/70 bg-muted/30 flex items-center justify-between border-b px-3 py-2.5">
-                                <span className="text-xs font-semibold">Queue ({students.data.length})</span>
-                                <span className="text-muted-foreground font-mono text-[10px]">Alt + ← / →</span>
+                    <Card className="border-border/70 relative overflow-hidden">
+                        {loading && (
+                            <div className="bg-background/50 absolute inset-0 z-20 flex items-center justify-center backdrop-blur-[1px]">
+                                <Loader2 className="text-primary size-6 animate-spin" />
                             </div>
-                            <div className="flex-1 divide-y overflow-y-auto">
-                                {students.data.map((student) => {
-                                    const active = student.id === selectedStudentId;
-                                    const reqTotal = student.summary.required_total ?? 0;
-                                    return (
-                                        <button
-                                            key={student.id}
-                                            type="button"
-                                            onClick={() => setSelectedStudentId(student.id)}
-                                            className={cn(
-                                                "flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors",
-                                                active ? "bg-primary/10" : "hover:bg-muted/50",
-                                            )}
-                                        >
-                                            <div className="min-w-0">
-                                                <p className="truncate text-xs font-semibold">{student.full_name}</p>
-                                                <p className="text-muted-foreground truncate font-mono text-[10px]">
-                                                    {student.student_id || `#${student.id}`} · {student.course_code || "—"}
-                                                </p>
-                                            </div>
-                                            <Badge
-                                                variant="outline"
-                                                className={cn(
-                                                    "shrink-0 font-mono text-[10px] tabular-nums",
-                                                    student.summary.is_complete
-                                                        ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                                                        : student.summary.pending_review_count > 0
-                                                          ? "border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                                                          : "border-border text-muted-foreground",
-                                                )}
-                                            >
-                                                {student.summary.compliant_count}/{reqTotal}
-                                            </Badge>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-
-                        {/* Center Pane: Live Document Viewer */}
-                        <div className="flex min-h-0 flex-col overflow-hidden p-3">
-                            {workbenchLoading ? (
-                                <div className="flex flex-1 items-center justify-center">
-                                    <Loader2 className="text-primary size-6 animate-spin" />
+                        )}
+                        <div className="grid h-[72vh] min-h-[540px] grid-cols-1 divide-y overflow-hidden lg:grid-cols-[260px_minmax(0,1fr)_320px] lg:divide-x lg:divide-y-0">
+                            {/* Left Pane: Student Queue */}
+                            <div className="flex min-h-0 flex-col overflow-hidden">
+                                <div className="border-border/70 bg-muted/30 flex items-center justify-between border-b px-3 py-2.5">
+                                    <span className="text-xs font-semibold">
+                                        Queue ({students.data.length}
+                                        {students.total > students.data.length ? ` of ${students.total}` : ""})
+                                    </span>
+                                    <span className="text-muted-foreground font-mono text-[10px]">Alt + ← / →</span>
                                 </div>
-                            ) : activeWorkbenchSlot ? (
-                                <DocumentPreviewViewer
-                                    title={`${activeWorkbenchStudent?.full_name || "Student"} — ${activeWorkbenchSlot.label}`}
-                                    fileName={activeWorkbenchSlot.file_name}
-                                    mimeType={activeWorkbenchSlot.mime_type}
-                                    previewUrl={activeWorkbenchSlot.preview_url}
-                                    downloadUrl={activeWorkbenchSlot.download_url}
-                                    className="h-full"
-                                />
-                            ) : (
-                                <div className="text-muted-foreground flex flex-1 items-center justify-center text-xs">
-                                    Select a student from the queue to inspect documents.
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Right Pane: Checklist & Rapid Decision Rail */}
-                        <div className="flex min-h-0 flex-col overflow-hidden">
-                            <input
-                                ref={workbenchFileRef}
-                                type="file"
-                                className="hidden"
-                                onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (file && activeWorkbenchStudent && activeWorkbenchSlot) {
-                                        void handleUploadSlot(activeWorkbenchStudent.id, activeWorkbenchSlot.key, file);
-                                    }
-                                    e.currentTarget.value = "";
-                                }}
-                            />
-
-                            <div className="border-border/70 bg-muted/30 flex items-center justify-between gap-2 border-b px-3.5 py-2.5">
-                                <div className="min-w-0">
-                                    <p className="truncate text-xs font-semibold">
-                                        {activeWorkbenchStudent?.full_name || "Checklist"}
-                                    </p>
-                                    {workbenchDossier && (
-                                        <p className="text-muted-foreground font-mono text-[10px]">
-                                            {workbenchDossier.summary.compliant_count}/
-                                            {workbenchDossier.summary.total_required ?? 0} Ready (
-                                            {workbenchDossier.summary.compliance_percent}%)
-                                        </p>
+                                <div className="flex-1 divide-y overflow-y-auto">
+                                    {students.data.length === 0 ? (
+                                        <div className="text-muted-foreground flex h-full items-center justify-center p-4 text-center text-xs">
+                                            No students match the current filter.
+                                        </div>
+                                    ) : (
+                                        students.data.map((student) => {
+                                            const active = student.id === selectedStudentId;
+                                            const reqTotal = student.summary.required_total ?? 0;
+                                            return (
+                                                <button
+                                                    key={student.id}
+                                                    type="button"
+                                                    onClick={() => setSelectedStudentId(student.id)}
+                                                    className={cn(
+                                                        "flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors",
+                                                        active ? "bg-primary/10" : "hover:bg-muted/50",
+                                                    )}
+                                                >
+                                                    <div className="min-w-0">
+                                                        <p className="truncate text-xs font-semibold">{student.full_name}</p>
+                                                        <p className="text-muted-foreground truncate font-mono text-[10px]">
+                                                            {student.student_id || `#${student.id}`} · {student.course_code || "—"}
+                                                        </p>
+                                                    </div>
+                                                    <Badge
+                                                        variant="outline"
+                                                        className={cn(
+                                                            "shrink-0 font-mono text-[10px] tabular-nums",
+                                                            student.summary.is_complete
+                                                                ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                                                                : student.summary.pending_review_count > 0
+                                                                  ? "border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                                                                  : "border-border text-muted-foreground",
+                                                        )}
+                                                    >
+                                                        {student.summary.compliant_count}/{reqTotal}
+                                                    </Badge>
+                                                </button>
+                                            );
+                                        })
                                     )}
                                 </div>
-                                <div className="flex items-center gap-1">
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="icon"
-                                        className="size-7"
-                                        disabled={selectedStudentIdx <= 0}
-                                        onClick={() => setSelectedStudentId(students.data[selectedStudentIdx - 1].id)}
-                                        title="Previous student"
-                                    >
-                                        <ArrowLeft className="size-3.5" />
-                                    </Button>
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="icon"
-                                        className="size-7"
-                                        disabled={selectedStudentIdx < 0 || selectedStudentIdx >= students.data.length - 1}
-                                        onClick={() => setSelectedStudentId(students.data[selectedStudentIdx + 1].id)}
-                                        title="Next student"
-                                    >
-                                        <ArrowRight className="size-3.5" />
-                                    </Button>
-                                </div>
                             </div>
 
-                            {workbenchDossier && (
-                                <div className="px-3.5 pt-2.5">
-                                    <Progress value={workbenchDossier.summary.compliance_percent} className="h-1.5" />
-                                </div>
-                            )}
-
-                            <div className="flex-1 space-y-2 overflow-y-auto p-3.5">
-                                {(workbenchDossier?.slots ?? []).map((slot) => {
-                                    const meta = documentStatusMeta(slot.status);
-                                    const selected = slot.key === activeWorkbenchSlot?.key;
-                                    return (
-                                        <div
-                                            key={slot.key}
-                                            onClick={() => setActiveSlotKey(slot.key)}
-                                            className={cn(
-                                                "cursor-pointer rounded-xl border p-3 transition-colors",
-                                                selected ? "border-primary bg-primary/5" : "border-border/70 hover:bg-muted/40",
-                                            )}
+                            {/* Center Pane: Live Document Viewer */}
+                            <div className="flex min-h-0 flex-col overflow-hidden p-3">
+                                {workbenchLoading ? (
+                                    <div className="flex flex-1 items-center justify-center">
+                                        <Loader2 className="text-primary size-6 animate-spin" />
+                                    </div>
+                                ) : workbenchDossier && activeWorkbenchStudent && activeWorkbenchSlot ? (
+                                    <DocumentPreviewViewer
+                                        title={`${activeWorkbenchStudent.full_name} — ${activeWorkbenchSlot.label}`}
+                                        fileName={activeWorkbenchSlot.file_name}
+                                        mimeType={activeWorkbenchSlot.mime_type}
+                                        previewUrl={activeWorkbenchSlot.preview_url}
+                                        downloadUrl={activeWorkbenchSlot.download_url}
+                                        className="h-full"
+                                    />
+                                ) : activeWorkbenchStudent ? (
+                                    <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-2 text-center text-xs">
+                                        <p>Unable to load document dossier for {activeWorkbenchStudent.full_name}.</p>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-8 gap-1.5 text-xs"
+                                            onClick={() => void fetchWorkbenchDossier(activeWorkbenchStudent.id)}
                                         >
-                                            <div className="flex items-center justify-between gap-2">
-                                                <span className="truncate text-xs font-semibold">{slot.label}</span>
-                                                <Badge variant="outline" className={cn("text-[10px]", meta.className)}>
-                                                    {meta.shortLabel}
-                                                </Badge>
-                                            </div>
-                                            {slot.rejection_reason && (
-                                                <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">
-                                                    {slot.rejection_reason}
-                                                </p>
-                                            )}
-                                            {selected && activeWorkbenchStudent && (
-                                                <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t pt-2.5">
-                                                    {slot.status !== "verified" && (
-                                                        <Button
-                                                            type="button"
-                                                            size="sm"
-                                                            className="h-7 gap-1 px-2 text-[11px]"
-                                                            disabled={cellBusy}
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                void handleReviewSlot(activeWorkbenchStudent.id, slot.key, "verify");
-                                                            }}
-                                                        >
-                                                            <CheckCircle2 className="size-3" />
-                                                            Verify
-                                                        </Button>
-                                                    )}
-                                                    {!slot.has_file && slot.status !== "physical_on_file" && (
-                                                        <Button
-                                                            type="button"
-                                                            size="sm"
-                                                            variant="outline"
-                                                            className="h-7 gap-1 px-2 text-[11px]"
-                                                            disabled={cellBusy}
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                void handleReviewSlot(activeWorkbenchStudent.id, slot.key, "physical");
-                                                            }}
-                                                        >
-                                                            <FileCheck2 className="size-3" />
-                                                            Physical
-                                                        </Button>
-                                                    )}
-                                                    {slot.has_file && slot.status !== "rejected" && (
-                                                        <Button
-                                                            type="button"
-                                                            size="sm"
-                                                            variant="outline"
-                                                            className="h-7 gap-1 px-2 text-[11px] text-rose-600"
-                                                            disabled={cellBusy}
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                void handleReviewSlot(
-                                                                    activeWorkbenchStudent.id,
-                                                                    slot.key,
-                                                                    "reject",
-                                                                    DOCUMENT_REJECTION_PRESETS[0],
-                                                                );
-                                                            }}
-                                                        >
-                                                            <XCircle className="size-3" />
-                                                            Reject
-                                                        </Button>
-                                                    )}
-                                                    <Button
-                                                        type="button"
-                                                        size="sm"
-                                                        variant="outline"
-                                                        className="h-7 gap-1 px-2 text-[11px]"
-                                                        disabled={cellBusy}
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            workbenchFileRef.current?.click();
-                                                        }}
-                                                    >
-                                                        <UploadCloud className="size-3" />
-                                                        {slot.has_file ? "Replace" : "Upload"}
-                                                    </Button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
+                                            <RotateCcw className="size-3.5" />
+                                            Retry
+                                        </Button>
+                                    </div>
+                                ) : (
+                                    <div className="text-muted-foreground flex flex-1 items-center justify-center text-xs">
+                                        Select a student from the queue to inspect documents.
+                                    </div>
+                                )}
                             </div>
 
-                            {activeWorkbenchStudent && (
-                                <div className="border-border/70 border-t p-3">
-                                    <Button
-                                        render={<Link href={`/administrators/students/${activeWorkbenchStudent.id}/documents`} />}
-                                        nativeButton={false}
-                                        variant="outline"
-                                        size="sm"
-                                        className="h-8 w-full gap-1.5 text-xs"
-                                    >
-                                        <ExternalLink className="size-3.5" />
-                                        Open Full Student Studio
-                                    </Button>
+                            {/* Right Pane: Checklist & Rapid Decision Rail */}
+                            <div className="flex min-h-0 flex-col overflow-hidden">
+                                <input
+                                    ref={workbenchFileRef}
+                                    type="file"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file && workbenchDossier && activeWorkbenchStudent && activeWorkbenchSlot) {
+                                            void handleUploadSlot(activeWorkbenchStudent.id, activeWorkbenchSlot.key, file);
+                                        }
+                                        e.currentTarget.value = "";
+                                    }}
+                                />
+
+                                <div className="border-border/70 bg-muted/30 flex items-center justify-between gap-2 border-b px-3.5 py-2.5">
+                                    <div className="min-w-0">
+                                        <p className="truncate text-xs font-semibold">
+                                            {activeWorkbenchStudent?.full_name || "Checklist"}
+                                        </p>
+                                        {workbenchDossier && (
+                                            <p className="text-muted-foreground font-mono text-[10px]">
+                                                {workbenchDossier.summary.compliant_count}/
+                                                {workbenchDossier.summary.total_required ?? 0} Ready (
+                                                {workbenchDossier.summary.compliance_percent}%)
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="icon"
+                                            className="size-7"
+                                            disabled={selectedStudentIdx <= 0}
+                                            onClick={() => setSelectedStudentId(students.data[selectedStudentIdx - 1].id)}
+                                            title="Previous student"
+                                        >
+                                            <ArrowLeft className="size-3.5" />
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="icon"
+                                            className="size-7"
+                                            disabled={selectedStudentIdx < 0 || selectedStudentIdx >= students.data.length - 1}
+                                            onClick={() => setSelectedStudentId(students.data[selectedStudentIdx + 1].id)}
+                                            title="Next student"
+                                        >
+                                            <ArrowRight className="size-3.5" />
+                                        </Button>
+                                    </div>
                                 </div>
-                            )}
+
+                                {workbenchDossier && (
+                                    <div className="px-3.5 pt-2.5">
+                                        <Progress value={workbenchDossier.summary.compliance_percent} className="h-1.5" />
+                                    </div>
+                                )}
+
+                                <div className="flex-1 space-y-2 overflow-y-auto p-3.5">
+                                    {workbenchLoading ? (
+                                        <div className="flex h-full items-center justify-center">
+                                            <Loader2 className="text-primary size-5 animate-spin" />
+                                        </div>
+                                    ) : workbenchDossier && activeWorkbenchStudent ? (
+                                        workbenchDossier.slots.map((slot) => {
+                                            const meta = documentStatusMeta(slot.status);
+                                            const selected = slot.key === activeWorkbenchSlot?.key;
+                                            return (
+                                                <div
+                                                    key={slot.key}
+                                                    className={cn(
+                                                        "rounded-xl border transition-colors",
+                                                        selected ? "border-primary bg-primary/5" : "border-border/70 hover:bg-muted/40",
+                                                    )}
+                                                >
+                                                    <button
+                                                        type="button"
+                                                        aria-pressed={selected}
+                                                        onClick={() => selectWorkbenchSlot(slot.key)}
+                                                        className="focus-visible:ring-ring w-full rounded-xl p-3 text-left outline-none focus-visible:ring-2"
+                                                    >
+                                                        <div className="flex items-center justify-between gap-2">
+                                                            <span className="truncate text-xs font-semibold">{slot.label}</span>
+                                                            <Badge variant="outline" className={cn("text-[10px]", meta.className)}>
+                                                                {meta.shortLabel}
+                                                            </Badge>
+                                                        </div>
+                                                        {slot.rejection_reason && (
+                                                            <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">
+                                                                {slot.rejection_reason}
+                                                            </p>
+                                                        )}
+                                                    </button>
+                                                    {selected && (
+                                                        <div className="mx-3 mb-3 space-y-2.5 border-t pt-2.5">
+                                                            <div className="flex flex-wrap items-center gap-1.5">
+                                                                {slot.status !== "verified" && (
+                                                                    <Button
+                                                                        type="button"
+                                                                        size="sm"
+                                                                        className="h-7 gap-1 px-2 text-[11px]"
+                                                                        disabled={cellBusy || !slot.has_file}
+                                                                        title={
+                                                                            !slot.has_file
+                                                                                ? "Upload a file first before verifying"
+                                                                                : "Verify uploaded document"
+                                                                        }
+                                                                        onClick={() => {
+                                                                            if (!slot.has_file) return;
+                                                                            void handleReviewSlot(
+                                                                                activeWorkbenchStudent.id,
+                                                                                slot.key,
+                                                                                "verify",
+                                                                            );
+                                                                        }}
+                                                                    >
+                                                                        <CheckCircle2 className="size-3" />
+                                                                        Verify
+                                                                    </Button>
+                                                                )}
+                                                                {!slot.has_file && slot.status !== "physical_on_file" && (
+                                                                    <Button
+                                                                        type="button"
+                                                                        size="sm"
+                                                                        variant="outline"
+                                                                        className="h-7 gap-1 px-2 text-[11px]"
+                                                                        disabled={cellBusy}
+                                                                        onClick={() =>
+                                                                            void handleReviewSlot(
+                                                                                activeWorkbenchStudent.id,
+                                                                                slot.key,
+                                                                                "physical",
+                                                                            )
+                                                                        }
+                                                                    >
+                                                                        <FileCheck2 className="size-3" />
+                                                                        Physical
+                                                                    </Button>
+                                                                )}
+                                                                {slot.has_file && slot.status !== "rejected" && (
+                                                                    <Button
+                                                                        type="button"
+                                                                        size="sm"
+                                                                        variant="outline"
+                                                                        className="h-7 gap-1 px-2 text-[11px] text-rose-600"
+                                                                        disabled={cellBusy}
+                                                                        onClick={() => {
+                                                                            setWorkbenchRejectReason(DOCUMENT_REJECTION_PRESETS[0]);
+                                                                            setWorkbenchRejectOpen(true);
+                                                                        }}
+                                                                    >
+                                                                        <XCircle className="size-3" />
+                                                                        Reject
+                                                                    </Button>
+                                                                )}
+                                                                <Button
+                                                                    type="button"
+                                                                    size="sm"
+                                                                    variant="outline"
+                                                                    className="h-7 gap-1 px-2 text-[11px]"
+                                                                    disabled={cellBusy}
+                                                                    onClick={() => workbenchFileRef.current?.click()}
+                                                                >
+                                                                    <UploadCloud className="size-3" />
+                                                                    {slot.has_file ? "Replace" : "Upload"}
+                                                                </Button>
+                                                            </div>
+
+                                                            {workbenchRejectOpen && slot.has_file && (
+                                                                <div className="space-y-2 rounded-lg border border-rose-500/30 bg-rose-500/5 p-2.5">
+                                                                    <Label
+                                                                        htmlFor="workbench-reject-reason"
+                                                                        className="text-xs font-semibold"
+                                                                    >
+                                                                        Rejection Reason (sent to student)
+                                                                    </Label>
+                                                                    <div className="flex flex-wrap gap-1">
+                                                                        {DOCUMENT_REJECTION_PRESETS.map((preset) => (
+                                                                            <button
+                                                                                key={preset}
+                                                                                type="button"
+                                                                                onClick={() => setWorkbenchRejectReason(preset)}
+                                                                                className={cn(
+                                                                                    "border-border rounded border px-1.5 py-0.5 text-left text-[10px]",
+                                                                                    workbenchRejectReason === preset
+                                                                                        ? "border-primary bg-primary/10 font-medium"
+                                                                                        : "hover:bg-muted",
+                                                                                )}
+                                                                            >
+                                                                                {preset}
+                                                                            </button>
+                                                                        ))}
+                                                                    </div>
+                                                                    <Textarea
+                                                                        id="workbench-reject-reason"
+                                                                        value={workbenchRejectReason}
+                                                                        onChange={(e) => setWorkbenchRejectReason(e.target.value)}
+                                                                        rows={2}
+                                                                        className="text-xs"
+                                                                    />
+                                                                    <div className="flex justify-end gap-1.5">
+                                                                        <Button
+                                                                            type="button"
+                                                                            variant="ghost"
+                                                                            size="sm"
+                                                                            className="h-7 px-2 text-[11px]"
+                                                                            disabled={cellBusy}
+                                                                            onClick={() => setWorkbenchRejectOpen(false)}
+                                                                        >
+                                                                            Cancel
+                                                                        </Button>
+                                                                        <Button
+                                                                            type="button"
+                                                                            variant="destructive"
+                                                                            size="sm"
+                                                                            className="h-7 px-2 text-[11px]"
+                                                                            disabled={cellBusy || workbenchRejectReason.trim().length === 0}
+                                                                            onClick={() =>
+                                                                                void handleReviewSlot(
+                                                                                    activeWorkbenchStudent.id,
+                                                                                    slot.key,
+                                                                                    "reject",
+                                                                                    workbenchRejectReason.trim(),
+                                                                                )
+                                                                            }
+                                                                        >
+                                                                            Confirm Rejection &amp; Notify
+                                                                        </Button>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })
+                                    ) : (
+                                        <div className="text-muted-foreground flex h-full items-center justify-center text-center text-xs">
+                                            {activeWorkbenchStudent
+                                                ? "Checklist unavailable until the dossier loads."
+                                                : "Select a student to view checklist."}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {activeWorkbenchStudent && (
+                                    <div className="border-border/70 border-t p-3">
+                                        <Button
+                                            render={<Link href={`/administrators/students/${activeWorkbenchStudent.id}/documents`} />}
+                                            nativeButton={false}
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-8 w-full gap-1.5 text-xs"
+                                        >
+                                            <ExternalLink className="size-3.5" />
+                                            Open Full Student Studio
+                                        </Button>
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                    </div>
+                        {paginationFooter}
+                    </Card>
                 )}
             </div>
 
             {/* Matrix Cell Quick-Action Dialog */}
-            <Dialog open={activeCell !== null} onOpenChange={(open) => !open && setActiveCell(null)}>
+            <Dialog open={activeCell !== null} onOpenChange={(open) => !open && closeMatrixCell()}>
                 <DialogContent className="max-w-2xl">
                     <DialogHeader>
                         <DialogTitle className="flex flex-wrap items-center gap-2 text-base">
@@ -1186,7 +1454,9 @@ export default function AdministratorStudentDocumentsHub({
 
                             {rejectMode && (
                                 <div className="space-y-2 rounded-lg border border-rose-500/30 bg-rose-500/5 p-3">
-                                    <Label className="text-xs font-semibold">Rejection Reason (sent to student)</Label>
+                                    <Label htmlFor="matrix-reject-reason" className="text-xs font-semibold">
+                                        Rejection Reason (sent to student)
+                                    </Label>
                                     <div className="flex flex-wrap gap-1.5">
                                         {DOCUMENT_REJECTION_PRESETS.map((preset) => (
                                             <button
@@ -1203,6 +1473,7 @@ export default function AdministratorStudentDocumentsHub({
                                         ))}
                                     </div>
                                     <Textarea
+                                        id="matrix-reject-reason"
                                         value={rejectReason}
                                         onChange={(e) => setRejectReason(e.target.value)}
                                         rows={2}
@@ -1216,7 +1487,7 @@ export default function AdministratorStudentDocumentsHub({
                                             type="button"
                                             variant="destructive"
                                             size="sm"
-                                            disabled={cellBusy}
+                                            disabled={cellBusy || rejectReason.trim().length === 0}
                                             onClick={() =>
                                                 void handleReviewSlot(
                                                     activeCell.student.id,
@@ -1234,8 +1505,11 @@ export default function AdministratorStudentDocumentsHub({
 
                             {waiveMode && (
                                 <div className="bg-muted/30 space-y-2 rounded-lg border p-3">
-                                    <Label className="text-xs font-semibold">Waiver Reason</Label>
+                                    <Label htmlFor="matrix-waive-reason" className="text-xs font-semibold">
+                                        Waiver Reason
+                                    </Label>
                                     <Input
+                                        id="matrix-waive-reason"
                                         value={waiveReason}
                                         onChange={(e) => setWaiveReason(e.target.value)}
                                         placeholder="e.g. Not applicable for freshman entrant"
@@ -1327,10 +1601,16 @@ export default function AdministratorStudentDocumentsHub({
                                         type="button"
                                         size="sm"
                                         className="h-8 gap-1.5 text-xs"
-                                        disabled={cellBusy}
-                                        onClick={() =>
-                                            void handleReviewSlot(activeCell.student.id, activeCell.cell.key, "verify")
+                                        disabled={cellBusy || !activeCell.cell.has_file}
+                                        title={
+                                            !activeCell.cell.has_file
+                                                ? "Upload a file before verifying (or mark Physical Copy)"
+                                                : "Verify uploaded document"
                                         }
+                                        onClick={() => {
+                                            if (!activeCell.cell.has_file) return;
+                                            void handleReviewSlot(activeCell.student.id, activeCell.cell.key, "verify");
+                                        }}
                                     >
                                         {cellBusy ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
                                         Verify

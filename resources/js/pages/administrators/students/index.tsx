@@ -36,10 +36,8 @@ import {
     FileCheck2,
     FileSpreadsheet,
     FileWarning,
-    Filter,
     GitMerge,
     GraduationCap,
-    HelpCircle,
     KeyRound,
     Layers,
     LayoutGrid,
@@ -54,7 +52,6 @@ import {
     UserPlus,
     Users,
     X,
-    XCircle,
     Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -82,6 +79,17 @@ interface SavedView {
 }
 
 const SAVED_VIEWS_STORAGE_KEY = "koakademy:students:saved-views:v1";
+const MAX_SAVED_VIEWS = 6;
+
+function resolveTriageFromProps(filters: StudentsIndexProps["filters"]): TriageKey {
+    if (filters.triage && filters.triage !== "all") {
+        return filters.triage;
+    }
+    if (filters.trashed === "trashed") {
+        return "trashed";
+    }
+    return "all";
+}
 
 function parseSortOption(value: string): { sort: string; direction: "asc" | "desc" } {
     const [sort = "created_at", direction = "desc"] = value.split(":");
@@ -90,8 +98,9 @@ function parseSortOption(value: string): { sort: string; direction: "asc" | "des
 
 function extractFiltersFromProps(filters: StudentsIndexProps["filters"]): FilterType[] {
     const initialFilters: FilterType[] = [];
+    const resolvedTriage = resolveTriageFromProps(filters);
     const trashedValue = filters.trashed ?? "active";
-    if (trashedValue !== "active" && filters.triage !== "trashed") {
+    if (trashedValue !== "active" && resolvedTriage !== "trashed") {
         initialFilters.push({ id: "trashed", field: "trashed", operator: "is", values: [trashedValue] });
     }
     if (filters.type) initialFilters.push({ id: "type", field: "type", operator: "is", values: [filters.type] });
@@ -185,7 +194,7 @@ export default function AdministratorStudentsIndex({
     const studentConfig = options.student_configuration;
 
     const [searchTerm, setSearchTerm] = useState(serverFilters.search ?? "");
-    const [activeTriage, setActiveTriage] = useState<TriageKey>((serverFilters.triage as TriageKey) || "all");
+    const [activeTriage, setActiveTriage] = useState<TriageKey>(() => resolveTriageFromProps(serverFilters));
     const [filters, setFilters] = useState<FilterType[]>(() => extractFiltersFromProps(serverFilters));
     const [sort, setSort] = useState(serverFilters.sort || "created_at");
     const [direction, setDirection] = useState<"asc" | "desc">(serverFilters.direction === "asc" ? "asc" : "desc");
@@ -223,7 +232,7 @@ export default function AdministratorStudentsIndex({
 
     useEffect(() => {
         setSearchTerm(serverFilters.search ?? "");
-        setActiveTriage((serverFilters.triage as TriageKey) || "all");
+        setActiveTriage(resolveTriageFromProps(serverFilters));
         setFilters(extractFiltersFromProps(serverFilters));
         setSort(serverFilters.sort || "created_at");
         setDirection(serverFilters.direction === "asc" ? "asc" : "desc");
@@ -245,9 +254,16 @@ export default function AdministratorStudentsIndex({
         return () => window.removeEventListener("keydown", onKeyDown);
     }, []);
 
+    const cancelPendingSearch = () => {
+        if (searchDebounceRef.current) {
+            clearTimeout(searchDebounceRef.current);
+            searchDebounceRef.current = null;
+        }
+    };
+
     useEffect(() => {
         return () => {
-            if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+            cancelPendingSearch();
         };
     }, []);
 
@@ -289,6 +305,7 @@ export default function AdministratorStudentsIndex({
     };
 
     const navigateDirectory = (overrides?: Parameters<typeof buildQueryParams>[0]) => {
+        cancelPendingSearch();
         const params = buildQueryParams(overrides);
         setIsTableLoading(true);
         router.get(route("administrators.students.index"), params, {
@@ -302,8 +319,9 @@ export default function AdministratorStudentsIndex({
 
     const handleSearchChange = (value: string) => {
         setSearchTerm(value);
-        if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+        cancelPendingSearch();
         searchDebounceRef.current = setTimeout(() => {
+            searchDebounceRef.current = null;
             navigateDirectory({ search: value, page: 1 });
         }, 280);
     };
@@ -332,23 +350,38 @@ export default function AdministratorStudentsIndex({
     const handleSaveCurrentView = () => {
         const name = window.prompt("Name this saved view (e.g. Missing Docs — 1st Year):");
         if (!name || name.trim() === "") return;
-        const next: SavedView[] = [
-            ...savedViews.filter((v) => v.name.toLowerCase() !== name.trim().toLowerCase()),
-            {
-                id: String(Date.now()),
-                name: name.trim(),
-                triage: activeTriage,
-                search: searchTerm,
-                filters,
-            },
-        ].slice(0, 6);
+        const trimmedName = name.trim();
+        const existingIndex = savedViews.findIndex((v) => v.name.toLowerCase() === trimmedName.toLowerCase());
+        const isUpdate = existingIndex !== -1;
+
+        if (!isUpdate && savedViews.length >= MAX_SAVED_VIEWS) {
+            toast.error(
+                `You can save up to ${MAX_SAVED_VIEWS} views. Remove an existing view or reuse a name to update it.`,
+            );
+            return;
+        }
+
+        const nextView: SavedView = {
+            id: isUpdate ? savedViews[existingIndex].id : String(Date.now()),
+            name: trimmedName,
+            triage: activeTriage,
+            search: searchTerm,
+            filters,
+        };
+        const next: SavedView[] = isUpdate
+            ? savedViews.map((v, idx) => (idx === existingIndex ? nextView : v))
+            : [...savedViews, nextView];
+
         setSavedViews(next);
         try {
             window.localStorage.setItem(SAVED_VIEWS_STORAGE_KEY, JSON.stringify(next));
         } catch {
-            // ignore storage errors
+            toast.error(
+                `Could not save "${trimmedName}" to browser storage. It is available temporarily for this session only.`,
+            );
+            return;
         }
-        toast.success(`Saved view "${name.trim()}"`);
+        toast.success(isUpdate ? `Updated saved view "${trimmedName}"` : `Saved view "${trimmedName}"`);
     };
 
     const handleDeleteSavedView = (id: string) => {
@@ -357,7 +390,7 @@ export default function AdministratorStudentsIndex({
         try {
             window.localStorage.setItem(SAVED_VIEWS_STORAGE_KEY, JSON.stringify(next));
         } catch {
-            // ignore
+            toast.error("Could not update saved views in browser storage.");
         }
     };
 
@@ -800,6 +833,7 @@ export default function AdministratorStudentsIndex({
                                     {searchTerm && (
                                         <button
                                             type="button"
+                                            aria-label="Clear search"
                                             onClick={() => handleSearchChange("")}
                                             className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2.5 -translate-y-1/2"
                                         >
@@ -889,7 +923,10 @@ export default function AdministratorStudentsIndex({
                                     }}
                                     viewMode={viewMode}
                                     returnUrl={returnUrl}
-                                    isTrashedView={activeTriage === "trashed"}
+                                    isTrashedView={
+                                        activeTriage === "trashed" ||
+                                        filters.some((f) => f.field === "trashed" && f.values[0] === "trashed")
+                                    }
                                     onRowClick={(student) => {
                                         setInspectorTab("overview");
                                         setInspectedStudentId(student.id);

@@ -30,7 +30,8 @@ import {
     Trash2,
     XCircle,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import type { IdentifierPolicy, SchoolProfile } from "./shared-types";
 
 declare let route: (name: string, params?: Record<string, unknown> | string | number) => string;
@@ -127,32 +128,53 @@ export const getStatusColor = (status: string | null) => {
 
 function CopyableId({ value, lrn }: { value: string | number | null; lrn?: string | null }) {
     const [copied, setCopied] = useState(false);
+    const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(() => {
+        return () => {
+            if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+        };
+    }, []);
 
     if (!value) return <span className="text-muted-foreground text-xs">—</span>;
 
-    const handleCopy = (e: React.MouseEvent) => {
+    const handleCopy = async (e: React.MouseEvent<HTMLButtonElement>) => {
         e.stopPropagation();
-        navigator.clipboard.writeText(String(value));
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1800);
+        try {
+            if (!navigator.clipboard?.writeText) {
+                throw new Error("Clipboard API unavailable");
+            }
+            await navigator.clipboard.writeText(String(value));
+            setCopied(true);
+            if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+            resetTimerRef.current = setTimeout(() => {
+                setCopied(false);
+                resetTimerRef.current = null;
+            }, 1800);
+        } catch {
+            setCopied(false);
+            toast.error("Failed to copy ID to clipboard.");
+        }
     };
 
     const showLrn = Boolean(lrn && String(lrn) !== String(value));
 
     return (
         <div className="space-y-0.5">
-            <div
-                onClick={handleCopy}
-                className="group bg-muted/40 hover:bg-muted text-foreground/80 hover:text-foreground inline-flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 font-mono text-xs font-medium tabular-nums transition-colors"
+            <button
+                type="button"
+                onClick={(e) => void handleCopy(e)}
+                aria-label={`Copy ID, ${value}`}
+                className="group bg-muted/40 hover:bg-muted text-foreground/80 hover:text-foreground focus-visible:ring-ring inline-flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 font-mono text-xs font-medium tabular-nums transition-colors focus-visible:ring-2 focus-visible:outline-none"
                 title="Click to copy ID"
             >
                 <span>{value}</span>
                 {copied ? (
                     <Check className="h-3 w-3 text-emerald-500" />
                 ) : (
-                    <Copy className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100" />
+                    <Copy className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
                 )}
-            </div>
+            </button>
             {showLrn && <p className="text-muted-foreground pl-1 font-mono text-[10px]">LRN: {lrn}</p>}
         </div>
     );
@@ -230,7 +252,7 @@ export function createColumns(handlers?: ColumnActionHandlers): ColumnDef<Studen
                             <AdminLink
                                 href={showStudent.url(
                                     student.id,
-                                    handlers?.returnUrl ? { query: { return: handlers.returnUrl } } : undefined,
+                                    handlers?.returnUrl ? { query: { return_to: handlers.returnUrl } } : undefined,
                                 )}
                                 onClick={(e) => e.stopPropagation()}
                                 className="hover:text-primary truncate font-medium transition-colors"
@@ -432,6 +454,8 @@ export function createColumns(handlers?: ColumnActionHandlers): ColumnDef<Studen
         cell: ({ row }) => {
             const student = row.original;
             const isTrashed = Boolean(student.deleted_at);
+            const hasStudentId =
+                student.student_id !== null && student.student_id !== undefined && String(student.student_id).trim() !== "";
 
             return (
                 <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
@@ -465,19 +489,31 @@ export function createColumns(handlers?: ColumnActionHandlers): ColumnDef<Studen
                                     Quick Inspect
                                 </DropdownMenuItem>
                             )}
-                            <DropdownMenuItem
-                                onClick={() => navigator.clipboard.writeText(String(student.student_id ?? student.id))}
-                            >
-                                <Copy className="mr-2 h-4 w-4" />
-                                Copy {idLabel}
-                            </DropdownMenuItem>
+                            {hasStudentId && (
+                                <DropdownMenuItem
+                                    onClick={async () => {
+                                        try {
+                                            if (!navigator.clipboard?.writeText) {
+                                                throw new Error("Clipboard API unavailable");
+                                            }
+                                            await navigator.clipboard.writeText(String(student.student_id));
+                                            toast.success(`${idLabel} copied to clipboard.`);
+                                        } catch {
+                                            toast.error(`Failed to copy ${idLabel} to clipboard.`);
+                                        }
+                                    }}
+                                >
+                                    <Copy className="mr-2 h-4 w-4" />
+                                    Copy {idLabel}
+                                </DropdownMenuItem>
+                            )}
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                                 render={
                                     <AdminLink
                                         href={showStudent.url(
                                             student.id,
-                                            handlers?.returnUrl ? { query: { return: handlers.returnUrl } } : undefined,
+                                            handlers?.returnUrl ? { query: { return_to: handlers.returnUrl } } : undefined,
                                         )}
                                     />
                                 }

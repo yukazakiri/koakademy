@@ -19,7 +19,24 @@ export default function AdministratorStudentsCreate({ user, options }: CreateStu
     const initialMode = pageUrl.includes("mode=batch") ? "batch" : "single";
     const [intakeMode, setIntakeMode] = useState<"single" | "batch">(initialMode);
 
-    const firstCourseCode = options.courses[0]?.items[0]?.label?.split(" - ")[0] || options.shs_strands[0]?.label || "BSCS";
+    const defaultType =
+        options.student_configuration.default_type ||
+        options.student_configuration.enabled_types[0] ||
+        "college";
+
+    const sampleProgramCode = (() => {
+        if (defaultType === "shs") {
+            return options.shs_strands[0]?.label || "STEM";
+        }
+
+        const preferredPathway = defaultType === "tesda" ? "tesda_qualification" : "program";
+        const matchingCourseLabel =
+            options.courses.find((group) => group.pathway === preferredPathway && group.items.length > 0)?.items[0]
+                ?.label ||
+            options.courses.find((group) => group.items.length > 0)?.items[0]?.label;
+
+        return matchingCourseLabel?.split(" - ")[0]?.trim() || options.shs_strands[0]?.label || "BSCS";
+    })();
 
     return (
         <AdminLayout user={user} title="Add Student">
@@ -62,16 +79,16 @@ export default function AdministratorStudentsCreate({ user, options }: CreateStu
                         </TabsTrigger>
                     </TabsList>
 
-                    <TabsContent value="single" className="mt-4">
-                        <StudentFormStudio mode="create" options={options} />
+                    <TabsContent value="single" keepMounted className="mt-4">
+                        <StudentFormStudio mode="create" options={options} active={intakeMode === "single"} />
                     </TabsContent>
 
-                    <TabsContent value="batch" className="mt-4">
+                    <TabsContent value="batch" keepMounted className="mt-4">
                         <StudentBatchIntake
                             configuration={options.student_configuration}
                             identifierPolicy={options.identifier_policy}
                             schoolProfile={options.school_profile}
-                            sampleProgramCode={firstCourseCode}
+                            sampleProgramCode={sampleProgramCode}
                         />
                     </TabsContent>
                 </Tabs>

@@ -1,3 +1,13 @@
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -52,6 +62,8 @@ interface DocumentStudioCardsProps {
     onDossierUpdated?: (next: DocumentDossier) => void;
 }
 
+const MAX_REVIEW_REASON_LENGTH = 500;
+
 const DYNAMIC_PRESET_TYPES = [
     "Medical Certificate",
     "Scholarship Award Letter",
@@ -92,8 +104,15 @@ export function DocumentStudioCards({
         action: "reject" | "waive";
     } | null>(null);
     const [reviewReason, setReviewReason] = useState("");
+    const [reviewError, setReviewError] = useState<string | null>(null);
     const [notifyStudent, setNotifyStudent] = useState(true);
     const [historySlot, setHistorySlot] = useState<DocumentSlot | null>(null);
+    const [deleteTarget, setDeleteTarget] = useState<
+        | { kind: "fixed"; slot: DocumentSlot }
+        | { kind: "dynamic"; doc: DynamicDocument }
+        | null
+    >(null);
+    const [deletingDocument, setDeletingDocument] = useState(false);
 
     // Additional document upload modal
     const [dynamicOpen, setDynamicOpen] = useState(false);
@@ -140,7 +159,7 @@ export function DocumentStudioCards({
         action: "verify" | "reject" | "physical" | "waive" | "reset",
         reason?: string,
         notify = true,
-    ) => {
+    ): Promise<{ ok: boolean; error?: string }> => {
         setBusySlot(slot.key);
         try {
             const response = await axios.post(
@@ -150,11 +169,66 @@ export function DocumentStudioCards({
             );
             applyNextDossier(response.data?.dossier);
             toast.success(response.data?.message || "Document status updated.");
+            return { ok: true };
         } catch (error: unknown) {
-            const err = error as { response?: { data?: { message?: string } } };
-            toast.error(err.response?.data?.message || "Failed to update document status.");
+            const err = error as {
+                response?: { data?: { message?: string; errors?: Record<string, string[]> } };
+            };
+            const fieldError =
+                err.response?.data?.errors?.reason?.[0] ??
+                (err.response?.data?.errors ? Object.values(err.response.data.errors)[0]?.[0] : null);
+            const message = fieldError || err.response?.data?.message || "Failed to update document status.";
+            toast.error(message);
+            return { ok: false, error: message };
         } finally {
             setBusySlot(null);
+        }
+    };
+
+    const handleSubmitReviewModal = async () => {
+        if (!reviewModal) return;
+        const trimmedReason = reviewReason.trim();
+        if (trimmedReason.length === 0) {
+            setReviewError(
+                reviewModal.action === "reject"
+                    ? "Please enter a rejection reason."
+                    : "Please enter a waiver reason.",
+            );
+            return;
+        }
+        if (trimmedReason.length > MAX_REVIEW_REASON_LENGTH) {
+            setReviewError(`Reason must be ${MAX_REVIEW_REASON_LENGTH} characters or fewer.`);
+            return;
+        }
+
+        setReviewError(null);
+        const result = await handleReviewAction(
+            reviewModal.slot,
+            reviewModal.action,
+            trimmedReason,
+            notifyStudent,
+        );
+        if (result.ok) {
+            setReviewModal(null);
+            setReviewReason("");
+            setReviewError(null);
+        } else {
+            setReviewError(result.error || "Failed to update document status.");
+        }
+    };
+
+    const handleConfirmDelete = async () => {
+        if (!deleteTarget || deletingDocument) return;
+        setDeletingDocument(true);
+        try {
+            if (deleteTarget.kind === "fixed") {
+                await handleRemoveFixed(deleteTarget.slot);
+            } else {
+                await handleDeleteDynamic(deleteTarget.doc);
+            }
+            setDeleteTarget(null);
+        } finally {
+            setDeletingDocument(false);
         }
     };
 
@@ -472,8 +546,12 @@ export function DocumentStudioCards({
                                                 size="sm"
                                                 variant={slot.has_file ? "default" : "outline"}
                                                 className="h-7 gap-1 px-2 text-[11px]"
-                                                disabled={isBusy}
-                                                onClick={() => void handleReviewAction(slot, "verify")}
+                                                disabled={isBusy || !slot.has_file}
+                                                title={!slot.has_file ? "Upload a file first before verifying" : "Verify uploaded document"}
+                                                onClick={() => {
+                                                    if (!slot.has_file) return;
+                                                    void handleReviewAction(slot, "verify");
+                                                }}
                                             >
                                                 <CheckCircle2 className="size-3" />
                                                 Verify
@@ -517,6 +595,7 @@ export function DocumentStudioCards({
                                                 disabled={isBusy}
                                                 onClick={() => {
                                                     setReviewReason(DOCUMENT_REJECTION_PRESETS[0]);
+                                                    setReviewError(null);
                                                     setNotifyStudent(true);
                                                     setReviewModal({ slot, action: "reject" });
                                                 }}
@@ -535,6 +614,7 @@ export function DocumentStudioCards({
                                                 disabled={isBusy}
                                                 onClick={() => {
                                                     setReviewReason("");
+                                                    setReviewError(null);
                                                     setReviewModal({ slot, action: "waive" });
                                                 }}
                                             >
@@ -551,7 +631,7 @@ export function DocumentStudioCards({
                                                 className="text-muted-foreground hover:text-destructive ml-auto size-7"
                                                 title="Remove file"
                                                 disabled={isBusy}
-                                                onClick={() => void handleRemoveFixed(slot)}
+                                                onClick={() => setDeleteTarget({ kind: "fixed", slot })}
                                             >
                                                 <Trash2 className="size-3.5" />
                                             </Button>
@@ -646,7 +726,7 @@ export function DocumentStudioCards({
                                                 size="icon"
                                                 className="text-muted-foreground hover:text-destructive size-8"
                                                 title="Delete"
-                                                onClick={() => void handleDeleteDynamic(doc)}
+                                                onClick={() => setDeleteTarget({ kind: "dynamic", doc })}
                                             >
                                                 <Trash2 className="size-4" />
                                             </Button>
@@ -705,7 +785,15 @@ export function DocumentStudioCards({
             </Dialog>
 
             {/* Reject / Waive Reason Dialog */}
-            <Dialog open={reviewModal !== null} onOpenChange={(open) => !open && setReviewModal(null)}>
+            <Dialog
+                open={reviewModal !== null}
+                onOpenChange={(open) => {
+                    if (!open && (!reviewModal || busySlot !== reviewModal.slot.key)) {
+                        setReviewModal(null);
+                        setReviewError(null);
+                    }
+                }}
+            >
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle>
@@ -725,7 +813,10 @@ export function DocumentStudioCards({
                                     <button
                                         key={preset}
                                         type="button"
-                                        onClick={() => setReviewReason(preset)}
+                                        onClick={() => {
+                                            setReviewReason(preset);
+                                            setReviewError(null);
+                                        }}
                                         className={cn(
                                             "border-border hover:bg-muted rounded-md border px-2 py-1 text-left text-[11px] transition-colors",
                                             reviewReason === preset && "border-primary bg-primary/10 text-primary font-medium",
@@ -738,20 +829,47 @@ export function DocumentStudioCards({
                         )}
 
                         <div className="space-y-1.5">
-                            <Label htmlFor="doc-review-reason" className="text-xs">
-                                {reviewModal?.action === "reject" ? "Rejection Reason" : "Waiver Reason"}
-                            </Label>
+                            <div className="flex items-center justify-between gap-2">
+                                <Label htmlFor="doc-review-reason" className="text-xs">
+                                    {reviewModal?.action === "reject" ? "Rejection Reason" : "Waiver Reason"}
+                                </Label>
+                                <span
+                                    className={cn(
+                                        "font-mono text-[11px] tabular-nums",
+                                        reviewReason.trim().length > MAX_REVIEW_REASON_LENGTH
+                                            ? "text-destructive font-medium"
+                                            : "text-muted-foreground",
+                                    )}
+                                >
+                                    {reviewReason.trim().length} / {MAX_REVIEW_REASON_LENGTH}
+                                </span>
+                            </div>
                             <Textarea
                                 id="doc-review-reason"
                                 value={reviewReason}
-                                onChange={(e) => setReviewReason(e.target.value)}
+                                onChange={(e) => {
+                                    const nextValue = e.target.value;
+                                    setReviewReason(nextValue);
+                                    if (nextValue.trim().length > MAX_REVIEW_REASON_LENGTH) {
+                                        setReviewError(`Reason must be ${MAX_REVIEW_REASON_LENGTH} characters or fewer.`);
+                                    } else {
+                                        setReviewError(null);
+                                    }
+                                }}
                                 placeholder={
                                     reviewModal?.action === "reject"
                                         ? "Explain what needs to be corrected..."
                                         : "e.g., Not a transferee student, or approved by Registrar"
                                 }
                                 rows={3}
+                                aria-invalid={Boolean(reviewError)}
+                                aria-describedby={reviewError ? "doc-review-reason-error" : undefined}
                             />
+                            {reviewError && (
+                                <p id="doc-review-reason-error" role="alert" className="text-destructive text-xs">
+                                    {reviewError}
+                                </p>
+                            )}
                         </div>
 
                         {reviewModal?.action === "reject" && (
@@ -763,24 +881,84 @@ export function DocumentStudioCards({
                     </div>
 
                     <DialogFooter>
-                        <Button type="button" variant="outline" onClick={() => setReviewModal(null)}>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            disabled={Boolean(reviewModal && busySlot === reviewModal.slot.key)}
+                            onClick={() => {
+                                setReviewModal(null);
+                                setReviewError(null);
+                            }}
+                        >
                             Cancel
                         </Button>
                         <Button
                             type="button"
                             variant={reviewModal?.action === "reject" ? "destructive" : "default"}
-                            onClick={() => {
-                                if (!reviewModal) return;
-                                const target = reviewModal;
-                                setReviewModal(null);
-                                void handleReviewAction(target.slot, target.action, reviewReason.trim(), notifyStudent);
-                            }}
+                            disabled={
+                                !reviewModal ||
+                                busySlot === reviewModal.slot.key ||
+                                reviewReason.trim().length === 0 ||
+                                reviewReason.trim().length > MAX_REVIEW_REASON_LENGTH
+                            }
+                            onClick={() => void handleSubmitReviewModal()}
                         >
+                            {reviewModal && busySlot === reviewModal.slot.key && (
+                                <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                            )}
                             {reviewModal?.action === "reject" ? "Reject Document" : "Confirm Waiver"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {/* Permanent Delete Confirmation Dialog */}
+            <AlertDialog
+                open={deleteTarget !== null}
+                onOpenChange={(open) => {
+                    if (!open && !deletingDocument) {
+                        setDeleteTarget(null);
+                    }
+                }}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Permanently delete student document?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {deleteTarget?.kind === "fixed" ? (
+                                <>
+                                    This will permanently delete{" "}
+                                    <span className="text-foreground font-medium">
+                                        {deleteTarget.slot.file_name || deleteTarget.slot.label}
+                                    </span>{" "}
+                                    from the <span className="text-foreground font-medium">{deleteTarget.slot.label}</span>{" "}
+                                    slot for {studentName}. This action cannot be undone.
+                                </>
+                            ) : deleteTarget?.kind === "dynamic" ? (
+                                <>
+                                    This will permanently delete{" "}
+                                    <span className="text-foreground font-medium">{deleteTarget.doc.file_name}</span> (
+                                    {deleteTarget.doc.type}) from {studentName}&apos;s vault. This action cannot be undone.
+                                </>
+                            ) : null}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={deletingDocument}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            disabled={deletingDocument}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={(e) => {
+                                e.preventDefault();
+                                void handleConfirmDelete();
+                            }}
+                        >
+                            {deletingDocument && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+                            Delete Document
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
 
             {/* Audit History Dialog */}
             <Dialog open={historySlot !== null} onOpenChange={(open) => !open && setHistorySlot(null)}>

@@ -1,12 +1,15 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { Link, router } from "@inertiajs/react";
 import axios from "axios";
@@ -24,8 +27,10 @@ import {
     Mail,
     Pencil,
     Phone,
+    RotateCcw,
     Save,
     ShieldAlert,
+    Trash2,
     UploadCloud,
     XCircle,
 } from "lucide-react";
@@ -33,6 +38,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { getInitials, getStatusColor, type Student } from "../columns";
 import {
+    DOCUMENT_REJECTION_PRESETS,
     documentStatusMeta,
     type DocumentDossier,
     type DocumentSlot,
@@ -71,17 +77,61 @@ export function StudentInspectorDrawer({
     const [yearLevel, setYearLevel] = useState(String(student?.year_level ?? 1));
     const [saving, setSaving] = useState(false);
 
-    // Lazy dossier loading for Documents tab
-    const [dossier, setDossier] = useState<DocumentDossier | null>(null);
-    const [dossierLoading, setDossierLoading] = useState(false);
-    const [busySlot, setBusySlot] = useState<string | null>(null);
-    const [previewSlot, setPreviewSlot] = useState<DocumentSlot | null>(null);
+    // Lazy dossier loading for Documents tab (scoped per student to avoid cross-student races)
+    const activeStudentId = student?.id ?? null;
+    const activeStudentIdRef = useRef<number | null>(activeStudentId);
+    activeStudentIdRef.current = activeStudentId;
+    const isTrashed = Boolean(student?.deleted_at);
+
+    const [dossierState, setDossierState] = useState<{ studentId: number; dossier: DocumentDossier } | null>(null);
+    const [loadingDossierStudentId, setLoadingDossierStudentId] = useState<number | null>(null);
+    const [failedDossierStudentId, setFailedDossierStudentId] = useState<number | null>(null);
+    const dossierRequestSeqRef = useRef(0);
+    const dossierAbortControllerRef = useRef<AbortController | null>(null);
+
+    const [busySlots, setBusySlots] = useState<Record<string, number>>({});
+    const [previewSlotKey, setPreviewSlotKey] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
-    const [uploadTargetKey, setUploadTargetKey] = useState<string | null>(null);
+    const [uploadTarget, setUploadTarget] = useState<{ studentId: number; slotKey: string } | null>(null);
+
+    const [rejectTarget, setRejectTarget] = useState<{ studentId: number; slot: DocumentSlot } | null>(null);
+    const [rejectReason, setRejectReason] = useState("");
+    const [notifyStudentOnReject, setNotifyStudentOnReject] = useState(true);
+
+    const activeDossier =
+        activeStudentId !== null && dossierState?.studentId === activeStudentId ? dossierState.dossier : null;
+    const isDossierLoading = activeStudentId !== null && loadingDossierStudentId === activeStudentId;
+    const hasDossierError = activeStudentId !== null && failedDossierStudentId === activeStudentId;
+
+    const previewSlot = useMemo(() => {
+        if (!previewSlotKey || !activeDossier) return null;
+        return activeDossier.slots.find((slot) => slot.key === previewSlotKey && slot.has_file) ?? null;
+    }, [activeDossier, previewSlotKey]);
+
+    const markSlotBusy = useCallback((studentId: number, slotKey: string) => {
+        const compositeKey = `${studentId}:${slotKey}`;
+        setBusySlots((prev) => ({ ...prev, [compositeKey]: (prev[compositeKey] ?? 0) + 1 }));
+    }, []);
+
+    const unmarkSlotBusy = useCallback((studentId: number, slotKey: string) => {
+        const compositeKey = `${studentId}:${slotKey}`;
+        setBusySlots((prev) => {
+            const nextCount = (prev[compositeKey] ?? 0) - 1;
+            if (nextCount <= 0) {
+                const rest = { ...prev };
+                delete rest[compositeKey];
+                return rest;
+            }
+            return { ...prev, [compositeKey]: nextCount };
+        });
+    }, []);
 
     useEffect(() => {
         if (open) {
             setActiveTab(initialTab);
+        } else {
+            dossierAbortControllerRef.current?.abort();
+            dossierAbortControllerRef.current = null;
         }
     }, [open, initialTab]);
 
@@ -89,35 +139,94 @@ export function StudentInspectorDrawer({
         if (!student) return;
         setStatus(student.status ?? "enrolled");
         setYearLevel(String(student.year_level ?? 1));
-        setDossier(null);
-        setPreviewSlot(null);
-    }, [student]);
+    }, [student?.id, student?.status, student?.year_level]);
+
+    useEffect(() => {
+        dossierAbortControllerRef.current?.abort();
+        dossierAbortControllerRef.current = null;
+        setPreviewSlotKey(null);
+        setRejectTarget(null);
+        setRejectReason("");
+        setUploadTarget(null);
+    }, [student?.id]);
+
+    useEffect(() => {
+        return () => {
+            dossierAbortControllerRef.current?.abort();
+            dossierAbortControllerRef.current = null;
+        };
+    }, []);
 
     const loadDossier = useCallback(async (studentId: number) => {
-        setDossierLoading(true);
+        dossierAbortControllerRef.current?.abort();
+        const controller = new AbortController();
+        dossierAbortControllerRef.current = controller;
+        const requestSeq = ++dossierRequestSeqRef.current;
+
+        setLoadingDossierStudentId(studentId);
+        setFailedDossierStudentId((prev) => (prev === studentId ? null : prev));
+
         try {
             const response = await axios.get(`/administrators/students/${studentId}/documents/dossier`, {
                 headers: { Accept: "application/json" },
+                signal: controller.signal,
             });
-            setDossier(response.data?.dossier ?? null);
-        } catch {
+            if (activeStudentIdRef.current !== studentId || dossierRequestSeqRef.current !== requestSeq) {
+                return;
+            }
+            const nextDossier = response.data?.dossier as DocumentDossier | undefined;
+            if (nextDossier) {
+                setDossierState({ studentId, dossier: nextDossier });
+            } else {
+                setFailedDossierStudentId(studentId);
+            }
+        } catch (error: unknown) {
+            const errName = (error as { name?: string })?.name;
+            if (axios.isCancel(error) || errName === "CanceledError" || errName === "AbortError") {
+                return;
+            }
+            if (activeStudentIdRef.current !== studentId || dossierRequestSeqRef.current !== requestSeq) {
+                return;
+            }
+            setFailedDossierStudentId(studentId);
             toast.error("Unable to load student documents.");
         } finally {
-            setDossierLoading(false);
+            if (dossierRequestSeqRef.current === requestSeq) {
+                setLoadingDossierStudentId((prev) => (prev === studentId ? null : prev));
+            }
         }
     }, []);
 
     useEffect(() => {
-        if (open && activeTab === "documents" && student && !dossier && !dossierLoading) {
+        if (
+            open &&
+            activeTab === "documents" &&
+            student &&
+            !isTrashed &&
+            !activeDossier &&
+            !isDossierLoading &&
+            !hasDossierError
+        ) {
             void loadDossier(student.id);
         }
-    }, [open, activeTab, student, dossier, dossierLoading, loadDossier]);
+    }, [open, activeTab, student, isTrashed, activeDossier, isDossierLoading, hasDossierError, loadDossier]);
 
     useEffect(() => {
         if (!open) return;
         const onKeyDown = (event: KeyboardEvent) => {
+            if (event.metaKey || event.ctrlKey || event.altKey) return;
+            if (rejectTarget !== null) return;
             const target = event.target as HTMLElement | null;
-            if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+            if (
+                target &&
+                (target.isContentEditable ||
+                    ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) ||
+                    target.closest(
+                        '[role="combobox"], [role="listbox"], [role="option"], [aria-haspopup="listbox"], [data-slot="select-trigger"], [data-slot="select-content"]',
+                    ))
+            ) {
+                return;
+            }
             if ((event.key === "[" || event.key === "k") && hasPrev) {
                 event.preventDefault();
                 onPrev?.();
@@ -128,7 +237,7 @@ export function StudentInspectorDrawer({
         };
         window.addEventListener("keydown", onKeyDown);
         return () => window.removeEventListener("keydown", onKeyDown);
-    }, [open, hasPrev, hasNext, onPrev, onNext]);
+    }, [open, rejectTarget, hasPrev, hasNext, onPrev, onNext]);
 
     const yearChoices = useMemo(() => {
         const typeKey = student?.type ?? "college";
@@ -173,52 +282,71 @@ export function StudentInspectorDrawer({
         }
     };
 
-    const handleInlineReview = async (slot: DocumentSlot, action: "verify" | "physical" | "reject") => {
-        setBusySlot(slot.key);
+    const handleInlineReview = async (
+        slot: DocumentSlot,
+        action: "verify" | "physical" | "reject",
+        options?: { reason?: string; notifyStudent?: boolean; studentId?: number },
+    ) => {
+        const targetStudentId = options?.studentId ?? student.id;
+        const trimmedReason = options?.reason?.trim() || null;
+        const notifyStudent = action === "reject" ? (options?.notifyStudent ?? true) : true;
+
+        markSlotBusy(targetStudentId, slot.key);
         try {
             const response = await axios.post(
-                `/administrators/students/${student.id}/documents/fixed/${slot.key}/review`,
+                `/administrators/students/${targetStudentId}/documents/fixed/${slot.key}/review`,
                 {
                     action,
-                    reason: action === "reject" ? "Blurry or unreadable scan — please upload a clearer copy." : null,
-                    notify_student: true,
+                    reason: action === "reject" ? trimmedReason : null,
+                    notify_student: notifyStudent,
                 },
                 { headers: { Accept: "application/json" } },
             );
-            setDossier(response.data?.dossier ?? null);
-            toast.success(response.data?.message || "Document updated.");
+            const nextDossier = response.data?.dossier as DocumentDossier | undefined;
+            if (nextDossier && activeStudentIdRef.current === targetStudentId) {
+                setDossierState({ studentId: targetStudentId, dossier: nextDossier });
+            }
+            if (action === "reject" && trimmedReason) {
+                toast.success(response.data?.message || `Rejected ${slot.label}: ${trimmedReason}`);
+            } else {
+                toast.success(response.data?.message || "Document updated.");
+            }
             router.reload({ only: ["students", "triage_counts"] });
         } catch (error: unknown) {
             const err = error as { response?: { data?: { message?: string } } };
             toast.error(err.response?.data?.message || "Failed to update document.");
         } finally {
-            setBusySlot(null);
+            unmarkSlotBusy(targetStudentId, slot.key);
         }
     };
 
-    const handleInlineUpload = async (key: string, file: File) => {
-        setBusySlot(key);
+    const handleInlineUpload = async (targetStudentId: number, key: string, file: File) => {
+        markSlotBusy(targetStudentId, key);
         try {
             const formData = new FormData();
             formData.append("document_type", key);
             formData.append("file", file);
             formData.append("auto_verify", "1");
-            const response = await axios.post(`/administrators/students/${student.id}/documents/fixed`, formData, {
+            const response = await axios.post(`/administrators/students/${targetStudentId}/documents/fixed`, formData, {
                 headers: { Accept: "application/json", "Content-Type": "multipart/form-data" },
             });
-            setDossier(response.data?.dossier ?? null);
+            const nextDossier = response.data?.dossier as DocumentDossier | undefined;
+            if (nextDossier && activeStudentIdRef.current === targetStudentId) {
+                setDossierState({ studentId: targetStudentId, dossier: nextDossier });
+            }
             toast.success("Document uploaded and verified.");
             router.reload({ only: ["students", "triage_counts"] });
         } catch (error: unknown) {
             const err = error as { response?: { data?: { message?: string } } };
             toast.error(err.response?.data?.message || "Failed to upload file.");
         } finally {
-            setBusySlot(null);
+            unmarkSlotBusy(targetStudentId, key);
         }
     };
 
     return (
-        <Sheet open={open} onOpenChange={onOpenChange}>
+        <>
+            <Sheet open={open} onOpenChange={onOpenChange}>
             <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-[560px]">
                 <SheetHeader className="border-border/70 bg-muted/20 border-b px-5 py-4">
                     <div className="flex items-start justify-between gap-3 pr-6">
@@ -440,24 +568,35 @@ export function StudentInspectorDrawer({
                                 className="hidden"
                                 onChange={(e) => {
                                     const file = e.target.files?.[0];
-                                    if (file && uploadTargetKey) {
-                                        void handleInlineUpload(uploadTargetKey, file);
+                                    const target = uploadTarget;
+                                    setUploadTarget(null);
+                                    if (file && target) {
+                                        void handleInlineUpload(target.studentId, target.slotKey, file);
                                     }
                                     e.currentTarget.value = "";
                                 }}
                             />
 
-                            {dossierLoading ? (
+                            {isTrashed ? (
+                                <div className="border-border/70 bg-muted/30 flex flex-col items-center gap-2 rounded-xl border border-dashed px-4 py-10 text-center">
+                                    <Trash2 className="text-muted-foreground size-5" />
+                                    <p className="text-foreground text-xs font-semibold">Student record is in the trash</p>
+                                    <p className="text-muted-foreground max-w-xs text-xs">
+                                        Document viewing, verification, and uploads are unavailable for trashed records. Restore this
+                                        student from the directory first to manage their documents.
+                                    </p>
+                                </div>
+                            ) : isDossierLoading ? (
                                 <div className="flex items-center justify-center py-12">
                                     <Loader2 className="text-muted-foreground size-5 animate-spin" />
                                 </div>
-                            ) : dossier ? (
+                            ) : activeDossier ? (
                                 <>
                                     <div className="space-y-1.5">
                                         <div className="flex items-center justify-between text-xs">
                                             <span className="font-semibold">
-                                                Checklist Readiness ({dossier.summary.compliant_count}/
-                                                {dossier.summary.total_required ?? dossier.summary.required_total ?? 0})
+                                                Checklist Readiness ({activeDossier.summary.compliant_count}/
+                                                {activeDossier.summary.total_required ?? activeDossier.summary.required_total ?? 0})
                                             </span>
                                             <Link
                                                 href={`/administrators/students/${student.id}/documents`}
@@ -466,7 +605,7 @@ export function StudentInspectorDrawer({
                                                 Open Full Studio →
                                             </Link>
                                         </div>
-                                        <Progress value={dossier.summary.compliance_percent} className="h-1.5" />
+                                        <Progress value={activeDossier.summary.compliance_percent} className="h-1.5" />
                                     </div>
 
                                     {previewSlot && (
@@ -478,12 +617,13 @@ export function StudentInspectorDrawer({
                                                     variant="ghost"
                                                     size="sm"
                                                     className="h-7 text-xs"
-                                                    onClick={() => setPreviewSlot(null)}
+                                                    onClick={() => setPreviewSlotKey(null)}
                                                 >
                                                     Close Preview
                                                 </Button>
                                             </div>
                                             <DocumentPreviewViewer
+                                                key={`${student.id}:${previewSlot.key}:${previewSlot.preview_url ?? ""}:${previewSlot.file_name ?? ""}:${previewSlot.uploaded_at ?? ""}`}
                                                 title={previewSlot.label}
                                                 fileName={previewSlot.file_name}
                                                 mimeType={previewSlot.mime_type}
@@ -495,9 +635,9 @@ export function StudentInspectorDrawer({
                                     )}
 
                                     <div className="space-y-2">
-                                        {dossier.slots.map((slot) => {
+                                        {activeDossier.slots.map((slot) => {
                                             const meta = documentStatusMeta(slot.status);
-                                            const isBusy = busySlot === slot.key;
+                                            const isBusy = (busySlots[`${student.id}:${slot.key}`] ?? 0) > 0;
 
                                             return (
                                                 <div
@@ -524,7 +664,7 @@ export function StudentInspectorDrawer({
                                                                 variant="ghost"
                                                                 className="size-7"
                                                                 title="Preview"
-                                                                onClick={() => setPreviewSlot(slot)}
+                                                                onClick={() => setPreviewSlotKey(slot.key)}
                                                             >
                                                                 <Eye className="size-3.5" />
                                                             </Button>
@@ -550,7 +690,11 @@ export function StudentInspectorDrawer({
                                                                 className="size-7 text-rose-600 hover:text-rose-700"
                                                                 title="Reject"
                                                                 disabled={isBusy}
-                                                                onClick={() => void handleInlineReview(slot, "reject")}
+                                                                onClick={() => {
+                                                                    setRejectReason("");
+                                                                    setNotifyStudentOnReject(true);
+                                                                    setRejectTarget({ studentId: student.id, slot });
+                                                                }}
                                                             >
                                                                 <XCircle className="size-3.5" />
                                                             </Button>
@@ -575,7 +719,7 @@ export function StudentInspectorDrawer({
                                                             title={slot.has_file ? "Replace file" : "Upload file"}
                                                             disabled={isBusy}
                                                             onClick={() => {
-                                                                setUploadTargetKey(slot.key);
+                                                                setUploadTarget({ studentId: student.id, slotKey: slot.key });
                                                                 fileInputRef.current?.click();
                                                             }}
                                                         >
@@ -592,7 +736,22 @@ export function StudentInspectorDrawer({
                                     </div>
                                 </>
                             ) : (
-                                <p className="text-muted-foreground py-8 text-center text-xs">Unable to load document dossier.</p>
+                                <div className="flex flex-col items-center gap-3 py-8 text-center">
+                                    <p className="text-muted-foreground text-xs">Unable to load document dossier.</p>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-8 gap-1.5 text-xs"
+                                        onClick={() => {
+                                            setFailedDossierStudentId(null);
+                                            void loadDossier(student.id);
+                                        }}
+                                    >
+                                        <RotateCcw className="size-3.5" />
+                                        Retry
+                                    </Button>
+                                </div>
                             )}
                         </TabsContent>
 
@@ -654,5 +813,82 @@ export function StudentInspectorDrawer({
                 </Tabs>
             </SheetContent>
         </Sheet>
+
+            <Dialog open={rejectTarget !== null} onOpenChange={(nextOpen) => !nextOpen && setRejectTarget(null)}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Reject {rejectTarget?.slot.label}</DialogTitle>
+                        <DialogDescription>
+                            Choose or enter a clear rejection reason so the student knows what needs to be re-uploaded.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-3 py-2">
+                        <div className="flex flex-wrap gap-1.5">
+                            {DOCUMENT_REJECTION_PRESETS.map((preset) => (
+                                <button
+                                    key={preset}
+                                    type="button"
+                                    onClick={() => setRejectReason(preset)}
+                                    className={cn(
+                                        "border-border hover:bg-muted rounded-md border px-2 py-1 text-left text-[11px] transition-colors",
+                                        rejectReason === preset && "border-primary bg-primary/10 text-primary font-medium",
+                                    )}
+                                >
+                                    {preset}
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <Label htmlFor="inspector-reject-reason" className="text-xs">
+                                Rejection Reason
+                            </Label>
+                            <Textarea
+                                id="inspector-reject-reason"
+                                value={rejectReason}
+                                onChange={(e) => setRejectReason(e.target.value)}
+                                placeholder="Explain what needs to be corrected..."
+                                rows={3}
+                            />
+                        </div>
+
+                        <label className="flex items-center gap-2 text-xs">
+                            <Checkbox
+                                checked={notifyStudentOnReject}
+                                onCheckedChange={(checked) => setNotifyStudentOnReject(Boolean(checked))}
+                            />
+                            <span>Email &amp; notify student with re-upload link</span>
+                        </label>
+                    </div>
+
+                    <DialogFooter>
+                        <Button type="button" variant="outline" onClick={() => setRejectTarget(null)}>
+                            Cancel
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="destructive"
+                            disabled={rejectReason.trim() === ""}
+                            onClick={() => {
+                                if (!rejectTarget) return;
+                                const target = rejectTarget;
+                                const reason = rejectReason.trim();
+                                const notify = notifyStudentOnReject;
+                                setRejectTarget(null);
+                                setRejectReason("");
+                                void handleInlineReview(target.slot, "reject", {
+                                    reason,
+                                    notifyStudent: notify,
+                                    studentId: target.studentId,
+                                });
+                            }}
+                        >
+                            Reject Document
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </>
     );
 }

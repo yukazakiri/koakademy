@@ -68,16 +68,31 @@ final class StudentSchoolOptionService
         }
 
         $like = '%'.mb_strtolower($search).'%';
+        $schoolId = app(TenantContext::class)->getCurrentSchoolId();
 
         return $nameColumns
-            ->flatMap(function (string $nameColumn) use ($addressColumn, $like): array {
+            ->flatMap(function (string $nameColumn) use ($addressColumn, $like, $schoolId): array {
                 $addressSelect = $addressColumn ? $addressColumn.' as address' : 'NULL as address';
 
                 return DB::table('student_education_info')
-                    ->selectRaw($nameColumn.' as name, '.$addressSelect)
-                    ->whereRaw('LOWER('.$nameColumn.') LIKE ?', [$like])
-                    ->whereNotNull($nameColumn)
-                    ->where($nameColumn, '!=', '')
+                    ->selectRaw('student_education_info.'.$nameColumn.' as name, '.$addressSelect)
+                    ->whereRaw('LOWER(student_education_info.'.$nameColumn.') LIKE ?', [$like])
+                    ->whereNotNull('student_education_info.'.$nameColumn)
+                    ->where('student_education_info.'.$nameColumn, '!=', '')
+                    ->when($schoolId !== null, function ($query) use ($schoolId): void {
+                        $query->where(function ($scope) use ($schoolId): void {
+                            $scope->whereExists(function ($sub) use ($schoolId): void {
+                                $sub->selectRaw('1')
+                                    ->from('students')
+                                    ->whereColumn('students.student_education_id', 'student_education_info.id')
+                                    ->where('students.school_id', $schoolId);
+                            })->orWhereNotExists(function ($sub): void {
+                                $sub->selectRaw('1')
+                                    ->from('students')
+                                    ->whereColumn('students.student_education_id', 'student_education_info.id');
+                            });
+                        });
+                    })
                     ->limit(25)
                     ->get()
                     ->all();

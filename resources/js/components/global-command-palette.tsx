@@ -9,7 +9,7 @@ import {
     CommandShortcut,
 } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { getRoutesForRoleWithModules, type ModuleAdminRoute } from "@/config/admin-routes";
+import { canAccessRoute, getRoutesForRoleWithModules, type ModuleAdminRoute } from "@/config/admin-routes";
 import { adminVisit } from "@/lib/admin-navigation";
 import type { FeatureFlags } from "@/types/feature-flags";
 import type { User } from "@/types/user";
@@ -276,7 +276,7 @@ export function GlobalCommandContent({
 
     const actions = useMemo(() => {
         if (isAdminContext) {
-            const navigationCandidates: Array<ActionItem & { routeId?: string }> = [
+            const navigationCandidates: Array<ActionItem & { routeId?: string; requiredPermission?: string | string[] }> = [
                 {
                     id: "nav:admin-dashboard",
                     routeId: "admin-dashboard-overview",
@@ -318,6 +318,40 @@ export function GlobalCommandContent({
                     shortcut: "G S",
                     icon: <IconUser className="h-4 w-4" />,
                     onSelect: () => adminVisit("/administrators/students"),
+                },
+                {
+                    id: "nav:admin-student-documents",
+                    routeId: "admin-students",
+                    label: "Student Documents Hub",
+                    keywords: "admin students documents compliance matrix verification workbench",
+                    icon: <IconChecklist className="h-4 w-4" />,
+                    onSelect: () => adminVisit("/administrators/students/documents"),
+                },
+                {
+                    id: "nav:admin-students-create",
+                    routeId: "admin-students",
+                    requiredPermission: "Create:Student",
+                    label: "Add Student (Single Intake)",
+                    keywords: "admin students add create intake new",
+                    icon: <IconUser className="h-4 w-4" />,
+                    onSelect: () => adminVisit("/administrators/students/create"),
+                },
+                {
+                    id: "nav:admin-students-batch",
+                    routeId: "admin-students",
+                    requiredPermission: "Create:Student",
+                    label: "Batch Student Intake (CSV / Spreadsheet)",
+                    keywords: "admin students batch import csv spreadsheet paste",
+                    icon: <IconUsers className="h-4 w-4" />,
+                    onSelect: () => adminVisit("/administrators/students/create?mode=batch"),
+                },
+                {
+                    id: "nav:admin-students-duplicates",
+                    routeId: "admin-students",
+                    label: "Duplicate Student Scanner",
+                    keywords: "admin students duplicates merge scan",
+                    icon: <IconUsers className="h-4 w-4" />,
+                    onSelect: () => adminVisit("/administrators/students/duplicates"),
                 },
                 {
                     id: "nav:admin-classes",
@@ -395,19 +429,27 @@ export function GlobalCommandContent({
                     onSelect: () => router.visit("/help"),
                 },
             ];
-            const moduleNavigation = allowedAdminRoutes
-                .filter((route) => route.moduleSource)
-                .filter((route) => !navigationCandidates.some((candidate) => candidate.routeId === route.id))
-                .map((route) => ({
-                    id: `nav:${route.id}`,
-                    routeId: route.id,
-                    label: route.title,
-                    keywords: `${route.title} ${route.moduleSource ?? ""}`.trim(),
-                    icon: route.icon ?? <IconGridDots className="h-4 w-4" />,
-                    onSelect: () => adminVisit(route.link),
-                }));
+            const moduleNavigation: Array<ActionItem & { routeId?: string; requiredPermission?: string | string[] }> =
+                allowedAdminRoutes
+                    .filter((route) => route.moduleSource)
+                    .filter((route) => !navigationCandidates.some((candidate) => candidate.routeId === route.id))
+                    .map((route) => ({
+                        id: `nav:${route.id}`,
+                        routeId: route.id,
+                        label: route.title,
+                        keywords: `${route.title} ${route.moduleSource ?? ""}`.trim(),
+                        icon: route.icon ?? <IconGridDots className="h-4 w-4" />,
+                        onSelect: () => adminVisit(route.link),
+                    }));
             const navigation = [...navigationCandidates, ...moduleNavigation].filter(
-                (item) => !item.routeId || allowedAdminRouteIds.has(item.routeId),
+                (item) =>
+                    (!item.routeId || allowedAdminRouteIds.has(item.routeId)) &&
+                    (!item.requiredPermission ||
+                        canAccessRoute(
+                            { id: item.id, title: item.label, link: "", requiredPermission: item.requiredPermission },
+                            resolvedUserRole,
+                            resolvedUserPermissions,
+                        )),
             );
 
             return { navigation, productivity: [] };
@@ -638,7 +680,16 @@ export function GlobalCommandContent({
         const productivity = isInstructor ? [...productivityInstructor, ...productivityBase] : productivityStudent;
 
         return { navigation, productivity };
-    }, [allowedAdminRouteIds, allowedAdminRoutes, isAdminContext, isInstructor, user.email, user.role]);
+    }, [
+        allowedAdminRouteIds,
+        allowedAdminRoutes,
+        isAdminContext,
+        isInstructor,
+        resolvedUserPermissions,
+        resolvedUserRole,
+        user.email,
+        user.role,
+    ]);
 
     const filteredNavigation = useMemo(() => filterActions(actions.navigation, searchText), [actions.navigation, searchText]);
     const filteredProductivity = useMemo(() => filterActions(actions.productivity, searchText), [actions.productivity, searchText]);

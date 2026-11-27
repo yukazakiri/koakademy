@@ -4,19 +4,25 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Administrators;
 
+use App\Enums\UserRole;
+use App\Support\AdministratorPermissionChecker;
 use Illuminate\Foundation\Http\FormRequest;
 
 final class BulkEmailStudentsRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        return AdministratorPermissionChecker::userHasAnyPermission(
+            $this->user(),
+            ['ViewAny:Student', 'Update:Student'],
+            [UserRole::Admin, UserRole::Registrar, UserRole::AssistantRegistrar, UserRole::StudentAffairsOfficer],
+        );
     }
 
     public function rules(): array
     {
         return [
-            'student_ids' => ['required', 'array', 'min:1'],
+            'student_ids' => ['required', 'array', 'min:1', 'max:500'],
             'student_ids.*' => ['required', 'integer', 'distinct', 'exists:students,id'],
             'subject' => ['required', 'string', 'max:150'],
             'message' => ['required', 'string', 'max:5000'],

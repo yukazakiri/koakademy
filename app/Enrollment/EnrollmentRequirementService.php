@@ -9,6 +9,7 @@ use App\Models\EnrollmentPolicySnapshot;
 use App\Models\EnrollmentRequirement;
 use App\Models\StudentEnrollment;
 use App\Models\User;
+use App\Services\StudentDocumentService;
 
 final readonly class EnrollmentRequirementService
 {
@@ -79,7 +80,10 @@ final readonly class EnrollmentRequirementService
             'waiver_reason' => null,
         ])->save();
 
-        return $requirement->refresh();
+        $refreshed = $requirement->refresh();
+        app(StudentDocumentService::class)->syncFromEnrollmentRequirement($refreshed, $actor);
+
+        return $refreshed;
     }
 
     public function waive(EnrollmentRequirement $requirement, User $actor, string $reason): EnrollmentRequirement
@@ -98,7 +102,10 @@ final readonly class EnrollmentRequirementService
             'verified_at' => null,
         ])->save();
 
-        return $requirement->refresh();
+        $refreshed = $requirement->refresh();
+        app(StudentDocumentService::class)->syncFromEnrollmentRequirement($refreshed, $actor);
+
+        return $refreshed;
     }
 
     public function reset(EnrollmentRequirement $requirement, User $actor, string $reason): EnrollmentRequirement
@@ -117,6 +124,9 @@ final readonly class EnrollmentRequirementService
             'waiver_reason' => null,
         ])->save();
 
-        return $requirement->refresh();
+        $refreshed = $requirement->refresh();
+        app(StudentDocumentService::class)->syncFromEnrollmentRequirement($refreshed, $actor);
+
+        return $refreshed;
     }
 }

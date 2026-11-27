@@ -16,6 +16,7 @@ use App\Http\Requests\Administrators\BulkEmailStudentsRequest;
 use App\Http\Requests\Administrators\BulkForceDeleteStudentRequest;
 use App\Http\Requests\Administrators\BulkUpdateStudentClearanceRequest;
 use App\Http\Requests\Administrators\BulkUpdateStudentStatusRequest;
+use App\Jobs\CleanupDeletedStudentFilesJob;
 use App\Jobs\GenerateStudentSoaPdfJob;
 use App\Mail\StudentBulkMessage;
 use App\Models\Account;
@@ -24,11 +25,14 @@ use App\Models\ClassEnrollment;
 use App\Models\Course;
 use App\Models\Department;
 use App\Models\DocumentLocation;
+use App\Models\Resource;
 use App\Models\ShsStrand;
 use App\Models\ShsStudent;
 use App\Models\Student;
 use App\Models\StudentClearance;
+use App\Models\StudentDocumentRecord;
 use App\Models\StudentEnrollment;
+use App\Models\StudentHold;
 use App\Models\StudentStatusRecord;
 use App\Models\StudentTransaction;
 use App\Models\StudentTuition;
@@ -44,9 +48,13 @@ use App\Services\GradeEvaluationService;
 use App\Services\GradeReleaseService;
 use App\Services\GradingSystemService;
 use App\Services\IdentifierGenerator;
+use App\Services\StudentConfigurationService;
+use App\Services\StudentDocumentService;
 use App\Services\StudentIdUpdateService;
 use App\Services\StudentOrganizationAssignmentService;
+use App\Services\StudentProfileCompletionService;
 use App\Services\StudentSchoolOptionService;
+use App\Services\TenantContext;
 use App\Services\UserSystemRoleService;
 use App\Settings\SiteSettings;
 use App\Support\BulkChunk;
@@ -59,9 +67,11 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
@@ -73,6 +83,8 @@ use Illuminate\Validation\Rules\Enum as RulesEnum;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use RuntimeException;
+use Throwable;
 
 final class AdministratorStudentManagementController extends Controller
 {
@@ -90,7 +102,17 @@ final class AdministratorStudentManagementController extends Controller
 
     public function index(Request $request): Response
     {
+        $this->authorizeStudentAccess(['ViewAny:Student', 'View:Student']);
+
         $generalSettingsService = app(GeneralSettingsService::class);
+        $configService = app(StudentConfigurationService::class);
+        $documentService = app(StudentDocumentService::class);
+        $schoolId = app(TenantContext::class)->getCurrentSchoolId();
+        $studentConfiguration = $configService->get($schoolId);
+        $schoolProfile = $configService->schoolProfile($schoolId);
+        $configuredYearLevels = $configService->filterYearLevels($schoolId);
+        $validYearLevelValues = array_column($configuredYearLevels, 'numeric');
+
         $currentSchoolYear = $generalSettingsService->getCurrentSchoolYearString();
         $currentSemester = $generalSettingsService->getCurrentSemester();
         $systemSettings = $generalSettingsService->getGlobalSettingsModel();
@@ -111,7 +133,7 @@ final class AdministratorStudentManagementController extends Controller
         $departmentId = $request->integer('department_id');
         $departmentId = $departmentId > 0 ? $departmentId : null;
         $yearLevel = $request->integer('year_level');
-        $yearLevel = in_array($yearLevel, [1, 2, 3, 4], true) ? $yearLevel : null;
+        $yearLevel = in_array($yearLevel, $validYearLevelValues, true) ? $yearLevel : null;
         $currentEnrollment = $request->string('current_enrollment')->toString();
         $currentEnrollment = in_array($currentEnrollment, ['enrolled', 'not_enrolled'], true) ? $currentEnrollment : null;
         $scholarshipType = $request->input('scholarship_type');
@@ -119,9 +141,16 @@ final class AdministratorStudentManagementController extends Controller
         $isIndigenousPerson = $request->input('is_indigenous_person');
         $regionOfOrigin = $request->input('region_of_origin');
         $previousSemesterCleared = $request->input('previous_semester_cleared');
-        $trashedFilter = $request->string('trashed', 'active')->toString();
+        $triage = $request->string('triage', 'all')->toString();
+        if (! in_array($triage, ['all', 'needs_doc_review', 'missing_docs', 'active_holds', 'no_portal', 'incomplete_profile', 'trashed'], true)) {
+            $triage = 'all';
+        }
+        $trashedFilter = $request->string('trashed', $triage === 'trashed' ? 'trashed' : 'active')->toString();
         if (! in_array($trashedFilter, ['active', 'trashed', 'all'], true)) {
             $trashedFilter = 'active';
+        }
+        if ($triage === 'trashed') {
+            $trashedFilter = 'trashed';
         }
 
         $sort = $request->string('sort', 'created_at')->toString();
@@ -133,10 +162,15 @@ final class AdministratorStudentManagementController extends Controller
         $perPage = $request->input('per_page', 20);
         $perPage = in_array((int) $perPage, [10, 20, 50, 100], true) ? (int) $perPage : 20;
 
+        $hasDocRecordsTable = Schema::hasTable('student_document_records');
+        $hasHoldsTable = Schema::hasTable('student_holds');
+
         $studentsQuery = Student::query()
             ->select([
                 'students.id',
+                'students.school_id',
                 'students.student_id',
+                'students.lrn',
                 'students.student_type',
                 'students.first_name',
                 'students.middle_name',
@@ -145,6 +179,7 @@ final class AdministratorStudentManagementController extends Controller
                 'students.phone',
                 'students.user_id',
                 'students.course_id',
+                'students.shs_strand_id',
                 'students.academic_year',
                 'students.document_location_id',
                 'students.is_indigenous_person',
@@ -154,10 +189,12 @@ final class AdministratorStudentManagementController extends Controller
                 'students.created_at',
                 'students.deleted_at',
             ])
-            ->with([
+            ->with(array_filter([
                 'Course:id,department_id,code,title',
-                'DocumentLocation:id,picture_1x1',
+                'shsStrand:id,strand_name',
+                'DocumentLocation',
                 'user:id,name,email,email_verified_at,suspended_at',
+                $hasDocRecordsTable ? 'documentRecords' : null,
                 'gradeReleaseClearances' => function ($query) use ($gradeClearancePeriod): void {
                     $query->select(['id', 'student_id', 'school_year', 'semester', 'is_cleared'])
                         ->where('school_year', $gradeClearancePeriod['school_year'])
@@ -168,7 +205,13 @@ final class AdministratorStudentManagementController extends Controller
                         ->where('academic_year', $currentPeriod['academic_year'])
                         ->where('semester', $currentPeriod['semester']);
                 },
+            ]));
+
+        if ($hasHoldsTable) {
+            $studentsQuery->withCount([
+                'holds as active_holds_count' => fn (Builder $query) => $query->active(),
             ]);
+        }
 
         if ($trashedFilter === 'trashed') {
             $studentsQuery->onlyTrashed();
@@ -186,6 +229,8 @@ final class AdministratorStudentManagementController extends Controller
             $studentsQuery->where(function (Builder $query) use ($searchTerm, $currentPeriod, $textCast): void {
                 $like = "%{$searchTerm}%";
                 $query->whereRaw("LOWER(CAST(students.student_id AS {$textCast})) LIKE LOWER(?)", [$like])
+                    ->orWhere('students.lrn', 'like', $like)
+                    ->orWhere('students.email', 'like', $like)
                     ->orWhere('students.first_name', 'like', $like)
                     ->orWhere('students.middle_name', 'like', $like)
                     ->orWhere('students.last_name', 'like', $like)
@@ -203,6 +248,24 @@ final class AdministratorStudentManagementController extends Controller
                         $statusQuery->where('academic_year', $currentPeriod['academic_year'])
                             ->where('semester', $currentPeriod['semester'])
                             ->where('status', 'like', $like);
+                    });
+            });
+        }
+
+        if ($triage === 'needs_doc_review') {
+            $this->applyNeedsDocReviewFilter($studentsQuery, $documentService, $studentConfiguration, $schoolId, $hasDocRecordsTable);
+        } elseif ($triage === 'missing_docs') {
+            $this->applyMissingRequiredDocsFilter($studentsQuery, $documentService, $studentConfiguration, $schoolId, $hasDocRecordsTable);
+        } elseif ($triage === 'active_holds' && $hasHoldsTable) {
+            $studentsQuery->whereHas('holds', fn (Builder $q) => $q->active());
+        } elseif ($triage === 'no_portal') {
+            $studentsQuery->whereNull('students.user_id');
+        } elseif ($triage === 'incomplete_profile') {
+            $studentsQuery->where(function (Builder $q): void {
+                $q->whereNull('students.email')->orWhere('students.email', '')
+                    ->orWhereNull('students.phone')->orWhere('students.phone', '')
+                    ->orWhere(function (Builder $placement): void {
+                        $placement->whereNull('students.course_id')->whereNull('students.shs_strand_id');
                     });
             });
         }
@@ -303,7 +366,7 @@ final class AdministratorStudentManagementController extends Controller
 
         $studentsQuery->orderBy('students.id', $direction);
 
-        $studentTransform = function (Student $student): array {
+        $studentTransform = function (Student $student) use ($documentService, $hasDocRecordsTable): array {
             $studentType = $student->student_type;
             $currentStatusRecord = $student->statusRecords->first();
             $currentStatus = $currentStatusRecord?->status;
@@ -317,9 +380,15 @@ final class AdministratorStudentManagementController extends Controller
                 $currentClearanceStatus = $currentClearance->is_cleared ? 'cleared' : 'not_cleared';
             }
 
+            $docsSummary = $documentService->rowSummaryFor(
+                $student,
+                $hasDocRecordsTable && $student->relationLoaded('documentRecords') ? $student->documentRecords : collect(),
+            );
+
             return [
                 'id' => $student->id,
                 'student_id' => $student->student_id,
+                'lrn' => $student->lrn,
                 'name' => $student->full_name,
                 'email' => $student->email,
                 'phone' => $student->phone,
@@ -332,8 +401,9 @@ final class AdministratorStudentManagementController extends Controller
                 ] : null,
                 'course_id' => $student->course_id,
                 'department_id' => $student->Course?->department_id,
-                'course' => $student->Course?->code,
-                'course_title' => $student->Course?->title,
+                'course' => $student->Course?->code ?? $student->shsStrand?->strand_name,
+                'course_title' => $student->Course?->title ?? ($student->shsStrand ? 'Senior High Strand' : null),
+                'shs_strand_id' => $student->shs_strand_id,
                 'year_level' => $student->academic_year,
                 'academic_year' => $student->formatted_academic_year,
                 'type' => $studentType instanceof StudentType ? $studentType->value : (is_string($studentType) ? $studentType : null),
@@ -345,6 +415,16 @@ final class AdministratorStudentManagementController extends Controller
                 'is_indigenous_person' => $student->is_indigenous_person,
                 'region_of_origin' => $student->region_of_origin,
                 'previous_sem_clearance' => $currentClearanceStatus,
+                'active_holds_count' => (int) ($student->active_holds_count ?? 0),
+                'docs_summary' => [
+                    'required_total' => $docsSummary['required_total'],
+                    'compliant_count' => $docsSummary['compliant_count'],
+                    'pending_review_count' => $docsSummary['pending_review_count'],
+                    'rejected_count' => $docsSummary['rejected_count'],
+                    'missing_count' => $docsSummary['missing_count'],
+                    'compliance_percent' => $docsSummary['compliance_percent'],
+                    'is_complete' => $docsSummary['is_complete'],
+                ],
                 'avatar_url' => $student->picture1x1 !== '' ? $student->picture1x1 : null,
                 'created_at' => format_timestamp($student->created_at),
                 'deleted_at' => $student->deleted_at ? format_timestamp($student->deleted_at) : null,
@@ -374,6 +454,7 @@ final class AdministratorStudentManagementController extends Controller
             || $isIndigenousPerson !== null
             || (is_string($regionOfOrigin) && mb_trim($regionOfOrigin) !== '')
             || $previousSemesterCleared !== null
+            || $triage !== 'all'
             || $trashedFilter !== 'active';
 
         $isPartialReload = $request->header('X-Inertia-Partial-Data') !== null;
@@ -387,11 +468,13 @@ final class AdministratorStudentManagementController extends Controller
             $request->attributes->set('admin_students_global_total', $globalStudentTotal);
         }
 
-        $optionsResolver = function (): array {
+        $optionsResolver = function () use ($studentConfiguration, $schoolProfile, $configuredYearLevels, $schoolId): array {
+            $enabledTypes = $studentConfiguration['enabled_types'] ?? array_column(StudentType::cases(), 'value');
             $types = collect(StudentType::cases())
+                ->filter(fn (StudentType $studentType): bool => in_array($studentType->value, $enabledTypes, true))
                 ->map(fn (StudentType $studentType): array => [
                     'value' => $studentType->value,
-                    'label' => $studentType->getLabel() ?? $studentType->value,
+                    'label' => $studentConfiguration['type_labels'][$studentType->value] ?? $studentType->getLabel() ?? $studentType->value,
                 ])
                 ->values()
                 ->all();
@@ -420,12 +503,34 @@ final class AdministratorStudentManagementController extends Controller
                 ->values()
                 ->all();
 
-            $courses = Course::query()
+            $courseModels = Course::query()
                 ->orderBy('code')
-                ->get(['id', 'code', 'title'])
+                ->get(['id', 'code', 'title']);
+
+            $courses = $courseModels
                 ->map(fn (Course $course): array => [
                     'value' => (string) $course->id,
                     'label' => "{$course->code} - {$course->title}",
+                ])
+                ->values()
+                ->all();
+
+            $quickCreateCourses = $courseModels
+                ->map(fn (Course $course): array => [
+                    'id' => $course->id,
+                    'code' => $course->code,
+                    'title' => $course->title,
+                ])
+                ->values()
+                ->all();
+
+            $shsStrands = ShsStrand::query()
+                ->orderBy('strand_name')
+                ->get(['id', 'strand_name'])
+                ->map(fn (ShsStrand $strand): array => [
+                    'id' => $strand->id,
+                    'value' => (string) $strand->id,
+                    'label' => $strand->strand_name,
                 ])
                 ->values()
                 ->all();
@@ -440,21 +545,27 @@ final class AdministratorStudentManagementController extends Controller
                 ->values()
                 ->all();
 
-            $yearLevels = collect([1, 2, 3, 4])
-                ->map(fn (int $year): array => [
-                    'value' => (string) $year,
-                    'label' => "Year {$year}",
+            $yearLevels = collect($configuredYearLevels)
+                ->map(fn (array $item): array => [
+                    'value' => $item['value'],
+                    'label' => $item['label'],
                 ])
+                ->values()
                 ->all();
 
             return [
                 'types' => $types,
                 'statuses' => $statuses,
                 'courses' => $courses,
+                'quick_create_courses' => $quickCreateCourses,
+                'shs_strands' => $shsStrands,
                 'departments' => $departments,
                 'year_levels' => $yearLevels,
                 'scholarship_types' => $scholarshipTypes,
                 'employment_statuses' => $employmentStatuses,
+                'student_configuration' => $studentConfiguration,
+                'identifier_policy' => app(IdentifierGenerator::class)->studentPolicy(schoolId: $schoolId),
+                'school_profile' => $schoolProfile,
             ];
         };
 
@@ -485,6 +596,41 @@ final class AdministratorStudentManagementController extends Controller
             ];
         };
 
+        $triageCountsResolver = function () use ($hasDocRecordsTable, $hasHoldsTable, $documentService, $studentConfiguration, $schoolId): array {
+            $totalActive = Student::query()->count();
+            $trashedCount = Student::onlyTrashed()->count();
+            $noPortalCount = Student::query()->whereNull('user_id')->count();
+            $incompleteCount = Student::query()->where(function (Builder $q): void {
+                $q->whereNull('email')->orWhere('email', '')
+                    ->orWhereNull('phone')->orWhere('phone', '')
+                    ->orWhere(function (Builder $p): void {
+                        $p->whereNull('course_id')->whereNull('shs_strand_id');
+                    });
+            })->count();
+
+            $needsDocReviewQuery = Student::query();
+            $this->applyNeedsDocReviewFilter($needsDocReviewQuery, $documentService, $studentConfiguration, $schoolId, $hasDocRecordsTable);
+            $needsDocReviewCount = $needsDocReviewQuery->count();
+
+            $missingDocsQuery = Student::query();
+            $this->applyMissingRequiredDocsFilter($missingDocsQuery, $documentService, $studentConfiguration, $schoolId, $hasDocRecordsTable);
+            $missingDocsCount = $missingDocsQuery->count();
+
+            $activeHoldsCount = $hasHoldsTable
+                ? Student::query()->whereHas('holds', fn (Builder $q) => $q->active())->count()
+                : 0;
+
+            return [
+                'all' => $totalActive,
+                'needs_doc_review' => $needsDocReviewCount,
+                'missing_docs' => $missingDocsCount,
+                'active_holds' => $activeHoldsCount,
+                'no_portal' => $noPortalCount,
+                'incomplete_profile' => $incompleteCount,
+                'trashed' => $trashedCount,
+            ];
+        };
+
         return Inertia::render('administrators/students/index', [
             'user' => fn (): array => $this->getUserProps(),
             'filament' => [
@@ -495,6 +641,7 @@ final class AdministratorStudentManagementController extends Controller
             ],
             'students' => $students,
             'stats' => $statsResolver,
+            'triage_counts' => Inertia::defer($triageCountsResolver, 'student-triage'),
             'filters' => [
                 'search' => is_string($search) ? $search : null,
                 'type' => is_string($type) ? $type : null,
@@ -508,6 +655,7 @@ final class AdministratorStudentManagementController extends Controller
                 'is_indigenous_person' => $isIndigenousPerson,
                 'region_of_origin' => $regionOfOrigin,
                 'previous_semester_cleared' => $previousSemesterCleared,
+                'triage' => $triage,
                 'trashed' => $trashedFilter,
                 'sort' => $sort,
                 'direction' => $direction,
@@ -519,15 +667,20 @@ final class AdministratorStudentManagementController extends Controller
 
     public function show(Student $student): Response
     {
+        $this->authorizeStudentAccess(['ViewAny:Student', 'View:Student']);
+
         $studentSchoolId = $student->school_id ?: $student->institution_id;
-        abort_if($studentSchoolId && ! app(\App\Services\TenantContext::class)->canAccessOrganization((int) $studentSchoolId), 404);
+        abort_if($studentSchoolId && ! app(TenantContext::class)->canAccessOrganization((int) $studentSchoolId), 404);
         $student->loadMissing([
             'Course',
+            'shsStrand',
+            'user:id,name,email,email_verified_at,suspended_at',
             'studentContactsInfo',
             'studentParentInfo',
             'studentEducationInfo',
             'personalInfo',
             'DocumentLocation',
+            'resources',
             'subjectEnrolled.subject', // For checklist
             'subjects', // For checklist
         ]);
@@ -815,6 +968,37 @@ final class AdministratorStudentManagementController extends Controller
         $canPublishGrades = $isGradeReleaseAdmin || (($actor?->isAdministrative() || in_array($actor?->role, [UserRole::Registrar, UserRole::AssistantRegistrar], true)) && $actor?->can('Update:Student'));
         $canViewGradeRelease = $canManageGradeClearance || $canPublishGrades || (bool) $actor?->can('view_clearance');
 
+        $portalAccount = $this->resolvePortalAccountSummary($student, includeEmailMismatch: true);
+
+        $activeHolds = Schema::hasTable('student_holds')
+            ? $student->holds()
+                ->active()
+                ->with('placedBy:id,name')
+                ->latest('placed_at')
+                ->get()
+                ->map(fn (StudentHold $hold): array => [
+                    'id' => $hold->id,
+                    'office' => $hold->office,
+                    'office_label' => $hold->officeLabel(),
+                    'severity' => $hold->severity,
+                    'title' => $hold->title,
+                    'reason' => $hold->reason,
+                    'blocks_enrollment' => $hold->blocks_enrollment,
+                    'blocks_add_drop' => $hold->blocks_add_drop,
+                    'blocks_grade_release' => $hold->blocks_grade_release,
+                    'placed_by' => $hold->placedBy?->name,
+                    'placed_at' => $hold->placed_at?->format('M j, Y'),
+                ])
+                ->values()
+                ->all()
+            : [];
+
+        $dossier = app(StudentDocumentService::class)->dossierFor($student);
+        $configService = app(StudentConfigurationService::class);
+        $studentConfig = $configService->get($student->school_id);
+        $schoolProfile = $configService->schoolProfile($student->school_id);
+        $profileCompletion = app(StudentProfileCompletionService::class)->summarize($student);
+
         return Inertia::render('administrators/students/show', [
             'user' => $this->getUserProps(),
             'options' => [
@@ -836,10 +1020,14 @@ final class AdministratorStudentManagementController extends Controller
                     ->map(fn ($c): array => ['value' => $c->id, 'label' => $c->code.' - '.$c->title])
                     ->values()
                     ->all(),
+                'student_configuration' => $studentConfig,
+                'identifier_policy' => app(IdentifierGenerator::class)->studentPolicy(schoolId: $student->school_id),
+                'school_profile' => $schoolProfile,
             ],
             'student' => [
                 'id' => $student->id,
                 'student_id' => $student->student_id,
+                'lrn' => $student->lrn,
                 'name' => $student->full_name,
                 'first_name' => $student->first_name,
                 'middle_name' => $student->middle_name,
@@ -855,13 +1043,18 @@ final class AdministratorStudentManagementController extends Controller
                 'academic_year' => $student->formatted_academic_year,
                 // Raw year level, needed by the inline editor to reconcile optimistic updates.
                 'academic_year_value' => $student->academic_year,
-                'custom_fields' => app(\App\Services\StudentConfigurationService::class)->displayCustomValues($student),
-                'year_level_options' => app(\App\Services\StudentConfigurationService::class)->get($student->school_id)['year_levels'][$student->student_type?->value ?? 'college'],
+                'custom_fields' => $configService->displayCustomValues($student),
+                'year_level_options' => $studentConfig['year_levels'][$student->student_type?->value ?? 'college'] ?? [],
                 'course' => [
                     'id' => $student->Course?->id,
-                    'code' => $student->Course?->code,
-                    'title' => $student->Course?->title,
+                    'code' => $student->Course?->code ?? $student->shsStrand?->strand_name,
+                    'title' => $student->Course?->title ?? ($student->shsStrand ? 'Senior High Strand' : null),
                 ],
+                'portal_account' => $portalAccount,
+                'active_holds' => $activeHolds,
+                'profile_completion' => $profileCompletion,
+                'dossier' => $dossier,
+                'export_zip_url' => route('administrators.students.documents.export-zip', $student->id),
                 'created_at' => format_timestamp($student->created_at),
                 'updated_at' => format_timestamp($student->updated_at),
                 'deleted_at' => $student->deleted_at ? format_timestamp($student->deleted_at) : null,
@@ -870,7 +1063,7 @@ final class AdministratorStudentManagementController extends Controller
                 'parents' => $student->studentParentInfo,
                 'education' => $student->studentEducationInfo,
                 'personal_info' => $student->personalInfo,
-                'documents' => $student->DocumentLocation?->toResolvedDocumentArray(),
+                'documents' => $student->DocumentLocation?->toResolvedDocumentArray($student),
                 'signature_url' => $this->resolveStudentSignatureUrl($student),
                 'grade_release_periods' => $canViewGradeRelease ? app(GradeReleaseService::class)->periods($student) : [],
                 'grade_release_clearance_required' => app(GradeReleaseService::class)->requiresClearance(),
@@ -1060,6 +1253,8 @@ final class AdministratorStudentManagementController extends Controller
 
     public function create(CurriculumCapabilityResolver $capabilityResolver): Response
     {
+        $this->authorizeStudentAccess('Create:Student');
+
         return Inertia::render('administrators/students/create', [
             'user' => fn (): array => $this->getUserProps(),
             'options' => fn (): array => $this->getFormOptions($capabilityResolver, null, false),
@@ -1068,8 +1263,10 @@ final class AdministratorStudentManagementController extends Controller
 
     public function store(Request $request, CurriculumCapabilityResolver $capabilityResolver): RedirectResponse
     {
+        $this->authorizeStudentAccess('Create:Student');
+
         $identifierGenerator = app(IdentifierGenerator::class);
-        $configuration = app(\App\Services\StudentConfigurationService::class);
+        $configuration = app(StudentConfigurationService::class);
         $typeValue = (string) $request->input('student_type');
         $usesExternal = $configuration->usesExternal($typeValue);
         // Older API clients may omit the mode: supplied values are manual, never inferred from a preview.
@@ -1175,6 +1372,7 @@ final class AdministratorStudentManagementController extends Controller
             'is_pwd' => ['nullable', 'boolean'],
             'pwd_type' => ['nullable', 'string', 'max:100'],
             'is_solo_parent' => ['nullable', 'boolean'],
+            'is_solo_parent_dependent' => ['nullable', 'boolean'],
             'is_senior_citizen' => ['nullable', 'boolean'],
             'is_magna_carta' => ['nullable', 'boolean'],
             'is_underprivileged' => ['nullable', 'boolean'],
@@ -1197,6 +1395,11 @@ final class AdministratorStudentManagementController extends Controller
             'employed_by_institution' => ['nullable', 'boolean'],
             'picture_1x1' => ['nullable', 'file', 'mimes:jpeg,jpg,png,webp', 'max:5120'],
             'signature' => ['nullable', 'file', 'mimes:png,jpg,jpeg,webp', 'max:2048'],
+            'documents' => ['nullable', 'array'],
+            'documents.*' => ['nullable', 'file', 'mimes:pdf,doc,docx,jpg,jpeg,png,webp', 'max:5120'],
+            'documents.picture_1x1' => ['nullable', 'file', 'mimes:jpeg,jpg,png,webp', 'max:5120'],
+            'provision_portal_account' => ['nullable', 'boolean'],
+            'send_activation_link' => ['nullable', 'boolean'],
         ];
         $validated = $request->validate([...$configuration->rules($rules, $typeValue), ...$configuration->customFieldRules()]);
 
@@ -1228,7 +1431,7 @@ final class AdministratorStudentManagementController extends Controller
             $validated['guardian_relationship'] = $validated['emergency_contact_relationship'];
         }
 
-        $schoolId = app(\App\Services\TenantContext::class)->getCurrentSchoolId();
+        $schoolId = app(TenantContext::class)->getCurrentSchoolId();
         $student = DB::transaction(function () use ($identifierGenerator, $validated, $usesExternal, $mode, $configuration, $schoolId): Student {
             $identifierGenerator->sequenceFor(IdentifierGenerator::Student, lock: true, schoolId: $schoolId);
             $configuration->forget($schoolId);
@@ -1289,6 +1492,10 @@ final class AdministratorStudentManagementController extends Controller
                 'contacts' => $this->studentContactsPayload($validated),
             ]);
 
+            if ($this->hasColumn('students', 'is_solo_parent_dependent')) {
+                $student->is_solo_parent_dependent = (bool) ($validated['is_solo_parent_dependent'] ?? false);
+            }
+
             $student->lrn = $validated['lrn'] ?? null;
             $student->student_id = $usesExternal
                 ? $identifierGenerator->claimExternalIdentifier($studentType, $validated['lrn'])
@@ -1309,7 +1516,72 @@ final class AdministratorStudentManagementController extends Controller
             return $student;
         });
 
-        $this->persistStudentAssets($request, $student);
+        $assetResult = $this->persistStudentAssets($request, $student);
+        $failedDocumentSlots = $assetResult['failed_slots'];
+        $portalProvisioningError = null;
+
+        if ((bool) ($validated['provision_portal_account'] ?? false) && filled($student->email)) {
+            $portalRequest = Request::create('', 'POST', [
+                'mode' => 'auto',
+                'send_reset_link' => (bool) ($validated['send_activation_link'] ?? true),
+            ]);
+            $portalRequest->headers->set('Accept', 'application/json');
+
+            try {
+                $portalResponse = $this->managePortalAccount($portalRequest, $student);
+                if ($portalResponse instanceof JsonResponse && $portalResponse->getStatusCode() >= 400) {
+                    $payload = $portalResponse->getData(true);
+                    $portalProvisioningError = is_array($payload) && is_string($payload['message'] ?? null)
+                        ? $payload['message']
+                        : 'Portal account could not be provisioned for this email address.';
+                }
+            } catch (Throwable $e) {
+                Log::warning('Failed to provision student portal account during creation.', [
+                    'student_id' => $student->id,
+                    'error' => $e->getMessage(),
+                ]);
+                $portalProvisioningError = 'Portal account provisioning failed. You can update the email and retry from this student record.';
+            }
+        }
+
+        if ($failedDocumentSlots !== [] || $portalProvisioningError !== null) {
+            $warnings = [];
+            $errorBag = [];
+
+            if ($failedDocumentSlots !== []) {
+                $failedLabels = implode(', ', array_keys($failedDocumentSlots));
+                $warnings[] = "Some document uploads failed ({$failedLabels}). Already uploaded files were preserved — retry only the failed slot(s) below.";
+                foreach ($failedDocumentSlots as $slotKey => $slotError) {
+                    $fieldKey = in_array($slotKey, ['picture_1x1', 'signature'], true)
+                        ? $slotKey
+                        : "documents.{$slotKey}";
+                    $errorBag[$fieldKey] = $slotError;
+                }
+            }
+
+            if ($portalProvisioningError !== null) {
+                $warnings[] = 'Portal account was not provisioned: '.$portalProvisioningError;
+            }
+
+            $redirect = to_route('administrators.students.edit', $student, 303)
+                ->with('success', 'Student created successfully.')
+                ->with('warning', implode(' ', $warnings))
+                ->with('saved_student_id', $student->id);
+
+            if ($failedDocumentSlots !== []) {
+                $redirect->with('failed_document_slots', array_keys($failedDocumentSlots));
+            }
+
+            if ($portalProvisioningError !== null) {
+                $redirect->with('portal_provisioning_error', $portalProvisioningError);
+            }
+
+            if ($errorBag !== []) {
+                $redirect->withErrors($errorBag);
+            }
+
+            return $redirect;
+        }
 
         return match ($validated['submit_action'] ?? 'view') {
             'create_another' => to_route('administrators.students.create', status: 303)
@@ -1323,6 +1595,8 @@ final class AdministratorStudentManagementController extends Controller
 
     public function edit(Student $student, CurriculumCapabilityResolver $capabilityResolver): Response
     {
+        $this->authorizeStudentAccess('Update:Student');
+
         $relationsLoaded = false;
         $ensureStudentLoaded = function () use ($student, &$relationsLoaded): void {
             if ($relationsLoaded) {
@@ -1354,25 +1628,7 @@ final class AdministratorStudentManagementController extends Controller
             'portal_account' => function () use ($student, $ensureStudentLoaded): ?array {
                 $ensureStudentLoaded();
 
-                $portalUser = $student->user;
-                if (! $portalUser && filled($student->email)) {
-                    $portalUser = User::query()
-                        ->whereRaw('LOWER(email) = ?', [mb_strtolower(mb_trim((string) $student->email))])
-                        ->first(['id', 'name', 'email', 'email_verified_at', 'suspended_at']);
-                }
-
-                if (! $portalUser) {
-                    return null;
-                }
-
-                return [
-                    'id' => $portalUser->id,
-                    'name' => $portalUser->name,
-                    'email' => $portalUser->email,
-                    'is_linked' => (int) $student->user_id === (int) $portalUser->id,
-                    'email_verified' => $portalUser->email_verified_at !== null,
-                    'suspended' => $portalUser->suspended_at !== null,
-                ];
+                return $this->resolvePortalAccountSummary($student);
             },
             'student_assets' => function () use ($student, $ensureStudentLoaded): array {
                 $ensureStudentLoaded();
@@ -1404,17 +1660,18 @@ final class AdministratorStudentManagementController extends Controller
 
     public function generateId(Request $request, IdentifierGenerator $identifierGenerator): JsonResponse
     {
-        $type = StudentType::tryFrom($request->query('type'));
+        $rawType = $request->query('type') ?? $request->query('student_type');
+        $type = is_string($rawType) ? StudentType::tryFrom($rawType) : null;
 
         if (! $type) {
             return response()->json(['id' => null], 400);
         }
 
-        if (app(\App\Services\StudentConfigurationService::class)->usesExternal($type->value)) {
+        if (app(StudentConfigurationService::class)->usesExternal($type->value)) {
             return response()->json(['id' => null]);
         }
 
-        if (! in_array($type->value, app(\App\Services\StudentConfigurationService::class)->get()['enabled_types'], true)) {
+        if (! in_array($type->value, app(StudentConfigurationService::class)->get()['enabled_types'], true)) {
             return response()->json(['id' => null], 422);
         }
         $nextId = $identifierGenerator->previewStudentId($type);
@@ -1486,16 +1743,83 @@ final class AdministratorStudentManagementController extends Controller
             return response()->json([]);
         }
 
+        $schoolId = app(TenantContext::class)->getCurrentSchoolId();
+
         $results = $columns
-            ->flatMap(fn (string $column): array => DB::table($table)
-                ->whereRaw('LOWER('.$column.') LIKE ?', [$like])
-                ->whereNotNull($column)
-                ->where($column, '!=', '')
-                ->distinct()
-                ->orderBy($column)
-                ->limit(15)
-                ->pluck($column)
-                ->all())
+            ->flatMap(function (string $column) use ($table, $like, $schoolId): array {
+                $query = DB::table($table)
+                    ->whereRaw('LOWER('.$table.'.'.$column.') LIKE ?', [$like])
+                    ->whereNotNull($table.'.'.$column)
+                    ->where($table.'.'.$column, '!=', '');
+
+                if ($schoolId !== null) {
+                    if ($table === 'students') {
+                        $query->where('students.school_id', $schoolId);
+                    } else {
+                        $fkColumn = match ($table) {
+                            'student_contacts' => 'student_contact_id',
+                            'student_parents_info' => 'student_parent_info',
+                            'student_education_info' => 'student_education_id',
+                            'students_personal_info' => 'student_personal_id',
+                            default => null,
+                        };
+
+                        if ($fkColumn !== null) {
+                            $hasStudentIdColumn = $this->hasColumn($table, 'student_id');
+
+                            $query->where(function ($scope) use ($table, $fkColumn, $schoolId, $hasStudentIdColumn): void {
+                                $scope->whereExists(function ($sub) use ($table, $fkColumn, $schoolId): void {
+                                    $sub->selectRaw('1')
+                                        ->from('students')
+                                        ->whereColumn("students.{$fkColumn}", "{$table}.id")
+                                        ->where('students.school_id', $schoolId);
+                                });
+
+                                if ($hasStudentIdColumn) {
+                                    $scope->orWhere(function ($direct) use ($table, $fkColumn, $schoolId): void {
+                                        $direct->whereNotExists(function ($sub) use ($table, $fkColumn): void {
+                                            $sub->selectRaw('1')
+                                                ->from('students')
+                                                ->whereColumn("students.{$fkColumn}", "{$table}.id");
+                                        })->whereExists(function ($sub) use ($table, $schoolId): void {
+                                            $sub->selectRaw('1')
+                                                ->from('students')
+                                                ->whereColumn('students.id', "{$table}.student_id")
+                                                ->where('students.school_id', $schoolId);
+                                        });
+                                    });
+                                }
+
+                                $scope->orWhere(function ($unreferenced) use ($table, $fkColumn, $hasStudentIdColumn): void {
+                                    $unreferenced->whereNotExists(function ($sub) use ($table, $fkColumn): void {
+                                        $sub->selectRaw('1')
+                                            ->from('students')
+                                            ->whereColumn("students.{$fkColumn}", "{$table}.id");
+                                    });
+
+                                    if ($hasStudentIdColumn) {
+                                        $unreferenced->where(function ($noOwner) use ($table): void {
+                                            $noOwner->whereNull("{$table}.student_id")
+                                                ->orWhereNotExists(function ($sub) use ($table): void {
+                                                    $sub->selectRaw('1')
+                                                        ->from('students')
+                                                        ->whereColumn('students.id', "{$table}.student_id");
+                                                });
+                                        });
+                                    }
+                                });
+                            });
+                        }
+                    }
+                }
+
+                return $query
+                    ->distinct()
+                    ->orderBy($table.'.'.$column)
+                    ->limit(15)
+                    ->pluck($table.'.'.$column)
+                    ->all();
+            })
             ->map(fn (mixed $value): string => mb_trim((string) $value))
             ->filter()
             ->unique(fn (string $value): string => mb_strtolower($value))
@@ -1514,10 +1838,12 @@ final class AdministratorStudentManagementController extends Controller
         return response()->json($schoolOptions->search($field, $search));
     }
 
-    public function update(Request $request, Student $student): RedirectResponse
+    public function update(Request $request, Student $student, CurriculumCapabilityResolver $capabilityResolver): RedirectResponse
     {
+        $this->authorizeStudentAccess('Update:Student');
+
         $identifierGenerator = app(IdentifierGenerator::class);
-        $configuration = app(\App\Services\StudentConfigurationService::class);
+        $configuration = app(StudentConfigurationService::class);
         $usesExternal = $configuration->usesExternal((string) $request->input('student_type'), $student->school_id)
             && ((string) $student->student_id === (string) $student->lrn || blank($student->student_id));
         if (! $usesExternal && blank($request->input('student_id'))) {
@@ -1537,9 +1863,9 @@ final class AdministratorStudentManagementController extends Controller
 
         $rules = [
             'student_type' => ['required', 'string'],
-            'first_name' => ['required', 'string', 'max:50'],
-            'last_name' => ['required', 'string', 'max:50'],
-            'middle_name' => ['nullable', 'string', 'max:20'],
+            'first_name' => ['required', 'string', 'max:100'],
+            'last_name' => ['required', 'string', 'max:100'],
+            'middle_name' => ['nullable', 'string', 'max:100'],
             'suffix' => ['nullable', 'string', 'max:20'],
             'gender' => ['required', 'string', 'in:male,female,other,prefer_not_to_say'],
             'birth_date' => ['required', 'date', 'before:today'],
@@ -1636,6 +1962,7 @@ final class AdministratorStudentManagementController extends Controller
             'is_pwd' => ['nullable', 'boolean'],
             'pwd_type' => ['nullable', 'string', 'max:100'],
             'is_solo_parent' => ['nullable', 'boolean'],
+            'is_solo_parent_dependent' => ['nullable', 'boolean'],
             'is_senior_citizen' => ['nullable', 'boolean'],
             'is_magna_carta' => ['nullable', 'boolean'],
             'is_underprivileged' => ['nullable', 'boolean'],
@@ -1660,14 +1987,36 @@ final class AdministratorStudentManagementController extends Controller
             'stay' => ['nullable', 'boolean'],
             'picture_1x1' => ['nullable', 'file', 'mimes:jpeg,jpg,png,webp', 'max:5120'],
             'signature' => ['nullable', 'file', 'mimes:png,jpg,jpeg,webp', 'max:2048'],
+            'documents' => ['nullable', 'array'],
+            'documents.*' => ['nullable', 'file', 'mimes:pdf,doc,docx,jpg,jpeg,png,webp', 'max:5120'],
+            'documents.picture_1x1' => ['nullable', 'file', 'mimes:jpeg,jpg,png,webp', 'max:5120'],
+            'provision_portal_account' => ['nullable', 'boolean'],
+            'send_activation_link' => ['nullable', 'boolean'],
         ];
         $validated = $request->validate([...$configuration->rules($rules, (string) $request->input('student_type'), $student), ...$configuration->customFieldRules($student)]);
         $validated = $configuration->preserveHidden($validated, $student);
+
+        if (($validated['student_type'] ?? null) === StudentType::TESDA->value && isset($validated['course_id'])) {
+            $course = Course::query()->with('department')->find($validated['course_id']);
+            if ($course instanceof Course && ! $capabilityResolver->isTesdaCourse($course)) {
+                return back()->withErrors(['course_id' => 'Select a TESDA qualification for a TESDA student.'])->withInput();
+            }
+        }
+
+        if (($validated['student_type'] ?? null) === StudentType::College->value && isset($validated['course_id'])) {
+            $course = Course::query()->with('department')->find($validated['course_id']);
+            if ($course instanceof Course && ! $capabilityResolver->isCollegeCourse($course)) {
+                return back()->withErrors(['course_id' => 'Select a college program for a college student.'])->withInput();
+            }
+        }
 
         DB::transaction(function () use ($validated, $student, $usesExternal, $configuration, $identifierGenerator): void {
             $identifierGenerator->sequenceFor(IdentifierGenerator::Student, lock: true, schoolId: $student->school_id);
             $configuration->forget($student->school_id);
             $student->refresh();
+            $originalLrn = $student->lrn;
+            $originalSchoolId = $student->school_id;
+            $originalType = $student->student_type;
             \Illuminate\Support\Facades\Validator::make($validated, $configuration->customFieldRules($student))->validate();
             // Update main student record
             $student->student_type = $validated['student_type'];
@@ -1701,6 +2050,13 @@ final class AdministratorStudentManagementController extends Controller
             $student->is_pwd = $validated['is_pwd'] ?? false;
             $student->pwd_type = $validated['pwd_type'] ?? null;
             $student->is_solo_parent = $validated['is_solo_parent'] ?? false;
+            if (
+                $this->hasColumn('students', 'is_solo_parent_dependent')
+                && array_key_exists('is_solo_parent_dependent', $validated)
+                && $validated['is_solo_parent_dependent'] !== null
+            ) {
+                $student->is_solo_parent_dependent = (bool) $validated['is_solo_parent_dependent'];
+            }
             $student->is_senior_citizen = $validated['is_senior_citizen'] ?? false;
             $student->is_magna_carta = $validated['is_magna_carta'] ?? false;
             $student->is_underprivileged = $validated['is_underprivileged'] ?? false;
@@ -1725,7 +2081,7 @@ final class AdministratorStudentManagementController extends Controller
             $student->employed_by_institution = $validated['employed_by_institution'] ?? false;
 
             // Handle Type Specifics
-            $student->lrn = $validated['lrn'] ?? $student->lrn;
+            $student->lrn = array_key_exists('lrn', $validated) ? $validated['lrn'] : $student->lrn;
             $student->student_id = $usesExternal ? $validated['lrn'] : $validated['student_id'];
             if ($validated['student_type'] === StudentType::SeniorHighSchool->value) {
                 $student->shs_strand_id = $validated['shs_strand_id'];
@@ -1743,12 +2099,50 @@ final class AdministratorStudentManagementController extends Controller
             $this->syncStudentRelations($student, $validated);
             $student->save();
 
+            // Reconcile the SHS roster row keyed by the previous LRN when an optional LRN
+            // is cleared, replaced, or when the student leaves SHS while changing/clearing LRN.
+            if (filled($originalLrn) && Schema::hasTable('shs_students')) {
+                $lrnCleared = blank($student->lrn);
+                $lrnChanged = ! $lrnCleared && (string) $student->lrn !== (string) $originalLrn;
+                $leftShs = $originalType === StudentType::SeniorHighSchool
+                    && $student->student_type !== StudentType::SeniorHighSchool;
+
+                if ($lrnCleared || $lrnChanged || $leftShs) {
+                    ShsStudent::query()
+                        ->where('student_lrn', $originalLrn)
+                        ->when(
+                            $originalSchoolId !== null,
+                            fn (Builder $query) => $query->where('school_id', $originalSchoolId),
+                            fn (Builder $query) => $query->whereNull('school_id'),
+                        )
+                        ->delete();
+                }
+            }
+
             if (isset($validated['status'])) {
                 $this->syncCurrentStudentStatus($student, StudentStatus::from($validated['status']));
             }
         });
 
-        $this->persistStudentAssets($request, $student);
+        $assetResult = $this->persistStudentAssets($request, $student);
+        $failedDocumentSlots = $assetResult['failed_slots'];
+
+        if ($failedDocumentSlots !== []) {
+            $failedLabels = implode(', ', array_keys($failedDocumentSlots));
+            $errorBag = [];
+            foreach ($failedDocumentSlots as $slotKey => $slotError) {
+                $fieldKey = in_array($slotKey, ['picture_1x1', 'signature'], true)
+                    ? $slotKey
+                    : "documents.{$slotKey}";
+                $errorBag[$fieldKey] = $slotError;
+            }
+
+            return redirect()->route('administrators.students.edit', $student)
+                ->with('success', 'Student updated successfully.')
+                ->with('warning', "Some document uploads failed ({$failedLabels}). Already uploaded files were preserved — retry only the failed slot(s) below.")
+                ->with('failed_document_slots', array_keys($failedDocumentSlots))
+                ->withErrors($errorBag);
+        }
 
         $message = 'Student updated successfully.';
 
@@ -2088,6 +2482,30 @@ final class AdministratorStudentManagementController extends Controller
 
                 return back()->with('error', $message);
             }
+
+            if (
+                $student->school_id !== null
+                && $portalUser->school_id !== null
+                && (int) $portalUser->school_id !== (int) $student->school_id
+            ) {
+                $message = 'This portal account belongs to a different school and cannot be linked to this student record.';
+
+                if ($request->wantsJson() && ! $request->header('X-Inertia')) {
+                    return response()->json(['message' => $message], 422);
+                }
+
+                return back()->with('error', $message);
+            }
+
+            if (Student::withoutSchoolScope()->withTrashed()->where('user_id', $portalUser->id)->whereKeyNot($student->id)->exists()) {
+                $message = 'This portal account is already linked to a different student record.';
+
+                if ($request->wantsJson() && ! $request->header('X-Inertia')) {
+                    return response()->json(['message' => $message], 422);
+                }
+
+                return back()->with('error', $message);
+            }
         }
 
         $targetRole = $student->student_type === StudentType::SeniorHighSchool
@@ -2160,10 +2578,17 @@ final class AdministratorStudentManagementController extends Controller
      */
     public function quickStore(Request $request, CurriculumCapabilityResolver $capabilityResolver): JsonResponse
     {
+        $this->authorizeStudentAccess('Create:Student');
+
         $identifierGenerator = app(IdentifierGenerator::class);
-        $configuration = app(\App\Services\StudentConfigurationService::class);
-        $typeValue = (string) $request->input('student_type', StudentType::College->value);
-        $usesExternal = $configuration->usesExternal($typeValue);
+        $configuration = app(StudentConfigurationService::class);
+        $schoolId = app(TenantContext::class)->getCurrentSchoolId();
+        $config = $configuration->get($schoolId);
+        $typeValue = (string) $request->input('student_type', $config['default_type'] ?? StudentType::College->value);
+        $usesExternal = $configuration->usesExternal($typeValue, $schoolId);
+        $policy = $identifierGenerator->studentPolicy(StudentType::tryFrom($typeValue), $schoolId);
+        $defaultMode = ($policy['assignment_mode'] ?? 'automatic') === 'manual' ? 'manual' : ($request->filled('student_id') ? 'manual' : 'automatic');
+        $mode = (string) $request->input('identifier_assignment', $defaultMode);
 
         $sanitizedNames = [];
         foreach (['first_name', 'middle_name', 'last_name', 'suffix'] as $field) {
@@ -2175,7 +2600,8 @@ final class AdministratorStudentManagementController extends Controller
             $request->merge($sanitizedNames);
         }
 
-        $validated = $request->validate([
+        $rules = [
+            'identifier_assignment' => ['nullable', 'in:automatic,manual'],
             'student_type' => ['required', Rule::enum(StudentType::class)],
             'first_name' => ['required', 'string', 'max:100'],
             'middle_name' => ['nullable', 'string', 'max:100'],
@@ -2195,19 +2621,48 @@ final class AdministratorStudentManagementController extends Controller
                 'nullable',
                 'exists:shs_strands,id',
             ],
-            'academic_year' => ['required', 'integer', 'min:1', 'max:12'],
+            'academic_year' => ['required', 'integer'],
+            'student_id' => $usesExternal || $mode === 'automatic'
+                ? ['exclude']
+                : $identifierGenerator->getStudentIdValidationRules(StudentType::tryFrom($typeValue), schoolId: $schoolId),
             'lrn' => [
                 Rule::requiredIf(fn (): bool => $typeValue === StudentType::SeniorHighSchool->value || $usesExternal),
                 'nullable',
                 'string',
                 'max:20',
-                'unique:students,lrn',
+                Rule::unique('students', 'lrn')->where('school_id', $schoolId),
             ],
             'status' => ['nullable', Rule::enum(StudentStatus::class)],
             'provision_portal_account' => ['nullable', 'boolean'],
             'send_activation_link' => ['nullable', 'boolean'],
             'allow_duplicate' => ['nullable', 'boolean'],
-        ]);
+        ];
+
+        $configuration->assertRequiredFieldsSupported(['email', 'phone'], $schoolId);
+
+        $validated = $request->validate($configuration->rules($rules, $typeValue, schoolId: $schoolId));
+
+        if (isset($validated['course_id']) && ($validated['student_type'] ?? null) !== StudentType::SeniorHighSchool->value) {
+            $course = Course::query()->with('department')->find($validated['course_id']);
+
+            if (! $course instanceof Course) {
+                throw ValidationException::withMessages([
+                    'course_id' => 'Select a course from the current school.',
+                ]);
+            }
+
+            if (($validated['student_type'] ?? null) === StudentType::TESDA->value && ! $capabilityResolver->isTesdaCourse($course)) {
+                throw ValidationException::withMessages([
+                    'course_id' => 'Select a TESDA qualification for a TESDA student.',
+                ]);
+            }
+
+            if (($validated['student_type'] ?? null) === StudentType::College->value && ! $capabilityResolver->isCollegeCourse($course)) {
+                throw ValidationException::withMessages([
+                    'course_id' => 'Select a college program for a college student.',
+                ]);
+            }
+        }
 
         // Fuzzy duplicate detection on name + birth_date or email before creating a new walk-in record
         if (! (bool) ($validated['allow_duplicate'] ?? false)) {
@@ -2254,9 +2709,10 @@ final class AdministratorStudentManagementController extends Controller
             }
         }
 
-        $schoolId = app(\App\Services\TenantContext::class)->getCurrentSchoolId();
-        $student = DB::transaction(function () use ($identifierGenerator, $validated, $usesExternal, $schoolId): Student {
+        $student = DB::transaction(function () use ($identifierGenerator, $configuration, $validated, $usesExternal, $schoolId, $mode): Student {
             $identifierGenerator->sequenceFor(IdentifierGenerator::Student, lock: true, schoolId: $schoolId);
+            $configuration->forget($schoolId);
+            $configuration->assertRequiredFieldsSupported(['email', 'phone'], $schoolId);
             $studentType = StudentType::from($validated['student_type']);
             $status = StudentStatus::tryFrom((string) ($validated['status'] ?? StudentStatus::Applicant->value)) ?? StudentStatus::Applicant;
             $birthDate = Carbon::parse($validated['birth_date']);
@@ -2281,8 +2737,8 @@ final class AdministratorStudentManagementController extends Controller
 
             $student->lrn = $validated['lrn'] ?? null;
             $student->student_id = $usesExternal
-                ? $identifierGenerator->claimExternalIdentifier($studentType, (string) $validated['lrn'])
-                : $identifierGenerator->assign($studentType, null, 'automatic');
+                ? $identifierGenerator->claimExternalIdentifier($studentType, (string) $validated['lrn'], $schoolId)
+                : $identifierGenerator->assign($studentType, $validated['student_id'] ?? null, $mode, $schoolId);
 
             if ($studentType === StudentType::SeniorHighSchool) {
                 $student->shs_strand_id = $validated['shs_strand_id'];
@@ -2296,20 +2752,55 @@ final class AdministratorStudentManagementController extends Controller
             return $student;
         });
 
-        if ((bool) ($validated['provision_portal_account'] ?? false) && filled($student->email)) {
+        $portalProvisioning = [
+            'requested' => (bool) ($validated['provision_portal_account'] ?? false) && filled($student->email),
+            'provisioned' => false,
+            'status' => 'skipped',
+            'error' => null,
+        ];
+
+        if ($portalProvisioning['requested']) {
             $portalRequest = Request::create('', 'POST', [
                 'mode' => 'auto',
                 'send_reset_link' => (bool) ($validated['send_activation_link'] ?? true),
             ]);
             $portalRequest->headers->set('Accept', 'application/json');
-            $this->managePortalAccount($portalRequest, $student);
+
+            try {
+                $portalResponse = $this->managePortalAccount($portalRequest, $student);
+                if ($portalResponse instanceof JsonResponse && $portalResponse->getStatusCode() >= 400) {
+                    $payload = $portalResponse->getData(true);
+                    $portalProvisioning['status'] = 'failed';
+                    $portalProvisioning['error'] = is_array($payload) && is_string($payload['message'] ?? null)
+                        ? $payload['message']
+                        : 'Portal account could not be provisioned for this email address.';
+                } else {
+                    $portalProvisioning['provisioned'] = true;
+                    $portalProvisioning['status'] = 'provisioned';
+                }
+            } catch (Throwable $e) {
+                Log::warning('Failed to provision student portal account during quick intake.', [
+                    'student_id' => $student->id,
+                    'error' => $e->getMessage(),
+                ]);
+                $portalProvisioning['status'] = 'failed';
+                $portalProvisioning['error'] = 'Portal account provisioning failed. Update the email and retry from the student record.';
+            }
+
             $student->refresh();
         }
 
         $student->load('Course');
 
+        $responseMessage = $portalProvisioning['status'] === 'failed'
+            ? 'Student created successfully, but portal account provisioning was refused: '.$portalProvisioning['error']
+            : 'Student created successfully.';
+
         return response()->json([
-            'message' => 'Student created successfully.',
+            'message' => $responseMessage,
+            'warning' => $portalProvisioning['error'],
+            'portal_provisioning' => $portalProvisioning,
+            'edit_url' => route('administrators.students.edit', $student),
             'student' => [
                 'id' => $student->id,
                 'student_id' => $student->student_id,
@@ -2468,11 +2959,13 @@ final class AdministratorStudentManagementController extends Controller
 
     public function changeCourse(Request $request, Student $student): RedirectResponse
     {
+        $this->authorizeStudentAccess('Update:Student');
+
         $validated = $request->validate([
             'course_id' => ['required', 'exists:courses,id'],
             'credits' => ['nullable', 'array'],
-            'credits.*.source_subject_id' => ['required', 'exists:subjects,id'],
-            'credits.*.target_subject_id' => ['required', 'exists:subjects,id'],
+            'credits.*.source_subject_id' => ['required', 'exists:subject,id'],
+            'credits.*.target_subject_id' => ['required', 'exists:subject,id'],
         ]);
 
         DB::transaction(function () use ($student, $validated): void {
@@ -2652,7 +3145,7 @@ final class AdministratorStudentManagementController extends Controller
      */
     public function quickUpdate(Request $request, Student $student): JsonResponse
     {
-        $configuration = app(\App\Services\StudentConfigurationService::class)->get($student->school_id);
+        $configuration = app(StudentConfigurationService::class)->get($student->school_id);
         $levels = array_column($configuration['year_levels'][$student->student_type->value] ?? [], 'value');
         $levels[] = $student->academic_year;
         $validated = $request->validate([
@@ -2812,7 +3305,7 @@ final class AdministratorStudentManagementController extends Controller
         abort_unless($actor instanceof User && $settings, 403);
 
         $gradeReleaseService = app(GradeReleaseService::class);
-        $tenantContext = app(\App\Services\TenantContext::class);
+        $tenantContext = app(TenantContext::class);
         $schoolYear = $settings->getSchoolYearString();
         $semester = (int) $settings->semester;
         $updatedCount = 0;
@@ -2930,8 +3423,16 @@ final class AdministratorStudentManagementController extends Controller
             ])->withInput();
         }
 
-        $deletedCount = 0;
+        $deletedStudentIds = [];
         $failures = [];
+        $cleanupWarnings = [];
+        $queueConnection = (string) config('queue.default', 'sync');
+        $queueDriver = (string) config("queue.connections.{$queueConnection}.driver", $queueConnection);
+        $queueDbConnection = config("queue.connections.{$queueConnection}.connection");
+        $queueTable = (string) config("queue.connections.{$queueConnection}.table", 'jobs');
+        $canEnqueueAtomicallyInDbTransaction = $queueDriver === 'database'
+            && ($queueDbConnection === null || $queueDbConnection === config('database.default'))
+            && Schema::hasTable($queueTable);
 
         foreach (BulkChunk::of($studentIds) as $chunk) {
             $students = Student::withTrashed()->whereIn('id', $chunk)->get();
@@ -2954,12 +3455,65 @@ final class AdministratorStudentManagementController extends Controller
                 continue;
             }
 
-            try {
-                DB::transaction(function () use ($eligibleStudents): void {
-                    $chunkStudentIds = $eligibleStudents->pluck('id')->all();
+            $chunkStudentIds = $eligibleStudents->pluck('id')->all();
+            /** @var list<array{disk: string|null, path: string}> $filesToDelete */
+            $filesToDelete = [];
+            $cleanupDispatchedInTransaction = false;
 
-                    // The related rows are removed with one statement per
-                    // table instead of one per student.
+            try {
+                DB::transaction(function () use (
+                    $eligibleStudents,
+                    $chunkStudentIds,
+                    &$filesToDelete,
+                    &$cleanupDispatchedInTransaction,
+                    $canEnqueueAtomicallyInDbTransaction,
+                ): void {
+                    $docLocationIds = $eligibleStudents->pluck('document_location_id')->filter()->unique()->values()->all();
+                    $parentInfoIds = $eligibleStudents->pluck('student_parent_info')->filter()->unique()->values()->all();
+                    $educationInfoIds = $eligibleStudents->pluck('student_education_id')->filter()->unique()->values()->all();
+                    $contactInfoIds = $eligibleStudents->pluck('student_contact_id')->filter()->unique()->values()->all();
+                    $personalInfoIds = $eligibleStudents->pluck('student_personal_id')->filter()->unique()->values()->all();
+
+                    // Collect non-empty file references before rows are deleted so storage
+                    // cleanup executes only after the transaction commits.
+                    foreach ($eligibleStudents as $eligibleStudent) {
+                        if (is_string($eligibleStudent->signature_path) && mb_trim($eligibleStudent->signature_path) !== '') {
+                            $filesToDelete[] = [
+                                'disk' => null,
+                                'path' => mb_trim($eligibleStudent->signature_path),
+                            ];
+                        }
+                    }
+
+                    if (Schema::hasTable('student_document_records')) {
+                        $docRecords = StudentDocumentRecord::query()
+                            ->whereIn('student_id', $chunkStudentIds)
+                            ->get(['disk', 'file_path']);
+
+                        foreach ($docRecords as $record) {
+                            if (is_string($record->file_path) && mb_trim($record->file_path) !== '') {
+                                $filesToDelete[] = [
+                                    'disk' => is_string($record->disk) && mb_trim($record->disk) !== '' ? mb_trim($record->disk) : null,
+                                    'path' => mb_trim($record->file_path),
+                                ];
+                            }
+                        }
+                    }
+
+                    $resources = Resource::query()
+                        ->where('resourceable_type', Student::class)
+                        ->whereIn('resourceable_id', $chunkStudentIds)
+                        ->get(['disk', 'file_path']);
+
+                    foreach ($resources as $resource) {
+                        if (is_string($resource->file_path) && mb_trim($resource->file_path) !== '') {
+                            $filesToDelete[] = [
+                                'disk' => is_string($resource->disk) && mb_trim($resource->disk) !== '' ? mb_trim($resource->disk) : null,
+                                'path' => mb_trim($resource->file_path),
+                            ];
+                        }
+                    }
+
                     SubjectEnrollment::query()->whereIn('student_id', $chunkStudentIds)->forceDelete();
                     StudentClearance::query()->whereIn('student_id', $chunkStudentIds)->forceDelete();
                     ClassEnrollment::query()->whereIn('student_id', $chunkStudentIds)->forceDelete();
@@ -2973,6 +3527,19 @@ final class AdministratorStudentManagementController extends Controller
                         ClassAttendanceRecord::whereIn('student_id', $chunkStudentIds)->delete();
                     }
 
+                    if (Schema::hasTable('student_document_records')) {
+                        StudentDocumentRecord::query()->whereIn('student_id', $chunkStudentIds)->delete();
+                    }
+
+                    if (Schema::hasTable('student_holds')) {
+                        StudentHold::query()->whereIn('student_id', $chunkStudentIds)->delete();
+                    }
+
+                    Resource::query()
+                        ->where('resourceable_type', Student::class)
+                        ->whereIn('resourceable_id', $chunkStudentIds)
+                        ->delete();
+
                     $learnersNumbers = $eligibleStudents->pluck('lrn')->filter()->unique()->values();
 
                     if ($learnersNumbers->isNotEmpty() && Schema::hasTable('shs_students')) {
@@ -2980,27 +3547,616 @@ final class AdministratorStudentManagementController extends Controller
                     }
 
                     Student::withTrashed()->whereIn('id', $chunkStudentIds)->forceDelete();
+
+                    if ($docLocationIds !== []) {
+                        $orphanedDocLocations = DocumentLocation::query()
+                            ->whereIn('id', $docLocationIds)
+                            ->whereNotExists(function ($sub): void {
+                                $sub->selectRaw('1')
+                                    ->from('students')
+                                    ->whereColumn('students.document_location_id', 'document_locations.id');
+                            })
+                            ->get(['id', ...DocumentLocation::DOCUMENT_FIELDS]);
+
+                        foreach ($orphanedDocLocations as $docLocation) {
+                            foreach (DocumentLocation::DOCUMENT_FIELDS as $field) {
+                                $path = $docLocation->getAttribute($field);
+                                if (is_string($path) && mb_trim($path) !== '') {
+                                    $filesToDelete[] = [
+                                        'disk' => null,
+                                        'path' => mb_trim($path),
+                                    ];
+                                }
+                            }
+                        }
+
+                        if ($orphanedDocLocations->isNotEmpty()) {
+                            DocumentLocation::query()
+                                ->whereIn('id', $orphanedDocLocations->pluck('id')->all())
+                                ->delete();
+                        }
+                    }
+
+                    if ($parentInfoIds !== [] && Schema::hasTable('student_parents_info')) {
+                        DB::table('student_parents_info')
+                            ->whereIn('id', $parentInfoIds)
+                            ->whereNotExists(function ($sub): void {
+                                $sub->selectRaw('1')
+                                    ->from('students')
+                                    ->whereColumn('students.student_parent_info', 'student_parents_info.id');
+                            })
+                            ->delete();
+                    }
+
+                    if ($educationInfoIds !== [] && Schema::hasTable('student_education_info')) {
+                        DB::table('student_education_info')
+                            ->whereIn('id', $educationInfoIds)
+                            ->whereNotExists(function ($sub): void {
+                                $sub->selectRaw('1')
+                                    ->from('students')
+                                    ->whereColumn('students.student_education_id', 'student_education_info.id');
+                            })
+                            ->delete();
+                    }
+
+                    if ($contactInfoIds !== [] && Schema::hasTable('student_contacts')) {
+                        DB::table('student_contacts')
+                            ->whereIn('id', $contactInfoIds)
+                            ->whereNotExists(function ($sub): void {
+                                $sub->selectRaw('1')
+                                    ->from('students')
+                                    ->whereColumn('students.student_contact_id', 'student_contacts.id');
+                            })
+                            ->delete();
+                    }
+
+                    if ($personalInfoIds !== [] && Schema::hasTable('students_personal_info')) {
+                        DB::table('students_personal_info')
+                            ->whereIn('id', $personalInfoIds)
+                            ->whereNotExists(function ($sub): void {
+                                $sub->selectRaw('1')
+                                    ->from('students')
+                                    ->whereColumn('students.student_personal_id', 'students_personal_info.id');
+                            })
+                            ->delete();
+                    }
+
+                    if ($filesToDelete !== [] && $canEnqueueAtomicallyInDbTransaction) {
+                        CleanupDeletedStudentFilesJob::dispatch($filesToDelete)->beforeCommit();
+                        $cleanupDispatchedInTransaction = true;
+                    }
                 });
 
-                $deletedCount += $eligibleStudents->count();
+                foreach ($chunkStudentIds as $deletedId) {
+                    $deletedStudentIds[] = $deletedId;
+                }
             } catch (Exception $e) {
                 foreach ($eligibleStudents as $student) {
                     $failures[] = $student->full_name.' ('.$e->getMessage().')';
                 }
+
+                continue;
             }
+
+            if ($filesToDelete !== [] && ! $cleanupDispatchedInTransaction) {
+                try {
+                    CleanupDeletedStudentFilesJob::dispatch($filesToDelete);
+                } catch (Throwable $cleanupException) {
+                    Log::error('Deleted student file cleanup failed after commit; manual or queued retry required.', [
+                        'student_ids' => $chunkStudentIds,
+                        'files' => $filesToDelete,
+                        'error' => $cleanupException->getMessage(),
+                    ]);
+                    $cleanupWarnings[] = $cleanupException->getMessage();
+                }
+            }
+        }
+
+        $deletedCount = count($deletedStudentIds);
+
+        if ($deletedCount > 0) {
+            activity('students')
+                ->causedBy($request->user())
+                ->event('students.bulk_force_deleted')
+                ->withProperties([
+                    'count' => $deletedCount,
+                    'student_ids' => $deletedStudentIds,
+                ])
+                ->log("Permanently deleted {$deletedCount} student record(s).");
         }
 
         $message = "Permanently deleted {$deletedCount} student(s).";
 
         if ($failures !== []) {
             $message .= ' '.count($failures).' failed: '.implode('; ', $failures);
+            if ($cleanupWarnings !== []) {
+                $message .= ' File cleanup is pending retry.';
+            }
 
             return back()->with('error', $message);
+        }
+
+        if ($cleanupWarnings !== []) {
+            $message .= ' Some stored files could not be removed immediately and are pending cleanup retry.';
+
+            return redirect()
+                ->route('administrators.students.index')
+                ->with('warning', $message);
         }
 
         return redirect()
             ->route('administrators.students.index')
             ->with('success', $message);
+    }
+
+    public function bulkRestore(Request $request): RedirectResponse
+    {
+        $this->authorizeStudentAccess(['Restore:Student', 'RestoreAny:Student'], [UserRole::Admin, UserRole::Registrar]);
+
+        $validated = $request->validate([
+            'student_ids' => ['required', 'array', 'min:1', 'max:500'],
+            'student_ids.*' => ['required', 'integer', 'distinct'],
+        ]);
+
+        $students = Student::onlyTrashed()->whereIn('id', $validated['student_ids'])->get();
+        $restored = 0;
+
+        foreach ($students as $student) {
+            $student->restore();
+            $restored++;
+        }
+
+        if ($restored > 0) {
+            activity('students')
+                ->causedBy($request->user())
+                ->event('students.bulk_restored')
+                ->withProperties(['count' => $restored, 'student_ids' => $students->pluck('id')->all()])
+                ->log("Restored {$restored} trashed student record(s).");
+        }
+
+        return back()->with('success', "Restored {$restored} student(s).");
+    }
+
+    public function bulkPromote(Request $request, CurriculumCapabilityResolver $capabilityResolver): RedirectResponse
+    {
+        $this->authorizeStudentAccess('Update:Student');
+
+        $validated = $request->validate([
+            'student_ids' => ['required', 'array', 'min:1', 'max:500'],
+            'student_ids.*' => ['required', 'integer', 'distinct', 'exists:students,id'],
+            'target_year_level' => ['nullable', 'integer', 'min:1', 'max:99'],
+            'course_id' => ['nullable', 'integer', 'exists:courses,id'],
+        ]);
+
+        $configService = app(StudentConfigurationService::class);
+        $students = Student::query()->whereIn('id', $validated['student_ids'])->get();
+        $targetCourse = isset($validated['course_id'])
+            ? Course::query()->with('department')->find($validated['course_id'])
+            : null;
+
+        if (isset($validated['course_id']) && ! $targetCourse instanceof Course) {
+            return back()->withErrors([
+                'course_id' => 'Select a course from the current school.',
+            ])->withInput();
+        }
+
+        if ($targetCourse instanceof Course) {
+            foreach ($students as $student) {
+                if ($student->student_type === StudentType::TESDA && ! $capabilityResolver->isTesdaCourse($targetCourse)) {
+                    return back()->withErrors([
+                        'course_id' => 'Select a TESDA qualification for a TESDA student.',
+                    ])->withInput();
+                }
+
+                if ($student->student_type === StudentType::College && ! $capabilityResolver->isCollegeCourse($targetCourse)) {
+                    return back()->withErrors([
+                        'course_id' => 'Select a college program for a college student.',
+                    ])->withInput();
+                }
+            }
+        }
+
+        $updatedStudentIds = [];
+        $skippedInvalidYearLevelCount = 0;
+
+        DB::transaction(function () use ($students, $validated, $configService, &$updatedStudentIds, &$skippedInvalidYearLevelCount): void {
+            foreach ($students as $student) {
+                $updates = [];
+                $levels = $configService->get($student->school_id)['year_levels'][$student->student_type?->value ?? 'college'] ?? [];
+                $values = array_values(array_map(fn (array $item): int => (int) $item['value'], $levels));
+
+                if (isset($validated['target_year_level'])) {
+                    $targetYearLevel = (int) $validated['target_year_level'];
+                    if (in_array($targetYearLevel, $values, true)) {
+                        $updates['academic_year'] = $targetYearLevel;
+                    } else {
+                        $skippedInvalidYearLevelCount++;
+                    }
+                } else {
+                    $currentIdx = array_search((int) $student->academic_year, $values, true);
+                    if ($currentIdx !== false && isset($values[$currentIdx + 1])) {
+                        $updates['academic_year'] = $values[$currentIdx + 1];
+                    }
+                }
+
+                if (isset($validated['course_id']) && $student->student_type !== StudentType::SeniorHighSchool) {
+                    $updates['course_id'] = (int) $validated['course_id'];
+                }
+
+                if ($updates !== []) {
+                    $student->update($updates);
+                    $updatedStudentIds[] = $student->id;
+                }
+            }
+        });
+
+        $updated = count($updatedStudentIds);
+
+        if ($updated === 0 && $skippedInvalidYearLevelCount > 0) {
+            return back()->withErrors([
+                'target_year_level' => 'The selected year level is not configured for the selected student(s).',
+            ])->withInput();
+        }
+
+        if ($updated > 0) {
+            activity('students')
+                ->causedBy($request->user())
+                ->event('students.bulk_promoted')
+                ->withProperties(['count' => $updated, 'student_ids' => $updatedStudentIds])
+                ->log("Updated academic placement for {$updated} student(s).");
+        }
+
+        $message = "Updated placement for {$updated} student(s).";
+        if ($skippedInvalidYearLevelCount > 0) {
+            $message .= " Skipped year-level update for {$skippedInvalidYearLevelCount} student(s) with incompatible configured levels.";
+        }
+
+        return back()->with('success', $message);
+    }
+
+    public function validateBatchImport(Request $request, CurriculumCapabilityResolver $capabilityResolver): JsonResponse
+    {
+        $this->authorizeStudentAccess('Create:Student');
+
+        $validated = $request->validate([
+            'rows' => ['required', 'array', 'min:1', 'max:250'],
+            'rows.*' => ['required', 'array'],
+        ]);
+
+        $schoolId = app(TenantContext::class)->getCurrentSchoolId();
+        $configService = app(StudentConfigurationService::class);
+        $configService->assertRequiredFieldsSupported(['email', 'phone'], $schoolId);
+        $config = $configService->get($schoolId);
+        $policy = app(IdentifierGenerator::class)->studentPolicy(schoolId: $schoolId);
+        $courses = Course::query()->with('department:id,code')->get(['id', 'code', 'title', 'department_id', 'curriculum_kind']);
+        $coursesByCode = $courses->keyBy(fn (Course $c): string => mb_strtolower($c->code));
+        $coursesById = $courses->keyBy('id');
+        $strands = ShsStrand::query()->get(['id', 'strand_name']);
+        $strandsByName = $strands->keyBy(fn (ShsStrand $s): string => mb_strtolower($s->strand_name));
+        $strandsById = $strands->keyBy('id');
+
+        $previewRows = [];
+        $validCount = 0;
+        $errorCount = 0;
+        $duplicateCount = 0;
+
+        foreach ($validated['rows'] as $index => $rawRow) {
+            $rowResult = $this->validateAndNormalizeBatchImportRow(
+                rawRow: $rawRow,
+                config: $config,
+                policy: $policy,
+                schoolId: $schoolId,
+                coursesByCode: $coursesByCode,
+                coursesById: $coursesById,
+                strandsByName: $strandsByName,
+                strandsById: $strandsById,
+                configService: $configService,
+                capabilityResolver: $capabilityResolver,
+                isCommit: false,
+            );
+
+            $errors = $rowResult['errors'];
+            $warnings = [];
+            $normalized = $rowResult['normalized'];
+
+            // Duplicate check
+            $duplicateMatch = null;
+            if ($normalized['first_name'] !== '' && $normalized['last_name'] !== '' && $normalized['birth_date'] !== null) {
+                $firstName = $normalized['first_name'];
+                $lastName = $normalized['last_name'];
+                $birthDate = $normalized['birth_date'];
+                $email = $normalized['email'] ?? '';
+                $lrn = $normalized['lrn'] ?? '';
+
+                $duplicateMatch = Student::query()
+                    ->where(function (Builder $q) use ($firstName, $lastName, $birthDate, $email, $lrn): void {
+                        $q->where(function (Builder $nameQ) use ($firstName, $lastName, $birthDate): void {
+                            $nameQ->whereRaw('LOWER(first_name) = ?', [mb_strtolower($firstName)])
+                                ->whereRaw('LOWER(last_name) = ?', [mb_strtolower($lastName)])
+                                ->whereDate('birth_date', $birthDate);
+                        });
+                        if ($email !== '') {
+                            $q->orWhereRaw('LOWER(email) = ?', [mb_strtolower($email)]);
+                        }
+                        if ($lrn !== '') {
+                            $q->orWhere('lrn', $lrn);
+                        }
+                    })
+                    ->first(['id', 'student_id', 'first_name', 'last_name']);
+            }
+
+            if ($duplicateMatch) {
+                $duplicateCount++;
+                $warnings[] = "Possible duplicate of {$duplicateMatch->full_name} ({$duplicateMatch->student_id}).";
+            }
+
+            $isValid = $errors === [];
+            if ($isValid) {
+                $validCount++;
+            } else {
+                $errorCount++;
+            }
+
+            $previewRows[] = [
+                'row_number' => $index + 1,
+                'valid' => $isValid,
+                'errors' => $errors,
+                'warnings' => $warnings,
+                'normalized' => $normalized,
+            ];
+        }
+
+        return response()->json([
+            'summary' => [
+                'total' => count($previewRows),
+                'valid' => $validCount,
+                'errors' => $errorCount,
+                'duplicates' => $duplicateCount,
+            ],
+            'rows' => $previewRows,
+        ]);
+    }
+
+    public function commitBatchImport(Request $request, CurriculumCapabilityResolver $capabilityResolver): JsonResponse
+    {
+        $this->authorizeStudentAccess('Create:Student');
+
+        // Validate only the batch envelope up front so each row can be validated
+        // independently against current school rules without rejecting valid siblings.
+        $validated = $request->validate([
+            'rows' => ['required', 'array', 'min:1', 'max:250'],
+            'provision_portal_accounts' => ['nullable', 'boolean'],
+            'allow_duplicates' => ['nullable', 'boolean'],
+        ]);
+
+        $allowDuplicates = (bool) ($validated['allow_duplicates'] ?? false);
+        $schoolId = app(TenantContext::class)->getCurrentSchoolId();
+        $identifierGenerator = app(IdentifierGenerator::class);
+        $configuration = app(StudentConfigurationService::class);
+        $configuration->forget($schoolId);
+        $configuration->assertRequiredFieldsSupported(['email', 'phone'], $schoolId);
+        $config = $configuration->get($schoolId);
+        $policy = $identifierGenerator->studentPolicy(schoolId: $schoolId);
+        $courses = Course::query()->with('department:id,code')->get(['id', 'code', 'title', 'department_id', 'curriculum_kind']);
+        $coursesByCode = $courses->keyBy(fn (Course $c): string => mb_strtolower($c->code));
+        $coursesById = $courses->keyBy('id');
+        $strands = ShsStrand::query()->get(['id', 'strand_name']);
+        $strandsByName = $strands->keyBy(fn (ShsStrand $s): string => mb_strtolower($s->strand_name));
+        $strandsById = $strands->keyBy('id');
+
+        $created = [];
+        $failed = [];
+        $activationFailed = [];
+
+        foreach ($validated['rows'] as $index => $rawRow) {
+            if (! is_array($rawRow)) {
+                $failed[] = [
+                    'row_number' => $index + 1,
+                    'name' => '',
+                    'error' => 'Row payload must be an object.',
+                    'errors' => ['Row payload must be an object.'],
+                ];
+
+                continue;
+            }
+
+            $rowResult = $this->validateAndNormalizeBatchImportRow(
+                rawRow: $rawRow,
+                config: $config,
+                policy: $policy,
+                schoolId: $schoolId,
+                coursesByCode: $coursesByCode,
+                coursesById: $coursesById,
+                strandsByName: $strandsByName,
+                strandsById: $strandsById,
+                configService: $configuration,
+                capabilityResolver: $capabilityResolver,
+                isCommit: true,
+            );
+
+            $row = $rowResult['normalized'];
+            $rowName = mb_trim(($row['first_name'] ?? '').' '.($row['last_name'] ?? ''));
+
+            if ($rowResult['errors'] !== []) {
+                $failed[] = [
+                    'row_number' => $index + 1,
+                    'name' => $rowName,
+                    'error' => implode(' ', $rowResult['errors']),
+                    'errors' => $rowResult['errors'],
+                ];
+
+                continue;
+            }
+
+            try {
+                $student = DB::transaction(function () use ($row, $identifierGenerator, $configuration, $policy, $schoolId, $allowDuplicates): Student {
+                    $identifierGenerator->sequenceFor(IdentifierGenerator::Student, lock: true, schoolId: $schoolId);
+                    $studentType = StudentType::from($row['student_type']);
+                    $usesExternal = $configuration->usesExternal($studentType->value, $schoolId);
+                    $mode = filled($row['student_id'] ?? null) || ($policy['assignment_mode'] ?? 'automatic') === 'manual' ? 'manual' : 'automatic';
+                    $status = StudentStatus::tryFrom((string) ($row['status'] ?? StudentStatus::Applicant->value)) ?? StudentStatus::Applicant;
+                    $birthDate = Carbon::parse($row['birth_date']);
+
+                    // Backend replay/duplicate safeguard: always reject exact identity collisions
+                    // (email, LRN, student_id), and reject name + birth_date duplicates unless
+                    // the caller explicitly passed allow_duplicates.
+                    $hasIdentityFilters = ! $allowDuplicates
+                        || filled($row['email'] ?? null)
+                        || filled($row['lrn'] ?? null)
+                        || filled($row['student_id'] ?? null);
+
+                    $existingDuplicate = $hasIdentityFilters
+                        ? Student::query()
+                            ->where(function (Builder $q) use ($row, $birthDate, $allowDuplicates): void {
+                                if (! $allowDuplicates) {
+                                    $q->orWhere(function (Builder $nameQ) use ($row, $birthDate): void {
+                                        $nameQ->whereRaw('LOWER(first_name) = ?', [mb_strtolower((string) $row['first_name'])])
+                                            ->whereRaw('LOWER(last_name) = ?', [mb_strtolower((string) $row['last_name'])])
+                                            ->whereDate('birth_date', $birthDate->toDateString());
+                                    });
+                                }
+
+                                if (filled($row['email'] ?? null)) {
+                                    $q->orWhereRaw('LOWER(email) = ?', [mb_strtolower((string) $row['email'])]);
+                                }
+
+                                if (filled($row['lrn'] ?? null)) {
+                                    $q->orWhere('lrn', (string) $row['lrn']);
+                                }
+
+                                if (filled($row['student_id'] ?? null)) {
+                                    $q->orWhere('student_id', (string) $row['student_id']);
+                                }
+                            })
+                            ->lockForUpdate()
+                            ->first(['id', 'student_id', 'first_name', 'last_name'])
+                        : null;
+
+                    if ($existingDuplicate !== null) {
+                        throw ValidationException::withMessages([
+                            'row' => "Already imported or duplicate of {$existingDuplicate->full_name} (ID: {$existingDuplicate->student_id}).",
+                        ]);
+                    }
+
+                    $student = new Student;
+                    $student->fill([
+                        'student_type' => $studentType->value,
+                        'first_name' => $row['first_name'],
+                        'middle_name' => $row['middle_name'],
+                        'last_name' => $row['last_name'],
+                        'gender' => $row['gender'],
+                        'birth_date' => $birthDate->toDateString(),
+                        'age' => $birthDate->age,
+                        'email' => $row['email'],
+                        'phone' => $row['phone'],
+                        'academic_year' => (int) $row['academic_year'],
+                        'status' => $status->value,
+                        'scholarship_type' => ScholarshipType::None->value,
+                        'employment_status' => EmploymentStatus::NotApplicable->value,
+                    ]);
+
+                    $student->lrn = $row['lrn'];
+                    $student->student_id = $usesExternal
+                        ? $identifierGenerator->claimExternalIdentifier($studentType, (string) $row['lrn'], $schoolId)
+                        : $identifierGenerator->assign($studentType, $row['student_id'], $mode, $schoolId);
+
+                    if ($studentType === StudentType::SeniorHighSchool) {
+                        $student->shs_strand_id = $row['shs_strand_id'];
+                    } else {
+                        $student->course_id = $row['course_id'];
+                    }
+
+                    $student->save();
+                    $this->syncCurrentStudentStatus($student, $status);
+
+                    return $student;
+                });
+            } catch (Throwable $e) {
+                $failed[] = [
+                    'row_number' => $index + 1,
+                    'name' => $rowName,
+                    'error' => $e->getMessage(),
+                ];
+
+                continue;
+            }
+
+            // Record the saved student immediately after persistence commits so a later
+            // portal activation error never causes the saved row to be classified as failed.
+            $created[] = [
+                'id' => $student->id,
+                'student_id' => $student->student_id,
+                'full_name' => $student->full_name,
+            ];
+
+            if ((bool) ($validated['provision_portal_accounts'] ?? false) && filled($student->email)) {
+                try {
+                    $portalRequest = Request::create('', 'POST', ['mode' => 'auto', 'send_reset_link' => true]);
+                    $portalRequest->headers->set('Accept', 'application/json');
+                    $portalResponse = $this->managePortalAccount($portalRequest, $student);
+
+                    if ($portalResponse instanceof JsonResponse && $portalResponse->getStatusCode() >= 400) {
+                        $payload = $portalResponse->getData(true);
+                        $activationFailed[] = [
+                            'row_number' => $index + 1,
+                            'id' => $student->id,
+                            'student_id' => $student->student_id,
+                            'full_name' => $student->full_name,
+                            'email' => $student->email,
+                            'error' => is_array($payload) && is_string($payload['message'] ?? null)
+                                ? $payload['message']
+                                : 'Portal account could not be provisioned.',
+                        ];
+                    }
+                } catch (Throwable $activationException) {
+                    Log::warning('Batch import student saved, but portal activation dispatch failed.', [
+                        'student_id' => $student->id,
+                        'row_number' => $index + 1,
+                        'error' => $activationException->getMessage(),
+                    ]);
+                    $activationFailed[] = [
+                        'row_number' => $index + 1,
+                        'id' => $student->id,
+                        'student_id' => $student->student_id,
+                        'full_name' => $student->full_name,
+                        'email' => $student->email,
+                        'error' => $activationException->getMessage(),
+                    ];
+                }
+            }
+        }
+
+        if ($created !== []) {
+            activity('students')
+                ->causedBy($request->user())
+                ->event('students.batch_imported')
+                ->withProperties([
+                    'created_count' => count($created),
+                    'failed_count' => count($failed),
+                    'activation_failed_count' => count($activationFailed),
+                ])
+                ->log('Batch imported '.count($created).' student record(s).');
+        }
+
+        $message = 'Imported '.count($created).' student(s)';
+        $suffixParts = [];
+        if ($failed !== []) {
+            $suffixParts[] = count($failed).' failed';
+        }
+        if ($activationFailed !== []) {
+            $suffixParts[] = count($activationFailed).' portal activation(s) failed';
+        }
+        $message .= $suffixParts !== [] ? ' ('.implode(', ', $suffixParts).').' : '.';
+
+        return response()->json([
+            'message' => $message,
+            'created_count' => count($created),
+            'failed_count' => count($failed),
+            'activation_failed_count' => count($activationFailed),
+            'created' => $created,
+            'failed' => $failed,
+            'activation_failed' => $activationFailed,
+        ], $created !== [] ? 201 : 422);
     }
 
     public function removeSubject(Student $student, SubjectEnrollment $subjectEnrollment): RedirectResponse
@@ -3019,6 +4175,8 @@ final class AdministratorStudentManagementController extends Controller
      */
     public function destroy(Student $student): RedirectResponse
     {
+        $this->authorizeStudentAccess(['Delete:Student', 'DeleteAny:Student'], [UserRole::Admin, UserRole::Registrar]);
+
         $studentName = $student->full_name;
 
         $student->delete();
@@ -3031,6 +4189,8 @@ final class AdministratorStudentManagementController extends Controller
      */
     public function restore(int $student): RedirectResponse
     {
+        $this->authorizeStudentAccess(['Restore:Student', 'RestoreAny:Student'], [UserRole::Admin, UserRole::Registrar]);
+
         $studentModel = Student::withTrashed()->findOrFail($student);
 
         if (! $studentModel->trashed()) {
@@ -3049,6 +4209,11 @@ final class AdministratorStudentManagementController extends Controller
      */
     public function forceDestroy(Request $request, int $student): RedirectResponse
     {
+        // Intentionally permits the portal Admin role alongside explicit ForceDelete grants
+        // (matching BulkForceDeleteStudentRequest::authorize), while restricting Registrar
+        // and other staff roles unless they hold ForceDelete:Student or ForceDeleteAny:Student.
+        $this->authorizeStudentAccess(['ForceDelete:Student', 'ForceDeleteAny:Student'], [UserRole::Admin]);
+
         $studentModel = Student::withTrashed()->findOrFail($student);
 
         $studentName = $studentModel->full_name;
@@ -3090,46 +4255,712 @@ final class AdministratorStudentManagementController extends Controller
     }
 
     /**
-     * Persist optional 1x1 ID photo and signature uploads submitted alongside Student create/edit forms.
+     * Persist optional 1x1 ID photo, signature, and fixed document uploads submitted alongside Student create/edit forms.
+     *
+     * Catches per-slot upload failures so already-saved student records and committed documents
+     * are preserved, returning only the failed slots for retry.
+     *
+     * @return array{uploaded_slots: list<string>, failed_slots: array<string, string>}
      */
-    private function persistStudentAssets(Request $request, Student $student): void
+    private function persistStudentAssets(Request $request, Student $student): array
     {
-        if ($request->hasFile('picture_1x1')) {
-            /** @var UploadedFile $photo */
-            $photo = $request->file('picture_1x1');
-            $privateDisk = (string) config('filesystems.private_disk', 'private');
-            $path = $photo->store("students/{$student->id}/documents", $privateDisk);
+        $uploadedSlots = [];
+        $failedSlots = [];
 
-            if (is_string($path) && $path !== '') {
-                $student->loadMissing('DocumentLocation');
-                if (! $student->DocumentLocation) {
-                    $docLocation = DocumentLocation::create(['picture_1x1' => $path]);
-                    $student->forceFill(['document_location_id' => $docLocation->id])->save();
-                } else {
-                    $oldPath = $student->DocumentLocation->picture_1x1;
-                    if (is_string($oldPath) && $oldPath !== '' && ! filter_var($oldPath, FILTER_VALIDATE_URL) && ! str_starts_with($oldPath, '/')) {
-                        foreach (['private', config('filesystems.default'), 'public'] as $disk) {
-                            if (is_string($disk) && Storage::disk($disk)->exists($oldPath)) {
-                                Storage::disk($disk)->delete($oldPath);
-                            }
+        if ($request->hasFile('picture_1x1')) {
+            try {
+                /** @var UploadedFile $photo */
+                $photo = $request->file('picture_1x1');
+                $privateDisk = (string) config('filesystems.private_disk', 'private');
+                $path = $photo->store("students/{$student->id}/documents", $privateDisk);
+
+                if (! is_string($path) || $path === '') {
+                    throw new RuntimeException('Unable to store ID photo.');
+                }
+
+                $oldPath = DB::transaction(function () use ($student, $path): ?string {
+                    Student::withoutSchoolScope()->withTrashed()->whereKey($student->id)->lockForUpdate()->first();
+                    $student->refresh()->load('DocumentLocation');
+
+                    if (! $student->DocumentLocation) {
+                        $docLocation = DocumentLocation::create(['picture_1x1' => $path]);
+                        $student->forceFill(['document_location_id' => $docLocation->id])->save();
+                        $student->setRelation('DocumentLocation', $docLocation);
+
+                        return null;
+                    }
+
+                    $previousPath = $student->DocumentLocation->picture_1x1;
+                    $student->DocumentLocation->update(['picture_1x1' => $path]);
+
+                    return is_string($previousPath) && $previousPath !== '' && $previousPath !== $path
+                        ? $previousPath
+                        : null;
+                });
+
+                if (is_string($oldPath) && ! filter_var($oldPath, FILTER_VALIDATE_URL) && ! str_starts_with($oldPath, '/')) {
+                    $candidateDisks = array_values(array_unique(array_filter([
+                        (string) config('filesystems.private_disk', 'private'),
+                        'private',
+                        is_string(config('filesystems.default')) ? (string) config('filesystems.default') : null,
+                        'public',
+                    ])));
+
+                    foreach ($candidateDisks as $disk) {
+                        if (Storage::disk($disk)->exists($oldPath)) {
+                            Storage::disk($disk)->delete($oldPath);
                         }
                     }
-                    $student->DocumentLocation->update(['picture_1x1' => $path]);
                 }
+
+                $uploadedSlots[] = 'picture_1x1';
+            } catch (Throwable $e) {
+                Log::warning('Failed to persist student picture_1x1 asset.', [
+                    'student_id' => $student->id,
+                    'error' => $e->getMessage(),
+                ]);
+                $failedSlots['picture_1x1'] = 'Failed to upload ID photo. Please retry.';
             }
         }
 
         if ($request->hasFile('signature')) {
-            /** @var UploadedFile $signature */
-            $signature = $request->file('signature');
-            $privateDisk = (string) config('filesystems.private_disk', 'private');
-            $newPath = $signature->store("students/{$student->id}/signatures", $privateDisk);
+            try {
+                /** @var UploadedFile $signature */
+                $signature = $request->file('signature');
+                $privateDisk = (string) config('filesystems.private_disk', 'private');
+                $newPath = $signature->store("students/{$student->id}/signatures", $privateDisk);
 
-            if (is_string($newPath) && $newPath !== '') {
+                if (! is_string($newPath) || $newPath === '') {
+                    throw new RuntimeException('Unable to store signature.');
+                }
+
                 $this->deleteStoredSignature($student->signature_path);
                 $student->forceFill(['signature_path' => $newPath])->save();
+                $uploadedSlots[] = 'signature';
+            } catch (Throwable $e) {
+                Log::warning('Failed to persist student signature asset.', [
+                    'student_id' => $student->id,
+                    'error' => $e->getMessage(),
+                ]);
+                $failedSlots['signature'] = 'Failed to upload signature. Please retry.';
             }
         }
+
+        $documentFiles = $request->file('documents', []);
+        if (is_array($documentFiles) && $documentFiles !== []) {
+            $documentService = app(StudentDocumentService::class);
+            /** @var User|null $actor */
+            $actor = Auth::user();
+            foreach ($documentFiles as $docKey => $uploadedFile) {
+                if (! is_string($docKey) || ! in_array($docKey, DocumentLocation::DOCUMENT_FIELDS, true) || ! $uploadedFile instanceof UploadedFile) {
+                    continue;
+                }
+
+                try {
+                    // Reload/unset DocumentLocation across iterations so a newly created
+                    // DocumentLocation row is reused by all subsequent document slots.
+                    $student->unsetRelation('DocumentLocation');
+                    $documentService->uploadFixed($student, $docKey, $uploadedFile, $actor, autoVerify: true);
+                    $student->load('DocumentLocation');
+                    $uploadedSlots[] = $docKey;
+                } catch (Throwable $e) {
+                    Log::warning('Failed to persist fixed student document slot.', [
+                        'student_id' => $student->id,
+                        'document_key' => $docKey,
+                        'error' => $e->getMessage(),
+                    ]);
+                    $failedSlots[$docKey] = 'Failed to upload document. Please retry this slot.';
+                }
+            }
+        }
+
+        return [
+            'uploaded_slots' => $uploadedSlots,
+            'failed_slots' => $failedSlots,
+        ];
+    }
+
+    /**
+     * Apply the shared "Needs Doc Review" predicate matching StudentDocumentService::rowSummaryFor()
+     * effective-status logic, including legacy DocumentLocation files with no StudentDocumentRecord.
+     *
+     * @param  array<string, mixed>  $studentConfiguration
+     */
+    private function applyNeedsDocReviewFilter(
+        Builder $query,
+        StudentDocumentService $documentService,
+        array $studentConfiguration,
+        ?int $schoolId,
+        bool $hasDocRecordsTable,
+    ): void {
+        $knownTypes = array_column(StudentType::cases(), 'value');
+        $defaultType = (string) ($studentConfiguration['default_type'] ?? StudentType::College->value);
+        $slotKeysByType = [];
+
+        foreach ($knownTypes as $typeValue) {
+            $slotKeys = array_values(array_filter(
+                array_column($documentService->checklistFor($typeValue, $schoolId), 'key'),
+                static fn (string $key): bool => in_array($key, DocumentLocation::DOCUMENT_FIELDS, true),
+            ));
+
+            if ($slotKeys !== []) {
+                $slotKeysByType[$typeValue] = $slotKeys;
+            }
+        }
+
+        if (! $hasDocRecordsTable && $slotKeysByType === []) {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
+
+        $query->where(function (Builder $outer) use ($slotKeysByType, $knownTypes, $defaultType, $hasDocRecordsTable): void {
+            if ($hasDocRecordsTable) {
+                $outer->whereHas('documentRecords', function (Builder $recQ): void {
+                    $recQ->where('status', StudentDocumentRecord::StatusPendingReview);
+                })->orWhereHas('documentRecords', function (Builder $recQ): void {
+                    $recQ->where('status', StudentDocumentRecord::StatusMissing)
+                        ->whereNotNull('file_path')
+                        ->whereRaw("TRIM(file_path) <> ''");
+                });
+            }
+
+            foreach ($slotKeysByType as $typeValue => $slotKeys) {
+                $outer->orWhere(function (Builder $typeQ) use ($typeValue, $defaultType, $knownTypes, $slotKeys, $hasDocRecordsTable): void {
+                    if ($typeValue === $defaultType) {
+                        $typeQ->where(function (Builder $matchType) use ($typeValue, $knownTypes): void {
+                            $matchType->where('students.student_type', $typeValue)
+                                ->orWhereNull('students.student_type')
+                                ->orWhereNotIn('students.student_type', $knownTypes);
+                        });
+                    } else {
+                        $typeQ->where('students.student_type', $typeValue);
+                    }
+
+                    $typeQ->where(function (Builder $legacyQ) use ($slotKeys, $hasDocRecordsTable): void {
+                        foreach ($slotKeys as $slotKey) {
+                            $legacyQ->orWhere(function (Builder $slotQ) use ($slotKey, $hasDocRecordsTable): void {
+                                $slotQ->whereHas('DocumentLocation', function (Builder $docQ) use ($slotKey): void {
+                                    $docQ->whereNotNull($slotKey)
+                                        ->whereRaw("TRIM({$slotKey}) <> ''");
+                                });
+
+                                if ($hasDocRecordsTable) {
+                                    $slotQ->whereDoesntHave('documentRecords', function (Builder $recQ) use ($slotKey): void {
+                                        $recQ->where('document_key', $slotKey)
+                                            ->where('status', '!=', StudentDocumentRecord::StatusMissing);
+                                    });
+                                }
+                            });
+                        }
+                    });
+                });
+            }
+        });
+    }
+
+    /**
+     * Apply the shared per-student-type "Missing Required Docs" predicate using
+     * StudentDocumentService checklists and compliant status rules.
+     *
+     * @param  array<string, mixed>  $studentConfiguration
+     */
+    private function applyMissingRequiredDocsFilter(
+        Builder $query,
+        StudentDocumentService $documentService,
+        array $studentConfiguration,
+        ?int $schoolId,
+        bool $hasDocRecordsTable,
+    ): void {
+        $knownTypes = array_column(StudentType::cases(), 'value');
+        $defaultType = (string) ($studentConfiguration['default_type'] ?? StudentType::College->value);
+        $requiredKeysByType = [];
+
+        foreach ($knownTypes as $typeValue) {
+            $requiredKeys = collect($documentService->checklistFor($typeValue, $schoolId))
+                ->where('required', true)
+                ->pluck('key')
+                ->filter(static fn (mixed $key): bool => is_string($key) && in_array($key, DocumentLocation::DOCUMENT_FIELDS, true))
+                ->values()
+                ->all();
+
+            if ($requiredKeys !== []) {
+                $requiredKeysByType[$typeValue] = $requiredKeys;
+            }
+        }
+
+        if ($requiredKeysByType === []) {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
+
+        $query->where(function (Builder $outer) use ($requiredKeysByType, $knownTypes, $defaultType, $hasDocRecordsTable): void {
+            foreach ($requiredKeysByType as $typeValue => $requiredKeys) {
+                $outer->orWhere(function (Builder $typeQ) use ($typeValue, $defaultType, $knownTypes, $requiredKeys, $hasDocRecordsTable): void {
+                    if ($typeValue === $defaultType) {
+                        $typeQ->where(function (Builder $matchType) use ($typeValue, $knownTypes): void {
+                            $matchType->where('students.student_type', $typeValue)
+                                ->orWhereNull('students.student_type')
+                                ->orWhereNotIn('students.student_type', $knownTypes);
+                        });
+                    } else {
+                        $typeQ->where('students.student_type', $typeValue);
+                    }
+
+                    if ($hasDocRecordsTable) {
+                        $typeQ->where(function (Builder $missingSlot) use ($requiredKeys): void {
+                            foreach ($requiredKeys as $key) {
+                                $missingSlot->orWhereDoesntHave('documentRecords', function (Builder $recQ) use ($key): void {
+                                    $recQ->where('document_key', $key)
+                                        ->whereIn('status', StudentDocumentRecord::COMPLIANT_STATUSES);
+                                });
+                            }
+                        });
+                    } else {
+                        $typeQ->where(function (Builder $legacyMissing) use ($requiredKeys): void {
+                            $legacyMissing->whereNull('students.document_location_id')
+                                ->orWhereHas('DocumentLocation', function (Builder $docQ) use ($requiredKeys): void {
+                                    $docQ->where(function (Builder $missing) use ($requiredKeys): void {
+                                        foreach ($requiredKeys as $key) {
+                                            $missing->orWhereNull($key)
+                                                ->orWhereRaw("TRIM({$key}) = ''");
+                                        }
+                                    });
+                                });
+                        });
+                    }
+                });
+            }
+        });
+    }
+
+    /**
+     * Resolve the student's portal account summary for show/edit views using the same
+     * eligibility rules enforced by managePortalAccount() so staff, cross-school, or
+     * already-bound users are never surfaced as linkable student portal accounts.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function resolvePortalAccountSummary(Student $student, bool $includeEmailMismatch = false): ?array
+    {
+        $portalUser = $student->user;
+
+        if (! $portalUser && filled($student->email)) {
+            $normalizedEmail = mb_strtolower(mb_trim((string) $student->email));
+            $candidate = User::query()
+                ->whereRaw('LOWER(email) = ?', [$normalizedEmail])
+                ->first();
+
+            if ($candidate instanceof User && $this->isEligibleStudentPortalUser($candidate, $student)) {
+                $portalUser = $candidate;
+            }
+        }
+
+        if (! $portalUser instanceof User) {
+            return null;
+        }
+
+        $summary = [
+            'id' => $portalUser->id,
+            'name' => $portalUser->name,
+            'email' => $portalUser->email,
+            'is_linked' => (int) $student->user_id === (int) $portalUser->id,
+            'email_verified' => $portalUser->email_verified_at !== null,
+            'suspended' => $portalUser->suspended_at !== null,
+        ];
+
+        if ($includeEmailMismatch) {
+            $summary['email_mismatch'] = filled($student->email)
+                && strcasecmp((string) $student->email, (string) $portalUser->email) !== 0;
+        }
+
+        return $summary;
+    }
+
+    private function isEligibleStudentPortalUser(User $candidate, Student $student): bool
+    {
+        if ($candidate->canAccessAdminPortal() || $candidate->isFaculty()) {
+            return false;
+        }
+
+        if (filled($candidate->record_id) && (string) $candidate->record_id !== (string) $student->id) {
+            return false;
+        }
+
+        if (
+            $student->school_id !== null
+            && $candidate->school_id !== null
+            && (int) $candidate->school_id !== (int) $student->school_id
+        ) {
+            return false;
+        }
+
+        return ! Student::withoutSchoolScope()
+            ->withTrashed()
+            ->where('user_id', $candidate->id)
+            ->whereKeyNot($student->id)
+            ->exists();
+    }
+
+    /**
+     * Shared per-row normalization and validation used by both batch import preview and commit.
+     *
+     * @param  array<string, mixed>  $rawRow
+     * @param  array<string, mixed>  $config
+     * @param  array<string, mixed>  $policy
+     * @param  Collection<string, Course>  $coursesByCode
+     * @param  Collection<int, Course>  $coursesById
+     * @param  Collection<string, ShsStrand>  $strandsByName
+     * @param  Collection<int, ShsStrand>  $strandsById
+     * @return array{errors: list<string>, normalized: array<string, mixed>}
+     */
+    private function validateAndNormalizeBatchImportRow(
+        array $rawRow,
+        array $config,
+        array $policy,
+        ?int $schoolId,
+        Collection $coursesByCode,
+        Collection $coursesById,
+        Collection $strandsByName,
+        Collection $strandsById,
+        StudentConfigurationService $configService,
+        CurriculumCapabilityResolver $capabilityResolver,
+        bool $isCommit,
+    ): array {
+        $errors = [];
+
+        $cellKeys = [
+            'student_type',
+            'first_name',
+            'middle_name',
+            'last_name',
+            'gender',
+            'birth_date',
+            'email',
+            'phone',
+            'lrn',
+            'student_id',
+            'program',
+            'course_code',
+            'strand',
+            'course_id',
+            'shs_strand_id',
+            'year_level',
+            'academic_year',
+            'status',
+        ];
+
+        /** @var array<string, string|null> $cells */
+        $cells = [];
+        foreach ($cellKeys as $cellKey) {
+            if (! array_key_exists($cellKey, $rawRow) || $rawRow[$cellKey] === null) {
+                $cells[$cellKey] = null;
+
+                continue;
+            }
+
+            if (! is_scalar($rawRow[$cellKey])) {
+                $errors[] = "Field '{$cellKey}' must be a scalar value.";
+                $cells[$cellKey] = null;
+
+                continue;
+            }
+
+            $cells[$cellKey] = mb_trim((string) $rawRow[$cellKey]);
+        }
+
+        $typeRaw = $cells['student_type'];
+        $type = $typeRaw !== null && $typeRaw !== ''
+            ? mb_strtolower($typeRaw)
+            : ($isCommit ? '' : mb_strtolower((string) ($config['default_type'] ?? StudentType::College->value)));
+
+        if ($type === '' || StudentType::tryFrom($type) === null || ! in_array($type, $config['enabled_types'], true)) {
+            $errors[] = $type === ''
+                ? 'Student type is required.'
+                : "Unsupported student type '{$type}' for this school.";
+        }
+
+        $firstName = mb_trim(strip_tags($cells['first_name'] ?? ''));
+        $lastName = mb_trim(strip_tags($cells['last_name'] ?? ''));
+        $middleName = mb_trim(strip_tags($cells['middle_name'] ?? ''));
+        $genderRaw = $cells['gender'];
+        $gender = $genderRaw !== null
+            ? mb_strtolower($genderRaw)
+            : ($isCommit ? '' : mb_strtolower((string) ($config['defaults']['gender'] ?: 'male')));
+        $birthDateRaw = $cells['birth_date'] ?? '';
+        $email = $cells['email'] ?? '';
+        $phone = $cells['phone'] ?? '';
+        $lrn = $cells['lrn'] ?? '';
+        $manualId = $cells['student_id'] ?? '';
+        $programInput = $cells['program'] ?? $cells['course_code'] ?? $cells['strand'] ?? '';
+        $courseIdRaw = $cells['course_id'] ?? '';
+        $shsStrandIdRaw = $cells['shs_strand_id'] ?? '';
+        $yearLevelRaw = $cells['year_level'] ?? $cells['academic_year'] ?? '';
+        $statusRaw = $cells['status'];
+        $status = $statusRaw !== null && $statusRaw !== ''
+            ? mb_strtolower($statusRaw)
+            : StudentStatus::Applicant->value;
+
+        if ($firstName === '') {
+            $errors[] = 'First name is required.';
+        } elseif (mb_strlen($firstName) > 100) {
+            $errors[] = 'First name must not exceed 100 characters.';
+        }
+
+        if ($lastName === '') {
+            $errors[] = 'Last name is required.';
+        } elseif (mb_strlen($lastName) > 100) {
+            $errors[] = 'Last name must not exceed 100 characters.';
+        }
+
+        if ($middleName !== '' && mb_strlen($middleName) > 100) {
+            $errors[] = 'Middle name must not exceed 100 characters.';
+        }
+
+        if (! in_array($gender, ['male', 'female', 'other', 'prefer_not_to_say'], true)) {
+            $errors[] = 'Gender must be male, female, other, or prefer_not_to_say.';
+        }
+
+        $birthDate = null;
+        if ($birthDateRaw === '') {
+            $errors[] = 'Birth date is required (YYYY-MM-DD).';
+        } else {
+            try {
+                $parsed = Carbon::parse($birthDateRaw);
+                if (! $parsed->lt(Carbon::today())) {
+                    $errors[] = 'Birth date must be before today.';
+                } else {
+                    $birthDate = $parsed->toDateString();
+                }
+            } catch (Throwable) {
+                $errors[] = 'Invalid birth date format.';
+            }
+        }
+
+        if ($email !== '') {
+            if (mb_strlen($email) > 255) {
+                $errors[] = 'Email must not exceed 255 characters.';
+            } elseif (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $errors[] = 'Invalid email format.';
+            }
+        }
+
+        $emailRequired = (bool) (($config['fields']['email']['visible'] ?? true) && ($config['fields']['email']['required'] ?? false));
+        if ($emailRequired && $email === '') {
+            $errors[] = 'Email is required by school configuration.';
+        }
+
+        if ($phone !== '' && mb_strlen($phone) > 30) {
+            $errors[] = 'Phone must not exceed 30 characters.';
+        }
+
+        $phoneRequired = (bool) (($config['fields']['phone']['visible'] ?? true) && ($config['fields']['phone']['required'] ?? false));
+        if ($phoneRequired && $phone === '') {
+            $errors[] = 'Phone is required by school configuration.';
+        }
+
+        $external = $configService->externalFor($type, $schoolId);
+        if ($external['enabled']) {
+            $externalLabel = $external['label'] ?: 'External ID';
+            if (($external['required'] || $external['use_as_student_id']) && $lrn === '') {
+                $errors[] = $externalLabel.' is required.';
+            } elseif ($lrn !== '') {
+                $minLen = (int) ($external['min_length'] ?? 1);
+                $maxLen = min(32, (int) ($external['max_length'] ?? 32));
+                if (mb_strlen($lrn) < $minLen || mb_strlen($lrn) > $maxLen) {
+                    $errors[] = "{$externalLabel} must be between {$minLen} and {$maxLen} characters.";
+                } elseif (($external['format'] ?? 'text') === 'digits' && ! preg_match('/\A[0-9]+\z/', $lrn)) {
+                    $errors[] = "{$externalLabel} must contain digits only.";
+                } elseif (($external['format'] ?? 'text') === 'alphanumeric' && ! preg_match('/\A[A-Za-z0-9]+\z/', $lrn)) {
+                    $errors[] = "{$externalLabel} must be alphanumeric.";
+                }
+            }
+        } elseif ($lrn !== '' && mb_strlen($lrn) > 32) {
+            $errors[] = 'LRN must not exceed 32 characters.';
+        }
+
+        if ($manualId !== '' && mb_strlen($manualId) > 64) {
+            $errors[] = 'Student ID must not exceed 64 characters.';
+        }
+
+        if (($policy['assignment_mode'] ?? 'automatic') === 'manual' && ! ($external['enabled'] && $external['use_as_student_id']) && $manualId === '') {
+            $errors[] = ($policy['display_label'] ?: 'Student ID').' is required in manual ID mode.';
+        }
+
+        $courseId = null;
+        $shsStrandId = null;
+        $resolvedProgramLabel = $programInput;
+
+        if ($type === StudentType::SeniorHighSchool->value) {
+            $strand = null;
+            if ($shsStrandIdRaw !== '') {
+                if (preg_match('/\A[1-9][0-9]*\z/', $shsStrandIdRaw)) {
+                    $strand = $strandsById->get((int) $shsStrandIdRaw);
+                }
+                if (! $strand) {
+                    $errors[] = "SHS strand ID '{$shsStrandIdRaw}' not found.";
+                }
+            } elseif ($programInput !== '') {
+                $strand = $strandsByName->get(mb_strtolower($programInput));
+                if (! $strand) {
+                    $errors[] = "SHS strand '{$programInput}' not found.";
+                }
+            } else {
+                $defaultStrandId = $config['defaults']['shs_strand_id'] ?? null;
+                if (is_numeric($defaultStrandId) && (int) $defaultStrandId > 0) {
+                    $strand = $strandsById->get((int) $defaultStrandId);
+                }
+                if (! $strand) {
+                    $errors[] = 'SHS strand is required.';
+                }
+            }
+
+            if ($strand instanceof ShsStrand) {
+                $shsStrandId = $strand->id;
+                $resolvedProgramLabel = $strand->strand_name;
+            }
+        } elseif ($type !== '' && StudentType::tryFrom($type) !== null) {
+            $course = null;
+            if ($courseIdRaw !== '') {
+                if (preg_match('/\A[1-9][0-9]*\z/', $courseIdRaw)) {
+                    $course = $coursesById->get((int) $courseIdRaw);
+                }
+                if (! $course) {
+                    $errors[] = "Program/course ID '{$courseIdRaw}' not found.";
+                }
+            } elseif ($programInput !== '') {
+                $course = $coursesByCode->get(mb_strtolower($programInput));
+                if (! $course) {
+                    $errors[] = "Program/course code '{$programInput}' not found.";
+                }
+            } else {
+                $defaultCourseId = $config['defaults']['course_id'] ?? null;
+                if (is_numeric($defaultCourseId) && (int) $defaultCourseId > 0) {
+                    $course = $coursesById->get((int) $defaultCourseId);
+                }
+                if (! $course) {
+                    $errors[] = 'Program/course code is required.';
+                }
+            }
+
+            if ($course instanceof Course) {
+                $courseId = $course->id;
+                $resolvedProgramLabel = $course->code;
+
+                if ($type === StudentType::TESDA->value && ! $capabilityResolver->isTesdaCourse($course)) {
+                    $errors[] = "Course '{$course->code}' is not a TESDA qualification.";
+                } elseif ($type === StudentType::College->value && ! $capabilityResolver->isCollegeCourse($course)) {
+                    $errors[] = "Course '{$course->code}' is not a college program.";
+                }
+            }
+        }
+
+        $configuredLevelItems = is_array($config['year_levels'][$type] ?? null) ? $config['year_levels'][$type] : [];
+        $configuredLevels = array_values(array_map(
+            static fn (array $item): int => (int) ($item['value'] ?? 0),
+            $configuredLevelItems,
+        ));
+        $yearLevel = $this->parseImportYearLevel(
+            raw: $yearLevelRaw,
+            configuredLevels: $configuredLevels,
+            configuredLevelItems: $configuredLevelItems,
+            allowBlankDefault: ! $isCommit,
+        );
+
+        if ($yearLevel === null || ! in_array($yearLevel, $configuredLevels, true)) {
+            $errors[] = $yearLevelRaw === ''
+                ? "Year/grade level is required for {$type}."
+                : "Year/grade level '{$yearLevelRaw}' is not configured for {$type}.";
+        }
+
+        if (StudentStatus::tryFrom($status) === null) {
+            $errors[] = "Invalid student status '{$status}'.";
+        }
+
+        return [
+            'errors' => $errors,
+            'normalized' => [
+                'student_type' => $type,
+                'student_id' => $manualId !== '' ? $manualId : null,
+                'lrn' => $lrn !== '' ? $lrn : null,
+                'first_name' => $firstName,
+                'middle_name' => $middleName !== '' ? $middleName : null,
+                'last_name' => $lastName,
+                'gender' => $gender,
+                'birth_date' => $birthDate,
+                'email' => $email !== '' ? $email : null,
+                'phone' => $phone !== '' ? $phone : null,
+                'course_id' => $courseId,
+                'shs_strand_id' => $shsStrandId,
+                'program_label' => $resolvedProgramLabel,
+                'academic_year' => $yearLevel,
+                'status' => $status,
+            ],
+        ];
+    }
+
+    /**
+     * Parse an imported year/grade level strictly from supported formats without stripping
+     * signs or arbitrary non-digits (so values such as "-1" are rejected rather than coerced to 1).
+     *
+     * @param  list<int>  $configuredLevels
+     * @param  list<array<string, mixed>>  $configuredLevelItems
+     */
+    private function parseImportYearLevel(
+        string $raw,
+        array $configuredLevels,
+        array $configuredLevelItems,
+        bool $allowBlankDefault = true,
+    ): ?int {
+        $trimmed = mb_trim($raw);
+
+        if ($trimmed === '') {
+            if (! $allowBlankDefault) {
+                return null;
+            }
+
+            return isset($configuredLevels[0]) ? $configuredLevels[0] : null;
+        }
+
+        // Exact positive integer (e.g. "1", "11")
+        if (preg_match('/\A[1-9][0-9]*\z/', $trimmed)) {
+            return (int) $trimmed;
+        }
+
+        // Exact match against any configured label for this student type (case-insensitive)
+        $lower = mb_strtolower($trimmed);
+        foreach ($configuredLevelItems as $item) {
+            $label = mb_strtolower(mb_trim((string) ($item['label'] ?? '')));
+            if ($label !== '' && $label === $lower) {
+                return (int) ($item['value'] ?? 0);
+            }
+        }
+
+        // Supported ordinal format (e.g. "1st", "2nd Year", "3rd yr")
+        if (preg_match('/\A([1-9][0-9]*)(?:st|nd|rd|th)(?:\s+(?:year|yr))?\z/i', $trimmed, $matches)) {
+            return (int) $matches[1];
+        }
+
+        // Supported labeled format (e.g. "Grade 11", "Year 2", "Level 3", "Training Level 1")
+        if (preg_match('/\A(?:grade|year|yr|level|training\s+level)\s+([1-9][0-9]*)\z/i', $trimmed, $matches)) {
+            return (int) $matches[1];
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  string|array<int, string>  $permissions
+     * @param  array<int, UserRole|string>  $allowedRoles
+     */
+    private function authorizeStudentAccess(
+        string|array $permissions,
+        array $allowedRoles = [UserRole::Admin, UserRole::Registrar, UserRole::AssistantRegistrar],
+    ): void {
+        /** @var User|null $user */
+        $user = Auth::user();
+        $this->abortUnlessUserHasAnyPermission($user, $permissions, $allowedRoles);
     }
 
     /**
@@ -3690,16 +5521,27 @@ final class AdministratorStudentManagementController extends Controller
 
     private function getFormOptions(CurriculumCapabilityResolver $capabilityResolver, ?Student $student = null, bool $includeSubjects = true): array
     {
-        $configuration = app(\App\Services\StudentConfigurationService::class)->get($student?->school_id);
+        $schoolId = $student?->school_id ?? app(TenantContext::class)->getCurrentSchoolId();
+        $configService = app(StudentConfigurationService::class);
+        $configuration = $configService->get($schoolId);
+        $schoolProfile = $configService->schoolProfile($schoolId);
+        $documentService = app(StudentDocumentService::class);
         $enabledTypes = $configuration['enabled_types'];
         if ($student?->student_type !== null) {
             $enabledTypes[] = $student->student_type->value;
         }
 
+        $documentChecklists = [];
+        foreach (array_unique($enabledTypes) as $typeValue) {
+            $documentChecklists[$typeValue] = $documentService->checklistFor((string) $typeValue, $schoolId);
+        }
+
         return [
             'student_configuration' => $configuration,
-            'configuration_scope' => \App\Services\StudentConfigurationService::scope(app(\App\Services\TenantContext::class)->getCurrentSchoolId()),
-            'identifier_policy' => app(IdentifierGenerator::class)->studentPolicy(),
+            'school_profile' => $schoolProfile,
+            'document_checklists' => $documentChecklists,
+            'configuration_scope' => StudentConfigurationService::scope($schoolId),
+            'identifier_policy' => app(IdentifierGenerator::class)->studentPolicy(schoolId: $schoolId),
             'types' => collect(StudentType::cases())->filter(fn ($type): bool => in_array($type->value, $enabledTypes, true))->map(fn ($type): array => ['value' => $type->value, 'label' => $configuration['type_labels'][$type->value]])->values()->all(),
             'statuses' => collect(StudentStatus::cases())->map(fn ($s): array => ['value' => $s->value, 'label' => $s->getLabel()])->values()->all(),
             'scholarship_types' => collect(ScholarshipType::cases())->map(fn ($s): array => ['value' => $s->value, 'label' => $s->getLabel()])->values()->all(),

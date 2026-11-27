@@ -1504,11 +1504,18 @@ final class EnrollmentRegistrationController extends Controller
             return;
         }
 
-        $student->loadMissing('DocumentLocation');
-        if (! $student->DocumentLocation) {
-            $docLocation = DocumentLocation::create($mappedAttributes);
-            $student->forceFill(['document_location_id' => $docLocation->id])->save();
-        } else {
+        DB::transaction(function () use ($student, $mappedAttributes): void {
+            Student::withoutSchoolScope()->withTrashed()->whereKey($student->id)->lockForUpdate()->first();
+            $student->refresh()->load('DocumentLocation');
+
+            if (! $student->DocumentLocation) {
+                $docLocation = DocumentLocation::create($mappedAttributes);
+                $student->forceFill(['document_location_id' => $docLocation->id])->save();
+                $student->setRelation('DocumentLocation', $docLocation);
+
+                return;
+            }
+
             $updates = [];
             foreach ($mappedAttributes as $column => $path) {
                 $existing = $student->DocumentLocation->getAttribute($column);
@@ -1520,7 +1527,7 @@ final class EnrollmentRegistrationController extends Controller
             if ($updates !== []) {
                 $student->DocumentLocation->update($updates);
             }
-        }
+        });
     }
 
     /**

@@ -1,4 +1,5 @@
 import type { User } from "@/types/user";
+import type { ActiveHoldSummary, DocumentDossier, IdentifierPolicy, SchoolProfile, StudentConfiguration } from "./shared-types";
 
 export interface Branding {
     organizationName: string;
@@ -15,6 +16,9 @@ export interface StudentOptions {
     enrollment_ids: { value: number; label: string }[];
     previous_period: { academic_year: string; semester: number };
     courses: { value: number; label: string }[];
+    student_configuration?: StudentConfiguration;
+    identifier_policy?: IdentifierPolicy;
+    school_profile?: SchoolProfile;
 }
 
 export interface EnrolledClassSchedule {
@@ -112,6 +116,7 @@ export type StudentDetail = {
     year_level_options?: Array<{ value: number; label: string }>;
     id: number;
     student_id: number | string | null;
+    lrn?: string | null;
     name: string;
     first_name: string | null;
     middle_name: string | null;
@@ -128,6 +133,24 @@ export type StudentDetail = {
     academic_year_value: number | null;
     custom_fields?: { key: string; label: string; value: string | number | null }[];
     course: { id?: number; code: string | null; title: string | null };
+    portal_account?: {
+        id: number;
+        name?: string;
+        email: string;
+        is_linked?: boolean;
+        email_verified?: boolean;
+        suspended?: boolean;
+        email_mismatch?: boolean;
+    } | null;
+    active_holds?: ActiveHoldSummary[];
+    profile_completion?: {
+        percentage?: number;
+        completed?: number;
+        total?: number;
+        missing_fields?: string[];
+    } | null;
+    dossier?: DocumentDossier;
+    export_zip_url?: string | null;
     created_at: string | null;
     updated_at: string | null;
     deleted_at: string | null;

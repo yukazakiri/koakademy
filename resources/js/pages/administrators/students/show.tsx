@@ -329,9 +329,6 @@ export default function AdministratorStudentShow({ user, student, options }: Stu
                         <Link href={route("administrators.students.edit", student.id)} className={buttonVariants()}>
                             Edit Student
                         </Link>
-                        <a href={student.filament.view_url} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline" })}>
-                            Open in Filament
-                        </a>
                     </div>
                 </div>
 

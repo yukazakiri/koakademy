@@ -8,6 +8,7 @@ use App\Models\DocumentLocation;
 use App\Models\Student;
 use App\Models\User;
 use App\Services\StudentConfigurationService;
+use App\Services\StudentDocumentService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -19,36 +20,77 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class StudentDocumentController extends Controller
 {
+    public function __construct(
+        private readonly StudentDocumentService $documentService,
+        private readonly StudentConfigurationService $configuration,
+    ) {}
+
     public function index(Request $request): Response
     {
         /** @var User $user */
         $user = $request->user();
         $student = $this->resolveStudent($user);
-        $docLocation = $student?->DocumentLocation;
-        $checklist = app(StudentConfigurationService::class)->documentChecklist($student?->school_id);
 
         $documents = [];
-        $uploadedCount = 0;
+        $summary = [
+            'uploaded' => 0,
+            'compliant' => 0,
+            'total' => 0,
+            'pending_review' => 0,
+            'rejected' => 0,
+        ];
 
-        foreach ($checklist as $key => $meta) {
-            $storedPath = $docLocation?->getAttribute($key);
-            $hasFile = is_string($storedPath) && mb_trim($storedPath) !== '';
+        if ($student instanceof Student) {
+            $dossier = $this->documentService->dossierFor($student, forStudentPortal: true);
+            $documents = collect($dossier['slots'])
+                ->map(fn (array $slot): array => [
+                    'key' => $slot['key'],
+                    'label' => $slot['label'],
+                    'description' => $slot['description'],
+                    'accepted' => $slot['accepted'],
+                    'required' => $slot['required'],
+                    'status' => $slot['has_file'] && $slot['status'] === 'pending_review' ? 'pending_review' : $slot['status'],
+                    'is_compliant' => $slot['is_compliant'],
+                    'has_file' => $slot['has_file'],
+                    'file_name' => $slot['file_name'],
+                    'rejection_reason' => $slot['rejection_reason'],
+                    'waiver_reason' => $slot['waiver_reason'],
+                    'verified_at_label' => $slot['verified_at_label'],
+                    'download_url' => $slot['download_url'],
+                    'preview_url' => $slot['preview_url'],
+                ])
+                ->values()
+                ->all();
 
-            if ($hasFile) {
-                $uploadedCount++;
-            }
-
-            $documents[] = [
-                'key' => $key,
-                'label' => $meta['label'],
-                'description' => $meta['description'],
-                'accepted' => $meta['accepted'],
-                'required' => $meta['required'],
-                'status' => $hasFile ? 'on_file' : 'missing',
-                'file_name' => $hasFile ? basename($storedPath) : null,
-                'download_url' => $hasFile ? route('student.documents.download', ['documentType' => $key]) : null,
-                'preview_url' => $hasFile ? route('student.documents.download', ['documentType' => $key, 'preview' => 1]) : null,
+            $docsCollection = collect($documents);
+            $summary = [
+                'uploaded' => $docsCollection->where('has_file', true)->count(),
+                'compliant' => $docsCollection->where('is_compliant', true)->count(),
+                'total' => $docsCollection->count(),
+                'pending_review' => $docsCollection->where('status', 'pending_review')->count(),
+                'rejected' => $docsCollection->where('status', 'rejected')->count(),
             ];
+        } else {
+            $checklist = $this->configuration->documentChecklist();
+            foreach ($checklist as $key => $meta) {
+                $documents[] = [
+                    'key' => $key,
+                    'label' => $meta['label'],
+                    'description' => $meta['description'],
+                    'accepted' => $meta['accepted'],
+                    'required' => $meta['required'],
+                    'status' => 'missing',
+                    'is_compliant' => false,
+                    'has_file' => false,
+                    'file_name' => null,
+                    'rejection_reason' => null,
+                    'waiver_reason' => null,
+                    'verified_at_label' => null,
+                    'download_url' => null,
+                    'preview_url' => null,
+                ];
+            }
+            $summary['total'] = count($documents);
         }
 
         return Inertia::render('student/documents/index', [
@@ -63,13 +105,10 @@ final class StudentDocumentController extends Controller
                 'id' => $student->id,
                 'student_id' => $student->student_id,
                 'full_name' => $student->full_name,
-                'course' => $student->Course?->title ?? $student->Course?->name ?? $student->shsStrand?->name,
+                'course' => $student->Course?->title ?? $student->Course?->name ?? $student->shsStrand?->strand_name,
             ] : null,
             'documents' => $documents,
-            'summary' => [
-                'uploaded' => $uploadedCount,
-                'total' => count($checklist),
-            ],
+            'summary' => $summary,
         ]);
     }
 
@@ -81,7 +120,7 @@ final class StudentDocumentController extends Controller
 
         abort_if(! $student instanceof Student, 404, 'Student record not found.');
 
-        $checklist = app(StudentConfigurationService::class)->documentChecklist($student->school_id);
+        $checklist = $this->configuration->documentChecklist($student->school_id);
         $allowedDocumentTypes = array_values(array_intersect(
             array_keys($checklist),
             DocumentLocation::DOCUMENT_FIELDS,
@@ -95,36 +134,17 @@ final class StudentDocumentController extends Controller
         $type = (string) $validated['document_type'];
         /** @var UploadedFile $file */
         $file = $request->file('file');
-        $privateDisk = (string) config('filesystems.private_disk', 'private');
 
-        $path = $file->store("students/{$student->id}/documents", $privateDisk);
-        abort_if(! is_string($path) || $path === '', 500, 'Could not store document.');
+        $this->documentService->uploadFixed(
+            student: $student,
+            documentKey: $type,
+            file: $file,
+            actor: $user,
+            autoVerify: false,
+        );
 
-        if (! $student->DocumentLocation) {
-            $docLocation = DocumentLocation::create([$type => $path]);
-            $student->document_location_id = $docLocation->id;
-            $student->save();
-        } else {
-            $oldPath = $student->DocumentLocation->getAttribute($type);
-            if (is_string($oldPath) && $oldPath !== '' && ! filter_var($oldPath, FILTER_VALIDATE_URL) && ! str_starts_with($oldPath, '/')) {
-                $candidateDisks = array_values(array_unique(array_filter([
-                    $privateDisk,
-                    'private',
-                    is_string(config('filesystems.default')) ? (string) config('filesystems.default') : null,
-                    'public',
-                ])));
-
-                foreach ($candidateDisks as $disk) {
-                    if (Storage::disk($disk)->exists($oldPath)) {
-                        Storage::disk($disk)->delete($oldPath);
-                    }
-                }
-            }
-
-            $student->DocumentLocation->update([$type => $path]);
-        }
-
-        $label = $checklist[$type]['label'] ?? str_replace('_', ' ', ucfirst($type));
+        $label = $checklist[$type]['label']
+            ?? $this->documentService->labelFor($type, $student->student_type?->value, $student->school_id);
 
         return redirect()
             ->back()
@@ -139,50 +159,23 @@ final class StudentDocumentController extends Controller
 
         abort_if(! $student instanceof Student, 404, 'Student record not found.');
 
-        $configuredSlots = array_keys(app(StudentConfigurationService::class)->documentChecklist($student->school_id, onlyVisible: false));
+        $configuredSlots = array_keys($this->configuration->documentChecklist($student->school_id, onlyVisible: false));
         $allowedDocumentTypes = array_values(array_unique([...$configuredSlots, ...DocumentLocation::DOCUMENT_FIELDS]));
 
         if (! in_array($documentType, $allowedDocumentTypes, true) || ! in_array($documentType, DocumentLocation::DOCUMENT_FIELDS, true)) {
             abort(404, 'Invalid document type.');
         }
 
-        $path = $student->DocumentLocation?->getAttribute($documentType);
+        $resolved = $this->documentService->resolveFixedFile($student, $documentType);
+        abort_if($resolved === null, 404, 'Document not found.');
 
-        if (! is_string($path) || mb_trim($path) === '' || str_contains($path, '..')) {
-            abort(404, 'Document not found.');
-        }
-
-        $privateDisk = (string) config('filesystems.private_disk', 'private');
-        $candidateDisks = array_values(array_unique(array_filter([
-            $privateDisk,
-            'private',
-            is_string(config('filesystems.default')) ? (string) config('filesystems.default') : null,
-            'public',
-        ])));
-
-        $resolvedDisk = null;
-        foreach ($candidateDisks as $disk) {
-            if (Storage::disk($disk)->exists($path)) {
-                $resolvedDisk = $disk;
-                break;
-            }
-        }
-
-        abort_if($resolvedDisk === null, 404, 'Document file not found on storage.');
-
-        $extension = pathinfo($path, PATHINFO_EXTENSION);
-        $studentNumber = preg_replace('/[^A-Za-z0-9_-]/', '', (string) ($student->student_id ?? $student->id)) ?: (string) $student->id;
-        $filename = "{$studentNumber}_{$documentType}".($extension !== '' ? ".{$extension}" : '');
+        $headers = ['X-Content-Type-Options' => 'nosniff'];
 
         if ($request->boolean('preview')) {
-            return Storage::disk($resolvedDisk)->response($path, $filename, [
-                'X-Content-Type-Options' => 'nosniff',
-            ]);
+            return Storage::disk($resolved['disk'])->response($resolved['path'], $resolved['filename'], $headers);
         }
 
-        return Storage::disk($resolvedDisk)->download($path, $filename, [
-            'X-Content-Type-Options' => 'nosniff',
-        ]);
+        return Storage::disk($resolved['disk'])->download($resolved['path'], $resolved['filename'], $headers);
     }
 
     private function resolveStudent(User $user): ?Student

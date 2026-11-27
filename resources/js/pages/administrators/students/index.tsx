@@ -1,6 +1,7 @@
 import AdminLayout from "@/components/administrators/admin-layout";
 import { AdminDeferredSection } from "@/components/administrators/admin-skeleton";
 import { Filters, type FilterFieldConfig, type Filter as FilterType } from "@/components/reui/filters";
+import { IconTile } from "@/components/reui/icon-tile";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -13,66 +14,94 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AdminLink } from "@/lib/admin-navigation";
+import { canAccessRoute } from "@/config/admin-routes";
 import { cn } from "@/lib/utils";
 import type { User } from "@/types/user";
-import { Head, router, useRemember } from "@inertiajs/react";
+import { Head, Link, router, usePage, useRemember } from "@inertiajs/react";
 import type { SortingState } from "@tanstack/react-table";
 import {
+    AlertCircle,
     Award,
+    Bookmark,
     BookOpen,
     Briefcase,
     Building2,
     CalendarCheck,
     CheckCircle,
-    Filter,
+    Clock,
+    FileCheck2,
+    FileSpreadsheet,
+    FileWarning,
     GitMerge,
     GraduationCap,
-    HelpCircle,
+    KeyRound,
     Layers,
     LayoutGrid,
     List,
     Loader2,
-    MapPin,
     Plus,
     RotateCcw,
     Search,
+    ShieldAlert,
     Trash2,
     UserCheck,
-    UserIcon,
     UserPlus,
     Users,
     X,
-    XCircle,
     Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { createColumns, Student } from "./columns";
+import { createColumns, type Student } from "./columns";
+import {
+    SchoolAdaptiveQuickCreateDrawer,
+    type QuickCreateCourseOption,
+    type QuickCreateStrandOption,
+} from "./components/school-adaptive-quick-create-drawer";
 import { StudentInspectorDrawer } from "./components/student-inspector-drawer";
 import { DataTable } from "./data-table";
+import type { IdentifierPolicy, SchoolProfile, StudentConfiguration, TriageCounts } from "./shared-types";
 
 declare let route: (name: string, params?: Record<string, unknown> | string | number) => string;
 
+type TriageKey = "all" | "needs_doc_review" | "missing_docs" | "active_holds" | "no_portal" | "incomplete_profile" | "trashed";
+
+interface SavedView {
+    id: string;
+    name: string;
+    triage: TriageKey;
+    search: string;
+    filters: FilterType[];
+}
+
+const SAVED_VIEWS_STORAGE_KEY = "koakademy:students:saved-views:v1";
+const MAX_SAVED_VIEWS = 6;
+
+function resolveTriageFromProps(filters: StudentsIndexProps["filters"]): TriageKey {
+    if (filters.triage && filters.triage !== "all") {
+        return filters.triage;
+    }
+    if (filters.trashed === "trashed") {
+        return "trashed";
+    }
+    return "all";
+}
+
 function parseSortOption(value: string): { sort: string; direction: "asc" | "desc" } {
     const [sort = "created_at", direction = "desc"] = value.split(":");
-
-    return {
-        sort,
-        direction: direction === "asc" ? "asc" : "desc",
-    };
+    return { sort, direction: direction === "asc" ? "asc" : "desc" };
 }
 
 function extractFiltersFromProps(filters: StudentsIndexProps["filters"]): FilterType[] {
     const initialFilters: FilterType[] = [];
+    const resolvedTriage = resolveTriageFromProps(filters);
     const trashedValue = filters.trashed ?? "active";
-    if (trashedValue !== "active") {
+    if (trashedValue !== "active" && resolvedTriage !== "trashed") {
         initialFilters.push({ id: "trashed", field: "trashed", operator: "is", values: [trashedValue] });
     }
     if (filters.type) initialFilters.push({ id: "type", field: "type", operator: "is", values: [filters.type] });
@@ -82,23 +111,13 @@ function extractFiltersFromProps(filters: StudentsIndexProps["filters"]): Filter
         initialFilters.push({ id: "department_id", field: "department_id", operator: "is", values: [String(filters.department_id)] });
     if (filters.year_level) initialFilters.push({ id: "year_level", field: "year_level", operator: "is", values: [String(filters.year_level)] });
     if (filters.current_enrollment)
-        initialFilters.push({
-            id: "current_enrollment",
-            field: "current_enrollment",
-            operator: "is",
-            values: [filters.current_enrollment],
-        });
+        initialFilters.push({ id: "current_enrollment", field: "current_enrollment", operator: "is", values: [filters.current_enrollment] });
     if (filters.scholarship_type)
         initialFilters.push({ id: "scholarship_type", field: "scholarship_type", operator: "is", values: [filters.scholarship_type] });
     if (filters.employment_status)
         initialFilters.push({ id: "employment_status", field: "employment_status", operator: "is", values: [filters.employment_status] });
     if (filters.is_indigenous_person)
-        initialFilters.push({
-            id: "is_indigenous_person",
-            field: "is_indigenous_person",
-            operator: "is",
-            values: [filters.is_indigenous_person],
-        });
+        initialFilters.push({ id: "is_indigenous_person", field: "is_indigenous_person", operator: "is", values: [filters.is_indigenous_person] });
     if (filters.previous_semester_cleared)
         initialFilters.push({
             id: "previous_semester_cleared",
@@ -112,22 +131,14 @@ function extractFiltersFromProps(filters: StudentsIndexProps["filters"]): Filter
 
 interface StudentsIndexProps {
     user: User;
-    filament: {
-        students: {
-            index_url: string;
-            create_url: string;
-        };
-    };
     students?: {
         data: Student[];
-        total: number;
-        from: number;
-        to: number;
         current_page: number;
         last_page: number;
         per_page: number;
-        next_page_url: string | null;
-        prev_page_url: string | null;
+        total: number;
+        from: number | null;
+        to: number | null;
     };
     stats: {
         total_students: number;
@@ -135,166 +146,138 @@ interface StudentsIndexProps {
         total_applicants: number;
         total_graduated: number;
     };
+    triage_counts?: TriageCounts;
     filters: {
-        search?: string | null;
-        type?: string | null;
-        status?: string | null;
-        course_id?: number | null;
-        department_id?: number | null;
-        year_level?: number | null;
-        current_enrollment?: "enrolled" | "not_enrolled" | null;
-        scholarship_type?: string | null;
-        employment_status?: string | null;
-        is_indigenous_person?: string | null;
-        previous_semester_cleared?: string | null;
-        trashed?: "active" | "trashed" | "all" | null;
-        sort?: string | null;
-        direction?: "asc" | "desc" | null;
-        per_page?: number;
+        search: string | null;
+        type: string | null;
+        status: string | null;
+        course_id: number | null;
+        department_id: number | null;
+        year_level: number | null;
+        current_enrollment: "enrolled" | "not_enrolled" | null;
+        scholarship_type: string | null;
+        employment_status: string | null;
+        is_indigenous_person: string | null;
+        region_of_origin: string | null;
+        previous_semester_cleared: string | null;
+        triage?: TriageKey | null;
+        trashed: "active" | "trashed" | "all";
+        sort: string;
+        direction: "asc" | "desc";
+        per_page: number;
     };
     options: {
         types: { value: string; label: string }[];
         statuses: { value: string; label: string }[];
         courses: { value: string; label: string }[];
+        quick_create_courses?: QuickCreateCourseOption[];
+        shs_strands?: QuickCreateStrandOption[];
         departments: { value: string; label: string }[];
         year_levels: { value: string; label: string }[];
         scholarship_types: { value: string; label: string }[];
         employment_statuses: { value: string; label: string }[];
+        student_configuration?: StudentConfiguration;
+        identifier_policy?: IdentifierPolicy;
+        school_profile?: SchoolProfile;
     };
 }
 
-type QuickCohort = "all" | "enrolled" | "applicant" | "graduated" | "trashed";
+export default function AdministratorStudentsIndex({
+    user,
+    students,
+    stats,
+    triage_counts,
+    filters: serverFilters,
+    options,
+}: StudentsIndexProps) {
+    const { props: pageProps } = usePage<{ auth?: { user?: User | null } }>();
+    const sharedAuthUser = pageProps.auth?.user;
+    const resolvedUserRole = sharedAuthUser?.role ?? user.role ?? "";
+    const resolvedUserPermissions = sharedAuthUser?.permissions ?? user.permissions ?? [];
+    const canCreateStudent = useMemo(
+        () =>
+            canAccessRoute(
+                {
+                    id: "admin-students-create",
+                    title: "Create Student",
+                    link: "/administrators/students/create",
+                    requiredPermission: "Create:Student",
+                },
+                resolvedUserRole,
+                resolvedUserPermissions,
+            ),
+        [resolvedUserRole, resolvedUserPermissions],
+    );
 
-export default function AdministratorStudentsIndex({ user, students, stats, filters, options }: StudentsIndexProps) {
-    const studentRows = students?.data ?? [];
+    const schoolProfile = options.school_profile;
+    const identifierPolicy = options.identifier_policy;
+    const studentConfig = options.student_configuration;
+
+    const [searchTerm, setSearchTerm] = useState(serverFilters.search ?? "");
+    const [activeTriage, setActiveTriage] = useState<TriageKey>(() => resolveTriageFromProps(serverFilters));
+    const [filters, setFilters] = useState<FilterType[]>(() => extractFiltersFromProps(serverFilters));
+    const [sort, setSort] = useState(serverFilters.sort || "created_at");
+    const [direction, setDirection] = useState<"asc" | "desc">(serverFilters.direction === "asc" ? "asc" : "desc");
+    const [perPage, setPerPage] = useState(serverFilters.per_page || 20);
+    const [viewMode, setViewMode] = useRemember<"list" | "grid">("list", "admin-students-view-mode");
+    const [isTableLoading, setIsTableLoading] = useState(false);
+
+    // Quick-create & Inspector drawers
+    const [quickCreateOpen, setQuickCreateOpen] = useState(false);
     const [inspectedStudentId, setInspectedStudentId] = useState<number | null>(null);
-    const inspectedIndex = inspectedStudentId !== null ? studentRows.findIndex((row) => row.id === inspectedStudentId) : -1;
-    const inspectedStudent = inspectedIndex >= 0 ? studentRows[inspectedIndex] : null;
-    const [search, setSearch] = useState(filters.search || "");
-    const searchInputRef = useRef<HTMLInputElement>(null);
-    const searchInputFocusedRef = useRef(false);
-    const searchDraftRef = useRef(filters.search || "");
-    const debouncedSearchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [inspectorTab, setInspectorTab] = useState<"overview" | "documents" | "holds" | "portal">("overview");
 
-    const [viewMode, setViewMode] = useRemember<"list" | "grid">("list", "administrators.students.index:viewMode");
-    const [sortOption, setSortOption] = useState(`${filters.sort ?? "created_at"}:${filters.direction ?? "desc"}`);
-    const [sorting, setSorting] = useState<SortingState>(() => {
-        const initialSort = parseSortOption(`${filters.sort ?? "created_at"}:${filters.direction ?? "desc"}`);
-
-        return [{ id: initialSort.sort, desc: initialSort.direction === "desc" }];
+    // Saved views
+    const [savedViews, setSavedViews] = useState<SavedView[]>(() => {
+        if (typeof window === "undefined") return [];
+        try {
+            const raw = window.localStorage.getItem(SAVED_VIEWS_STORAGE_KEY);
+            return raw ? (JSON.parse(raw) as SavedView[]) : [];
+        } catch {
+            return [];
+        }
     });
 
-    const [activeFilters, setActiveFilters] = useState<FilterType[]>(() => extractFiltersFromProps(filters));
+    // Row actions modal state
+    const [softDeleteTarget, setSoftDeleteTarget] = useState<Student | null>(null);
+    const [forceDeleteTarget, setForceDeleteTarget] = useState<Student | null>(null);
+    const [forceDeleteConfirmText, setForceDeleteConfirmText] = useState("");
+    const [restoreTarget, setRestoreTarget] = useState<Student | null>(null);
+    const [isMutating, setIsMutating] = useState(false);
 
-    // Keyboard shortcut to focus search input: '/' or 'Cmd+K' / 'Ctrl+K'
+    const searchInputRef = useRef<HTMLInputElement>(null);
+    const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const studentRows = students?.data ?? [];
+
     useEffect(() => {
-        const handleKeyDown = (event: KeyboardEvent) => {
-            if (
-                (event.key === "/" || ((event.metaKey || event.ctrlKey) && event.key === "k")) &&
-                document.activeElement?.tagName !== "INPUT" &&
-                document.activeElement?.tagName !== "TEXTAREA"
-            ) {
+        setSearchTerm(serverFilters.search ?? "");
+        setActiveTriage(resolveTriageFromProps(serverFilters));
+        setFilters(extractFiltersFromProps(serverFilters));
+        setSort(serverFilters.sort || "created_at");
+        setDirection(serverFilters.direction === "asc" ? "asc" : "desc");
+        setPerPage(serverFilters.per_page || 20);
+    }, [serverFilters]);
+
+    // Press `/` (ONLY `/` — never hijack global Cmd/Ctrl+K command palette!)
+    useEffect(() => {
+        const onKeyDown = (event: KeyboardEvent) => {
+            const target = event.target as HTMLElement | null;
+            const isEditable =
+                target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+            if (event.key === "/" && !isEditable && !event.metaKey && !event.ctrlKey && !event.altKey) {
                 event.preventDefault();
                 searchInputRef.current?.focus();
             }
         };
-
-        window.addEventListener("keydown", handleKeyDown);
-        return () => window.removeEventListener("keydown", handleKeyDown);
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
     }, []);
 
-    // Synchronize initial filters from server props without clobbering active search drafts
-    useEffect(() => {
-        const serverSearch = filters.search || "";
-        if (!searchInputFocusedRef.current && debouncedSearchRef.current === null) {
-            setSearch(serverSearch);
-            searchDraftRef.current = serverSearch;
-        } else if (searchDraftRef.current === serverSearch) {
-            setSearch(serverSearch);
-        }
-
-        setActiveFilters(extractFiltersFromProps(filters));
-
-        const nextSortOption = `${filters.sort ?? "created_at"}:${filters.direction ?? "desc"}`;
-        const nextSort = parseSortOption(nextSortOption);
-        setSortOption(nextSortOption);
-        setSorting([{ id: nextSort.sort, desc: nextSort.direction === "desc" }]);
-    }, [filters]);
-
-    const activeFilterValues = useMemo(
-        () =>
-            Object.fromEntries(
-                activeFilters
-                    .map((filter) => [filter.field, filter.values[0]] as const)
-                    .filter((entry): entry is readonly [string, string | number] => typeof entry[1] === "string" || typeof entry[1] === "number")
-                    .map(([field, value]) => [field, String(value)]),
-            ),
-        [activeFilters],
-    );
-
-    // Identify active quick cohort
-    const currentCohort: QuickCohort = useMemo(() => {
-        if (activeFilterValues.trashed === "trashed") {
-            return "trashed";
-        }
-        const currentStatus = activeFilterValues.status;
-        if (currentStatus === "enrolled") return "enrolled";
-        if (currentStatus === "applicant") return "applicant";
-        if (currentStatus === "graduated") return "graduated";
-        return "all";
-    }, [activeFilterValues.status, activeFilterValues.trashed]);
-
-    const buildQueryParams = (
-        overrides: {
-            search?: string;
-            filters?: FilterType[];
-            sort?: string;
-            direction?: "asc" | "desc";
-            page?: number;
-            per_page?: number;
-        } = {},
-    ) => {
-        const nextFilters = overrides.filters ?? activeFilters;
-        const filterMap = Object.fromEntries(
-            nextFilters
-                .map((filter) => [filter.field, filter.values[0]] as const)
-                .filter((entry): entry is readonly [string, string | number] => typeof entry[1] === "string" || typeof entry[1] === "number")
-                .map(([field, value]) => [field, String(value)]),
-        );
-
-        const activeSearch = overrides.search !== undefined ? overrides.search : search;
-        const activeSort = overrides.sort !== undefined ? overrides.sort : (sorting[0]?.id ?? filters.sort ?? "created_at");
-        const activeDirection = overrides.direction !== undefined ? overrides.direction : sorting[0]?.desc ? "desc" : "asc";
-        const activePerPage = overrides.per_page !== undefined ? overrides.per_page : (filters.per_page ?? 20);
-        const activePage = overrides.page !== undefined ? overrides.page : (students?.current_page ?? 1);
-
-        const params: Record<string, string | number | null> = {
-            search: activeSearch.trim() ? activeSearch.trim() : null,
-            sort: activeSort,
-            direction: activeDirection,
-            per_page: activePerPage,
-            page: activePage,
-        };
-
-        if (filterMap.trashed && filterMap.trashed !== "active") params.trashed = filterMap.trashed;
-        if (filterMap.type) params.type = filterMap.type;
-        if (filterMap.status) params.status = filterMap.status;
-        if (filterMap.course_id) params.course_id = filterMap.course_id;
-        if (filterMap.department_id) params.department_id = filterMap.department_id;
-        if (filterMap.year_level) params.year_level = filterMap.year_level;
-        if (filterMap.current_enrollment) params.current_enrollment = filterMap.current_enrollment;
-        if (filterMap.scholarship_type) params.scholarship_type = filterMap.scholarship_type;
-        if (filterMap.employment_status) params.employment_status = filterMap.employment_status;
-        if (filterMap.is_indigenous_person) params.is_indigenous_person = filterMap.is_indigenous_person;
-        if (filterMap.previous_semester_cleared) params.previous_semester_cleared = filterMap.previous_semester_cleared;
-
-        return params;
-    };
-
     const cancelPendingSearch = () => {
-        if (debouncedSearchRef.current) {
-            clearTimeout(debouncedSearchRef.current);
-            debouncedSearchRef.current = null;
+        if (searchDebounceRef.current) {
+            clearTimeout(searchDebounceRef.current);
+            searchDebounceRef.current = null;
         }
     };
 
@@ -304,822 +287,715 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
         };
     }, []);
 
-    const navigateWithParams = (params: Record<string, string | number | null>, options: { replace?: boolean; only?: string[] } = {}) => {
+    const buildQueryParams = (overrides?: {
+        search?: string;
+        triage?: TriageKey;
+        filters?: FilterType[];
+        sort?: string;
+        direction?: "asc" | "desc";
+        perPage?: number;
+        page?: number;
+    }): Record<string, string | number> => {
+        const nextSearch = overrides?.search ?? searchTerm;
+        const nextTriage = overrides?.triage ?? activeTriage;
+        const nextFilters = overrides?.filters ?? filters;
+        const nextSort = overrides?.sort ?? sort;
+        const nextDirection = overrides?.direction ?? direction;
+        const nextPerPage = overrides?.perPage ?? perPage;
+        const nextPage = overrides?.page ?? 1;
+
+        const params: Record<string, string | number> = {
+            sort: nextSort,
+            direction: nextDirection,
+            per_page: nextPerPage,
+            page: nextPage,
+        };
+
+        if (nextSearch.trim() !== "") params.search = nextSearch.trim();
+        if (nextTriage !== "all") params.triage = nextTriage;
+        if (nextTriage === "trashed") params.trashed = "trashed";
+
+        for (const f of nextFilters) {
+            const val = f.values[0];
+            if (!val) continue;
+            params[f.field] = String(val);
+        }
+
+        return params;
+    };
+
+    const navigateDirectory = (overrides?: Parameters<typeof buildQueryParams>[0]) => {
         cancelPendingSearch();
+        const params = buildQueryParams(overrides);
+        setIsTableLoading(true);
         router.get(route("administrators.students.index"), params, {
             preserveState: true,
             preserveScroll: true,
-            replace: options.replace ?? true,
-            only: options.only ?? ["students", "filters"],
+            replace: true,
+            only: ["students", "filters"],
+            onFinish: () => setIsTableLoading(false),
         });
     };
 
-    const handleSearchChange = (nextSearch: string) => {
-        searchDraftRef.current = nextSearch;
-        setSearch(nextSearch);
+    const handleSearchChange = (value: string) => {
+        setSearchTerm(value);
         cancelPendingSearch();
-        debouncedSearchRef.current = setTimeout(() => {
-            debouncedSearchRef.current = null;
-            router.get(route("administrators.students.index"), buildQueryParams({ search: nextSearch, page: 1 }), {
-                preserveState: true,
-                preserveScroll: true,
-                replace: true,
-                only: ["students", "filters"],
-            });
-        }, 300);
+        searchDebounceRef.current = setTimeout(() => {
+            searchDebounceRef.current = null;
+            navigateDirectory({ search: value, page: 1 });
+        }, 280);
     };
 
-    const handleClearSearch = () => {
-        searchDraftRef.current = "";
-        setSearch("");
-        cancelPendingSearch();
-        navigateWithParams(buildQueryParams({ search: "", page: 1 }));
+    const handleSelectTriage = (nextTriage: TriageKey) => {
+        setActiveTriage(nextTriage);
+        const cleaned = filters.filter((f) => f.field !== "trashed");
+        setFilters(cleaned);
+        navigateDirectory({ triage: nextTriage, filters: cleaned, page: 1 });
     };
 
-    const handleSelectCohort = (cohort: QuickCohort) => {
-        const nextFilters = activeFilters.filter((f) => f.field !== "status" && f.field !== "trashed");
+    const handleFiltersChange = (nextFilters: FilterType[]) => {
+        setFilters(nextFilters);
+        navigateDirectory({ filters: nextFilters, page: 1 });
+    };
 
-        if (cohort === "trashed") {
-            nextFilters.push({ id: "trashed", field: "trashed", operator: "is", values: ["trashed"] });
-        } else if (cohort !== "all") {
-            nextFilters.push({ id: "status", field: "status", operator: "is", values: [cohort] });
+    const handleResetAll = () => {
+        setSearchTerm("");
+        setActiveTriage("all");
+        setFilters([]);
+        setSort("created_at");
+        setDirection("desc");
+        navigateDirectory({ search: "", triage: "all", filters: [], sort: "created_at", direction: "desc", page: 1 });
+    };
+
+    const handleSaveCurrentView = () => {
+        const name = window.prompt("Name this saved view (e.g. Missing Docs — 1st Year):");
+        if (!name || name.trim() === "") return;
+        const trimmedName = name.trim();
+        const existingIndex = savedViews.findIndex((v) => v.name.toLowerCase() === trimmedName.toLowerCase());
+        const isUpdate = existingIndex !== -1;
+
+        if (!isUpdate && savedViews.length >= MAX_SAVED_VIEWS) {
+            toast.error(
+                `You can save up to ${MAX_SAVED_VIEWS} views. Remove an existing view or reuse a name to update it.`,
+            );
+            return;
         }
 
-        setActiveFilters(nextFilters);
-        navigateWithParams(buildQueryParams({ filters: nextFilters, page: 1 }));
+        const nextView: SavedView = {
+            id: isUpdate ? savedViews[existingIndex].id : String(Date.now()),
+            name: trimmedName,
+            triage: activeTriage,
+            search: searchTerm,
+            filters,
+        };
+        const next: SavedView[] = isUpdate
+            ? savedViews.map((v, idx) => (idx === existingIndex ? nextView : v))
+            : [...savedViews, nextView];
+
+        setSavedViews(next);
+        try {
+            window.localStorage.setItem(SAVED_VIEWS_STORAGE_KEY, JSON.stringify(next));
+        } catch {
+            toast.error(
+                `Could not save "${trimmedName}" to browser storage. It is available temporarily for this session only.`,
+            );
+            return;
+        }
+        toast.success(isUpdate ? `Updated saved view "${trimmedName}"` : `Saved view "${trimmedName}"`);
     };
 
-    const handleFiltersChange = (newFilters: FilterType[]) => {
-        setActiveFilters(newFilters);
-        navigateWithParams(buildQueryParams({ filters: newFilters, page: 1 }));
+    const handleDeleteSavedView = (id: string) => {
+        const next = savedViews.filter((v) => v.id !== id);
+        setSavedViews(next);
+        try {
+            window.localStorage.setItem(SAVED_VIEWS_STORAGE_KEY, JSON.stringify(next));
+        } catch {
+            toast.error("Could not update saved views in browser storage.");
+        }
     };
 
-    const clearFilters = () => {
-        setActiveFilters([]);
-        navigateWithParams(buildQueryParams({ filters: [], page: 1 }));
-    };
-
-    const clearAllFiltersAndSearch = () => {
-        searchDraftRef.current = "";
-        setSearch("");
-        cancelPendingSearch();
-        setActiveFilters([]);
-        navigateWithParams(buildQueryParams({ filters: [], search: "", page: 1 }));
-    };
-
-    const removeFilter = (field: string) => {
-        const nextFilters = activeFilters.filter((f) => f.field !== field);
-        setActiveFilters(nextFilters);
-        navigateWithParams(buildQueryParams({ filters: nextFilters, page: 1 }));
-    };
-
-    const handleSortChange = (value: string | null) => {
-        if (!value) return;
-        setSortOption(value);
-        const sort = parseSortOption(value);
-        setSorting([{ id: sort.sort, desc: sort.direction === "desc" }]);
-        navigateWithParams(buildQueryParams({ sort: sort.sort, direction: sort.direction, page: 1 }));
-    };
-
-    const handleTableSortingChange = (nextSorting: SortingState) => {
-        setSorting(nextSorting);
-        const nextSort = nextSorting[0];
-        const sortField = nextSort?.id ?? "created_at";
-        const direction = nextSort?.desc ? "desc" : "asc";
-        setSortOption(`${sortField}:${direction}`);
-        navigateWithParams(buildQueryParams({ sort: sortField, direction, page: 1 }));
-    };
-
-    const handlePageIndexChange = (newPageIndex: number) => {
-        navigateWithParams(buildQueryParams({ page: newPageIndex + 1 }), { replace: false });
-    };
-
-    const handlePageSizeChange = (newPageSize: number) => {
-        navigateWithParams(buildQueryParams({ per_page: newPageSize, page: 1 }));
-    };
-
-    const filterFields: FilterFieldConfig[] = useMemo(
-        () => [
-            {
-                key: "trashed",
-                label: "Record Visibility",
-                type: "select",
-                icon: <Filter className="size-4" />,
-                options: [
-                    { value: "active", label: "Active Records", icon: <CheckCircle className="size-4 text-emerald-500" /> },
-                    { value: "trashed", label: "Trashed Records", icon: <Trash2 className="size-4 text-red-500" /> },
-                    { value: "all", label: "All Records", icon: <Users className="size-4" /> },
-                ],
-            },
+    // Build school-config adaptive filter fields
+    const filterFields = useMemo<FilterFieldConfig[]>(() => {
+        const isPhilippine = schoolProfile?.philippine_reporting ?? false;
+        const fields: FilterFieldConfig[] = [
             {
                 key: "status",
-                label: "Enrollment Status",
+                label: "Status",
                 type: "select",
-                icon: <GraduationCap className="size-4" />,
-                options: options.statuses.map((opt) => ({ ...opt, icon: <GraduationCap className="text-muted-foreground size-4" /> })),
-            },
-            {
-                key: "type",
-                label: "Student Type",
-                type: "select",
-                icon: <UserIcon className="size-4" />,
-                options: options.types.map((opt) => ({ ...opt, icon: <UserIcon className="text-muted-foreground size-4" /> })),
+                icon: <GraduationCap className="size-3.5" />,
+                options: options.statuses.map((s) => ({ value: s.value, label: s.label })),
             },
             {
                 key: "course_id",
-                label: "Course / Degree",
+                label: schoolProfile?.is_tvet ? "Qualification" : "Program / Course",
                 type: "select",
-                icon: <BookOpen className="size-4" />,
-                options: options.courses.map((opt) => ({ ...opt, icon: <BookOpen className="text-muted-foreground size-4" /> })),
+                icon: <BookOpen className="size-3.5" />,
+                options: options.courses,
             },
             {
                 key: "department_id",
                 label: "Department",
                 type: "select",
-                icon: <Building2 className="size-4" />,
-                options: options.departments.map((opt) => ({ ...opt, icon: <Building2 className="text-muted-foreground size-4" /> })),
+                icon: <Building2 className="size-3.5" />,
+                options: options.departments,
             },
             {
                 key: "year_level",
-                label: "Year Level",
+                label: schoolProfile?.is_basic_ed ? "Grade Level" : "Academic Level",
                 type: "select",
-                icon: <Layers className="size-4" />,
-                options: options.year_levels.map((opt) => ({ ...opt, icon: <Layers className="text-muted-foreground size-4" /> })),
+                icon: <Layers className="size-3.5" />,
+                options: options.year_levels,
             },
             {
                 key: "current_enrollment",
-                label: "Current Period Enrollment",
+                label: `Current ${schoolProfile?.term_label || "Term"}`,
                 type: "select",
-                icon: <CalendarCheck className="size-4" />,
+                icon: <CalendarCheck className="size-3.5" />,
                 options: [
-                    { value: "enrolled", label: "Currently enrolled", icon: <UserCheck className="size-4 text-emerald-500" /> },
-                    { value: "not_enrolled", label: "Not currently enrolled", icon: <XCircle className="size-4 text-red-500" /> },
+                    { value: "enrolled", label: "Enrolled" },
+                    { value: "not_enrolled", label: "Not Enrolled" },
                 ],
             },
             {
                 key: "previous_semester_cleared",
-                label: "Current grade clearance",
+                label: "Grade Clearance",
                 type: "select",
-                icon: <CheckCircle className="size-4" />,
+                icon: <CheckCircle className="size-3.5" />,
                 options: [
-                    { value: "true", label: "Cleared", icon: <CheckCircle className="size-4 text-emerald-500" /> },
-                    { value: "false", label: "Pending", icon: <HelpCircle className="size-4 text-amber-500" /> },
+                    { value: "true", label: "Cleared" },
+                    { value: "false", label: "Pending" },
                 ],
             },
-            {
-                key: "scholarship_type",
-                label: "Scholarship",
+        ];
+
+        if (options.types.length > 1) {
+            fields.unshift({
+                key: "type",
+                label: "Student Category",
                 type: "select",
-                icon: <Award className="size-4" />,
-                options: options.scholarship_types.map((opt) => ({ ...opt, icon: <Award className="text-muted-foreground size-4" /> })),
-            },
-            {
-                key: "employment_status",
-                label: "Employment Status",
-                type: "select",
-                icon: <Briefcase className="size-4" />,
-                options: options.employment_statuses.map((opt) => ({ ...opt, icon: <Briefcase className="text-muted-foreground size-4" /> })),
-            },
-            {
-                key: "is_indigenous_person",
-                label: "Indigenous Person",
-                type: "select",
-                icon: <MapPin className="size-4" />,
-                options: [
-                    { value: "yes", label: "Yes", icon: <CheckCircle className="size-4 text-emerald-500" /> },
-                    { value: "no", label: "No", icon: <XCircle className="size-4 text-red-500" /> },
-                ],
-            },
-        ],
-        [options],
-    );
-
-    const getFilterFieldLabel = (field: string): string => {
-        switch (field) {
-            case "trashed":
-                return "Visibility";
-            case "status":
-                return "Status";
-            case "type":
-                return "Type";
-            case "course_id":
-                return "Course";
-            case "department_id":
-                return "Department";
-            case "year_level":
-                return "Year";
-            case "current_enrollment":
-                return "Enrollment";
-            case "previous_semester_cleared":
-                return "Clearance";
-            case "scholarship_type":
-                return "Scholarship";
-            case "employment_status":
-                return "Employment";
-            case "is_indigenous_person":
-                return "Indigenous";
-            default:
-                return field;
+                icon: <Users className="size-3.5" />,
+                options: options.types,
+            });
         }
-    };
 
-    const getFilterValueLabel = (field: string, value: unknown): string => {
-        const stringValue = String(value ?? "");
-        switch (field) {
-            case "trashed":
-                return stringValue === "trashed" ? "Trashed" : stringValue === "all" ? "All" : "Active";
-            case "course_id": {
-                const found = options.courses.find((c) => c.value === stringValue);
-                return found ? found.label.split(" - ")[0] : stringValue;
-            }
-            case "department_id": {
-                const found = options.departments.find((d) => d.value === stringValue);
-                return found ? found.label.split(" - ")[0] : stringValue;
-            }
-            case "year_level":
-                return `Year ${stringValue}`;
-            case "current_enrollment":
-                return stringValue === "enrolled" ? "Enrolled" : "Not Enrolled";
-            case "previous_semester_cleared":
-                return stringValue === "true" ? "Cleared" : "Pending";
-            case "is_indigenous_person":
-                return stringValue === "yes" ? "Yes" : "No";
-            case "status":
-                return options.statuses.find((s) => s.value === stringValue)?.label ?? stringValue;
-            case "type":
-                return options.types.find((t) => t.value === stringValue)?.label ?? stringValue;
-            case "scholarship_type":
-                return options.scholarship_types.find((s) => s.value === stringValue)?.label ?? stringValue;
-            case "employment_status":
-                return options.employment_statuses.find((e) => e.value === stringValue)?.label ?? stringValue;
-            default:
-                return stringValue;
-        }
-    };
-
-    const [softDeleteTarget, setSoftDeleteTarget] = useState<Student | null>(null);
-    const [forceDeleteTarget, setForceDeleteTarget] = useState<Student | null>(null);
-    const [restoreTarget, setRestoreTarget] = useState<Student | null>(null);
-    const [confirmForceText, setConfirmForceText] = useState("");
-    const [deleting, setDeleting] = useState(false);
-
-    useEffect(() => {
-        const onSoft = (e: Event) => setSoftDeleteTarget((e as CustomEvent<Student>).detail);
-        const onForce = (e: Event) => {
-            setForceDeleteTarget((e as CustomEvent<Student>).detail);
-            setConfirmForceText("");
-        };
-        const onRestore = (e: Event) => setRestoreTarget((e as CustomEvent<Student>).detail);
-        const onInspect = (e: Event) => setInspectedStudentId((e as CustomEvent<Student>).detail.id);
-
-        window.addEventListener("students:soft-delete", onSoft as EventListener);
-        window.addEventListener("students:force-delete", onForce as EventListener);
-        window.addEventListener("students:restore", onRestore as EventListener);
-        window.addEventListener("students:inspect", onInspect as EventListener);
-
-        return () => {
-            window.removeEventListener("students:soft-delete", onSoft as EventListener);
-            window.removeEventListener("students:force-delete", onForce as EventListener);
-            window.removeEventListener("students:restore", onRestore as EventListener);
-            window.removeEventListener("students:inspect", onInspect as EventListener);
-        };
-    }, []);
-
-    const handleConfirmSoftDelete = () => {
-        if (!softDeleteTarget) return;
-        setDeleting(true);
-        router.delete(route("administrators.students.destroy", softDeleteTarget.id), {
-            preserveScroll: true,
-            onSuccess: () => {
-                toast.success(`Student "${softDeleteTarget.name}" has been moved to trash.`);
-                setSoftDeleteTarget(null);
-            },
-            onError: () => toast.error("Failed to delete student."),
-            onFinish: () => setDeleting(false),
-        });
-    };
-
-    const handleConfirmForceDelete = () => {
-        if (!forceDeleteTarget || confirmForceText.trim() !== String(forceDeleteTarget.student_id ?? "").trim()) {
-            toast.error("Student ID confirmation does not match.");
-            return;
-        }
-        setDeleting(true);
-        router.delete(route("administrators.students.force-destroy", forceDeleteTarget.id), {
-            preserveScroll: true,
-            onSuccess: () => {
-                toast.success(`Student "${forceDeleteTarget.name}" has been permanently deleted.`);
-                setForceDeleteTarget(null);
-                setConfirmForceText("");
-            },
-            onError: () => toast.error("Failed to permanently delete student."),
-            onFinish: () => setDeleting(false),
-        });
-    };
-
-    const handleConfirmRestore = () => {
-        if (!restoreTarget) return;
-        setDeleting(true);
-        router.post(
-            route("administrators.students.restore", restoreTarget.id),
-            {},
-            {
-                preserveScroll: true,
-                onSuccess: () => {
-                    toast.success(`Student "${restoreTarget.name}" has been restored.`);
-                    setRestoreTarget(null);
+        if (isPhilippine) {
+            fields.push(
+                {
+                    key: "scholarship_type",
+                    label: "Scholarship",
+                    type: "select",
+                    icon: <Award className="size-3.5" />,
+                    options: options.scholarship_types,
                 },
-                onError: () => toast.error("Failed to restore student."),
-                onFinish: () => setDeleting(false),
-            },
-        );
-    };
+                {
+                    key: "is_indigenous_person",
+                    label: "Indigenous Person",
+                    type: "select",
+                    icon: <UserCheck className="size-3.5" />,
+                    options: [
+                        { value: "yes", label: "Yes" },
+                        { value: "no", label: "No" },
+                    ],
+                },
+                {
+                    key: "employment_status",
+                    label: "Graduate Employment",
+                    type: "select",
+                    icon: <Briefcase className="size-3.5" />,
+                    options: options.employment_statuses,
+                },
+            );
+        }
+
+        return fields;
+    }, [options, schoolProfile]);
 
     const returnUrl = useMemo(() => {
-        const queryParams = buildQueryParams();
-        const searchParams = new URLSearchParams();
-        for (const [key, value] of Object.entries(queryParams)) {
-            if (value !== null && value !== undefined && value !== "") {
-                searchParams.set(key, String(value));
-            }
-        }
-        const query = searchParams.toString();
-        return query ? `/administrators/students?${query}` : "/administrators/students";
-    }, [activeFilters, search, sorting, students?.current_page, filters.per_page]);
+        const params = buildQueryParams({ page: students?.current_page ?? 1 });
+        const qs = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString();
+        return `/administrators/students${qs ? `?${qs}` : ""}`;
+    }, [searchTerm, activeTriage, filters, sort, direction, perPage, students?.current_page]);
 
-    const tableColumns = useMemo(
+    const columns = useMemo(
         () =>
             createColumns({
                 returnUrl,
-                onSoftDelete: setSoftDeleteTarget,
-                onForceDelete: (student) => {
-                    setForceDeleteTarget(student);
-                    setConfirmForceText("");
+                identifierPolicy,
+                schoolProfile,
+                typeLabels: studentConfig?.type_labels,
+                onInspect: (student, tab = "overview") => {
+                    setInspectorTab(tab);
+                    setInspectedStudentId(student.id);
                 },
-                onRestore: setRestoreTarget,
+                onSoftDelete: (student) => setSoftDeleteTarget(student),
+                onForceDelete: (student) => {
+                    setForceDeleteConfirmText("");
+                    setForceDeleteTarget(student);
+                },
+                onRestore: (student) => setRestoreTarget(student),
             }),
-        [returnUrl],
+        [returnUrl, identifierPolicy, schoolProfile, studentConfig?.type_labels],
     );
 
-    const statCards = [
+    const inspectedIndex = useMemo(
+        () => (inspectedStudentId === null ? -1 : studentRows.findIndex((s) => s.id === inspectedStudentId)),
+        [inspectedStudentId, studentRows],
+    );
+    const inspectedStudent = inspectedIndex >= 0 ? studentRows[inspectedIndex] : null;
+
+    const sortingState: SortingState = useMemo(
+        () => [{ id: sort, desc: direction === "desc" }],
+        [sort, direction],
+    );
+
+    const handleSortingChange = (next: SortingState) => {
+        const primary = next[0];
+        const nextSort = primary?.id || "created_at";
+        const nextDir: "asc" | "desc" = primary?.desc ? "desc" : "asc";
+        setSort(nextSort);
+        setDirection(nextDir);
+        navigateDirectory({ sort: nextSort, direction: nextDir, page: 1 });
+    };
+
+    const handleSoftDelete = () => {
+        if (!softDeleteTarget || isMutating) return;
+        setIsMutating(true);
+        router.delete(route("administrators.students.destroy", softDeleteTarget.id), {
+            preserveScroll: true,
+            onSuccess: () => {
+                setSoftDeleteTarget(null);
+                toast.success("Student moved to trash.");
+            },
+            onFinish: () => setIsMutating(false),
+        });
+    };
+
+    const handleRestore = () => {
+        if (!restoreTarget || isMutating) return;
+        setIsMutating(true);
+        router.post(route("administrators.students.restore", restoreTarget.id), {}, {
+            preserveScroll: true,
+            onSuccess: () => {
+                setRestoreTarget(null);
+                toast.success("Student restored.");
+            },
+            onFinish: () => setIsMutating(false),
+        });
+    };
+
+    const handleForceDelete = () => {
+        if (!forceDeleteTarget || isMutating) return;
+        setIsMutating(true);
+        router.delete(route("administrators.students.force-destroy", forceDeleteTarget.id), {
+            preserveScroll: true,
+            onSuccess: () => {
+                setForceDeleteTarget(null);
+                toast.success("Student permanently deleted.");
+            },
+            onFinish: () => setIsMutating(false),
+        });
+    };
+
+    const triageQueues: Array<{
+        key: TriageKey;
+        label: string;
+        count?: number;
+        icon: React.ReactNode;
+        toneClass: string;
+    }> = [
         {
-            key: "all" as const,
-            label: "Total records",
-            value: stats.total_students,
-            detail: "All active profiles",
-            icon: Users,
-            tone: "text-primary",
-            bgTone: "bg-primary/10",
+            key: "all",
+            label: "All Active",
+            count: triage_counts?.all ?? stats.total_students,
+            icon: <Users className="size-4" />,
+            toneClass: "text-primary",
         },
         {
-            key: "enrolled" as const,
-            label: "Enrolled",
-            value: stats.total_enrolled,
-            detail: "Current period",
-            icon: UserCheck,
-            tone: "text-emerald-600 dark:text-emerald-400",
-            bgTone: "bg-emerald-500/10",
+            key: "needs_doc_review",
+            label: "Needs Doc Review",
+            count: triage_counts?.needs_doc_review,
+            icon: <Clock className="size-4" />,
+            toneClass: "text-amber-600 dark:text-amber-400",
         },
         {
-            key: "applicant" as const,
-            label: "Applicants",
-            value: stats.total_applicants,
-            detail: "Admissions pending",
-            icon: UserPlus,
-            tone: "text-amber-600 dark:text-amber-400",
-            bgTone: "bg-amber-500/10",
+            key: "missing_docs",
+            label: "Missing Required Docs",
+            count: triage_counts?.missing_docs,
+            icon: <FileWarning className="size-4" />,
+            toneClass: "text-orange-600 dark:text-orange-400",
         },
         {
-            key: "graduated" as const,
-            label: "Graduated",
-            value: stats.total_graduated,
-            detail: "Completed records",
-            icon: GraduationCap,
-            tone: "text-blue-600 dark:text-blue-400",
-            bgTone: "bg-blue-500/10",
+            key: "active_holds",
+            label: "Active Holds",
+            count: triage_counts?.active_holds,
+            icon: <ShieldAlert className="size-4" />,
+            toneClass: "text-rose-600 dark:text-rose-400",
+        },
+        {
+            key: "no_portal",
+            label: "No Portal Account",
+            count: triage_counts?.no_portal,
+            icon: <KeyRound className="size-4" />,
+            toneClass: "text-sky-600 dark:text-sky-400",
+        },
+        {
+            key: "incomplete_profile",
+            label: "Incomplete Profile",
+            count: triage_counts?.incomplete_profile,
+            icon: <AlertCircle className="size-4" />,
+            toneClass: "text-violet-600 dark:text-violet-400",
+        },
+        {
+            key: "trashed",
+            label: "Trashed",
+            count: triage_counts?.trashed,
+            icon: <Trash2 className="size-4" />,
+            toneClass: "text-muted-foreground",
         },
     ];
 
-    return (
-        <AdminLayout user={user} title="Student Directory">
-            <Head title="Administrators • Student Directory" />
+    const hasAnyFilter = searchTerm.trim() !== "" || filters.length > 0 || activeTriage !== "all";
 
-            <div className="flex flex-col gap-5">
-                {/* Header */}
-                <header className="flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-end sm:justify-between">
+    return (
+        <AdminLayout user={user} title="Students">
+            <Head title="Administrators • Students Directory" />
+
+            <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-5">
+                {/* Clean Operational Header */}
+                <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
                     <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                            <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.16em] uppercase">Student Records</p>
-                            <span className="text-muted-foreground/60 text-xs">•</span>
-                            <span className="text-muted-foreground text-xs">Directory</span>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">
+                                Student Records · Directory
+                            </span>
+                            {schoolProfile && (
+                                <Badge variant="secondary" className="text-[10px] font-medium">
+                                    {schoolProfile.school_level_label}
+                                </Badge>
+                            )}
+                            <Badge variant="outline" className="font-mono text-[10px] tabular-nums">
+                                {stats.total_enrolled} Enrolled · {stats.total_applicants} Applicants
+                            </Badge>
                         </div>
-                        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Student Directory</h1>
-                        <p className="text-muted-foreground max-w-2xl text-xs leading-relaxed sm:text-sm">
-                            Search, manage, and audit student profiles, enrollment statuses, and clearances across academic departments.
-                        </p>
+                        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Student Directory</h1>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
-                        <AdminLink
-                            href="/administrators/students/duplicates"
-                            className={buttonVariants({
-                                variant: "outline",
-                                className: "h-9 w-full gap-2 text-xs font-medium shadow-xs sm:w-auto sm:text-sm",
-                            })}
+                        <Button
+                            render={<AdminLink href="/administrators/students/documents" />}
+                            nativeButton={false}
+                            variant="outline"
+                            size="sm"
+                            className="h-9 gap-1.5 text-xs"
                         >
-                            <GitMerge className="size-4" aria-hidden="true" />
-                            Duplicate Scanner
-                        </AdminLink>
-                        <AdminLink
-                            href={route("administrators.students.create")}
-                            className={buttonVariants({ className: "h-9 w-full gap-2 text-xs font-semibold shadow-xs sm:w-auto sm:text-sm" })}
+                            <FileCheck2 className="size-3.5" />
+                            Documents Hub
+                        </Button>
+                        <Button
+                            render={<AdminLink href="/administrators/students/duplicates" />}
+                            nativeButton={false}
+                            variant="outline"
+                            size="sm"
+                            className="h-9 gap-1.5 text-xs"
                         >
-                            <Plus className="size-4" aria-hidden="true" />
-                            Create student
-                        </AdminLink>
+                            <GitMerge className="size-3.5" />
+                            Duplicates
+                        </Button>
+                        {canCreateStudent && (
+                            <>
+                                <Button
+                                    render={<AdminLink href="/administrators/students/create?mode=batch" />}
+                                    nativeButton={false}
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-9 gap-1.5 text-xs"
+                                >
+                                    <FileSpreadsheet className="size-3.5" />
+                                    Batch Intake
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="sm"
+                                    className="h-9 gap-1.5 text-xs"
+                                    onClick={() => setQuickCreateOpen(true)}
+                                >
+                                    <UserPlus className="size-3.5" />
+                                    Quick Add
+                                </Button>
+                                <Link
+                                    href={route("administrators.students.create")}
+                                    className={buttonVariants({ size: "sm", className: "h-9 gap-1.5 text-xs" })}
+                                >
+                                    <Plus className="size-3.5" />
+                                    Full Intake
+                                </Link>
+                            </>
+                        )}
                     </div>
-                </header>
-
-                {/* Interactive Metric Summary Strip */}
-                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
-                    {statCards.map((metric) => {
-                        const isActive = currentCohort === metric.key;
-
-                        return (
-                            <Card
-                                key={metric.key}
-                                onClick={() => handleSelectCohort(metric.key)}
-                                className={`hover:border-primary/50 cursor-pointer gap-0 py-0 transition-all hover:shadow-xs ${
-                                    isActive ? "ring-primary border-primary/60 bg-primary/5 shadow-xs ring-2" : ""
-                                }`}
-                                role="button"
-                                tabIndex={0}
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter" || e.key === " ") {
-                                        e.preventDefault();
-                                        handleSelectCohort(metric.key);
-                                    }
-                                }}
-                                aria-label={`Filter by ${metric.label}`}
-                            >
-                                <CardContent className="flex items-center justify-between gap-3 p-3.5">
-                                    <div className="min-w-0">
-                                        <div className="flex items-center gap-1.5">
-                                            <p className="text-muted-foreground truncate text-[10px] font-semibold tracking-wide uppercase sm:text-[11px]">
-                                                {metric.label}
-                                            </p>
-                                            {isActive && <div className="bg-primary size-1.5 shrink-0 rounded-full" />}
-                                        </div>
-                                        <p className="text-foreground mt-0.5 text-xl font-bold tracking-tight tabular-nums sm:text-2xl">
-                                            {metric.value}
-                                        </p>
-                                        <p className="text-muted-foreground mt-0.5 truncate text-[11px]">{metric.detail}</p>
-                                    </div>
-                                    <div className={`flex size-9 shrink-0 items-center justify-center rounded-lg sm:size-10 ${metric.bgTone}`}>
-                                        <metric.icon className={`size-4 sm:size-5 ${metric.tone}`} aria-hidden="true" />
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        );
-                    })}
                 </div>
 
-                {/* Main Filter & Search Control Panel */}
-                <Card className="border-border/80 gap-3 py-3 shadow-xs">
-                    <CardContent className="space-y-3 px-3.5 sm:px-4">
-                        {/* Quick Cohort Tabs */}
-                        <div className="flex flex-wrap items-center gap-1.5 border-b pb-2.5">
-                            <span className="text-muted-foreground mr-1 hidden text-xs font-semibold sm:inline">Cohort:</span>
-                            <Button
-                                variant={currentCohort === "all" ? "default" : "outline"}
-                                size="sm"
-                                onClick={() => handleSelectCohort("all")}
-                                className="h-7 rounded-md px-2.5 text-xs"
-                            >
-                                All Records
-                            </Button>
-                            <Button
-                                variant={currentCohort === "enrolled" ? "default" : "outline"}
-                                size="sm"
-                                onClick={() => handleSelectCohort("enrolled")}
-                                className="h-7 gap-1.5 rounded-md px-2.5 text-xs"
-                            >
-                                <span className="size-1.5 rounded-full bg-emerald-500" />
-                                Enrolled
-                            </Button>
-                            <Button
-                                variant={currentCohort === "applicant" ? "default" : "outline"}
-                                size="sm"
-                                onClick={() => handleSelectCohort("applicant")}
-                                className="h-7 gap-1.5 rounded-md px-2.5 text-xs"
-                            >
-                                <span className="size-1.5 rounded-full bg-amber-500" />
-                                Applicants
-                            </Button>
-                            <Button
-                                variant={currentCohort === "graduated" ? "default" : "outline"}
-                                size="sm"
-                                onClick={() => handleSelectCohort("graduated")}
-                                className="h-7 gap-1.5 rounded-md px-2.5 text-xs"
-                            >
-                                <span className="size-1.5 rounded-full bg-blue-500" />
-                                Graduated
-                            </Button>
-                            <Button
-                                variant={currentCohort === "trashed" ? "destructive" : "ghost"}
-                                size="sm"
-                                onClick={() => handleSelectCohort("trashed")}
-                                className="text-muted-foreground hover:text-foreground ml-auto h-7 gap-1.5 rounded-md px-2.5 text-xs"
-                            >
-                                <Trash2 className="size-3.5" />
-                                Trashed
-                            </Button>
-                        </div>
-
-                        {/* Search + Action Bar */}
-                        <div className="flex flex-col justify-between gap-2.5 lg:flex-row lg:items-center">
-                            {/* Search Field */}
-                            <div className="relative min-w-0 flex-1">
-                                <Search
-                                    className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
-                                    aria-hidden="true"
-                                />
-                                <Input
-                                    ref={searchInputRef}
-                                    placeholder="Search by student name, ID, course, or status... (Press '/' to focus)"
-                                    className="bg-background/50 focus:bg-background h-9 pr-8 pl-9 text-xs sm:text-sm"
-                                    value={search}
-                                    onFocus={() => {
-                                        searchInputFocusedRef.current = true;
-                                    }}
-                                    onBlur={() => {
-                                        searchInputFocusedRef.current = false;
-                                    }}
-                                    onChange={(event) => handleSearchChange(event.target.value)}
-                                />
-                                {search && (
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 size-5 -translate-y-1/2 rounded-full p-0"
-                                        onClick={handleClearSearch}
-                                        aria-label="Clear search"
-                                    >
-                                        <X className="size-3.5" />
-                                    </Button>
-                                )}
-                            </div>
-
-                            {/* Toolbar actions */}
-                            <div className="flex flex-wrap items-center gap-2">
-                                <Select value={sortOption} onValueChange={handleSortChange}>
-                                    <SelectTrigger className="h-9 w-[170px] text-xs">
-                                        <SelectValue placeholder="Sort students" />
-                                    </SelectTrigger>
-                                    <SelectContent align="end">
-                                        <SelectItem value="created_at:desc" className="text-xs">
-                                            Latest added
-                                        </SelectItem>
-                                        <SelectItem value="created_at:asc" className="text-xs">
-                                            Oldest added
-                                        </SelectItem>
-                                        <SelectItem value="name:asc" className="text-xs">
-                                            Name A–Z
-                                        </SelectItem>
-                                        <SelectItem value="name:desc" className="text-xs">
-                                            Name Z–A
-                                        </SelectItem>
-                                        <SelectItem value="student_id:asc" className="text-xs">
-                                            Student ID (ascending)
-                                        </SelectItem>
-                                        <SelectItem value="student_id:desc" className="text-xs">
-                                            Student ID (descending)
-                                        </SelectItem>
-                                    </SelectContent>
-                                </Select>
-
-                                <Filters
-                                    fields={filterFields}
-                                    filters={activeFilters}
-                                    onChange={handleFiltersChange}
-                                    trigger={
-                                        <Button variant="outline" className="relative h-9 gap-1.5 text-xs" size="sm">
-                                            <Filter className="size-3.5" aria-hidden="true" />
-                                            <span>Filters</span>
-                                            {activeFilters.length > 0 && (
-                                                <Badge
-                                                    variant="secondary"
-                                                    className="ml-0.5 flex size-5 items-center justify-center rounded-full p-0 text-[10px]"
+                {/* Main 2-Column Triage Workbench */}
+                <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[15rem_minmax(0,1fr)]">
+                    {/* Left Sticky Triage Queues Rail */}
+                    <aside className="space-y-4 lg:sticky lg:top-4">
+                        <div className="border-border/70 bg-card rounded-xl border p-2.5">
+                            <p className="text-muted-foreground px-2 pb-2 text-[10px] font-semibold tracking-wider uppercase">
+                                Triage Queues
+                            </p>
+                            <nav className="flex gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">
+                                {triageQueues.map((q) => {
+                                    const active = activeTriage === q.key;
+                                    return (
+                                        <button
+                                            key={q.key}
+                                            type="button"
+                                            onClick={() => handleSelectTriage(q.key)}
+                                            className={cn(
+                                                "flex shrink-0 items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-xs font-medium transition-colors lg:w-full",
+                                                active
+                                                    ? "bg-primary/10 text-primary"
+                                                    : "text-foreground/80 hover:bg-muted hover:text-foreground",
+                                            )}
+                                        >
+                                            <span className="flex min-w-0 items-center gap-2">
+                                                <IconTile
+                                                    variant={active ? "soft" : "outline"}
+                                                    size="xs"
+                                                    className={active ? "text-primary" : q.toneClass}
                                                 >
-                                                    {activeFilters.length}
+                                                    {q.icon}
+                                                </IconTile>
+                                                <span className="truncate">{q.label}</span>
+                                            </span>
+                                            {typeof q.count === "number" && (
+                                                <Badge
+                                                    variant={active ? "default" : "secondary"}
+                                                    className="h-5 min-w-6 justify-center px-1.5 font-mono text-[10px] tabular-nums"
+                                                >
+                                                    {q.count}
                                                 </Badge>
                                             )}
-                                        </Button>
-                                    }
-                                />
-
-                                {activeFilters.length > 0 && (
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={clearFilters}
-                                        className="text-muted-foreground hover:text-foreground h-9 gap-1 px-2 text-xs"
-                                        title="Clear all filters"
-                                    >
-                                        <RotateCcw className="size-3" aria-hidden="true" />
-                                        <span className="hidden sm:inline">Reset</span>
-                                    </Button>
-                                )}
-
-                                <Separator orientation="vertical" className="mx-1 hidden h-6 sm:block" />
-
-                                <Tabs value={viewMode} onValueChange={(value) => setViewMode(value as "list" | "grid")}>
-                                    <TabsList className="grid h-9 grid-cols-2 p-0.5">
-                                        <TabsTrigger value="list" className="h-8 px-2.5 text-xs" title="Table view" aria-label="Table view">
-                                            <List className="size-4" aria-hidden="true" />
-                                        </TabsTrigger>
-                                        <TabsTrigger value="grid" className="h-8 px-2.5 text-xs" title="Grid cards view" aria-label="Grid cards view">
-                                            <LayoutGrid className="size-4" aria-hidden="true" />
-                                        </TabsTrigger>
-                                    </TabsList>
-                                </Tabs>
-                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </nav>
                         </div>
 
-                        {/* Active Filter Removable Chips */}
-                        {activeFilters.length > 0 && (
-                            <div className="flex flex-wrap items-center gap-1.5 border-t pt-2.5">
-                                <span className="text-muted-foreground mr-1 text-[11px] font-medium">Active filters:</span>
-                                {activeFilters.map((f) => (
-                                    <Badge
-                                        key={f.id}
-                                        variant="secondary"
-                                        className="bg-muted hover:bg-muted/80 text-foreground gap-1.5 px-2 py-0.5 text-[11px] font-normal"
-                                    >
-                                        <span className="text-muted-foreground font-semibold">{getFilterFieldLabel(f.field)}:</span>
-                                        <span>{getFilterValueLabel(f.field, f.values[0])}</span>
-                                        <button
-                                            type="button"
-                                            onClick={() => removeFilter(f.field)}
-                                            className="text-muted-foreground hover:bg-background hover:text-foreground ml-0.5 rounded-full p-0.5 transition-colors"
-                                            aria-label={`Remove filter ${f.field}`}
-                                        >
-                                            <X className="size-3" />
-                                        </button>
-                                    </Badge>
-                                ))}
-                                <Button
-                                    variant="link"
-                                    size="sm"
-                                    onClick={clearFilters}
-                                    className="text-muted-foreground hover:text-foreground h-6 px-1.5 text-[11px]"
+                        {/* Saved Views */}
+                        <div className="border-border/70 bg-card hidden rounded-xl border p-2.5 lg:block">
+                            <div className="flex items-center justify-between px-2 pb-1.5">
+                                <span className="text-muted-foreground text-[10px] font-semibold tracking-wider uppercase">
+                                    Saved Views
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={handleSaveCurrentView}
+                                    className="text-primary hover:underline text-[11px] font-medium"
                                 >
-                                    Clear all
-                                </Button>
+                                    + Save
+                                </button>
                             </div>
-                        )}
-                    </CardContent>
-                </Card>
-
-                {/* Deferred Student Data Directory Section */}
-                <AdminDeferredSection data="students" label="Loading student records" name="admin-administrators-students-index" variant="list">
-                    {({ reloading }) => (
-                        <div className={cn("relative transition-opacity duration-150", reloading && "pointer-events-none opacity-60")}>
-                            {reloading && (
-                                <div className="bg-background/20 absolute inset-0 z-20 flex items-start justify-center pt-24 backdrop-blur-[0.5px]">
-                                    <div className="bg-background/95 text-muted-foreground flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium shadow-sm">
-                                        <Loader2 className="text-primary size-3.5 animate-spin" />
-                                        <span>Updating student records…</span>
-                                    </div>
+                            {savedViews.length === 0 ? (
+                                <p className="text-muted-foreground px-2 py-1.5 text-[11px]">
+                                    Save any filter combo for 1-click daily access.
+                                </p>
+                            ) : (
+                                <div className="space-y-1">
+                                    {savedViews.map((sv) => (
+                                        <div
+                                            key={sv.id}
+                                            className="hover:bg-muted group flex items-center justify-between gap-1 rounded-md px-2 py-1.5 text-xs"
+                                        >
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setActiveTriage(sv.triage);
+                                                    setSearchTerm(sv.search);
+                                                    setFilters(sv.filters);
+                                                    navigateDirectory({
+                                                        triage: sv.triage,
+                                                        search: sv.search,
+                                                        filters: sv.filters,
+                                                        page: 1,
+                                                    });
+                                                }}
+                                                className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-left"
+                                            >
+                                                <Bookmark className="text-muted-foreground size-3 shrink-0" />
+                                                <span className="truncate">{sv.name}</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleDeleteSavedView(sv.id)}
+                                                className="text-muted-foreground hover:text-destructive opacity-0 transition-opacity group-hover:opacity-100"
+                                                aria-label={`Remove ${sv.name}`}
+                                            >
+                                                <X className="size-3" />
+                                            </button>
+                                        </div>
+                                    ))}
                                 </div>
                             )}
-                            <DataTable
-                                columns={tableColumns}
-                                data={studentRows}
-                                pageIndex={(students?.current_page ?? 1) - 1}
-                                pageSize={students?.per_page ?? filters.per_page ?? 20}
-                                pageCount={students?.last_page ?? 1}
-                                totalCount={students?.total ?? studentRows.length}
-                                from={students?.from ?? (studentRows.length > 0 ? 1 : 0)}
-                                to={students?.to ?? studentRows.length}
-                                sorting={sorting}
-                                viewMode={viewMode}
-                                returnUrl={returnUrl}
-                                onPageIndexChange={handlePageIndexChange}
-                                onPageSizeChange={handlePageSizeChange}
-                                onSortingChange={handleTableSortingChange}
-                                bulkActions={{ statusOptions: options.statuses }}
-                                onSoftDelete={setSoftDeleteTarget}
-                                onForceDelete={(student) => {
-                                    setForceDeleteTarget(student);
-                                    setConfirmForceText("");
-                                }}
-                                onRestore={setRestoreTarget}
-                                onClearFilters={clearAllFiltersAndSearch}
-                            />
                         </div>
-                    )}
-                </AdminDeferredSection>
+                    </aside>
+
+                    {/* Right Main Directory Surface */}
+                    <div className="min-w-0 space-y-4">
+                        {/* Search, Filters & Sort Toolbar */}
+                        <div className="border-border/70 bg-card flex flex-col gap-3 rounded-xl border p-3.5">
+                            <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
+                                <div className="relative flex-1">
+                                    <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+                                    <Input
+                                        ref={searchInputRef}
+                                        value={searchTerm}
+                                        onChange={(e) => handleSearchChange(e.target.value)}
+                                        placeholder={`Search name, ${identifierPolicy?.display_label || "ID"}, LRN, email... (press /)`}
+                                        className="h-9 pr-8 pl-9 text-xs"
+                                    />
+                                    {searchTerm && (
+                                        <button
+                                            type="button"
+                                            aria-label="Clear search"
+                                            onClick={() => handleSearchChange("")}
+                                            className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2.5 -translate-y-1/2"
+                                        >
+                                            <X className="size-3.5" />
+                                        </button>
+                                    )}
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Select
+                                        value={`${sort}:${direction}`}
+                                        onValueChange={(value) => {
+                                            const parsed = parseSortOption(value);
+                                            setSort(parsed.sort);
+                                            setDirection(parsed.direction);
+                                            navigateDirectory({ sort: parsed.sort, direction: parsed.direction, page: 1 });
+                                        }}
+                                    >
+                                        <SelectTrigger className="h-9 w-[160px] text-xs">
+                                            <SelectValue placeholder="Sort by" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="created_at:desc">Newest Added</SelectItem>
+                                            <SelectItem value="created_at:asc">Oldest Added</SelectItem>
+                                            <SelectItem value="name:asc">Name (A–Z)</SelectItem>
+                                            <SelectItem value="name:desc">Name (Z–A)</SelectItem>
+                                            <SelectItem value="student_id:asc">ID Ascending</SelectItem>
+                                            <SelectItem value="student_id:desc">ID Descending</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+
+                                    <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as "list" | "grid")}>
+                                        <TabsList className="h-9">
+                                            <TabsTrigger value="list" className="px-2.5" aria-label="List view">
+                                                <List className="size-3.5" />
+                                            </TabsTrigger>
+                                            <TabsTrigger value="grid" className="px-2.5" aria-label="Grid view">
+                                                <LayoutGrid className="size-3.5" />
+                                            </TabsTrigger>
+                                        </TabsList>
+                                    </Tabs>
+
+                                    {hasAnyFilter && (
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-9 gap-1 px-2.5 text-xs"
+                                            onClick={handleResetAll}
+                                        >
+                                            <RotateCcw className="size-3.5" />
+                                            Reset
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Filters filters={filters} fields={filterFields} onChange={handleFiltersChange} />
+                            </div>
+                        </div>
+
+                        {/* Deferred Directory Table / Grid */}
+                        <div className="relative">
+                            {isTableLoading && (
+                                <div className="bg-background/50 absolute inset-0 z-20 flex items-center justify-center rounded-xl backdrop-blur-[1px]">
+                                    <Loader2 className="text-primary size-6 animate-spin" />
+                                </div>
+                            )}
+
+                            <AdminDeferredSection data="students" name="student-directory" variant="list" label="Loading students">
+                                <DataTable
+                                    columns={columns}
+                                    data={studentRows}
+                                    pageIndex={(students?.current_page ?? 1) - 1}
+                                    pageSize={students?.per_page ?? perPage}
+                                    pageCount={students?.last_page ?? 1}
+                                    totalCount={students?.total ?? 0}
+                                    from={students?.from ?? undefined}
+                                    to={students?.to ?? undefined}
+                                    sorting={sortingState}
+                                    onSortingChange={handleSortingChange}
+                                    onPageIndexChange={(nextPageIndex) => navigateDirectory({ page: nextPageIndex + 1 })}
+                                    onPageSizeChange={(nextPerPage) => {
+                                        setPerPage(nextPerPage);
+                                        navigateDirectory({ perPage: nextPerPage, page: 1 });
+                                    }}
+                                    viewMode={viewMode}
+                                    returnUrl={returnUrl}
+                                    isTrashedView={
+                                        activeTriage === "trashed" ||
+                                        filters.some((f) => f.field === "trashed" && f.values[0] === "trashed")
+                                    }
+                                    onRowClick={(student) => {
+                                        setInspectorTab("overview");
+                                        setInspectedStudentId(student.id);
+                                    }}
+                                    onSoftDelete={(student) => setSoftDeleteTarget(student)}
+                                    onForceDelete={(student) => {
+                                        setForceDeleteConfirmText("");
+                                        setForceDeleteTarget(student);
+                                    }}
+                                    onRestore={(student) => setRestoreTarget(student)}
+                                    onClearFilters={handleResetAll}
+                                    bulkActions={{
+                                        statusOptions: options.statuses,
+                                        yearLevelOptions: options.year_levels,
+                                    }}
+                                />
+                            </AdminDeferredSection>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            {/* Individual Soft Delete Dialog */}
-            <AlertDialog open={!!softDeleteTarget} onOpenChange={(open) => !open && setSoftDeleteTarget(null)}>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle className="flex items-center gap-2">
-                            <Trash2 className="size-5 text-amber-600" />
-                            Move Student to Trash?
-                        </AlertDialogTitle>
-                        <AlertDialogDescription>
-                            <strong className="text-foreground">{softDeleteTarget?.name}</strong> will be moved to trash and hidden from default
-                            views. You can restore them at any time from the Trashed view.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                            onClick={handleConfirmSoftDelete}
-                            disabled={deleting}
-                            className="bg-amber-600 text-white hover:bg-amber-700 dark:bg-amber-600 dark:hover:bg-amber-700"
-                        >
-                            {deleting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Trash2 className="mr-2 size-4" />}
-                            Move to Trash
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
+            {/* Walk-in Quick-Create Drawer */}
+            {canCreateStudent && (
+                <SchoolAdaptiveQuickCreateDrawer
+                    open={quickCreateOpen}
+                    onOpenChange={setQuickCreateOpen}
+                    configuration={studentConfig}
+                    identifierPolicy={identifierPolicy}
+                    schoolProfile={schoolProfile}
+                    courses={options.quick_create_courses ?? []}
+                    shsStrands={options.shs_strands ?? []}
+                />
+            )}
 
-            {/* Individual Permanent Delete Dialog */}
-            <AlertDialog open={!!forceDeleteTarget} onOpenChange={(open) => !open && !deleting && setForceDeleteTarget(null)}>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle className="text-destructive flex items-center gap-2">
-                            <Zap className="size-5" />
-                            Permanently Delete Student?
-                        </AlertDialogTitle>
-                        <AlertDialogDescription>
-                            This will permanently erase <strong className="text-foreground">{forceDeleteTarget?.name}</strong> along with all
-                            enrollments, tuition, transactions, clearances, grades, and records. This action{" "}
-                            <strong className="text-foreground">cannot be undone</strong>.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <div className="space-y-2 py-1">
-                        <Label htmlFor="index-force-confirm">
-                            Type <span className="text-foreground font-mono font-semibold">{forceDeleteTarget?.student_id}</span> to confirm:
-                        </Label>
-                        <Input
-                            id="index-force-confirm"
-                            value={confirmForceText}
-                            onChange={(e) => setConfirmForceText(e.target.value)}
-                            placeholder={String(forceDeleteTarget?.student_id ?? "")}
-                            autoComplete="off"
-                            disabled={deleting}
-                        />
-                    </div>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-                        <Button
-                            onClick={handleConfirmForceDelete}
-                            disabled={deleting || confirmForceText.trim() !== String(forceDeleteTarget?.student_id ?? "").trim()}
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        >
-                            {deleting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Zap className="mr-2 size-4" />}
-                            Permanently Delete
-                        </Button>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
-
-            {/* Individual Restore Dialog */}
-            <AlertDialog open={!!restoreTarget} onOpenChange={(open) => !open && setRestoreTarget(null)}>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle className="flex items-center gap-2">
-                            <RotateCcw className="text-primary size-5" />
-                            Restore Student Record?
-                        </AlertDialogTitle>
-                        <AlertDialogDescription>
-                            <strong className="text-foreground">{restoreTarget?.name}</strong> will be restored to active status and reappear in the
-                            active student directory.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleConfirmRestore} disabled={deleting}>
-                            {deleting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <RotateCcw className="mr-2 size-4" />}
-                            Restore Student
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
-            {/* Cohort Command Deck: Non-Destructive Slide-Over Enrollee Inspector */}
+            {/* Deep 4-Tab Keyboard-Steppable Inspector Drawer */}
             <StudentInspectorDrawer
                 student={inspectedStudent}
                 open={inspectedStudent !== null}
                 onOpenChange={(open) => {
                     if (!open) setInspectedStudentId(null);
                 }}
+                initialTab={inspectorTab}
                 statusOptions={options.statuses}
+                studentConfiguration={studentConfig}
                 hasPrev={inspectedIndex > 0}
                 hasNext={inspectedIndex >= 0 && inspectedIndex < studentRows.length - 1}
                 onPrev={() => {
@@ -1131,6 +1007,80 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
                     }
                 }}
             />
+
+            {/* Row Soft Delete Dialog */}
+            <AlertDialog open={softDeleteTarget !== null} onOpenChange={(open) => !open && setSoftDeleteTarget(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Move student to trash?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {softDeleteTarget?.name} will be moved to the Trashed queue and can be restored anytime.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleSoftDelete} disabled={isMutating}>
+                            Move to Trash
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            {/* Row Restore Dialog */}
+            <AlertDialog open={restoreTarget !== null} onOpenChange={(open) => !open && setRestoreTarget(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Restore student record?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {restoreTarget?.name} will be restored to the active student directory.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleRestore} disabled={isMutating}>
+                            Restore Student
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            {/* Row Force Delete Dialog */}
+            <AlertDialog open={forceDeleteTarget !== null} onOpenChange={(open) => !open && setForceDeleteTarget(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="text-destructive flex items-center gap-2">
+                            <Zap className="size-4" />
+                            Permanently delete student?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This permanently deletes <strong>{forceDeleteTarget?.name}</strong> and associated records. Type{" "}
+                            <code className="font-mono font-semibold">DELETE</code> to confirm.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <div className="py-2">
+                        <Label htmlFor="single-force-delete-confirm" className="text-xs">
+                            Confirmation
+                        </Label>
+                        <Input
+                            id="single-force-delete-confirm"
+                            value={forceDeleteConfirmText}
+                            onChange={(e) => setForceDeleteConfirmText(e.target.value)}
+                            placeholder="DELETE"
+                            className="mt-1.5 font-mono text-xs"
+                        />
+                    </div>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={handleForceDelete}
+                            disabled={isMutating || forceDeleteConfirmText !== "DELETE"}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                            Delete Permanently
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </AdminLayout>
     );
 }

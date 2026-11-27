@@ -5,7 +5,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useFeatureFlags } from "@/hooks/use-feature-flags";
 import { Link, usePage } from "@inertiajs/react";
 import {
     AlertCircle,
@@ -23,8 +22,8 @@ import {
 import { Cell, Legend, Pie, PieChart, Tooltip as RechartsTooltip, ResponsiveContainer } from "recharts";
 import { toast } from "sonner";
 import type { Branding, StudentDetail } from "../types";
+import { DocumentStudioCards } from "./document-studio-cards";
 import { GradeReleaseSection } from "./grade-release-section";
-import { StudentSignaturePad } from "./student-signature-pad";
 import { TextEntry } from "./text-entry";
 
 declare const route: (name: string, params?: Record<string, unknown> | string | number) => string;
@@ -41,7 +40,6 @@ interface StudentTabsProps {
 
 export function StudentTabs({ student, options, onAdjustTuition, selectedTab, onTabChange }: StudentTabsProps) {
     const { props } = usePage<{ branding?: Branding }>();
-    const flags = useFeatureFlags();
     const currency = props.branding?.currency || "PHP";
     const zeroString = currency === "USD" ? "$ 0.00" : "₱ 0.00";
     const soaPrintUrl = route("administrators.students.tuition.soa", {
@@ -49,6 +47,17 @@ export function StudentTabs({ student, options, onAdjustTuition, selectedTab, on
         school_year: student.tuition?.school_year ?? student.current_school_year,
         semester: student.tuition?.semester ?? student.current_semester,
     });
+    const hasGuardianInfo = Boolean(
+        student.parents?.guardian_name ||
+            student.parents?.guardian_relationship ||
+            student.parents?.guardian_contact ||
+            student.parents?.guardian_email,
+    );
+    const guardianName = hasGuardianInfo ? student.parents?.guardian_name : student.contacts?.emergency_contact_name;
+    const guardianRelationship = hasGuardianInfo
+        ? student.parents?.guardian_relationship
+        : student.contacts?.emergency_contact_relationship;
+    const guardianContact = hasGuardianInfo ? student.parents?.guardian_contact : student.contacts?.emergency_contact_phone;
 
     return (
         <Tabs value={selectedTab} onValueChange={onTabChange} className="w-full">
@@ -162,31 +171,75 @@ export function StudentTabs({ student, options, onAdjustTuition, selectedTab, on
                 <TabsContent value="parents">
                     <Card>
                         <CardHeader>
-                            <CardTitle>Parent Information</CardTitle>
+                            <CardTitle>Parent &amp; Guardian Information</CardTitle>
                         </CardHeader>
-                        <CardContent className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                            <TextEntry label="Father's Name" value={student.parents?.fathers_name} />
-                            <TextEntry label="Mother's Name" value={student.parents?.mothers_name} />
+                        <CardContent className="space-y-6">
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                <TextEntry label="Father's Name" value={student.parents?.father_name ?? student.parents?.fathers_name} />
+                                <TextEntry label="Father's Occupation" value={student.parents?.father_occupation} />
+                                <TextEntry label="Father's Contact" value={student.parents?.father_contact} />
+                                <TextEntry label="Father's Email" value={student.parents?.father_email} />
+                            </div>
+                            <Separator />
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                <TextEntry label="Mother's Name" value={student.parents?.mother_name ?? student.parents?.mothers_name} />
+                                <TextEntry label="Mother's Occupation" value={student.parents?.mother_occupation} />
+                                <TextEntry label="Mother's Contact" value={student.parents?.mother_contact} />
+                                <TextEntry label="Mother's Email" value={student.parents?.mother_email} />
+                            </div>
+                            <Separator />
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                <TextEntry label="Guardian Name" value={guardianName} />
+                                <TextEntry label="Relationship" value={guardianRelationship} />
+                                <TextEntry label="Guardian Contact" value={guardianContact} />
+                                <TextEntry label="Guardian Email" value={student.parents?.guardian_email} />
+                                <TextEntry label="Family Address" value={student.parents?.family_address} />
+                            </div>
                         </CardContent>
                     </Card>
                 </TabsContent>
                 <TabsContent value="school">
                     <Card>
                         <CardHeader>
-                            <CardTitle>School Information</CardTitle>
+                            <CardTitle>Academic Background</CardTitle>
                         </CardHeader>
-                        <CardContent className="space-y-6">
-                            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                        <CardContent className="space-y-5">
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                                 <TextEntry label="Elementary School" value={student.education?.elementary_school} />
                                 <TextEntry label="Elem. Grad Year" value={student.education?.elementary_graduate_year} />
                                 <TextEntry label="Elem. Address" value={student.education?.elementary_school_address} />
                             </div>
                             <Separator />
-                            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                                <TextEntry label="Senior High School" value={student.education?.senior_high_name} />
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                                <TextEntry
+                                    label="Junior High School"
+                                    value={student.education?.junior_high_school_name ?? student.education?.high_school}
+                                />
+                                <TextEntry label="JHS Grad Year" value={student.education?.junior_high_graduation_year} />
+                                <TextEntry label="JHS Address" value={student.education?.junior_high_school_address} />
+                            </div>
+                            <Separator />
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                                <TextEntry
+                                    label="Senior High School"
+                                    value={student.education?.senior_high_name ?? student.education?.senior_high_school}
+                                />
                                 <TextEntry label="SHS Grad Year" value={student.education?.senior_high_graduate_year} />
                                 <TextEntry label="SHS Address" value={student.education?.senior_high_address} />
                             </div>
+                            {(student.education?.college_school || student.education?.vocational_school) && (
+                                <>
+                                    <Separator />
+                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                                        <TextEntry label="Prior College" value={student.education?.college_school} />
+                                        <TextEntry label="Prior Program" value={student.education?.college_course} />
+                                        <TextEntry label="College Year" value={student.education?.college_year_graduated} />
+                                        <TextEntry label="Vocational School" value={student.education?.vocational_school} />
+                                        <TextEntry label="Vocational Course" value={student.education?.vocational_course} />
+                                        <TextEntry label="Vocational Year" value={student.education?.vocational_year_graduated} />
+                                    </div>
+                                </>
+                            )}
                         </CardContent>
                     </Card>
                 </TabsContent>
@@ -196,7 +249,7 @@ export function StudentTabs({ student, options, onAdjustTuition, selectedTab, on
                             <CardTitle>Contact Information</CardTitle>
                         </CardHeader>
                         <CardContent className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                            <TextEntry label="Phone Number" value={student.contacts?.personal_contact} />
+                            <TextEntry label="Phone Number" value={student.phone ?? student.contacts?.personal_contact} />
                             <TextEntry label="Facebook" value={student.contacts?.facebook_contact} />
                             <Separator className="md:col-span-2" />
                             <TextEntry label="Emergency Contact" value={student.contacts?.emergency_contact_name} />
@@ -206,40 +259,32 @@ export function StudentTabs({ student, options, onAdjustTuition, selectedTab, on
                     </Card>
                 </TabsContent>
                 <TabsContent value="documents">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Documents</CardTitle>
-                            <CardDescription>
-                                Manage required files{flags.studentSignaturePad ? " and capture the student signature" : ""}.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-6">
-                            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                                <div className="space-y-1">
-                                    <p className="text-sm font-medium">Document Manager</p>
-                                    <p className="text-muted-foreground text-xs">Upload and manage required student files.</p>
+                    {student.dossier ? (
+                        <DocumentStudioCards
+                            key={student.id}
+                            studentId={student.id}
+                            studentName={student.name}
+                            dossier={student.dossier}
+                            exportZipUrl={student.export_zip_url}
+                            compact
+                        />
+                    ) : (
+                        <Card>
+                            <CardContent className="flex items-center justify-between p-6">
+                                <div>
+                                    <p className="text-sm font-medium">Document Studio</p>
+                                    <p className="text-muted-foreground text-xs">Upload, verify, and manage required student files.</p>
                                 </div>
                                 <Link
                                     href={route("administrators.students.documents.index", student.id)}
                                     className={buttonVariants({ variant: "outline", size: "sm", className: "gap-2" })}
                                 >
                                     <FileText className="h-4 w-4" />
-                                    Open Manager
+                                    Open Studio
                                 </Link>
-                            </div>
-                            {flags.studentSignaturePad && (
-                                <>
-                                    <Separator />
-                                    <div className="max-w-xs">
-                                        <div className="text-muted-foreground mb-1.5 flex items-center gap-1.5 text-xs font-medium tracking-wider uppercase">
-                                            Signature
-                                        </div>
-                                        <StudentSignaturePad studentId={student.id} signatureUrl={student.signature_url} />
-                                    </div>
-                                </>
-                            )}
-                        </CardContent>
-                    </Card>
+                            </CardContent>
+                        </Card>
+                    )}
                 </TabsContent>
                 <TabsContent value="tuition">
                     {student.tuition ? (
@@ -538,7 +583,9 @@ export function StudentTabs({ student, options, onAdjustTuition, selectedTab, on
                                                         </div>
                                                         <div className="space-y-1">
                                                             <p className="text-muted-foreground text-xs tracking-wider uppercase">Last Updated</p>
-                                                            <p className="text-muted-foreground text-sm font-medium">Just now</p>
+                                                            <p className="text-muted-foreground text-sm font-medium">
+                                                                {student.tuition.adjusted_at || student.tuition.updated_at || "—"}
+                                                            </p>
                                                         </div>
                                                     </div>
                                                 </AccordionContent>
@@ -562,9 +609,22 @@ export function StudentTabs({ student, options, onAdjustTuition, selectedTab, on
                                             {student.current_semester}).
                                         </p>
                                     </div>
-                                    <Link href={route("administrators.students.edit", student.id)} className={buttonVariants({ variant: "outline" })}>
-                                        Create Tuition Record
-                                    </Link>
+                                    {(() => {
+                                        const currentEnrollmentId =
+                                            student.current_enrollment?.id ?? student.current_enrollment_id ?? null;
+                                        return (
+                                            <Link
+                                                href={
+                                                    currentEnrollmentId
+                                                        ? `/administrators/enrollments/${currentEnrollmentId}`
+                                                        : `/administrators/enrollments/create?student_id=${student.id}`
+                                                }
+                                                className={buttonVariants({ variant: "outline" })}
+                                            >
+                                                {currentEnrollmentId ? "View Enrollment & Billing" : "Create Enrollment & Billing"}
+                                            </Link>
+                                        );
+                                    })()}
                                 </div>
                             </CardContent>
                         </Card>

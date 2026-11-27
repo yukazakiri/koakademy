@@ -167,7 +167,7 @@ final class ViewStudent extends ViewRecord
                                         }
 
                                         // Check if ID already exists
-                                        if (! $studentIdUpdateService->isIdAvailable($newStudentId)) {
+                                        if (! $studentIdUpdateService->isIdAvailable($newStudentId, $model->school_id)) {
                                             $component->state(null);
                                             Notification::make()
                                                 ->title('ID Already Exists')

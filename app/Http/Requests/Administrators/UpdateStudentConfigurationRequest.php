@@ -67,6 +67,12 @@ final class UpdateStudentConfigurationRequest extends FormRequest
             'signup.faculty_identifier_help_text' => ['sometimes', 'nullable', 'string', 'max:300'],
             'type_labels' => ['required', 'array:'.implode(',', $types)],
             'year_levels' => ['required', 'array:'.implode(',', $types)],
+            'document_checklist' => ['sometimes', 'array'],
+            'document_checklist.*' => ['sometimes', 'array'],
+            'document_checklist.*.*.key' => ['required_with:document_checklist', 'string', Rule::in(\App\Models\DocumentLocation::DOCUMENT_FIELDS)],
+            'document_checklist.*.*.label' => ['nullable', 'string', 'max:80'],
+            'document_checklist.*.*.required' => ['required_with:document_checklist', 'boolean'],
+            'document_checklist.*.*.enabled' => ['sometimes', 'boolean'],
         ];
         foreach (StudentConfigurationService::fieldLabels() as $field => $label) {
             $rules['fields.'.$field] = ['required', 'array:label,visible,required'];

@@ -239,6 +239,8 @@ export function createDefaultSchedule(
 }
 
 export function buildClassDefaults(defaults: ClassDefaultsInput): ClassFormData {
+    const defaultRoomId = Number(defaults.options.rooms[0]?.id ?? 0);
+
     return {
         classification: "college",
         course_codes: [],
@@ -255,7 +257,7 @@ export function buildClassDefaults(defaults: ClassDefaultsInput): ClassFormData 
         start_date: null,
         section: "A",
         delivery_mode: "face_to_face",
-        room_id: null,
+        room_id: defaultRoomId || null,
         maximum_slots: 40,
         schedules: [],
         settings: {

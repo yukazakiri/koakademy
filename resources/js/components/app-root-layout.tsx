@@ -38,7 +38,7 @@ export default function AppRootLayout({ children }: { children: React.ReactNode 
 
     return (
         <OnlinePresenceProvider>
-            <SeoHead />
+            {!["login", "signup", "enrollment/index", "enrollment/closed", "terms-of-service", "privacy-policy", "changelog", "docs/index"].includes(component) && <SeoHead />}
             <AnalyticsScripts />
             <DemoModeBanner />
             {!isAuthPage && !isPortalUser ? <AnnouncementBanner announcements={announcements} /> : null}

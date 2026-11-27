@@ -118,11 +118,38 @@ final class StudentDocumentService
      *
      * @return list<array{key: string, label: string, short_label: string, description: string, accepted: string, required: bool, enabled: bool, image_only: bool}>
      */
-    public function checklistFor(?string $studentType = null, ?int $schoolId = null): array
+    public function checklistFor(?string $studentType = null, ?int $schoolId = null, bool $forStudentPortal = false): array
     {
+        if ($forStudentPortal) {
+            $portalChecklist = $this->configuration->documentChecklist($schoolId);
+            $slots = [];
+
+            foreach ($portalChecklist as $key => $meta) {
+                if (! array_key_exists($key, self::SLOT_CATALOG)) {
+                    continue;
+                }
+                $catalog = self::SLOT_CATALOG[$key];
+                $slots[] = [
+                    'key' => $key,
+                    'label' => (string) $meta['label'],
+                    'short_label' => $catalog['short_label'],
+                    'description' => (string) ($meta['description'] ?? ''),
+                    'accepted' => (string) ($meta['accepted'] ?? $catalog['accepted']),
+                    'required' => (bool) ($meta['required'] ?? false),
+                    'enabled' => true,
+                    'image_only' => (bool) ($catalog['image_only'] ?? false),
+                ];
+            }
+
+            if ($slots !== []) {
+                return $slots;
+            }
+        }
+
         $config = $this->configuration->get($schoolId);
         $resolvedType = $studentType ?: (string) ($config['default_type'] ?? StudentType::College->value);
         $isPhilippine = (bool) ($config['philippine_reporting'] ?? false);
+        $configuredDocSlots = is_array($config['documents'] ?? null) ? $config['documents'] : [];
 
         $configuredChecklist = $config['document_checklist'][$resolvedType]
             ?? $config['document_checklist']['default']
@@ -162,7 +189,7 @@ final class StudentDocumentService
             }
         }
 
-        return $this->defaultChecklistForType($resolvedType, $isPhilippine);
+        return $this->defaultChecklistForType($resolvedType, $isPhilippine, $configuredDocSlots);
     }
 
     /**
@@ -202,31 +229,33 @@ final class StudentDocumentService
     {
         $student->loadMissing(['DocumentLocation', 'resources']);
         $recordsByKey = $this->recordsByKeyForStudent($student);
-        $checklist = $this->checklistFor($student->student_type?->value, $student->school_id);
+        $checklist = $this->checklistFor($student->student_type?->value, $student->school_id, $forStudentPortal);
         $checklistKeys = array_column($checklist, 'key');
 
         // Also include any legacy DocumentLocation slots that already have a file even if not in active checklist
         $docLocation = $student->DocumentLocation;
         $slots = $checklist;
-        foreach (DocumentLocation::DOCUMENT_FIELDS as $field) {
-            if (in_array($field, $checklistKeys, true)) {
-                continue;
-            }
-            $legacyPath = $docLocation?->getAttribute($field);
-            $hasLegacy = is_string($legacyPath) && mb_trim($legacyPath) !== '';
-            $hasRecord = isset($recordsByKey[$field]) && $recordsByKey[$field]->status !== StudentDocumentRecord::StatusMissing;
-            if ($hasLegacy || $hasRecord) {
-                $catalog = self::SLOT_CATALOG[$field];
-                $slots[] = [
-                    'key' => $field,
-                    'label' => $catalog['label'],
-                    'short_label' => $catalog['short_label'],
-                    'description' => $catalog['description'],
-                    'accepted' => $catalog['accepted'],
-                    'required' => false,
-                    'enabled' => true,
-                    'image_only' => (bool) ($catalog['image_only'] ?? false),
-                ];
+        if (! $forStudentPortal) {
+            foreach (DocumentLocation::DOCUMENT_FIELDS as $field) {
+                if (in_array($field, $checklistKeys, true)) {
+                    continue;
+                }
+                $legacyPath = $docLocation?->getAttribute($field);
+                $hasLegacy = is_string($legacyPath) && mb_trim($legacyPath) !== '';
+                $hasRecord = isset($recordsByKey[$field]) && $recordsByKey[$field]->status !== StudentDocumentRecord::StatusMissing;
+                if ($hasLegacy || $hasRecord) {
+                    $catalog = self::SLOT_CATALOG[$field];
+                    $slots[] = [
+                        'key' => $field,
+                        'label' => $catalog['label'],
+                        'short_label' => $catalog['short_label'],
+                        'description' => $catalog['description'],
+                        'accepted' => $catalog['accepted'],
+                        'required' => false,
+                        'enabled' => true,
+                        'image_only' => (bool) ($catalog['image_only'] ?? false),
+                    ];
+                }
             }
         }
 
@@ -942,9 +971,10 @@ final class StudentDocumentService
     }
 
     /**
+     * @param  array<string, array{label?: string, description?: string, visible?: bool, required?: bool}>  $configuredDocSlots
      * @return list<array{key: string, label: string, short_label: string, description: string, accepted: string, required: bool, enabled: bool, image_only: bool}>
      */
-    private function defaultChecklistForType(string $studentType, bool $isPhilippine): array
+    private function defaultChecklistForType(string $studentType, bool $isPhilippine, array $configuredDocSlots = []): array
     {
         $requiredByType = match (true) {
             ! $isPhilippine => [
@@ -980,13 +1010,25 @@ final class StudentDocumentService
         $slots = [];
         foreach ($requiredByType as $key => $required) {
             $catalog = self::SLOT_CATALOG[$key];
+            $docSlotOverride = $configuredDocSlots[$key] ?? null;
+            if (is_array($docSlotOverride) && array_key_exists('visible', $docSlotOverride) && ! (bool) $docSlotOverride['visible']) {
+                continue;
+            }
+
+            $label = is_array($docSlotOverride) && filled($docSlotOverride['label'] ?? null)
+                ? (string) $docSlotOverride['label']
+                : ($isPhilippine ? $catalog['label'] : $catalog['neutral_label']);
+            $description = is_array($docSlotOverride) && filled($docSlotOverride['description'] ?? null)
+                ? (string) $docSlotOverride['description']
+                : ($isPhilippine ? $catalog['description'] : $catalog['neutral_description']);
+
             $slots[] = [
                 'key' => $key,
-                'label' => $isPhilippine ? $catalog['label'] : $catalog['neutral_label'],
+                'label' => $label,
                 'short_label' => $catalog['short_label'],
-                'description' => $isPhilippine ? $catalog['description'] : $catalog['neutral_description'],
+                'description' => $description,
                 'accepted' => $catalog['accepted'],
-                'required' => $required,
+                'required' => is_array($docSlotOverride) && ($docSlotOverride['required'] ?? false) ? true : $required,
                 'enabled' => true,
                 'image_only' => (bool) ($catalog['image_only'] ?? false),
             ];

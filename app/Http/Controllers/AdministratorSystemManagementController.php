@@ -606,11 +606,19 @@ final class AdministratorSystemManagementController extends Controller
 
     public function studentConfiguration(): Response
     {
+        $studentConfiguration = app(\App\Services\StudentConfigurationService::class);
+        $generator = app(IdentifierGenerator::class);
+
         return $this->renderSystemManagementPage('administrators/system-management/student-configuration', 'student_configuration', 'viewStudentConfiguration', [
-            'student_configuration' => app(\App\Services\StudentConfigurationService::class)->get(),
+            'student_configuration' => $studentConfiguration->get(),
             'student_presets' => [
                 'neutral' => \App\Services\StudentConfigurationService::defaults(),
                 'legacy_ph' => \App\Services\StudentConfigurationService::defaults(legacy: true),
+            ],
+            'external_identifier_presets' => \App\Services\StudentConfigurationService::externalIdentifierPresets(),
+            'identifier_policies' => [
+                'student' => $generator->studentPolicy(),
+                'staff' => $generator->staffPolicy(),
             ],
         ]);
     }
@@ -620,8 +628,29 @@ final class AdministratorSystemManagementController extends Controller
         DB::transaction(function () use ($request, $configuration): void {
             app(IdentifierGenerator::class)->sequenceFor(IdentifierGenerator::Student, lock: true);
             $configuration->forget();
+            $current = $configuration->get();
             $settings = $request->validated();
-            $settings['custom_fields'] ??= $configuration->get()['custom_fields'];
+            $settings['custom_fields'] ??= $current['custom_fields'];
+            $settings['external_identifier'] = array_replace(
+                $current['external_identifier'],
+                $settings['external_identifier'],
+            );
+            $settings['signup'] = array_replace(
+                $current['signup'],
+                $settings['signup'] ?? [],
+            );
+            $mergedDocuments = $current['documents'];
+            foreach ($settings['documents'] ?? [] as $slotKey => $slotConfig) {
+                if (isset($mergedDocuments[$slotKey]) && is_array($slotConfig)) {
+                    $mergedDocuments[$slotKey] = array_replace($mergedDocuments[$slotKey], [
+                        'label' => $slotConfig['label'],
+                        'description' => (string) ($slotConfig['description'] ?? ''),
+                        'visible' => (bool) $slotConfig['visible'],
+                        'required' => (bool) $slotConfig['required'],
+                    ]);
+                }
+            }
+            $settings['documents'] = $mergedDocuments;
             $configuration->validateCustomFieldChanges($settings['custom_fields']);
             $configuration->validateIdentifierCompatibility($settings);
             $configuration->update($settings);

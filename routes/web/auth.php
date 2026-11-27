@@ -78,6 +78,7 @@ Route::middleware('guest')->group(function (): void {
     Route::get('/signup', [AuthController::class, 'showSignupForm'])->name('signup');
     Route::post('/signup', [AuthController::class, 'signup'])->middleware('throttle:signup-attempt');
     Route::post('/signup/cancel-social', [AuthController::class, 'cancelSocialSignup'])->name('signup.cancel-social');
+    Route::post('/signup/social-login-link', [AuthController::class, 'startSocialLoginLink'])->name('signup.social-login-link');
     Route::post('/signup/email-lookup', SignupEmailLookupController::class)->middleware('throttle:signup-email-lookup')->name('signup.email-lookup');
     Route::post('/signup/send-otp', [SignupOtpController::class, 'store'])->middleware('throttle:signup-send-otp')->name('signup.send-otp');
     Route::post('/signup/recover-identifier', SignupIdentifierRecoveryController::class)->middleware('throttle:signup-send-otp')->name('signup.recover-identifier');

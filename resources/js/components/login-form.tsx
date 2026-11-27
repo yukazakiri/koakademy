@@ -47,13 +47,22 @@ const demoAccountIcons: Record<string, typeof GraduationCap> = {
     admin: ShieldCheck,
 };
 
+export type PendingSocialLink = {
+    provider: string;
+    name?: string | null;
+    email?: string | null;
+    avatar_url?: string | null;
+    email_verified?: boolean;
+};
+
 export interface LoginFormProps extends ComponentPropsWithoutRef<"div"> {
     demoMode?: DemoMode;
     errors?: Record<string, string>;
     status?: string | null;
+    pendingSocialLink?: PendingSocialLink | null;
 }
 
-export function LoginForm({ className, demoMode, errors, status, ...props }: LoginFormProps) {
+export function LoginForm({ className, demoMode, errors, status, pendingSocialLink, ...props }: LoginFormProps) {
     const { data, setData, post, processing } = useForm({
         email: "",
         password: "",
@@ -225,8 +234,41 @@ export function LoginForm({ className, demoMode, errors, status, ...props }: Log
         );
     };
 
+    const providerLabel = pendingSocialLink?.provider
+        ? pendingSocialLink.provider.charAt(0).toUpperCase() + pendingSocialLink.provider.slice(1)
+        : null;
+
     return (
         <div className={cn("flex flex-col gap-5", className)} {...props}>
+            {pendingSocialLink && providerLabel && (
+                <div className="border-primary/25 bg-primary/5 flex items-center gap-3 rounded-xl border p-3.5 text-xs">
+                    {pendingSocialLink.avatar_url ? (
+                        <img
+                            src={pendingSocialLink.avatar_url}
+                            alt=""
+                            className="border-border size-9 shrink-0 rounded-full border object-cover"
+                        />
+                    ) : (
+                        <span className="bg-primary/15 text-primary flex size-9 shrink-0 items-center justify-center rounded-full font-semibold">
+                            {providerLabel.charAt(0)}
+                        </span>
+                    )}
+                    <div className="min-w-0 flex-1">
+                        <p className="text-foreground font-semibold">Linking {providerLabel} after sign-in</p>
+                        {pendingSocialLink.email && <p className="text-muted-foreground truncate">{pendingSocialLink.email}</p>}
+                    </div>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-muted-foreground hover:text-foreground h-7 shrink-0 px-2 text-xs"
+                        onClick={() => router.post("/signup/cancel-social", { redirect: "login" })}
+                    >
+                        Cancel
+                    </Button>
+                </div>
+            )}
+
             {/* Segmented Mode Switcher: Password vs Magic Link */}
             <div
                 role="tablist"

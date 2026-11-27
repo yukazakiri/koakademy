@@ -68,8 +68,20 @@ final class SignupController extends Controller
 
             $facultyCandidates = $this->facultySignups->candidatesForEmail($email);
             $registerableFaculties = $facultyCandidates->filter(fn ($candidate): bool => $candidate->isRegisterable())->values();
+            $studentConfig = app(\App\Services\StudentConfigurationService::class);
 
             if ($registerableFaculties->isNotEmpty()) {
+                $allowedFaculties = $registerableFaculties->filter(
+                    fn ($candidate): bool => (bool) ($studentConfig->get($candidate->school_id)['signup']['allow_faculty_self_signup'] ?? true),
+                )->values();
+
+                if ($allowedFaculties->isEmpty()) {
+                    return response()->json([
+                        'found' => false,
+                        'message' => 'Self-service faculty account activation is currently disabled for your institution. Please contact your school administrator.',
+                    ]);
+                }
+
                 return response()->json([
                     'found' => true,
                     'type' => 'faculty',
@@ -80,10 +92,14 @@ final class SignupController extends Controller
             $student = $students->first();
 
             if ($student) {
-                if ($students->pluck('student_type')->unique()->count() > 1) {
+                $allowedStudents = $students->filter(
+                    fn ($candidate): bool => (bool) ($studentConfig->get($candidate->school_id)['signup']['allow_student_self_signup'] ?? true),
+                )->values();
+
+                if ($allowedStudents->isEmpty()) {
                     return response()->json([
                         'found' => false,
-                        'message' => 'This email matches multiple student types. Please contact your school administrator.',
+                        'message' => 'Self-service student account activation is currently disabled for your institution. Please contact your school administrator.',
                     ]);
                 }
 
@@ -199,19 +215,20 @@ final class SignupController extends Controller
     private function signupStudent(Request $request): JsonResponse
     {
         $studentType = $request->input('student_type');
-        $isShs = $studentType === 'shs';
 
         $validationRules = [
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255',
             'password' => ['required', 'confirmed', Password::defaults()],
             'user_type' => 'required|string|in:student',
-            'student_type' => ['required', 'string', \Illuminate\Validation\Rule::enum(StudentType::class)],
+            'student_type' => ['nullable', 'string', \Illuminate\Validation\Rule::enum(StudentType::class)],
             'record_id' => 'nullable|integer',
             'otp' => 'required|string',
         ];
 
-        $identifierField = $request->filled('student_id') ? 'student_id' : 'lrn';
+        $identifierField = $request->filled('identifier')
+            ? 'identifier'
+            : ($request->filled('student_id') ? 'student_id' : ($request->filled('lrn') ? 'lrn' : 'identifier'));
         $validationRules[$identifierField] = 'required|string|max:64';
 
         $validator = Validator::make($request->all(), $validationRules);
@@ -240,16 +257,21 @@ final class SignupController extends Controller
             ], 422);
         }
 
-        $role = $isShs ? UserRole::ShsStudent : UserRole::Student;
-        $user = DB::transaction(function () use ($request, $role, $studentType, $email, $identifierField): User {
+        $resolvedStudentType = null;
+        $user = DB::transaction(function () use ($request, $studentType, $email, $identifierField, &$resolvedStudentType): User {
             $student = $this->studentOrganizations->resolveForSignup(
                 email: $email,
-                studentType: StudentType::from($studentType),
+                studentType: filled($studentType) ? StudentType::from((string) $studentType) : null,
                 identifier: $request->string($identifierField)->toString(),
                 recordId: $request->input('record_id'),
                 lockForUpdate: true,
                 inputField: $identifierField,
             );
+
+            $resolvedStudentType = $student->student_type?->value ?? (string) $studentType;
+            $role = $student->student_type === StudentType::SeniorHighSchool
+                ? UserRole::ShsStudent
+                : UserRole::Student;
 
             $spatieRole = Role::firstOrCreate(
                 ['name' => $role->value, 'guard_name' => 'web'],
@@ -288,7 +310,7 @@ final class SignupController extends Controller
                     'name' => $user->name,
                     'email' => $user->email,
                     'role' => $user->role?->value,
-                    'student_type' => $studentType,
+                    'student_type' => $resolvedStudentType,
                 ],
                 'token' => $token,
                 'token_type' => 'Bearer',
@@ -415,11 +437,13 @@ final class SignupController extends Controller
     {
         $studentType = $request->input('student_type');
         $rules = [
-            'student_type' => ['required', 'string', \Illuminate\Validation\Rule::enum(StudentType::class)],
+            'student_type' => ['nullable', 'string', \Illuminate\Validation\Rule::enum(StudentType::class)],
             'record_id' => 'nullable|integer',
         ];
 
-        $identifierField = $request->filled('student_id') ? 'student_id' : 'lrn';
+        $identifierField = $request->filled('identifier')
+            ? 'identifier'
+            : ($request->filled('student_id') ? 'student_id' : ($request->filled('lrn') ? 'lrn' : 'identifier'));
         $rules[$identifierField] = 'required|string|max:64';
 
         $validator = Validator::make($request->all(), $rules);
@@ -430,7 +454,7 @@ final class SignupController extends Controller
 
         $this->studentOrganizations->resolveForSignup(
             email: $request->string('email')->toString(),
-            studentType: StudentType::from($studentType),
+            studentType: filled($studentType) ? StudentType::from((string) $studentType) : null,
             identifier: $request->string($identifierField)->toString(),
             recordId: $request->input('record_id'),
             inputField: $identifierField,

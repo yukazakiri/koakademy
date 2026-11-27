@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Models\DocumentLocation;
 use App\Models\Student;
 use App\Models\User;
+use App\Services\StudentConfigurationService;
 use App\Services\StudentDocumentService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -21,6 +22,7 @@ final class StudentDocumentController extends Controller
 {
     public function __construct(
         private readonly StudentDocumentService $documentService,
+        private readonly StudentConfigurationService $configuration,
     ) {}
 
     public function index(Request $request): Response
@@ -60,14 +62,35 @@ final class StudentDocumentController extends Controller
                 ->values()
                 ->all();
 
-            $uploadedCount = collect($dossier['slots'])->where('has_file', true)->count();
+            $docsCollection = collect($documents);
             $summary = [
-                'uploaded' => $uploadedCount,
-                'compliant' => $dossier['summary']['compliant_count'],
-                'total' => $dossier['summary']['total_required'] ?: count($documents),
-                'pending_review' => $dossier['summary']['pending_review_count'],
-                'rejected' => $dossier['summary']['rejected_count'],
+                'uploaded' => $docsCollection->where('has_file', true)->count(),
+                'compliant' => $docsCollection->where('is_compliant', true)->count(),
+                'total' => $docsCollection->count(),
+                'pending_review' => $docsCollection->where('status', 'pending_review')->count(),
+                'rejected' => $docsCollection->where('status', 'rejected')->count(),
             ];
+        } else {
+            $checklist = $this->configuration->documentChecklist();
+            foreach ($checklist as $key => $meta) {
+                $documents[] = [
+                    'key' => $key,
+                    'label' => $meta['label'],
+                    'description' => $meta['description'],
+                    'accepted' => $meta['accepted'],
+                    'required' => $meta['required'],
+                    'status' => 'missing',
+                    'is_compliant' => false,
+                    'has_file' => false,
+                    'file_name' => null,
+                    'rejection_reason' => null,
+                    'waiver_reason' => null,
+                    'verified_at_label' => null,
+                    'download_url' => null,
+                    'preview_url' => null,
+                ];
+            }
+            $summary['total'] = count($documents);
         }
 
         return Inertia::render('student/documents/index', [
@@ -97,8 +120,14 @@ final class StudentDocumentController extends Controller
 
         abort_if(! $student instanceof Student, 404, 'Student record not found.');
 
+        $checklist = $this->configuration->documentChecklist($student->school_id);
+        $allowedDocumentTypes = array_values(array_intersect(
+            array_keys($checklist),
+            DocumentLocation::DOCUMENT_FIELDS,
+        ));
+
         $validated = $request->validate([
-            'document_type' => ['required', 'string', Rule::in(DocumentLocation::DOCUMENT_FIELDS)],
+            'document_type' => ['required', 'string', Rule::in($allowedDocumentTypes)],
             'file' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png,webp', 'max:5120'],
         ]);
 
@@ -114,24 +143,28 @@ final class StudentDocumentController extends Controller
             autoVerify: false,
         );
 
-        $label = $this->documentService->labelFor($type, $student->student_type?->value, $student->school_id);
+        $label = $checklist[$type]['label']
+            ?? $this->documentService->labelFor($type, $student->student_type?->value, $student->school_id);
 
         return redirect()
             ->back()
-            ->with('success', "{$label} uploaded successfully and queued for registrar review.");
+            ->with('success', "{$label} uploaded successfully.");
     }
 
     public function download(Request $request, string $documentType): StreamedResponse
     {
-        if (! in_array($documentType, DocumentLocation::DOCUMENT_FIELDS, true)) {
-            abort(404, 'Invalid document type.');
-        }
-
         /** @var User $user */
         $user = $request->user();
         $student = $this->resolveStudent($user);
 
         abort_if(! $student instanceof Student, 404, 'Student record not found.');
+
+        $configuredSlots = array_keys($this->configuration->documentChecklist($student->school_id, onlyVisible: false));
+        $allowedDocumentTypes = array_values(array_unique([...$configuredSlots, ...DocumentLocation::DOCUMENT_FIELDS]));
+
+        if (! in_array($documentType, $allowedDocumentTypes, true) || ! in_array($documentType, DocumentLocation::DOCUMENT_FIELDS, true)) {
+            abort(404, 'Invalid document type.');
+        }
 
         $resolved = $this->documentService->resolveFixedFile($student, $documentType);
         abort_if($resolved === null, 404, 'Document not found.');

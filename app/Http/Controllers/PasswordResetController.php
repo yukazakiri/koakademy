@@ -57,6 +57,7 @@ final class PasswordResetController extends Controller
         $status = Password::broker('users')->reset(
             Arr::only($request->all(), ['email', 'password', 'password_confirmation', 'token']),
             function ($user, $password): void {
+                $user->markPasswordProvisioned(true);
                 $user->forceFill([
                     'password' => $password,
                     'session_version' => ((int) ($user->session_version ?? 0)) + 1,

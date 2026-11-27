@@ -103,6 +103,43 @@
             }
         }
 
+        // Search metadata must be stable across visitors, including in multi-school installations.
+        $publicSchool = null;
+        if (request()->routeIs('login', 'signup', 'enrollment.create', 'terms-of-service', 'privacy-policy', 'changelog')) {
+            $activeSchools = \App\Models\School::query()->where('is_active', true)->limit(2)->get(['name', 'description']);
+            $publicSchool = $activeSchools->count() === 1 ? $activeSchools->first() : null;
+        }
+        $schoolName = filled($publicSchool?->name) ? mb_trim($publicSchool->name) : $siteSettings->getOrganizationName();
+        $schoolDescription = $publicSchool?->description ?: ($siteSettings->portal_description ?: $siteDescription);
+
+        // Public pages need distinct descriptions and their own canonical URLs.
+        $publicPageSeo = match (request()->route()?->getName()) {
+            'login' => ['Student Portal Login', 'Sign in to '.$schoolName.' to access the student portal.'],
+            'signup' => ['Create an Account', 'Create an account for '.$schoolName.'.'],
+            'enrollment.create' => ['Online Enrollment', 'Apply for enrollment online at '.$schoolName.'.'],
+            'terms-of-service' => ['Terms of Service', 'Read the terms of service for '.$schoolName.'.'],
+            'privacy-policy' => ['Privacy Policy', 'Read the privacy policy for '.$schoolName.'.'],
+            'changelog' => ['Changelog', 'See the latest updates to '.$schoolName.'.'],
+            default => null,
+        };
+        if ($publicPageSeo !== null) {
+            $metaTitle = $publicPageSeo[0].' | '.$schoolName;
+            $metaDescription = $publicPageSeo[1];
+            $ogTitle = $metaTitle;
+            $ogDescription = $metaDescription;
+            $ogSiteName = $schoolName;
+            $canonicalOverride = url()->current();
+            if (request()->routeIs('login')) {
+                $organization = ['@context' => 'https://schema.org', '@type' => 'EducationalOrganization', 'name' => $schoolName, 'url' => $canonicalOverride];
+                if (filled($schoolDescription)) {
+                    $organization['description'] = strip_tags($schoolDescription);
+                }
+                $structuredDataJson = json_encode($organization, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+            }
+        } elseif ($isDocsPage) {
+            $canonicalOverride = url()->current();
+        }
+
         // Generate proper URLs for R2-stored files
         $faviconUrl = $siteSettings->getFavicon();
         $appleTouchIconUrl = $siteSettings->getLogo();

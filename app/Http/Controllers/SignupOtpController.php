@@ -90,11 +90,13 @@ final class SignupOtpController extends Controller
         $studentType = $request->input('student_type');
 
         $rules = [
-            'student_type' => ['required', 'string', \Illuminate\Validation\Rule::enum(StudentType::class)],
+            'student_type' => ['nullable', 'string', \Illuminate\Validation\Rule::enum(StudentType::class)],
             'record_id' => 'nullable|integer',
         ];
 
-        $identifierField = $request->filled('student_id') ? 'student_id' : 'lrn';
+        $identifierField = $request->filled('identifier')
+            ? 'identifier'
+            : ($request->filled('student_id') ? 'student_id' : ($request->filled('lrn') ? 'lrn' : 'identifier'));
         $rules[$identifierField] = 'required|string|max:64';
 
         $validator = Validator::make($request->all(), $rules);
@@ -105,7 +107,7 @@ final class SignupOtpController extends Controller
 
         $this->studentOrganizations->resolveForSignup(
             email: $request->string('email')->toString(),
-            studentType: StudentType::from($studentType),
+            studentType: filled($studentType) ? StudentType::from((string) $studentType) : null,
             identifier: $request->string($identifierField)->toString(),
             recordId: $request->input('record_id'),
             inputField: $identifierField,

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="light dark">
     <meta name="supported-color-schemes" content="light dark">
-    <title>{{ $appName }} — Your Student Number / LRN</title>
+    <title>{{ $appName }} — Your {{ $identifierHeading ?? 'Student ID' }}</title>
     <style>
         :root { color-scheme: light dark; supported-color-schemes: light dark; }
         @media (prefers-color-scheme: dark) {
@@ -51,10 +51,15 @@
 
                                 <div style="padding: 32px;">
                                     <p class="email-text" style="font-size: 15px; line-height: 1.65; color: #3f3f46; margin: 0 0 20px;">
-                                        We received a request to recover the Student Number / LRN associated with <strong>{{ $recipientEmail }}</strong>.
+                                        We received a request to recover the {{ $identifierHeading ?? 'Student ID' }} associated with <strong>{{ $recipientEmail }}</strong>.
                                     </p>
 
                                     @foreach($records as $record)
+                                        @php
+                                            $externalValue = $record['external_id'] ?? $record['lrn'] ?? null;
+                                            $externalLabel = $record['external_id_label'] ?? 'External Identifier';
+                                            $primaryLabel = $record['student_id_label'] ?? 'Student ID';
+                                        @endphp
                                         <div class="email-record-box" style="background-color: #fafafa; border: 1px solid #e4e4e7; border-radius: 12px; padding: 20px; margin: 0 0 16px;">
                                             <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                                                 @if(!empty($record['student_name']))
@@ -65,14 +70,14 @@
                                                 @endif
                                                 @if(!empty($record['student_id']))
                                                     <tr>
-                                                        <td class="email-muted" style="padding: 5px 0; color: #71717a; font-size: 12px;">Student Number</td>
+                                                        <td class="email-muted" style="padding: 5px 0; color: #71717a; font-size: 12px;">{{ $primaryLabel }}</td>
                                                         <td class="email-heading" style="padding: 5px 0; color: #18181b; font-size: 16px; font-weight: 700; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; letter-spacing: 1px;">{{ $record['student_id'] }}</td>
                                                     </tr>
                                                 @endif
-                                                @if(!empty($record['lrn']))
+                                                @if(!empty($externalValue) && $externalValue !== ($record['student_id'] ?? null))
                                                     <tr>
-                                                        <td class="email-muted" style="padding: 5px 0; color: #71717a; font-size: 12px;">LRN</td>
-                                                        <td class="email-heading" style="padding: 5px 0; color: #18181b; font-size: 16px; font-weight: 700; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; letter-spacing: 1px;">{{ $record['lrn'] }}</td>
+                                                        <td class="email-muted" style="padding: 5px 0; color: #71717a; font-size: 12px;">{{ $externalLabel }}</td>
+                                                        <td class="email-heading" style="padding: 5px 0; color: #18181b; font-size: 16px; font-weight: 700; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; letter-spacing: 1px;">{{ $externalValue }}</td>
                                                     </tr>
                                                 @endif
                                                 @if(!empty($record['program']))

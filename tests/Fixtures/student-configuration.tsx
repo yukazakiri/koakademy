@@ -35,16 +35,54 @@ const neutral: Configuration = {
     fields: Object.fromEntries(
         Object.entries(fields).map(([key, label]) => [key, { label, visible: !["religion", "weight", "height"].includes(key), required: false }]),
     ),
+    documents: {
+        birth_certificate: {
+            label: "Birth Certificate / Identity Proof",
+            description: "Official birth certificate or government-issued identity document (clear scan or photo)",
+            visible: true,
+            required: false,
+        },
+        form_138: {
+            label: "Academic Transcript / Report Card",
+            description: "Latest official academic transcript or prior school report card",
+            visible: true,
+            required: false,
+        },
+        good_moral_cert: {
+            label: "Character / Transfer Reference",
+            description: "Certificate of good standing, conduct, or transfer reference from previous school",
+            visible: true,
+            required: false,
+        },
+        picture_1x1: {
+            label: "ID Photo",
+            description: "Recent clear plain-background identification photo",
+            visible: true,
+            required: false,
+        },
+    },
     external_identifier: {
         enabled: false,
         label: "External Identifier",
         help_text: "An identifier assigned outside this institution.",
+        placeholder: null,
         required: false,
         student_types: ["shs"],
         format: "text",
         min_length: 1,
         max_length: 32,
         use_as_student_id: false,
+        allow_for_signup: true,
+    },
+    signup: {
+        allow_student_self_signup: true,
+        allow_faculty_self_signup: true,
+        allow_identifier_recovery: true,
+        require_faculty_id: false,
+        student_identifier_placeholder: null,
+        student_identifier_help_text: null,
+        faculty_identifier_placeholder: null,
+        faculty_identifier_help_text: null,
     },
     type_labels: labels,
     year_levels: Object.fromEntries(
@@ -69,6 +107,32 @@ const institution: Configuration = {
     defaults: { nationality: "filipino", citizenship: "filipino", gender: "male" },
     philippine_reporting: true,
     fields: Object.fromEntries(Object.entries(fields).map(([key, label]) => [key, { label, visible: true, required: false }])),
+    documents: {
+        birth_certificate: {
+            label: "Birth Certificate",
+            description: "PSA / NSO Birth Certificate (clear scan or photo)",
+            visible: true,
+            required: false,
+        },
+        form_138: {
+            label: "Form 138 / Report Card",
+            description: "Latest official high school or prior school report card",
+            visible: true,
+            required: false,
+        },
+        good_moral_cert: {
+            label: "Good Moral Certificate",
+            description: "Certificate of Good Moral Character from previous school",
+            visible: true,
+            required: false,
+        },
+        picture_1x1: {
+            label: "1x1 ID Photo",
+            description: "Recent clear 1x1 or 2x2 plain-background ID photo",
+            visible: true,
+            required: false,
+        },
+    },
     external_identifier: {
         ...neutral.external_identifier,
         enabled: true,
@@ -119,6 +183,11 @@ createInertiaApp({
             },
             student_configuration: configuration,
             student_presets: { neutral, legacy_ph: institution },
+            external_identifier_presets: {},
+            identifier_policies: {
+                student: { display_label: "Student ID", assignment_mode: "hybrid", character_set: "numeric", legacy_format: legacy },
+                staff: { display_label: "Faculty ID", assignment_mode: "hybrid", character_set: "numeric", legacy_format: legacy },
+            },
             identifier_year: "2026",
             id_sequences: {
                 student: sequence,

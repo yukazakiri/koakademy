@@ -9,6 +9,7 @@ use App\Models\Student;
 use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Throwable;
 
 /** School-owned preferences, not deployment-time overrides. */
 final class StudentConfigurationService
@@ -30,12 +31,31 @@ final class StudentConfigurationService
             'defaults' => ['nationality' => $legacy ? 'filipino' : '', 'citizenship' => $legacy ? 'filipino' : '', 'gender' => $legacy ? 'male' : ''],
             'philippine_reporting' => $legacy,
             'fields' => $fields,
+            'documents' => self::defaultDocuments($legacy),
             'custom_fields' => [],
             'external_identifier' => [
-                'enabled' => $legacy, 'label' => $legacy ? 'LRN' : 'External Identifier',
+                'enabled' => $legacy,
+                'label' => $legacy ? 'LRN' : 'External Identifier',
                 'help_text' => $legacy ? 'Learner Reference Number assigned by the Department of Education.' : 'An identifier assigned outside this institution.',
-                'required' => $legacy, 'student_types' => ['shs'], 'format' => 'text',
-                'min_length' => 1, 'max_length' => $legacy ? 20 : 32, 'use_as_student_id' => $legacy,
+                'placeholder' => $legacy ? 'e.g. 123456789012' : null,
+                'required' => $legacy,
+                'student_types' => ['shs'],
+                'format' => 'text',
+                'min_length' => 1,
+                'max_length' => $legacy ? 20 : 32,
+                'use_as_student_id' => $legacy,
+                'allow_for_signup' => true,
+            ],
+            'signup' => [
+                'allow_student_self_signup' => true,
+                'allow_faculty_self_signup' => true,
+                'allow_identifier_recovery' => true,
+                'require_faculty_id' => false,
+                'require_password_on_social_signup' => false,
+                'student_identifier_placeholder' => null,
+                'student_identifier_help_text' => null,
+                'faculty_identifier_placeholder' => null,
+                'faculty_identifier_help_text' => null,
             ],
             'type_labels' => $legacy
                 ? collect(StudentType::cases())->mapWithKeys(fn (StudentType $type): array => [$type->value => $type->getLabel()])->all()
@@ -49,9 +69,198 @@ final class StudentConfigurationService
         ];
     }
 
+    /**
+     * Built-in international & regional registry presets for open-source deployments worldwide.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public static function externalIdentifierPresets(): array
+    {
+        return [
+            'none' => [
+                'name' => 'Institutional ID Only (Universal)',
+                'region' => 'Global Default',
+                'description' => 'Use your school-issued Student ID only, with no external government registry number.',
+                'config' => [
+                    'enabled' => false,
+                    'label' => 'External Identifier',
+                    'help_text' => 'An identifier assigned outside this institution.',
+                    'placeholder' => null,
+                    'student_types' => ['shs'],
+                    'format' => 'text',
+                    'min_length' => 1,
+                    'max_length' => 32,
+                    'required' => false,
+                    'use_as_student_id' => false,
+                    'allow_for_signup' => true,
+                ],
+            ],
+            'ph_lrn' => [
+                'name' => 'Philippines — DepEd LRN',
+                'region' => 'Philippines',
+                'description' => '12-digit Learner Reference Number assigned by the Department of Education.',
+                'config' => [
+                    'enabled' => true,
+                    'label' => 'LRN',
+                    'help_text' => '12-digit Learner Reference Number assigned by the Department of Education.',
+                    'placeholder' => 'e.g. 123456789012',
+                    'student_types' => ['shs'],
+                    'format' => 'digits',
+                    'min_length' => 12,
+                    'max_length' => 12,
+                    'required' => false,
+                    'use_as_student_id' => false,
+                    'allow_for_signup' => true,
+                ],
+            ],
+            'uk_uln' => [
+                'name' => 'United Kingdom — ULN',
+                'region' => 'United Kingdom',
+                'description' => '10-digit Unique Learner Number issued by the Learning Records Service.',
+                'config' => [
+                    'enabled' => true,
+                    'label' => 'ULN',
+                    'help_text' => '10-digit Unique Learner Number issued by the Learning Records Service.',
+                    'placeholder' => 'e.g. 1234567890',
+                    'student_types' => ['college', 'shs'],
+                    'format' => 'digits',
+                    'min_length' => 10,
+                    'max_length' => 10,
+                    'required' => false,
+                    'use_as_student_id' => false,
+                    'allow_for_signup' => true,
+                ],
+            ],
+            'au_usi' => [
+                'name' => 'Australia — USI',
+                'region' => 'Australia',
+                'description' => '10-character alphanumeric Unique Student Identifier for tertiary and VET learners.',
+                'config' => [
+                    'enabled' => true,
+                    'label' => 'USI',
+                    'help_text' => '10-character Unique Student Identifier issued by the Australian Government.',
+                    'placeholder' => 'e.g. 3AW88YH9U5',
+                    'student_types' => ['college', 'tesda'],
+                    'format' => 'alphanumeric',
+                    'min_length' => 10,
+                    'max_length' => 10,
+                    'required' => false,
+                    'use_as_student_id' => false,
+                    'allow_for_signup' => true,
+                ],
+            ],
+            'in_apaar' => [
+                'name' => 'India — APAAR / ABC ID',
+                'region' => 'India',
+                'description' => '12-digit Automated Permanent Academic Account Registry (APAAR) ID.',
+                'config' => [
+                    'enabled' => true,
+                    'label' => 'APAAR ID',
+                    'help_text' => '12-digit APAAR / Academic Bank of Credits identifier.',
+                    'placeholder' => 'e.g. 123456789012',
+                    'student_types' => ['college', 'shs'],
+                    'format' => 'digits',
+                    'min_length' => 12,
+                    'max_length' => 12,
+                    'required' => false,
+                    'use_as_student_id' => false,
+                    'allow_for_signup' => true,
+                ],
+            ],
+            'us_ssid' => [
+                'name' => 'United States — State Student ID (SSID)',
+                'region' => 'United States',
+                'description' => 'Statewide Student Identifier assigned by a state education agency.',
+                'config' => [
+                    'enabled' => true,
+                    'label' => 'State Student ID',
+                    'help_text' => 'Statewide Student Identifier (SSID) issued by your state education agency.',
+                    'placeholder' => 'e.g. 1048291042',
+                    'student_types' => ['shs'],
+                    'format' => 'alphanumeric',
+                    'min_length' => 6,
+                    'max_length' => 20,
+                    'required' => false,
+                    'use_as_student_id' => false,
+                    'allow_for_signup' => true,
+                ],
+            ],
+        ];
+    }
+
     public static function fieldLabels(): array
     {
         return ['email' => 'Email', 'phone' => 'Phone', 'civil_status' => 'Civil Status', 'nationality' => 'Nationality', 'citizenship' => 'Citizenship', 'religion' => 'Religion', 'height' => 'Height', 'weight' => 'Weight', 'birthplace' => 'Birthplace', 'current_address' => 'Current Address', 'permanent_address' => 'Permanent Address'];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function documentSlotKeys(): array
+    {
+        return ['birth_certificate', 'form_138', 'good_moral_cert', 'picture_1x1'];
+    }
+
+    /**
+     * @return array<string, array{label: string, description: string, visible: bool, required: bool}>
+     */
+    public static function defaultDocuments(bool $legacy = false): array
+    {
+        if ($legacy) {
+            return [
+                'birth_certificate' => [
+                    'label' => 'Birth Certificate',
+                    'description' => 'PSA / NSO Birth Certificate (clear scan or photo)',
+                    'visible' => true,
+                    'required' => false,
+                ],
+                'form_138' => [
+                    'label' => 'Form 138 / Report Card',
+                    'description' => 'Latest official high school or prior school report card',
+                    'visible' => true,
+                    'required' => false,
+                ],
+                'good_moral_cert' => [
+                    'label' => 'Good Moral Certificate',
+                    'description' => 'Certificate of Good Moral Character from previous school',
+                    'visible' => true,
+                    'required' => false,
+                ],
+                'picture_1x1' => [
+                    'label' => '1x1 ID Photo',
+                    'description' => 'Recent clear 1x1 or 2x2 plain-background ID photo',
+                    'visible' => true,
+                    'required' => false,
+                ],
+            ];
+        }
+
+        return [
+            'birth_certificate' => [
+                'label' => 'Birth Certificate / Identity Proof',
+                'description' => 'Official birth certificate or government-issued identity document (clear scan or photo)',
+                'visible' => true,
+                'required' => false,
+            ],
+            'form_138' => [
+                'label' => 'Academic Transcript / Report Card',
+                'description' => 'Latest official academic transcript or prior school report card',
+                'visible' => true,
+                'required' => false,
+            ],
+            'good_moral_cert' => [
+                'label' => 'Character / Transfer Reference',
+                'description' => 'Certificate of good standing, conduct, or transfer reference from previous school',
+                'visible' => true,
+                'required' => false,
+            ],
+            'picture_1x1' => [
+                'label' => 'ID Photo',
+                'description' => 'Recent clear plain-background identification photo',
+                'visible' => true,
+                'required' => false,
+            ],
+        ];
     }
 
     public static function reportingFields(): array
@@ -221,7 +430,193 @@ final class StudentConfigurationService
         $configuration = is_string($stored) ? json_decode($stored, true, flags: JSON_THROW_ON_ERROR) : [];
 
         // Arrays such as enabled_types are replaced, never recursively merged by index.
-        return $this->resolved[$scope] = array_replace(self::defaults(), $configuration);
+        $defaults = self::defaults();
+        $merged = array_replace($defaults, $configuration);
+        $merged['external_identifier'] = array_replace(
+            $defaults['external_identifier'],
+            is_array($configuration['external_identifier'] ?? null) ? $configuration['external_identifier'] : [],
+        );
+        $merged['signup'] = array_replace(
+            $defaults['signup'],
+            is_array($configuration['signup'] ?? null) ? $configuration['signup'] : [],
+        );
+        $storedDocuments = is_array($configuration['documents'] ?? null) ? $configuration['documents'] : [];
+        $mergedDocuments = [];
+        foreach (self::documentSlotKeys() as $slotKey) {
+            $defaultSlot = $defaults['documents'][$slotKey];
+            $storedSlot = is_array($storedDocuments[$slotKey] ?? null) ? $storedDocuments[$slotKey] : [];
+            $mergedDocuments[$slotKey] = array_replace($defaultSlot, $storedSlot);
+        }
+        $merged['documents'] = $mergedDocuments;
+
+        return $this->resolved[$scope] = $merged;
+    }
+
+    /**
+     * Return configured student document vault slots for a school or installation.
+     *
+     * @return array<string, array{label: string, description: string, visible: bool, required: bool, accepted: string}>
+     */
+    public function documentChecklist(?int $schoolId = null, bool $onlyVisible = true): array
+    {
+        $documents = $this->get($schoolId)['documents'];
+        $accepted = self::documentSlotAcceptedFormats();
+        $checklist = [];
+
+        foreach (self::documentSlotKeys() as $slotKey) {
+            $slot = $documents[$slotKey];
+            $visible = (bool) ($slot['visible'] ?? true);
+
+            if ($onlyVisible && ! $visible) {
+                continue;
+            }
+
+            $checklist[$slotKey] = [
+                'label' => (string) $slot['label'],
+                'description' => (string) ($slot['description'] ?? ''),
+                'visible' => $visible,
+                'required' => (bool) ($slot['required'] ?? false),
+                'accepted' => $accepted[$slotKey] ?? 'PDF, JPG, PNG, or WebP up to 5 MB',
+            ];
+        }
+
+        return $checklist;
+    }
+
+    /**
+     * Build dynamic, privacy-safe portal signup presentation metadata for a school or installation.
+     *
+     * @return array<string, mixed>
+     */
+    public function signupPresentation(?int $schoolId = null): array
+    {
+        $config = $this->get($schoolId);
+        $external = $config['external_identifier'];
+        $signup = $config['signup'];
+        $generator = app(IdentifierGenerator::class);
+
+        $studentPolicy = $generator->studentPolicy(schoolId: $schoolId);
+        $staffPolicy = $generator->staffPolicy(schoolId: $schoolId);
+
+        $studentIdLabel = mb_trim((string) ($studentPolicy['display_label'] ?? ''));
+        if ($studentIdLabel === '') {
+            $studentIdLabel = 'Student ID';
+        }
+
+        $staffIdLabel = mb_trim((string) ($staffPolicy['display_label'] ?? ''));
+        if ($staffIdLabel === '' || mb_strtolower($staffIdLabel) === 'student id') {
+            $staffIdLabel = 'Faculty ID';
+        }
+
+        $enabledTypes = is_array($config['enabled_types'] ?? null) ? $config['enabled_types'] : ['college'];
+        $externalStudentTypes = is_array($external['student_types'] ?? null) ? $external['student_types'] : [];
+        $externalAppliesToEnabled = (bool) ($external['enabled'] ?? false)
+            && array_intersect($enabledTypes, $externalStudentTypes) !== [];
+        $allowExternalForSignup = $externalAppliesToEnabled
+            && ((bool) ($external['allow_for_signup'] ?? true) || (bool) ($external['use_as_student_id'] ?? false));
+        $externalLabel = mb_trim((string) ($external['label'] ?? 'External Identifier'));
+        if ($externalLabel === '') {
+            $externalLabel = 'External Identifier';
+        }
+
+        $externalOnly = $allowExternalForSignup
+            && (bool) ($external['use_as_student_id'] ?? false)
+            && count(array_diff($enabledTypes, $externalStudentTypes)) === 0;
+
+        $universalIdentifierLabel = $externalOnly
+            ? $externalLabel
+            : ($allowExternalForSignup ? "{$studentIdLabel} or {$externalLabel}" : $studentIdLabel);
+
+        $studentPreview = null;
+        try {
+            $studentPreview = $generator->previewStudentId(schoolId: $schoolId);
+        } catch (Throwable) {
+            $studentPreview = null;
+        }
+
+        $staffPreview = null;
+        try {
+            $staffPreview = $generator->previewStaffId($schoolId);
+        } catch (Throwable) {
+            $staffPreview = null;
+        }
+
+        $externalPlaceholder = filled($external['placeholder'] ?? null)
+            ? mb_trim((string) $external['placeholder'])
+            : null;
+
+        $configuredStudentPlaceholder = filled($signup['student_identifier_placeholder'] ?? null)
+            ? mb_trim((string) $signup['student_identifier_placeholder'])
+            : null;
+
+        if ($configuredStudentPlaceholder !== null) {
+            $studentPlaceholder = $configuredStudentPlaceholder;
+        } elseif ($externalOnly) {
+            $studentPlaceholder = $externalPlaceholder ?? "Enter your {$externalLabel}";
+        } elseif ($allowExternalForSignup) {
+            $primaryExample = filled($studentPreview) ? $studentPreview : '2026-0001';
+            $secondaryExample = $externalPlaceholder !== null
+                ? preg_replace('/^e\.g\.\s*/i', '', $externalPlaceholder)
+                : null;
+            $studentPlaceholder = filled($secondaryExample)
+                ? "e.g. {$primaryExample} or {$secondaryExample}"
+                : "e.g. {$primaryExample}";
+        } else {
+            $studentPlaceholder = filled($studentPreview)
+                ? "e.g. {$studentPreview}"
+                : "Enter your {$studentIdLabel}";
+        }
+
+        $configuredStudentHelp = filled($signup['student_identifier_help_text'] ?? null)
+            ? mb_trim((string) $signup['student_identifier_help_text'])
+            : null;
+
+        if ($configuredStudentHelp !== null) {
+            $studentHelpText = $configuredStudentHelp;
+        } elseif ($externalOnly && filled($external['help_text'] ?? null)) {
+            $studentHelpText = (string) $external['help_text'];
+        } elseif ($allowExternalForSignup) {
+            $studentHelpText = "Enter your {$studentIdLabel} or {$externalLabel} — we'll automatically match your student record.";
+        } else {
+            $studentHelpText = 'Found on your admission notice, registration slip, or campus ID card.';
+        }
+
+        $configuredFacultyPlaceholder = filled($signup['faculty_identifier_placeholder'] ?? null)
+            ? mb_trim((string) $signup['faculty_identifier_placeholder'])
+            : null;
+
+        $facultyPlaceholder = $configuredFacultyPlaceholder
+            ?? (filled($staffPreview) ? "e.g. {$staffPreview}" : "Enter your {$staffIdLabel}");
+
+        $facultyHelpText = filled($signup['faculty_identifier_help_text'] ?? null)
+            ? mb_trim((string) $signup['faculty_identifier_help_text'])
+            : "Enter the {$staffIdLabel} assigned by HR or your institution.";
+
+        $enabledTrackLabels = collect($enabledTypes)
+            ->map(fn (string $type): string => (string) ($config['type_labels'][$type] ?? ucfirst($type)))
+            ->filter(fn (string $label): bool => mb_trim($label) !== '')
+            ->values()
+            ->all();
+
+        return [
+            'student_id_label' => $studentIdLabel,
+            'faculty_id_label' => $staffIdLabel,
+            'external_identifier_enabled' => $allowExternalForSignup,
+            'external_identifier_label' => $externalLabel,
+            'external_identifier_help_text' => filled($external['help_text'] ?? null) ? (string) $external['help_text'] : null,
+            'external_identifier_only' => $externalOnly,
+            'universal_identifier_label' => $universalIdentifierLabel,
+            'student_identifier_placeholder' => $studentPlaceholder,
+            'student_identifier_help_text' => $studentHelpText,
+            'faculty_identifier_placeholder' => $facultyPlaceholder,
+            'faculty_identifier_help_text' => $facultyHelpText,
+            'enabled_track_labels' => $enabledTrackLabels,
+            'allow_student_self_signup' => (bool) ($signup['allow_student_self_signup'] ?? true),
+            'allow_faculty_self_signup' => (bool) ($signup['allow_faculty_self_signup'] ?? true),
+            'allow_identifier_recovery' => (bool) ($signup['allow_identifier_recovery'] ?? true),
+            'require_faculty_id' => (bool) ($signup['require_faculty_id'] ?? false),
+            'require_password_on_social_signup' => (bool) ($signup['require_password_on_social_signup'] ?? false),
+        ];
     }
 
     public function update(array $configuration, ?int $schoolId = null): void
@@ -417,7 +812,11 @@ final class StudentConfigurationService
             'bail',
             $external['required'] || $external['use_as_student_id'] ? 'required' : 'nullable',
             'string', 'min:'.$external['min_length'], 'max:'.$external['max_length'],
-            ...($external['format'] === 'digits' ? ['regex:/\A[0-9]+\z/'] : []),
+            ...match ($external['format']) {
+                'digits' => ['regex:/\A[0-9]+\z/'],
+                'alphanumeric' => ['regex:/\A[A-Za-z0-9]+\z/'],
+                default => [],
+            },
             Rule::unique('students', 'lrn')->where('school_id', $schoolId)->ignore($student?->id),
         ] : ['exclude'];
         if ($external['enabled'] && $external['use_as_student_id'] && ($student === null || (string) $student->student_id === (string) $student->lrn)) {
@@ -462,5 +861,18 @@ final class StudentConfigurationService
         }
 
         return $data;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function documentSlotAcceptedFormats(): array
+    {
+        return [
+            'birth_certificate' => 'PDF, JPG, PNG, or WebP up to 5 MB',
+            'form_138' => 'PDF, JPG, PNG, or WebP up to 5 MB',
+            'good_moral_cert' => 'PDF, JPG, PNG, or WebP up to 5 MB',
+            'picture_1x1' => 'JPG, PNG, WebP, or PDF up to 5 MB',
+        ];
     }
 }

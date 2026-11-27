@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Enums\UserRole;
 use App\Models\ConnectedAccount;
 use App\Models\User;
+use App\Services\Auth\PendingSocialSignupService;
 use App\Services\SocialiteProviderService;
 use App\Services\StudentOrganizationAssignmentService;
 use App\Services\UserSecurityActivityService;
@@ -23,6 +24,7 @@ final class SocialAuthController extends Controller
     public function __construct(
         private readonly SocialiteProviderService $socialiteProviders,
         private readonly StudentOrganizationAssignmentService $studentOrganizations,
+        private readonly PendingSocialSignupService $pendingSocialSignup,
     ) {}
 
     public function redirect(string $provider): RedirectResponse
@@ -101,18 +103,14 @@ final class SocialAuthController extends Controller
                 );
             }
 
-            $request->session()->put('socialite_signup', [
-                'provider' => $provider,
-                'provider_id' => $socialUser->getId(),
-                'name' => $socialUser->getName(),
-                'nickname' => $socialUser->getNickname(),
-                'email' => $email,
-                'avatar_url' => $socialUser->getAvatar(),
-                'token' => $socialUser->token ?? '',
-                'secret' => $socialUser->tokenSecret ?? null,
-                'refresh_token' => $socialUser->refreshToken ?? null,
-                'expires_at' => $this->expiresAt($socialUser)?->toIso8601String(),
-            ]);
+            $this->pendingSocialSignup->store(
+                request: $request,
+                provider: $provider,
+                socialUser: $socialUser,
+                normalizedEmail: $email,
+                emailVerified: $this->hasVerifiedProviderEmail($provider, $socialUser),
+                expiresAt: $this->expiresAt($socialUser),
+            );
 
             return redirect('/signup')->with('status', 'Finish creating your account to link '.ucfirst($provider).'.');
         } catch (Exception $e) {

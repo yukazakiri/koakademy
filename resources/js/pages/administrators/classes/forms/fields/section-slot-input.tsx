@@ -3,7 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { Calendar, Minus, Plus } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { ValueOption } from "../../lib/class-defaults";
 
 type SectionSlotInputProps = {
@@ -18,7 +18,7 @@ type SectionSlotInputProps = {
 };
 
 function clampSlots(value: number): number {
-    return Math.min(Math.max(value, 1), 200);
+    return Math.max(Math.trunc(value), 0);
 }
 
 export function SectionSlotInput({
@@ -32,20 +32,49 @@ export function SectionSlotInput({
     onMaximumSlotsChange,
 }: SectionSlotInputProps): ReactNode {
     const semesterLabel = semesters.find((option) => option.value === semester)?.label ?? semester;
+    const [slotsDraft, setSlotsDraft] = useState<string>(String(maximumSlots));
+
+    useEffect(() => {
+        setSlotsDraft(String(maximumSlots));
+    }, [maximumSlots]);
+
+    const handleSlotsChange = (raw: string): void => {
+        if (raw === "") {
+            setSlotsDraft("");
+            return;
+        }
+        if (!/^\d+$/.test(raw)) {
+            return;
+        }
+        setSlotsDraft(raw);
+        const parsed = Number.parseInt(raw, 10);
+        if (Number.isFinite(parsed) && parsed >= 0) {
+            onMaximumSlotsChange(parsed);
+        }
+    };
+
+    const handleSlotsBlur = (): void => {
+        const parsed = Number.parseInt(slotsDraft, 10);
+        const clamped = Number.isFinite(parsed) ? clampSlots(parsed) : maximumSlots;
+        setSlotsDraft(String(clamped));
+        if (clamped !== maximumSlots) {
+            onMaximumSlotsChange(clamped);
+        }
+    };
 
     return (
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {/* Section */}
             <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                    <Label id="section-label" className="text-foreground text-sm font-semibold">
+                    <Label htmlFor="section-code-input" id="section-label" className="text-foreground text-sm font-semibold">
                         Section
                     </Label>
-                    <span className="text-muted-foreground text-xs">Section ID</span>
+                    <span className="text-muted-foreground text-xs">Quick pick or custom</span>
                 </div>
-                <div className="grid grid-cols-4 gap-2" role="group" aria-labelledby="section-label">
+                <div className="flex flex-wrap gap-1.5" role="group" aria-labelledby="section-label">
                     {sections.map((option) => {
-                        const isSelected = section === option.value;
+                        const isSelected = section.trim().toUpperCase() === option.value.toUpperCase();
                         return (
                             <Button
                                 key={option.value}
@@ -54,7 +83,7 @@ export function SectionSlotInput({
                                 onClick={() => onSectionChange(option.value)}
                                 aria-pressed={isSelected}
                                 className={cn(
-                                    "h-11 rounded-xl border text-base font-bold transition-all",
+                                    "h-9 min-w-10 rounded-lg border px-3 text-sm font-bold transition-all",
                                     isSelected
                                         ? "border-primary bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground ring-primary/20 shadow-xs ring-2"
                                         : "bg-card hover:bg-muted/50 hover:border-border/80",
@@ -65,7 +94,16 @@ export function SectionSlotInput({
                         );
                     })}
                 </div>
-                <p className="text-muted-foreground text-xs">Choose the cohort letter code.</p>
+                <Input
+                    id="section-code-input"
+                    value={section}
+                    maxLength={20}
+                    placeholder="e.g. A, E, STEM-1"
+                    onChange={(event) => onSectionChange(event.target.value)}
+                    onBlur={(event) => onSectionChange(event.target.value.trim())}
+                    className="h-10 rounded-xl font-mono text-sm font-semibold"
+                />
+                <p className="text-muted-foreground text-xs">Pick a preset or enter any section code (up to 20 chars).</p>
             </div>
 
             {/* Maximum Slots */}
@@ -90,11 +128,12 @@ export function SectionSlotInput({
                     <div className="relative flex-1">
                         <Input
                             id="maximum_slots"
-                            type="number"
-                            min={1}
-                            max={200}
-                            value={maximumSlots}
-                            onChange={(event) => onMaximumSlotsChange(clampSlots(Number(event.target.value) || 1))}
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            value={slotsDraft}
+                            onChange={(event) => handleSlotsChange(event.target.value)}
+                            onBlur={handleSlotsBlur}
                             className="h-11 rounded-xl text-center text-base font-semibold tabular-nums"
                         />
                     </div>
@@ -110,7 +149,7 @@ export function SectionSlotInput({
                     </Button>
                 </div>
                 <div className="text-muted-foreground flex items-center justify-between text-xs">
-                    <span>1 to 200 student cap</span>
+                    <span>Existing classes: 0 means unlimited</span>
                     <button type="button" className="text-primary font-medium hover:underline" onClick={() => onMaximumSlotsChange(40)}>
                         Standard (40)
                     </button>

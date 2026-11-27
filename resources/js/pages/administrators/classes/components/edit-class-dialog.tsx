@@ -66,6 +66,7 @@ type SelectedClass = {
         enable_announcements?: boolean;
         enable_grade_visibility?: boolean;
         enable_attendance_tracking?: boolean;
+        enable_online_resources?: boolean;
         allow_late_submissions?: boolean;
         enable_discussion_board?: boolean;
         notify_students_on_schedule_changes?: boolean;
@@ -203,6 +204,7 @@ export function EditClassDialog({
                     enable_announcements: selectedClass.settings?.enable_announcements ?? true,
                     enable_grade_visibility: selectedClass.settings?.enable_grade_visibility ?? true,
                     enable_attendance_tracking: selectedClass.settings?.enable_attendance_tracking ?? false,
+                    enable_online_resources: selectedClass.settings?.enable_online_resources ?? true,
                     allow_late_submissions: selectedClass.settings?.allow_late_submissions ?? false,
                     enable_discussion_board: selectedClass.settings?.enable_discussion_board ?? false,
                     notify_students_on_schedule_changes: selectedClass.settings?.notify_students_on_schedule_changes ?? true,
@@ -214,7 +216,6 @@ export function EditClassDialog({
 
         setSubjectCodeTouched(Boolean(selectedClass.subject_code));
         setValidationError(null);
-        setCurrentStep(0);
         void loadCollegeSubjects(selectedClass.course_ids ?? []);
     }, [open, selectedClass]);
 
@@ -254,31 +255,13 @@ export function EditClassDialog({
         );
     };
 
-    const step1Valid = useMemo(() => step1IsValid(form.data, normalizedOptions), [form.data, normalizedOptions]);
+    const step1Valid = useMemo(() => step1IsValid(form.data, normalizedOptions, true), [form.data, normalizedOptions]);
     const step2Valid = useMemo(() => step2IsValid(form.data), [form.data]);
 
     const navigateTo = (stepIndex: number): void => {
         setCurrentStep(stepIndex);
         setValidationError(null);
         scrollContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-    };
-
-    const validateStep = (indexToValidate: number): boolean => {
-        if (indexToValidate === 0) {
-            if (step1Valid !== true) {
-                setValidationError(step1Valid.message);
-                toast.error(step1Valid.message);
-                return false;
-            }
-        } else if (indexToValidate === 1) {
-            if (step2Valid !== true) {
-                setValidationError(step2Valid.message);
-                toast.error(step2Valid.message);
-                return false;
-            }
-        }
-        setValidationError(null);
-        return true;
     };
 
     const submit = (): void => {

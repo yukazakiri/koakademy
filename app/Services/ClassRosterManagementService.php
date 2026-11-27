@@ -605,110 +605,11 @@ final readonly class ClassRosterManagementService
         array $data,
         ?User $actor = null,
     ): ClassEnrollment {
-        $this->assertEnrollmentBelongsToClass($class, $enrollment);
+        return DB::transaction(function () use ($class, $enrollment, $data, $actor): ClassEnrollment {
+            $locked = ClassEnrollment::query()->whereKey($enrollment->getKey())->lockForUpdate()->firstOrFail();
 
-        $forceGradeOverride = (bool) ($data['force_grade_override'] ?? false);
-        $overrideReason = $this->nullableTrimmed($data['override_reason'] ?? null);
-
-        $updates = [];
-        $newEnrollmentStatus = null;
-
-        if (array_key_exists('enrollment_status', $data) && $data['enrollment_status'] !== null) {
-            $newEnrollmentStatus = (string) $data['enrollment_status'];
-            if (! in_array($newEnrollmentStatus, ClassEnrollment::ENROLLMENT_STATUSES, true)) {
-                throw ValidationException::withMessages([
-                    'enrollment_status' => [sprintf('Invalid enrollment status "%s".', $newEnrollmentStatus)],
-                ]);
-            }
-
-            $updates['enrollment_status'] = $newEnrollmentStatus;
-            $updates['status'] = ClassEnrollment::statusBooleanFor($newEnrollmentStatus);
-        }
-
-        if (array_key_exists('status_reason', $data)) {
-            $updates['status_reason'] = $this->nullableTrimmed($data['status_reason']);
-        }
-
-        if (array_key_exists('remarks', $data)) {
-            $updates['remarks'] = $this->nullableTrimmed($data['remarks']);
-        }
-
-        $gradeKeys = ['prelim_grade', 'midterm_grade', 'finals_grade'];
-        $modifyingGrades = false;
-        $gradeFieldProvided = false;
-
-        foreach ($gradeKeys as $gradeKey) {
-            if (! array_key_exists($gradeKey, $data)) {
-                continue;
-            }
-
-            $gradeFieldProvided = true;
-            $rawValue = $data[$gradeKey];
-            $normalizedValue = ($rawValue === '' || $rawValue === null) ? null : round((float) $rawValue, 2);
-            $currentValue = $enrollment->{$gradeKey} === null ? null : round((float) $enrollment->{$gradeKey}, 2);
-
-            if ($normalizedValue !== $currentValue) {
-                $modifyingGrades = true;
-            }
-
-            $updates[$gradeKey] = $normalizedValue;
-        }
-
-        $isDroppingOrWithdrawing = $newEnrollmentStatus !== null
-            && in_array($newEnrollmentStatus, [ClassEnrollment::STATUS_DROPPED, ClassEnrollment::STATUS_WITHDRAWN], true);
-
-        $isGradeLocked = (bool) $enrollment->is_grades_verified || (bool) $enrollment->is_grades_finalized;
-        $requiresGradeOverride = ($isGradeLocked && ($modifyingGrades || $isDroppingOrWithdrawing))
-            || ($isDroppingOrWithdrawing && $enrollment->isGradeProtected());
-
-        if ($requiresGradeOverride && (! $forceGradeOverride || $overrideReason === null)) {
-            throw ValidationException::withMessages([
-                'force_grade_override' => [
-                    'Grades are recorded, finalized, or verified for this enrollment. Provide force_grade_override and a non-empty override_reason to proceed.',
-                ],
-            ]);
-        }
-
-        if ($gradeFieldProvided) {
-            $prelim = array_key_exists('prelim_grade', $updates) ? $updates['prelim_grade'] : $enrollment->prelim_grade;
-            $midterm = array_key_exists('midterm_grade', $updates) ? $updates['midterm_grade'] : $enrollment->midterm_grade;
-            $finals = array_key_exists('finals_grade', $updates) ? $updates['finals_grade'] : $enrollment->finals_grade;
-
-            if (is_numeric($prelim) && is_numeric($midterm) && is_numeric($finals)) {
-                $updates['total_average'] = app(GradeComputationService::class)->totalAverage(
-                    (float) $prelim,
-                    (float) $midterm,
-                    (float) $finals,
-                );
-            } else {
-                $updates['total_average'] = null;
-            }
-        }
-
-        if ($requiresGradeOverride && $overrideReason !== null && ! array_key_exists('status_reason', $updates)) {
-            $updates['status_reason'] = $overrideReason;
-        }
-
-        if ($updates !== []) {
-            $enrollment->fill($updates)->save();
-        }
-
-        if ($requiresGradeOverride && $forceGradeOverride && $overrideReason !== null) {
-            $this->logRosterActivity(
-                enrollment: $enrollment,
-                actor: $actor,
-                description: 'Class enrollment updated with grade-lock override',
-                properties: [
-                    'action' => 'update_grade_override',
-                    'class_id' => (int) $class->id,
-                    'student_id' => (int) $enrollment->student_id,
-                    'override_reason' => $overrideReason,
-                    'updated_fields' => array_keys($updates),
-                ],
-            );
-        }
-
-        return $enrollment->fresh() ?? $enrollment;
+            return $this->updateLockedEnrollment($class, $locked, $data, $actor);
+        });
     }
 
     /**
@@ -1066,6 +967,119 @@ final readonly class ClassRosterManagementService
                 'error_count' => count($errors),
             ];
         });
+    }
+
+    /** @param array<string, mixed> $data */
+    private function updateLockedEnrollment(
+        Classes $class,
+        ClassEnrollment $enrollment,
+        array $data,
+        ?User $actor,
+    ): ClassEnrollment {
+        $this->assertEnrollmentBelongsToClass($class, $enrollment);
+
+        $forceGradeOverride = (bool) ($data['force_grade_override'] ?? false);
+        $overrideReason = $this->nullableTrimmed($data['override_reason'] ?? null);
+
+        $updates = [];
+        $newEnrollmentStatus = null;
+
+        if (array_key_exists('enrollment_status', $data) && $data['enrollment_status'] !== null) {
+            $newEnrollmentStatus = (string) $data['enrollment_status'];
+            if (! in_array($newEnrollmentStatus, ClassEnrollment::ENROLLMENT_STATUSES, true)) {
+                throw ValidationException::withMessages([
+                    'enrollment_status' => [sprintf('Invalid enrollment status "%s".', $newEnrollmentStatus)],
+                ]);
+            }
+
+            $updates['enrollment_status'] = $newEnrollmentStatus;
+            $updates['status'] = ClassEnrollment::statusBooleanFor($newEnrollmentStatus);
+        }
+
+        if (array_key_exists('status_reason', $data)) {
+            $updates['status_reason'] = $this->nullableTrimmed($data['status_reason']);
+        }
+
+        if (array_key_exists('remarks', $data)) {
+            $updates['remarks'] = $this->nullableTrimmed($data['remarks']);
+        }
+
+        $gradeKeys = ['prelim_grade', 'midterm_grade', 'finals_grade'];
+        $modifyingGrades = false;
+        $gradeFieldProvided = false;
+
+        foreach ($gradeKeys as $gradeKey) {
+            if (! array_key_exists($gradeKey, $data)) {
+                continue;
+            }
+
+            $gradeFieldProvided = true;
+            $rawValue = $data[$gradeKey];
+            $normalizedValue = ($rawValue === '' || $rawValue === null) ? null : round((float) $rawValue, 2);
+            $currentValue = $enrollment->{$gradeKey} === null ? null : round((float) $enrollment->{$gradeKey}, 2);
+
+            if ($normalizedValue !== $currentValue) {
+                $modifyingGrades = true;
+            }
+
+            $updates[$gradeKey] = $normalizedValue;
+        }
+
+        $isDroppingOrWithdrawing = $newEnrollmentStatus !== null
+            && in_array($newEnrollmentStatus, [ClassEnrollment::STATUS_DROPPED, ClassEnrollment::STATUS_WITHDRAWN], true);
+
+        $isGradeLocked = (bool) $enrollment->is_grades_verified || (bool) $enrollment->is_grades_finalized;
+        $requiresGradeOverride = ($isGradeLocked && ($modifyingGrades || $isDroppingOrWithdrawing))
+            || ($isDroppingOrWithdrawing && $enrollment->isGradeProtected());
+
+        if ($requiresGradeOverride && (! $forceGradeOverride || $overrideReason === null)) {
+            throw ValidationException::withMessages([
+                'force_grade_override' => [
+                    'Grades are recorded, finalized, or verified for this enrollment. Provide force_grade_override and a non-empty override_reason to proceed.',
+                ],
+            ]);
+        }
+
+        if ($gradeFieldProvided) {
+            $prelim = array_key_exists('prelim_grade', $updates) ? $updates['prelim_grade'] : $enrollment->prelim_grade;
+            $midterm = array_key_exists('midterm_grade', $updates) ? $updates['midterm_grade'] : $enrollment->midterm_grade;
+            $finals = array_key_exists('finals_grade', $updates) ? $updates['finals_grade'] : $enrollment->finals_grade;
+
+            if (is_numeric($prelim) && is_numeric($midterm) && is_numeric($finals)) {
+                $updates['total_average'] = app(GradeComputationService::class)->totalAverage(
+                    (float) $prelim,
+                    (float) $midterm,
+                    (float) $finals,
+                );
+            } else {
+                $updates['total_average'] = null;
+            }
+        }
+
+        if ($requiresGradeOverride && $overrideReason !== null && ! array_key_exists('status_reason', $updates)) {
+            $updates['status_reason'] = $overrideReason;
+        }
+
+        if ($updates !== []) {
+            $enrollment->fill($updates)->save();
+        }
+
+        if ($requiresGradeOverride && $forceGradeOverride && $overrideReason !== null) {
+            $this->logRosterActivity(
+                enrollment: $enrollment,
+                actor: $actor,
+                description: 'Class enrollment updated with grade-lock override',
+                properties: [
+                    'action' => 'update_grade_override',
+                    'class_id' => (int) $class->id,
+                    'student_id' => (int) $enrollment->student_id,
+                    'override_reason' => $overrideReason,
+                    'updated_fields' => array_keys($updates),
+                ],
+            );
+        }
+
+        return $enrollment->fresh() ?? $enrollment;
     }
 
     /**

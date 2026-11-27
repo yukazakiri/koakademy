@@ -2179,6 +2179,14 @@ final class AdministratorEnrollmentManagementController extends Controller
             return back()->with('flash', ['info' => 'There are no pending class schedule changes to notify for this student.']);
         }
 
+        if ($result['failed'] > 0) {
+            return back()->with('flash', ['warning' => sprintf(
+                '%d schedule notice(s) were queued; %d could not be sent and remain pending.',
+                $result['count'] - $result['failed'],
+                $result['failed'],
+            )]);
+        }
+
         return back()->with('flash', [
             'success' => sprintf(
                 'Queued %d class schedule change notification%s for this student.',

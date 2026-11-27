@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Enums\UserRole;
+use App\Models\ClassEnrollment;
 use App\Models\Classes;
 use App\Models\ClassScheduleChangeStudentNotification;
 use App\Models\Student;
@@ -29,6 +30,7 @@ final class ClassScheduleChangeNotificationService
     {
         return $this->formatScheduleSnapshot(
             $class->schedules()
+                ->where(fn ($query) => $query->whereNull('status')->orWhere('status', 'published'))
                 ->with('room:id,name')
                 ->get(),
         );
@@ -37,7 +39,7 @@ final class ClassScheduleChangeNotificationService
     /**
      * @param  array<int, array{day_of_week: string, start_time: string, end_time: string, room_id: int|null, room_name: string|null, delivery_mode?: string}>  $oldSnapshot
      */
-    public function notifyIfChanged(Classes $class, array $oldSnapshot, ?User $changedBy = null): int
+    public function notifyIfChanged(Classes $class, array $oldSnapshot, ?User $changedBy = null, bool $dispatchAutomatically = true): int
     {
         $newSnapshot = $this->snapshot($class);
 
@@ -62,7 +64,7 @@ final class ClassScheduleChangeNotificationService
         }
 
         $settings = array_merge(Classes::getDefaultSettings(), (array) ($class->settings ?? []));
-        $automatic = (bool) ($settings['notify_students_on_schedule_changes'] ?? true);
+        $automatic = $dispatchAutomatically && (bool) ($settings['notify_students_on_schedule_changes'] ?? true);
         $users = $this->linkedStudentUsers($students);
         foreach ($students as $student) {
             $user = $this->linkedUserForStudent($student, $users);
@@ -104,7 +106,7 @@ final class ClassScheduleChangeNotificationService
     public function pendingNotificationsForEnrollment(StudentEnrollment $enrollment): Collection
     {
         $classIds = $enrollment->student->classEnrollments()
-            ->where('status', true)
+            ->activeForNotices()
             ->whereHas('class', function ($query) use ($enrollment): void {
                 $query->where('school_year', $enrollment->school_year)
                     ->where('semester', $enrollment->semester);
@@ -137,23 +139,44 @@ final class ClassScheduleChangeNotificationService
     }
 
     /**
-     * @return array{count: int, recipients: int}
+     * @return array{count: int, recipients: int, failed: int}
      */
     public function notifyPendingForEnrollment(StudentEnrollment $enrollment, ?User $notifiedBy = null): array
     {
         $pending = $this->pendingNotificationsForEnrollment($enrollment);
 
-        return [
-            'count' => $pending->count(),
-            'recipients' => $this->sendPendingNotifications($pending, $notifiedBy),
-        ];
+        return ['count' => $pending->count(), ...$this->sendPendingNotifications($pending, $notifiedBy)];
+    }
+
+    /**
+     * @return array{count: int, recipients: int, failed: int}
+     */
+    public function notifyPendingForClass(Classes $class, ?User $notifiedBy = null): array
+    {
+        $pending = ClassScheduleChangeStudentNotification::query()
+            ->pending()
+            ->whereHas('scheduleChange', fn ($query) => $query->where('class_id', $class->id))
+            ->whereHas('student.classEnrollments', fn ($query) => $query
+                ->where('class_id', $class->id)
+                ->activeForNotices())
+            ->get(['id']);
+
+        return ['count' => $pending->count(), ...$this->sendPendingNotifications($pending, $notifiedBy)];
     }
 
     /** Retry durable automatic dispatches after queue outages. */
     public function dispatchPendingAutomatic(int $limit = 100): int
     {
         $ids = ClassScheduleChangeStudentNotification::query()->pending()->where('auto_dispatch', true)
-            ->whereHas('scheduleChange.class')
+            ->where(fn ($query) => $query->whereNotNull('user_id')->orWhereNotNull('email')
+                ->orWhereNotNull('database_queued_at')->orWhereNotNull('mail_queued_at'))
+            ->whereHas('scheduleChange', fn ($query) => $query->whereHas('class')->whereExists(
+                fn ($enrollments) => $enrollments->selectRaw('1')->from('class_enrollments')
+                    ->whereColumn('class_enrollments.class_id', 'class_schedule_changes.class_id')
+                    ->whereColumn('class_enrollments.student_id', 'class_schedule_change_student_notifications.student_id')
+                    ->whereNull('class_enrollments.deleted_at')
+                    ->where(fn ($q) => ClassEnrollment::applyActiveForNotices($q))
+            ))
             ->orderBy('id')->limit($limit)->pluck('id');
         $count = 0;
         foreach ($ids as $id) {
@@ -289,9 +312,7 @@ final class ClassScheduleChangeNotificationService
     private function enrolledStudents(Classes $class): Collection
     {
         return $class->class_enrollments()
-            ->where(fn ($query) => $query
-                ->whereNull('status')
-                ->orWhere('status', true))
+            ->activeForNotices()
             ->with('student')
             ->get()
             ->pluck('student')
@@ -369,22 +390,35 @@ final class ClassScheduleChangeNotificationService
 
     /**
      * @param  Collection<int, ClassScheduleChangeStudentNotification>  $pending
+     * @return array{recipients: int, failed: int}
      */
-    private function sendPendingNotifications(Collection $pending, ?User $notifiedBy = null): int
+    private function sendPendingNotifications(Collection $pending, ?User $notifiedBy = null): array
     {
         $recipientCount = 0;
+        $failed = 0;
         foreach ($pending as $studentNotification) {
-            $recipientCount += $this->dispatchOne((int) $studentNotification->id, $notifiedBy);
+            $partiallyQueued = 0;
+            try {
+                $recipientCount += $this->dispatchOne((int) $studentNotification->id, $notifiedBy, $partiallyQueued);
+                if (ClassScheduleChangeStudentNotification::query()->whereKey($studentNotification->id)->whereNull('notified_at')->exists()) {
+                    $failed++;
+                }
+            } catch (Throwable $exception) {
+                $recipientCount += $partiallyQueued;
+                $failed++;
+                report($exception);
+            }
         }
 
-        return $recipientCount;
+        return ['recipients' => $recipientCount, 'failed' => $failed];
     }
 
-    private function dispatchOne(int $id, ?User $notifiedBy = null): int
+    private function dispatchOne(int $id, ?User $notifiedBy = null, ?int &$partiallyQueued = null): int
     {
         $count = 0;
         foreach (['database', 'mail', 'complete'] as $channel) {
             $count += $this->dispatchChannel($id, $channel, $notifiedBy);
+            $partiallyQueued = $count;
         }
 
         return $count;
@@ -407,6 +441,14 @@ final class ClassScheduleChangeNotificationService
             $class = $change->class;
 
             if (! $class instanceof Classes) {
+                return 0;
+            }
+
+            $active = $class->class_enrollments()
+                ->where('student_id', $studentNotification->student_id)
+                ->activeForNotices()
+                ->exists();
+            if (! $active) {
                 return 0;
             }
 
@@ -440,7 +482,7 @@ final class ClassScheduleChangeNotificationService
                 $recipientCount++;
             }
 
-            if ($channel === 'complete') {
+            if ($channel === 'complete' && ($studentNotification->database_queued_at !== null || $studentNotification->mail_queued_at !== null)) {
                 $studentNotification->forceFill([
                     'notified_at' => now(),
                     'notified_by_user_id' => $notifiedBy?->id,

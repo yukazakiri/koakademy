@@ -981,22 +981,20 @@ final readonly class ClassScheduleWorkspaceService
     private function batchSetCapacity(EloquentCollection $classes, array $payload): array
     {
         $maximumSlots = max(0, (int) ($payload['maximum_slots'] ?? 0));
-        $warnings = [];
-
-        DB::transaction(function () use ($classes, $maximumSlots, &$warnings): void {
-            foreach ($classes as $class) {
-                $enrolled = (int) ($class->active_enrollments_count ?? 0);
-                if ($maximumSlots > 0 && $enrolled > $maximumSlots) {
-                    $warnings[] = [
-                        'type' => 'over_capacity',
-                        'class_id' => (int) $class->id,
-                        'message' => sprintf(
-                            '%s currently has %d active students, exceeding the new cap of %d.',
-                            $class->record_title,
-                            $enrolled,
-                            $maximumSlots,
-                        ),
-                    ];
+        DB::transaction(function () use ($classes, $maximumSlots): void {
+            $lockedClasses = Classes::query()->whereKey($classes->modelKeys())->orderBy('id')->lockForUpdate()->get();
+            foreach ($lockedClasses as $class) {
+                $current = (int) ($class->maximum_slots ?? 0);
+                if ($maximumSlots > 0 && ($current === 0 || $maximumSlots < $current)) {
+                    $enrolled = $class->class_enrollments()
+                        ->where(fn (Builder $query) => $query->whereNull('status')->orWhere('status', true))
+                        ->where(fn (Builder $query) => $query->whereNull('enrollment_status')->orWhereNotIn('enrollment_status', [ClassEnrollment::STATUS_DROPPED, ClassEnrollment::STATUS_WITHDRAWN]))
+                        ->count();
+                    if ($maximumSlots < $enrolled) {
+                        throw ValidationException::withMessages([
+                            'maximum_slots' => sprintf('%s has %d active students; capacity cannot be reduced to %d.', $class->record_title, $enrolled, $maximumSlots),
+                        ]);
+                    }
                 }
 
                 $class->maximum_slots = $maximumSlots;
@@ -1008,7 +1006,7 @@ final readonly class ClassScheduleWorkspaceService
             'action' => 'set_capacity',
             'updated_count' => $classes->count(),
             'skipped_count' => 0,
-            'warnings' => $warnings,
+            'warnings' => [],
             'errors' => [],
         ];
     }

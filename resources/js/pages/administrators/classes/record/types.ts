@@ -1,5 +1,7 @@
 import type { User } from "@/types/user";
+import type { CrudFacultyOption, DossierProps } from "../crud/types";
 import type { DeliveryMode, DeliverySummary } from "../lib/class-defaults";
+import type { EnrollmentStatusValue } from "../workspace/types";
 
 export type WeeklyScheduleEntry = {
     delivery_mode?: DeliveryMode;
@@ -55,11 +57,14 @@ export type ClassShowData = {
     year_level: string | null;
     semester: string;
     school_year: string;
+    start_date?: string | null;
 
     students_count: number;
     maximum_slots: number;
 
+    faculty_id?: string | null;
     faculty: {
+        id?: string | number | null;
         name: string;
         email: string | null;
         avatar_url: string | null;
@@ -76,6 +81,7 @@ export type ClassShowData = {
             enable_announcements: boolean;
             enable_grade_visibility: boolean;
             enable_attendance_tracking: boolean;
+            enable_online_resources?: boolean;
             allow_late_submissions: boolean;
             enable_discussion_board: boolean;
             notify_students_on_schedule_changes: boolean;
@@ -95,23 +101,36 @@ export type EnrollmentRow = {
     id: number;
     student_enrollment_id: number | null;
     status: boolean | null;
+    enrollment_status?: EnrollmentStatusValue;
+    status_reason?: string | null;
     prelim_grade: number | null;
     midterm_grade: number | null;
     finals_grade: number | null;
     total_average: number | null;
     remarks: string | null;
+    is_grades_verified?: boolean;
+    is_grades_finalized?: boolean;
+    is_grade_protected?: boolean;
+    grade_symbol?: string | null;
+    grade_outcome?: string | null;
+    deleted_at?: string | null;
+    timetable_status?: "clear" | "clash" | "ok";
+    timetable_conflicts?: string[];
     student: {
         id: number;
         student_id: string | number | null;
         name: string;
         course: string | null;
         academic_year: string | number | null;
+        email?: string | null;
     } | null;
 };
 
 export type RoomOption = {
     id: number;
     label: string;
+    capacity?: number | null;
+    type?: string | null;
 };
 
 export type TransferableClass = {
@@ -119,10 +138,11 @@ export type TransferableClass = {
     section: string;
     label: string;
     is_full: boolean;
-    available_slots: number;
+    available_slots: number | null;
 };
 
 export type ClassShowCapabilities = {
+    create?: boolean;
     update: boolean;
     delete: boolean;
     restore: boolean;
@@ -134,8 +154,11 @@ export interface ClassShowProps {
     class: ClassShowData;
     capabilities?: ClassShowCapabilities;
     enrollments: EnrollmentRow[];
+    trashed_enrollments?: EnrollmentRow[];
     raw_schedules: RawScheduleEntry[];
     schedule_revision: string;
     rooms: RoomOption[];
+    faculties?: CrudFacultyOption[];
     transferable_classes: TransferableClass[];
+    dossier?: DossierProps;
 }

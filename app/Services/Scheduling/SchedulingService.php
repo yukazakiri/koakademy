@@ -186,8 +186,8 @@ final readonly class SchedulingService
             $class->unsetRelation('Schedule');
 
             $effectiveStatus = $scheduleStatus ?? 'published';
-            if ($notifyEnrolled && $effectiveStatus === 'published') {
-                $this->notificationService->notifyIfChanged($class, $oldSnapshot, $actor);
+            if ($effectiveStatus === 'published') {
+                $this->notificationService->notifyIfChanged($class, $oldSnapshot, $actor, $notifyEnrolled);
             }
 
             return $result;
@@ -203,6 +203,7 @@ final readonly class SchedulingService
         bool $notifyEnrolled = true,
     ): int {
         return DB::transaction(function () use ($class, $actor, $notifyEnrolled): int {
+            $this->lockScheduleWrites();
             $locked = $class->newQuery()->whereKey($class->getKey())->lockForUpdate()->firstOrFail();
 
             $existing = $locked->schedules()->with('room:id,name')->get();
@@ -211,6 +212,18 @@ final readonly class SchedulingService
             if (! $hasDrafts) {
                 return 0;
             }
+
+            $blocks = $existing->map(fn (Schedule $schedule): array => [
+                'id' => $schedule->id,
+                'day_of_week' => $schedule->day_of_week,
+                'start_time' => $schedule->start_time?->format('H:i:s'),
+                'end_time' => $schedule->end_time?->format('H:i:s'),
+                'room_id' => $schedule->room_id,
+                'delivery_mode' => $schedule->delivery_mode,
+            ])->all();
+            Validator::make(['schedules' => $blocks], [
+                'schedules' => [new NonOverlappingScheduleBlocksRule, new ScheduleOverlapRule($locked->id)],
+            ])->validate();
 
             $oldPublishedSnapshot = $existing
                 ->filter(fn (Schedule $schedule): bool => ($schedule->status ?? 'published') === 'published')
@@ -232,8 +245,8 @@ final readonly class SchedulingService
             $locked->unsetRelation('schedules');
             $locked->unsetRelation('Schedule');
 
-            if ($notifyEnrolled && $updatedCount > 0) {
-                $this->notificationService->notifyIfChanged($locked, $oldPublishedSnapshot, $actor);
+            if ($updatedCount > 0) {
+                $this->notificationService->notifyIfChanged($locked, $oldPublishedSnapshot, $actor, $notifyEnrolled);
             }
 
             return $updatedCount;
@@ -530,10 +543,9 @@ final readonly class SchedulingService
     }
 
     /**
-     * Lock a shared row before checking conflicts. All schedule-only saves use
-     * this same lock, including saves for different schools and rooms.
+     * Serialize participating schedule checks and writes. Must run inside a transaction.
      */
-    private function lockScheduleWrites(): void
+    public function lockScheduleWrites(): void
     {
         $connection = DB::connection();
         if ($connection->getDriverName() === 'pgsql') {

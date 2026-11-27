@@ -12,8 +12,11 @@ use App\Models\EnrollmentClassWaitlist;
 use App\Models\Schedule;
 use App\Models\User;
 use App\Services\ClassRosterManagementService;
+use App\Services\ClassScheduleChangeNotificationService;
 use App\Services\EnrollmentWaitlistService;
 use App\Services\GeneralSettingsService;
+use App\Services\GradeComputationService;
+use App\Services\Scheduling\ClassCrudPreflightService;
 use App\Services\Scheduling\ClassScheduleWorkspaceService;
 use App\Services\Scheduling\SchedulingService;
 use App\Support\AdministratorPermissionChecker;
@@ -21,6 +24,7 @@ use App\Support\ScheduleDelivery;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
@@ -564,7 +568,7 @@ final class AdministratorClassWorkspaceController extends Controller
                 'enroll_cohort',
             ])],
             'faculty_id' => ['nullable', 'exists:faculty,id'],
-            'maximum_slots' => ['nullable', 'integer', 'min:0', 'max:1000'],
+            'maximum_slots' => ['required_if:action,set_capacity', 'nullable', 'integer', 'min:0', 'max:1000'],
             'notify_enrolled' => ['sometimes', 'boolean'],
             'pattern' => ['nullable', 'string', Rule::in(['mwf', 'tth', 'custom'])],
             'days' => ['sometimes', 'array'],
@@ -695,6 +699,418 @@ final class AdministratorClassWorkspaceController extends Controller
                 $result['skipped_count'],
             ),
         ]);
+    }
+
+    /**
+     * Draft-safe schedule preflight (see resources/js/pages/administrators/classes/crud/types.ts: PreflightRequest/PreflightResponse).
+     */
+    public function preflight(
+        Request $request,
+        ClassCrudPreflightService $preflightService,
+    ): JsonResponse {
+        $this->authorizePreflight($request);
+
+        $validated = $request->validate([
+            'class_id' => ['nullable', 'integer'],
+            'classification' => ['required', Rule::in(['college', 'shs'])],
+            'faculty_id' => ['nullable'],
+            'room_id' => ['nullable', 'integer'],
+            'school_year' => ['required', 'string', 'max:50'],
+            'semester' => ['required', Rule::in(['1', '2', 1, 2, 'summer'])],
+            'course_codes' => ['nullable', 'array'],
+            'course_codes.*' => ['integer'],
+            'subject_ids' => ['nullable', 'array'],
+            'subject_ids.*' => ['integer'],
+            'subject_code' => ['nullable', 'string', 'max:255'],
+            'academic_year' => ['nullable', 'integer'],
+            'grade_level' => ['nullable', 'string', 'max:50'],
+            'shs_strand_id' => ['nullable', 'integer'],
+            'maximum_slots' => ['required', 'integer', 'min:0'],
+            'delivery_mode' => ['nullable', 'string', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
+            'schedules' => ['nullable', 'array'],
+            'schedules.*' => ['required', 'array'],
+            'schedules.*.id' => ['nullable', 'integer'],
+            'schedules.*.day_of_week' => ['required', 'string', Rule::in(ScheduleDelivery::ALL_DAYS)],
+            'schedules.*.start_time' => ['required', 'string', 'regex:/^\d{1,2}:\d{2}(:\d{2})?$/'],
+            'schedules.*.end_time' => ['required', 'string', 'regex:/^\d{1,2}:\d{2}(:\d{2})?$/'],
+            'schedules.*.room_id' => ['nullable', 'integer'],
+            'schedules.*.delivery_mode' => ['nullable', 'string', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
+            'schedules.*.component_type' => ['nullable', 'string', Rule::in(['lecture', 'lab'])],
+            'schedules.*.status' => ['nullable', 'string', Rule::in(['draft', 'published'])],
+        ]);
+
+        return response()->json($preflightService->preflight($validated));
+    }
+
+    /**
+     * Subject blueprint + parallel section matrix create/update (BatchBlueprintRequest/BatchBlueprintResponse).
+     */
+    public function batchBlueprint(
+        Request $request,
+        ClassCrudPreflightService $preflightService,
+    ): JsonResponse {
+        $this->authorizeCreate($request);
+
+        $rawSections = $request->input('sections', []);
+        $hasUpdates = is_array($rawSections) && collect($rawSections)->contains(
+            fn (mixed $section): bool => is_array($section) && isset($section['class_id']) && is_numeric($section['class_id']) && (int) $section['class_id'] > 0
+        );
+
+        if ($hasUpdates) {
+            $this->authorizeMutation($request);
+        }
+
+        $validated = $request->validate([
+            'blueprint' => ['required', 'array'],
+            'blueprint.classification' => ['required', Rule::in(['college', 'shs'])],
+            'blueprint.course_codes' => ['nullable', 'array'],
+            'blueprint.course_codes.*' => ['integer'],
+            'blueprint.subject_ids' => ['nullable', 'array'],
+            'blueprint.subject_ids.*' => ['integer'],
+            'blueprint.subject_code' => ['nullable', 'string', 'max:255'],
+            'blueprint.academic_year' => ['nullable', 'integer', 'min:1', 'max:4'],
+            'blueprint.shs_track_id' => ['nullable', 'integer', 'exists:shs_tracks,id'],
+            'blueprint.shs_strand_id' => ['nullable', 'integer', Rule::exists('shs_strands', 'id')->where('track_id', $request->input('blueprint.shs_track_id'))],
+            'blueprint.subject_code_shs' => ['nullable', 'string', 'max:255'],
+            'blueprint.grade_level' => ['nullable', 'string', 'max:50'],
+            'blueprint.school_year' => ['required', 'string', 'max:50'],
+            'blueprint.semester' => ['required', Rule::in(['1', '2', 1, 2, 'summer'])],
+            'blueprint.start_date' => ['nullable', 'date'],
+            'blueprint.delivery_mode' => ['nullable', 'string', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
+            'blueprint.settings' => ['nullable', 'array'],
+            'blueprint.settings.enable_announcements' => ['sometimes', 'boolean'],
+            'blueprint.settings.enable_grade_visibility' => ['sometimes', 'boolean'],
+            'blueprint.settings.enable_attendance_tracking' => ['sometimes', 'boolean'],
+            'blueprint.settings.enable_online_resources' => ['sometimes', 'boolean'],
+            'blueprint.settings.allow_late_submissions' => ['sometimes', 'boolean'],
+            'blueprint.settings.enable_discussion_board' => ['sometimes', 'boolean'],
+            'blueprint.settings.notify_students_on_schedule_changes' => ['sometimes', 'boolean'],
+            'sections' => ['required', 'array', 'min:1'],
+            'sections.*' => ['required', 'array'],
+            'sections.*.client_key' => ['required', 'string', 'max:100', 'distinct'],
+            'sections.*.class_id' => ['nullable', 'integer', 'distinct', 'exists:classes,id'],
+            'sections.*.section' => ['required', 'string', 'max:20'],
+            'sections.*.faculty_id' => ['nullable', 'exists:faculty,id'],
+            'sections.*.maximum_slots' => ['required', 'integer', 'min:0'],
+            'sections.*.room_id' => ['nullable', 'integer', 'exists:rooms,id'],
+            'sections.*.schedules' => ['nullable', 'array'],
+            'sections.*.schedules.*' => ['required', 'array'],
+            'sections.*.schedules.*.id' => ['nullable', 'integer'],
+            'sections.*.schedules.*.day_of_week' => ['required', 'string', Rule::in(ScheduleDelivery::ALL_DAYS)],
+            'sections.*.schedules.*.start_time' => ['required', 'string', 'regex:/^\d{1,2}:\d{2}(:\d{2})?$/'],
+            'sections.*.schedules.*.end_time' => ['required', 'string', 'regex:/^\d{1,2}:\d{2}(:\d{2})?$/'],
+            'sections.*.schedules.*.room_id' => ['nullable', 'integer', 'exists:rooms,id'],
+            'sections.*.schedules.*.delivery_mode' => ['nullable', 'string', Rule::in(ScheduleDelivery::ACCEPTED_MODES)],
+            'sections.*.schedules.*.component_type' => ['nullable', 'string', Rule::in(['lecture', 'lab'])],
+            'sections.*.schedules.*.status' => ['nullable', 'string', Rule::in(['draft', 'published'])],
+            'dry_run' => ['required', 'boolean'],
+            'schedule_status' => ['required', 'string', Rule::in(['draft', 'published'])],
+            'notify_enrolled' => ['sometimes', 'boolean'],
+        ]);
+
+        $actor = $request->user() instanceof User ? $request->user() : null;
+        $outcome = $preflightService->batchBlueprint($validated, $actor);
+
+        return response()->json($outcome['body'], $outcome['status']);
+    }
+
+    /**
+     * Verify / unverify / finalize / unlock grades for one or many enrollments (VerifyGradesRequest/VerifyGradesResponse).
+     */
+    public function verifyGrades(
+        Request $request,
+        Classes $class,
+        GradeComputationService $gradeComputation,
+    ): JsonResponse {
+        $this->authorizeMutation($request);
+
+        $validated = $request->validate([
+            'enrollment_ids' => ['nullable', 'array'],
+            'enrollment_ids.*' => ['required', 'integer'],
+            'action' => ['required', 'string', Rule::in(['verify', 'unverify', 'finalize', 'unlock'])],
+            'notes' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $actor = $request->user() instanceof User ? $request->user() : null;
+        $action = (string) $validated['action'];
+        $notes = isset($validated['notes']) && is_string($validated['notes']) && mb_trim($validated['notes']) !== ''
+            ? mb_trim($validated['notes'])
+            : null;
+        $requestedIds = isset($validated['enrollment_ids']) && is_array($validated['enrollment_ids'])
+            ? array_values(array_unique(array_map(intval(...), $validated['enrollment_ids'])))
+            : null;
+
+        $updated = 0;
+        $updatedIds = [];
+        $skipped = [];
+
+        DB::transaction(function () use (
+            $class,
+            $requestedIds,
+            $action,
+            $actor,
+            $notes,
+            $gradeComputation,
+            &$updated,
+            &$updatedIds,
+            &$skipped,
+        ): void {
+            $enrollments = $class->class_enrollments()
+                ->when($requestedIds !== null, fn (Builder $query) => $query->whereIn('id', $requestedIds))
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->filter(fn (ClassEnrollment $enrollment): bool => ! in_array(
+                    $enrollment->resolvedEnrollmentStatus(),
+                    [ClassEnrollment::STATUS_DROPPED, ClassEnrollment::STATUS_WITHDRAWN],
+                    true,
+                ));
+
+            foreach ($enrollments as $enrollment) {
+                $hasAnyGrade = $enrollment->prelim_grade !== null
+                    || $enrollment->midterm_grade !== null
+                    || $enrollment->finals_grade !== null
+                    || $enrollment->total_average !== null
+                    || filled($enrollment->grade_symbol);
+
+                if ($action === 'verify') {
+                    if ((bool) $enrollment->is_grades_verified) {
+                        $skipped[] = ['id' => (int) $enrollment->id, 'reason' => 'Grades are already verified.'];
+
+                        continue;
+                    }
+                    if (! $hasAnyGrade) {
+                        $skipped[] = ['id' => (int) $enrollment->id, 'reason' => 'No grades have been recorded yet.'];
+
+                        continue;
+                    }
+
+                    $enrollment->is_grades_verified = true;
+                    $enrollment->verified_by = $actor?->id;
+                    $enrollment->verified_at = now();
+                    $enrollment->verification_notes = $notes;
+                    $enrollment->save();
+                    $updated++;
+                    $updatedIds[] = (int) $enrollment->id;
+
+                    continue;
+                }
+
+                if ($action === 'unverify') {
+                    if ((bool) $enrollment->is_grades_finalized) {
+                        $skipped[] = ['id' => (int) $enrollment->id, 'reason' => 'Grades are finalized. Unlock before unverifying.'];
+
+                        continue;
+                    }
+                    if (! (bool) $enrollment->is_grades_verified) {
+                        $skipped[] = ['id' => (int) $enrollment->id, 'reason' => 'Grades are not verified.'];
+
+                        continue;
+                    }
+
+                    $enrollment->is_grades_verified = false;
+                    $enrollment->verified_by = null;
+                    $enrollment->verified_at = null;
+                    if ($notes !== null) {
+                        $enrollment->verification_notes = $notes;
+                    }
+                    $enrollment->save();
+                    $updated++;
+                    $updatedIds[] = (int) $enrollment->id;
+
+                    continue;
+                }
+
+                if ($action === 'finalize') {
+                    if ((bool) $enrollment->is_grades_finalized) {
+                        $skipped[] = ['id' => (int) $enrollment->id, 'reason' => 'Grades are already finalized.'];
+
+                        continue;
+                    }
+                    if (! $hasAnyGrade) {
+                        $skipped[] = ['id' => (int) $enrollment->id, 'reason' => 'No grades have been recorded yet.'];
+
+                        continue;
+                    }
+
+                    if (
+                        $enrollment->total_average === null
+                        && is_numeric($enrollment->prelim_grade)
+                        && is_numeric($enrollment->midterm_grade)
+                        && is_numeric($enrollment->finals_grade)
+                    ) {
+                        $enrollment->total_average = $gradeComputation->totalAverage(
+                            (float) $enrollment->prelim_grade,
+                            (float) $enrollment->midterm_grade,
+                            (float) $enrollment->finals_grade,
+                        );
+                    }
+
+                    $enrollment->is_grades_finalized = true;
+                    if (! (bool) $enrollment->is_grades_verified) {
+                        $enrollment->is_grades_verified = true;
+                        $enrollment->verified_by = $actor?->id;
+                        $enrollment->verified_at = now();
+                        if ($notes !== null) {
+                            $enrollment->verification_notes = $notes;
+                        }
+                    }
+                    $enrollment->save();
+                    $updated++;
+                    $updatedIds[] = (int) $enrollment->id;
+
+                    continue;
+                }
+
+                // unlock
+                if (! (bool) $enrollment->is_grades_finalized) {
+                    $skipped[] = ['id' => (int) $enrollment->id, 'reason' => 'Grades are not finalized.'];
+
+                    continue;
+                }
+
+                $enrollment->is_grades_finalized = false;
+                $enrollment->save();
+                $updated++;
+                $updatedIds[] = (int) $enrollment->id;
+            }
+            if ($updated > 0 && function_exists('activity')) {
+                $logger = activity('classes')
+                    ->performedOn($class)
+                    ->withProperties([
+                        'action' => 'grades_'.$action,
+                        'updated_count' => $updated,
+                        'skipped_count' => count($skipped),
+                        'enrollment_ids' => $updatedIds,
+                        'notes' => $notes,
+                    ]);
+
+                if ($actor instanceof User) {
+                    $logger->causedBy($actor);
+                }
+
+                $logger->log(sprintf('Grades %s applied to %d enrollment(s) in %s', $action, $updated, $class->record_title));
+            }
+        });
+
+        $actionPastTense = match ($action) {
+            'verify' => 'verified',
+            'unverify' => 'unverified',
+            'finalize' => 'finalized',
+            default => 'unlocked',
+        };
+
+        $message = $updated > 0
+            ? sprintf('%d enrollment(s) %s%s.', $updated, $actionPastTense, $skipped !== [] ? sprintf(' (%d skipped)', count($skipped)) : '')
+            : sprintf('No enrollments were %s%s.', $actionPastTense, $skipped !== [] ? sprintf(' (%d skipped)', count($skipped)) : '');
+
+        return response()->json([
+            'updated' => $updated,
+            'skipped' => $skipped,
+            'message' => $message,
+        ]);
+    }
+
+    /**
+     * Send pending manual schedule-change notices to enrolled students.
+     */
+    public function sendScheduleNotices(
+        Request $request,
+        Classes $class,
+        ClassScheduleChangeNotificationService $notifications,
+    ): JsonResponse {
+        $this->authorizeMutation($request);
+
+        $actor = $request->user() instanceof User ? $request->user() : null;
+        $result = $notifications->notifyPendingForClass($class, $actor);
+        $count = (int) $result['count'];
+        $recipients = (int) $result['recipients'];
+        $failed = (int) $result['failed'];
+
+        return response()->json([
+            'count' => $count,
+            'recipients' => $recipients,
+            'failed' => $failed,
+            'message' => $count > 0
+                ? sprintf('Queued %d notice(s) across %d delivery channel(s).%s', $count - $failed, $recipients, $failed > 0 ? sprintf(' %d could not be sent and remain pending.', $failed) : '')
+                : 'No pending schedule notices to send.',
+        ]);
+    }
+
+    /**
+     * Inline partial settings update that never touches the banner image.
+     */
+    public function quickSettings(Request $request, Classes $class): JsonResponse
+    {
+        $this->authorizeMutation($request);
+
+        if ($class->trashed()) {
+            return response()->json([
+                'message' => 'Cannot update settings for an archived class.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'enable_announcements' => ['sometimes', 'boolean'],
+            'enable_grade_visibility' => ['sometimes', 'boolean'],
+            'enable_attendance_tracking' => ['sometimes', 'boolean'],
+            'enable_online_resources' => ['sometimes', 'boolean'],
+            'allow_late_submissions' => ['sometimes', 'boolean'],
+            'enable_discussion_board' => ['sometimes', 'boolean'],
+            'notify_students_on_schedule_changes' => ['sometimes', 'boolean'],
+        ]);
+
+        $merged = DB::transaction(function () use ($class, $validated): array {
+            $locked = Classes::query()->lockForUpdate()->findOrFail($class->getKey());
+            $merged = array_merge(Classes::getDefaultSettings(), (array) ($locked->settings ?? []));
+            foreach (ClassCrudPreflightService::POLICY_SETTING_KEYS as $key) {
+                if (array_key_exists($key, $validated)) {
+                    $merged[$key] = (bool) $validated[$key];
+                }
+            }
+            $locked->settings = $merged;
+            $locked->save();
+
+            return $merged;
+        });
+
+        $policySettings = [];
+        foreach (ClassCrudPreflightService::POLICY_SETTING_KEYS as $key) {
+            $policySettings[$key] = (bool) ($merged[$key] ?? false);
+        }
+
+        return response()->json([
+            'settings' => $policySettings,
+            'message' => 'Class settings updated.',
+        ]);
+    }
+
+    private function authorizePreflight(Request $request): void
+    {
+        $user = $request->user();
+
+        abort_unless(
+            AdministratorPermissionChecker::userHasAnyPermission(
+                $user instanceof User ? $user : null,
+                ['ViewAny:Classes', 'Create:Classes', 'Update:Classes'],
+                [UserRole::Admin],
+            ),
+            403,
+        );
+    }
+
+    private function authorizeCreate(Request $request): void
+    {
+        $user = $request->user();
+
+        abort_unless(
+            AdministratorPermissionChecker::userHasAnyPermission(
+                $user instanceof User ? $user : null,
+                'Create:Classes',
+                [UserRole::Admin],
+            ),
+            403,
+        );
     }
 
     private function authorizeRead(Request $request): void

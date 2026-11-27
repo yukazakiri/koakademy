@@ -2,8 +2,10 @@ import AdminLayout from "@/components/administrators/admin-layout";
 import { type FilterFieldConfig, type Filter as FilterType } from "@/components/reui/filters";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -110,6 +112,7 @@ type SelectedClass = {
         enable_announcements?: boolean;
         enable_grade_visibility?: boolean;
         enable_attendance_tracking?: boolean;
+        enable_online_resources?: boolean;
         allow_late_submissions?: boolean;
         enable_discussion_board?: boolean;
         notify_students_on_schedule_changes?: boolean;
@@ -223,6 +226,7 @@ interface ClassesIndexProps {
     };
     options?: Partial<ClassOptions>;
     defaults?: Partial<ClassDefaults>;
+    flash?: { type: string; message: string } | null;
 }
 
 function createActiveFilters(filters?: ClassesIndexProps["filters"]): FilterType[] {
@@ -303,7 +307,14 @@ export default function AdministratorClassesIndex({
     filters = {},
     options: rawOptions,
     defaults: rawDefaults,
+    flash,
 }: ClassesIndexProps) {
+    React.useEffect(() => {
+        if (!flash?.message) return;
+        if (flash.type === "warning") toast.warning(flash.message);
+        else if (flash.type === "error") toast.error(flash.message);
+        else toast.success(flash.message);
+    }, [flash]);
     const options: ClassOptions = React.useMemo(
         () => ({
             classifications: rawOptions?.classifications ?? DEFAULT_OPTIONS.classifications,
@@ -543,6 +554,7 @@ export default function AdministratorClassesIndex({
     const [editActiveTab, setEditActiveTab] = React.useState<ClassDialogTab>("details");
     const [copySourceId, setCopySourceId] = React.useState<number | null>(null);
     const [copySection, setCopySection] = React.useState("A");
+    const [copySchedules, setCopySchedules] = React.useState(false);
     const [pendingDelete, setPendingDelete] = React.useState<ClassRow | null>(null);
     const [isCompareOpen, setIsCompareOpen] = React.useState(false);
     const [compareInitialClassIds, setCompareInitialClassIds] = React.useState<[number, number] | undefined>();
@@ -882,6 +894,7 @@ export default function AdministratorClassesIndex({
         onCopy: (id) => {
             setCopySourceId(id);
             setCopySection("A");
+            setCopySchedules(false);
             setIsCopyOpen(true);
         },
         capabilities,
@@ -1419,23 +1432,34 @@ export default function AdministratorClassesIndex({
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>Copy class</DialogTitle>
-                        <DialogDescription>Creates a new class with the same data (schedules not copied).</DialogDescription>
+                        <DialogDescription>
+                            Creates a new section with the same curriculum, faculty, capacity, and classroom settings.
+                        </DialogDescription>
                     </DialogHeader>
 
-                    <div className="space-y-2">
-                        <Label>New section</Label>
-                        <Select value={copySection} onValueChange={setCopySection}>
-                            <SelectTrigger className="w-full">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {options.sections.map((sec) => (
-                                    <SelectItem key={sec.value} value={sec.value}>
-                                        {sec.label}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="copy-class-section">New section</Label>
+                            <Input id="copy-class-section" value={copySection} maxLength={20} onChange={(event) => setCopySection(event.target.value)} />
+                        </div>
+
+                        <label
+                            htmlFor="copy-class-schedules"
+                            className="bg-muted/30 flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-sm"
+                        >
+                            <Checkbox
+                                id="copy-class-schedules"
+                                checked={copySchedules}
+                                onCheckedChange={(checked) => setCopySchedules(checked === true)}
+                                className="mt-0.5"
+                            />
+                            <span className="space-y-0.5">
+                                <span className="text-foreground block font-medium">Copy weekly schedules as well</span>
+                                <span className="text-muted-foreground block text-xs">
+                                    Leave unchecked to copy the offering without duplicating existing room or faculty time blocks.
+                                </span>
+                            </span>
+                        </label>
                     </div>
 
                     <DialogFooter>
@@ -1443,12 +1467,13 @@ export default function AdministratorClassesIndex({
                             Cancel
                         </Button>
                         <Button
+                            disabled={!copySection.trim()}
                             onClick={() => {
                                 if (!copySourceId) return;
                                 router.post(
                                     copyClass.url(copySourceId),
-                                    { section: copySection },
-                                    { preserveScroll: true, onSuccess: () => setIsCopyOpen(false) },
+                                    { section: copySection.trim(), copy_schedules: copySchedules },
+                                    { preserveScroll: true, onSuccess: () => setIsCopyOpen(false), onError: (errors) => toast.error(errors.section ?? "Could not copy this class.") },
                                 );
                             }}
                         >
